@@ -15,6 +15,7 @@ import type { Env } from '../core/env';
 import { log } from '../core/log';
 import type { Principal, Principals } from '../core/types';
 import { subscribe } from './billing';
+import { retryBootstrapCreate } from './transient';
 import { adminCreateUser, adminDeleteUser, passwordGrant, type AdminUser } from './supabase';
 
 export interface Provisioned {
@@ -102,8 +103,14 @@ async function provisionOwner(
   // Funding must follow this call, not race it: the account row is created
   // lazily on the first token/project call.
   const ownerClient = new Client(env.apiUrl).as(owner.principal);
-  const tok = await ownerClient.post('/v1/accounts/tokens', {
-    name: `e2e-${runId}-owner-bootstrap`,
+  // Fresh name per attempt: if a laundered 5xx hid a committed create, the
+  // orphan token is inert (revoked by gc) and the retry cannot 409 on it.
+  const tok = await retryBootstrapCreate('owner PAT mint', async (attempt) => {
+    const res = await ownerClient.post('/v1/accounts/tokens', {
+      name: `e2e-${runId}-owner-bootstrap${attempt > 1 ? `-r${attempt}` : ''}`,
+    });
+    res.status([200, 201]);
+    return res;
   });
   const patAcctSecret = tok.json<any>()?.secret_key as string | undefined;
 

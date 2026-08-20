@@ -72,6 +72,13 @@ interface GroupsTabProps {
    * allowed), so the create action is disabled here rather than left to
    * fail with a 402 on submit. */
   rbacEnabled: boolean;
+  /** `role.read` / `policy.read` — the leaves `GET .../iam/roles` and
+   * `GET .../iam/policies` assert. Forwarded to `GroupAccessPanel`, which is
+   * the only thing here that reads either. PERMISSION, a different axis from
+   * the `rbacEnabled` entitlement above: the hub resolves both in its one
+   * batched probe, so this thread costs no extra request. */
+  canReadRoles: boolean;
+  canReadPolicies: boolean;
   /** null = show the group list. A group id = show that group's access panel.
    *  Controlled by the account page's `?group=` param, exactly like
    *  `AccessProjectsTab`'s `?project=`. */
@@ -83,6 +90,8 @@ export function GroupsTab({
   accountId,
   canCreate,
   rbacEnabled,
+  canReadRoles,
+  canReadPolicies,
   selectedGroupId,
   onSelectGroup,
 }: GroupsTabProps) {
@@ -93,6 +102,8 @@ export function GroupsTab({
         accountId={accountId}
         groupId={selectedGroupId}
         rbacEnabled={rbacEnabled}
+        canReadRoles={canReadRoles}
+        canReadPolicies={canReadPolicies}
         onBack={() => onSelectGroup(null)}
       />
     );

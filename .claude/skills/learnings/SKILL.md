@@ -21,6 +21,194 @@ linked, not inlined.
 
 ## Register
 
+### A per-host credential never goes in a client-wide header bag (2026-08-20)
+
+**When:** giving any browser/HTTP client a token that authorises ONE origin —
+Playwright `use.extraHTTPHeaders`, an axios/fetch default-headers object, a
+`RequestInit` you reuse. These apply to EVERY request the client makes, so the
+secret goes to every third party the page touches, and any extra header forces
+the cross-origin preflight to list it — which a fixed
+`Access-Control-Allow-Headers` then rejects, killing the real request with
+`net::ERR_FAILED` (the 204 preflight makes it look like CORS passed). Prefer the
+cookie/session form of the credential, scoped to its host; if a header is the
+only option, attach it per-request to that origin. **Enforcer:**
+`tests/unit/web-ecs-workflow.test.ts` fails if the bypass secret returns to
+`extraHTTPHeaders`.
+
+*Incident:* `VERCEL_AUTOMATION_BYPASS_SECRET` in `playwright.config.ts`
+`extraHTTPHeaders` blocked EVERY browser API call on staging — the same 11 specs
+red on every release-gate run (32306385663, 32310893789) — and shipped the
+secret to 16 hosts incl. Google/Facebook/DoubleClick, in plaintext inside public
+workflow-run trace artifacts. Fixed in PR #6632; secret required rotation.
+
+### A deployed API cannot read the test runner's filesystem (2026-08-20)
+
+**When:** writing any e2e fixture that hands the API a path — `repo_url`, a file
+URI, a callback host. It works locally because the API is the same machine, and
+fails only against a deployed target, where the origin 5xx arrives laundered as
+`503 MAINTENANCE_MODE` and looks like an outage. Branch the fixture on the
+target (`src/fixtures/world.ts` and `tests/e2e/helpers/manifest-project.ts` are
+the pattern: local bare repo on `local`, provisioned managed-git otherwise).
+
+*Incident:* specs 21/22 pointed staging at `/tmp/ke2e-git-*/remote.git` on the
+GitHub runner; trigger writes 502'd and the resource-grants agent list came back
+silently EMPTY. PR #6632.
+
+### Rewiring writers and converting their table to a view must be TWO releases (2026-08-19)
+
+**When:** an expand/contract store swap (table -> compatibility view). The
+migration applies BEFORE the new image rolls, so old pods run against the view
+for the whole build+rollout window — and any of their `INSERT ... ON CONFLICT
+(cols)` writers 42P10 for that entire window (INSTEAD OF triggers cannot help;
+conflict inference precedes them). Locally it is worse: the shared Supabase DB
+is cutover'd the moment the migration runs, and EVERY other worktree still on
+pre-cutover code breaks until it merges main.
+The rule: **release N rewires every ON CONFLICT writer off the table; release
+N+1 converts it to a view.** If they must ship together, size the window
+explicitly (dev: minutes; prod: pod drain + build — unacceptable for hot
+writers) and schedule the promote accordingly. After cutting over a shared
+local DB, tell every other active session to merge main IMMEDIATELY.
+*Incident:* RBAC cutover #6594 — dev's grant/invite/SSO-JIT/SCIM upserts
+42P10'd from migration-apply until the API rollout landed; every local
+worktree session on pre-cutover code broke against the shared DB at once.
+*Enforcer:* none — prose only. The promote runbook must carry this check.
+
+### A VALIDATE ships only with a reconciliation the TARGET data has passed (2026-08-19)
+
+**When:** writing `VALIDATE CONSTRAINT` for an FK/CHECK added `NOT VALID`.
+Zero violating rows on the local DB is not evidence — local data is young.
+Long-lived envs hold rows written before the catalog/constraint existed (dev:
+`iam_role_actions` rows with retired `project.cr.*`/`trigger.*` actions).
+Either probe every target env for violators first, or — better — precede the
+VALIDATE with idempotent reconciliation DML in the same migration so it cannot
+fail on data the constraint predates. Reconcile by REMAPPING a retired value to
+its replacement, never by deleting the row: where the retired action was a
+rename/collapse (`project.cr.open` -> `project.gitops.push`), the row is the
+whole reason the old name still exists, and deleting it silently strips a
+capability from whoever held it — a permission change disguised as a migration
+fix. Delete only a value with no replacement (the dead `trigger.*` family). A merged migration that VALIDATE-fails
+blocks EVERY deploy of that env; the only sanctioned fix is a checksum-guarded
+runtime override (`packages/db/scripts/migration-runtime-overrides.ts`).
+*Incident:* RBAC cutover #6594 — `role_permissions_action_permissions_fk`
+VALIDATE 23503'd on dev; Deploy Dev blocked ~1h; fixed by the third runtime
+override (map `cr.*`→`gitops.*` dedup-aware, purge uncataloged, then VALIDATE).
+*Enforcer:* `migration-runtime-overrides.test.ts` pins the override; nothing
+yet lints "VALIDATE without reconciliation" — prose only.
+
+### `drizzle-kit generate` reports a TTY prompt as "no schema changes" (2026-08-19)
+
+**When:** running `bun packages/db/scripts/generate.ts <slug>` from any
+non-interactive shell (an agent, CI, a piped command).
+When a diff contains BOTH a created and a deleted table, drizzle-kit opens an
+interactive "created or renamed?" picker. Without a TTY it throws
+`Interactive prompts require a TTY terminal`, and the wrapper still prints
+`No schema changes detected — kortix.ts matches the snapshot. Nothing generated.`
+— the snapshot is NOT written, and `schema-sync` then rubber-stamps a stale one.
+The rule: **read the line drizzle-kit itself prints (`No schema changes, nothing
+to migrate 😴`), not the wrapper's summary**, and verify
+`drizzle/meta/_journal.json`'s tail plus the snapshot `prevId` chain by hand. To
+avoid the prompt entirely, split the change into two generate runs — deletions
+first, then creations — so neither diff has both sides.
+*Near-miss:* the canonical-RBAC cutover; `account_memberships` (created) landed
+in the same diff as three dropped tables, and the first run silently produced no
+snapshot. Same failure class as the 2026-07-16 forked-snapshot incident
+(MIGRATIONS.md "Why drizzle-kit generate needed fixing").
+
+### `ON CONFLICT (cols)` cannot run against a view (2026-08-19)
+
+**When:** replacing a table with a compatibility view (expand/contract), or
+adding an INSTEAD OF trigger.
+A view has no indexes, so `INSERT ... ON CONFLICT (a, b) DO UPDATE` fails at
+runtime with `42P10 there is no unique or exclusion constraint matching the ON
+CONFLICT specification` — INSTEAD OF triggers do not help, because inference
+happens before they run. `ON CONFLICT DO NOTHING` with NO target does work. A
+view with a JOIN is not auto-updatable at all, and a rendered/expression column
+is never assignable even on an otherwise auto-updatable view.
+The rule: **before turning a table into a view, grep every writer for
+`onConflictDoUpdate` / `ON CONFLICT (` on that relation and rewire it first.**
+*Near-miss:* the canonical-RBAC cutover — five production write sites on
+`project_members` / `project_group_grants` / `iam_resource_grants` / the
+`account_members` accept paths would have 500'd on the first grant after deploy.
+*Enforcer:* `apps/api/src/__tests__/unit-iam-gate-codemod-pin.test.ts`
+("no production module writes a legacy grant table directly").
+
+### A store swap needs the FKs the old store had, or it silently loses a cascade (2026-08-19)
+
+**When:** moving rows from several tables into one canonical table.
+`project_members`, `project_group_grants` and `iam_resource_grants` each had
+`ON DELETE CASCADE` from `kortix.projects`; the canonical `role_assignments` had
+no FK on `scope_id`, so the swap would have made "delete a project" stop
+retracting its grants. The legacy `iam_policies` never had that FK either, and
+410 of its 413 local rows pointed at deleted projects — orphans nothing could
+observe and nothing cleaned up.
+The rule: **enumerate every FK and every ON DELETE rule on the tables you are
+replacing, and reproduce them on the survivor.** Add the FK `NOT VALID`, purge
+the pre-existing violations in a batched `.concurrent.ts`, then `VALIDATE` in a
+follow-up file.
+*Near-miss:* the canonical-RBAC cutover, caught by diffing `pg_constraint` for
+the retired tables before writing the migration.
+
+
+### A picker that offers a model the runtime does not know is a silent outage; the runtime must learn the set from the API it talks to (2026-08-19)
+
+**When:** adding or changing a managed model (`LLM_GATEWAY_MANAGED_MODELS`,
+`@kortix/llm-catalog` MANAGED_MODELS), or touching how the sandbox daemon
+builds OpenCode's `kortix` provider (`apps/kortix-sandbox-agent-server/src/opencode.ts`).
+The web picker reads the API (`/model-picker`, `/v1/llm/models`); OpenCode in the
+guest accepts only the ids in the provider map it BOOTED with, built from the
+image-baked `/opt/kortix/llm-catalog.json`. That file is frozen at template-build
+time and nothing rebuilds a template for a catalog change, so every managed
+model added after the bake is offered by the picker and rejected by the guest
+(`ModelNotFound: kortix/<id>`, 2 ms after the user message, before any gateway
+call). Rules: (1) the guest must fetch the managed set from the API on EVERY boot
+(`GET /models?scope=managed`, ~3 KB) and overlay it — never trust a baked list
+for anything deployment-config decides; (2) a boot-path fetch gets its own small
+budget and a bundled fallback, and is started in parallel with the clone, never
+awaited on the critical path beyond a cap; (3) a catalog "refresh" that can
+silently fall back (here 2.5 s/4 s for a 3.3 MB body) is not a refresh — size the
+payload to the budget; (4) a `session.error` with no assistant message must be
+rendered under the turn that failed, or the user sees nothing at all.
+*Incident:* prod 2026-08-19, `grok-4.6` and `deepseek-v4-pro-0813` (added
+2026-08-12/13) returned no reply in every session on templates built before
+then; 0 gateway log rows ever. PR #6576.
+*Enforcer:* `managed-fallback-sync.test.ts` (bundled table vs `MANAGED_MODELS`
+drift), `managed-model-overlay.test.ts` (stale file + live overlay; failed
+fetch → bundled floor; await cap), `managed-scope.test.ts`; web: sync-store
+per-turn `session.error` tests. Not enforced: a live "picker ⊆ guest provider
+map" assertion after deploy — run the dev sweep by hand until it exists.
+
+### `KORTIX_SELF_HOST_CONFIG_DIR` isolates the config, NOT the containers (2026-08-19)
+
+**When:** exercising `kortix self-host` locally on a machine that already runs a
+self-host instance. Pointing `KORTIX_SELF_HOST_CONFIG_DIR` at a temp directory
+looks like a sandbox — `init` writes a fresh `.env` + compose there and touches
+nothing else. But `composeProject(instance)` derives the Docker Compose project
+name from the INSTANCE NAME alone (`kortix-<instance>`), so any command that
+reaches `docker compose` — `env set`, `start`, `update`, `configure` — applies
+the temp config to the containers of the REAL instance of the same name.
+`env set EMAIL_URL=…` against a temp dir recreated the live instance's
+`kortix-api` (×2, from the temp `KORTIX_APP_REPLICAS`) and `supabase-auth` with
+the temp instance's secrets.
+
+The rule: when testing self-host CLI commands against a throwaway config dir,
+**also pass `--instance <unique-name>`** — that is the only input that moves the
+Compose project. Verify with `docker ps --filter name=kortix-<instance>` BEFORE
+running anything that restarts services, and prefer `--no-start` plus reading
+the rendered `.env`/`docker-compose.yml` when you only need to inspect
+derivation.
+
+Recovery: re-apply the real instance's own files —
+`docker compose --project-name kortix-<instance> --env-file <real>/.env -f
+<real>/docker-compose.yml up -d --no-build` — then prove identity by diffing a
+secret from the real `.env` against `docker exec … printenv`, not by health
+alone (a container started from foreign config is perfectly healthy).
+*Incident:* 2026-08-19 near-miss during the EMAIL_URL work — the local
+`kortix-default` instance (16 containers, up 16 h) had 3 containers recreated
+with a temp instance's secrets; restored in ~4 min, all 16 healthy after.
+*Enforcer:* none — the CLI should either namespace the Compose project by the
+config dir or refuse when the resolved project already exists under a different
+instance directory. Until then this rule is the only guard.
+
 ### A request/response log must never cap what it captures (2026-08-18)
 
 **When:** persisting or rendering a captured request/response body (gateway
@@ -785,3 +973,106 @@ not the test output. And **reproduce the exact CI step** (`pnpm install
 and names the file.
 *Incident:* PR #6526, one full CI cycle lost; caught by reading the install
 step after the failure pattern (fast + everything) ruled out the tests.
+
+### `CREATE INDEX CONCURRENTLY` under a 5-second `lock_timeout` cannot land on live prod (2026-08-19)
+
+**When:** writing or applying any `.concurrent` migration; responding to a `55P03`
+("canceling statement due to lock timeout") during `Apply DB migrations to prod`.
+
+v0.13.0's deploy-prod (run 32248002434) failed its migration job twice, both times
+on a `.concurrent` migration that did `set lock_timeout = '5s'` then
+`create index concurrently …` — first on `kortix.iam_roles` (6 rows, 80 kB),
+then on `kortix.account_tokens` (30k rows). The table size is irrelevant:
+`CREATE INDEX CONCURRENTLY` has to wait for EVERY transaction in the database
+that started before it (it takes a ShareLock on each one's virtual transaction
+id), and `lock_timeout` governs that wait. On live prod — audit_events writers
+on every request, multi-second session-turn transactions — some transaction
+outlives a 5-second budget almost every time, so the CIC is cancelled and leaves
+an INVALID index behind, which makes a plain re-run fail with "already exists".
+The 2–5 s house value exists to keep DDL from blocking prod; CIC's wait blocks
+nobody, so that rationale does not apply to it.
+
+The rule: **in a `.concurrent` migration, set `lock_timeout` long enough for a
+live system — 2–3 minutes — and note why in the file.** The one lock a CIC
+holds (ShareUpdateExclusive on the table) only excludes other DDL/VACUUM; a long
+wait on virtual transaction ids hurts no user.
+
+Recovery when it has already failed (used twice tonight, ~2 min each):
+1. `select indexrelname from pg_stat_user_indexes s join pg_index i on
+   i.indexrelid=s.indexrelid where not i.indisvalid` — find the INVALID leftover.
+2. `drop index concurrently if exists <it>`.
+3. Hand-run the migration's exact statements in `psql` with
+   `set lock_timeout='180s'; set statement_timeout='30min'`; confirm `indisvalid`.
+4. `insert into kortix_migrations.pgmigrations (name, run_on) values ('<file
+   basename without extension>', now())` — the ledger must match what is live.
+5. `gh run rerun <deploy-prod run> --failed` — the migrate step sees nothing
+   pending and the roll proceeds.
+Migration files are immutable once merged (CI enforces it), so do not edit the
+failing file; fix the template/house rule for the next one.
+*Incident:* v0.13.0 deploy-prod run 32248002434, migrations
+`20260819015724600_rbac_canonical_indexes.concurrent` and
+`20260819015726000_account_tokens_session_id_index.concurrent`; ~30 min of
+release delay. Prod also carries four pre-existing INVALID legacy indexes
+(`public.idx_messages_*`, old Suna table) that predate this and were left alone.
+
+### A redirect URI, a protocol handshake, and a cached catalog all break silently the first time a third party is real (2026-08-19)
+
+**When:** integrating any third-party OAuth provider or remote MCP server;
+building any flow whose success depends on what an external server accepts.
+
+Kortix's generic OAuth2 connector surface passed its unit tests, its ke2e flow,
+and a full local run. It had never completed one authorization against a real
+provider. Three defects were sitting in it, and each one is invisible until a
+third party refuses you.
+
+**1. A redirect URI derived from the request is the wrong origin.** The
+authorize route built the callback with
+`new URL('/v1/connectors/oauth2/callback', c.req.url)`. Behind the load
+balancer the API sees the *internal* origin, so dev emitted
+`http://dev-api-ecs-fargate.kortix.com/v1/connectors/oauth2/callback` — plain
+http, internal hostname. An authorization server byte-compares `redirect_uri`
+against the registered value, so every real authorization would have been
+rejected. Locally it looked perfect, because locally `c.req.url` *is* the
+public origin. **A value a third party will compare against must come from
+configuration (`KORTIX_URL`), never from the incoming request.** The same rule
+covers webhook URLs, issuer strings, and audience values. Anything derived from
+`req.url` is correct exactly until a proxy is in front of you.
+
+**2. "Optional" in a spec means "mandatory" for some implementations.** MCP's
+streamable-HTTP transport describes `initialize` → `notifications/initialized`
+→ `Mcp-Session-Id`. Kortix posted a bare `tools/call`, which every *stateless*
+server accepts — so it worked against the servers we happened to try. Servers
+built on the official MCP SDKs default to **stateful** and answer anything
+without a session id with `400 Bad Request: Server not initialized`. Read as a
+generic 400, that looks like a malformed request, not a missing handshake.
+**When a protocol describes a handshake, implement the handshake, even if your
+first three test servers do not need it.** Two details that are easy to get
+wrong and are load-bearing: the session cache key must include the
+*credential* (or two principals share one server session), and `401`/`403` must
+never be treated as a handshake failure and retried — those are credential
+problems and belong to the caller untouched.
+
+**3. A credential-dependent cache computed before the credential exists is
+poison, and nothing recomputes it.** An MCP tool catalog is fetched *with* the
+connector credential. Creating the connector before authorizing it therefore
+recorded `status: 'error'`, `last_error: "MCP tools/list failed: HTTP 401"`.
+Completing OAuth wrote the token and stopped. The user finished the flow, saw
+"connected", and the connector still read **Error** with zero tools — the exact
+failure the feature existed to remove, now with a success toast on top of it.
+**Whenever a credential starts to exist, re-run everything that failed for want
+of it.** Ask of any cache: which inputs can arrive *after* this was computed,
+and what re-runs it when they do? Here the repo already had the helper
+(`rematerializeCatalogAfterCredentialUpdate`); only the OAuth completion paths
+never called it.
+
+The meta-rule tying all three together: **an integration is unverified until it
+has completed once against the real third party.** Not a mock, not a fixture,
+not a conformant test double — the actual server. All three defects survived a
+green suite; all three fell out within minutes of pointing the flow at
+`api.read.ai`. Budget for one live end-to-end run before calling any
+third-party integration done, and prefer a provider that implements the spec
+strictly (dynamic registration, stateful sessions) as the one you test against.
+
+*Incident:* found and fixed while building one-click OAuth 2.1 for MCP
+connectors, PR #6579. No production outage — the surface had never been used
+against a real provider, which is precisely why all three shipped unnoticed.

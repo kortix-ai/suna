@@ -19,6 +19,7 @@ export {
   // Kortix tables — accounts
   accounts,
   accountMembers,
+  accountMemberships,
   accountInvitations,
   accountGithubInstallations,
   accountGithubInstallationStates,
@@ -81,9 +82,6 @@ export {
   providerEvents,
   sandboxes,
   sandboxMembers,
-  sandboxMemberScopes,
-  scopeEffectEnum,
-  sandboxInvites,
   legacySandboxMigrations,
   sunaAccountMigrations,
   kortixApiKeys,
@@ -99,7 +97,6 @@ export {
   projectSessionRuntimeContextsRelations,
   sandboxesRelations,
   sandboxMembersRelations,
-  sandboxInvitesRelations,
   kortixApiKeysRelations,
   // Billing / Credits (moved from public → kortix schema)
   billingCustomers,
@@ -209,7 +206,6 @@ export {
   connectors,
   connectorConnections,
   projectSessionConnectorBindings,
-  connectorGrants,
   connectionCredentials,
   connectionOAuthApplications,
   connectionOAuthSessions,

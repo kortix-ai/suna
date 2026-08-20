@@ -48,6 +48,7 @@ let createSequence: Array<{ result?: Record<string, unknown>; error?: Error }> =
   { result: { id: 'sbx_new', state: 'running' } },
 ];
 let createCallCount = 0;
+let nextSecretId = 1;
 
 function normalizeHeaders(h: RequestInit['headers']): Record<string, string> {
   if (!h) return {};
@@ -62,6 +63,10 @@ mock.module('../../shared/platinum', () => ({
     const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined;
     const headers = normalizeHeaders(init.headers);
     calls.push({ path, method: String(init.method ?? 'GET'), headers, body });
+    if (path.startsWith('/v1/secrets?')) return { items: [], cursor: null };
+    if (path === '/v1/secrets' && String(init.method ?? 'GET') === 'POST') {
+      return { id: `sec_${nextSecretId++}`, ...body };
+    }
     if (path.startsWith('/v1/sandboxes?')) {
       const idx = Math.min(createCallCount, createSequence.length - 1);
       createCallCount += 1;
@@ -98,6 +103,7 @@ function createCalls() {
 beforeEach(() => {
   calls = [];
   createCallCount = 0;
+  nextSecretId = 1;
   createSequence = [{ result: { id: 'sbx_new', state: 'running' } }];
   delete process.env.KORTIX_PLATINUM_CREATE_DEDUP;
 });

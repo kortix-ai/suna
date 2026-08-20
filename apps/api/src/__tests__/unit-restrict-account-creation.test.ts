@@ -16,6 +16,7 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { mockIamAssignments } from './helpers/iam-mocks';
 
 const ADMIN_ID = '00000000-0000-4000-a000-000000000001';
 const MEMBER_ID = '00000000-0000-4000-a000-000000000002';
@@ -42,6 +43,11 @@ mock.module('../shared/platform-roles', () => ({
 }));
 
 let insertedAccount: { name: string } | null = null;
+
+// Creating an account is TWO writes now: the identity row
+// (`account_memberships`) and the owner ROLE (`assignRole`). This suite is about
+// the creation RESTRICTION, not the grant store, so the write path is bypassed.
+mockIamAssignments();
 
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,

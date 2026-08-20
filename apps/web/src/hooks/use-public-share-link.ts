@@ -16,8 +16,13 @@
  * have access.
  */
 
-import { type CreateSessionPublicShareInput, createSessionPublicShare } from '@kortix/sdk';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  type CreateSessionPublicShareInput,
+  createSessionPublicShare,
+  listProjectSessions,
+} from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -32,6 +37,21 @@ export interface PublicShareLinkTarget {
 
 export function usePublicShareLink({ projectId, sessionId, input }: PublicShareLinkTarget) {
   const queryClient = useQueryClient();
+  // Minting a public link is the session OWNER's call — the link is
+  // unauthenticated, so a project manager who cannot read the session must not
+  // be able to mint one and read it through the URL instead (the API refuses
+  // with 403). Read the same verdict the API computes rather than showing a
+  // control that can only fail. Only an explicit `false` withholds it: the
+  // inventory is not loaded on every surface this hook serves, and an unknown
+  // answer must not silently remove a control from the owner.
+  const { data: sessions } = useQuery({
+    queryKey: qk.project.sessions(projectId ?? ''),
+    queryFn: () => listProjectSessions(projectId!),
+    enabled: !!projectId && !!sessionId,
+    ...contract('inventory'),
+  });
+  const canManageSharing =
+    sessions?.find((s) => s.session_id === sessionId)?.can_manage_sharing !== false;
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -77,6 +97,6 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
     copyLink: () => mutation.mutate(),
     isPending: mutation.isPending,
     copied,
-    canShare: !!projectId && !!sessionId && !!input,
+    canShare: !!projectId && !!sessionId && !!input && canManageSharing,
   };
 }

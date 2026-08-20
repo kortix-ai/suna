@@ -128,6 +128,7 @@ Target a specific DB (secrets never go through the shell): the adapter reads `DA
 - One logical change per migration.
 - Generated/hand-written SQL is reviewed by a human before it touches a database.
 - Every migration needs `lock_timeout`/`statement_timeout` set (squawk: `require-timeout-settings`) — **both** `migrate:create` and `migrate:generate` pre-fill this. (`migrate:generate` did not until 2026-08-05; it renamed drizzle-kit's output through unchanged, so generated migrations were born failing the rule.)
+- A `.concurrent.ts` migration takes the **opposite** `lock_timeout` to a `.sql` one: `'180s'`, never 2–5 s. `CREATE INDEX CONCURRENTLY` waits on every older transaction and `lock_timeout` governs that wait, so a short budget fails on live prod regardless of table size. Enforced — below 120 s fails lint. See [Roll-forward safety](#lock_timeout-in-a-concurrentts-file-is-the-opposite-of-the-house-value).
 - Any migration that **drops or alters** a constraint, unique index, column, or enum value needs a `-- mixed-version-safe: <justification>` (or `-- enum-value-checked: <justification>` for `ADD VALUE`) comment, or CI fails it — see [Zero-downtime rules](#zero-downtime-rules-checklist). Same rule for `.concurrent.ts` (e.g. a `DROP INDEX CONCURRENTLY`) — use a `//` comment there instead of `--`.
 
 ---
@@ -198,6 +199,19 @@ merge-conflict markers, duplicate timestamps — which they already pass).
 **Any filename not in that list — i.e. every migration written from now
 on — gets full enforcement.** The list only ever stays fixed; nothing is
 ever added to it.
+
+Each later guard gets its **own** baseline with its own cutoff, rather than
+reopening the 2026-07-16 list:
+
+| Baseline | Guard | Cutoff |
+| --- | --- | --- |
+| `grandfathered-migrations.json` | mixed-version + enum-value annotations, squawk | 2026-07-16 |
+| `backfill-grandfathered-migrations.json` | top-level DML in a single-transaction `.sql` migration | 2026-08-10 (`centralized_audit_v2` outage) |
+| `concurrent-lock-timeout-grandfathered-migrations.json` | the 120 s `lock_timeout` floor for CONCURRENTLY migrations | 2026-08-19 (deploy-prod run `32248002434`) |
+
+The cutoffs are independent: a file exempt from one guard is still held to the
+others. Same contract for all three — the lists are fixed, and nothing is ever
+added to them.
 
 See `packages/db/SQUAWK_BASELINE.md` for the one-time squawk retro-lint
 report over the pre-existing corpus (178 findings, none fixed, none blocking
@@ -276,6 +290,62 @@ immediately after it in the same `pnpm migrate` invocation applies correctly
 in the reopened transaction. `scripts/lint-migrations.ts` flags any
 `.concurrent.ts` file with a multi-statement `pgm.sql()` call.
 
+### `lock_timeout` in a `.concurrent.ts` file is the OPPOSITE of the house value
+
+**Use `set lock_timeout = '180s'` in a CONCURRENTLY migration — never the 2–5 s
+a plain `.sql` migration uses.** This is lint-enforced: a new `.concurrent.ts`
+file that runs a CONCURRENTLY operation and sets `lock_timeout` below **120 s**
+fails `pnpm --filter @kortix/db lint`.
+
+The reason the house value is short does not apply here, and following it breaks
+the migration outright. `CREATE INDEX CONCURRENTLY` does not merely take a brief
+lock at the end: to make its scans safe it must wait for **every transaction in
+the database that began before it**, taking a `ShareLock` on each one's virtual
+transaction id — once before it starts, and again before it finishes. And
+`lock_timeout` governs that wait.
+
+So on a live system the table's own size is irrelevant. Prod takes an
+`audit_events` write on nearly every request and runs multi-second session-turn
+transactions, so *some* transaction outlives a 5-second budget almost every
+time. The build is then cancelled with `55P03` and — because CIC is
+non-transactional — leaves an **INVALID index** behind, which makes a plain
+re-run fail with "already exists".
+
+Meanwhile the only lock a CIC actually *holds* is `ShareUpdateExclusive` on the
+target table, which excludes other DDL and `VACUUM` but never queries or writes.
+A long wait here blocks no user. That is the whole asymmetry: the short value
+protects against DDL that blocks traffic; a CIC is not that.
+
+`'0'` (wait indefinitely) is also accepted by the lint, as is omitting
+`lock_timeout` entirely — Postgres defaults it to `0`. Keep `statement_timeout`
+generous too (`'30min'` in the scaffold): an index build on a large table
+legitimately runs for minutes, and the `.sql` header's 30 s budget would kill it.
+
+**When it has already failed** (`55P03` during `Apply DB migrations to prod`):
+
+1. Find the leftover — `select indexrelname from pg_stat_user_indexes s join
+   pg_index i on i.indexrelid = s.indexrelid where not i.indisvalid;`
+2. `drop index concurrently if exists <it>;`
+3. Re-run the migration's exact statements in `psql` with
+   `set lock_timeout='180s'; set statement_timeout='30min';` and confirm
+   `indisvalid`.
+4. Record it: `insert into kortix_migrations.pgmigrations (name, run_on) values
+   ('<file basename without extension>', now());` — the ledger must match what is
+   live.
+5. `gh run rerun <deploy-prod run> --failed`; the migrate step now sees nothing
+   pending.
+
+Migration files are immutable once merged, so **do not edit the failing file** —
+fix the template and the house rule for the next one, which is what the 120 s
+floor is.
+
+*Incident: v0.13.0 deploy-prod run `32248002434` failed its migration job twice
+this way, first on `kortix.iam_roles` (6 rows, 80 kB), then on
+`kortix.account_tokens` (30 k rows). The 6-row table is what proved size was not
+the variable. Pre-floor `.concurrent.ts` files are exempt via
+`concurrent-lock-timeout-grandfathered-migrations.json` — they are immutable and
+already applied.*
+
 ---
 
 ## How migrations are applied, per environment
@@ -317,7 +387,7 @@ mode we've actually hit:
 
 | Job | Enforces | Failure mode it prevents |
 |---|---|---|
-| `lint` | Filename shape, no merge markers, no empty files/placeholders, no duplicate timestamps, **mixed-version guard, enum-value annotation** (new migrations only) | Malformed migrations; the `20260713220001000` class; the `sandbox_provider` enum-drift class |
+| `lint` | Filename shape, no merge markers, no empty files/placeholders, no duplicate timestamps, **mixed-version guard, enum-value annotation, backfill-DML guard, CONCURRENTLY `lock_timeout` floor** (new migrations only) | Malformed migrations; the `20260713220001000` class; the `sandbox_provider` enum-drift class; the `centralized_audit_v2` backfill outage; the `32248002434` `55P03` CIC class |
 | `squawk` | Deterministic Postgres locking/downtime rules (new migrations only) — see `.squawk.toml` | Non-concurrent index ops, unvalidated constraints, missing timeout headers, ACCESS EXCLUSIVE type changes, ... |
 | `immutability` | Already-merged migration files are never modified | Silent schema drift between environments that ran the file at different times |
 | `sequence` | New migrations sort after every already-merged migration | The historical `_journal`/`pgmigrations` ordering-dedupe incident |

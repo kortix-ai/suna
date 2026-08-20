@@ -20,14 +20,30 @@ import { C, help, pad, status, visibleWidth } from '../style.ts';
 
 const HELP = help`Usage: kortix secrets <subcommand> [options]
 
-Manage encrypted secrets on the linked Kortix project. A delivery policy
-controls whether each value reaches a sandbox or stays on Kortix services.
+Manage encrypted secrets on the linked Kortix project.
 
-A secret has an IDENTIFIER (the unique handle an agent's
-\`secrets\` grant references), a KEY (the env var injected into the sandbox),
-and a value. Runtime delivery uses KEY as an environment variable. Leave the
+A secret has an IDENTIFIER (the name an agent's \`secrets\` grant references),
+a KEY (the env var it occupies in the sandbox), and a value. Leave the
 identifier blank and it defaults to the key. Set it explicitly to keep a
 second credential profile under the same key.
+
+Each secret has one EXPOSURE — can agent code read the value?
+
+  environment  The real value is in the sandbox env. Required for a credential
+               the code must COMPUTE with (AWS SigV4, HMAC webhook signing, JWT
+               assertions, SSH/PEM keys) and for anything that is not HTTPS.
+               Use it as little as possible.
+  enforced     The env var holds a HANDLE, not the value. Kortix substitutes
+               the real value outside the sandbox, only on the approved hosts,
+               and rewrites any echo of it to [REDACTED]. The default for any
+               credential that only has to travel on the wire.
+  none         No sandbox presence. A Kortix service spends the value (LLM
+               gateway, connector, Git), or the secret is stored and disabled.
+
+Enforcement is ONE mechanism on every sandbox provider, not a menu. Agent code
+sends the handle with its ordinary HTTP client. \`kortix secrets call\` is the
+explicit door to the same hosts and the same policy, for a request that cannot
+be intercepted in the sandbox.
 
 Subcommands:
   ls                                List secrets (by identifier, → key when it
@@ -52,18 +68,33 @@ Subcommands:
                                     this session's sandbox. Use after setting
                                     a secret via the intake link or after a
                                     secret was updated mid-session.
-  delivery IDENTIFIER STRATEGY      Set runtime, broker, egress, or denied.
-    --consumer <service>             Broker consumer: llm-gateway, connector,
-                                    automation, or http-broker.
-    --allow-host <host>              Approved host. Repeat for more hosts.
-    --allow-method <method>          Broker only. Repeat as needed.
-    --allow-path <path>              Broker only. Exact path or trailing /*.
-    --inject-header <name>           Inject into one managed header.
-    --inject-query <name>            Broker only. Inject into a query parameter.
-    --inject-json <path>             Broker only. Inject into a JSON body field.
-    --template <value>               Header template containing {{secret}}.
-    --handle-prefix <prefix>         Optional vendor-shaped sandbox handle.
-  call IDENTIFIER URL               Send one policy-bound HTTPS request.
+  delivery IDENTIFIER EXPOSURE      Set environment, enforced, or none. The
+                                    stored names runtime|egress|broker|denied
+                                    are accepted as aliases.
+    --allow-host <host>              Approved host for enforced exposure.
+                                    Exact host, HTTPS. Repeat for more hosts.
+                                    The host list IS the policy.
+    --consumer <service>             Which Kortix service spends a none-exposure
+                                    secret: llm-gateway or connector.
+                                    (\`--consumer http-broker\` writes a legacy
+                                    \`secrets call\`-only row; prefer enforced.)
+    --inject-header <name>           Deprecated. Writes a legacy injection row
+                                    that sets one header instead of
+                                    substituting a handle.
+    --template <value>               Deprecated. Header template containing
+                                    {{secret}}. Requires --inject-header.
+    --allow-method <method>          Deprecated. Legacy http-broker rows only.
+    --allow-path <path>              Deprecated. Legacy http-broker rows only.
+    --inject-query <name>            Deprecated. Legacy http-broker rows only.
+    --inject-json <path>             Deprecated. Legacy http-broker rows only.
+    --handle-prefix <prefix>         Vendor-shaped handle prefix, for an SDK
+                                    that validates the credential's format.
+  call IDENTIFIER URL               Send one policy-bound HTTPS request through
+                                    Kortix — same hosts, same policy, same
+                                    [REDACTED] on an echoed value. The explicit
+                                    fallback for a request the sandbox cannot
+                                    intercept, not a second way to configure a
+                                    secret.
     --method <method>                Default: GET.
     --header <name:value>            Request header. Repeat as needed.
     --data <value>                   Inline request body.
@@ -147,13 +178,19 @@ type SecretRow = {
 };
 
 /**
- * The DELIVERY cell: where the value goes, and whether it can get there.
+ * The DELIVERY cell: the secret's exposure, or the service that spends it.
  *
- * `delivery_status` is the field that says a boundary secret is dead — an
- * `egress` secret on a project with no network boundary is stored, valid and
- * completely undelivered. `denied` reports 'disabled' as its own target and is
- * a choice rather than a fault, so only 'unavailable' is flagged. The marker is
- * text, not colour, because the CLI runs unstyled under NO_COLOR and in pipes.
+ * The words are the model's own (docs/specs/
+ * 2026-08-19-secrets-exposure-usage-model.md §3): `runtime` reads as
+ * "environment" because that is the exposure a reader has to weigh, and
+ * `egress` reads as its host list because the hosts ARE the policy. A
+ * `broker` row has no sandbox presence at all, so it names its spender.
+ *
+ * `delivery_status` is the field that says an enforced secret is dead — stored,
+ * valid and delivered nowhere. `denied` reports 'disabled' as its own target
+ * and is a choice rather than a fault, so only 'unavailable' is flagged. The
+ * marker is text, not colour, because the CLI runs unstyled under NO_COLOR and
+ * in pipes.
  */
 export function deliveryCell(row: {
   strategy: SecretRow['strategy'];
@@ -163,12 +200,14 @@ export function deliveryCell(row: {
 }): string {
   const target =
     row.strategy === 'runtime'
-      ? 'sandbox'
+      ? 'environment'
       : row.strategy === 'denied'
         ? 'disabled'
         : row.strategy === 'broker'
-          ? (row.consumer ?? 'Kortix broker')
-          : 'approved hosts';
+          ? (row.consumer ?? 'Kortix service')
+          : // Colon, not the ` · ` the markers below use — the exposure and its
+            // hosts are one fact, and a second ` · ` would read as a third one.
+            'enforced: approved hosts';
   const undeliverable =
     row.deliveryStatus === 'unavailable' ? ` ${C.red}· unavailable${C.reset}` : '';
   const rotation = row.requiresRotation ? ' · rotate' : '';
@@ -376,6 +415,32 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
 
 const SECRET_STRATEGIES = ['runtime', 'broker', 'egress', 'denied'] as const;
 type SecretStrategy = (typeof SECRET_STRATEGIES)[number];
+
+/**
+ * What a user types → what the API stores.
+ *
+ * The exposure words are the model's (docs/specs/
+ * 2026-08-19-secrets-exposure-usage-model.md §3); the stored `strategy` column
+ * is unchanged, so both spellings resolve to the same four values and no
+ * existing script or agent transcript breaks. `broker` has no exposure word of
+ * its own: which exposure it means depends on its consumer, so it stays
+ * reachable only under its stored name.
+ */
+const EXPOSURE_ALIASES: Readonly<Record<string, SecretStrategy>> = {
+  environment: 'runtime',
+  enforced: 'egress',
+  'egress-enforced': 'egress',
+  none: 'denied',
+};
+
+/** The stored strategy for an EXPOSURE or a legacy strategy name; null if neither. */
+export function parseExposure(input: string | undefined): SecretStrategy | null {
+  if (input === undefined) return null;
+  const normalized = input.trim().toLowerCase();
+  if (SECRET_STRATEGIES.includes(normalized as SecretStrategy)) return normalized as SecretStrategy;
+  return EXPOSURE_ALIASES[normalized] ?? null;
+}
+
 const BROKER_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 type BrokerMethod = (typeof BROKER_METHODS)[number];
 
@@ -397,10 +462,15 @@ function takeFlagValues(args: string[], names: string[]): string[] {
   return values;
 }
 
-function deliveryLabel(strategy: SecretStrategy): string {
-  if (strategy === 'runtime') return 'Readable in sandbox';
-  if (strategy === 'broker') return 'Used through Kortix';
-  if (strategy === 'egress') return 'Sent only to approved hosts';
+/** The one-line confirmation, in the exposure the user just chose. */
+function deliveryLabel(strategy: SecretStrategy, consumer?: string): string {
+  if (strategy === 'runtime') return 'Exposed in the sandbox environment';
+  if (strategy === 'egress') return 'Enforced at the network';
+  if (strategy === 'broker') {
+    return consumer === 'http_broker'
+      ? 'Enforced at the network — `kortix secrets call` only'
+      : `Spent by Kortix (${(consumer ?? 'service').replace(/_/g, ' ')}), never in the sandbox`;
+  }
   return 'Stored but disabled';
 }
 
@@ -409,12 +479,17 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
   const options = args.slice(2);
   if (!identifier || !IDENTIFIER_RE.test(identifier)) {
     process.stderr.write(
-      `${status.err('Usage: kortix secrets delivery IDENTIFIER runtime|broker|egress|denied')}\n`,
+      `${status.err('Usage: kortix secrets delivery IDENTIFIER environment|enforced|none')}\n`,
     );
     return 2;
   }
-  if (!SECRET_STRATEGIES.includes(strategyRaw as SecretStrategy)) {
-    process.stderr.write(`${status.err('Delivery must be runtime, broker, egress, or denied.')}\n`);
+  const parsedStrategy = parseExposure(strategyRaw);
+  if (parsedStrategy === null) {
+    process.stderr.write(
+      `${status.err(
+        'Exposure must be environment, enforced, or none (stored aliases: runtime, egress, broker, denied).',
+      )}\n`,
+    );
     return 2;
   }
 
@@ -450,7 +525,7 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
 
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const strategy = strategyRaw as SecretStrategy;
+  const strategy = parsedStrategy;
   const normalizedConsumer = consumerFlag?.replace(/-/g, '_') ?? 'http_broker';
   // Preserve the old `automation` flag as an input alias. Send only the canonical value.
   const consumer = normalizedConsumer === 'automation' ? 'connector' : normalizedConsumer;
@@ -464,7 +539,11 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     return 2;
   }
   if (strategy !== 'broker' && consumerFlag !== undefined) {
-    process.stderr.write(`${status.err('--consumer is only valid for broker delivery.')}\n`);
+    process.stderr.write(
+      `${status.err(
+        '--consumer names the Kortix service that spends a none-exposure secret. Pass it with the `broker` alias.',
+      )}\n`,
+    );
     return 2;
   }
   const hasHttpPolicyOptions =
@@ -478,7 +557,9 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     handlePrefix !== undefined;
   if (strategy !== 'broker' && strategy !== 'egress' && hasHttpPolicyOptions) {
     process.stderr.write(
-      `${status.err('HTTP policy flags are only valid for broker or egress delivery.')}\n`,
+      `${status.err(
+        'Host and injection flags describe a policy, which only an enforced secret has.',
+      )}\n`,
     );
     return 2;
   }
@@ -492,7 +573,7 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
   }
   if (strategy === 'broker' && consumer === 'http_broker') {
     if (allowedHosts.length === 0) {
-      process.stderr.write(`${status.err('Broker delivery requires --allow-host.')}\n`);
+      process.stderr.write(`${status.err('A legacy http-broker row requires --allow-host.')}\n`);
       return 2;
     }
     const injectionValues = [injectHeader, injectQuery, injectJson].filter(
@@ -500,7 +581,7 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     );
     if (injectionValues.length !== 1) {
       process.stderr.write(
-        `${status.err('Broker delivery requires exactly one injection flag.')}\n`,
+        `${status.err('A legacy http-broker row requires exactly one injection flag.')}\n`,
       );
       return 2;
     }
@@ -533,21 +614,39 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     const exactHost =
       /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
     const normalizedHosts = allowedHosts.map((host) => host.trim().toLowerCase());
-    const unsupported =
-      allowedMethods.length > 0 ||
-      allowedPath !== undefined ||
-      injectQuery !== undefined ||
-      injectJson !== undefined ||
-      handlePrefix !== undefined;
-    if (
-      normalizedHosts.length === 0 ||
-      normalizedHosts.some((host) => !exactHost.test(host)) ||
-      !injectHeader ||
-      unsupported
-    ) {
+    // The whole policy of an enforced secret is its host list (docs/specs/
+    // 2026-08-19-secrets-exposure-usage-model.md §6): the value is substituted
+    // for the handle wherever the agent's own client put it, so there is no
+    // slot for the CLI to name and no method or path for it to promise.
+    const legacyOnly = [
+      allowedMethods.length > 0 ? '--allow-method' : null,
+      allowedPath !== undefined ? '--allow-path' : null,
+      injectQuery !== undefined ? '--inject-query' : null,
+      injectJson !== undefined ? '--inject-json' : null,
+      handlePrefix !== undefined ? '--handle-prefix' : null,
+    ].filter((flag): flag is string => flag !== null);
+    if (legacyOnly.length > 0) {
       process.stderr.write(
-        `${status.err('Network delivery supports exact hosts and header injection only.')}\n`,
+        `${status.err(
+          `${legacyOnly.join(', ')} configure${legacyOnly.length === 1 ? 's' : ''} a legacy http-broker row, not an enforced secret.`,
+        )}\n`,
       );
+      return 2;
+    }
+    if (normalizedHosts.length === 0) {
+      process.stderr.write(
+        `${status.err('Enforced exposure requires --allow-host — the host list is the policy.')}\n`,
+      );
+      return 2;
+    }
+    if (normalizedHosts.some((host) => !exactHost.test(host))) {
+      process.stderr.write(
+        `${status.err('Enforced exposure requires exact hosts — no wildcards, no paths, no scheme.')}\n`,
+      );
+      return 2;
+    }
+    if (template !== undefined && injectHeader === undefined) {
+      process.stderr.write(`${status.err('--template requires --inject-header.')}\n`);
       return 2;
     }
     if (template !== undefined && !template.includes('{{secret}}')) {
@@ -556,11 +655,18 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     }
     policy = {
       rules: [...new Set(normalizedHosts)].map((host) => ({ host })),
-      inject: {
-        kind: 'header',
-        name: injectHeader,
-        ...(template ? { template } : {}),
-      },
+      // Absent by default: a substitution row. `--inject-header` is kept, and
+      // kept working, because scripts and stored rows use it — it writes the
+      // legacy injection row the server still serves unchanged.
+      ...(injectHeader
+        ? {
+            inject: {
+              kind: 'header' as const,
+              name: injectHeader,
+              ...(template ? { template } : {}),
+            },
+          }
+        : {}),
       on_no_match: 'deny',
       tls: 'terminate',
     };
@@ -580,24 +686,30 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
       emitJson(result);
       return 0;
     }
-    process.stdout.write(`${status.ok(`${identifier}: ${deliveryLabel(strategy)}`)}\n`);
+    process.stdout.write(
+      `${status.ok(
+        `${identifier}: ${deliveryLabel(strategy, strategy === 'broker' ? consumer : undefined)}`,
+      )}\n`,
+    );
     if (strategy === 'runtime') {
       process.stdout.write(
-        `  ${C.dim}The value is available to agent code and commands inside the sandbox.${C.reset}\n`,
+        `  ${C.dim}The real value is an env var in the sandbox. Agent code, and anything it runs, can read it.${C.reset}\n`,
       );
     } else if (strategy === 'egress') {
-      // Two mechanisms satisfy this delivery — the provider edge injects at the
-      // sandbox's egress proxy, the in-guest shim relays to the broker route
-      // which injects server-side — and nothing in this response says which one
-      // the project runs. Naming either is wrong half the time, and both hold
-      // the same promise, so state the promise instead.
+      // The mechanism is now the same on every provider, so this says what it
+      // does rather than promising an outcome and hiding the how: the env var
+      // is a handle, the swap happens on the approved hosts, an echo comes back
+      // redacted, and `call` is the door for a request that never reaches the
+      // relay. An agent that knows the last line does not go asking a human for
+      // the raw value.
       process.stdout.write(
-        `  ${C.dim}The value is injected outside the sandbox on the way to those hosts — agent code never sees it.${C.reset}\n`,
+        `  ${C.dim}The env var holds a handle. Kortix substitutes the real value outside the sandbox, only on those hosts, and rewrites any echo of it to [REDACTED].${C.reset}\n` +
+          `  ${C.dim}Agent code sends the handle with its ordinary HTTP client. For a request that cannot be intercepted, run \`kortix secrets call ${identifier} <https-url>\`.${C.reset}\n`,
       );
       if (result.network_boundary_available === false) {
         process.stdout.write(
           `  ${status.warn(
-            'No network boundary is enabled on this project — requests will leave without the value.',
+            'This Kortix server reports no enforcement path — requests would leave carrying the handle, not the value.',
           )}\n`,
         );
       }
@@ -650,7 +762,7 @@ async function secretsCall(args: string[], opts: CtxOpts, json = false): Promise
     const parsedUrl = new URL(rawUrl);
     if (parsedUrl.protocol !== 'https:') throw new Error('not HTTPS');
   } catch {
-    process.stderr.write(`${status.err('Broker URL must be a valid HTTPS URL.')}\n`);
+    process.stderr.write(`${status.err('`kortix secrets call` needs a valid https:// URL.')}\n`);
     return 2;
   }
 

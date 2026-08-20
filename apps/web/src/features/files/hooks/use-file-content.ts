@@ -1,10 +1,12 @@
 'use client';
 
 import type { FileContent } from '@/features/file-browser/types';
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFile } from '../api/runtime-files';
+import { SANDBOX_WAKING_REFETCH_INTERVAL_MS } from './file-read-retry';
 import { isSystemDirectoryPath } from './system-dir';
 
 export const fileContentKeys = {
@@ -34,6 +36,11 @@ export function useFileContent(
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     retry: false,
+    // A readiness 503 (parked/booting sandbox) is a pending state, not a
+    // failure: keep polling until the box is active so the file loads on its
+    // own once the sandbox wakes.
+    refetchInterval: (query) =>
+      isSandboxNotReadyError(query.state.error) ? SANDBOX_WAKING_REFETCH_INTERVAL_MS : false,
   });
 }
 

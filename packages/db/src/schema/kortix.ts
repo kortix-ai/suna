@@ -216,6 +216,32 @@ export const accountMembers = kortixSchema.table(
   ],
 );
 
+/**
+ * The IDENTITY half of account membership, and the only physical one.
+ *
+ * `20260819160100000_rbac_cutover_views.sql` renamed the `account_members`
+ * TABLE to `account_memberships` and republished `account_members` as a view
+ * whose `account_role` is derived from `kortix.role_assignments`. Use THIS
+ * object to write identity (a new membership row, `is_super_admin`,
+ * `scim_external_id`); use `assignRole()` to write the ROLE. `accountMembers`
+ * above still reads and writes correctly through the view's INSTEAD OF
+ * triggers, which is what keeps a straggler writer correct — but a production
+ * write that goes through it skips the audit event and the cache bust.
+ */
+export const accountMemberships = kortixSchema.table(
+  'account_memberships',
+  {
+    userId: uuid('user_id').notNull(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    isSuperAdmin: boolean('is_super_admin').default(false).notNull(),
+    scimExternalId: text('scim_external_id'),
+    joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.accountId] })],
+);
+
 // Pending invitations for users not yet members (or not yet signed up). On
 // signup or first /v1/accounts call we auto-claim invites matching the user's
 // email and convert them into account_members rows.
@@ -578,12 +604,17 @@ export interface SecretEgressPolicy {
    */
   rules: SecretEgressRule[];
   /**
-   * REQUIRED. Where the credential is attached when a rule does not override it.
-   * "First match wins, no match denies" only means something if a matched rule
-   * has a defined slot to inject into; an absent default would leave a matched
-   * request with nowhere to put the secret and no principled answer.
+   * LEGACY. Where the credential is attached when a rule does not override it.
+   *
+   * Optional since the exposure/usage model (docs/specs/
+   * 2026-08-19-secrets-exposure-usage-model.md §6). An egress-enforced secret
+   * is delivered as a HANDLE in the sandbox env and the relay substitutes the
+   * real value for that handle, so the policy is a HOST LIST and there is no
+   * slot to name. "First match wins, no match denies" still decides WHETHER the
+   * value may be spent on a request; the slot only decides where a legacy row
+   * writes it. A stored row that carries `inject` keeps injecting as before.
    */
-  inject: SecretInjectionSlot;
+  inject?: SecretInjectionSlot;
   /** `observe` tunnels and audits undeclared hosts so a project can discover its
    *  real egress footprint before committing to `deny`. */
   on_no_match?: 'deny' | 'observe';
@@ -2162,7 +2193,6 @@ export const sandboxes = kortixSchema.table(
   ],
 );
 
-export const scopeEffectEnum = kortixSchema.enum('scope_effect', ['grant', 'revoke']);
 
 export const sandboxMembers = kortixSchema.table(
   'sandbox_members',
@@ -2181,48 +2211,6 @@ export const sandboxMembers = kortixSchema.table(
     uniqueIndex('idx_sandbox_members_unique').on(table.sandboxId, table.userId),
     index('idx_sandbox_members_user').on(table.userId),
     index('idx_sandbox_members_sandbox').on(table.sandboxId),
-  ],
-);
-
-export const sandboxMemberScopes = kortixSchema.table(
-  'sandbox_member_scopes',
-  {
-    sandboxId: uuid('sandbox_id')
-      .notNull()
-      .references(() => sandboxes.sandboxId, { onDelete: 'cascade' }),
-    userId: uuid('user_id').notNull(),
-    scope: text('scope').notNull(),
-    effect: scopeEffectEnum('effect').notNull(),
-    grantedBy: uuid('granted_by'),
-    grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_sandbox_member_scopes_unique').on(table.sandboxId, table.userId, table.scope),
-    index('idx_sandbox_member_scopes_lookup').on(table.sandboxId, table.userId),
-  ],
-);
-
-export const sandboxInvites = kortixSchema.table(
-  'sandbox_invites',
-  {
-    inviteId: uuid('invite_id').defaultRandom().primaryKey(),
-    sandboxId: uuid('sandbox_id')
-      .notNull()
-      .references(() => sandboxes.sandboxId, { onDelete: 'cascade' }),
-    accountId: uuid('account_id').notNull(),
-    email: varchar('email', { length: 255 }).notNull(),
-    invitedBy: uuid('invited_by'),
-    initialRole: accountRoleEnum('initial_role').default('member').notNull(),
-    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true })
-      .default(sql`now() + interval '14 days'`)
-      .notNull(),
-  },
-  (table) => [
-    index('idx_sandbox_invites_email').on(table.email),
-    index('idx_sandbox_invites_sandbox').on(table.sandboxId),
-    index('idx_sandbox_invites_expires_at').on(table.expiresAt),
   ],
 );
 
@@ -2584,13 +2572,6 @@ export const projectSessionRuntimeContextsRelations = relations(
 export const sandboxMembersRelations = relations(sandboxMembers, ({ one }) => ({
   sandbox: one(sandboxes, {
     fields: [sandboxMembers.sandboxId],
-    references: [sandboxes.sandboxId],
-  }),
-}));
-
-export const sandboxInvitesRelations = relations(sandboxInvites, ({ one }) => ({
-  sandbox: one(sandboxes, {
-    fields: [sandboxInvites.sandboxId],
     references: [sandboxes.sandboxId],
   }),
 }));
@@ -5146,32 +5127,6 @@ export const projectSessionConnectorBindings = kortixSchema.table(
     }).onDelete('restrict'),
     index('idx_project_session_connector_bindings_connection').on(table.connectionId),
     index('idx_project_session_connector_bindings_project').on(table.projectId),
-  ],
-);
-
-/** ORPHANED 2026-07-06 — the per-connector member/department "who can access"
- *  allow-list was retired (connectors are project-wide now); the retirement
- *  migration deleted every row and nothing in the app writes to this table
- *  anymore. Kept (empty) rather than dropped — see the shareScope/agentScope
- *  comments on connectors. */
-export const connectorGrants = kortixSchema.table(
-  'connector_grants',
-  {
-    grantId: uuid('grant_id').defaultRandom().primaryKey(),
-    connectorId: uuid('connector_id')
-      .notNull()
-      .references(() => connectors.connectorId, { onDelete: 'cascade' }),
-    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
-    principalId: uuid('principal_id').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_connector_grants_connector').on(table.connectorId),
-    uniqueIndex('idx_connector_grants_unique').on(
-      table.connectorId,
-      table.principalType,
-      table.principalId,
-    ),
   ],
 );
 

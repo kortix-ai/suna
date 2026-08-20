@@ -6,9 +6,13 @@
  */
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
-import { CliSandbox, type CliResult } from '../fixtures/cli';
+import { CliSandbox, throwIfCliInfraFailure, type CliResult } from '../fixtures/cli';
 
 function requireExit(result: CliResult, expected: number, action: string): void {
+  // An edge-laundered 5xx or a killed process is infrastructure, not contract.
+  // It must reach the flow-level infra budget as a RETRYABLE error — CLI-SEC
+  // (exit 143) and CLI-SESS (HTTP 503) both failed on their first attempt here.
+  if (expected === 0) throwIfCliInfraFailure(result, action);
   if (result.exitCode !== expected) {
     throw new Error(`${action} exited ${result.exitCode}, expected ${expected}: ${result.all}`);
   }
@@ -104,6 +108,13 @@ flow(
   'CLI-SEC',
   {
     domain: 'cli',
+    // CLI-SEC starts EIGHT sequential CLI subprocesses (login, set, ls, env
+    // pull, env push, ls, unset, ls). It was the only CLI flow left on the
+    // deployed 180_000ms floor while CLI-SESS declares 300_000 and CLI-SHIP
+    // 420_000. Eight deployed round trips do not fit in 180s, which is how run
+    // 32306385663 got `kortix secrets ls … exited 143` — the harness killer,
+    // not the CLI. Match CLI-SESS.
+    timeoutMs: 300_000,
     routes: [
       'GET /v1/accounts/me',
       'GET /v1/projects/:projectId/secrets',

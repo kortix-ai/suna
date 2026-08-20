@@ -274,6 +274,9 @@ describe("managed Git fixture selection", () => {
     // The sweep now takes the domain list too, so it can also see the browser
     // suite's accounts — see gc-sweep.test.ts.
     expect(gc).toContain("if (env.databaseUrl) return listTestUsersViaDb(env, domains)");
-    expect(gc).toContain("ssl: local ? false : { rejectUnauthorized: false }");
+    // The permissive-chain policy moved into `gcDbSsl`, which gc-sweep.test.ts
+    // now pins by behaviour instead of by source text. Assert the connection
+    // helper still routes through it.
+    expect(gc).toContain("ssl: gcDbSsl(conn)");
   });
 });

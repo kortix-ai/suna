@@ -26,7 +26,10 @@ import type { TraceEmitter, TraceFields } from './trace';
 // 4xx statuses that mean "this upstream won't serve you right now" rather than
 // "your request is wrong" — rate limit, payment required, quota/forbidden. These
 // are the ones worth failing over (e.g. BYOK out of quota → managed fallback).
-const LIMIT_STATUSES = new Set([402, 403, 429]);
+// Exported so the AI-SDK-native failover path (pipeline/native-failover.ts)
+// classifies a typed `error` part with the EXACT same limit-vs-terminal rule as
+// this byte path — one source of truth for "which 4xx fails over".
+export const LIMIT_STATUSES = new Set([402, 403, 429]);
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {

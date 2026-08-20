@@ -1,11 +1,11 @@
 // Public IAM surface for the rest of the codebase.
 //
-// ONE engine (`./authorize`) and ONE write path (`./assignments`), both taking
-// the structured `Actor` built once in `middleware/auth.ts`. The V1 policy
-// engine, the flag-routing dispatcher and `engine-v2` are gone — a positional
-// `(userId, accountId, action, target?, actingTokenId?, requestCtx?)` signature
-// cannot be expressed any more, which is what made the agent-grant fold
-// silently skippable.
+// ONE store (`kortix.role_assignments`), ONE engine (`./authorize`) and ONE
+// write path (`./assignments`), all taking the structured `Actor` built once in
+// `middleware/auth.ts`. The V1 policy engine, the flag-routing dispatcher and
+// `engine-v2` are gone — a positional `(userId, accountId, action, target?,
+// actingTokenId?, requestCtx?)` signature cannot be expressed any more, which is
+// what made the agent-grant fold silently skippable.
 export {
   authorize,
   assertAuthorized,
@@ -65,10 +65,19 @@ export {
   deleteResourceGrant,
   hasAnyResourceGrants,
   unscopedResourceIds,
-  isProjectResourceExplicitlyGranted,
   type ResourceType as ResourceGrantType,
   type PrincipalType as ResourceGrantPrincipalType,
 } from './resource-grants';
+export {
+  normalizeProjectRole,
+  parseAssignableProjectRole,
+  maxProjectRole,
+  isAccountManager,
+  PROJECT_ROLE_RANK,
+  PROJECT_ROLE_INPUT_ERROR,
+  type AccountRole,
+  type ProjectRole,
+} from './roles';
 export {
   ACCOUNT_ACTIONS,
   PROJECT_ACTIONS,

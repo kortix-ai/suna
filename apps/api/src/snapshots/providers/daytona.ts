@@ -19,9 +19,7 @@ import {
   DEFAULT_MEMORY_GB,
   KORTIX_ENTRYPOINT,
   type StagedContext,
-  stageBuildContext,
-  stageAppBuildContext,
-  stageMetaBuildContext,
+  stageRuntimeBuildContext,
   stageWarmFromBaseContext,
 } from '../build-context';
 import { type InvalidatableObservation, shortLivedObservation } from '../observation-cache';
@@ -138,16 +136,14 @@ class DaytonaAdapter implements SandboxProviderAdapter {
           input.warmRepo,
         );
       } else {
-        ctx = input.runtimeProfile === 'app'
-          ? await stageAppBuildContext(input.snapshotName, userDockerfile, input.appContext!)
-          : input.runtimeProfile === 'meta'
-          ? await stageMetaBuildContext()
-          : await stageBuildContext(
-              input.snapshotName,
-              userDockerfile,
-              input.warmRepo,
-              input.isShared,
-            );
+        ctx = await stageRuntimeBuildContext({
+          snapshotName: input.snapshotName,
+          userDockerfile,
+          runtimeProfile: input.runtimeProfile,
+          appContext: input.appContext,
+          warmRepo: input.warmRepo,
+          isShared: input.isShared,
+        });
       }
       const buildLogs: string[] = [];
       try {

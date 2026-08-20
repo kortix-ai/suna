@@ -238,14 +238,18 @@ project access.
 | method | what |
 | --- | --- |
 | `list()` · `upsert(input)` | list metadata · create or update a write-only value and delivery policy |
-| `setStrategy(identifier, strategy, options?)` | change the consumer and delivery policy |
+| `setStrategy(identifier, strategy, options?)` | change the exposure and its host list |
 | `broker(identifier, request)` | execute a session-authorized, policy-bound HTTPS request |
 | `remove(identifier)` | delete a secret |
 | `setPersonal(name, value)` · `removePersonal(name)` | set · remove a per-user override |
 | `setGitCredential(input)` | set a git auth credential |
 
-`runtime` with consumer `sandbox` is the only policy that exposes plaintext to
-the session. Managed consumers use `broker`. The HTTPS broker method requires a
+`runtime` with consumer `sandbox` is **environment** exposure — the only policy
+that puts a plaintext value in the session. `egress` with consumer `network` is
+**egress-enforced** exposure: the session holds a handle and Kortix substitutes
+the real value outside the sandbox, for the exact HTTPS hosts the policy lists.
+Every `broker` consumer has no session presence at all. See
+[Secrets](/docs/project/secrets). The `broker(...)` method requires a
 session-scoped token and an active session handle.
 
 #### `p.access` — project assignments, invites, requests

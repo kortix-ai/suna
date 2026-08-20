@@ -119,6 +119,117 @@ Complete the OAuth flow. Kortix stores the connected account as a connection.
 </Step>
 </Steps>
 
+## Connect an MCP server that uses OAuth 2.1
+
+Kortix implements the MCP authorization specification. Open the connector,
+select **Add credential**, then select the **OAuth 2.0** tab. Kortix probes the
+server and reads its metadata:
+
+1. The unauthenticated probe returns `401` with
+   `WWW-Authenticate: Bearer resource_metadata="…"`.
+2. Kortix reads the protected resource metadata (RFC 9728) at that URL, or at
+   `/.well-known/oauth-protected-resource`.
+3. Kortix reads the authorization server metadata (RFC 8414 or OpenID Connect
+   discovery) for the first authorization server the resource names.
+
+When that server advertises `registration_endpoint`, Kortix registers itself as
+an OAuth client (RFC 7591) and shows one button: **Connect &lt;server&gt;**. You
+create no application, and you copy no client ID or secret. Kortix then runs
+Authorization Code with PKCE (S256) and binds the token to the server with the
+`resource` parameter (RFC 8707).
+
+Register this redirect URI when a server needs one in advance:
+
+```text
+https://api.kortix.com/v1/connectors/oauth2/callback
+```
+
+When the server publishes endpoints but no `registration_endpoint`, Kortix
+prefills the authorization URL, token URL, and scopes. Enter the client ID of an
+app you create with that provider. When the server publishes no metadata, enter
+every field.
+
+Kortix keeps the MCP session: it runs `initialize` and
+`notifications/initialized` on demand, then sends `Mcp-Session-Id` on later
+calls. A server that answers without a session never sees the handshake.
+
+Kortix binds each connection to the authorization server that issued it. When
+the callback carries an `iss` parameter (RFC 9207), Kortix rejects it unless it
+matches the recorded issuer — a code minted by a different server is refused
+before it is redeemed.
+
+### Authorize from the CLI
+
+The dashboard is one way to run this flow, not the only one. Declare the
+connector in `kortix.yaml`, then authorize it from a terminal or an agent
+session:
+
+```yaml
+connectors:
+  - slug: read-ai
+    name: Read AI
+    provider: mcp
+    url: 'https://api.read.ai/mcp'
+    auth:
+      type: bearer
+```
+
+```text
+kortix connectors authorize read-ai --json
+```
+
+The command creates the connection, runs the discovery chain, registers Kortix
+as a client when the server supports RFC 7591, and returns the URL to approve:
+
+```json
+{
+  "connection_id": "7b1a16b2-...",
+  "registered": true,
+  "scopes": ["openid", "offline_access", "mcp:execute", "meeting:read"],
+  "authorization_url": "https://authn.read.ai/oauth2/auth?response_type=code&...",
+  "expires_at": "2026-08-19T14:48:26.345Z"
+}
+```
+
+An agent returns `authorization_url` to the person it is working with. After
+they approve, the agent confirms:
+
+```text
+kortix connectors authorize read-ai --status
+```
+
+The command exits non-zero while the status is `error`. Use `--scope` to narrow
+what is requested. Use `--client-id` and `--client-secret` for a server that
+does not support dynamic client registration.
+
+The same steps are available on the SDK — `discoverConnectionOAuth2Resource`,
+`registerConnectionOAuth2Client`, `startConnectionOAuth2Authorization`, and
+`getConnectionOAuth2Status`.
+
+Kortix refetches the connector's tool catalog as soon as authorization
+completes, so the connector leaves the `error` state without a manual sync.
+
+### Self-hosted: give the box a stable public URL
+
+The callback URL is derived from `KORTIX_URL`, the public origin of your API.
+Authorization servers compare `redirect_uri` byte for byte, so the value must be
+stable.
+
+A self-host install started with the zero-config quick tunnel gets a **new**
+`https://<random>.trycloudflare.com` hostname every time `cloudflared`
+restarts. The callback URL changes with it. A server that supports dynamic
+client registration recovers on its own — the next authorization registers a
+new client against the current URL. A server that needs a pre-registered OAuth
+app does not: you must update its allowed redirect URI after every restart.
+
+Set `CLOUDFLARE_TUNNEL_TOKEN` and `CLOUDFLARE_TUNNEL_HOSTNAME` for a named
+tunnel, or point `KORTIX_URL` at your own domain. Then register one callback
+URL once:
+
+```text
+https://<your-kortix-host>/v1/connectors/oauth2/callback
+```
+
 ## Connect a direct API with OAuth2
 
 Direct connectors support:
@@ -126,6 +237,7 @@ Direct connectors support:
 - client credentials
 - authorization code with PKCE
 - device authorization
+- dynamic client registration (RFC 7591)
 
 For client credentials, enter the token URL, client ID, scopes, and client
 secret. You can use `client_secret_basic`, `client_secret_post`,
@@ -136,7 +248,8 @@ authorization, enter the device-authorization URL and token URL. An RFC 8414
 discovery URL can provide these endpoints.
 
 Kortix encrypts the OAuth2 configuration and tokens. It refreshes access tokens
-before expiry. Revoking the connection blocks the next connector call.
+before expiry, and it stores each rotated refresh token. Revoking the connection
+blocks the next connector call.
 
 For Microsoft Graph, use:
 

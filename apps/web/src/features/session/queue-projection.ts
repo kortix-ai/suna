@@ -70,7 +70,15 @@ export function projectQueueRows(input: {
     // runtime echoes it. The transcript wins; this list is for what is NOT in
     // it yet. A HELD row in the transcript is no exception any more: its
     // controls live in the bubble's own meta row (`QueuedPromptControls`).
-    if (prompt.message_id && input.transcriptMessageIds?.has(prompt.message_id)) {
+    // EITHER of the prompt's ids counts: `message_id` moves to the server's
+    // re-minted id the moment the drain places the prompt — before the
+    // runtime echoes it and before the store can alias the echo back — while
+    // the bubble this tab painted still carries `wire_message_id`. Matching
+    // only `message_id` drew the row beside its own bubble for that window.
+    if (
+      (prompt.message_id && input.transcriptMessageIds?.has(prompt.message_id)) ||
+      (prompt.wire_message_id && input.transcriptMessageIds?.has(prompt.wire_message_id))
+    ) {
       continue;
     }
     // A DELIVERING row is a queue row too. The server forwards a prompt typed

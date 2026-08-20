@@ -99,6 +99,19 @@ describe('beginOptimisticSend', () => {
     expect('sess-1' in useSyncStore.getState().sessionStatus).toBe(false);
   });
 
+  test('the stub carries NO time.created — display order puts it newest, whatever the box clock says', () => {
+    // `compareMessagesForDisplay` orders by `time.created`, which the BOX
+    // stamps on real messages. A stub stamped from the browser clock sorted
+    // ABOVE real messages whenever the box ran behind the browser (measured:
+    // ~1 s locally) — "Held B" drawn above "Held A", rapid sends 2..5 drawn
+    // above 1. An untimed stub is "the newest thing the user did" by the
+    // comparator's own rule, which is the only order that is right on every
+    // clock.
+    beginOptimisticSend('sess-1', 'msg-1', 'hello there', ['prt-1']);
+    const info = useSyncStore.getState().messages['sess-1']?.[0] as { time?: { created?: number } };
+    expect(info.time?.created).toBeUndefined();
+  });
+
   test('adds no parts for empty/whitespace-only text', () => {
     beginOptimisticSend('sess-1', 'msg-1', '   ');
     expect(useSyncStore.getState().parts['msg-1'] ?? []).toHaveLength(0);

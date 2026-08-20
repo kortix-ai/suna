@@ -1,36 +1,37 @@
-Apps goes stable, Monitors lands experimental, and a big session-reliability pass
+Release gate goes green: sharded, self-cleaning, right-sized staging
 
 ## New
 
-- **Apps is now a stable feature** — it moved out of experimental status and sits in the sidebar under Customize. Apps open instantly (no more loading flash), show their desktop layout on the preview card instead of mobile, and get their own IAM permissions and per-team scoping. Non-public Apps are now usable and honest about who can access them; self-host installs can serve Apps even though they can't publish to kortix.com.
-- **Invite-time project grants** — inviting someone to a project now grants both the account role and project access in one step, instead of two separate actions.
-- **Settings unified into one tabbed panel**, and the Billing pane was rebuilt with fewer boxes and a single credits card.
-- **Chat input rebuilt** to stop duplicate and lost sends; triple-tapping Escape now stops the agent even while you're typing.
-- **Easy panel overhaul** (the non-technical-user view): memory updates are now visible and plainly labelled, skill and task calls expand with live sub-agent activity, and a connect-apps strip and context-card actions were added.
-- **Session usage modal** reworked for clarity and speed; the model switcher and session usage view now show the real upstream provider instead of "Kortix".
-- **Monitors** (experimental): a new trigger type that runs on its own provisioned box, with its own CLI command group and MCP surface.
-- **Network-boundary secrets on Daytona**: an in-guest egress shim scopes a secret to the sandbox it was issued to, replacing the old operator-wide env var.
-- **Presentations framework** at `/presentations`, including a diagram-led security deck.
-- Added managed models: DeepSeek V4 Pro 0813 and Grok 4.6.
-- The CLI now shows the identity behind a minted agent token instead of reporting "not logged in".
+- **One URL configures every email Kortix sends.** Signup confirmations, magic links, invites and alerts all flow through the same `EMAIL_URL` transport with the same sender identity and templates — self-hosted installs configure email once. Supabase auth mail now goes through the same path instead of GoTrue's own SMTP.
+- **One-click OAuth for MCP connectors.** Connecting an MCP server that requires OAuth 2.1 now works end-to-end from the UI or via `kortix connectors authorize` — discovery, dynamic client registration and token exchange included.
+- **Secrets get an exposure and usage model.** Each secret declares how it may be exposed and which usages are assigned to it, enforced by one mechanism across every sandbox provider.
+- Session sharing is now the owner's call: managers keep lifecycle control (stop, restart), but only the session's owner can share it or mint public links.
 
 ## Fixed
 
-- A cluster of stuck-session bugs: sessions could get wedged on boot with no retry, get stuck in a runaway self-repeating turn, show phantom interrupts, or strand mid-workspace-switch. A failed direct send now lands in the failed lane instead of disappearing, and prompts no longer get lost around session hand-off.
-- Session truth now reads from a durable server-side turn ledger over HTTP, replacing several client-side guesses about whether a session is still working.
-- Self-host: Storage now hands out public URLs instead of an internal Docker host address, and updates auto-heal from unlogged-table fork corruption that used to block them.
-- The gateway reports what an LLM request actually cost, not what Kortix billed; it no longer kills slow reasoning turns at a hard 90-second timeout, drops the trailing-assistant prefill that made strict backends fail, and its body size ceiling is raised to 1 GiB (was rejecting large multimodal requests).
-- MCP catalog discovery is now authenticated, and private sessions are no longer discoverable by other connectors.
-- Creating a duplicate App slug now returns 409 instead of 500.
-- The Vercel production frontend build now pins its runtime version so it can't get stranded on a stale one.
-- Cleaned up frontend error noise from bot/automation scripts and third-party scripts on Safari.
-- The reasoning-effort icon for Auto is now visually distinct, and agent names are capitalized consistently.
+- **Revoked API tokens now actually stop working.** A personal access token that had been revoked could still authenticate on every surface (REST, the LLM gateway, git proxy, preview proxy, connectors) because the validation query never checked the revocation timestamp. Revoked tokens are now rejected everywhere.
+- **Deleting an account now stops and removes every one of its sandboxes** — across every account the user owns and every non-terminal state — instead of only stopping the ones under the earliest-joined account.
+- **A runaway agent turn can no longer take the API down.** Each session's audit-event stream is bounded (900 events per minute); past that ceiling only the high-volume streaming-delta class is dropped while lifecycle, usage and billing events keep flowing.
+- **API writes are much faster under load.** Audit events are written asynchronously in batches off the request path (they were a synchronous insert into a 14-index table on every request), and the account list no longer makes one admin-API call per member to resolve owner emails. Audit reads flush the queue first, so the audit log stays read-your-writes.
+- **A waking sandbox no longer looks like an error.** Every surface (web, CLI, SDK) now treats the sandbox-starting state as "waking" with retry, instead of surfacing a 503. Resuming a stopped box also dropped two provider round trips.
+- **Gateway reliability:** long streaming turns are no longer killed at 255 seconds by a runtime idle timeout; Bedrock requests with trailing prefill or redacted reasoning no longer fail; the gateway's provider shaping now runs on the new AI-SDK-native transport path, which is the default everywhere.
+- **Slack:** another bot @-mentioning Kortix now works; linking the bot no longer demands owner/admin (it delegates only your own authority); user lookups were sent in a form Slack silently ignored — fixed.
+- **Prompt queue and composer:** forwarded prompts can no longer strand, Stop can no longer leak into the next turn, fresh sessions paint instantly in one ordered batch, and the boot-time composer shows the session's real agent.
+- Deleted sessions are no longer readable by id. Listing a project's group grants is manager-only, matching the write routes.
+- Sandboxes learn the managed model set from the API on every boot, so a model the picker offers is one the runtime knows.
+- Keyboard scrolling in a session is treated as scroll intent: Cmd+Up no longer snaps back to the end. A `session.error` is now attributed to the turn that failed.
+- Starter reflector and reviewer agents run without approval prompts. Self-hosted boxes get a daily Docker prune timer.
+- **Session titles and conversation counts are recorded again.** The per-session metadata mirror was silently never written (the internal call carried no user identity, so the sandbox rejected it) — session names and conversation counts now populate for new sessions.
 
-## Notes
+## Security
 
-This release also includes a large internal hardening pass: an in-guest network-boundary/egress-secrets system, a warm-session simplification (session pooling now reuses ordinary sessions instead of a separate warm-session concept), a large API route-file split for maintainability, and expanded test coverage across sessions, monitors, and the deployed staging gate.
+- The sandbox egress pin trusts the edge-populated client IP rather than spoofable forwarding headers; the App public proxy honors a token's project/session scope; trigger-session manager visibility no longer extends to session-bound agent tokens.
+- The browser test suite was broadcasting a deployment-protection bypass secret to third-party hosts on every run; it now authenticates once via a scoped cookie and the secret reaches no third party.
+- nodemailer upgraded across two majors to clear open advisories, including one high.
 
-## Also in this release
+## Internal
 
-- **Security hardening** — the sandbox egress pin now trusts the edge-populated client IP rather than spoofable forwarding headers; the App public proxy honors a token's project/session scope when authorizing App access; trigger-session manager visibility no longer extends to session-bound agent tokens; a deleted session is no longer readable by id.
-- **Release-pipeline reliability** — the release gate is sharded into parallel jobs, cleans up its own test debris, and runs against a right-sized staging; several long-standing test-suite defects that kept the gate red were fixed.
+- **Roles have one store.** The RBAC cutover made `role_assignments` the only authorization store — legacy tables became views, mirror triggers were dropped, and 3,100 lines of parallel code were deleted.
+- **The production release gate is now reliable and fast.** It runs as 6 API shards + 3 browser shards, cleans up its own test debris, tolerates a traffic-degraded-but-serving gateway, can be rehearsed against staging without opening a release PR, and the test client never replays a non-idempotent request through an edge-laundered error. Staging was right-sized for it, and a workflow-gating bug that had silently frozen the staging frontend for a week is fixed.
+- **Container image builds are ~7× faster.** Staging and dev images build natively per architecture with a registry layer cache (API image: ~3 minutes, was ~20), and the arm64 frontend image is now genuinely arm64.
+- `CREATE INDEX CONCURRENTLY` migrations ship with a `lock_timeout` that can land on a live database, and CI blocks any new one that sets it too low.

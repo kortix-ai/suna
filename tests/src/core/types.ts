@@ -111,7 +111,16 @@ export interface Fixtures {
    * accept/decline handlers reject callers whose email doesn't match the invite.
    */
   userWithEmail(email: string, opts?: { label?: string }): Promise<Principal>;
-  /** A unique run-scoped name with the e2e-<runId>- prefix. */
+  /**
+   * A unique run-scoped name with the `e2e-<runId>-` prefix.
+   *
+   * Stable within one flow ATTEMPT (two calls with the same slug return the
+   * same string, so a create and its later read agree) and distinct across
+   * attempts (attempt 2 appends `-r2`). Attempt-scoping is required, not
+   * cosmetic: a retried flow re-creates its fixtures but a name derived only
+   * from the run id would still collide with whatever the previous attempt
+   * committed before it failed.
+   */
   name(slug: string): string;
 }
 
@@ -133,6 +142,15 @@ export interface FlowMeta {
   routes?: string[];
   /** Registers as a tracked skip (yellow in the report) instead of running. */
   todo?: string;
+  /**
+   * Quarantined: registered and reported, never run — the API-flow mirror of
+   * the browser lane's `@quarantine` tag. Only for a flow whose failure is a
+   * NAMED pre-existing defect that cannot be fixed from this tree (edge infra,
+   * a product defect with its own tracked follow-up). The string must say what
+   * the defect is and where it is tracked. `--require-all` accepts it (unlike
+   * `todo`, which is an unimplemented contract and stays a failure).
+   */
+  quarantine?: string;
 }
 
 export interface FlowContext {

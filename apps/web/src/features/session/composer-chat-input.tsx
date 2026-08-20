@@ -134,6 +134,7 @@ export function ComposerChatInput({
    */
   const agentResolution = resolveComposerAgent({
     agents,
+    boundAgent: boundAgentName,
     defaultAgent: projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });

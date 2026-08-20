@@ -9,7 +9,6 @@ const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]{0,63}$/
 const SERVICE_CONSUMERS = new Set(['llm_gateway', 'connector', 'git_proxy'])
 const MAX_CATALOG_BYTES = 64 * 1024
 const HOST_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
-const HEADER_RE = /^[a-z0-9!#$%&'*+.^_`|~-]{1,128}$/
 const MAX_NOTES_CHARS = 4_000
 
 type CatalogEntry = {
@@ -17,13 +16,12 @@ type CatalogEntry = {
   delivery: 'sandbox' | 'https_broker' | 'kortix_service' | 'network'
   environment_variable?: string
   consumer?: string
-  /** Network-boundary only: the exact hosts the provider edge injects on. */
+  /** Egress-enforced only: the exact hosts whose requests get the real value
+   *  substituted for the handle. Every other host receives the handle. */
   hosts?: string[]
-  /** Network-boundary only: the header name the edge writes. Never the value. */
-  header?: string
 }
 
-/** The API authors the network rules once, as `notes.network`. Rendering them
+/** The API authors the egress rules once, as `notes.network`. Rendering them
  *  here rather than restating them keeps the guest-facing wording in a single
  *  place — the agent reads this file as OpenCode `instructions`. */
 function parseNetworkNotes(raw: string | undefined): string[] {
@@ -81,9 +79,6 @@ function parseCatalog(raw: string | undefined): CatalogEntry[] {
                 ),
               }
             : {}),
-          ...(typeof item.header === 'string' && HEADER_RE.test(item.header)
-            ? { header: item.header }
-            : {}),
         },
       ]
     })
@@ -102,6 +97,7 @@ export function renderSecretCapabilitiesInstruction(raw: string | undefined): st
     `Read \`$${SECRET_CAPABILITIES_ENV_NAME}\` for machine-readable usage rules.`,
     'Never print, copy, or return a secret value or broker handle.',
     'Use sandbox secrets through their named environment variable.',
+    'Use egress-enforced secrets through their named environment variable too: it holds a handle Kortix swaps for the real value on the listed hosts.',
     'Use HTTPS broker secrets with `kortix secrets call IDENTIFIER URL [options]`.',
     'Use Kortix service secrets through the named service. They are never available as plaintext.',
     '',
@@ -120,10 +116,11 @@ export function renderSecretCapabilitiesInstruction(raw: string | undefined): st
         )
       } else if (entry.delivery === 'network') {
         const hosts = (entry.hosts ?? []).join(', ')
+        const variable = entry.environment_variable ?? entry.identifier
         lines.push(
-          `- \`${entry.identifier}\`: network boundary. Kortix adds the \`${entry.header ?? 'authorization'}\`` +
-            ` header to your HTTPS requests to ${hosts || 'its allow-listed hosts'} — outside this sandbox.` +
-            ' Send the request normally and add no credential of your own.',
+          `- \`${entry.identifier}\`: egress-enforced. \`${variable}\` holds a Kortix handle, not the` +
+            ` value. Use it exactly as you would the credential; Kortix swaps it for the real value` +
+            ` outside this sandbox on your HTTPS requests to ${hosts || 'its allow-listed hosts'}.`,
         )
       } else {
         lines.push(
@@ -134,7 +131,7 @@ export function renderSecretCapabilitiesInstruction(raw: string | undefined): st
   }
   const networkNotes = hasNetwork ? parseNetworkNotes(raw) : []
   if (networkNotes.length > 0) {
-    lines.push('', '## Network boundary', '')
+    lines.push('', '## Egress-enforced secrets', '')
     for (const note of networkNotes) lines.push(`- ${note}`)
   }
   return `${lines.join('\n')}\n`

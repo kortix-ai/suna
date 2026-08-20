@@ -249,16 +249,23 @@ export function useSessionPrompts(
     },
     onSettled: invalidate,
   });
+  // No-op hook-level `onError`s: every caller shows its own specific toast,
+  // and without one TanStack falls back to the app-global default `onError`
+  // IN ADDITION — a second, generic "Failed to perform action: …" for every
+  // expected refusal (e.g. removing a prompt a step just started answering).
   const removeMutation = useMutation({
     mutationFn: (promptId: string) => deleteSessionPrompt(projectId!, sessionId!, promptId),
+    onError: () => {},
     onSettled: invalidate,
   });
   const retryMutation = useMutation({
     mutationFn: (promptId: string) => retrySessionPrompt(projectId!, sessionId!, promptId),
+    onError: () => {},
     onSettled: invalidate,
   });
   const holdMutation = useMutation({
     mutationFn: (held: boolean) => holdSessionPrompts(projectId!, sessionId!, held),
+    onError: () => {},
     onSettled: invalidate,
   });
 
@@ -327,6 +334,7 @@ export async function startSessionWithPrompt(
       clientMessageId,
       messageId: mintSessionWireMessageId(sessionId, clientMessageId),
       parts: input.parts,
+      clientSentAtMs: now(),
       ...(input.overrides ? { overrides: input.overrides } : {}),
       remintOnDelivery: true,
     });

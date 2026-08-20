@@ -1,4 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { PUBLIC_SHARE_OWNER_ONLY_ERROR } from '../../connectors/share';
 import { auth, errors, json } from '../../openapi';
 import {
   DEFAULT_PREVIEW_CANDIDATES,
@@ -81,7 +82,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageSharing) {
+    if (!visible.canManageLifecycle) {
       return c.json({ error: 'Only the session owner or a project manager can view public shares' }, 403);
     }
 
@@ -117,8 +118,11 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    // Minting, not revoking: a public share link is unauthenticated, so this is
+    // the owner's call. A manager who cannot read the session cannot mint one
+    // and read it through the link instead.
     if (!visible.canManageSharing) {
-      return c.json({ error: 'Only the session owner or a project manager can create public shares' }, 403);
+      return c.json({ error: PUBLIC_SHARE_OWNER_ONLY_ERROR }, 403);
     }
     if (
       await sessionHasMemberConnectorBinding({
@@ -176,7 +180,9 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageSharing) {
+    // Revoking only ever REMOVES access, so it stays manager-tier: a project
+    // manager must be able to kill a leaking link without owning the session.
+    if (!visible.canManageLifecycle) {
       return c.json({ error: 'Only the session owner or a project manager can revoke public shares' }, 403);
     }
 

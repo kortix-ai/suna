@@ -16,6 +16,7 @@ import {
   KE2E_FLOW_TIMEOUT,
   maxAttemptBound,
   readAttemptPolicy,
+  resolveFlowTimeoutMs,
   type RegisteredFlow,
 } from "./flow";
 import { loadEnv, type Env } from "./env";
@@ -127,6 +128,13 @@ async function runOneFlow(
   const declaredAttempts = f.meta.retry?.attempts;
   const maxAttempts = declaredAttempts ?? maxAttemptBound(policy);
 
+  // Quarantine → reported, never run, exempt from --require-all (see
+  // FlowMeta.quarantine and runExitCode).
+  if (f.meta.quarantine) {
+    return mkResult(f, "skip", `quarantined: ${f.meta.quarantine}`, [], performance.now() - flowStart, 0, {
+      quarantined: true,
+    });
+  }
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
   if (missing.length) {
@@ -160,7 +168,9 @@ async function runOneFlow(
       skip: (reason) => {
         throw new SkipSignal(reason);
       },
-      fixtures: world.makeFixtures(stack),
+      // Attempt-scoped: a retry must not re-derive the SAME names its failed
+      // predecessor already committed (see world.ts attemptSuffix).
+      fixtures: world.makeFixtures(stack, attempt),
       step: async (name, fn) => {
         const collector = new StepCollector(routesHit);
         const start = performance.now();
@@ -169,14 +179,23 @@ async function runOneFlow(
           steps.push(stepResult(name, "pass", start, collector));
           return out;
         } catch (err) {
-          steps.push(stepResult(name, "fail", start, collector, err));
+          // A ctx.skip() fired inside this step: the step did not FAIL — it
+          // asserted what it could (its passing assertions are recorded) and
+          // then declared the rest unreachable on this target. Recording it
+          // as "fail" made every one-step assert-then-skip flow (CHN-6) count
+          // as an unasserted skip under --require-all (run 32344222963
+          // shard 1: 34/35 passed, 0 failed, exit 1).
+          steps.push(
+            stepResult(name, err instanceof SkipSignal ? "skip" : "fail", start, collector,
+              err instanceof SkipSignal ? undefined : err),
+          );
           throw err;
         }
       },
     };
 
     try {
-      await withTimeout(f.fn(ctx), f.meta.timeoutMs ?? 120_000, f.id);
+      await withTimeout(f.fn(ctx), resolveFlowTimeoutMs(f.meta.timeoutMs), f.id);
       await stack.teardown();
       return mkResult(f, "pass", undefined, steps, performance.now() - flowStart, attempt);
     } catch (err) {
@@ -225,6 +244,7 @@ function mkResult(
   steps: StepResult[],
   durationMs: number,
   attempts: number,
+  extra: { quarantined?: boolean } = {},
 ): FlowResult {
   return {
     id: f.id,
@@ -235,6 +255,16 @@ function mkResult(
     durationMs,
     attempts,
     steps: [...steps],
+    quarantined: extra.quarantined,
+    // A skip that already PASSED at least one step asserted the reachable
+    // contract on this target (see FlowResult.asserted / runExitCode).
+    // Asserted = the flow proved SOMETHING before skipping: a fully passed
+    // step, or at least one passing assertion inside the step the skip fired
+    // from (the one-step assert-then-skip shape).
+    asserted:
+      status === "skip"
+        ? steps.some((s) => s.status === "pass" || s.assertions.some((a) => a.pass))
+        : undefined,
   };
 }
 

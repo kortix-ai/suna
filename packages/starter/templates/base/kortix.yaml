@@ -97,14 +97,20 @@ agents:
     # sub-agents, skills/tools, memory — memory curation is its fourth
     # pass) from session evidence. Fans out session-reviewer sub-agents,
     # one per recent session, then opens — never merges — a harness CR.
-    # No connectors, no project secrets.
-    kortix_cli: [project.cr.open, project.session.read]
+    # Runs unattended on a cron: a scoped kortix_cli grant 403s the CLI
+    # reads it needs (skills, agents, triggers) with nobody present to
+    # widen it, so it gets `all`. It reads untrusted transcripts, so it
+    # gets NO connectors and NO project secrets — nothing to exfiltrate.
+    kortix_cli: all
+    skills: all
 
   session-reviewer:
-    # Read-only sub-agent of the harness-reflector: deep-reviews ONE
-    # session's full history and reports failure-signature findings.
-    # Never edits, never opens CRs.
-    kortix_cli: [project.session.read]
+    # Sub-agent of the harness-reflector: deep-reviews ONE session's full
+    # history and reports failure-signature findings. "Read-only" (never
+    # edits, never opens CRs) is its prompt discipline; it runs inside the
+    # reflector's session with the same grant, so it mirrors it here.
+    kortix_cli: all
+    skills: all
 
 # ─── Triggers ────────────────────────────────────────────────────────────
 # Each entry spawns a fresh session that runs `prompt` as its initial

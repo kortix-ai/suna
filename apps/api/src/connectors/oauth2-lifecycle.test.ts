@@ -174,3 +174,21 @@ describe('generic OAuth2 lifecycle protocol', () => {
     ).rejects.toThrow('OAuth2 token request failed (400): invalid_grant');
   });
 });
+
+describe('RFC 8707 resource indicator', () => {
+  test('authorization request carries the resource when configured', () => {
+    const result = buildOAuth2AuthorizationRequest(
+      { ...PUBLIC_APP, resource: 'https://mcp.example.com/mcp' },
+      { callbackUrl: 'https://api.kortix.test/v1/connectors/oauth2/callback' },
+    );
+    const url = new URL(result.authorizationUrl);
+    expect(url.searchParams.get('resource')).toBe('https://mcp.example.com/mcp');
+  });
+
+  test('authorization request omits resource when not configured', () => {
+    const result = buildOAuth2AuthorizationRequest(PUBLIC_APP, {
+      callbackUrl: 'https://api.kortix.test/v1/connectors/oauth2/callback',
+    });
+    expect(new URL(result.authorizationUrl).searchParams.has('resource')).toBe(false);
+  });
+});

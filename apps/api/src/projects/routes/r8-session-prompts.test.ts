@@ -476,6 +476,9 @@ describe('GET .../prompts', () => {
         prompt_id: PROMPT_ID,
         client_message_id: 'q_1',
         message_id: WIRE_ID,
+        // The id the client painted under — the same while nothing re-minted.
+        wire_message_id: WIRE_ID,
+        client_sent_at_ms: null,
         state: 'queued',
         reason: null,
         text: 'say hi',
@@ -595,6 +598,7 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(await response.json()).toEqual({
       removed: {
         prompt_id: PROMPT_ID,
+        removed_message_ids: [WIRE_ID],
         client_message_id: 'q_1',
         message_id: WIRE_ID,
         parts: [

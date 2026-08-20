@@ -7,20 +7,21 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import {
   assignRole,
-  auditAssignmentRevoked,
   listAssignments,
+  revokeProjectRole,
   SYSTEM_ACTOR,
 } from '../../iam/assignments';
+import { actorOf } from '../../iam/actor';
 import {
   accountRoleMap,
   groupProjectGrants,
   isAccountManagerRole,
 } from '../../iam/read-models';
-import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/role-perms';
+import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { AnyObject, GroupGrantSchema, projectsApp } from '../lib/app';
@@ -210,34 +211,10 @@ projectsApp.openapi(
     .limit(1);
   if (!group) return c.json({ error: 'group not found in this account' }, 404);
 
-  const now = new Date();
-  await db
-    .insert(projectGroupGrants)
-    .values({
-      projectId,
-      groupId,
-      accountId: loaded.row.accountId,
-      role,
-      grantedBy: loaded.userId,
-      expiresAt: expires.value ?? null,
-    })
-    .onConflictDoUpdate({
-      target: [projectGroupGrants.projectId, projectGroupGrants.groupId],
-      set: {
-        role,
-        grantedBy: loaded.userId,
-        updatedAt: now,
-        // Only overwrite when caller explicitly set the field.
-        ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
-      },
-    });
-  // …and the canonical grant, through the ONE write path. The route already
-  // asserted `project.members.manage` above, so `SYSTEM_ACTOR` here does not
-  // widen anything — it says "the caller was authorized by this route, not by
-  // re-deriving a different action". Best-effort: the mirror trigger on
-  // `project_group_grants` wrote the same canonical row inside the statement
-  // above, so a failure costs the audit event, not the grant.
-  await mirrorGroupGrant(loaded.row.accountId, projectId, groupId, role, expires.value ?? null, loaded.userId);
+  // THE write. The route already asserted `project.members.manage` above, so
+  // `SYSTEM_ACTOR` here does not widen anything — it says "the caller was
+  // authorized by this route, not by re-deriving a different action".
+  await grantGroupRole(loaded.row.accountId, projectId, groupId, role, expires.value ?? null, loaded.userId);
   await invalidateIamCacheForGroup(groupId);
 
   return c.json({ project_id: projectId, group_id: groupId, role }, 201);
@@ -295,35 +272,41 @@ projectsApp.openapi(
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
-  const result = await db
-    .update(projectGroupGrants)
-    .set({
-      role,
-      updatedAt: new Date(),
-      ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
+  // PATCH still means "change an EXISTING grant", so the 404 has to come from a
+  // read: `assignRole` would happily create one. `expires.value === undefined`
+  // means "leave the expiry alone", which is why the existing row is read rather
+  // than assumed.
+  const [existing] = (
+    await listAssignments({
+      accountId: loaded.row.accountId,
+      principal: { type: 'group', id: groupId },
+      scopeType: 'project',
+      scopeId: projectId,
+      liveOnly: false,
     })
-    .where(
-        and(eq(projectGroupGrants.projectId, projectId), eq(projectGroupGrants.groupId, groupId)),
-    )
-    .returning({ groupId: projectGroupGrants.groupId });
+  ).filter((r) => r.roleIsSystem && r.objectType === null);
+  if (!existing) return c.json({ error: 'grant not found' }, 404);
 
-  if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
-  await mirrorGroupGrant(loaded.row.accountId, projectId, groupId, role, expires.value ?? null, loaded.userId);
+  await grantGroupRole(
+    loaded.row.accountId,
+    projectId,
+    groupId,
+    role,
+    expires.value !== undefined ? expires.value : existing.expiresAt,
+    loaded.userId,
+  );
   await invalidateIamCacheForGroup(groupId);
   return c.json({ project_id: projectId, group_id: groupId, role: body.role });
 },
 );
 
 /**
- * The canonical half of a group→project grant.
- *
- * Best-effort on purpose: the mirror trigger on `project_group_grants` has
- * already written (or removed) the same `role_assignments` row inside the
- * caller's own statement, so the ENGINE is correct either way. What these add is
- * the single `iam.assignment.{granted,revoked}` audit event and the group
- * fan-out cache bust — bookkeeping that must never fail a legitimate grant.
+ * A group→project role grant. `kortix.project_group_grants` is a view over
+ * `kortix.role_assignments` as of the cutover, so this ONE call is the whole
+ * grant — it writes the row, emits `iam.assignment.granted`, and enforces the
+ * delegability ceiling. A failure is a failure of the grant and propagates.
  */
-async function mirrorGroupGrant(
+async function grantGroupRole(
   accountId: string,
   projectId: string,
   groupId: string,
@@ -331,51 +314,21 @@ async function mirrorGroupGrant(
   expiresAt: Date | null,
   grantedBy: string,
 ): Promise<void> {
-  try {
-    await assignRole(SYSTEM_ACTOR, accountId, {
-      principal: { type: 'group', id: groupId },
-      roleKey: role,
-      scope: { type: 'project', id: projectId },
-      expiresAt,
-      source: 'manual',
-      // `SYSTEM_ACTOR` is about writer AUTHORIZATION, not about provenance —
-      // the legacy row records the granter and the canonical one must too.
-      grantedBy,
-    });
-  } catch (err) {
-    console.warn('[group-grants] canonical assignment failed', {
-      projectId,
-      groupId,
-      err: (err as Error)?.message,
-    });
-  }
+  await assignRole(SYSTEM_ACTOR, accountId, {
+    principal: { type: 'group', id: groupId },
+    roleKey: role,
+    scope: { type: 'project', id: projectId },
+    expiresAt,
+    source: 'manual',
+    // The legacy PRIMARY KEY (project_id, group_id) meant one role per group per
+    // project; an upsert REPLACED it. Reproduce that.
+    exclusive: true,
+    // `SYSTEM_ACTOR` is about writer AUTHORIZATION, not about provenance — the
+    // legacy row recorded the granter and the canonical one must too.
+    grantedBy,
+  });
 }
 
-async function revokeGroupGrant(
-  accountId: string,
-  projectId: string,
-  groupId: string,
-): Promise<void> {
-  try {
-    const rows = await listAssignments({
-      accountId,
-      principal: { type: 'group', id: groupId },
-      scopeType: 'project',
-      scopeId: projectId,
-      liveOnly: false,
-    });
-    for (const row of rows) {
-      if (row.objectType !== null || !row.roleIsSystem) continue;
-      await auditAssignmentRevoked(SYSTEM_ACTOR, accountId, row);
-    }
-  } catch (err) {
-    console.warn('[group-grants] canonical revoke audit failed', {
-      projectId,
-      groupId,
-      err: (err as Error)?.message,
-    });
-  }
-}
 
 // DELETE /v1/projects/:projectId/group-grants/:groupId
 // Detach a group. Members of the group lose access via this grant
@@ -412,12 +365,10 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     );
 
-  await revokeGroupGrant(loaded.row.accountId, projectId, groupId);
-  await db
-    .delete(projectGroupGrants)
-    .where(
-        and(eq(projectGroupGrants.projectId, projectId), eq(projectGroupGrants.groupId, groupId)),
-    );
+  await revokeProjectRole(await actorOf(c, loaded.row.accountId), loaded.row.accountId, projectId, {
+    type: 'group',
+    id: groupId,
+  });
   await invalidateIamCacheForGroup(groupId);
 
   return c.json({ ok: true });

@@ -36,9 +36,18 @@ interface TranscriptStoreSlice {
 export function selectSessionTranscript(
   state: TranscriptStoreSlice,
   sessionId: string,
+  /**
+   * Messages to leave OUT of the entry — this tab's optimistic stubs. The
+   * cache mirrors the runtime's transcript, and a stub is not in it: persisted,
+   * it came back after a reload as a plain message the runtime had never
+   * heard of, beside the real one, for ever.
+   */
+  exclude?: (messageId: string) => boolean,
 ): CachedTranscript | null {
-  const messages = state.messages[sessionId];
-  if (!messages || messages.length === 0) return null;
+  const all = state.messages[sessionId];
+  if (!all || all.length === 0) return null;
+  const messages = exclude ? all.filter((message) => !message?.id || !exclude(message.id)) : all;
+  if (messages.length === 0) return null;
   const parts: Record<string, Part[]> = {};
   for (const message of messages) {
     if (!message?.id) continue;
@@ -46,7 +55,6 @@ export function selectSessionTranscript(
   }
   return { messages, parts };
 }
-
 /** Reshape a cached transcript into the `{ info, parts }` rows `hydrate` takes. */
 export function toHydrateEntries(
   transcript: CachedTranscript,
@@ -107,8 +115,9 @@ export function writeCachedTranscript(
   state: TranscriptStoreSlice,
   sessionId: string,
   kortixSessionScope?: string,
+  exclude?: (messageId: string) => boolean,
 ): Promise<void> {
-  const transcript = selectSessionTranscript(state, sessionId);
+  const transcript = selectSessionTranscript(state, sessionId, exclude);
   if (!transcript) return Promise.resolve();
   return saveSessionToIDB(sessionId, transcript.messages, transcript.parts, kortixSessionScope);
 }

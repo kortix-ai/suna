@@ -51,7 +51,6 @@ describe('buildSecretView — identifier model', () => {
       name: 'STRIPE_KEY',
       shared: sharedRow(),
       canManageShared: false,
-      projectMetadata: undefined,
     });
     expect(v.identifier).toBe('STRIPE_KEY');
     expect(v.name).toBe('STRIPE_KEY');
@@ -68,14 +67,12 @@ describe('buildSecretView — identifier model', () => {
       name: 'GOOGLE_MAPS_API_KEY',
       shared: sharedRow({ identifier: 'GMAPS-primary', name: 'GOOGLE_MAPS_API_KEY', secretId: 's-a' }),
       canManageShared: false,
-      projectMetadata: undefined,
     });
     const backup = buildSecretView({
       identifier: 'GMAPS-backup',
       name: 'GOOGLE_MAPS_API_KEY',
       shared: sharedRow({ identifier: 'GMAPS-backup', name: 'GOOGLE_MAPS_API_KEY', secretId: 's-b' }),
       canManageShared: false,
-      projectMetadata: undefined,
     });
     expect(primary.identifier).not.toBe(backup.identifier);
     expect(primary.name).toBe(backup.name);
@@ -88,7 +85,6 @@ describe('buildSecretView — identifier model', () => {
       name: 'CODEX_AUTH_JSON',
       personal: personalRow(),
       canManageShared: false,
-      projectMetadata: undefined,
     });
     expect(v.configured).toBe(false);
     expect(v.effective_source).toBe('mine');
@@ -101,7 +97,6 @@ describe('buildSecretView — identifier model', () => {
       shared: sharedRow({ identifier: 'CODEX_AUTH_JSON', name: 'CODEX_AUTH_JSON' }),
       personal: personalRow(),
       canManageShared: false,
-      projectMetadata: undefined,
     });
     expect(v.mine).toEqual({ active: true, updated_at: '2026-01-01T00:00:00.000Z' });
     expect(v.effective_source).toBe('mine');
@@ -114,7 +109,6 @@ describe('buildSecretView — identifier model', () => {
       shared: sharedRow({ identifier: 'CODEX_AUTH_JSON', name: 'CODEX_AUTH_JSON' }),
       personal: personalRow({ active: false }),
       canManageShared: false,
-      projectMetadata: undefined,
     });
     expect(v.effective_source).toBe('shared');
   });
@@ -125,7 +119,6 @@ describe('buildSecretView — identifier model', () => {
       name: 'KORTIX_INTERNAL',
       shared: sharedRow({ identifier: 'KORTIX_INTERNAL', name: 'KORTIX_INTERNAL' }),
       canManageShared: true,
-      projectMetadata: undefined,
     });
     expect(v.system).toBe(true);
     expect(v.can_manage_shared).toBe(false);

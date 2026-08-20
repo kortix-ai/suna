@@ -113,27 +113,43 @@ flow(
     // Waiting for the mirror straight after an initial_prompt boot is therefore
     // unsatisfiable by construction. Drive ONE real turn through the proxy, the
     // way every client does, and then assert the mirror the flow is about.
-    let ocSessionId = '';
-    await ctx.step('a real prompt through the preview proxy produces assistant output', async () => {
-      ocSessionId = await canonicalOcConversation(ctx, sandboxId);
+    const MIRROR_PROMPT =
+      'Summarize why deterministic end-to-end tests reduce release risk in one sentence.';
+    /** Prompt the pinned root through the proxy — this is what arms the snapshot. */
+    const promptPinnedRoot = async (ocId: string) => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
-          parts: [
-            {
-              type: 'text',
-              text: 'Summarize why deterministic end-to-end tests reduce release risk in one sentence.',
-            },
-          ],
+        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
+          parts: [{ type: 'text', text: MIRROR_PROMPT }],
         });
       r.status([200, 202, 204]);
+    };
+
+    let ocSessionId = '';
+    await ctx.step('a real prompt through the preview proxy produces assistant output', async () => {
+      ocSessionId = await pinnedOcRoot(ctx, project.id, session.id, sandboxId);
+      await promptPinnedRoot(ocSessionId);
       await waitForAssistantOutput(ctx, sandboxId, ocSessionId);
     });
 
     let mirrored: any = null;
     await ctx.step('the session read exposes a non-placeholder root OpenCode title and tree', async () => {
+      // `metadata.opencode_sessions` has exactly ONE writer:
+      // `scheduleOpencodeSnapshotSync`, armed by the proxy's pre-prompt hook.
+      // It fires at prompt+20s and prompt+60s and then STOPS
+      // (apps/api/src/projects/opencode-session-snapshot.ts). The session read
+      // itself is a pure DB read — a source-level guard test enforces that. So
+      // a poll that merely waits is reading a value whose writer has already
+      // retired: run 32306385663 spent 120 of its 180 s that way. Re-arm the
+      // writer by re-prompting the pinned root, instead of waiting on a dead one.
+      const REARM_AFTER_MS = 75_000;
+      let lastPromptAt = Date.now();
       mirrored = await waitFor(
         async () => {
+          if (Date.now() - lastPromptAt > REARM_AFTER_MS) {
+            lastPromptAt = Date.now();
+            await promptPinnedRoot(ocSessionId);
+          }
           const response = await ctx.client
             .as(ctx.P.OWNER)
             .get('/v1/projects/:projectId/sessions/:sessionId', {
@@ -182,18 +198,35 @@ flow(
 /**
  * Boot a fresh session and wait for its runtime to reach `ready`, returning the
  * proxy id (`external_id`, the value `:sandboxId` in the preview proxy path).
+ *
+ * The body runs INSIDE a `ctx.step`, and that is the whole point of the wrapper.
+ * Request capture is `AsyncLocalStorage`-scoped to a step (core/context.ts
+ * `withRecorder`, entered only by `ctx.step` in core/runner.ts), so every
+ * `POST /start` poll made outside one is recorded NOWHERE. RUN-4 failed in run
+ * 32330628092 with `Timed out waiting for session runtime ready` and produced a
+ * flow record with `"steps": []` — no request, no body, no `provisioningStage`,
+ * no `lastInitError`, on the single failure mode these flows actually fail with.
+ * Boot is the most expensive and most failure-prone part of every flow here; it
+ * must leave evidence behind.
  */
 async function bootSandbox(
   ctx: FlowContext,
   opts?: { prompt?: string; readinessTimeoutMs?: number },
 ): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
-  const project = await ctx.fixtures.sharedSeededProject();
-  const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
-  const started = await waitForSessionReady(ctx, project.id, session.id, opts?.readinessTimeoutMs);
+  return ctx.step('a fresh session boots to a ready runtime', async () => {
+    const project = await ctx.fixtures.sharedSeededProject();
+    const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
+    const started = await waitForSessionReady(
+      ctx,
+      project.id,
+      session.id,
+      opts?.readinessTimeoutMs,
+    );
 
-  const sandbox = started.sandbox;
-  const sandboxId = String(sandbox.external_id ?? sandbox.externalId);
-  return { projectId: project.id, sessionId: session.id, sandboxId, sandbox };
+    const sandbox = started.sandbox;
+    const sandboxId = String(sandbox.external_id ?? sandbox.externalId);
+    return { projectId: project.id, sessionId: session.id, sandboxId, sandbox };
+  });
 }
 
 /** The workspace directory the session's OpenCode root lives under (see
@@ -272,6 +305,34 @@ async function canonicalOcConversation(ctx: FlowContext, sandboxId: string): Pro
   const id = roots[0]?.id;
   if (!id) throw new Error(`no canonical OpenCode root on sandbox ${sandboxId}`);
   return String(id);
+}
+
+/**
+ * The root the SERVER has pinned for this session, preferred over re-deriving it.
+ *
+ * `resolveRootSessionId` (apps/api/src/projects/opencode-session-resolver.ts)
+ * returns an EXISTING pin unconditionally — "most recently active parentless
+ * root" is the server's rule only for the FIRST resolution. Once a pin exists
+ * the two rules can disagree (a daemon restart or a warm-fork seed rotation
+ * leaves a second root), and then the flow prompts root B while the snapshot
+ * mirrors pinned root A. Root A is never prompted, so its title never changes,
+ * and the mirror wait can never be satisfied at any budget — SESS-10's 410 s
+ * failure in run 32306385663. Ask the server which root it pinned.
+ */
+async function pinnedOcRoot(
+  ctx: FlowContext,
+  projectId: string,
+  sessionId: string,
+  sandboxId: string,
+): Promise<string> {
+  const r = await ctx.client
+    .as(ctx.P.OWNER)
+    .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
+  const pinned = r.statusCode === 200 ? r.json<any>()?.opencode_session_id : null;
+  if (typeof pinned === 'string' && pinned.length > 0) return pinned;
+  // Nothing pinned yet — the server's first resolution will adopt whatever
+  // root is most recently active, which is exactly what this derives.
+  return canonicalOcConversation(ctx, sandboxId);
 }
 
 function hasAssistantOutput(messages: unknown): boolean {

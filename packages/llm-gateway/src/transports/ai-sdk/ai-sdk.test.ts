@@ -59,6 +59,14 @@ const usage = (over: Record<string, unknown> = {}) => ({
 
 const CTX = { model: 'openai/gpt-5.6', provider: 'openai' };
 
+// A Bedrock family covers Claude AND non-Claude (global.openai.*, Nova, Meta)
+// models; only Claude accepts the Converse-only primitives (cachePoint,
+// reasoningConfig:adaptive), gated on the resolved model id (isBedrockClaudeModel).
+// Bedrock tests that assert those primitives pass a Claude resolvedModel.
+const BEDROCK_CLAUDE = 'us.anthropic.claude-fable-5';
+// A non-Claude Bedrock upstream (OpenAI on Bedrock) — must get NEITHER primitive.
+const BEDROCK_OPENAI = 'global.openai.gpt-5.6-sol';
+
 describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
   it('maps cache-write usage when the provider reports no cache reads', () => {
     const mapped = mapUsage(
@@ -504,13 +512,14 @@ describe('ai-sdk per-request capability gating (reuses @kortix/llm-catalog clamp
 
   it('(c) a non-reasoning model suppresses thinking/reasoningEffort entirely (anthropic family)', () => {
     // reasoning:false + no reasoning_options → the effort tier is dropped, so
-    // resolveThinkingRequest never turns extended thinking on and maxOutputTokens
-    // falls back to the plain (non-thinking) 4096 default, not the thinking bump.
+    // resolveThinkingRequest never turns extended thinking on. With no thinking
+    // AND a resolved model, defaultMaxTokens is the model's real ceiling
+    // (limit.output = 8000 here), not the 4096 unresolved-model fallback.
     const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic', {
       model: effortModel({ reasoning: false, reasoning_options: undefined }),
     });
     expect(args.providerOptions).toBeUndefined();
-    expect(args.maxOutputTokens).toBe(4096);
+    expect(args.maxOutputTokens).toBe(8000);
   });
 
   it('(d) parity: with NO model passed, gating is a no-op — output matches the pre-gating result exactly', () => {
@@ -606,7 +615,9 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
   });
 
   it('bedrock: reasoning_effort maps to adaptive reasoningConfig + effort (never enabled/budgetTokens), never providerOptions.anthropic', () => {
-    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'medium' }, 'bedrock');
+    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'medium' }, 'bedrock', {
+      resolvedModel: BEDROCK_CLAUDE,
+    });
     expect(args.providerOptions).toMatchObject({
       bedrock: { reasoningConfig: { type: 'adaptive', maxReasoningEffort: 'medium' } },
     });
@@ -623,6 +634,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     const args = buildAiSdkArgs(
       { messages: [], reasoning_effort: 'max', max_tokens: 2000 },
       'bedrock',
+      { resolvedModel: BEDROCK_CLAUDE },
     );
     expect(args.maxOutputTokens).toBe(2000);
     // Adaptive has no budget to clamp against max_tokens — the whole class of
@@ -643,7 +655,9 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
       ['max', 'max'],
     ];
     for (const [effort, tier] of cases) {
-      const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'bedrock');
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'bedrock', {
+        resolvedModel: BEDROCK_CLAUDE,
+      });
       expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
         type: 'adaptive',
         maxReasoningEffort: tier,
@@ -655,6 +669,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     const args = buildAiSdkArgs(
       { messages: [], thinking: { type: 'enabled', budget_tokens: 5000 } },
       'bedrock',
+      { resolvedModel: BEDROCK_CLAUDE },
     );
     // The old enabled/budgetTokens shape current-gen Bedrock Claude rejects must
     // never reach the wire — even when the client itself sent it.
@@ -734,7 +749,9 @@ describe('trailing assistant prefill is stripped across the board (one normaliza
   });
 
   it('bedrock: the prompt-cache breakpoint lands on the surviving user turn, not a removed assistant', () => {
-    const args = buildAiSdkArgs({ ...withTrailingAssistant }, 'bedrock');
+    const args = buildAiSdkArgs({ ...withTrailingAssistant }, 'bedrock', {
+      resolvedModel: BEDROCK_CLAUDE,
+    });
     const last = args.messages[args.messages.length - 1] as {
       role: string;
       providerOptions?: { bedrock?: { cachePoint?: unknown } };
@@ -800,6 +817,7 @@ describe('ai-sdk anthropic/bedrock prompt caching (ported from native)', () => {
         tools: [{ function: { name: 'only_tool', parameters: {} } }],
       },
       'bedrock',
+      { resolvedModel: BEDROCK_CLAUDE },
     );
 
     expect(args.system).toBeUndefined();
@@ -816,6 +834,7 @@ describe('ai-sdk anthropic/bedrock prompt caching (ported from native)', () => {
         ],
       },
       'bedrock',
+      { resolvedModel: BEDROCK_CLAUDE },
     );
     expect(withSystem.system).toEqual({
       role: 'system',
@@ -838,6 +857,115 @@ describe('ai-sdk anthropic/bedrock prompt caching (ported from native)', () => {
     expect(openai.system).toBe('ctx');
     expect(openai.messages[openai.messages.length - 1]).not.toHaveProperty('providerOptions');
     expect((openai.tools as any)?.t?.providerOptions).toBeUndefined();
+  });
+});
+
+// FIX B2 — a no-max_tokens request must default to the model's REAL output
+// ceiling (limit.output, e.g. 128000), not the fixed 32000/4096. A fixed cap
+// far below the ceiling truncated Claude mid-answer (finish_reason=length) once
+// adaptive thinking ate the budget. The client's own explicit max_tokens still
+// always wins; the fixed 32000/4096 remain the fallback for an unresolved model.
+describe('ai-sdk default max_tokens follows the model output ceiling (FIX B2)', () => {
+  // A high real output ceiling — far above the old fixed 32000/4096 defaults.
+  const claudeModel = (over: Partial<CatalogModel> = {}): CatalogModel => ({
+    id: 'claude-fable-5',
+    name: 'Claude Fable 5',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+    limit: { context: 1_000_000, output: 128_000 },
+    ...over,
+  });
+
+  it('anthropic (non-thinking, no max_tokens): defaults to limit.output, not 4096', () => {
+    const args = buildAiSdkArgs({ messages: [] }, 'anthropic', { model: claudeModel() });
+    expect(args.maxOutputTokens).toBe(128_000);
+  });
+
+  it('anthropic (thinking active, no max_tokens): defaults to limit.output, not 32000', () => {
+    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic', {
+      model: claudeModel(),
+    });
+    // Thinking is on (adaptive), yet the ceiling — not the 32000 thinking
+    // default — sizes the budget, so a long Claude answer is never truncated.
+    expect((args.providerOptions as any)?.anthropic?.thinking?.type).toBe('adaptive');
+    expect(args.maxOutputTokens).toBe(128_000);
+  });
+
+  it('bedrock (Claude, no max_tokens): defaults to limit.output, not 4096/32000', () => {
+    const args = buildAiSdkArgs({ messages: [] }, 'bedrock', {
+      model: claudeModel(),
+      resolvedModel: BEDROCK_CLAUDE,
+    });
+    expect(args.maxOutputTokens).toBe(128_000);
+  });
+
+  it('an explicit client max_tokens still wins over the model ceiling', () => {
+    const args = buildAiSdkArgs({ messages: [], max_tokens: 2000 }, 'anthropic', {
+      model: claudeModel(),
+    });
+    expect(args.maxOutputTokens).toBe(2000);
+  });
+
+  it('an unresolved model (no model) keeps the fixed 4096/32000 fallback', () => {
+    const plain = buildAiSdkArgs({ messages: [] }, 'anthropic');
+    expect(plain.maxOutputTokens).toBe(4096);
+    const thinking = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic');
+    expect(thinking.maxOutputTokens).toBe(32_000);
+  });
+
+  it('a model with no limit.output falls back to the fixed 4096 default', () => {
+    const args = buildAiSdkArgs({ messages: [] }, 'anthropic', {
+      model: claudeModel({ limit: undefined }),
+    });
+    expect(args.maxOutputTokens).toBe(4096);
+  });
+});
+
+// 403-fix regression (isBedrockClaudeModel gate): a single Bedrock family serves
+// Claude AND non-Claude (global.openai.*, Nova, Meta) models, but only Claude
+// accepts the Converse-only primitives. Non-Claude Bedrock 403s ("You invoked an
+// unsupported model or your request did not allow prompt caching.") on cachePoint
+// / reasoningConfig — so those must be gated on the resolved model id.
+describe('bedrock Converse primitives are gated on the resolved Claude model id (403 fix)', () => {
+  const body = {
+    messages: [
+      { role: 'system', content: 'ctx' },
+      { role: 'user', content: 'hi' },
+    ],
+    reasoning_effort: 'high',
+  };
+
+  it('non-Claude Bedrock (global.openai.*): emits NEITHER cachePoint NOR reasoningConfig', () => {
+    const args = buildAiSdkArgs({ ...body }, 'bedrock', { resolvedModel: BEDROCK_OPENAI });
+    // No reasoningConfig (adaptive thinking) in providerOptions.
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
+    // No cachePoint on the system prompt…
+    expect(args.system).toBe('ctx');
+    // …nor on the last message.
+    expect(args.messages[args.messages.length - 1]).not.toHaveProperty('providerOptions');
+  });
+
+  it('Claude Bedrock (us.anthropic.claude-*): still emits BOTH cachePoint and reasoningConfig', () => {
+    const args = buildAiSdkArgs({ ...body }, 'bedrock', { resolvedModel: BEDROCK_CLAUDE });
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
+      type: 'adaptive',
+      maxReasoningEffort: 'high',
+    });
+    expect(args.system).toEqual({
+      role: 'system',
+      content: 'ctx',
+      providerOptions: { bedrock: { cachePoint: { type: 'default' } } },
+    });
+    expect(args.messages[args.messages.length - 1]).toMatchObject({
+      providerOptions: { bedrock: { cachePoint: { type: 'default' } } },
+    });
+  });
+
+  it('absent resolvedModel is treated as non-Claude (no Claude primitives)', () => {
+    const args = buildAiSdkArgs({ ...body }, 'bedrock');
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
+    expect(args.system).toBe('ctx');
+    expect(args.messages[args.messages.length - 1]).not.toHaveProperty('providerOptions');
   });
 });
 

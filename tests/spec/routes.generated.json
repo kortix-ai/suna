@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 592,
+  "count": 595,
   "routes": [
     {
       "method": "GET",
@@ -1511,6 +1511,14 @@
       "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/discover"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/register"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/status"
     },
@@ -2305,6 +2313,10 @@
     {
       "method": "GET",
       "path": "/v1/user-roles"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/auth/send-email"
     },
     {
       "method": "POST",

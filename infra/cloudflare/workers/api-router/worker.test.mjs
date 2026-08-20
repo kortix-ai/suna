@@ -498,7 +498,7 @@ describe('api-router worker', () => {
     );
     expect(gatewayResponse.status).toBe(503);
     expect(await gatewayResponse.json()).toMatchObject({
-      error: 'MAINTENANCE_MODE',
+      error: { code: 'MAINTENANCE_MODE' },
       message: 'Writes are paused.',
     });
   });
@@ -605,7 +605,7 @@ describe('api-router worker', () => {
     expect(response.status).toBe(503);
     expect(response.headers.get('Content-Type')).toBe('application/json');
     expect(await response.json()).toMatchObject({
-      error: 'MAINTENANCE_MODE',
+      error: { code: 'MAINTENANCE_MODE' },
       maintenance: { level: 'blocking' },
     });
   });
@@ -632,7 +632,7 @@ describe('api-router worker', () => {
     );
 
     expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ error: 'MAINTENANCE_MODE' });
+    expect(await response.json()).toMatchObject({ error: { code: 'MAINTENANCE_MODE' } });
     expect(response.headers.get('X-Maintenance-Mode')).toBe('blocking');
     expect(response.headers.get('X-Origin-Status')).toBe('503');
     // The origin's own request id is restored, so an application 5xx is
@@ -671,7 +671,7 @@ describe('api-router worker', () => {
     );
 
     expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ error: 'MAINTENANCE_MODE' });
+    expect(await response.json()).toMatchObject({ error: { code: 'MAINTENANCE_MODE' } });
     expect(response.headers.get('X-Origin-Status')).toBe('504');
   });
 
@@ -686,7 +686,7 @@ describe('api-router worker', () => {
       );
       expect(response.status).toBe(503);
       expect(await response.json()).toMatchObject({
-        error: 'MAINTENANCE_MODE',
+        error: { code: 'MAINTENANCE_MODE' },
       });
     }
   });
@@ -703,7 +703,7 @@ describe('api-router worker', () => {
     );
 
     expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ error: 'MAINTENANCE_MODE' });
+    expect(await response.json()).toMatchObject({ error: { code: 'MAINTENANCE_MODE' } });
   });
 
   test('an unreachable origin reports fetch-error and stays retryable for the test client', async () => {

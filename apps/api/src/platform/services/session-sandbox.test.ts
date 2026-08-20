@@ -33,13 +33,13 @@
 // file-scoped — batching many files into one `bun test a b c...` invocation
 // can leak mocks/cached module instances across files. See the same caveat
 // documented in ../../projects/sandbox-reaper.test.ts.
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
-import * as realAgents from '../../projects/agents';
-import * as realProviders from '../providers';
 import * as realComputeMetering from '../../billing/services/compute-metering';
+import * as realAgents from '../../projects/agents';
+import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
+import * as realProviders from '../providers';
 
 const dialect = new PgDialect();
 
@@ -70,16 +70,22 @@ let stoppedIds: string[] = [];
 let onRemoved: (() => void) | null = null;
 let computeSessionsOpened: Array<{ sandboxId: string; accountId: string }> = [];
 let onComputeOpened: (() => void) | null = null;
-let recordedEvents: Array<{ outcome: string }> = [];
+let recordedEvents: Array<{ outcome: string; marks?: Array<{ label: string }> }> = [];
 let identityConflict = false;
 let recoveryPlaceholder = false;
 let providerCreateCalls = 0;
+let providerCreateOpts: Array<Record<string, unknown>> = [];
 let providerFallbackEnabled = false;
 let providerNamesRequested: string[] = [];
 let providerCreateErrors: Record<string, string | undefined> = {};
 let imageRequests: Array<Record<string, unknown>> = [];
+let fastImageRequests: Array<Record<string, unknown>> = [];
 let accountTokenCreateCalls: Array<Record<string, unknown>> = [];
 let serviceAccountCreateCalls: Array<Record<string, unknown>> = [];
+let networkBoundaryBindings: Array<Record<string, unknown>> = [];
+let providerSyncCalls: Array<{ externalId: string; bindings: Array<Record<string, unknown>> }> = [];
+// GATEWAY_AI_SDK_NATIVE — toggled per test via the config mock's getter below.
+let aiSdkNativeFlag = false;
 
 function compile(condition: unknown): { sql: string; params: unknown[] } {
   try {
@@ -107,6 +113,11 @@ mock.module('../../config', () => ({
     LLM_GATEWAY_PROXY_PORT: undefined,
     LLM_GATEWAY_PROXY_TARGET: undefined,
     LLM_GATEWAY_BASE_URL: undefined,
+    // Read live from the toggle so a single test can flip the flag and assert
+    // the session env-injection branch on either side.
+    get aiSdkNative() {
+      return aiSdkNativeFlag;
+    },
   },
 }));
 
@@ -126,10 +137,12 @@ mock.module('../../shared/db', () => ({
         where: (_cond: unknown) => ({
           limit: async (_n: number) => {
             if (table === projectSessions) {
-              return [{
-                status: scenario.projectSessionStatusAtCheck,
-                metadata: scenario.projectSessionMetadataAtCheck,
-              }];
+              return [
+                {
+                  status: scenario.projectSessionStatusAtCheck,
+                  metadata: scenario.projectSessionMetadataAtCheck,
+                },
+              ];
             }
             return [];
           },
@@ -156,18 +169,20 @@ mock.module('../../shared/db', () => ({
             recoveryPlaceholder = false;
             return updateResult(
               claimed
-                ? [{
-                    sandboxId: SANDBOX_ID,
-                    sessionId: SANDBOX_ID,
-                    accountId: ACCOUNT_ID,
-                    projectId: PROJECT_ID,
-                    provider: 'daytona',
-                    externalId: null,
-                    status: 'provisioning',
-                    baseUrl: null,
-                    config: {},
-                    metadata: { identityRecoveryAuthorizedAt: new Date().toISOString() },
-                  }]
+                ? [
+                    {
+                      sandboxId: SANDBOX_ID,
+                      sessionId: SANDBOX_ID,
+                      accountId: ACCOUNT_ID,
+                      projectId: PROJECT_ID,
+                      provider: 'daytona',
+                      externalId: null,
+                      status: 'provisioning',
+                      baseUrl: null,
+                      config: {},
+                      metadata: { identityRecoveryAuthorizedAt: new Date().toISOString() },
+                    },
+                  ]
                 : [],
             );
           }
@@ -186,29 +201,35 @@ mock.module('../providers', () => ({
   getProvider: (name: string) => {
     providerNamesRequested.push(name);
     return {
-    name,
-    provisioning: { async: true, stages: [{ id: 'boot', progress: 50, message: 'Booting…' }] },
-    create: async (_opts: unknown) => {
-      providerCreateCalls += 1;
-      if (providerCreateErrors[name]) throw new Error(providerCreateErrors[name]);
-      return {
-        externalId: name === 'daytona' ? EXTERNAL_ID : `ext-${name}-1`,
-        baseUrl: 'https://sandbox.test',
-        metadata: {},
-      };
-    },
-    remove: async (externalId: string) => {
-      removedIds.push(externalId);
-      onRemoved?.();
-    },
-    start: async () => {},
-    stop: async (externalId: string) => {
-      stoppedIds.push(externalId);
-    },
-    getStatus: async () => 'running',
-    resolveEndpoint: async () => ({ url: '', headers: {} }),
-    resolveProxyEndpoint: async () => ({ url: '', headers: {} }),
-  }},
+      name,
+      networkBoundaryAtCreate: name === 'platinum',
+      provisioning: { async: true, stages: [{ id: 'boot', progress: 50, message: 'Booting…' }] },
+      create: async (opts: Record<string, unknown>) => {
+        providerCreateCalls += 1;
+        providerCreateOpts.push(opts);
+        if (providerCreateErrors[name]) throw new Error(providerCreateErrors[name]);
+        return {
+          externalId: name === 'daytona' ? EXTERNAL_ID : `ext-${name}-1`,
+          baseUrl: 'https://sandbox.test',
+          metadata: {},
+        };
+      },
+      syncNetworkBoundary: async (externalId: string, bindings: Array<Record<string, unknown>>) => {
+        providerSyncCalls.push({ externalId, bindings });
+      },
+      remove: async (externalId: string) => {
+        removedIds.push(externalId);
+        onRemoved?.();
+      },
+      start: async () => {},
+      stop: async (externalId: string) => {
+        stoppedIds.push(externalId);
+      },
+      getStatus: async () => 'running',
+      resolveEndpoint: async () => ({ url: '', headers: {} }),
+      resolveProxyEndpoint: async () => ({ url: '', headers: {} }),
+    };
+  },
   WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {},
   SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},
 }));
@@ -243,6 +264,17 @@ mock.module('../../snapshots/builder', () => ({
       built: false,
     };
   },
+  ensureFastSandboxImage: async (opts: Record<string, unknown>) => {
+    fastImageRequests.push(opts);
+    return {
+      snapshotName: 'kortix-fast-dev-test',
+      slug: 'default',
+      contentHash: 'fast-hash-1',
+      isDefault: true,
+      built: false,
+      runtimeProfile: 'fast',
+    };
+  },
   deleteSandboxImage: async () => {},
   resolveTemplate: async (_project: unknown, _slug: unknown) => ({}),
 }));
@@ -260,7 +292,11 @@ mock.module('./provider-events', () => ({
 // whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../../billing/services/compute-metering', () => ({
   ...realComputeMetering,
-  startComputeSession: async (input: { sandboxId: string; accountId: string; provider: string }) => {
+  startComputeSession: async (input: {
+    sandboxId: string;
+    accountId: string;
+    provider: string;
+  }) => {
     computeSessionsOpened.push(input);
     onComputeOpened?.();
   },
@@ -290,6 +326,10 @@ mock.module('../../shared/account-limits', () => ({
 
 mock.module('../../projects/triggers', () => ({
   readManifest: async () => null,
+}));
+
+mock.module('../../projects/lib/network-secret-boundary', () => ({
+  resolveSessionNetworkBoundary: async () => networkBoundaryBindings,
 }));
 
 mock.module('../../projects/agents', () => ({
@@ -334,12 +374,21 @@ beforeEach(() => {
   identityConflict = false;
   recoveryPlaceholder = false;
   providerCreateCalls = 0;
+  providerCreateOpts = [];
   providerFallbackEnabled = false;
   providerNamesRequested = [];
   providerCreateErrors = {};
   imageRequests = [];
+  fastImageRequests = [];
   accountTokenCreateCalls = [];
   serviceAccountCreateCalls = [];
+  networkBoundaryBindings = [];
+  providerSyncCalls = [];
+  aiSdkNativeFlag = false;
+});
+
+afterEach(() => {
+  delete process.env.KORTIX_FAST_COLD_BOOT_ENABLED;
 });
 
 function baseOpts() {
@@ -393,6 +442,58 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(imageRequests[0]).not.toHaveProperty('requireCurrentRuntime');
   });
 
+  test('GATEWAY_AI_SDK_NATIVE on injects KORTIX_LLM_AI_SDK_NATIVE=true into the sandbox env', async () => {
+    aiSdkNativeFlag = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(providerCreateOpts).toHaveLength(1);
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    // The daemon's env route allowlists this name (OPENCODE_RUNTIME_ENV_NAMES);
+    // buildKortixProvider reads it to select @ai-sdk/gateway.
+    expect(envVars.KORTIX_LLM_AI_SDK_NATIVE).toBe('true');
+  });
+
+  test('GATEWAY_AI_SDK_NATIVE off leaves KORTIX_LLM_AI_SDK_NATIVE absent (byte-identical to today)', async () => {
+    // aiSdkNativeFlag stays false (reset in beforeEach).
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(providerCreateOpts).toHaveLength(1);
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars).not.toHaveProperty('KORTIX_LLM_AI_SDK_NATIVE');
+  });
+
+  test('the fast flag keeps the standard image so the edge optimization stays isolated', async () => {
+    process.env.KORTIX_FAST_COLD_BOOT_ENABLED = 'true';
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(fastImageRequests).toEqual([]);
+    expect(imageRequests).toHaveLength(1);
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect(finishCall?.updates.metadata).toMatchObject({
+      runtimeArtifact: {
+        providerArtifactRef: 'snap-test-1',
+      },
+    });
+  });
+
   test('E2B success records only provider-neutral lifecycle metadata and E2B billing attribution', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
@@ -402,7 +503,8 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await opened;
 
     const finishCall = updateCalls.find(
-      (call) => call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
     );
     expect(finishCall?.updates.metadata).toMatchObject({
       providerExternalId: 'ext-e2b-1',
@@ -491,7 +593,9 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
   test('provider-loss placeholder is reclaimed without inserting a second logical row', async () => {
     identityConflict = true;
     recoveryPlaceholder = true;
-    const opened = waitFor((resolve) => { onComputeOpened = resolve; });
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
 
     await provisionSessionSandbox(baseOpts());
     await opened;
@@ -504,7 +608,9 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
   test('legacy recovery placeholder authorization is single-use under concurrent allocation', async () => {
     identityConflict = true;
     recoveryPlaceholder = true;
-    const opened = waitFor((resolve) => { onComputeOpened = resolve; });
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
 
     const results = await Promise.allSettled([
       provisionSessionSandbox(baseOpts()),
@@ -583,7 +689,9 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
 
   test('manual stop racing provider create stops and preserves the sandbox instead of removing it', async () => {
     scenario.projectSessionStatusAtCheck = 'stopped';
-    const eventRecorded = waitFor((resolve) => { onProviderEvent = resolve; });
+    const eventRecorded = waitFor((resolve) => {
+      onProviderEvent = resolve;
+    });
     await provisionSessionSandbox(baseOpts());
     await eventRecorded;
 

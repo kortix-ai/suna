@@ -1,10 +1,12 @@
 name: Deploy Dev
 
-# DEV pipeline. `main` is the dev branch: every push auto-deploys the things that
-# change on most commits — API, frontend, CLI — as a DEV build versioned
-# `<next>-dev.<sha8>`, where <next> is one patch above the latest published
-# release tag (see the dev-version job). So dev tracks prod automatically and
-# `main` carries no release-version bump.
+# DEV pipeline. `main` is the dev branch: every push auto-deploys the surfaces
+# that changed vs what dev currently runs, on the LATEST commit, cancelling any
+# superseded in-flight deploy (see the `on:` and `concurrency:` blocks). A manual
+# `workflow_dispatch` can force all/frontend on demand. Builds are versioned
+# `<next>-dev.<sha8>`, where <next> is one patch above the latest published release
+# tag (see the dev-version job). So dev tracks prod's version line automatically
+# and `main` carries no release-version bump.
 #
 #   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, deployed to dev
 #                   via ECS Fargate. dev-api.kortix.com
@@ -25,38 +27,49 @@ name: Deploy Dev
 # the single unified vX.Y.Z release bundling API + frontend + CLI + desktop.
 
 on:
+  # DEV auto-deploys the LATEST main commit on every push, building only the
+  # surfaces that actually changed vs what dev is currently running (detect-
+  # changes below diffs against dev-api's live SHA). A newer push CANCELS the
+  # in-progress deploy — dev should always converge to newest, never spend
+  # minutes finishing a superseded build.
   push:
     branches: [main]
+  # Manual override: force a full or frontend-only redeploy, or re-deploy on
+  # demand. `changed` (default) matches the push path — only stale surfaces.
   workflow_dispatch:
     inputs:
       surface:
-        description: Surface to deploy from a manual branch run
+        description: What to deploy (main HEAD)
         type: choice
         required: true
-        default: all
+        default: changed
         options:
-          - all
-          - frontend
+          - changed   # only surfaces stale vs what dev currently runs (fast — the default)
+          - all       # force-rebuild + redeploy every surface
+          - frontend  # frontend only
 
-# One group for every surface, and it must NOT cancel what is already running.
+# Cancel a superseded deploy so dev always converges to the newest commit.
 #
-# `cancel-in-progress: true` starved the slowest surface out of existence. The
-# multi-arch API image takes ~23 min to build; main lands every ~10-20 min during
-# the day; and the group is workflow-wide, so a frontend-only push cancelled an
-# in-flight API build. Measured 2026-08-10: 19 of 30 runs cancelled, the API image
-# had not deployed in 3.5 h, and 5 API commits were stranded — the run that finally
-# landed only survived because the trunk went quiet in the evening.
-#
-# Queueing instead guarantees forward progress. GitHub keeps at most one pending
-# run per group and cancels the previous pending one, so a burst of pushes still
-# collapses into a single follow-up deploy — the newest commit wins, it just waits
-# its turn. This matches deploy-prod, rollback-prod and promote, which have always
-# used `false` for the same reason.
-#
-# It also stops `migrate-db` being killed mid-migration by an unrelated push.
+# HISTORY: this was flipped to `false` on 2026-08-10 after `true` caused a 3.5h
+# outage — the multi-arch API image took ~23 min, main landed every ~10-20 min,
+# so a frontend-only push kept cancelling the in-flight API build and 5 API
+# commits stranded (it never outran the trunk). TWO things fixed the root cause,
+# so `true` is safe again and is what we want:
+#   1. The API image is single-arch amd64 now (~4-7 min, not ~23) — it comfortably
+#      outruns the push cadence, so a cancel is a fresh fast rebuild, not a starve.
+#   2. detect-changes diffs against dev's LIVE SHA, so a surface whose deploy was
+#      cancelled is still stale-vs-dev and the next run rebuilds it. A cancel can
+#      no longer strand a surface — the property the 2026-08-10 stranding relied on
+#      is gone.
+# Residual risk, dev-only and recoverable: a cancel can kill `migrate-db` mid-run.
+# node-pg-migrate wraps each step in a transaction so a killed ordinary migration
+# rolls back cleanly and the next deploy re-applies it; a `.concurrent` migration
+# can leave an INVALID index that the next `IF NOT EXISTS` skips — drop+rebuild it
+# by hand (learnings: "CREATE INDEX CONCURRENTLY under lock_timeout"). staging/prod
+# are unaffected — they are promote-gated, never per-push.
 concurrency:
   group: deploy-dev
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   # ── Detect what changed (so unrelated surfaces are skipped) ─────────────────
@@ -73,10 +86,47 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # Full history so the change-diff can be taken against the SHA that dev
+          # is ACTUALLY running (below), which may be many commits back.
+          fetch-depth: 0
+      - name: Resolve deploy base (what dev is actually running)
+        id: base
+        # Runs for the change-diffing paths: an ordinary push, and an explicit
+        # dispatch with surface=changed. surface=all / surface=frontend force
+        # their own set below and skip this.
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.surface == 'changed')
+        run: |
+          # THE FLAKY-SKIP FIX. The old filter diffed `github.event.before..sha`
+          # — the commits in THIS push only. But a superseded/cancelled deploy
+          # meant a surface changed by an earlier commit was never built, and its
+          # push's diff was gone — so it stranded on dev. Diff against the sha dev
+          # is actually running instead: every surface stale relative to the live
+          # deployment rebuilds, and a cancelled deploy is simply re-picked-up by
+          # the next run (which is what makes cancel-in-progress safe here).
+          set +e
+          deployed=$(curl -sf --max-time 8 https://dev-api.kortix.com/v1/health \
+            | python3 -c "import sys,json;print(json.load(sys.stdin).get('commit',''))" 2>/dev/null)
+          set -e
+          if [ -n "$deployed" ] && [ "$deployed" != "unknown" ] && git cat-file -e "${deployed}^{commit}" 2>/dev/null; then
+            echo "base=$deployed" >> "$GITHUB_OUTPUT"
+            echo "force_all=false" >> "$GITHUB_OUTPUT"
+            echo "Comparing changed surfaces against deployed dev SHA ${deployed}"
+          else
+            # Health down, or the deployed sha is not in history (force-push,
+            # shallow, first deploy). Fail SAFE: build every surface rather than
+            # risk skipping a stale one. A redundant build is cheap; a stranded
+            # surface is the bug this fix exists to kill.
+            echo "base=" >> "$GITHUB_OUTPUT"
+            echo "force_all=true" >> "$GITHUB_OUTPUT"
+            echo "Deployed SHA unavailable ('${deployed}') — building ALL surfaces (fail-safe)"
+          fi
       - name: Path filter
         uses: dorny/paths-filter@v4
         id: filter
         with:
+          # For a push, compare against what dev runs (empty = action's default).
+          base: ${{ steps.base.outputs.base }}
           filters: |
             api:
               - 'apps/api/**'
@@ -86,6 +136,7 @@ jobs:
               - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
               - 'packages/**'
               - 'scripts/ci/cosign-sign-attest.sh'
+              - 'infra/scripts/ecs-deploy.sh'
               - '.github/workflows/deploy-dev.yml'
               - 'supabase/migrations/**' # run by ensureSchema at boot — must redeploy to apply
               - 'pnpm-lock.yaml'
@@ -144,21 +195,25 @@ jobs:
           frontend="${{ steps.filter.outputs.frontend }}"
           cli="${{ steps.filter.outputs.cli }}"
           terraform="${{ steps.filter.outputs.terraform }}"
+          if [ "${{ steps.base.outputs.force_all }}" = "true" ]; then
+            # Fail-safe from the base resolver: dev's running SHA was unknown, so
+            # build everything rather than skip a possibly-stale surface.
+            api=true; apps_router=true; gateway=true; frontend=true; cli=true; terraform=true
+          fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ inputs.surface }}" = "frontend" ]; then
-              api=false
-              apps_router=false
-              gateway=false
-              frontend=true
-              cli=false
-              terraform=false
-            else
-              api=true
-              apps_router=true
-              gateway=true
-              frontend=true
-              terraform=true
-            fi
+            case "${{ inputs.surface }}" in
+              frontend)
+                api=false; apps_router=false; gateway=false
+                frontend=true; cli=false; terraform=false ;;
+              all)
+                api=true; apps_router=true; gateway=true
+                frontend=true; cli=true; terraform=true ;;
+              changed)
+                # Keep the path-filter outputs — they were diffed against the sha
+                # dev actually runs (the base step above), so only stale surfaces
+                # build. force_all already covered the "deployed sha unknown" case.
+                : ;;
+            esac
           fi
           {
             echo "api=$api"
@@ -280,7 +335,7 @@ jobs:
 
   # ── Build + push the multi-arch API image ───────────────────────────────────
   build-api:
-    name: Build API image (multi-arch)
+    name: Build API image (amd64)
     needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
@@ -288,15 +343,20 @@ jobs:
       - uses: actions/checkout@v7
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push (amd64 + arm64)
+      - name: Build and push (amd64)
+        # DEV IS SINGLE-ARCH (amd64). dev ECS Fargate runs x86_64, so the arm64
+        # half was pure emulation cost — a QEMU-emulated arm64 build took the API
+        # image ~22 min, ~2/3 of the whole run, for an image dev never boots. This
+        # restores the deliberate `1ca937570d` state ("dev single-arch, multi-arch
+        # on prod only") that the `cb9d12a1b3` pipeline rewrite silently undid.
+        # deploy-prod.yml keeps amd64+arm64. Registry layer cache makes warm builds
+        # reuse layers instead of every build being cold.
         # Bake the dev version (e.g. 0.9.7-dev.<sha8>) into the image so
         # /v1/health reports it. The immutable :dev-<sha8> tag (tag-api job below)
         # is the artifact's real identity.
@@ -304,8 +364,10 @@ jobs:
         with:
           context: .
           file: apps/api/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
+          cache-from: type=registry,ref=kortix/kortix-api:dev-buildcache
+          cache-to: type=registry,ref=kortix/kortix-api:dev-buildcache,mode=max
           build-args: |
             SERVICE=apps/api
             KORTIX_VERSION=${{ needs.dev-version.outputs.version }}
@@ -448,6 +510,7 @@ jobs:
     env:
       AWS_REGION: us-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"true"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -524,28 +587,29 @@ jobs:
   # ── Build + push the multi-arch gateway image ───────────────────────────────
   # Standalone LLM gateway (apps/llm-gateway). Same dev-<sha8> versioning as the API.
   build-gateway:
-    name: Build gateway image (multi-arch)
+    name: Build gateway image (amd64)
     needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with: { submodules: false }
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push (amd64 + arm64)
+      - name: Build and push (amd64)
+        # Single-arch amd64 for dev (see the API build for the full rationale).
         uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/llm-gateway/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
+          cache-from: type=registry,ref=kortix/kortix-gateway:dev-buildcache
+          cache-to: type=registry,ref=kortix/kortix-gateway:dev-buildcache,mode=max
           build-args: |
             KORTIX_VERSION=${{ needs.dev-version.outputs.version }}
             KORTIX_COMMIT=${{ github.sha }}
@@ -660,7 +724,7 @@ jobs:
   # ── Build + push the multi-arch frontend image ──────────────────────────────
   # The same immutable image serves Dev ECS and the self-host distribution.
   build-frontend:
-    name: Build frontend image (multi-arch)
+    name: Build frontend image (amd64)
     needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
@@ -689,21 +753,22 @@ jobs:
           NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.dev-version.outputs.version }}
           NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.sha }}
           NEXT_OUTPUT: standalone
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push (amd64 + arm64)
+      - name: Build and push (amd64)
+        # Single-arch amd64 for dev (see the API build for the full rationale).
         uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
+          cache-from: type=registry,ref=kortix/kortix-frontend:dev-buildcache
+          cache-to: type=registry,ref=kortix/kortix-frontend:dev-buildcache,mode=max
           tags: |
             kortix/kortix-frontend:dev-latest
       - name: Retag :dev-latest → :dev-<sha8>

@@ -1,3 +1,5 @@
+import { log } from './log';
+
 export interface TargetSmokeConfig {
   apiUrl: string;
   webUrl: string;
@@ -12,9 +14,19 @@ interface ApiHealth {
   commit?: string;
 }
 
+interface GatewayCheck {
+  status?: string;
+}
+
 interface GatewayHealth {
   status?: string;
   commit?: string;
+  incidents?: string[];
+  checks?: {
+    api?: GatewayCheck;
+    upstreams?: GatewayCheck;
+  };
+  traffic?: Record<string, unknown>;
 }
 
 function normalizedUrl(value: string, name: string): URL {
@@ -100,6 +112,60 @@ export function resolveTargetSmokeConfig(
   };
 }
 
+/**
+ * The gateway's `status` is NOT a serve-ability signal. `apps/llm-gateway`
+ * (`src/server.ts`) reports `degraded` whenever ANY incident is open, and one of
+ * those incidents is its own rolling TRAFFIC error rate:
+ *
+ *   status = !apiCheck.ok ? 'unhealthy' : incidents.length ? 'degraded' : 'healthy'
+ *   incidents ⊇ [`error rate ${pct}% over ${window}s`]
+ *
+ * On run 32240074477 attempt 1 every release-gate shard died in PREFLIGHT with
+ * `incidents: ["error rate 100% over 300s"]` while `checks.api.status == 'up'`
+ * and no upstream breaker was open. The only traffic in that window came from
+ * zombie test sessions holding dead credentials — i.e. the gate refused to start
+ * because of the previous gate's garbage.
+ *
+ * A traffic-derived `degraded` must never block preflight. What actually has to
+ * hold is that the gateway can reach the API and no upstream is hard-down.
+ * `unhealthy` (which the gateway serves with HTTP 503) still fails.
+ */
+export function assertGatewayPreflightHealth(
+  gateway: GatewayHealth,
+  logWarn: (message: string) => void = log.warn,
+): void {
+  const status = gateway.status;
+  if (status !== 'healthy' && status !== 'degraded') {
+    throw new Error(`staging gateway health contract failed: ${JSON.stringify(gateway)}`);
+  }
+
+  const apiCheck = gateway.checks?.api;
+  // `degraded` alone does not say WHY. Without `checks.api` there is no evidence
+  // the gateway can reach the API, so a degraded-and-opaque gateway still fails.
+  if (status === 'degraded' && apiCheck?.status === undefined) {
+    throw new Error(
+      `staging gateway is degraded without a checks.api verdict: ${JSON.stringify(gateway)}`,
+    );
+  }
+  if (apiCheck?.status !== undefined && apiCheck.status !== 'up') {
+    throw new Error(
+      `staging gateway cannot reach the API (checks.api.status=${apiCheck.status}): ${JSON.stringify(gateway)}`,
+    );
+  }
+  const upstreams = gateway.checks?.upstreams;
+  if (upstreams?.status === 'down') {
+    throw new Error(`staging gateway upstreams are down: ${JSON.stringify(gateway)}`);
+  }
+
+  if (status === 'degraded') {
+    logWarn(
+      'staging gateway reports degraded but is serving: ' +
+        `incidents=${JSON.stringify(gateway.incidents ?? [])} ` +
+        `traffic=${JSON.stringify(gateway.traffic ?? {})}`,
+    );
+  }
+}
+
 async function healthJson<T>(url: string, fetchImpl: typeof fetch): Promise<T> {
   const response = await fetchImpl(url, { signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`${url} returned ${response.status}`);
@@ -117,9 +183,7 @@ export async function assertTargetSmokeHealth(
   if (api.status !== 'ok' || api.environment !== config.environment) {
     throw new Error(`${config.environment} API health contract failed: ${JSON.stringify(api)}`);
   }
-  if (gateway.status !== 'healthy') {
-    throw new Error(`staging gateway health contract failed: ${JSON.stringify(gateway)}`);
-  }
+  assertGatewayPreflightHealth(gateway);
   if (api.commit !== config.expectedSha || gateway.commit !== config.expectedSha) {
     throw new Error(
       `${config.environment} SHA mismatch: expected=${config.expectedSha} api=${api.commit ?? 'missing'} gateway=${gateway.commit ?? 'missing'}`,

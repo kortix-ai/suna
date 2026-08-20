@@ -119,6 +119,7 @@ describe('local test runner', () => {
       'target-browser-smoke',
     ]);
     expect(plan.lanes[0]?.command).toEqual(['bun', 'tests/bin/ke2e.ts', 'run', '--smoke']);
+    expect(plan.lanes[0]?.env).toEqual({ KE2E_FLOW_TIMEOUT_MS: '180000' });
     expect(plan.lanes[1]?.command).toEqual([
       'bun',
       'run',
@@ -179,12 +180,42 @@ describe('local test runner', () => {
       expect(buildLocalTestPlan(['--target-full']).lanes[0]?.env).toEqual({
         KE2E_API_WORKERS: '6',
         KE2E_SANDBOX_WORKERS: '3',
+        KE2E_FLOW_TIMEOUT_MS: '180000',
       });
       process.env.KE2E_API_WORKERS = '3';
       expect(buildLocalTestPlan(['--target-full']).lanes[0]?.env?.KE2E_API_WORKERS).toBe('3');
     } finally {
       if (previous === undefined) delete process.env.KE2E_API_WORKERS;
       else process.env.KE2E_API_WORKERS = previous;
+    }
+  });
+
+  it('gives every deployed lane a 180s flow budget, still overridable by env', () => {
+    // Run 32231251280 lost ~50% of its flows to `exceeded 120000ms` against live
+    // staging. The 120s runner default is a LOCAL-stack number.
+    const previous = process.env.KE2E_FLOW_TIMEOUT_MS;
+    delete process.env.KE2E_FLOW_TIMEOUT_MS;
+    try {
+      for (const args of [['--target-smoke'], ['--target-api-full'], ['--target-full']]) {
+        expect(buildLocalTestPlan(args).lanes[0]?.env?.KE2E_FLOW_TIMEOUT_MS).toBe('180000');
+      }
+      process.env.KE2E_FLOW_TIMEOUT_MS = '240000';
+      expect(buildLocalTestPlan(['--target-api-full']).lanes[0]?.env?.KE2E_FLOW_TIMEOUT_MS).toBe(
+        '240000',
+      );
+    } finally {
+      if (previous === undefined) delete process.env.KE2E_FLOW_TIMEOUT_MS;
+      else process.env.KE2E_FLOW_TIMEOUT_MS = previous;
+    }
+  });
+
+  it('never raises the flow budget on a local lane', () => {
+    // The local stack keeps the 120s default; only deployed targets pay the
+    // Cloudflare + real-cloud-sandbox tax.
+    for (const args of [[], ['--browser-only'], ['--full'], ['--id', 'ACC-4']]) {
+      for (const lane of buildLocalTestPlan(args).lanes) {
+        expect(lane.env?.KE2E_FLOW_TIMEOUT_MS).toBeUndefined();
+      }
     }
   });
 

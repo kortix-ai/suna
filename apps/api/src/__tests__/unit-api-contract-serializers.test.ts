@@ -360,7 +360,6 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'OPENAI_API_KEY',
       shared: secretRow(),
       canManageShared: true,
-      projectMetadata: undefined,
     });
     expect(SecretSchema.strict().parse(out)).toEqual(out);
     expect(out.effective_source).toBe('shared');
@@ -381,7 +380,6 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'OPENAI_API_KEY',
       shared: secretRow({ strategy: 'denied', rotatedAt: null }),
       canManageShared: true,
-      projectMetadata: undefined,
     });
 
     expect(SecretSchema.strict().parse(out)).toEqual(out);
@@ -403,7 +401,6 @@ describe('buildSecretView ⇄ SecretSchema', () => {
         updatedAt: new Date('2026-08-03T10:00:00.000Z'),
       }),
       canManageShared: true,
-      projectMetadata: undefined,
     });
 
     expect(SecretSchema.strict().parse(out)).toEqual(out);
@@ -421,7 +418,6 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'OPENAI_API_KEY',
       shared: secretRow({ strategy: 'broker', consumer: 'http_broker', egressPolicy }),
       canManageShared: true,
-      projectMetadata: undefined,
     });
 
     expect(SecretSchema.strict().parse(out)).toEqual(out);
@@ -439,7 +435,6 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'OPENAI_API_KEY',
       shared: secretRow({ strategy: 'broker', consumer: 'llm_gateway' }),
       canManageShared: true,
-      projectMetadata: undefined,
     });
 
     expect(SecretSchema.strict().parse(out)).toEqual(out);
@@ -457,14 +452,12 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'GOOGLE_MAPS_API_KEY',
       shared: secretRow({ identifier: 'GMAPS-primary', name: 'GOOGLE_MAPS_API_KEY' }),
       canManageShared: true,
-      projectMetadata: undefined,
     });
     const backup = buildSecretView({
       identifier: 'GMAPS-backup',
       name: 'GOOGLE_MAPS_API_KEY',
       shared: secretRow({ identifier: 'GMAPS-backup', name: 'GOOGLE_MAPS_API_KEY' }),
       canManageShared: true,
-      projectMetadata: undefined,
     });
     expect(SecretSchema.strict().parse(primary)).toEqual(primary);
     expect(SecretSchema.strict().parse(backup)).toEqual(backup);
@@ -478,7 +471,6 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'OPENAI_API_KEY',
       personal: secretRow({ ownerUserId: USER_ID }),
       canManageShared: false,
-      projectMetadata: undefined,
     });
     const parsed = SecretSchema.strict().parse(out);
     expect(parsed.configured).toBe(false);
@@ -492,7 +484,6 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'KORTIX_GIT_AUTH_TOKEN',
       shared: secretRow({ identifier: 'KORTIX_GIT_AUTH_TOKEN', name: 'KORTIX_GIT_AUTH_TOKEN' }),
       canManageShared: true,
-      projectMetadata: undefined,
     });
     const parsed = SecretSchema.strict().parse(out);
     expect(parsed.system).toBe(true);

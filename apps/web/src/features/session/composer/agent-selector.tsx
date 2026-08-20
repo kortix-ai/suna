@@ -91,9 +91,16 @@ export function AgentSelector({
   // user's own query with it.
   const showSearch = primaryAgents.length >= SEARCH_MIN_AGENTS;
 
-  const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
-  const displayName = currentAgent?.name ? capitalizeWords(currentAgent.name) : 'Agent';
-  const metaSelected = isMetaAgentName(currentAgent?.name);
+  // The trigger names the agent that will RUN, which is `selectedAgent` even
+  // when the roster does not (yet) contain it: a session bound to `kortix`
+  // must read "Kortix" while the roster query is still in flight, not whatever
+  // happens to be first in someone else's list. The `primaryAgents[0]`
+  // fallback stays only for a truly unresolved selection (no name at all),
+  // matching the resolver's own first-accessible pre-selection.
+  const currentAgent = primaryAgents.find((a) => a.name === selectedAgent);
+  const displayedName = currentAgent?.name ?? selectedAgent ?? primaryAgents[0]?.name;
+  const displayName = displayedName ? capitalizeWords(displayedName) : 'Agent';
+  const metaSelected = isMetaAgentName(displayedName);
 
   /**
    * One agent: name, its type, its description, and a check when it is the
@@ -193,7 +200,13 @@ export function AgentSelector({
   return (
     <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
       <CommandPopoverTrigger>
-        <Button type="button" variant="ghost" size="sm" className="text-foreground/70 rounded-lg">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label="Select agent"
+          className="text-foreground/70 rounded-lg"
+        >
           {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
           <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
           <CaretDownIcon className={cn('size-3', open && 'rotate-180')} />

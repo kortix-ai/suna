@@ -213,6 +213,26 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
+  // The immutable agent this session was created with — known BEFORE the
+  // sandbox is ready (the sessions-list row is usually already cached from the
+  // sidebar; `/start`'s first response carries it as well). Handed to every
+  // composer on this route so the picker renders the session's real agent from
+  // the first frame instead of guessing `selectable[0]` from the roster while
+  // booting, then "correcting" itself once ready. `'default'` is the server's
+  // spelling of "no agent bound" (see shared.ts serializers), not a roster
+  // agent — it must not shadow the project default.
+  // The start-stash covers the window BEFORE either server source answers: on
+  // the optimistic home→session redirect the producer stashed the picked agent
+  // under this route id (`writeStartStash`), and the picker must not fall back
+  // to the project default for the second it takes /start to respond. Lazy
+  // state, read once per mount: the stash is consumed later in this session's
+  // life, and re-reading it on every render would flip this back to null.
+  const [stashAgentName] = useState(() => readStartStash(sessionId)?.agent?.trim() || null);
+  const listAgentName = currentProjectSession?.agent_name?.trim();
+  const boundAgentName =
+    (listAgentName && listAgentName !== 'default' ? listAgentName : null) ??
+    session.agentName ??
+    stashAgentName;
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
   const completeSessionSwitch = useSessionSwitchStore((state) => state.completeSwitch);
 
@@ -690,6 +710,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                   projectId={projectId}
                   sessionId={sessionId}
                   sessionState={session}
+                  boundAgentName={boundAgentName}
                   onChatReady={() => setChatReady(true)}
                 />
               )}
@@ -712,6 +733,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                 projectId={projectId}
                 sessionId={sessionId}
                 stage={authLoading || !user ? 'provisioning' : startStage}
+                boundAgentName={boundAgentName}
                 onSubmit={() => setSubmittedOnShell(true)}
               />
             ) : (
@@ -827,11 +849,15 @@ function ActiveSessionChat({
   projectId,
   sessionId,
   sessionState,
+  boundAgentName,
   onChatReady,
 }: {
   projectId: string;
   sessionId: string;
   sessionState: UseSessionResult;
+  /** The session's immutable creation agent, resolved by the page (sessions
+   *  list row, falling back to /start's `agent_name`). */
+  boundAgentName?: string | null;
   onChatReady?: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -1000,6 +1026,7 @@ function ActiveSessionChat({
           sessionId={chatSessionId}
           projectSessionId={sessionId}
           projectId={projectId}
+          boundAgentName={boundAgentName}
           sessionState={chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined}
         />
       </ClientErrorBoundary>

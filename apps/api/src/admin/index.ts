@@ -370,24 +370,17 @@ adminApp.openapi(
       }
     }
 
-    await db
-      .update(accountMembers)
-      .set({ accountRole: role })
-      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
-    // …and the canonical assignment. `SYSTEM_ACTOR`: the writer is a platform
-    // operator, not a member of this account — they hold no role in it to
-    // authorize against, which is exactly what the platform-admin gate on this
-    // route already established.
-    try {
-      await assignRole(assignmentsModule.SYSTEM_ACTOR, accountId, {
-        principal: { type: 'user', id: userId },
-        roleKey: role,
-        scope: { type: 'account' },
-        source: 'system',
-      });
-    } catch (err) {
-      console.warn('[admin] canonical account-role assignment failed', err);
-    }
+    // THE write. `SYSTEM_ACTOR`: the writer is a platform operator, not a member
+    // of this account — they hold no role in it to authorize against, which is
+    // exactly what the platform-admin gate on this route already established.
+    // `exclusive` retracts the role being replaced, so a demotion is a demotion.
+    await assignRole(assignmentsModule.SYSTEM_ACTOR, accountId, {
+      principal: { type: 'user', id: userId },
+      roleKey: role,
+      scope: { type: 'account' },
+      source: 'system',
+      exclusive: true,
+    });
 
     try {
       const { recordAuditEvent } = await import('../shared/audit');

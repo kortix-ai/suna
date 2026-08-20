@@ -107,10 +107,14 @@ export function createInternalGatewayRoutes() {
   });
 
   app.post('/models', async (c) => {
-    const { principal } = await c.req.json();
+    const { principal, managedOnly } = await c.req.json();
     const p = principal as AuthedPrincipal;
+    // `managedOnly` backs the standalone gateway's `GET /models?scope=managed`
+    // — the compact managed lineup a sandbox fetches on boot. Dropping the
+    // projectId is what selects MANAGED_ONLY; free-tier accounts still get an
+    // empty managed set.
     return c.json({
-      models: gatewayModelCatalog(p.projectId, {
+      models: gatewayModelCatalog(managedOnly === true ? undefined : p.projectId, {
         freeManagedOnly: !!p.freeModelsOnly,
       }),
     });

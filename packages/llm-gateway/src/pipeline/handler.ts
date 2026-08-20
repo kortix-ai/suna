@@ -156,7 +156,7 @@ function requestHasImage(body: Record<string, unknown>): boolean {
 // a few times — before falling over to a different candidate, and before ever
 // giving up — resolves the overwhelming majority of these transparently,
 // including the common case where there is only one candidate to begin with.
-const MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE = 3;
+export const MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE = 3;
 
 function idOf(principal: AuthedPrincipal) {
   return {
@@ -172,7 +172,7 @@ function idOf(principal: AuthedPrincipal) {
 // Uses the host's combined `authorize` hook when present (one call), else the
 // granular authenticate + assertBillingActive + assertBudget hooks. Returns a
 // uniform AuthorizeResult so the handler renders one response/trace either way.
-async function admit(
+export async function admit(
   hooks: GatewayHooks,
   token: string,
   lap: () => number,

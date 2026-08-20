@@ -18,7 +18,6 @@ import {
 } from '../iam/actor';
 import { isImplicitManager, tokenScopeAllows, type Obj } from '../iam/authorize';
 import { scopeForUncatalogedAction } from '../iam/catalog';
-import { normalizeOldReason } from '../iam/parity-harness';
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const SA = '22222222-2222-4222-8222-222222222222';
@@ -198,27 +197,3 @@ describe('pendingPrincipalId', () => {
   });
 });
 
-describe('normalizeOldReason (the parity harness mapping)', () => {
-  test('collapses the three allow reasons and leaves every denial alone', () => {
-    expect(normalizeOldReason(true, 'account_role')).toBe('role');
-    expect(normalizeOldReason(true, 'project_role')).toBe('role');
-    expect(normalizeOldReason(true, 'custom_policy')).toBe('role');
-    expect(normalizeOldReason(true, 'super_admin')).toBe('super_admin');
-    expect(normalizeOldReason(true, 'impersonation')).toBe('impersonation');
-    for (const r of [
-      'not_a_member',
-      'token_out_of_scope',
-      'account_mfa_required',
-      'account_role_insufficient',
-      'project_role_insufficient',
-      'no_project_membership',
-      'service_account_scope_insufficient',
-      'resource_scope_insufficient',
-      'agent_scope_insufficient',
-      'project_target_required',
-      'impersonation_scope',
-    ]) {
-      expect(normalizeOldReason(false, r)).toBe(r);
-    }
-  });
-});

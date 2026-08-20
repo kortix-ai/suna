@@ -63,6 +63,23 @@ export interface AssignRoleInput {
    * been permanently empty once the legacy tables are dropped at cutover.
    */
   grantedBy?: string | null;
+  /**
+   * "This principal holds at most ONE system role at this scope."
+   *
+   * The legacy stores enforced it with a primary key: `project_members` was
+   * keyed (project_id, user_id), `project_group_grants` (project_id, group_id),
+   * and `account_members` held one `account_role` column — so an UPSERT there
+   * REPLACED the previous role. `role_assignments` is keyed by the role too, so
+   * a plain upsert would leave `owner` standing beside the `admin` that was
+   * meant to demote it, and the engine unions roles.
+   *
+   * With this set, every OTHER live system-role assignment the principal holds
+   * at the same scope (same project, or account scope) is revoked in the same
+   * call, each with its own `iam.assignment.revoked` event. Object assignments
+   * (`object_type` set) and CUSTOM-role assignments are untouched — they are a
+   * different axis and legitimately coexist.
+   */
+  exclusive?: boolean;
 }
 
 export interface AssignmentRow {
@@ -247,10 +264,80 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
     updatedAt: new Date(raw.updated_at as string),
   };
 
+  if (input.exclusive && role.isSystem) {
+    await retractSiblingSystemRoles(writer, accountId, row);
+  }
+
   await bustCachesFor(input.principal, scopeId);
   await audit(writer, accountId, 'iam.assignment.granted', row.assignmentId, null, describe(row, role.key));
 
   return row;
+}
+
+/**
+ * Revoke every OTHER live SYSTEM-role assignment this principal holds at this
+ * scope — the replacement half of an `exclusive` grant.
+ *
+ * Deletes directly rather than calling `revokeAssignment`: that function runs
+ * the last-owner and last-membership guards, which would 409 the very demotion
+ * this is completing (owner -> admin removes the only `owner` row before the
+ * `admin` row is counted as membership). The caller has already validated the
+ * change; the audit event is still emitted per row, so the trail is complete.
+ */
+async function retractSiblingSystemRoles(
+  writer: Writer,
+  accountId: string,
+  kept: AssignmentRow,
+): Promise<void> {
+  const rows = await listAssignments({
+    accountId,
+    principal: { type: kept.principalType as PrincipalRef['type'], id: kept.principalId },
+    scopeType: kept.scopeType as ScopeType,
+    ...(kept.scopeId ? { scopeId: kept.scopeId } : {}),
+    liveOnly: false,
+  });
+  for (const row of rows) {
+    if (row.assignmentId === kept.assignmentId) continue;
+    if (!row.roleIsSystem) continue;
+    if (row.objectType !== null) continue;
+    if (row.scopeId !== kept.scopeId) continue;
+    await db.delete(roleAssignments).where(eq(roleAssignments.assignmentId, row.assignmentId));
+    await audit(writer, accountId, 'iam.assignment.revoked', row.assignmentId, describe(row, row.roleKey), null);
+  }
+}
+
+/**
+ * Revoke the SYSTEM project-role assignments a principal holds on ONE project.
+ *
+ * The legacy shape of this was `DELETE FROM project_members WHERE project_id = ?
+ * AND user_id = ?` (and its group-grant twin), which the routes issued after
+ * asserting `project.members.manage`. `skipWriterAuthz` carries that forward:
+ * the permission was checked at the route, and re-deriving it here would demand
+ * a different one. Object assignments and custom-role bindings are left alone —
+ * removing someone's project ROLE is not removing their per-agent grants.
+ *
+ * Returns how many assignments were revoked.
+ */
+export async function revokeProjectRole(
+  writer: Writer,
+  accountId: string,
+  projectId: string,
+  principal: PrincipalRef,
+): Promise<number> {
+  const rows = await listAssignments({
+    accountId,
+    principal,
+    scopeType: 'project',
+    scopeId: projectId,
+    liveOnly: false,
+  });
+  let revoked = 0;
+  for (const row of rows) {
+    if (!row.roleIsSystem || row.objectType !== null) continue;
+    await revokeAssignment(writer, accountId, row.assignmentId, { skipWriterAuthz: true });
+    revoked += 1;
+  }
+  return revoked;
 }
 
 /**
@@ -363,17 +450,13 @@ export async function revokeAssignment(
   await assertNotLastOwner(accountId, existing);
   await assertNotLastMembership(accountId, existing);
 
-  // The canonical row AND the legacy row it mirrors, in ONE transaction.
-  //
-  // The dual-write triggers are one-way (legacy -> canonical) by design, so
-  // deleting only the canonical row leaves the legacy row standing — and any
-  // later UPDATE of it, from a pre-cutover replica or a support script, would
-  // re-derive the assignment this call just revoked. A revoke that a rolling
-  // deploy can silently undo is not a revoke.
-  await db.transaction(async (tx) => {
-    await deleteLegacyMirror(tx, accountId, existing);
-    await tx.delete(roleAssignments).where(eq(roleAssignments.assignmentId, assignmentId));
-  });
+  // ONE row, in ONE store. Until the cutover this had to delete a legacy mirror
+  // row as well, or a later UPDATE of it — from a pre-cutover replica or a
+  // support script — would have re-derived the assignment this call just
+  // revoked. `project_members`, `project_group_grants`, `iam_policies` and
+  // `iam_resource_grants` are VIEWS over this table now, so deleting the row
+  // deletes the legacy row: they are the same row.
+  await db.delete(roleAssignments).where(eq(roleAssignments.assignmentId, assignmentId));
 
   await bustCachesFor(
     { type: existing.principalType as PrincipalRef['type'], id: existing.principalId },
@@ -663,143 +746,6 @@ async function assertNotLastMembership(accountId: string, row: AssignmentRow): P
       message:
         'this is the principal’s only account role — removing it removes their membership. Use DELETE /accounts/{accountId}/members/{userId}, which also revokes their tokens and releases the seat.',
     });
-  }
-}
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-/**
- * The strongest SYSTEM project role this principal still holds on this project
- * once `row` is gone, or null when `row` was the last one.
- */
-async function strongestRemainingProjectRole(
-  tx: Tx,
-  accountId: string,
-  row: AssignmentRow,
-): Promise<string | null> {
-  const res = await tx.execute(sql`
-    select r.key
-      from kortix.role_assignments ra
-      join kortix.iam_roles r on r.role_id = ra.role_id
-     where ra.account_id = ${accountId}::uuid
-       and ra.principal_type = ${row.principalType}
-       and ra.principal_id = ${row.principalId}::uuid
-       and ra.scope_type = 'project'
-       and ra.scope_id = ${row.scopeId}::uuid
-       and ra.object_type is null
-       and ra.assignment_id <> ${row.assignmentId}::uuid
-       and r.account_id is null
-       and r.key <> 'agent-user'
-       and (ra.expires_at is null or ra.expires_at > now())
-     order by case r.key when 'manager' then 2 else 1 end desc
-     limit 1
-  `);
-  const rows = (res as unknown as { rows?: Array<{ key: string }> }).rows ??
-    (res as unknown as Array<{ key: string }>);
-  return rows[0]?.key ?? null;
-}
-
-/**
- * Delete the LEGACY row this assignment is mirrored by, if any.
- *
- * One case per legacy store, and the account case is a re-point rather than a
- * delete: `account_members.account_role` cannot express "no role", and the row
- * itself is identity (is_super_admin, scim_external_id, joined_at) that a role
- * revoke must not destroy. `assertNotLastMembership` has already guaranteed at
- * least one other account-scope role survives, so there is always something to
- * re-point at.
- */
-async function deleteLegacyMirror(tx: Tx, accountId: string, row: AssignmentRow): Promise<void> {
-  const principal = row.principalType;
-
-  if (row.objectType !== null) {
-    await tx.execute(sql`
-      delete from kortix.iam_resource_grants
-       where account_id = ${accountId}::uuid
-         and project_id = ${row.scopeId}::uuid
-         and resource_type = ${row.objectType}
-         and resource_id = ${row.objectId}
-         and principal_type = ${principal === 'group' ? 'group' : 'member'}
-         and principal_id = ${row.principalId}::uuid
-    `);
-    return;
-  }
-
-  if (!row.roleIsSystem) {
-    const legacyPrincipal =
-      principal === 'user' ? 'member' : principal === 'service_account' ? 'token' : principal;
-    await tx.execute(sql`
-      delete from kortix.iam_policies
-       where account_id = ${accountId}::uuid
-         and principal_type = ${legacyPrincipal}
-         and principal_id = ${row.principalId}::uuid
-         and role_id = ${row.roleId}::uuid
-         and scope_type = ${row.scopeType}
-         and scope_id is not distinct from ${row.scopeId}::uuid
-    `);
-    return;
-  }
-
-  if (row.scopeType === 'project' && (principal === 'group' || principal === 'user')) {
-    // The legacy tables hold ONE row per (principal, project); the canonical
-    // store lets a `member` and a `manager` assignment coexist. Deleting the
-    // legacy row while another assignment survives would retract that one too,
-    // through the very trigger this is keeping in step — so re-point when
-    // something remains and delete only when nothing does.
-    const remaining = await strongestRemainingProjectRole(tx, accountId, row);
-    if (principal === 'group') {
-      if (remaining) {
-        await tx.execute(sql`
-          update kortix.project_group_grants
-             set role = ${remaining}::kortix.project_role
-           where project_id = ${row.scopeId}::uuid and group_id = ${row.principalId}::uuid
-        `);
-      } else {
-        await tx.execute(sql`
-          delete from kortix.project_group_grants
-           where project_id = ${row.scopeId}::uuid and group_id = ${row.principalId}::uuid
-        `);
-      }
-      return;
-    }
-    if (remaining) {
-      await tx.execute(sql`
-        update kortix.project_members
-           set project_role = ${remaining}::kortix.project_role
-         where project_id = ${row.scopeId}::uuid and user_id = ${row.principalId}::uuid
-      `);
-    } else {
-      await tx.execute(sql`
-        delete from kortix.project_members
-         where project_id = ${row.scopeId}::uuid and user_id = ${row.principalId}::uuid
-      `);
-    }
-    return;
-  }
-
-  if (row.scopeType === 'account' && principal === 'user') {
-    // Re-point at the strongest role that survives this revoke. The trigger on
-    // this UPDATE then retracts any OTHER system account-scope assignment, so
-    // the column and the store agree when the transaction commits.
-    await tx.execute(sql`
-      update kortix.account_members m
-         set account_role = (
-           select r.key
-             from kortix.role_assignments ra
-             join kortix.iam_roles r on r.role_id = ra.role_id
-            where ra.account_id = ${accountId}::uuid
-              and ra.principal_type = 'user'
-              and ra.principal_id = ${row.principalId}::uuid
-              and ra.scope_type = 'account'
-              and ra.assignment_id <> ${row.assignmentId}::uuid
-              and r.account_id is null
-              and (ra.expires_at is null or ra.expires_at > now())
-            order by case r.key when 'owner' then 3 when 'admin' then 2 else 1 end desc
-            limit 1
-         )::kortix.account_role
-       where m.account_id = ${accountId}::uuid
-         and m.user_id = ${row.principalId}::uuid
-    `);
   }
 }
 

@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+runtime_versions=/opt/kortix/runtime-versions.json
+tool_name="$(basename "$0")"
+
+managed_python_base() {
+  local python_version python_bin
+  python_version="$(node -e "console.log(require('${runtime_versions}').python)")"
+  python_bin="$(uv python find --managed-python "${python_version}" 2>/dev/null || true)"
+  if [ -z "${python_bin}" ]; then
+    uv python install "${python_version}"
+    python_bin="$(uv python find --managed-python "${python_version}")"
+  fi
+  printf '%s' "${python_bin}"
+}
+
+managed_python() {
+  local document_python=/home/kortix/.local/share/kortix/python/bin/python
+  if [ -x "${document_python}" ]; then
+    printf '%s' "${document_python}"
+    return
+  fi
+  managed_python_base
+}
+
+install_apt_packages() {
+  exec 7>/tmp/kortix-toolpack-apt.lock
+  flock 7
+  sudo apt-get update >&2
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@" >&2
+  sudo rm -rf /var/lib/apt/lists/* >&2
+  flock -u 7
+}
+
+install_development() {
+  local marker=/opt/kortix/toolpacks/development.ready
+  [ -f "${marker}" ] && return
+  exec 6>/tmp/kortix-toolpack-development.lock
+  flock 6
+  [ -f "${marker}" ] && return
+  install_apt_packages build-essential pkg-config
+  mkdir -p "$(dirname "${marker}")"
+  touch "${marker}"
+}
+
+install_documents() {
+  local marker=/opt/kortix/toolpacks/documents.ready
+  [ -f "${marker}" ] && return
+  exec 9>/tmp/kortix-toolpack-documents.lock
+  flock 9
+  [ -f "${marker}" ] && return
+  install_apt_packages \
+    ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk latexmk \
+    libreoffice pandoc poppler-utils qpdf tesseract-ocr texlive-bibtex-extra \
+    texlive-fonts-recommended texlive-latex-base texlive-latex-extra \
+    texlive-latex-recommended
+  local python_bin python_env
+  local anydoc_version
+  python_bin="$(managed_python_base)"
+  python_env=/home/kortix/.local/share/kortix/python
+  anydoc_version="$(node -e "console.log(require('${runtime_versions}').anydoc)")"
+  mapfile -t python_specs < <(
+    node -e "const p=require('${runtime_versions}').pythonPackages; for (const k of Object.keys(p).sort()) console.log(k+'=='+p[k])"
+  )
+  if [ ! -x "${python_env}/bin/python" ]; then
+    uv venv --python "${python_bin}" "${python_env}"
+  fi
+  uv pip install --python "${python_env}/bin/python" "${python_specs[@]}"
+  pnpm add -g "@firecrawl/anydoc@${anydoc_version}" >&2
+  mkdir -p "$(dirname "${marker}")"
+  touch "${marker}"
+}
+
+install_browser() {
+  local marker=/opt/kortix/toolpacks/browser.ready
+  [ -f "${marker}" ] && return
+  exec 8>/tmp/kortix-toolpack-browser.lock
+  flock 8
+  [ -f "${marker}" ] && return
+  local agent_browser_version playwright_version chrome
+  agent_browser_version="$(node -e "console.log(require('${runtime_versions}').agentBrowser)")"
+  playwright_version="$(node -e "console.log(require('${runtime_versions}').playwright)")"
+  pnpm add -g --allow-build=agent-browser "agent-browser@${agent_browser_version}" >&2
+  exec 7>/tmp/kortix-toolpack-apt.lock
+  flock 7
+  PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
+    pnpm dlx "playwright@${playwright_version}" install --with-deps chromium >&2
+  flock -u 7
+  chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)"
+  test -n "${chrome}"
+  ln -sf "${chrome}" /home/kortix/.local/bin/chromium
+  mkdir -p /home/kortix/.agent-browser/browsers
+  ln -sfn "$(dirname "${chrome}")" /home/kortix/.agent-browser/browsers/chrome-linux64
+  mkdir -p "$(dirname "${marker}")"
+  touch "${marker}"
+}
+
+install_pack() {
+  case "${1:-}" in
+    development) install_development ;;
+    browser) install_browser ;;
+    documents) install_documents ;;
+    all) install_development; install_browser; install_documents ;;
+    *) echo 'usage: kortix-toolpack <development|browser|documents|all>' >&2; return 2 ;;
+  esac
+}
+
+case "${tool_name}" in
+  kortix-toolpack)
+    install_pack "${1:-}"
+    ;;
+  python|python3)
+    python_bin="$(managed_python)"
+    exec "${python_bin}" "$@"
+    ;;
+  agent-browser)
+    install_browser
+    exec /home/kortix/.local/share/pnpm/bin/agent-browser "$@"
+    ;;
+  chromium)
+    install_browser
+    exec /home/kortix/.local/bin/chromium "$@"
+    ;;
+  make|gcc|g++|cc|c++|pkg-config)
+    install_development
+    exec "/usr/bin/${tool_name}" "$@"
+    ;;
+  anydoc|libreoffice|pandoc|pdftotext|qpdf|tesseract|ffmpeg|latexmk)
+    install_documents
+    if [ "${tool_name}" = anydoc ]; then
+      exec /home/kortix/.local/share/pnpm/bin/anydoc "$@"
+    fi
+    exec "/usr/bin/${tool_name}" "$@"
+    ;;
+  *)
+    echo "unsupported lazy tool: ${tool_name}" >&2
+    exit 2
+    ;;
+esac

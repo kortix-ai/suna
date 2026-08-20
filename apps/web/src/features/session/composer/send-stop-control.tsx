@@ -87,6 +87,7 @@ export function SendStopControl({
         >
           <Button
             size="icon-base"
+            aria-label="Stop"
             onClick={onStop}
             disabled={stopDisabled || !onStop}
             className={ICON_BUTTON}

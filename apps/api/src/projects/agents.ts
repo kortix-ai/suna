@@ -1,4 +1,4 @@
-import { canonicalizeGrantConnectors } from '../iam/agent-scope';
+import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../iam/agent-scope';
 /**
  * `agents` block parsing for `kortix.yaml` (a legacy v1 project may instead
  * declare `[[agents]]` in `kortix.toml` — both are parsed here).
@@ -349,15 +349,22 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
 
   const spec = loaded.specs.find((s) => s.name === agentName && s.enabled);
   if (spec) {
-    // Canonicalize the connector list here so all three gates (catalog, call,
-    // session-create) compare the same spelling — a manifest may say `email` or
-    // `kortix_email` and both must mean the same connector.
-    return canonicalizeGrantConnectors({
-      agent: agentName,
-      kortixCli: spec.kortixCli,
-      connectors: spec.connectors,
-      env: spec.env,
-    });
+    // Canonicalize the manifest's spellings here, ONCE, so every gate compares
+    // canonical to canonical:
+    //   * connectors — a manifest may say `email` or `kortix_email` and both
+    //     must mean the same connector (catalog / call / session-create);
+    //   * kortix_cli actions — `project.cr.open` / `project.cr.merge` were
+    //     collapsed into the gitops leaves (spec §2.4) and are no longer in the
+    //     catalog, so a manifest written before that must be rewritten, not
+    //     aliased at every check.
+    return canonicalizeGrantActions(
+      canonicalizeGrantConnectors({
+        agent: agentName,
+        kortixCli: spec.kortixCli,
+        connectors: spec.connectors,
+        env: spec.env,
+      }),
+    );
   }
 
   // The `default` sentinel is non-binding for v1: no agent is ever named
@@ -381,16 +388,17 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     if (loaded.defaultAgent) {
       const declared = loaded.specs.find((s) => s.name === loaded.defaultAgent && s.enabled);
       if (declared) {
-        // Canonicalize here for the SAME reason the concrete-agent branch does
-        // (see above): catalog / call / create all compare canonical slugs, so
-        // a manifest that writes `email` rather than `kortix_email` would be
-        // silently denied at the call gate.
-        return canonicalizeGrantConnectors({
-          agent: loaded.defaultAgent,
-          kortixCli: declared.kortixCli,
-          connectors: declared.connectors,
-          env: declared.env,
-        });
+        // Canonicalize here for the SAME reasons the concrete-agent branch does
+        // (see above): every gate compares canonical spellings, for connectors
+        // and for kortix_cli actions alike.
+        return canonicalizeGrantActions(
+          canonicalizeGrantConnectors({
+            agent: loaded.defaultAgent,
+            kortixCli: declared.kortixCli,
+            connectors: declared.connectors,
+            env: declared.env,
+          }),
+        );
       }
     }
     // A project locks down its default by setting `default_agent` to a

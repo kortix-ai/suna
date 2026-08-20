@@ -15,7 +15,7 @@
 // next sign-in stomping it.
 
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { accountGroupMembers, accountGroups, accountInvitations, accountMembers } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accountMemberships } from '@kortix/db';
 import { db } from '../shared/db';
 import { assignRole, SYSTEM_ACTOR } from './assignments';
 import { invalidateIamCacheForUser } from './cache-invalidation';
@@ -274,34 +274,32 @@ export async function syncSsoMembership(args: {
     if (!provider.autoCreateMembers) {
       return { skipped: false, memberCreated: false };
     }
+    // IDENTITY, then the ROLE. Two stores since the cutover.
     await db
-      .insert(accountMembers)
-      .values({
-        accountId: provider.accountId,
-        userId: args.userId,
-        // SAML users default to 'member'. Real privileges come from group
-        // mappings; this row is identity + the membership baseline.
-        accountRole: 'member',
-      })
+      .insert(accountMemberships)
+      .values({ accountId: provider.accountId, userId: args.userId })
       .onConflictDoNothing();
-    // …and the canonical grant, through the ONE write path. SSO JIT keeps
-    // bypassing user-authz by design — an IdP is not a user, and this runs
-    // inside the auth middleware where there is no caller to authorize — but it
-    // no longer bypasses the audit trail or the cache contract: `SYSTEM_ACTOR`
-    // skips only `assertWriterMayAssign`, and `source: 'sso'` records WHY the
-    // row exists so an admin reading the assignment can tell an IdP-provisioned
-    // membership from one a human granted.
+    // The ROLE, through the ONE write path. SAML users default to `member`; real
+    // privileges come from the group mappings below.
     //
-    // Best-effort: a failure here must not fail the SAML request. The mirror
-    // trigger on account_members has already written the same row inside the
-    // INSERT above, so the engine is correct either way; what a throw would cost
-    // is the audit event, not the grant.
+    // SSO JIT keeps bypassing user-authz by design — an IdP is not a user, and
+    // this runs inside the auth middleware where there is no caller to
+    // authorize — but it does not bypass the audit trail or the cache contract:
+    // `SYSTEM_ACTOR` skips only `assertWriterMayAssign`, and `source: 'sso'`
+    // records WHY the row exists, so an admin reading the assignment can tell an
+    // IdP-provisioned membership from one a human granted.
+    //
+    // Still best-effort: this runs inside the auth middleware on EVERY SAML
+    // request, and a grant-store hiccup must not turn into a failed login. The
+    // identity row above is what makes the person a member; a missing assignment
+    // is re-created on their next request.
     try {
       await assignRole(SYSTEM_ACTOR, provider.accountId, {
         principal: { type: 'user', id: args.userId },
         roleKey: 'member',
         scope: { type: 'account' },
         source: 'sso',
+        exclusive: true,
       });
     } catch (err) {
       console.warn('[sso-sync] canonical membership assignment failed', {

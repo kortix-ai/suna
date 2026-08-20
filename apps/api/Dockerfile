@@ -16,7 +16,7 @@ FROM oven/bun:${BUN_VERSION}-slim AS base
 # App snapshots are built at API runtime. The deployed API image therefore
 # carries the exact supervisor and ingress binaries that every provider adds to
 # a user image.
-FROM golang:1.26-bookworm AS app-runtime
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS app-runtime
 
 WORKDIR /runtime
 COPY apps/kortix-app-runtime/go.mod apps/kortix-app-runtime/main.go ./
@@ -34,7 +34,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # The API builds Daytona layered snapshots at runtime. Those snapshots bake the
 # sandbox-side daemon from this repo, so the deployable API image must carry the
 # latest compiled Linux binary even though we no longer publish a sandbox image.
-FROM oven/bun:${SANDBOX_AGENT_BUN_VERSION}-slim AS sandbox-agent
+FROM --platform=$BUILDPLATFORM oven/bun:${SANDBOX_AGENT_BUN_VERSION}-slim AS sandbox-agent
 
 WORKDIR /agent
 
@@ -52,7 +52,7 @@ RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 # it to a self-contained Linux binary here, the same way as the daemon above,
 # and the runner copies it to the path the snapshot builder reads
 # (apps/cli/dist/kortix → KORTIX_SNAPSHOT_CLI_BIN_PATH).
-FROM oven/bun:${BUN_VERSION}-slim AS sandbox-cli
+FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-slim AS sandbox-cli
 
 WORKDIR /cli
 
@@ -98,7 +98,40 @@ ARG SERVICE
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY patches ./patches
 
-# Copy the target app and workspace packages it depends on
+# MANIFESTS ONLY, ahead of the install. This layer is keyed on dependency
+# DECLARATIONS, so an ordinary source edit no longer invalidates `pnpm install`
+# — the single most expensive step in this file (82.5s native / 396.0s emulated
+# on GitHub runners, measured on build-staging run 32293230397). The full
+# sources are copied AFTER the install, below.
+#
+# Every package listed here must also be COPYed in full further down, and the
+# two lists must stay in sync: a package whose manifest is present but whose
+# source is missing installs fine and then fails at runtime.
+COPY ${SERVICE}/package.json ./${SERVICE}/
+COPY packages/api-contract/package.json ./packages/api-contract/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/llm-catalog/package.json ./packages/llm-catalog/
+COPY packages/db/package.json ./packages/db/
+COPY packages/agent-tunnel/package.json ./packages/agent-tunnel/
+COPY packages/starter/package.json ./packages/starter/
+COPY packages/manifest-schema/package.json ./packages/manifest-schema/
+COPY packages/registry/package.json ./packages/registry/
+COPY packages/llm-gateway/package.json ./packages/llm-gateway/
+COPY packages/sdk/package.json ./packages/sdk/
+
+# Install pnpm and deps for this app + workspace packages it depends on.
+# --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
+# Include devDeps because the API runs TypeScript source directly under Bun.
+# Also install the root project's deps (--filter kortix) so the migration runner
+# (node-pg-migrate, pg) is bundled in the image — self-hosters apply migrations
+# with `bun packages/db/scripts/migrate.ts up`. node-pg-migrate lives at the root
+# (not @kortix/db) to keep the db package's drizzle-orm resolution single.
+RUN corepack enable pnpm && \
+    pnpm install --filter ./${SERVICE}... --filter kortix --shamefully-hoist --prod=false --ignore-scripts
+
+# Sources, after the install layer. `.dockerignore` excludes `**/node_modules`,
+# so these COPYs merge over the installed tree without clobbering what pnpm
+# just wrote. Keep this list identical to the manifest list above.
 COPY ${SERVICE} ./${SERVICE}
 COPY packages/api-contract ./packages/api-contract
 COPY packages/shared ./packages/shared
@@ -110,16 +143,6 @@ COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/llm-gateway ./packages/llm-gateway
 COPY packages/sdk ./packages/sdk
-
-# Install pnpm and deps for this app + workspace packages it depends on.
-# --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
-# Include devDeps because the API runs TypeScript source directly under Bun.
-# Also install the root project's deps (--filter kortix) so the migration runner
-# (node-pg-migrate, pg) is bundled in the image — self-hosters apply migrations
-# with `bun packages/db/scripts/migrate.ts up`. node-pg-migrate lives at the root
-# (not @kortix/db) to keep the db package's drizzle-orm resolution single.
-RUN corepack enable pnpm && \
-    pnpm install --filter ./${SERVICE}... --filter kortix --shamefully-hoist --prod=false --ignore-scripts
 
 # ---- Runner Stage ----
 FROM base AS runner
@@ -217,6 +240,8 @@ COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-am
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
+COPY apps/sandbox/MACHINE.fast.md ./apps/sandbox/MACHINE.fast.md
+COPY apps/sandbox/lazy-tools ./apps/sandbox/lazy-tools
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
 COPY packages/sdk ./packages/sdk
 

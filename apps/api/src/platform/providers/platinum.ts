@@ -41,8 +41,6 @@
 
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
-import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
-import { syncPlatinumNetworkBoundary } from '../../secrets/platinum-network-boundary';
 import { isOpencodePort } from '../../shared/opencode-ports';
 import { platinumJson } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
@@ -207,16 +205,6 @@ export class PlatinumProvider implements SandboxProvider {
     return null;
   }
 
-  syncNetworkBoundary(
-    externalId: string,
-    bindings: NetworkBoundarySecretBinding[],
-  ): Promise<{ state: 'armed'; attached: number }> {
-    return syncPlatinumNetworkBoundary(externalId, bindings, {
-      environment: config.INTERNAL_KORTIX_ENV,
-      rootSecret: config.API_KEY_SECRET,
-    });
-  }
-
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
     // Boot from the session's own per-project template if one was built
     // (opts.snapshot), else fall back to the fixed PLATINUM_TEMPLATE (e.g.
@@ -263,6 +251,7 @@ export class PlatinumProvider implements SandboxProvider {
     template: string,
     opts: CreateSandboxOpts,
   ): Promise<ProvisionResult> {
+    const _t0 = Date.now();
     const workloadType = sandboxWorkloadType(opts);
     const sandboxApiBase = config.KORTIX_URL
       .replace(/\/+$/, '')
@@ -345,7 +334,7 @@ export class PlatinumProvider implements SandboxProvider {
         ...(dedup ? { headers: { 'Idempotency-Key': dedup.idempotencyKey } } : {}),
       });
 
-    const _t0 = Date.now();
+    const _tCreate0 = Date.now();
     let sandbox: PlatinumSandbox;
     try {
       sandbox = await postCreate();
@@ -366,7 +355,7 @@ export class PlatinumProvider implements SandboxProvider {
         throw err;
       }
     }
-    const _vmMs = Date.now() - _t0;
+    const _vmMs = Date.now() - _tCreate0;
 
     const externalId = sandbox.id;
 
@@ -441,7 +430,8 @@ export class PlatinumProvider implements SandboxProvider {
     // clone stall in the background while the FE waits, so the session still
     // becomes usable without any create-path hang.
     console.log(
-      `[platinum-timing] ${externalId} vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
+      `[platinum-timing] ${externalId} ` +
+        `vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
         `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll, like daytona)` +
         (sandbox.replayed ? ' [S1: Idempotency-Key replay — adopted an already-committed box]' : ''),
     );
@@ -577,15 +567,10 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   async remove(externalId: string): Promise<void> {
-    await syncPlatinumNetworkBoundary(externalId, [], {
-      environment: config.INTERNAL_KORTIX_ENV,
-      rootSecret: config.API_KEY_SECRET,
-    }).catch((error) => {
-      console.warn(
-        `[platinum] failed to erase network-boundary replicas for ${externalId}:`,
-        error instanceof Error ? error.message : String(error),
-      );
-    });
+    // No credential replicas to erase first: Kortix stopped registering secrets
+    // at the Platinum edge when one mechanism took over every provider
+    // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4). The value is
+    // substituted server-side per request and never leaves the API.
     await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' });
   }
 

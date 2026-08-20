@@ -71,6 +71,17 @@ interface KortixComputerState {
    */
   isActionPanelOpen: boolean;
   _activeSessionId: string | null;
+  /** The Kortix project session behind `_activeSessionId`, when the layout
+   *  declared one — see `setActiveSession`'s `continuity` parameter. */
+  _activeProjectSessionId: string | null;
+  /** Whether `_activeSessionId` was activated by the transient boot shell. */
+  _activeIsTransient: boolean;
+  /** See `initialState._bootQuickView`. */
+  _bootQuickView: {
+    projectSessionId: string;
+    view: QuickView;
+    target?: QuickViewTarget;
+  } | null;
   /**
    * Per session: does that session's detail panel still HOLD something to show
    * (a file/app/step/audit detail, or the terminal layer)?
@@ -208,8 +219,18 @@ interface KortixComputerState {
    */
   toggleRightPanel: () => void;
   /** Call when a session becomes visible. Both right surfaces close — panel
-   *  state never travels between sessions. */
-  setActiveSession: (sessionId: string | null) => void;
+   *  state never travels between sessions.
+   *
+   *  `continuity` identifies the KORTIX project session behind the layout id,
+   *  plus whether the caller is the transient boot shell. The one transition it
+   *  changes: transient shell → real chat for the SAME project session (the
+   *  boot→ready crossfade renames the layout from the Kortix session id to the
+   *  OpenCode id). That is not a session change — a panel the user opened while
+   *  the sandbox booted must survive the handoff, not flicker shut. */
+  setActiveSession: (
+    sessionId: string | null,
+    continuity?: { projectSessionId: string | null; transient: boolean },
+  ) => void;
   /** `SessionPanelProvider` publishing whether `sessionId`'s detail panel holds
    *  content. Pass `null` to forget the session (the provider unmounted). */
   setDetailContent: (sessionId: string, has: boolean | null) => void;
@@ -267,6 +288,8 @@ const initialState = {
   isSidePanelOpen: false,
   isActionPanelOpen: false,
   _activeSessionId: null as string | null,
+  _activeProjectSessionId: null as string | null,
+  _activeIsTransient: false,
   _detailContentBySession: {} as Record<string, boolean>,
   isExpanded: false,
   panelSplit: null as number | null,
@@ -284,6 +307,16 @@ const initialState = {
     target?: QuickViewTarget;
   } | null,
   mobileToolView: null as QuickView | null,
+  /** A quick-view consumed by the transient BOOT shell (e.g. Terminal clicked
+   *  while the sandbox boots). The shell's provider dies at the boot→ready
+   *  handoff, taking the view with it — this remembers the intent so
+   *  `setActiveSession`'s handoff branch can replant it for the real layout.
+   *  See the continuity parameter on `setActiveSession`. */
+  _bootQuickView: null as {
+    projectSessionId: string;
+    view: QuickView;
+    target?: QuickViewTarget;
+  } | null,
 };
 
 export const useKortixComputerStore = create<KortixComputerState>()(
@@ -432,7 +465,10 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         else get().setIsActionPanelOpen(true);
       },
 
-      setActiveSession: (sessionId: string | null) => {
+      setActiveSession: (
+        sessionId: string | null,
+        continuity?: { projectSessionId: string | null; transient: boolean },
+      ) => {
         // A quick-view is an intent about the session it was made in — it must
         // not replay when some other session mounts later. Cleared even on the
         // no-op re-activation path below, or a request planted for another
@@ -442,7 +478,55 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           set({ pendingQuickView: null });
         }
         const prev = get()._activeSessionId;
-        if (prev === sessionId) return;
+        const nextProjectSessionId = continuity?.projectSessionId ?? null;
+        const nextIsTransient = continuity?.transient ?? false;
+        if (prev === sessionId) {
+          // Same layout re-activating (e.g. the shell flipping transient→ready
+          // state, or a tab refocus): keep the continuity bookkeeping fresh so
+          // the NEXT activation judges the handoff correctly.
+          if (
+            get()._activeProjectSessionId !== nextProjectSessionId ||
+            get()._activeIsTransient !== nextIsTransient
+          ) {
+            set({
+              _activeProjectSessionId: nextProjectSessionId,
+              _activeIsTransient: nextIsTransient,
+            });
+          }
+          return;
+        }
+        // Boot handoff, NOT a session change: the transient shell (layout id =
+        // Kortix session id) crossfades into the real chat (layout id =
+        // OpenCode id) for the SAME project session. The user is looking at
+        // the same session the whole time — a panel opened during boot must
+        // survive, so only the identity fields move. Everything the user can
+        // see (open flags, split, expansion) stays exactly as it is. One-shot
+        // intents also survive: they were made in this same session.
+        if (
+          prev !== null &&
+          get()._activeIsTransient &&
+          !nextIsTransient &&
+          nextProjectSessionId !== null &&
+          get()._activeProjectSessionId === nextProjectSessionId
+        ) {
+          // A quick-view the shell consumed (Terminal/Browser/Files during
+          // boot) is replanted for the incoming layout — its provider opens
+          // the same view, so the surviving panel shows content, never a
+          // blank card. Fresh timestamp: the boot can outlast the TTL.
+          const boot = get()._bootQuickView;
+          const replant =
+            sessionId && boot && boot.projectSessionId === nextProjectSessionId
+              ? { sessionId, view: boot.view, requestedAt: Date.now(), target: boot.target }
+              : null;
+          set({
+            _activeSessionId: sessionId,
+            _activeProjectSessionId: nextProjectSessionId,
+            _activeIsTransient: false,
+            _bootQuickView: null,
+            ...(replant ? { pendingQuickView: replant } : {}),
+          });
+          return;
+        }
         // EVERY session change lands closed. Both surfaces, no exceptions, no
         // per-session memory.
         //
@@ -460,6 +544,9 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // pressing ⌘I brings that back rather than the empty card home.
         set({
           _activeSessionId: sessionId,
+          _activeProjectSessionId: nextProjectSessionId,
+          _activeIsTransient: nextIsTransient,
+          _bootQuickView: null,
           isSidePanelOpen: false,
           isActionPanelOpen: false,
           isExpanded: false,
@@ -621,6 +708,19 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         if (!pending || pending.sessionId !== sessionId) return null;
         set({ pendingQuickView: null });
         if (now - pending.requestedAt > QUICK_VIEW_TTL_MS) return null;
+        // Consumed by the transient BOOT shell: its provider (and the view it
+        // opens) will not survive the boot→ready handoff. Remember the intent
+        // keyed by the project session, so the handoff can replant it for the
+        // real layout — a Terminal opened while booting stays a Terminal.
+        if (get()._activeIsTransient && get()._activeProjectSessionId) {
+          set({
+            _bootQuickView: {
+              projectSessionId: get()._activeProjectSessionId!,
+              view: pending.view,
+              target: pending.target,
+            },
+          });
+        }
         return { view: pending.view, target: pending.target };
       },
 

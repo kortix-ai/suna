@@ -8,11 +8,13 @@
  * tests/src/flows/iam.flow.ts for coverage of that surface. This file only
  * covers the pieces that still have no CRUD surface (see below).
  *
- * V2 decides access from six fixed code-defined roles via three tables
- * (account_members, project_members, project_group_grants), UNIONED
- * additively with any DB custom-role grants (iam_policies / iam_role_actions,
- * Enterprise-entitlement-gated) — there are still no deny rules and no
- * per-token policies beyond a token's own iam_policies row.
+ * The engine decides access from ONE table. `kortix.role_assignments` holds
+ * every grant — account membership, project roles, group grants, custom-role
+ * bindings and per-object grants — and `kortix.role_permissions` expands each
+ * role to its actions. `project_members`, `project_group_grants`, `iam_policies`,
+ * `iam_resource_grants` and `account_members.account_role` are compatibility
+ * VIEWS over that table, not stores. There are still no deny rules, and no
+ * per-token policies beyond a service account's own assignments.
  *
  * So these flows verify the ENGINE's observable semantics black-box through
  * the one read surface that exposes the computed decision:
@@ -69,14 +71,15 @@ const R_PROJECT_GRANTS_POST = `POST ${PROJECT_GRANTS}`;
 // ─── IAM-4: default (no custom role bound) → effective is the read surface ─
 // `…/iam/policies` CRUD now exists (custom-roles.ts) but is Enterprise-gated
 // and additive: with no custom role bound to this member, their
-// account-scoped permission set is decided purely by the fixed account_role.
+// account-scoped permission set is decided purely by the account-scope role
+// assignment the principal holds.
 // We assert that baseline through the effective probe.
 
 flow('IAM-4', { domain: 'iam', routes: [R_EFFECTIVE] }, async (ctx) => {
   const team = await ctx.fixtures.team();
   const member = await team.addMember('member');
 
-  await ctx.step("member's account.read is allowed via account_role", async () => {
+  await ctx.step("member's account.read is allowed via their account-scope role", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
       params: { accountId: team.id, userId: member.userId! },
       query: { action: 'account.read' },
@@ -335,7 +338,7 @@ flow(
 );
 
 // ─── IAM-11: PATs inherit the minter (default, no token-scoped policy) ──────
-// A token CAN have its own iam_policies row (principal_type='token',
+// A service account CAN hold its own assignments (principal_type='service_account',
 // Enterprise-gated custom-role grant) that narrows/extends it, but that is
 // opt-in and not exercised here. With no such row, an unscoped account PAT
 // carries no narrowing rule set; its access equals the user it was minted
@@ -377,9 +380,9 @@ flow('IAM-11', { domain: 'iam', routes: [R_EFFECTIVE, R_EFFECTIVE_BATCH] }, asyn
 });
 
 // ─── IAM-12: legacy role bridge ─────────────────────────────────────────────
-// account_role maps to the V2 action set: a plain member gets account-reads
+// The account-scope role assignment maps to the action set: a plain member gets account-reads
 // only (no account.write, no project.create → cannot reach all projects); a
-// project_members row bridges to the matching project role.
+// a project-scope role assignment gives the matching project role.
 
 flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, async (ctx) => {
   const team = await ctx.fixtures.team();
@@ -390,16 +393,31 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
   await ctx.step(
     'plain member: account.read allowed, account.write + project.create denied',
     async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post(
-        EFFECTIVE_BATCH,
+      // The IAM verdict cache is process-local with a 15s TTL and staging runs
+      // 6 API tasks: a probe served by a task that loaded this account's
+      // assignment snapshot BEFORE addMember committed answers allowed=false
+      // for up to one TTL window (runs 32353592362 attempts 2-3; steady-state
+      // probes are correct on every task). Poll until the grant is visible on
+      // the task answering THIS request, then assert the full verdict strictly.
+      const r = await waitFor(
+        () =>
+          ctx.client.as(ctx.P.OWNER).post(
+            EFFECTIVE_BATCH,
+            {
+              probes: [
+                { action: 'account.read' },
+                { action: 'account.write' },
+                { action: 'project.create' },
+              ],
+            },
+            { params: { accountId: team.id, userId: member.userId! } },
+          ),
         {
-          probes: [
-            { action: 'account.read' },
-            { action: 'account.write' },
-            { action: 'project.create' },
-          ],
+          until: (res) => res.statusCode === 200 && res.json<any>()?.results?.[0]?.allowed === true,
+          timeoutMs: 30_000,
+          intervalMs: 2_500,
+          description: 'member account.read verdict visible on the serving task',
         },
-        { params: { accountId: team.id, userId: member.userId! } },
       );
       r.status(200)
         .body()
@@ -412,21 +430,41 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
   );
 
   await ctx.step('admin bridges to Administrator-level set: account.write allowed', async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-      params: { accountId: team.id, userId: admin.userId! },
-      query: { action: 'account.write' },
-    });
+    // Same cross-task cache window as the member probe above.
+    const r = await waitFor(
+      () =>
+        ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
+          params: { accountId: team.id, userId: admin.userId! },
+          query: { action: 'account.write' },
+        }),
+      {
+        until: (res) => res.statusCode === 200 && res.json<any>()?.allowed === true,
+        timeoutMs: 30_000,
+        intervalMs: 2_500,
+        description: 'admin account.write verdict visible on the serving task',
+      },
+    );
     r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
   });
 
   await ctx.step(
-    'project_members row bridges to the project role: direct Manager → project.write allowed',
+    'a project-scope assignment gives the project role: direct Manager → project.write allowed',
     async () => {
       await team.grantProjectRole(project.id, member.userId!, 'manager');
-      const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-        params: { accountId: team.id, userId: member.userId! },
-        query: { action: 'project.write', resourceType: 'project', resourceId: project.id },
-      });
+      // Same cross-task cache window: the grant busts only the serving task.
+      const r = await waitFor(
+        () =>
+          ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
+            params: { accountId: team.id, userId: member.userId! },
+            query: { action: 'project.write', resourceType: 'project', resourceId: project.id },
+          }),
+        {
+          until: (res) => res.statusCode === 200 && res.json<any>()?.allowed === true,
+          timeoutMs: 30_000,
+          intervalMs: 2_500,
+          description: 'project manager verdict visible on the serving task',
+        },
+      );
       r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
     },
   );

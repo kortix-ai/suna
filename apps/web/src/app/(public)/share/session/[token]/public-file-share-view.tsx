@@ -1,5 +1,6 @@
 'use client';
 
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
@@ -56,6 +57,9 @@ function usePublicFileContent(
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     retry: false,
+    // A readiness 503 (parked/booting sandbox) is a pending state, not a
+    // failure: keep polling so the shared file loads once the box is up.
+    refetchInterval: (query) => (isSandboxNotReadyError(query.state.error) ? 3_000 : false),
     queryFn: async () => {
       const res = await fetch(fileUrl, { cache: 'no-store' });
       if (!res.ok) {
@@ -94,6 +98,8 @@ function usePublicBinaryBlob(
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     retry: false,
+    // Same readiness poll as usePublicFileContent above.
+    refetchInterval: (query) => (isSandboxNotReadyError(query.state.error) ? 3_000 : false),
     queryFn: async () => {
       const res = await fetch(fileUrl, { cache: 'no-store' });
       if (!res.ok) {

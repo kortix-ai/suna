@@ -27,7 +27,7 @@ import {
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { authorize } from '../../iam/authorize';
 import { actorForToken } from '../../iam/actor';
-import type { RequestContext } from '../../iam/engine';
+import type { RequestContext } from '../../iam/actor';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { accountRoleFor } from '../../iam/read-models';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';

@@ -8,7 +8,7 @@ import {
   type ProjectAccessAction,
   type ProjectRole,
 } from '../projects/access';
-import { normalizeProjectRole as parseProjectRole } from '../iam/role-perms';
+import { normalizeProjectRole as parseProjectRole } from '../iam/roles';
 import { iamActionForProjectAccess, isUuid } from '../projects/lib/access';
 
 describe('isUuid project-id guard', () => {

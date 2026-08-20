@@ -152,8 +152,13 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     expect(chat).toContain('transcriptMessageIds: transcriptUserMessageIds');
   });
 
-  test('the turn is keyed by the id the bubble was FIRST painted under', () => {
-    expect(chat).toContain('optimisticOriginOf(sessionId, turn.userMessage.info.id) ??');
+  test('the turn is keyed by the id the bubble was FIRST painted under — uniquely', () => {
+    // The origin key keeps one element across the re-mint swap; the
+    // uniqueness pass keeps React sane when an old echo and its re-placed
+    // copy transiently share an origin (duplicate keys corrupt the list).
+    expect(chat).toContain('key={turnRenderKeys.get(turn.userMessage.info.id)}');
+    expect(chat).toContain('const origin = optimisticOriginOf(sessionId, id);');
+    expect(chat).toContain('while (used.has(key)) key = `${key}~`;');
   });
 });
 

@@ -26,6 +26,7 @@ import {
 import { log } from '../src/core/log';
 import { renderStepSummary, writeResults } from '../src/core/report';
 import { runExitCode } from '../src/core/result';
+import { runAttemptSuffix } from '../src/core/run-identity';
 import { discoverFlows, runSuite } from '../src/core/runner';
 import { writeUiData } from '../src/core/ui-data';
 import { runCoverage } from '../src/coverage/check-coverage';
@@ -62,11 +63,16 @@ function newRunId(): string {
   // gate's matrix needs this: each shard must be able to reclaim exactly its
   // own principals in an `if: always()` step, and it cannot guess a random
   // suffix chosen inside this process.
+  //
+  // A PINNED id is returned VERBATIM. The pin and the `gc --run-id` sweep that
+  // follows it read the same variable, so the attempt must be folded in where
+  // that variable is set (tests-release.yml), never here — appending it here
+  // would rename the world out from under its own reclaim step.
   const pinned = process.env.KE2E_RUN_ID?.trim();
   if (pinned) return pinned;
   const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const r = Math.random().toString(36).slice(2, 8);
-  return `${process.env.GITHUB_RUN_ID ?? ts}-${r}`;
+  return `${process.env.GITHUB_RUN_ID ?? ts}${runAttemptSuffix()}-${r}`;
 }
 
 /**
@@ -240,7 +246,8 @@ async function main(): Promise<number> {
     const s = result.summary;
     log.info('');
     log.info(
-      `${log.bold('results')}: ${s.passed}/${s.total} passed · ${s.failed} failed · ${s.skipped} skipped · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`,
+      `${log.bold('results')}: ${s.passed}/${s.total} passed · ${s.failed} failed · ${s.skipped} skipped` +
+        `${s.quarantined ? ` (${s.quarantined} QUARANTINED)` : ''} · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`,
     );
     log.info(log.dim(`report → ${htmlPath}`));
 

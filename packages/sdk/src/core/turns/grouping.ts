@@ -26,23 +26,38 @@ interface TextPartLike extends PartLike {
 // ============================================================================
 
 /**
- * Display order: `time.created` first, wire id as the tiebreak.
+ * Display order: WIRE ID first for two well-formed wire ids, `time.created`
+ * otherwise, untimed messages (optimistic stubs) last.
  *
- * The sync store keeps messages sorted by ID (its binary-search invariant),
- * and the id is CLIENT-minted for user messages — a wrong one used to teleport
- * a bubble to the top of the thread. OpenCode stamps `time.created` at
- * persistence, from the box's clock, so a message ordered by it lands where it
- * happened whatever id it travelled under; a foreign or backdated id degrades
- * to slightly-odd placement at worst. A message with no timestamp (an
- * optimistic stub) sorts as newest — it is the latest thing the user did — and
- * two untimed messages keep their INPUT order, so a host that feeds unstamped
- * messages sees exactly the sequential behaviour it always had. Equal stamps
- * keep id order. A weak order (stable sort), never a partial one.
+ * The wire id is the message's POSITION: OpenCode's own loop resolves "is
+ * this answered?" by id order, and every id that reaches the transcript is
+ * placed by the control plane (the proxy's wire-id repair lifts a stale
+ * client id; the drain re-mints a queued prompt above the live turn). So for
+ * wire ids, id order IS conversation order.
+ *
+ * `time.created` is NOT: OpenCode stamps it at PERSISTENCE, from arrival
+ * wall-clock. A batch of queued prompts is posted concurrently on purpose
+ * (so one step answers them all), and their arrival order is the network's —
+ * sorting by it displayed "B4, FIRST, B2, B3" for a burst the model itself
+ * read, and answered, in id order. It remains the fallback for anything
+ * without two well-formed wire ids, where it is the only clock there is.
+ *
+ * A message with no timestamp AND no orderable id (a host's plain stub)
+ * sorts as newest — it is the latest thing the user did — and two such keep
+ * their INPUT order. Equal keys keep id order. A weak order (stable sort),
+ * never a partial one.
  */
+const WIRE_DISPLAY_ID = /^msg_[0-9a-f]{12}/;
+
 export function compareMessagesForDisplay(
   a: { info: { id: string; time?: { created?: number } } },
   b: { info: { id: string; time?: { created?: number } } },
 ): number {
+  const aWire = WIRE_DISPLAY_ID.test(a.info.id);
+  const bWire = WIRE_DISPLAY_ID.test(b.info.id);
+  if (aWire && bWire) {
+    return a.info.id < b.info.id ? -1 : a.info.id > b.info.id ? 1 : 0;
+  }
   const at = typeof a.info.time?.created === 'number' ? a.info.time.created : null;
   const bt = typeof b.info.time?.created === 'number' ? b.info.time.created : null;
   if (at === null && bt === null) return 0;

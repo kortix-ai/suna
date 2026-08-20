@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type http from 'node:http'
 import net from 'node:net'
+import zlib from 'node:zlib'
 import { createEphemeralCa } from './ca'
 import { parseShimRules, resolveShimConfig, shimUnavailableReason } from './rules'
 import { createEgressShim } from './shim'
@@ -232,6 +233,124 @@ describe('headers the broker would reject or that would defeat redaction', () =>
   })
 })
 
+/**
+ * The mirror of `accept-encoding: identity`, and the same security control on
+ * the other leg. Substitution is server-side and byte-based: the broker finds
+ * the handle in the outgoing body by scanning for it, so a compressed body
+ * hides it and the upstream receives the handle — a worthless string — and
+ * answers 401 with nothing naming why.
+ */
+describe('the request body reaches the broker as raw bytes', () => {
+  /** Send one complete request over the terminated leg and report both ends. */
+  async function relayBody(
+    head: string,
+    body: Buffer,
+  ): Promise<{
+    brokerBody: { headers?: Record<string, string>; body_base64?: string } | null
+    guestResponse: string
+  }> {
+    const { port, calls } = await startShim()
+    const { socket } = await connect(port, 'api.example.com:443')
+    const tls = await import('node:tls')
+    const guestResponse = await new Promise<string>((resolve, reject) => {
+      const secured = tls.connect({ socket, servername: 'api.example.com', ca: CA.certPem }, () => {
+        secured.write(head)
+        if (body.length > 0) secured.write(body)
+      })
+      secured.once('data', (chunk: Buffer) => {
+        secured.destroy()
+        resolve(chunk.toString('utf8'))
+      })
+      secured.once('error', reject)
+    })
+    const call = calls[0]
+    return {
+      brokerBody: call ? JSON.parse(String(call.init.body)) : null,
+      guestResponse,
+    }
+  }
+
+  const post = (body: Buffer, encoding?: string) =>
+    `POST /v1/charges HTTP/1.1\r\nHost: api.example.com\r\nContent-Type: application/json\r\n` +
+    (encoding ? `Content-Encoding: ${encoding}\r\n` : '') +
+    `Content-Length: ${body.length}\r\n\r\n`
+
+  const PLAIN = JSON.stringify({ token: 'kortix_h_demo_abcdef' })
+
+  test('an uncompressed body is relayed byte for byte', async () => {
+    const body = Buffer.from(PLAIN)
+    const { brokerBody } = await relayBody(post(body), body)
+    expect(Buffer.from(brokerBody?.body_base64 ?? '', 'base64').toString('utf8')).toBe(PLAIN)
+  })
+
+  test.each([
+    ['gzip', (buf: Buffer) => zlib.gzipSync(buf)],
+    ['deflate', (buf: Buffer) => zlib.deflateSync(buf)],
+    ['br', (buf: Buffer) => zlib.brotliCompressSync(buf)],
+  ])('a %s body is decoded, so the handle is visible to substitution', async (encoding, compress) => {
+    const body = compress(Buffer.from(PLAIN))
+    const { brokerBody } = await relayBody(post(body, encoding), body)
+    expect(Buffer.from(brokerBody?.body_base64 ?? '', 'base64').toString('utf8')).toBe(PLAIN)
+    // Dropped, or the upstream is told the raw bytes it now gets are compressed.
+    expect(brokerBody?.headers?.['content-encoding']).toBeUndefined()
+  })
+
+  test('a chain of encodings is undone in the order it was applied', async () => {
+    const body = zlib.gzipSync(zlib.deflateSync(Buffer.from(PLAIN)))
+    const { brokerBody } = await relayBody(post(body, 'deflate, gzip'), body)
+    expect(Buffer.from(brokerBody?.body_base64 ?? '', 'base64').toString('utf8')).toBe(PLAIN)
+  })
+
+  test('an encoding the shim cannot undo is refused, never relayed opaque', async () => {
+    const body = Buffer.from(' compressed-by-something-else')
+    const { brokerBody, guestResponse } = await relayBody(post(body, 'zstd'), body)
+    // Refusing beats relaying: a relayed compressed body is an unsubstituted
+    // handle, an upstream 401, and an agent with nothing to read.
+    expect(brokerBody).toBeNull()
+    expect(guestResponse).toContain('400')
+    expect(guestResponse).toContain('unsupported_request_encoding')
+  })
+
+  test('a decompression bomb is refused at the broker\'s own ceiling', async () => {
+    // 8 MiB of zeros gzips to ~8 KiB. Decoding it would blow past the broker's
+    // 1 MiB request cap anyway, so the ceiling doubles as the bomb guard.
+    const body = zlib.gzipSync(Buffer.alloc(8 * 1024 * 1024))
+    expect(body.length).toBeLessThan(64 * 1024)
+    const { brokerBody, guestResponse } = await relayBody(post(body, 'gzip'), body)
+    expect(brokerBody).toBeNull()
+    expect(guestResponse).toContain('400')
+  })
+
+  test('a corrupt body under a supported encoding is refused, not passed through', async () => {
+    const body = Buffer.from('not gzip at all')
+    const { brokerBody, guestResponse } = await relayBody(post(body, 'gzip'), body)
+    expect(brokerBody).toBeNull()
+    expect(guestResponse).toContain('400')
+  })
+
+  test('a bodyless request carrying the header is relayed, not refused', async () => {
+    // Nothing to make visible and nothing to hide: a `Content-Encoding` on a
+    // bodyless GET is a spurious header, not a request worth rejecting.
+    const { brokerBody, guestResponse } = await relayBody(
+      'GET /v1/charges HTTP/1.1\r\nHost: api.example.com\r\nContent-Encoding: gzip\r\n\r\n',
+      Buffer.alloc(0),
+    )
+    expect(brokerBody).not.toBeNull()
+    expect(brokerBody?.body_base64).toBeUndefined()
+    expect(guestResponse).toContain('200')
+  })
+
+  test.each([
+    ['identity', 'identity'],
+    ['a list that is only identity', 'identity, identity'],
+  ])('%s needs no decoding and still drops the header', async (_label, encoding) => {
+    const body = Buffer.from(PLAIN)
+    const { brokerBody } = await relayBody(post(body, encoding), body)
+    expect(Buffer.from(brokerBody?.body_base64 ?? '', 'base64').toString('utf8')).toBe(PLAIN)
+    expect(brokerBody?.headers?.['content-encoding']).toBeUndefined()
+  })
+})
+
 describe('what gets terminated', () => {
   test('a host with a rule is terminated and relayed', async () => {
     const { port, calls } = await startShim()
@@ -333,20 +452,17 @@ describe('rules are derived from what the guest already has', () => {
     ])
   })
 
-  test("a destination the provider's own edge owns is left alone", () => {
-    // on_echo is the only signal the guest gets for WHICH mechanism injects.
-    // 'block' means an edge outside the sandbox does it, so arming here would
-    // put a TLS-terminating proxy in a guest that is not supposed to have one
-    // and hand the agent the other mechanism's symptom. Measured on Platinum
-    // with the project flag off, where the shim armed and returned [REDACTED]
-    // to an agent that had been told to expect a cut connection.
-    expect(parseShimRules(caps({ on_echo: 'block' }))).toEqual([])
-  })
-
-  test('a destination the shim owns still arms', () => {
-    // The positive half — without it the assertion above passes for a parser
-    // that returns nothing at all.
-    expect(parseShimRules(caps({ on_echo: 'redact' }))).toEqual([
+  test.each([
+    ['absent', undefined],
+    ['redact', 'redact'],
+    ['a stale block from an older API', 'block'],
+  ])('on_echo (%s) does not decide whether the shim arms', (_label, onEcho) => {
+    // e7d9bdad0c skipped `on_echo: 'block'` because a provider edge owned some
+    // destinations. Nothing is edge-owned now — the shim is the one mechanism
+    // on every provider — so honouring a stale `block` would leave the session
+    // with no relay at all and every request leaving with a worthless handle.
+    // `delivery: 'network'` is the whole gate.
+    expect(parseShimRules(caps(onEcho === undefined ? {} : { on_echo: onEcho }))).toEqual([
       { hosts: ['api.example.com'], identifier: 'DEMO_TOKEN' },
     ])
   })
@@ -372,7 +488,7 @@ describe('rules are derived from what the guest already has', () => {
     expect(parseShimRules(raw as string | undefined)).toEqual([])
   })
 
-  test('one host cannot be claimed by two identifiers', () => {
+  test('one host is terminated once even when two identifiers list it', () => {
     const raw = JSON.stringify({
       version: 1,
       capabilities: [
@@ -380,9 +496,9 @@ describe('rules are derived from what the guest already has', () => {
         { identifier: 'SECOND', delivery: 'network', hosts: ['api.example.com'] },
       ],
     })
-    // Save-time validation already rejects this as a destination conflict. If
-    // one ever reaches the guest, resolving it deterministically beats picking
-    // per connection.
+    // Two secrets on one host is legal now (spec §6). One rule still covers
+    // both: substitution is server-side over every handle the session may
+    // spend on that host, so the identifier on the rule only picks the door.
     expect(parseShimRules(raw)).toEqual([{ hosts: ['api.example.com'], identifier: 'FIRST' }])
   })
 })

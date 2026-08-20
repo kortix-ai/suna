@@ -107,11 +107,21 @@ module "api" {
   # 2 tasks of 1 vCPU / 2 GiB, floor 2, ceiling 4. fargate_base_on_demand = 1
   # pins the first task to on-demand FARGATE: the rest stay Spot for cost, but
   # a Spot reclaim can no longer take the whole environment to zero.
-  task_cpu                   = 1024
-  task_memory                = 2048
-  desired_count              = 2
-  min_capacity               = 2
-  max_capacity               = 4
+  # Gate dry-run 32290094936 (2026-08-19, skew-free): with 2 x 1 vCPU tasks a
+  # plain POST /v1/accounts took 5.8-6.7s when it succeeded and intermittently
+  # 37s -> ALB 5xx -> edge-laundered 503, while the DB sat at 0 slow queries —
+  # API event-loop starvation, not data. 3 x 2 vCPU gives the release gate's
+  # ~18-worker fleet real JS throughput (~+$150/mo at the floor).
+  # 2026-08-20: floor raised 3 -> 6. Dry-run 32323656671 still collapsed the
+  # write path at 3 tasks (POST /v1/accounts 2.3-15.2s idle over the eu-west-2
+  # DB; 19 workers pushed it past the origin timeout), and a manual
+  # ecs-scale to 6 was silently reverted by the next deploy's TF apply —
+  # the floor must live here or it does not exist.
+  task_cpu                   = 2048
+  task_memory                = 4096
+  desired_count              = 6
+  min_capacity               = 6
+  max_capacity               = 8
   use_fargate_spot           = true
   fargate_base_on_demand     = 1
   requests_per_target_target = 600

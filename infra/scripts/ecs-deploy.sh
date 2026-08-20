@@ -32,6 +32,11 @@
 #
 # Requires: awscli v2, jq. Assumes the ECS cluster/service/ALB/target-group and
 # the exec/task IAM roles already exist (Terraform owns those).
+#
+# Optional non-secret task environment overrides are read from
+# KORTIX_ECS_ENV_OVERRIDES as a JSON object of string values. The renderer
+# replaces matching values from the running task and preserves every other
+# value. Secrets remain in the aggregate Secrets Manager blob.
 
 set -euo pipefail
 
@@ -70,6 +75,23 @@ configure_service_coordinates() {
       return 2
       ;;
   esac
+}
+
+merge_environment_overrides() {
+  local current="${1:-[]}" overrides="${2:-}"
+  [ -n "$overrides" ] || overrides='{}'
+  jq -cn --argjson current "$current" --argjson overrides "$overrides" '
+    if ($current | type) != "array" or any($current[]; (.name | type) != "string" or (.value | type) != "string") then
+      error("current ECS environment must be an array of string name/value objects")
+    elif ($overrides | type) != "object" or any($overrides[]; type != "string") then
+      error("KORTIX_ECS_ENV_OVERRIDES must be a JSON object of strings")
+    elif (($overrides | keys) | all(.[]; test("^[A-Za-z_][A-Za-z0-9_]*$"))) | not then
+      error("KORTIX_ECS_ENV_OVERRIDES contains an invalid environment name")
+    else
+      [$current[] | select(.name as $name | ($overrides | has($name) | not))]
+      + [$overrides | to_entries | sort_by(.key)[] | {name: .key, value: .value}]
+    end
+  '
 }
 
 # Allow sourcing for tests: `KORTIX_ECS_DEPLOY_LIB=1 source ecs-deploy.sh`.
@@ -176,6 +198,16 @@ CURRENT_TD="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" 
 CURRENT_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
   --task-definition "$CURRENT_TD" --query 'taskDefinition' --output json)"
 
+ENVIRONMENT_OVERRIDES_JSON="${KORTIX_ECS_ENV_OVERRIDES:-}"
+[ -n "$ENVIRONMENT_OVERRIDES_JSON" ] || ENVIRONMENT_OVERRIDES_JSON='{}'
+CURRENT_ENVIRONMENT_JSON="$(printf '%s' "$CURRENT_TD_JSON" | jq -c --arg c "$CONTAINER" \
+  '[.containerDefinitions[] | select(.name == $c) | (.environment // [])][0] // []')"
+MERGED_ENVIRONMENT_JSON="$(merge_environment_overrides "$CURRENT_ENVIRONMENT_JSON" "$ENVIRONMENT_OVERRIDES_JSON")"
+ENVIRONMENT_OVERRIDE_COUNT="$(printf '%s' "$ENVIRONMENT_OVERRIDES_JSON" | jq 'length')"
+if [ "$ENVIRONMENT_OVERRIDE_COUNT" -gt 0 ]; then
+  echo "▶ applied $ENVIRONMENT_OVERRIDE_COUNT explicit non-secret environment override(s)"
+fi
+
 # ── task size (cpu/memory) is owned by Terraform, not by the running task ────
 # Terraform owns task_cpu/task_memory (infra/terraform/modules/ecs-api), but the
 # service carries `ignore_changes = [task_definition]`, so a TF apply that
@@ -225,7 +257,8 @@ NEW_TD_JSON="$(printf '%s' "$CURRENT_TD_JSON" \
   | jq --arg img "$IMAGE" --arg c "$CONTAINER" --arg ver "$VERSION_OVERRIDE" \
        --arg version_env "$VERSION_ENV_NAME" \
        --arg cpu "$DESIRED_CPU" --arg memory "$DESIRED_MEMORY" \
-       --argjson secrets "$SECRETS_JSON" '
+       --argjson secrets "$SECRETS_JSON" \
+       --argjson environment "$MERGED_ENVIRONMENT_JSON" '
       # drop read-only fields register-task-definition rejects
       del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
           .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
@@ -246,7 +279,7 @@ NEW_TD_JSON="$(printf '%s' "$CURRENT_TD_JSON" \
             .image = $img
             | .secrets = $secrets
             | .environment = (
-                ((.environment // []) | map(
+                ($environment | map(
                   select(
                     .name != "KORTIX_VERSION" and
                     .name != "KORTIX_PUBLIC_VERSION" and

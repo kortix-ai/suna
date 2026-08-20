@@ -391,6 +391,24 @@ export async function validateAccountToken(
         and(
           inArray(accountTokens.secretKeyHash, secretKeyHashes),
           eq(accountTokens.status, 'active'),
+          // `revoked_at` is the SECOND half of the revocation invariant and it
+          // must be checked here, not only `status`. Nothing in the database
+          // ties the two columns together — there is no CHECK, no trigger and
+          // no partial index (schema: packages/db/src/schema/kortix.ts
+          // `accountTokens`) — so a row can be `status='active'` with
+          // `revoked_at` stamped. Until this predicate existed, every such row
+          // authenticated cleanly on every surface (REST, LLM gateway, git
+          // proxy, preview proxy, connectors) and emitted a normal
+          // `auth.login.success` audit event, which hid the bypass.
+          //
+          // This is not hypothetical: the release-gate sweep revokes test PATs
+          // with a direct `UPDATE account_tokens SET revoked_at = now()`, and
+          // 186 "Connector Session" tokens kept authenticating afterwards,
+          // keeping zombie sandbox agents alive against staging. Every other
+          // reader of this table already checks both columns — see
+          // projects/lib/session-token-grant.ts, whose comment states the
+          // intent outright: "a revoked token must stay dead".
+          isNull(accountTokens.revokedAt),
         ),
       )
       .limit(1);
@@ -459,7 +477,17 @@ async function updateLastUsedThrottled(tokenId: string): Promise<void> {
     await db
       .update(accountTokens)
       .set({ lastUsedAt: new Date() })
-      .where(eq(accountTokens.tokenId, tokenId));
+      // Same liveness predicate as the validation query. A revoked token must
+      // not keep refreshing its own idle clock: without this, a token revoked
+      // between the read and this write looks freshly used, which defeats the
+      // idle-revoke sweep above and makes the token appear live in the UI.
+      .where(
+        and(
+          eq(accountTokens.tokenId, tokenId),
+          eq(accountTokens.status, 'active'),
+          isNull(accountTokens.revokedAt),
+        ),
+      );
   } catch (err) {
     console.warn('Failed to update account_tokens.last_used_at:', err);
   }

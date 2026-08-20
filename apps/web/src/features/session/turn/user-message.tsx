@@ -828,6 +828,7 @@ export function UserMessageActions({
   onRewind,
   rewindDisabled,
   leading,
+  leadingStatus,
   alwaysVisible = false,
 }: {
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
@@ -846,6 +847,12 @@ export function UserMessageActions({
    * grow a second strip under it.
    */
   leading?: React.ReactNode;
+  /**
+   * Rendered before `leading` and ALWAYS visible — a queued prompt's status
+   * word (`QueuedPromptStatus`). The dim is what marks a bubble as queued;
+   * the word is what makes the dim legible, so it does not wait for a hover.
+   */
+  leadingStatus?: React.ReactNode;
   /** Keep the row visible without hover — a failed send must not be a thing
    *  the user has to hunt for. */
   alwaysVisible?: boolean;
@@ -856,21 +863,25 @@ export function UserMessageActions({
   const hasMeta = timestamp !== null || Boolean(edited);
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
-  if (!hasMeta && !copyText && !leading) return null;
+  if (!hasMeta && !copyText && !leading && !leadingStatus) return null;
 
   return (
     // The fade sits on the ROW, so the timestamp and the buttons reveal
     // together as one object rather than a label with controls growing out of
     // it. `opacity`, never mounting: the row holds its height whether or not
     // the pointer is over the turn, so nothing in the transcript reflows.
-    <div
-      className={cn(
-        'flex w-full items-center justify-end gap-2 transition-opacity duration-150',
-        alwaysVisible
-          ? 'opacity-100'
-          : 'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100',
-      )}
-    >
+    // The status word (when there is one) sits OUTSIDE the fade: it is the
+    // one thing on this row a user must not have to hover to learn.
+    <div className="flex w-full items-center justify-end gap-2">
+      {leadingStatus}
+      <div
+        className={cn(
+          'flex items-center gap-2 transition-opacity duration-150',
+          alwaysVisible
+            ? 'opacity-100'
+            : 'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100',
+        )}
+      >
       {leading}
       {/* `InlineMeta` owns the `·` separator and drops absent children, so a
           message with no stamp never renders a leading bullet. Skipped
@@ -901,6 +912,7 @@ export function UserMessageActions({
           <CopyButton code={copyText} size="sm" hintSide="top" />
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -919,6 +931,7 @@ export function UserMessage({
   onRewind,
   rewindDisabled = false,
   leadingActions,
+  leadingStatus,
   actionsAlwaysVisible = false,
 }: {
   message: MessageWithParts;
@@ -940,6 +953,8 @@ export function UserMessage({
   rewindDisabled?: boolean;
   /** See `UserMessageActions.leading` — a queued prompt's status + controls. */
   leadingActions?: React.ReactNode;
+  /** See `UserMessageActions.leadingStatus`. */
+  leadingStatus?: React.ReactNode;
   /** See `UserMessageActions.alwaysVisible`. */
   actionsAlwaysVisible?: boolean;
 }) {
@@ -1119,6 +1134,7 @@ export function UserMessage({
       onRewind={onRewind}
       rewindDisabled={rewindDisabled}
       leading={leadingActions}
+      leadingStatus={leadingStatus}
       alwaysVisible={actionsAlwaysVisible}
     />
   );

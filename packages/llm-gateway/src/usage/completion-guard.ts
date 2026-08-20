@@ -10,12 +10,17 @@ interface ChoiceLike {
     tool_calls?: unknown;
     reasoning?: unknown;
     reasoning_content?: unknown;
+    // A Claude refusal / content-filter turn carries the model's decision in
+    // `refusal` (OpenAI's refusal field) with `content` empty — see the
+    // finish-reason note on choiceHasContent below.
+    refusal?: unknown;
   };
   delta?: {
     content?: unknown;
     tool_calls?: unknown;
     reasoning?: unknown;
     reasoning_content?: unknown;
+    refusal?: unknown;
   };
 }
 
@@ -28,12 +33,26 @@ function partHasContent(part: ChoiceLike['message'] | ChoiceLike['delta']): bool
   const reasoningContent = 'reasoning_content' in part ? part.reasoning_content : undefined;
   if (typeof reasoning === 'string' && reasoning.length > 0) return true;
   if (typeof reasoningContent === 'string' && reasoningContent.length > 0) return true;
+  // A refusal IS the model's output — a populated `refusal` string is a real,
+  // committed turn, not the empty completion this guard exists to catch.
+  const refusal = 'refusal' in part ? part.refusal : undefined;
+  if (typeof refusal === 'string' && refusal.length > 0) return true;
   return false;
 }
 
 function choiceHasContent(choice: unknown): boolean {
   if (!choice || typeof choice !== 'object') return false;
   const c = choice as ChoiceLike;
+  // `finish_reason:'content_filter'` is a REAL terminal answer: the model
+  // refused, and that refusal is the turn's output — not an empty completion.
+  // A Claude refusal arrives as a lone `finish` part (finishReason
+  // 'content-filter', no content); sse.ts emits it as a terminal frame with an
+  // empty delta and `finish_reason:'content_filter'`. Without reading the
+  // finish reason here the stream read "empty", so streaming.ts never committed,
+  // handler.ts classified `empty_completion`, and the turn was retried 3× to a
+  // 502 — losing the refusal reason and wasting 3 upstream calls. Count it as
+  // content so the already-emitted content_filter frame flows to the client.
+  if (c.finish_reason === 'content_filter') return true;
   return partHasContent(c.message) || partHasContent(c.delta);
 }
 

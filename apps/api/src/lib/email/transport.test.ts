@@ -121,6 +121,8 @@ describe('configuredEmailProviders', () => {
       To: [{ Email: 'user@example.test' }],
       Subject: 'Test',
       HTML: '<p>hello</p>',
+      // Empty: this caller passes no `text`. Kortix templates all supply one
+      // (see template.ts renderText); nothing is derived from the HTML.
       Text: '',
       Tags: ['unit-test'],
     });

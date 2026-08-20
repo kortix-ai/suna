@@ -108,10 +108,19 @@ export const SessionLayout = memo(function SessionLayout({
   // (fresh navigation, tab switch, back/forward, transient → real handoff),
   // and `setActiveSession` closes both surfaces, so a session you have just
   // arrived at never inherits the last one's right side.
+  //
+  // `continuity` names the Kortix project session behind this layout id and
+  // whether this mount is the transient boot shell. The store uses it for one
+  // thing: the boot→ready crossfade renames the layout from the Kortix session
+  // id (shell) to the OpenCode id (real chat) for the SAME session — that
+  // handoff must carry an open panel across instead of slamming it shut.
   useEffect(() => {
     if (!isVisibleLayout) return;
-    setActiveSession(sessionId);
-  }, [isVisibleLayout, sessionId, setActiveSession]);
+    setActiveSession(sessionId, {
+      projectSessionId: projectSessionId ?? null,
+      transient,
+    });
+  }, [isVisibleLayout, sessionId, setActiveSession, projectSessionId, transient]);
 
   const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId]);
   const panelView = normalizeSessionPanelLayoutView(storedPanelView);

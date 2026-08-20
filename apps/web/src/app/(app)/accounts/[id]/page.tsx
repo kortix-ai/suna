@@ -140,6 +140,7 @@ const ACCOUNT_PERMISSION_PROBES = [
   { action: 'member.read' }, // GET .../iam/members        → Members
   { action: 'group.read' }, // GET .../iam/groups          → Groups
   { action: 'role.read' }, // GET .../iam/roles            → Roles
+  { action: 'policy.read' }, // GET .../iam/policies       → the members list's custom-role column
   { action: 'audit.read' }, // GET .../audit               → Audit log
   // Writes → controls inside a visible pane.
   { action: 'account.write' },
@@ -310,6 +311,7 @@ export default function AccountSettingsPage() {
     { allowed: canReadMembers },
     { allowed: canReadGroups },
     { allowed: canReadRoles },
+    { allowed: canReadPolicies },
     { allowed: canReadAudit },
     { allowed: canWriteAccount },
     { allowed: canDeleteAccount },
@@ -622,6 +624,8 @@ export default function AccountSettingsPage() {
                   canRemove={canRemoveMember}
                   rbacEnabled={rbacEnabled}
                   canManageRoles={canManageRoles}
+                  canReadPolicies={canReadPolicies}
+                  canReadRoles={canReadRoles}
                   onBack={() => navigate('members')}
                   onOpenGroup={(groupId) => navigate('groups', { group: groupId })}
                 />
@@ -641,6 +645,8 @@ export default function AccountSettingsPage() {
                   canAddToGroup={canManageGroupMembers}
                   rbacEnabled={rbacEnabled}
                   canManageRoles={canManageRoles}
+                  canReadRoles={canReadRoles}
+                  canReadPolicies={canReadPolicies}
                   onSelectMember={(id) => navigate('members', { member: id })}
                 />
               )
@@ -654,6 +660,8 @@ export default function AccountSettingsPage() {
                   accountId={account.account_id}
                   canCreate={canCreateGroup}
                   rbacEnabled={rbacEnabled}
+                  canReadRoles={canReadRoles}
+                  canReadPolicies={canReadPolicies}
                   selectedGroupId={selectedAccessGroupId}
                   onSelectGroup={(id) => navigate('groups', { group: id })}
                 />
@@ -1146,6 +1154,8 @@ function MembersCard({
   canAddToGroup,
   rbacEnabled,
   canManageRoles,
+  canReadRoles,
+  canReadPolicies,
   onSelectMember,
 }: {
   account: AccountDetail;
@@ -1164,6 +1174,13 @@ function MembersCard({
   /** Tier carries the `rbac` entitlement — gates the custom-role group. */
   rbacEnabled: boolean;
   canManageRoles: boolean;
+  /** `role.read` — the leaf `GET .../iam/roles` asserts. PERMISSION, not
+   *  entitlement: an entitled account whose viewer is a plain member holds
+   *  neither `role.read` nor `policy.read` — both live in `ADMIN_EXTRAS`
+   *  (`apps/api/src/iam/role-perms.ts`), never in `MEMBER_BASELINE`. */
+  canReadRoles: boolean;
+  /** `policy.read` — the leaf `GET .../iam/policies` asserts. */
+  canReadPolicies: boolean;
   /** Opens one member's `MemberAccessPanel` in this same pane
    *  (`?tab=members&member=<id>`) — no route change, the rail stays. */
   onSelectMember: (userId: string) => void;
@@ -1198,14 +1215,27 @@ function MembersCard({
   // that rides on the `member` baseline plus one account-scoped
   // `iam_policies` row. The row and the dialog read it through the same
   // `RoleValue`, so neither has to know which of the two it is.
-  // Both reads are gated on the entitlement: without `rbac` there are no
-  // custom roles and no policies to resolve, so every row's role is the
-  // built-in one and these two requests would only 402/403 for nothing.
-  const rolesQuery = useAccountRoles(account.account_id, rbacEnabled);
+  // Both reads are gated on TWO independent axes, and both must hold:
+  //
+  //  1. ENTITLEMENT (`rbacEnabled`) — without `rbac` there are no custom roles
+  //     and no policies to resolve, so every row's role is the built-in one.
+  //  2. PERMISSION (`canReadRoles` / `canReadPolicies`) — `GET .../iam/roles`
+  //     asserts `role.read` and `GET .../iam/policies` asserts `policy.read`
+  //     (`apps/api/src/accounts/iam/custom-roles.ts`). Both leaves sit in
+  //     `ADMIN_EXTRAS`; `MEMBER_BASELINE` holds neither
+  //     (`apps/api/src/iam/role-perms.ts`).
+  //
+  // The entitlement alone was the gate until now, which meant an entitled
+  // account whose viewer is an ordinary member fired both requests on every
+  // hub load and took two background 403s for data it can never render.
+  // `=== true` deliberately, not `!== false`: the probe answers `false` while
+  // in flight, so an optimistic gate would fire the very request it exists to
+  // suppress before the verdict arrives.
+  const rolesQuery = useAccountRoles(account.account_id, rbacEnabled && canReadRoles === true);
   const policiesQuery = useQuery({
     queryKey: ['iam-policies', account.account_id],
     queryFn: () => listPolicies(account.account_id),
-    enabled: rbacEnabled,
+    enabled: rbacEnabled && canReadPolicies === true,
     staleTime: 30_000,
   });
   const accountPolicyByUser = useMemo(() => {

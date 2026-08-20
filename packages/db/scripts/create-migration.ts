@@ -68,9 +68,23 @@ if (concurrent) {
 //   - Always use IF NOT EXISTS / IF EXISTS -- a CONCURRENTLY build can fail
 //     partway through and leave an INVALID index; the migration must be safe
 //     to re-run (check pg_index.indisvalid before retrying by hand if it does).
-//   - lock_timeout still matters for the brief catalog-level lock the build
-//     takes at the very end; statement_timeout should be generous (index
-//     builds on large tables can legitimately run long) or left unset.
+//   - lock_timeout MUST be generous here -- 180s below, never the 2-5s used by
+//     a plain .sql migration. CREATE INDEX CONCURRENTLY does not just take a
+//     brief lock at the end: before it can start, and again before it can
+//     finish, it waits for EVERY transaction in the database that began before
+//     it (it takes a ShareLock on each one's virtual transaction id), and
+//     \`lock_timeout\` governs that wait. On a live system -- audit_events
+//     writers on every request, multi-second session-turn transactions -- some
+//     transaction outlives a 5-second budget almost every time, so the build is
+//     cancelled with 55P03 and leaves an INVALID index behind, which then makes
+//     a plain re-run fail with "already exists". The 2-5s house value exists to
+//     stop DDL blocking prod; the one lock a CONCURRENTLY build holds
+//     (ShareUpdateExclusive on the table) only excludes other DDL and VACUUM,
+//     so a long wait here blocks no user and that rationale does not apply.
+//     This is lint-enforced: a new .concurrent.ts file that sets lock_timeout
+//     below 120s fails \`pnpm --filter @kortix/db lint\`.
+//   - statement_timeout should be generous (index builds on large tables can
+//     legitimately run long) -- 30min below.
 //   - This is lint-enforced: packages/db/scripts/lint-migrations.ts requires
 //     pgm.noTransaction() AND a CONCURRENTLY operation in every .concurrent.ts
 //     file, or CI fails.
@@ -90,7 +104,8 @@ export const up = (pgm) => {
   // silently defeats pgm.noTransaction() (CONCURRENTLY still fails with
   // "cannot run inside a transaction block") even though noTransaction() IS
   // working correctly at the node-pg-migrate level. One statement per call.
-  pgm.sql(\`set lock_timeout = '2s'\`);
+  pgm.sql(\`set lock_timeout = '180s'\`);
+  pgm.sql(\`set statement_timeout = '30min'\`);
   pgm.sql(\`
     create index concurrently if not exists idx_TODO_ON_TODO_TABLE
       on kortix.TODO_TABLE (TODO_COLUMN)

@@ -26,8 +26,8 @@ import { cn } from '@/lib/utils';
 import {
   ArrowClockwiseIcon,
   PaperPlaneRightIcon,
-  TrashIcon,
   WarningIcon,
+  XIcon,
 } from '@phosphor-icons/react';
 import { BUBBLE_SURFACE, BUBBLE_TEXT } from './user-message';
 
@@ -92,9 +92,107 @@ function Action({
 }
 
 /**
- * Status text + the controls a queued prompt has, laid out for a bubble's
- * meta row. A row on the wire has no controls — the server refuses every
- * action for it — and says so.
+ * The one-word status of a queued prompt — "Queued", "Held — stopped", "Not
+ * sent — …". ALWAYS visible: a bubble at 50% opacity with nothing said about
+ * it reads as "something is wrong", and the word is what makes the dim legible
+ * (Claude.ai/ChatGPT both caption a queued message). The controls beside it
+ * stay hover-revealed — see `QueuedPromptActions`.
+ */
+export function QueuedPromptStatus({
+  state,
+  lastError,
+}: {
+  state: QueuedPromptState;
+  lastError?: string;
+}) {
+  const failed = state === 'failed';
+  // A plain queued/in-flight bubble says nothing: the dim IS the state, and a
+  // caption under every queued message read as clutter (review feedback).
+  // Held, failed and interrupted still speak — those need words to be
+  // actionable.
+  if (state === 'queued' || state === 'in-flight') return null;
+  return (
+    <InlineMeta>
+      <span
+        data-queued-status={state}
+        className={cn('flex items-center gap-1', failed && 'text-destructive')}
+      >
+        {failed && <WarningIcon className="size-3.5" />}
+        {queuedPromptStatusLabel(state, lastError)}
+      </span>
+    </InlineMeta>
+  );
+}
+
+/**
+ * The controls a queued prompt has: remove; send now while the queue is HELD
+ * by a stop; retry on a failed row. Null when the row has none — on the wire
+ * (the server refuses every action for it) or interrupted (the runtime holds
+ * it; a button here only invited a duplicate).
+ */
+export function QueuedPromptActions({
+  id,
+  state,
+  onRemove,
+  onSendNow,
+  onRetry,
+}: {
+  id: string;
+  state: QueuedPromptState;
+  onRemove?: (id: string) => void;
+  onSendNow?: (id: string) => void;
+  onRetry?: (id: string) => void;
+}) {
+  const failed = state === 'failed';
+  const interrupted = state === 'interrupted';
+  // In-flight is NOT beyond removal any more: the server cancels a forwarded
+  // prompt the agent has not read (and answers 409 with the reason when a
+  // step already owns it). Only an interrupted message keeps zero controls —
+  // the runtime holds it and the next send runs it.
+  const showActions =
+    !interrupted &&
+    (Boolean(onRemove) || (failed && !!onRetry) || (state === 'held' && !!onSendNow));
+  if (!showActions) return null;
+  return (
+    <div className="flex shrink-0 items-center gap-0.5">
+      {failed && onRetry && (
+        <Action label="Retry" onClick={() => onRetry(id)}>
+          <ArrowClockwiseIcon className="size-4" />
+        </Action>
+      )}
+      {state === 'held' && onSendNow && (
+        <Action label="Send now" onClick={() => onSendNow(id)}>
+          <PaperPlaneRightIcon className="size-4" />
+        </Action>
+      )}
+      {onRemove && <RemoveFromQueueButton id={id} onRemove={onRemove} />}
+    </div>
+  );
+}
+
+/**
+ * The one way OUT of the queue, in a FIXED spot: beside the bubble, never in
+ * the meta row — the timestamp and copy control appear and resize there, and
+ * an X that jumps around is an X nobody can aim at (review feedback).
+ */
+export function RemoveFromQueueButton({
+  id,
+  onRemove,
+}: {
+  id: string;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <Action label="Remove from queue" onClick={() => onRemove(id)} destructive>
+      <XIcon className="size-4" />
+    </Action>
+  );
+}
+
+/**
+ * Status + controls together, for a caller that lays out one row. A row on
+ * the wire has no controls — the server refuses every action for it — and
+ * says so.
  */
 export function QueuedPromptControls({
   id,
@@ -111,45 +209,16 @@ export function QueuedPromptControls({
   onSendNow?: (id: string) => void;
   onRetry?: (id: string) => void;
 }) {
-  const failed = state === 'failed';
-  const inFlight = state === 'in-flight';
-  const interrupted = state === 'interrupted';
-  // An interrupted message has no controls: the runtime already holds it and
-  // the next send runs it — a button here only invited a duplicate.
-  const showActions =
-    !inFlight &&
-    !interrupted &&
-    (Boolean(onRemove) || (failed && !!onRetry) || (state === 'held' && !!onSendNow));
   return (
     <>
-      <InlineMeta>
-        <span
-          data-queued-status={state}
-          className={cn('flex items-center gap-1', failed && 'text-destructive')}
-        >
-          {failed && <WarningIcon className="size-3.5" />}
-          {queuedPromptStatusLabel(state, lastError)}
-        </span>
-      </InlineMeta>
-      {showActions && (
-        <div className="flex shrink-0 items-center gap-0.5">
-          {failed && onRetry && (
-            <Action label="Retry" onClick={() => onRetry(id)}>
-              <ArrowClockwiseIcon className="size-4" />
-            </Action>
-          )}
-          {state === 'held' && onSendNow && (
-            <Action label="Send now" onClick={() => onSendNow(id)}>
-              <PaperPlaneRightIcon className="size-4" />
-            </Action>
-          )}
-          {onRemove && (
-            <Action label="Remove" onClick={() => onRemove(id)} destructive>
-              <TrashIcon className="size-4" />
-            </Action>
-          )}
-        </div>
-      )}
+      <QueuedPromptStatus state={state} lastError={lastError} />
+      <QueuedPromptActions
+        id={id}
+        state={state}
+        onRemove={onRemove}
+        onSendNow={onSendNow}
+        onRetry={onRetry}
+      />
     </>
   );
 }
@@ -193,39 +262,46 @@ function QueuedBubble({
     <div
       data-queued-prompt-id={row.id}
       data-queued-state={state}
-      className="group/queued ml-auto flex w-full max-w-[80%] flex-col items-end gap-2 self-end"
+      className="group/queued ml-auto flex w-full max-w-[80%] flex-col items-end gap-1 self-end"
     >
-      <div
-        className={cn(
-          BUBBLE_SURFACE,
-          'w-fit transition-opacity duration-500',
-          failed ? 'opacity-90' : live ? 'opacity-100' : QUEUED_BUBBLE_OPACITY_CLASS,
-        )}
-      >
-        <div className={cn('max-w-full min-w-0 max-h-[200px] overflow-hidden', BUBBLE_TEXT)}>
-          {row.text}
+      {/* Bubble + its controls in ONE row: the actions sit beside the bubble,
+          to its right, revealed on hover — never floating in space. The
+          column is width-reserved (`w-6`) so nothing shifts on hover. */}
+      <div className="flex w-full items-center justify-end gap-1">
+        <div
+          className={cn(
+            BUBBLE_SURFACE,
+            'w-fit transition-opacity duration-500',
+            failed ? 'opacity-90' : live ? 'opacity-100' : QUEUED_BUBBLE_OPACITY_CLASS,
+          )}
+        >
+          <div className={cn('max-w-full min-w-0 max-h-[200px] overflow-hidden', BUBBLE_TEXT)}>
+            {row.text}
+          </div>
+        </div>
+        <div
+          className={cn(
+            'flex w-6 shrink-0 flex-col items-center justify-center transition-opacity duration-150',
+            failed
+              ? 'opacity-100'
+              : 'opacity-0 group-hover/queued:opacity-100 focus-within:opacity-100',
+          )}
+        >
+          <QueuedPromptActions
+            id={row.id}
+            state={state}
+            onRemove={onRemove}
+            onSendNow={onSendNow}
+            onRetry={onRetry}
+          />
         </div>
       </div>
-      {/* Same anatomy as the sent bubble's meta row: status + controls,
-          revealed on hover, height held so nothing reflows. A failed row keeps
-          its row visible — a failure the user has to hunt for is a message
-          silently lost. */}
-      <div
-        className={cn(
-          'flex w-full items-center justify-end gap-2 transition-opacity duration-150',
-          failed
-            ? 'opacity-100'
-            : 'opacity-0 group-hover/queued:opacity-100 focus-within:opacity-100',
-        )}
-      >
-        <QueuedPromptControls
-          id={row.id}
-          state={state}
-          lastError={row.lastError}
-          onRemove={onRemove}
-          onSendNow={onSendNow}
-          onRetry={onRetry}
-        />
+      {/* The status word sits SNUG under the bubble, aligned to its edge —
+          it is what explains the dim, so it is always readable, and it must
+          read as the bubble's caption, not a free-floating label. `pr-7`
+          keeps it flush with the bubble (the reserved actions column). */}
+      <div className="flex w-full items-center justify-end pr-7">
+        <QueuedPromptStatus state={state} lastError={row.lastError} />
       </div>
     </div>
   );
@@ -248,7 +324,7 @@ export function QueuedPromptBubbles({
     <div
       role="list"
       aria-label={held ? 'Queued prompts, held' : 'Queued prompts'}
-      className={cn('flex flex-col gap-4', className)}
+      className={cn('flex flex-col gap-3', className)}
     >
       {queued.map((row) => (
         <QueuedBubble

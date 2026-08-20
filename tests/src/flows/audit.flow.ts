@@ -4,6 +4,8 @@
  * Uses ctx.fixtures.team() — OWNER is authorized, NONMEMBER → 403. Maps to AUD-*.
  */
 import { flow } from '../core/flow';
+import { isKe2eRetryableError } from '../core/client';
+import { waitFor } from '../core/poll';
 
 interface AuditPageBody {
   events: Array<{ event_id: string }>;
@@ -517,16 +519,35 @@ flow(
       });
       action.status(200);
 
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
-        ...base,
-        query: {
-          project_id: project.id,
-          actor_type: 'human',
-          source: 'cli',
-          outcome: 'success',
-          correlation_id: correlationId,
+      // Audit writes are an in-process async queue since #6618
+      // (apps/api/src/shared/audit-queue.ts, 250 ms batch timer). The list
+      // route flushes — but flushes ITS OWN process's queue, and deployed
+      // staging runs 3 API tasks, so the read usually lands on a task that did
+      // not emit the event. Run 32306385663 read 0 events for that reason. Poll
+      // until the emitter's own timer has flushed; the strict envelope
+      // assertions below are unchanged. Never make audit writes synchronous.
+      const r = await waitFor(
+        async () =>
+          ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+            ...base,
+            query: {
+              project_id: project.id,
+              actor_type: 'human',
+              source: 'cli',
+              outcome: 'success',
+              correlation_id: correlationId,
+            },
+          }),
+        {
+          until: (res) =>
+            res.statusCode === 200 &&
+            (res.json<{ events?: unknown[] }>().events?.length ?? 0) > 0,
+          timeoutMs: 15_000,
+          intervalMs: 500,
+          description: `the correlated audit event for ${correlationId} to be flushed`,
+          retryOnError: isKe2eRetryableError,
         },
-      });
+      );
       r.status(200).body().exists('$.events');
       const events = r.json<{ events: Array<Record<string, unknown>> }>().events;
       if (events.length !== 1) {

@@ -61,7 +61,6 @@ import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
 import {
   type PreparedInitialSandboxTurn,
@@ -203,6 +202,12 @@ export function sessionBootByTemplateIdEnabled(): boolean {
   const raw = (process.env.KORTIX_SESSION_BOOT_BY_TEMPLATE_ID ?? '').trim().toLowerCase();
   if (raw === '') return true; // default ON
   return !(raw === '0' || raw === 'off' || raw === 'false' || raw === 'no');
+}
+
+/** Default-off kill switch for the shared slim cold-boot image. */
+export function fastColdBootEnabled(): boolean {
+  const raw = (process.env.KORTIX_FAST_COLD_BOOT_ENABLED ?? '').trim().toLowerCase();
+  return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes';
 }
 
 /**
@@ -530,6 +535,16 @@ export async function provisionSessionSandbox(opts: {
             KORTIX_LLM_BASE_URL: llmBaseUrl,
           }
         : {}),
+      // AI-SDK-native transport toggle. When the operator enables the native
+      // gateway path (`GATEWAY_AI_SDK_NATIVE`, one switch for both the gateway
+      // mount and this injection), tell the daemon's `buildKortixProvider` to
+      // select `@ai-sdk/gateway` (native `/language-model`) instead of
+      // `@ai-sdk/openai-compatible`. Allowlisted in the daemon's env route
+      // (OPENCODE_RUNTIME_ENV_NAMES). Inert without the KORTIX_LLM_* pair above:
+      // `buildKortixProvider` runs only when the gateway provider is mounted, so
+      // a session on native BYOK ignores it. When the flag is OFF this key is
+      // absent — byte-identical to the pre-flag env.
+      ...(config.aiSdkNative ? { KORTIX_LLM_AI_SDK_NATIVE: 'true' } : {}),
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
@@ -554,7 +569,13 @@ export async function provisionSessionSandbox(opts: {
     // Provider failover (one-shot, on init): set true once we've handed off to a
     // second provider, so a session never bounces between providers forever.
     let fallbackAttempted = false;
-    let imageInfo: { snapshotName: string; slug: string; contentHash: string; isDefault: boolean } | null = null;
+    let imageInfo: {
+      snapshotName: string;
+      slug: string;
+      contentHash: string;
+      isDefault: boolean;
+      runtimeProfile?: 'standard' | 'fast' | 'meta';
+    } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id),
     // read once, best-effort — a DB hiccup yields null → name-boot. Set
     // `idBootDisabled` once a definitive GC'd-pin 404 forces this session down to
@@ -584,26 +605,14 @@ export async function provisionSessionSandbox(opts: {
     provisioning: while (true) {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
-      const networkBoundary = await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
-      // A provider with no edge to arm is only a failure when nothing else can
-      // deliver the binding. With the in-guest shim the credential is injected
-      // by the broker route at request time, so there is nothing to register
-      // here — the binding reaches the guest as host->identifier rules in the
-      // sandbox env, carrying no value.
-      //
-      // This is the SECOND copy of this check; the other is in
-      // startNetworkBoundaryArm (projects/lib/sandbox-env-sync.ts). They share
-      // a message string and must not drift: relaxing only one still fails
-      // provisioning, just one frame later.
-      if (
-        networkBoundary.length > 0 &&
-        !provider.syncNetworkBoundary &&
-        !(await projectFeatureFlagEnabled(projectId, 'network_boundary_shim'))
-      ) {
-        throw new Error(
-          `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
-        );
-      }
+      // Resolved for its VALIDATION only: it re-reads the agent grant and
+      // throws on a policy no session could serve, which is what turns a broken
+      // secret config into `invalid-secret-boundary-policy` instead of a
+      // generic provider fault. There is nothing to register with a provider —
+      // one mechanism serves daytona, e2b and platinum alike (docs/specs/
+      // 2026-08-19-secrets-exposure-usage-model.md §4): the guest gets a HANDLE
+      // and the broker route substitutes the real value server-side.
+      await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
 
       // Stateless image resolution: ask Daytona if it has the image; build if not.
       // No DB lookup, no degraded fallback — the snapshot is either there or we
@@ -624,6 +633,7 @@ export async function provisionSessionSandbox(opts: {
         slug: image.slug,
         contentHash: image.contentHash,
         isDefault: image.isDefault,
+        runtimeProfile: image.runtimeProfile,
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
@@ -642,7 +652,10 @@ export async function provisionSessionSandbox(opts: {
         routing: activeRouting,
         providerName,
         providerSupportsIdBoot: typeof provider.createFromExternalId === 'function',
-        imageIsDefault: image.isDefault,
+        // A Platinum pin identifies the standard default template. The fast
+        // profile has its own content-addressed name and must never boot that
+        // standard pin by mistake.
+        imageIsDefault: image.isDefault && image.runtimeProfile !== 'fast',
         disabledForSession: idBootDisabled,
       });
       if (bootDecision.bootByTemplateId) {
@@ -654,6 +667,9 @@ export async function provisionSessionSandbox(opts: {
       const createFn = bootDecision.bootByTemplateId
         ? (o: CreateSandboxOpts) => provider.createFromExternalId!(bootDecision.bootByTemplateId!, o)
         : undefined;
+      // No provider edge is armed at create: one mechanism serves daytona, e2b
+      // and platinum alike (docs/specs/2026-08-19-secrets-exposure-usage-model.md
+      // §4). The guest holds a handle; the broker route substitutes server-side.
       let result: ProvisionResult;
       let attempts: number;
       try {
@@ -726,21 +742,6 @@ export async function provisionSessionSandbox(opts: {
         throw createErr;
       }
       bgExternalId = result.externalId;
-      // `syncNetworkBoundary` is optional on the provider interface. The
-      // non-null assertion was safe only while the pre-check above guaranteed
-      // the method existed; now that a shim-backed provider gets past that
-      // check, calling it unguarded would be a TypeError at provision time
-      // rather than the clean skip this is.
-      if (networkBoundary.length > 0 && provider.syncNetworkBoundary) {
-        try {
-          await provider.syncNetworkBoundary(result.externalId, networkBoundary);
-          tl.mark(`network-secrets:${networkBoundary.length}`);
-        } catch (error) {
-          await provider.remove(result.externalId).catch(() => {});
-          bgExternalId = null;
-          throw error;
-        }
-      }
       tl.mark(`provider-create:${attempts}x`);
       const timeline = tl.summary();
 
@@ -879,6 +880,7 @@ export async function provisionSessionSandbox(opts: {
               contentHash: imageInfo!.contentHash,
               sandboxSlug: imageInfo!.slug,
               isPlatformDefault: imageInfo!.isDefault,
+              runtimeProfile: imageInfo!.runtimeProfile ?? 'standard',
               branch,
               provider: providerName,
             },

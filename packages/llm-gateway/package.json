@@ -13,7 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ai-sdk/amazon-bedrock": "5.0.24",
+    "@ai-sdk/amazon-bedrock": "5.0.59",
     "@ai-sdk/anthropic": "4.0.16",
     "@ai-sdk/openai": "4.0.16",
     "@ai-sdk/openai-compatible": "3.0.12",
@@ -22,6 +22,7 @@
     "ai": "7.0.31"
   },
   "devDependencies": {
+    "@ai-sdk/gateway": "4.0.23",
     "@types/bun": "^1.1.0",
     "typescript": "^5.4.0"
   }

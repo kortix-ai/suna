@@ -1,4 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { configureKortix } from '../../http/config';
 import { validateToken } from './accounts';
 
@@ -43,4 +45,19 @@ test('validateToken never throws — returns { valid: false, error } on a 401', 
   expect(result.valid).toBe(false);
   expect(result.identity).toBeUndefined();
   expect(result.error).toBeTruthy();
+});
+
+// `accounts.iam_v2_enabled` was the per-account rollout flag that routed a
+// caller between the V1 and V2 IAM engines. The canonical-RBAC cutover made
+// `kortix.role_assignments` the only authorization store and
+// `apps/api/src/iam/authorize.ts` the only engine, so the API no longer emits
+// the field and nothing can ever set it again. A declared-but-never-populated
+// optional field is worse than no field: it reads as a live switch and invites
+// a host to branch on `undefined`. Asserted against the SOURCE, not the type,
+// because an optional property that is simply absent from the wire cannot be
+// caught at runtime.
+test('AccountDetail no longer declares the dead iam_v2_enabled dual-model switch', () => {
+  const source = readFileSync(join(import.meta.dir, 'accounts.ts'), 'utf8');
+  const offending = source.split('\n').filter((line) => line.includes('iam_v2_enabled'));
+  expect(offending).toEqual([]);
 });

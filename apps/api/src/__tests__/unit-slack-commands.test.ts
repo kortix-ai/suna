@@ -81,6 +81,8 @@ mock.module('../llm-gateway/models/picker', () => ({
 let identityRow: { userId: string } | null = null;
 mock.module('../channels/slack/identity', () => ({
   lookupSlackIdentity: async () => identityRow,
+  linkSlackIdentity: async () => {},
+  resolveSlackActor: async () => ({ userId: 'user-1' }),
   revokeSlackIdentity: async () => true,
   lookupSlackUserIdForKortixUser: async () => null,
 }));

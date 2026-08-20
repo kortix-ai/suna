@@ -8,7 +8,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
-import { iamPolicies, iamRoleActions, iamRoles, projects, serviceAccounts, accountMembers, accountGroups } from '@kortix/db';
+import { iamRoleActions, iamRoles, projects, serviceAccounts, accountMembers, accountGroups } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -184,23 +184,18 @@ function serializeAssignment(row: AssignmentRow) {
 /**
  * Resolve an id the client sent to the binding it names.
  *
- * Two eras of id reach these routes: an `iam_policies.policy_id` from a
- * pre-cutover response, and an assignment id from every response since. Both
- * revoke the same access, and both paths remove BOTH rows — the legacy delete
- * through the mirror trigger, the canonical one through `revokeAssignment`.
+ * ONE id space as of the cutover: `kortix.iam_policies` is a view over
+ * `kortix.role_assignments` whose `policy_id` IS the assignment id, so the two
+ * eras this used to reconcile are the same number. A genuinely pre-cutover
+ * `policy_id` — held by a page rendered before the migration ran — no longer
+ * resolves and gets a 404; reloading the page yields the current id.
  */
 async function resolveBindingId(
   accountId: string,
   id: string,
-): Promise<{ kind: 'legacy'; row: typeof iamPolicies.$inferSelect } | { kind: 'assignment'; row: CustomRoleBinding } | null> {
-  const [legacy] = await db
-    .select()
-    .from(iamPolicies)
-    .where(and(eq(iamPolicies.policyId, id), eq(iamPolicies.accountId, accountId)))
-    .limit(1);
-  if (legacy) return { kind: 'legacy', row: legacy };
+): Promise<CustomRoleBinding | null> {
   const [binding] = (await customRoleBindings({ accountId })).filter((b) => b.policyId === id);
-  return binding ? { kind: 'assignment', row: binding } : null;
+  return binding ?? null;
 }
 
 const Any = z.any();
@@ -290,7 +285,7 @@ iamRouter.openapi(
     }
     if (!name || name.length > 128) return c.json({ error: 'name is required (≤128 chars)' }, 400);
     const resourceType = body.resourceType === 'account' ? 'account' : 'project';
-    const v = validateActions(body.actions ?? [], resourceType);
+    const v = await validateActions(body.actions ?? [], resourceType);
     if (!v.ok) return c.json({ error: v.error }, 400);
 
     try {
@@ -456,7 +451,7 @@ iamRouter.openapi(
     if (!role) return c.json({ error: 'role not found' }, 404);
 
     const body = await readBody(c);
-    const v = validateActions(body.actions ?? [], role.scopeType === 'account' ? 'account' : 'project');
+    const v = await validateActions(body.actions ?? [], role.scopeType === 'account' ? 'account' : 'project');
     if (!v.ok) return c.json({ error: v.error }, 400);
 
     // Replace the set atomically, then bust everyone holding the role so the new
@@ -634,22 +629,10 @@ iamRouter.openapi(
     const parsed = await parsePolicyInput(accountId, body);
     if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status);
 
-    await db.insert(iamPolicies).values({
-      accountId,
-      principalType: parsed.value.principalType,
-      principalId: parsed.value.principalId,
-      roleId: parsed.value.roleId,
-      scopeType: parsed.value.scopeType,
-      scopeId: parsed.value.scopeId,
-      expiresAt: parsed.value.expiresAt,
-      grantedBy: userId,
-    });
-    // …and the canonical binding, through the ONE write path: it enforces the
-    // delegability ceiling (a role carrying a non-delegable action can no
-    // longer be BOUND, not just created), busts the caches, and emits the
-    // single `iam.assignment.granted` event. The mirror trigger already wrote
-    // the same identity inside the INSERT above, so the upsert here produces
-    // one row, not two.
+    // THE write: it enforces the delegability ceiling (a role carrying a
+    // non-delegable action cannot be BOUND, not just created), busts the caches,
+    // and emits the single `iam.assignment.granted` event. `kortix.iam_policies`
+    // is a view over the row it writes.
     const assignment = await assignRole(await actorOf(c, accountId), accountId, {
       principal: {
         type: legacyToCanonicalPrincipal(parsed.value.principalType)!,
@@ -697,31 +680,16 @@ iamRouter.openapi(
 
     const target = await resolveBindingId(accountId, policyId);
     if (!target) return c.json({ error: 'policy not found' }, 404);
-    const before =
-      target.kind === 'legacy'
-        ? {
-            principal_type: target.row.principalType,
-            principal_id: target.row.principalId,
-            role_id: target.row.roleId,
-          }
-        : {
-            principal_type: target.row.principalType,
-            principal_id: target.row.principalId,
-            role_id: target.row.roleId,
-          };
-    if (target.kind === 'legacy') {
-      // The mirror trigger drops the canonical row inside this statement.
-      await db
-        .delete(iamPolicies)
-        .where(and(eq(iamPolicies.policyId, policyId), eq(iamPolicies.accountId, accountId)));
-    } else {
-      // The route asserted policy.delete; `revokeAssignment` would otherwise
-      // re-derive policy.create for a custom role. It removes the legacy row in
-      // the same transaction, so a pre-cutover replica cannot resurrect it.
-      await revokeAssignment(await actorOf(c, accountId), accountId, policyId, {
-        skipWriterAuthz: true,
-      });
-    }
+    const before = {
+      principal_type: target.principalType,
+      principal_id: target.principalId,
+      role_id: target.roleId,
+    };
+    // The route asserted policy.delete; `revokeAssignment` would otherwise
+    // re-derive policy.create for a custom role.
+    await revokeAssignment(await actorOf(c, accountId), accountId, policyId, {
+      skipWriterAuthz: true,
+    });
     await invalidateIamCacheForPolicyPrincipal(before.principal_type, before.principal_id);
     await auditIam(c, {
       accountId,
@@ -752,24 +720,13 @@ iamRouter.openapi(
     const body = await readBody(c);
     const ids = Array.isArray(body.policy_ids) ? body.policy_ids.filter((x: unknown): x is string => typeof x === 'string') : [];
     if (ids.length === 0) return c.json({ deleted: 0 });
-    // Ids of both eras can appear in one batch (a page rendered before the
-    // cutover, revoked after it), so each is resolved on its own.
     const writer = await actorOf(c, accountId);
     let deleted = 0;
     for (const id of ids) {
       const target = await resolveBindingId(accountId, id);
       if (!target) continue;
-      if (target.kind === 'legacy') {
-        await db
-          .delete(iamPolicies)
-          .where(and(eq(iamPolicies.policyId, id), eq(iamPolicies.accountId, accountId)));
-      } else {
-        await revokeAssignment(writer, accountId, id, { skipWriterAuthz: true });
-      }
-      await invalidateIamCacheForPolicyPrincipal(
-        target.row.principalType,
-        target.row.principalId,
-      );
+      await revokeAssignment(writer, accountId, id, { skipWriterAuthz: true });
+      await invalidateIamCacheForPolicyPrincipal(target.principalType, target.principalId);
       deleted++;
     }
     return c.json({ deleted });
@@ -795,9 +752,8 @@ iamRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
-    const target = await resolveBindingId(accountId, policyId);
-    if (!target) return c.json({ error: 'policy not found' }, 404);
-    const existing = target.row;
+    const existing = await resolveBindingId(accountId, policyId);
+    if (!existing) return c.json({ error: 'policy not found' }, 404);
 
     const body = await readBody(c);
     // Re-validate the scope/role/effect/expiry using the same rules as create,
@@ -816,53 +772,10 @@ iamRouter.openapi(
     );
     if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status);
 
-    // A binding's identity IS (principal, role, scope) — changing any of them
-    // is a different assignment, so the edit is a revoke plus a grant, not an
-    // in-place UPDATE of an immutable key. The legacy row is updated too while
-    // it still exists, so a pre-cutover replica sees the same change.
-    const writer = await actorOf(c, accountId);
-    let assignment: AssignmentRow;
-    if (target.kind === 'legacy') {
-      // The legacy row is still the one the mirror trigger derives from, so
-      // updating it re-points the canonical row for free.
-      const [row] = await db
-        .update(iamPolicies)
-        .set({
-          roleId: parsed.value.roleId,
-          scopeType: parsed.value.scopeType,
-          scopeId: parsed.value.scopeId,
-          expiresAt: parsed.value.expiresAt,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(iamPolicies.policyId, policyId), eq(iamPolicies.accountId, accountId)))
-        .returning();
-      await invalidateIamCacheForPolicyPrincipal(existing.principalType, existing.principalId);
-      await auditIam(c, {
-        accountId,
-        action: 'iam.policy.update',
-        resourceType: 'account',
-        resourceId: policyId,
-        after: { role_id: parsed.value.roleId, scope_type: parsed.value.scopeType, scope_id: parsed.value.scopeId },
-      });
-      return c.json(serializeBinding({
-        policyId: row!.policyId,
-        accountId,
-        principalType: row!.principalType as CustomRoleBinding['principalType'],
-        principalId: row!.principalId,
-        roleId: row!.roleId,
-        roleKey: '',
-        roleName: '',
-        scopeType: row!.scopeType as ScopeType,
-        scopeId: row!.scopeId,
-        expiresAt: row!.expiresAt,
-        grantedBy: row!.grantedBy,
-        createdAt: row!.createdAt,
-        updatedAt: row!.updatedAt ?? row!.createdAt,
-      }));
-    }
     // An in-place re-point, NOT revoke+grant: the id is part of this route's
     // contract, and a caller that PATCHes then DELETEs holds it.
-    assignment = await updateAssignment(writer, accountId, policyId, {
+    const writer = await actorOf(c, accountId);
+    const assignment: AssignmentRow = await updateAssignment(writer, accountId, policyId, {
       roleId: parsed.value.roleId,
       scope: { type: parsed.value.scopeType as ScopeType, id: parsed.value.scopeId },
       expiresAt: parsed.value.expiresAt,
@@ -932,20 +845,9 @@ iamRouter.openapi(
       // partial-success contract) rather than aborting the batch with a 500 and
       // leaving earlier rows committed.
       try {
-        await db.insert(iamPolicies).values({
-          accountId,
-          principalType: parsed.value.principalType,
-          principalId: parsed.value.principalId,
-          roleId: parsed.value.roleId,
-          scopeType: parsed.value.scopeType,
-          scopeId: parsed.value.scopeId,
-          expiresAt: parsed.value.expiresAt,
-          grantedBy: userId,
-        });
-        // …and the canonical binding. This is also what makes the import
-        // idempotent: `assignRole` upserts on the assignment identity, where
-        // the legacy table has no unique constraint at all and re-importing the
-        // same file used to create duplicates.
+        // `assignRole` upserts on the assignment identity, which is what makes
+        // the import idempotent — `iam_policies` had no unique constraint at
+        // all, so re-importing the same file used to create duplicates.
         await assignRole(importer, accountId, {
           principal: {
             type: legacyToCanonicalPrincipal(parsed.value.principalType)!,

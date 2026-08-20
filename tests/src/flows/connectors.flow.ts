@@ -248,7 +248,19 @@ flow(
         },
         { params: { projectId: p.id } },
       );
-      r.status(200).body().has('$.ok', true);
+      // BOTH outcomes are correct here, and the test must not pick only one.
+      // This POST is a Git commit round-trip against the project manifest — the
+      // slowest write in the flow — and the ke2e HTTP client retries any
+      // request, POST included, on a fetch throw, a timeout, or an edge
+      // 502/503/504 (core/client.ts) with no test-side idempotency guard. When
+      // the first delivery lands but its response is lost, the retry finds the
+      // slug already in the manifest and `create_only: true` refuses to replace
+      // it with 409 (apps/api/src/connectors/manifest-crud.ts:250-257). That is
+      // the create-only contract working, not a failure. The 200 path still
+      // proves `$.ok`, and the config read below proves the entry landed
+      // exactly once either way.
+      r.status([200, 409]);
+      if (r.statusCode === 200) r.body().has('$.ok', true);
     });
     await ctx.step('duplicate create-only connector → 409', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
@@ -874,6 +886,8 @@ flow(
       'PUT /v1/projects/:projectId/connections/:connectionId/oauth2/application',
       'GET /v1/projects/:projectId/connections/:connectionId/oauth2/application',
       'POST /v1/projects/:projectId/connections/:connectionId/oauth2/discover',
+      'POST /v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
+      'POST /v1/projects/:projectId/connections/:connectionId/oauth2/register',
       'POST /v1/projects/:projectId/connections/:connectionId/oauth2/authorize',
       'POST /v1/projects/:projectId/connections/:connectionId/oauth2/device',
       'POST /v1/projects/:projectId/connections/:connectionId/oauth2/device/:sessionId',
@@ -983,6 +997,50 @@ flow(
       );
       poll.status(400);
     });
+
+    await ctx.step(
+      'MCP authorization discovery and dynamic registration refuse unsafe endpoints',
+      async () => {
+        // The connector's own URL is unresolvable in the local profile; the
+        // chain reports that as a 400 with a reason instead of hanging.
+        const ownResource = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
+          {},
+          { params: { projectId: p.id, connectionId } },
+        );
+        ownResource.status(400).body().exists('$.error');
+        const loopbackResource = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
+          { resource_url: 'https://127.0.0.1/mcp' },
+          { params: { projectId: p.id, connectionId } },
+        );
+        loopbackResource.status(400);
+        const loopbackRegistration = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/connections/:connectionId/oauth2/register',
+          {
+            registration_endpoint: 'https://127.0.0.1/oauth/register',
+            token_url: 'https://identity.example.com/token',
+          },
+          { params: { projectId: p.id, connectionId } },
+        );
+        loopbackRegistration.status(400);
+        const incompleteRegistration = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/connections/:connectionId/oauth2/register',
+          { registration_endpoint: 'https://identity.example.com/register' },
+          { params: { projectId: p.id, connectionId } },
+        );
+        incompleteRegistration.status(400);
+        // A non-member is stopped by the project gate before the connection
+        // is ever looked up, so this is 403 — the same code every other
+        // NONMEMBER step in this flow asserts — not the handler's 404.
+        const foreign = await ctx.client.as(ctx.P.NONMEMBER).post(
+          '/v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
+          {},
+          { params: { projectId: p.id, connectionId } },
+        );
+        foreign.status(403);
+      },
+    );
 
     await ctx.step('reject an invalid public callback state', async () => {
       const callback = await ctx.client

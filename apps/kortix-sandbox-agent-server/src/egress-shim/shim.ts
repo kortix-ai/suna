@@ -1,9 +1,11 @@
 /**
- * The in-guest egress shim — network-boundary secrets on a provider with no
- * credential edge of its own.
+ * The in-guest egress shim — the ONE way an egress-enforced secret is spent,
+ * identically on daytona, e2b and platinum (docs/specs/
+ * 2026-08-19-secrets-exposure-usage-model.md §4).
  *
- * Platinum injects at its own edge. Daytona has none, and cannot be pointed at
- * one (`outboundProxyUrl` is accepted and ignored — measured, see
+ * No provider edge serves secrets any more, and one of them never could:
+ * Daytona has no credential edge and cannot be pointed at one
+ * (`outboundProxyUrl` is accepted and ignored — measured, see
  * docs/NETWORK_BOUNDARY_WITHOUT_PLATINUM.md §7). The way out is to notice the proxy
  * does two separable jobs:
  *
@@ -13,8 +15,8 @@
  * Nothing requires those to be the same process, so they are split (§7.4):
  *
  *   agent ──HTTPS──▶ this shim ──HTTPS──▶ Kortix broker route ──▶ upstream
- *                    (ephemeral CA,        (holds the credential,
- *                     holds NOTHING)        injects, redacts the echo)
+ *                    (ephemeral CA,        (holds the credential, swaps the
+ *                     holds NOTHING)        handle for it, redacts the echo)
  *
  * ## This file cannot hold a secret, by construction
  *
@@ -36,6 +38,7 @@ import http from 'node:http'
 import https from 'node:https'
 import net from 'node:net'
 import type { Duplex } from 'node:stream'
+import zlib from 'node:zlib'
 
 import { LeafIssuer, type EphemeralCa } from './ca'
 import type { ShimBrokerRule } from './rules'
@@ -75,7 +78,7 @@ const BROKER_TIMEOUT_MS = 30_000
  * apps/api's http-broker (and its DB and config dependencies) into the sandbox.
  * The `blocked-headers` test asserts the two lists still agree.
  */
-const BLOCKED_REQUEST_HEADERS = new Set([
+export const BLOCKED_REQUEST_HEADERS = new Set([
   'authorization',
   'connection',
   'content-length',
@@ -89,6 +92,62 @@ const BLOCKED_REQUEST_HEADERS = new Set([
   'transfer-encoding',
   'upgrade',
 ])
+
+/**
+ * The broker's own request ceiling (`MAX_REQUEST_BYTES`,
+ * apps/api/src/secrets/http-broker.ts). Decoding past it only produces bytes
+ * the broker answers 413 to, so it doubles as the decompression-bomb guard: a
+ * 1 KiB gzip that expands to a gigabyte stops here instead of in this process.
+ */
+const MAX_DECODED_REQUEST_BYTES = 1_048_576
+
+const REQUEST_DECODERS: Record<string, (body: Buffer) => Buffer> = {
+  gzip: (body) => zlib.gunzipSync(body, { maxOutputLength: MAX_DECODED_REQUEST_BYTES }),
+  'x-gzip': (body) => zlib.gunzipSync(body, { maxOutputLength: MAX_DECODED_REQUEST_BYTES }),
+  br: (body) => zlib.brotliDecompressSync(body, { maxOutputLength: MAX_DECODED_REQUEST_BYTES }),
+  deflate: (body) => {
+    // `deflate` names two wire formats and clients disagree about which they
+    // send. Try the zlib-wrapped one, fall back to raw.
+    try {
+      return zlib.inflateSync(body, { maxOutputLength: MAX_DECODED_REQUEST_BYTES })
+    } catch {
+      return zlib.inflateRawSync(body, { maxOutputLength: MAX_DECODED_REQUEST_BYTES })
+    }
+  },
+}
+
+/**
+ * Undo the guest's request `content-encoding`, or refuse the request.
+ *
+ * The mirror of forcing `accept-encoding: identity` on the response leg, and
+ * the same security control. Substitution is server-side and byte-based: the
+ * broker finds a handle in the request body by scanning for it, and a gzipped
+ * body does not contain those bytes. Relaying compressed bytes would send the
+ * upstream a body still carrying the handle — a worthless string — and hand
+ * the agent a 401 with nothing naming why.
+ *
+ * Null means "cannot be made identity" and is a REFUSAL, not a fallback.
+ * Relaying an encoding this function does not understand is exactly the case
+ * above with no log line; failing here names it.
+ */
+export function decodeRequestBody(header: string, body: Buffer): Buffer | null {
+  const steps = header
+    .split(',')
+    .map((step) => step.trim().toLowerCase())
+    .filter((step) => step.length > 0 && step !== 'identity')
+  let out = body
+  // Encodings are listed in the order they were applied, so undo them backwards.
+  for (const step of steps.reverse()) {
+    const decode = REQUEST_DECODERS[step]
+    if (!decode) return null
+    try {
+      out = decode(out)
+    } catch {
+      return null
+    }
+  }
+  return out
+}
 
 function ruleFor(rules: readonly ShimBrokerRule[], host: string): ShimBrokerRule | null {
   const needle = host.toLowerCase()
@@ -137,15 +196,45 @@ async function relayToBroker(
   // This is a security control, not a compatibility tweak. The broker redacts
   // an echoed credential by scanning the response bytes; a gzipped body does
   // not contain those bytes, so the scan finds nothing and the credential is
-  // returned to the guest intact. The out-of-guest proxy forced identity for
-  // exactly this reason and the broker does NOT do it for us — `accept-encoding`
-  // is absent from its blocked list, so a plain `curl` (which offers gzip by
-  // default) would defeat echo protection.
+  // returned to the guest intact. The broker itself now forces `identity` on
+  // its upstream leg for exactly this reason (it DROPS any caller value rather
+  // than 400ing it, so this line and every already-deployed daemon that sends
+  // it keep working); the shim sets it too so a plain `curl` (which offers gzip
+  // by default) still gets an uncompressed body end to end.
   //
   // It is also the only correct answer for the guest: `content-encoding` is not
   // in the broker's response-header whitelist, so compressed bytes would arrive
   // with nothing saying they were compressed.
   forwarded['accept-encoding'] = 'identity'
+
+  // The REQUEST leg gets the same treatment, for the mirror-image reason:
+  // substitution scans the outgoing bytes for the handle, and a compressed
+  // body does not contain them. Undo the encoding here so the broker sees raw
+  // bytes, and drop the header so the upstream is told what it actually gets.
+  let payload = body
+  const contentEncoding = req.headers['content-encoding']
+  if (typeof contentEncoding === 'string' && contentEncoding.trim().length > 0) {
+    delete forwarded['content-encoding']
+    // An empty body carries no handle, so there is nothing to make visible and
+    // nothing to refuse — a `Content-Encoding` on a bodyless GET is a spurious
+    // header, not a request the shim should reject.
+    const decoded = body.length === 0 ? body : decodeRequestBody(contentEncoding, body)
+    if (!decoded) {
+      // Refuse rather than relay. The alternative is a request whose handle is
+      // never substituted, an upstream 401, and an agent with nothing to read.
+      res.writeHead(400, { 'content-type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          error:
+            `kortix egress shim: cannot relay a request body encoded as ` +
+            `'${contentEncoding}'. Send it uncompressed.`,
+          code: 'unsupported_request_encoding',
+        }),
+      )
+      return
+    }
+    payload = decoded
+  }
 
   const call = options.brokerFetch ?? fetch
   const url =
@@ -158,7 +247,7 @@ async function relayToBroker(
       url: `https://${host}${req.url ?? '/'}`,
       method: (req.method ?? 'GET').toUpperCase(),
       ...(Object.keys(forwarded).length > 0 ? { headers: forwarded } : {}),
-      ...(body.length > 0 ? { body_base64: body.toString('base64') } : {}),
+      ...(payload.length > 0 ? { body_base64: payload.toString('base64') } : {}),
     }),
     signal: AbortSignal.timeout(BROKER_TIMEOUT_MS),
   })

@@ -66,14 +66,22 @@ import {
  * open compute billing. A hard failure records a terminal cooldown payload, so
  * browser `/start` polling cannot create a provider retry storm.
  */
-export async function resumeStoppedSandbox(row: {
-  sandboxId: string;
-  sessionId: string;
-  accountId: string;
-  provider: string;
-  externalId: string | null;
-  metadata?: Record<string, unknown> | null;
-}): Promise<boolean> {
+export async function resumeStoppedSandbox(
+  row: {
+    sandboxId: string;
+    sessionId: string;
+    accountId: string;
+    provider: string;
+    externalId: string | null;
+    metadata?: Record<string, unknown> | null;
+  },
+  /**
+   * A provider status the caller already read, forwarded to the wake so it does
+   * not pay a second provider round trip for the same answer. See
+   * `executeClaimedRuntimeWake`'s `knownStatus`.
+   */
+  knownProviderStatus?: string | null,
+): Promise<boolean> {
   if (!row.externalId) return false;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) return false;
 
@@ -138,6 +146,7 @@ export async function resumeStoppedSandbox(row: {
 
   const provider = getProvider(row.provider as SandboxProviderName);
   void executeClaimedRuntimeWake({
+    knownStatus: knownProviderStatus ?? null,
     getStatus: () => provider.getStatus(externalId),
     start: () => provider.start(externalId),
     stop: () => provider.stop(externalId),
@@ -810,14 +819,25 @@ export async function openSession(args: {
       .getStatus(row.externalId)
       .catch(() => 'unknown' as const);
     if (stoppedProviderStatus !== 'removed' || !provider.recoverInPlace) {
-      await resumeStoppedSandbox({
-        sandboxId: row.sandboxId,
-        sessionId: row.sessionId,
-        accountId: row.accountId,
-        provider: row.provider,
-        externalId: row.externalId,
-        metadata: row.metadata as Record<string, unknown> | null,
-      });
+      await resumeStoppedSandbox(
+        {
+          sandboxId: row.sandboxId,
+          sessionId: row.sessionId,
+          accountId: row.accountId,
+          provider: row.provider,
+          externalId: row.externalId,
+          metadata: row.metadata as Record<string, unknown> | null,
+        },
+        // Already read one line above — do not buy it twice. Withheld for
+        // 'removed': that status makes the wake fail INSTEAD of starting, and
+        // the fence is detached (`void`), so without its own `getStatus` await
+        // to defer it the failure write races — and beats — the row re-read
+        // three lines below. The caller would then serve the terminal cooldown
+        // payload for a box whose wake had only just been claimed, instead of
+        // `runtime_waking`. A removed box is a rare terminal path where one
+        // extra provider round trip buys nothing worth that.
+        stoppedProviderStatus === 'removed' ? null : stoppedProviderStatus,
+      );
       const [resumed] = await db
         .select()
         .from(sessionSandboxes)

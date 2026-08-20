@@ -57,7 +57,9 @@ export interface ProjectSecret {
   configured: boolean;
   /** Which value is effective for the requesting user. */
   effective_source: 'mine' | 'shared' | 'none';
-  /** How the secret can leave Kortix storage. */
+  /** How the secret can leave Kortix storage — the stored column behind the
+   *  exposure a user sees: `runtime` = environment, `egress` = enforced at the
+   *  network, `broker`/`denied` = no sandbox presence. */
   strategy?: 'runtime' | 'egress' | 'broker' | 'denied';
   /** Service that consumes the secret. */
   consumer?:

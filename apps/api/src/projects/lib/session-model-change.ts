@@ -140,6 +140,6 @@ export function modelChangeResult(input: {
  * — so this gates on the same owner-or-manager signal the sharing and stop
  * routes use (routes/project-sessions.ts) rather than on visibility.
  */
-export function mayChangeSessionModel(visible: { canManageSharing: boolean }): boolean {
-  return visible.canManageSharing;
+export function mayChangeSessionModel(visible: { canManageLifecycle: boolean }): boolean {
+  return visible.canManageLifecycle;
 }
