@@ -144,6 +144,91 @@ describe('session/url', () => {
     ).toBe('http://p3000-sbx1.localhost:8008/x');
   });
 
+  it('label-encodes the sandbox id in the local form too — a hostname cannot carry `_`', () => {
+    expect(
+      rewriteLocalhostUrl(3000, '/x', {
+        ...opts,
+        sandboxId: 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H',
+        apiBaseUrl: 'http://localhost:8008/v1',
+      }),
+    ).toBe('http://p3000-sbx-01m0g4hxcm32bx5r1gpyzdyc1h.localhost:8008/x');
+  });
+
+  describe('preview origin (the deployment advertises a template)', () => {
+    // A path prefix cannot carry an app that emits `<a href="/learn">`: the
+    // browser resolves it against the API origin and the prefix is gone. When
+    // the deployment serves previews on their own hostname it says so via
+    // GET /v1/p/config, and every preview URL must use it.
+    const withTemplate = {
+      ...opts,
+      previewUrlTemplate: 'https://dev-p{port}-{sandbox}.p.kortix.com',
+    };
+
+    it('substitutes port and sandbox into the advertised template', () => {
+      expect(rewriteLocalhostUrl(3000, '/x', withTemplate)).toBe(
+        'https://dev-p3000-sbx1.p.kortix.com/x',
+      );
+    });
+
+    it('label-encodes the sandbox id the way DNS requires', () => {
+      // Hostnames are lowercased by the browser and cannot carry `_`; the API
+      // resolves the label back to the canonical id.
+      expect(
+        rewriteLocalhostUrl(8081, '/learn', {
+          ...withTemplate,
+          sandboxId: 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H',
+        }),
+      ).toBe('https://dev-p8081-sbx-01m0g4hxcm32bx5r1gpyzdyc1h.p.kortix.com/learn');
+    });
+
+    it('keeps the query string and normalizes a missing leading slash', () => {
+      expect(rewriteLocalhostUrl(3000, 'x?a=1', withTemplate)).toBe(
+        'https://dev-p3000-sbx1.p.kortix.com/x?a=1',
+      );
+    });
+
+    it('wins over both the path form and the localhost subdomain form', () => {
+      expect(
+        rewriteLocalhostUrl(3000, '/x', { ...withTemplate, apiBaseUrl: 'http://localhost:8008/v1' }),
+      ).toBe('https://dev-p3000-sbx1.p.kortix.com/x');
+    });
+
+    it('falls back to the path form when the deployment advertises none', () => {
+      expect(rewriteLocalhostUrl(3000, '/x', { ...opts, previewUrlTemplate: null })).toBe(
+        'https://api.kortix.cloud/v1/p/sbx1/3000/x',
+      );
+    });
+
+    it('ignores a template missing its slots rather than emitting a dead host', () => {
+      expect(
+        rewriteLocalhostUrl(3000, '/x', { ...opts, previewUrlTemplate: 'https://p.kortix.com' }),
+      ).toBe('https://api.kortix.cloud/v1/p/sbx1/3000/x');
+    });
+
+    it('still returns the internal URL when no runtime is bound yet', () => {
+      expect(
+        rewriteLocalhostUrl(3000, '/x', { ...withTemplate, sandboxId: '' }),
+      ).toBe('http://localhost:3000/x');
+    });
+
+    it('is recognized as a preview URL, not as a raw localhost dead end', () => {
+      expect(isPreviewUrl(rewriteLocalhostUrl(3000, '/x', withTemplate))).toBe(true);
+    });
+
+    it('strips trailing slashes off the template linearly, not quadratically', () => {
+      // A long run of '/' is the shape that makes a `/\/+$/` regex backtrack
+      // (CodeQL js/polynomial-redos), and the template is deployment-supplied.
+      const started = Date.now();
+      expect(
+        rewriteLocalhostUrl(3000, '/x', {
+          ...withTemplate,
+          previewUrlTemplate: `https://dev-p{port}-{sandbox}.p.kortix.com${'/'.repeat(50_000)}`,
+        }),
+      ).toBe('https://dev-p3000-sbx1.p.kortix.com/x');
+      expect(Date.now() - started).toBeLessThan(1_000);
+    });
+  });
+
   it('parses + proxies a localhost url', () => {
     expect(parseLocalhostUrl('http://localhost:3000/foo')?.port).toBe(3000);
     expect(proxyLocalhostUrl('http://localhost:3000/foo', opts)).toBe(

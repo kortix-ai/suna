@@ -68,13 +68,22 @@ export function buildPreviewAuthEndpoint(
 }
 
 /**
- * Subdomain preview form: `p{port}-{sandbox}.{host}/…`. These can't use the
- * host-only `/v1/p/` session cookie (it never reaches the preview subdomain),
- * so they authenticate via a one-shot `?token` on the first request.
+ * Preview ORIGIN form: `p{port}-{sandbox}.{host}` locally, or the deployed
+ * `{env}-p{port}-{sandbox}.{domain}`.
+ *
+ * These can't use the host-only `/v1/p/` session cookie — it never reaches
+ * another hostname — so they authenticate the FIRST request with a one-shot
+ * `?token`, which the proxy exchanges for a cookie on the preview origin and
+ * then strips. Every later request (sub-resources, `fetch`, WebSockets) rides
+ * that cookie, which is the only credential an app's own code can carry.
  */
 export function isSubdomainPreviewUrl(candidateUrl: string): boolean {
   try {
-    return /^p\d+-[^.]+\./.test(new URL(candidateUrl).hostname);
+    const { hostname } = new URL(candidateUrl);
+    return (
+      /^p\d+-[^.]+\./.test(hostname)
+      || /^(?:dev|staging|prod|preview)-p\d+-[a-z0-9-]+\./i.test(hostname)
+    );
   } catch {
     return false;
   }

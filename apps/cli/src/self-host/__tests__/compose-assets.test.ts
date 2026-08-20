@@ -410,6 +410,71 @@ describe('full self-host Docker distribution', () => {
     }
   });
 
+  test('preview origins add a wildcard *.<preview base domain> block, only when configured', () => {
+    const caddyfile = renderCaddyfile({ previewHostingConfigured: true });
+
+    expect(caddyfile).toContain('*.{$KORTIX_PREVIEW_BASE_DOMAIN} {');
+    expect(caddyfile).toMatch(/tls \{\s*on_demand\s*\}/);
+    expect(caddyfile).toContain('ask http://kortix-api:8008/v1/apps/edge/tls-check');
+    // Preview-only: the Apps block must not appear.
+    expect(caddyfile).not.toContain('*.{$KORTIX_APPS_BASE_DOMAIN} {');
+
+    const block = caddyfile.slice(caddyfile.indexOf('*.{$KORTIX_PREVIEW_BASE_DOMAIN} {'));
+    expect(block).toContain('name kortix-api');
+    expect(block).toContain('port 8008');
+    expect(block).toContain('health_uri /v1/health');
+    // Host must reach the API untouched — resolvePreviewHost(Host) is what
+    // names the sandbox and the port.
+    expect(block).not.toContain('header_up');
+    expect(block).toContain('Strict-Transport-Security "max-age=2592000"');
+  });
+
+  test('both wildcard families share the one global on_demand_tls ask Caddy allows', () => {
+    const caddyfile = renderCaddyfile({
+      appsHostingConfigured: true,
+      previewHostingConfigured: true,
+    });
+    expect(caddyfile).toContain('*.{$KORTIX_APPS_BASE_DOMAIN} {');
+    expect(caddyfile).toContain('*.{$KORTIX_PREVIEW_BASE_DOMAIN} {');
+    // Caddy allows exactly one global options block, and on_demand_tls is
+    // global-only — two would fail to load and take the whole proxy down.
+    expect(caddyfile.match(/on_demand_tls \{/g)?.length).toBe(1);
+    expect(caddyfile.match(/ask http:/g)?.length).toBe(1);
+  });
+
+  test('neither family configured leaves the base file byte-for-byte', () => {
+    expect(renderCaddyfile({ appsHostingConfigured: false, previewHostingConfigured: false })).toBe(
+      kortixRuntimeAssets.Caddyfile,
+    );
+  });
+
+  test('writeKortixRuntimeAssets writes the preview block only when configured', () => {
+    const withPreview = mkdtempSync(join(tmpdir(), 'kortix-caddy-preview-'));
+    const without = mkdtempSync(join(tmpdir(), 'kortix-caddy-nopreview-'));
+    try {
+      writeKortixRuntimeAssets(withPreview, { previewHostingConfigured: true });
+      writeKortixRuntimeAssets(without);
+      expect(readFileSync(join(withPreview, 'Caddyfile'), 'utf8')).toContain(
+        '*.{$KORTIX_PREVIEW_BASE_DOMAIN} {',
+      );
+      expect(readFileSync(join(without, 'Caddyfile'), 'utf8')).not.toContain(
+        'KORTIX_PREVIEW_BASE_DOMAIN',
+      );
+    } finally {
+      rmSync(withPreview, { recursive: true, force: true });
+      rmSync(without, { recursive: true, force: true });
+    }
+  });
+
+  test('caddy service passes KORTIX_PREVIEW_BASE_DOMAIN into its container env', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+    expect(document.services.caddy?.environment).toMatchObject({
+      KORTIX_PREVIEW_BASE_DOMAIN: '${KORTIX_PREVIEW_BASE_DOMAIN}',
+    });
+  });
+
   test('caddy service passes KORTIX_APPS_BASE_DOMAIN into its container env', () => {
     const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
       services: Record<string, { environment?: Record<string, string> }>;

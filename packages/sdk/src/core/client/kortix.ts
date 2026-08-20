@@ -23,6 +23,7 @@ import { type KortixPlatformConfig, configureKortix, platformConfig } from '../h
 import * as P from '../rest/projects-client';
 import { getSessionHealth } from '../session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
+import { cachedPreviewUrlTemplate, loadPreviewUrlTemplate } from '../session/preview-config';
 import { setCurrentRuntime } from '../session/current-runtime';
 import {
   clearSessionRuntime,
@@ -131,7 +132,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     if (u) {
       backendPort = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80;
     }
-    return { sandboxId, backendPort, apiBaseUrl };
+    return {
+      sandboxId,
+      backendPort,
+      apiBaseUrl,
+      // Warmed by ensureReady() before any handle can call previewUrl(). Null
+      // means "path form", which is both the pre-fetch state and the honest
+      // answer for a deployment that serves no preview domain.
+      previewUrlTemplate: cachedPreviewUrlTemplate(apiBaseUrl),
+    };
   }
 
   /** Account-scoped operations. */
@@ -866,6 +875,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       if (cached) return cached;
       const readyTimeoutMs = opts?.readyTimeoutMs ?? 180_000;
 
+      // Learn how this deployment addresses previews while the sandbox boots.
+      // `previewUrl()` is synchronous (a React render calls it), so the answer
+      // has to be here before it can be asked for. Runs alongside the start
+      // poll and never gates it — a failure just leaves the path form.
+      const previewConfig = loadPreviewUrlTemplate(
+        platformConfig().backendUrl ?? config.backendUrl,
+      ).catch(() => null);
+
       // Dedup concurrent starts for this (projectId, sessionId) — see
       // `inFlightSessionStarts`'s doc comment. If another call (this handle or
       // a different one) already kicked off `/start`, ride its result instead
@@ -874,6 +891,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       const inFlight = inFlightSessionStarts.get(key);
       if (inFlight) {
         _ready = await inFlight;
+        await previewConfig;
         return _ready;
       }
 
@@ -949,6 +967,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       inFlightSessionStarts.set(key, startPromise);
       try {
         _ready = await startPromise;
+        // Resolved concurrently with the boot above, so this is already
+        // settled — awaited here only so `previewUrl()` can never be reached
+        // before the deployment's preview addressing is known.
+        await previewConfig;
         return _ready;
       } finally {
         if (inFlightSessionStarts.get(key) === startPromise) {

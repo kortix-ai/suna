@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { getTraceHeaders } from '../../lib/request-context';
+import { previewOriginFor } from '../preview-hosts';
 import {
   PUBLIC_SHARE_BLOCKED_PORTS,
   STATIC_FILE_SHARE_PORT,
@@ -75,10 +76,23 @@ publicShareApp.get('/:token', async (c) => {
   const proxyPath = row.resourceType === 'file'
     ? `/v1/p/public-share/${token}/file`
     : `/v1/p/public-share/${token}/${row.port}${row.path}`;
-  // Path-based absolute URL only. The subdomain form (p{port}-{id}.{host}) has
-  // no wildcard DNS in production, so it never resolves — always serve the
-  // token-gated proxy path that the proxy routes below actually handle.
-  const publicUrl = row.resourceType === 'preview' ? `${publicOrigin(c)}${proxyPath}` : null;
+  // A shared preview goes to its OWN origin when this deployment has a preview
+  // domain. A shared app is a real site to whoever opens the link: under the
+  // path form its root-absolute links (`<a href="/learn">`, `fetch('/api')`,
+  // `url(/bg.png)`) resolve against the API origin and 404, which is the whole
+  // reason preview origins exist. The `?public_share` token authenticates the
+  // first request, and the proxy exchanges it for a cookie (see
+  // preview-origin.ts). Without a preview domain — a self-host that never
+  // configured one — this stays the token-gated path the routes below handle.
+  const previewOrigin =
+    row.resourceType === 'preview' && row.externalId && row.port
+      ? previewOriginFor(row.externalId, row.port)
+      : null;
+  const publicUrl = previewOrigin
+    ? `${previewOrigin}${normalizeProxyPath(row.path)}?public_share=${encodeURIComponent(token)}`
+    : row.resourceType === 'preview'
+      ? `${publicOrigin(c)}${proxyPath}`
+      : null;
   return c.json({
     share: {
       share_id: row.shareId,

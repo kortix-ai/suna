@@ -144,6 +144,13 @@ const envSchema = z.object({
   // `preview` = ephemeral per-PR API on EKS (shares the dev data plane, never
   // migrates it, workers off, allows preview frontends in CORS). See ensure-schema.ts + the CORS block in index.ts.
   INTERNAL_KORTIX_ENV: z.enum(['dev', 'staging', 'prod', 'preview']).optional().default('dev'),
+
+  // Wildcard domain every preview ORIGIN sits under
+  // (`{env}-p{port}-{sandbox}.{domain}`). Unset on managed cloud, where it is
+  // derived as `p.<registrable domain of KORTIX_URL>`; set it on a self-host
+  // whose DNS does not fit that shape. A deployment with neither keeps previews
+  // on the path proxy. See sandbox-proxy/preview-hosts.ts.
+  KORTIX_PREVIEW_BASE_DOMAIN: optStr,
   // Master switch: turns on real billing (Stripe + credit ledger), makes
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
@@ -956,6 +963,7 @@ export const config = {
 
   // ─── Internal Deployment Controls ─────────────────────────────────────────
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
+  KORTIX_PREVIEW_BASE_DOMAIN: env.KORTIX_PREVIEW_BASE_DOMAIN,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,

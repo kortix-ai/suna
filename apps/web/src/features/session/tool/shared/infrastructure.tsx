@@ -998,12 +998,14 @@ function ToolHeaderRow({
   running,
   onSubtitleClick,
   outcome = 'ok',
+  action,
 }: {
   icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
   running: boolean;
   onSubtitleClick?: () => void;
   outcome?: ToolOutcome;
+  action?: React.ReactNode;
 }) {
   const triggerIsEmpty = isTriggerTitle(trigger) ? !trigger.title && !trigger.subtitle : false;
 
@@ -1026,6 +1028,11 @@ function ToolHeaderRow({
           trigger
         )}
       </div>
+      {/* Outside the `flex-1` wrapper, so it is the row's far right edge and
+          the title/subtitle inside that wrapper take the truncation. `ml-auto`
+          is the belt to the flex-1 braces: a trigger with no subtitle and no
+          args renders a title that does not fill the wrapper. */}
+      {action && <span className="ml-auto flex shrink-0 items-center">{action}</span>}
     </>
   );
 }
@@ -1152,6 +1159,7 @@ function PanelToolRow({
   open,
   onOpenChange,
   className,
+  action,
 }: {
   icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
@@ -1164,6 +1172,7 @@ function PanelToolRow({
   open: boolean;
   onOpenChange: (value: boolean) => void;
   className?: string;
+  action?: React.ReactNode;
 }) {
   const hasBody = Boolean(children);
   // Same substitution the inline header makes, from the same context — a failed
@@ -1201,6 +1210,10 @@ function PanelToolRow({
           {badge}
         </span>
       )}
+      {/* After the badge, before the chevron: the badge counts what the row
+          holds, the chevron opens it, and the action leaves for somewhere else
+          — so the two that concern THIS row stay adjacent to it. */}
+      {action && <span className="flex shrink-0 items-center">{action}</span>}
       {hasBody && (
         <CaretRightIcon
           aria-hidden
@@ -1293,7 +1306,26 @@ function ActivatableToolRow({
   );
 }
 
-// Inline row that expands/collapses its children in place (the default layout).
+/**
+ * Inline row that expands/collapses its children in place (the default layout).
+ *
+ * A row with no children is NOT a disclosure. It used to be one anyway: the
+ * trigger was rendered unconditionally, so a childless row carried
+ * `role="button"`, `aria-expanded="false"` and `tabIndex={0}` and answered a
+ * click by toggling state that rendered nothing. The row said "press me to
+ * open" to a screen reader, to the keyboard and to the pointer, three times
+ * over, and then did nothing at all.
+ *
+ * It is most visible on a sub-agent row whose child session is not resident —
+ * `useOpenCodeMessages` only holds a child's transcript while the parent is
+ * streaming it, and `pruneDetachedSessions` evicts the older ones once a turn
+ * dispatches more than a couple of agents. So the LAST agent in a group of
+ * three opens and the first two are dead rows. But the defect belongs to every
+ * childless tool, so the fix belongs here.
+ *
+ * `PanelToolRow` has always gated its trigger this way. The two surfaces are
+ * one behaviour presented twice; this is the half that had drifted.
+ */
 function CollapsibleToolRow({
   header,
   children,
@@ -1307,18 +1339,22 @@ function CollapsibleToolRow({
   open: boolean;
   onOpenChange: (value: boolean) => void;
 }) {
+  const hasBody = Boolean(children);
+
+  const row = (
+    <div
+      data-component="tool-trigger"
+      className={cn(TOOL_ROW_CLASS, hasBody && !locked && 'cursor-pointer')}
+    >
+      {header}
+    </div>
+  );
+
   return (
     <Disclosure open={open} onOpenChange={onOpenChange}>
-      <DisclosureTrigger>
-        <div
-          data-component="tool-trigger"
-          className={cn(TOOL_ROW_CLASS, children && !locked && 'cursor-pointer')}
-        >
-          {header}
-        </div>
-      </DisclosureTrigger>
+      {hasBody ? <DisclosureTrigger>{row}</DisclosureTrigger> : row}
 
-      {children && open && <div className="mt-1 mb-1 overflow-hidden text-xs">{children}</div>}
+      {hasBody && open && <div className="mt-1 mb-1 overflow-hidden text-xs">{children}</div>}
     </Disclosure>
   );
 }
@@ -1335,6 +1371,7 @@ export function BasicTool({
   onClick,
   className,
   durationMs: durationMsProp,
+  triggerAction,
 }: BasicToolProps) {
   const running = useContext(ToolRunningContext);
   const contextDuration = useContext(ToolDurationContext);
@@ -1385,6 +1422,7 @@ export function BasicTool({
         open={open}
         onOpenChange={handleOpenChange}
         className={className}
+        action={triggerAction}
       >
         {children}
       </PanelToolRow>
@@ -1398,6 +1436,7 @@ export function BasicTool({
       running={running}
       onSubtitleClick={onSubtitleClick}
       outcome={outcome}
+      action={triggerAction}
     />
   );
 

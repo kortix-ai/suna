@@ -108,6 +108,43 @@ function preferredSandboxOrder() {
 // ── Row loading ────────────────────────────────────────────────────────────
 
 /**
+ * Canonical external id for a preview HOST LABEL (`sbx-01m0g4…`).
+ *
+ * A hostname cannot carry an external id verbatim — it is lowercased by the
+ * browser and cannot contain `_` — so the preview origin addresses a sandbox by
+ * `sandboxHostLabel(externalId)` and this turns that back into the real id,
+ * which every downstream gate (ownership, forwarding, WS) then uses unchanged.
+ *
+ * The comparison normalizes the stored column, so it cannot use the
+ * `external_id` index. That is why it is CACHED and why it is deliberately not
+ * folded into `loadSandbox`: the id↔label mapping is immutable, so one scan per
+ * sandbox per task is the whole cost, while `loadSandbox` stays on its indexed
+ * path for every request that carries a real id. Misses are cached briefly too,
+ * so a scan for random labels cannot be repeated at request rate.
+ */
+const HOST_LABEL_MISS_TTL_MS = 30 * 1000;
+const hostLabelCache = new Map<string, { externalId: string | null; expiresAt: number }>();
+
+export async function resolveExternalIdFromHostLabel(label: string): Promise<string | null> {
+  const key = label.toLowerCase();
+  const cached = hostLabelCache.get(key);
+  if (cached && (cached.externalId !== null || Date.now() < cached.expiresAt)) {
+    return cached.externalId;
+  }
+
+  const [match] = await db
+    .select({ externalId: sessionSandboxes.externalId })
+    .from(sessionSandboxes)
+    .where(sql`replace(lower(${sessionSandboxes.externalId}), '_', '-') = ${key}`)
+    .orderBy(...preferredSandboxOrder())
+    .limit(1);
+
+  const externalId = match?.externalId ?? null;
+  hostLabelCache.set(key, { externalId, expiresAt: Date.now() + HOST_LABEL_MISS_TTL_MS });
+  return externalId;
+}
+
+/**
  * Load the session-sandbox row for `externalId` in a single query. Returns null
  * when no row exists. Fresh on every call (status must not be cached); the
  * service key it finds is cached as a side-effect for `resolveServiceKey`.
