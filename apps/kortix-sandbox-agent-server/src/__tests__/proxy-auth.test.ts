@@ -20,7 +20,14 @@ import type { Opencode } from '../opencode'
 import { buildOpencodeApp } from '../proxy'
 import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { buildGitAuthArgs, configureGlobalGitIdentity, materializeRepo, __clearCloneTokenCacheForTests, __clearRepoIdentityMemoForTests } from '../git'
+import {
+  __clearCloneTokenCacheForTests,
+  __clearRepoIdentityMemoForTests,
+  __setScaffoldRepoPathForTests,
+  buildGitAuthArgs,
+  configureGlobalGitIdentity,
+  materializeRepo,
+} from '../git'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 const TEST_AGENT_ENV_FILE = join(tmpdir(), `kortix-proxy-agent-env-${process.pid}.sh`)
@@ -137,6 +144,7 @@ describe('daemon proxy auth gate', () => {
     // own fetch call count + git-config side effects.
     __clearCloneTokenCacheForTests()
     __clearRepoIdentityMemoForTests()
+    __setScaffoldRepoPathForTests()
     rmSync(TEST_AGENT_ENV_FILE, { force: true })
   })
 
@@ -376,6 +384,57 @@ describe('daemon proxy auth gate', () => {
     } finally {
       globalThis.fetch = originalFetch
       process.env.GIT_CONFIG_GLOBAL = originalGitConfigGlobal
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('materializes a matching fresh scaffold without fetching clone credentials', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-matching-scaffold-'))
+    const originalFetch = globalThis.fetch
+    const requests: string[] = []
+    try {
+      const remote = join(root, 'remote.git')
+      const seed = join(root, 'seed')
+      const target = join(root, 'workspace')
+      git(['init', '--bare', remote])
+      mkdirSync(seed)
+      git(['init'], seed)
+      git(['checkout', '-b', 'main'], seed)
+      writeFileSync(join(seed, 'README.md'), 'shared scaffold\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'seed'], seed)
+      git(['remote', 'add', 'origin', remote], seed)
+      git(['push', '-u', 'origin', 'main'], seed)
+      const baseSha = gitOutput(['-C', seed, 'rev-parse', 'HEAD'])
+
+      __setScaffoldRepoPathForTests(remote)
+      globalThis.fetch = (async (url: string | URL | Request) => {
+        const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url
+        requests.push(href)
+        return new Response(JSON.stringify({ auth: { token: 'clone-token' } }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }) as unknown as typeof fetch
+
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectId: 'project-123',
+        apiUrl: 'http://api.local/v1',
+        projectTarget: target,
+        repoUrl: remote,
+        defaultBranch: 'main',
+        branchName: 'session-fresh',
+        sessionFresh: true,
+        baseSha,
+      }))
+
+      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(0)
+      expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('shared scaffold\n')
+      expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(baseSha)
+      expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-fresh')
+    } finally {
+      globalThis.fetch = originalFetch
+      __setScaffoldRepoPathForTests()
       rmSync(root, { recursive: true, force: true })
     }
   })
