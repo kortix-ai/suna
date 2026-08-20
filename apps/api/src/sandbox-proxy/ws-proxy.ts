@@ -27,6 +27,7 @@ import { resolvePreviewWsUpstream } from './routes/preview';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports';
 import { resolveSandboxIngress } from './backend';
+import { establishPreviewSession, resolvePreviewRequest, sessionFromCookies } from './preview-origin';
 
 // opencode's PTY WebSocket endpoint lives on opencode's own port, reachable via
 // a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
@@ -128,7 +129,79 @@ export async function preparePreviewWsUpgrade(
     sandboxId,
   );
   if (!principal) return { ok: false, status: 401, message: 'unauthorized' };
-  const userId = principal.userId;
+
+  return resolveUpgradeForPrincipal({
+    sandboxId,
+    port,
+    remainingPath,
+    search: url.search,
+    userId: principal.userId,
+    callerSessionId: principal.sessionId,
+  });
+}
+
+/**
+ * Upgrade a WebSocket that arrived on a preview ORIGIN.
+ *
+ * The path form authenticates with `?token=` because it has nowhere else to put
+ * a credential. An app on its own origin does not have that option at all: it
+ * writes `new WebSocket('/hmr')`, and neither a header nor a query parameter is
+ * reachable from that call — which is exactly why the origin proxy issues a
+ * cookie. WebSocket handshakes are ordinary HTTP requests and carry it.
+ *
+ * Sandbox and port come from the Host header, so the whole path belongs to the
+ * app; `/v1/p/...` means nothing here.
+ */
+export async function preparePreviewHostWsUpgrade(
+  req: Request,
+  url: URL,
+): Promise<
+  | { ok: true; data: PreviewWsData }
+  | { ok: false; status: number; message: string }
+> {
+  const resolved = resolvePreviewRequest(req, url);
+  if (!resolved) return { ok: false, status: 404, message: 'not a preview host' };
+  if (!resolved.verified) return { ok: false, status: 403, message: 'unsigned preview host' };
+  const { target } = resolved;
+
+  let session = sessionFromCookies(req, target);
+  if (!session) {
+    // No cookie yet — accept the same one-shot credential the HTTP handshake
+    // takes, so a client that opens a socket before any page load still works.
+    const established = await establishPreviewSession(req, url, target);
+    if ('response' in established) {
+      return { ok: false, status: established.response.status, message: 'unauthorized' };
+    }
+    session = established.session;
+  }
+  if (session.kind !== 'principal') {
+    // A public share is a read-only view of an artifact, not a socket.
+    return { ok: false, status: 403, message: 'websocket not available on a shared preview' };
+  }
+
+  return resolveUpgradeForPrincipal({
+    sandboxId: session.sandboxId,
+    port: target.port,
+    remainingPath: url.pathname || '/',
+    search: url.search,
+    userId: session.userId,
+    callerSessionId: session.callerSessionId,
+  });
+}
+
+/** Shared tail of both upgrade paths: pick the upstream port and resolve it. */
+async function resolveUpgradeForPrincipal(input: {
+  sandboxId: string;
+  port: number;
+  remainingPath: string;
+  search: string;
+  userId: string;
+  callerSessionId: string | null;
+}): Promise<
+  | { ok: true; data: PreviewWsData }
+  | { ok: false; status: number; message: string }
+> {
+  const { sandboxId, port, remainingPath, userId, callerSessionId } = input;
 
   // opencode PTY (and any other opencode endpoint) must reach opencode directly
   // on 4096 — the daemon on 8000 can't carry a WebSocket. Everything else is
@@ -137,10 +210,11 @@ export async function preparePreviewWsUpgrade(
   const upstreamPort =
     ptyKind === 'opencode' ? await resolveLiveOpencodePort(sandboxId) : port;
 
-  // Strip our own auth token before forwarding — opencode authenticates via the
-  // Daytona preview token header, not our query param.
-  const upstreamQuery = new URLSearchParams(url.search);
+  // Strip our own auth credentials before forwarding — opencode authenticates
+  // via the Daytona preview token header, not our query params.
+  const upstreamQuery = new URLSearchParams(input.search);
   upstreamQuery.delete('token');
+  upstreamQuery.delete('public_share');
   const queryString = upstreamQuery.toString() ? `?${upstreamQuery.toString()}` : '';
 
   try {
@@ -150,10 +224,10 @@ export async function preparePreviewWsUpgrade(
       userId,
       remainingPath,
       queryString,
-      callerSessionId: principal.sessionId,
+      callerSessionId,
       // A PreviewPrincipal's sessionId is the SANDBOX's own token binding, never
       // a Supabase login id — so it is also the correct agent binding.
-      boundCredentialSessionId: principal.sessionId,
+      boundCredentialSessionId: callerSessionId,
     });
     if (!upstream.ok) {
       return { ok: false, status: upstream.status, message: upstream.message };

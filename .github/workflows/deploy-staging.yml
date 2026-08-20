@@ -311,6 +311,13 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
       SHA8: ${{ needs.preflight.outputs.sha8 }}
       VERSION: ${{ needs.preflight.outputs.version }}
+      # Non-secret task environment. KORTIX_PREVIEW_BASE_DOMAIN is the wildcard
+      # every sandbox preview origin sits under; it is declared, never derived
+      # (see apps/api/src/sandbox-proxy/preview-hosts.ts). Setting it is what
+      # makes clients stop using the path proxy, so it goes in only once the
+      # certificate pack for that wildcard is active. Unset = path proxy, which
+      # is also the complete rollback.
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

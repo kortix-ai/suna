@@ -18,6 +18,12 @@ import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import {
+  APP_EDGE_HEADERS,
+  edgeSecret as sharedEdgeSecret,
+  edgeSignature,
+  verifyEdgeSignedRequest,
+} from '../shared/edge-signature';
+import {
   appAccessCookie,
   appAccessCookieName,
   appAccessibleToUser,
@@ -28,10 +34,9 @@ import {
   type AppAccessMode,
 } from './access';
 
-const EDGE_HOST_HEADER = 'x-kortix-app-host';
-const EDGE_TIMESTAMP_HEADER = 'x-kortix-app-timestamp';
-const EDGE_SIGNATURE_HEADER = 'x-kortix-app-signature';
-const EDGE_MAX_SKEW_MS = 5 * 60_000;
+const EDGE_HOST_HEADER = APP_EDGE_HEADERS.host;
+const EDGE_TIMESTAMP_HEADER = APP_EDGE_HEADERS.timestamp;
+const EDGE_SIGNATURE_HEADER = APP_EDGE_HEADERS.signature;
 const WAKE_LEASE_MS = 2 * 60_000;
 const ACTIVITY_LEASE_MS = 60_000;
 // The `frame-ancestors` directive for App responses. It decides which origins
@@ -587,7 +592,7 @@ export function resolveAppRequest(request: Request, url: URL): ResolvedAppReques
 }
 
 function edgeSecret(): string {
-  return process.env.KORTIX_APPS_EDGE_SECRET || config.API_KEY_SECRET;
+  return sharedEdgeSecret(process.env.KORTIX_APPS_EDGE_SECRET);
 }
 
 export function appEdgeSignature(
@@ -597,15 +602,7 @@ export function appEdgeSignature(
   pathAndQuery: string,
   secret = edgeSecret(),
 ): string {
-  return createHmac('sha256', secret)
-    .update(`${timestamp}\n${host.toLowerCase()}\n${method.toUpperCase()}\n${pathAndQuery}`)
-    .digest('base64url');
-}
-
-function safeEqual(left: string, right: string): boolean {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return edgeSignature(timestamp, host, method, pathAndQuery, secret);
 }
 
 export function verifyAppEdgeRequest(
@@ -619,17 +616,11 @@ export function verifyAppEdgeRequest(
   // resolveAppRequest refuses the caller-supplied host header in this mode, so
   // the App being served is the one the real Host header names.
   if (appDirectEdgeMode()) return true;
-  const host = request.headers.get(EDGE_HOST_HEADER);
-  const timestamp = request.headers.get(EDGE_TIMESTAMP_HEADER);
-  const signature = request.headers.get(EDGE_SIGNATURE_HEADER);
-  if (!host || !timestamp || !signature) return false;
-  if (host.toLowerCase() !== publicHost.toLowerCase()) return false;
-  const time = Number(timestamp);
-  if (!Number.isFinite(time) || Math.abs(Date.now() - time) > EDGE_MAX_SKEW_MS) return false;
-  return safeEqual(
-    signature,
-    appEdgeSignature(timestamp, host, request.method, `${url.pathname}${url.search}`),
-  );
+  return verifyEdgeSignedRequest(request, url, {
+    headers: APP_EDGE_HEADERS,
+    secret: edgeSecret(),
+    publicHost,
+  });
 }
 
 export async function loadPublicAppState(routeKey: string) {

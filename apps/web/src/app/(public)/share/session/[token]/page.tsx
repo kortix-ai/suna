@@ -72,10 +72,15 @@ export default function PublicSessionSharePage() {
   const origin = apiOrigin();
   const iframeSrc = useMemo(() => {
     if (!meta?.share) return '';
-    // Prefer the path-based proxy on the same origin we just fetched metadata
-    // from — it always resolves. `public_url` is a fallback for older responses.
+    // Prefer `public_url`: when this deployment serves preview origins it is the
+    // shared app's OWN origin, which is the only form where the app's
+    // root-absolute links, fetch() calls and WebSockets work. The API falls back
+    // to the path-proxy URL there when it has no preview domain, so this is
+    // always at least as good as composing `proxy_path` ourselves — which stays
+    // as the last resort for an older API that sends no `public_url`.
+    if (meta.share.public_url) return meta.share.public_url;
     if (meta.share.proxy_path && origin) return `${origin}${meta.share.proxy_path}`;
-    return meta.share.public_url || '';
+    return '';
   }, [meta, origin]);
   const fileSrc = useMemo(() => {
     if (!meta?.share || meta.share.resource_type !== 'file') return '';

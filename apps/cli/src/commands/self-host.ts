@@ -1828,6 +1828,29 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
     }
   }
 
+  // Sandbox preview origins (optional, default skip): serves every sandbox port
+  // a browser can open on its OWN hostname,
+  // <env>-p<port>-<sandbox>.<preview base domain>. Without it previews use the
+  // path proxy (/v1/p/<sandbox>/<port>/), which works for tools but not for a
+  // browser: an app that emits <a href="/learn">, an XHR to /api, pushState, a
+  // service worker or a WebSocket resolves those against the API origin and
+  // escapes the prefix. Same mechanics as Apps above — a *.<domain> DNS record
+  // plus per-hostname on-demand certificates, no wildcard certificate needed.
+  if (shouldPrompt(flags)) {
+    const previewMode = await selectFrom(
+      'Sandbox preview origins (optional, makes browser previews of sandbox ports work like a real site): configure/skip',
+      ['skip', 'configure'] as const,
+      env.KORTIX_PREVIEW_BASE_DOMAIN ? 'configure' : 'skip',
+    );
+    if (previewMode === 'configure') {
+      env.KORTIX_PREVIEW_BASE_DOMAIN = await prompt(
+        'Preview base domain (needs a *.<domain> DNS record pointing at this instance; Caddy issues per-preview certificates on demand)',
+        env.KORTIX_PREVIEW_BASE_DOMAIN,
+      );
+      env.KORTIX_PREVIEW_ALLOW_DIRECT_EDGE = 'true';
+    }
+  }
+
   // Pipedream (optional, default skip): the ONE other env-only credential
   // that belongs here — the platform-level OAuth app Pipedream issues per
   // operator, not a per-user connection (those live in the DB and are
@@ -2363,6 +2386,13 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // reverse proxy are served instead of rejected for a missing edge signature.
     KORTIX_APPS_BASE_DOMAIN: '',
     KORTIX_APPS_ALLOW_DIRECT_EDGE: '',
+    // Sandbox preview origins. Blank = previews stay on the path proxy.
+    // KORTIX_PREVIEW_ALLOW_DIRECT_EDGE tells the API that no Cloudflare preview
+    // Worker fronts it, so a preview request arriving from the operator's own
+    // reverse proxy is served on its real Host header instead of being rejected
+    // for a missing edge signature.
+    KORTIX_PREVIEW_BASE_DOMAIN: '',
+    KORTIX_PREVIEW_ALLOW_DIRECT_EDGE: '',
     CONNECTOR_AUTH_PROVIDER: 'pipedream',
     KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: 'false',
     PIPEDREAM_CLIENT_ID: '',
@@ -2382,6 +2412,7 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
   // block is inert without a domain.
   writeKortixRuntimeAssets(root, {
     appsHostingConfigured: Boolean(env.KORTIX_APPS_BASE_DOMAIN?.trim()),
+    previewHostingConfigured: Boolean(env.KORTIX_PREVIEW_BASE_DOMAIN?.trim()),
   });
   writeFileSync(
     composePath(instance),
