@@ -11,6 +11,12 @@ const calculatorSource = readFileSync(
   'utf8',
 );
 const planSource = readFileSync(join(import.meta.dir, 'pricing-plans.ts'), 'utf8');
+/**
+ * The calculator with its block comments removed. A doc comment may *name* a
+ * billing number to explain why the code does not hardcode it; only the code
+ * itself is evidence about what renders.
+ */
+const calculatorCode = calculatorSource.replace(/\/\*[\s\S]*?\*\//g, '');
 const englishTranslations = JSON.parse(
   readFileSync(join(import.meta.dir, '../../../translations/en.json'), 'utf8'),
 ) as {
@@ -53,16 +59,26 @@ describe('pricing model billing copy', () => {
     expect(normalizedPricingCopy).toContain('input, output, and cached tokens use Team credits');
   });
 
-  test('shows the rounded per-seat Agent Computer hours', () => {
-    expect(calculatorSource).toContain('aria-label="hours"');
-    expect(calculatorSource).toContain('2,500');
-    expect(calculatorSource).toContain('<span>125</span>');
-    expect(calculatorSource).toContain(
-      '1 Team seat equals 2,500 pooled credits equals 125 Agent Computer hours per month.',
-    );
-    expect(calculatorSource).toContain('Agent Computer hours / month');
+  test('derives every credit figure instead of typing it in a second time', () => {
+    // Seats are the billing unit. The earlier "team members" control implied
+    // per-member billing and was removed for exactly that reason.
     expect(calculatorSource).not.toContain('teamMembers');
-    expect(calculatorSource).not.toContain('<Slider');
+    expect(calculatorSource).toContain('label="Team seats"');
+    expect(calculatorSource).toContain('label="Agent Computer runtime"');
+
+    // Every figure reads from compute-pricing.ts. A second typed-in copy of a
+    // billing number has drifted wrong in this file before.
+    expect(calculatorSource).toContain("from '@/features/billing/compute-pricing'");
+    expect(calculatorSource).toContain('TEAM_CREDITS_PER_SEAT');
+    expect(calculatorSource).toContain('DEFAULT_COMPUTE_HOURLY_PRICE_USD');
+    expect(calculatorSource).toContain('CREDITS_PER_USD');
+    expect(calculatorCode).not.toContain('2,500');
+    expect(calculatorCode).not.toContain('2500');
+    expect(calculatorCode).not.toContain('$40');
+
+    // The receipt still names the two figures the reader came for.
+    expect(calculatorSource).toContain('Pooled credits / month');
+    expect(calculatorSource).toContain('Runtime the pool covers');
   });
 
   test('keeps the model billing correction in every translated pricing page', () => {
