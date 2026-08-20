@@ -123,6 +123,13 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       PORT: "8090"
+      # Caddy routes /v1/llm* to THIS standalone gateway, so it must agree with
+      # kortix-api on the AI-SDK-native flag. kortix-api reads it from `.env`
+      # (env_file), but this service has no env_file — without this line the
+      # gateway defaults it off while sessions are baked native, and every turn
+      # 404s "AI-SDK-native gateway ingress is not enabled". Inherit the same
+      # value (default on, matching the app-side default).
+      GATEWAY_AI_SDK_NATIVE: ${GATEWAY_AI_SDK_NATIVE:-true}
       KORTIX_API_URL: http://kortix-api:8008
       GATEWAY_INTERNAL_TOKEN: ${GATEWAY_INTERNAL_TOKEN}
     depends_on:
