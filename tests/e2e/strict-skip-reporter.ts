@@ -15,9 +15,11 @@
  * before this reporter exists. An excluded journey therefore produces no
  * `TestCase` and no `onTestEnd` call at all: it is absent from the run, not
  * skipped in it, so `this.skipped` never sees it and the lane stays green
- * without weakening the strict rule for anything else. Verified by
- * `playwright test --list`: 21 tests bare, 19 with `E2E_EXCLUDE_TAGS`, and
- * exactly the 2 quarantined tests with `E2E_INCLUDE_TAGS`.
+ * without weakening the strict rule for anything else. The exclusion is the
+ * DEFAULT now, not something each gate opts into — see `resolveGrepFilters`.
+ * Verified by `playwright test --list`: 15 tests bare, the same 15 with
+ * `E2E_EXCLUDE_TAGS`, and exactly the 6 quarantined tests (3 files) with
+ * `E2E_INCLUDE_TAGS`.
  */
 import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
 import { mkdir, writeFile } from 'node:fs/promises';

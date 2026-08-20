@@ -3,8 +3,21 @@ import { describe, expect, it } from 'vitest';
 import { resolveGrepFilters } from '../playwright.config';
 
 describe('browser lane grep filters', () => {
-  it('applies no filter when the environment names none', () => {
-    expect(resolveGrepFilters({})).toEqual({});
+  it('excludes quarantine by DEFAULT, so no blocking gate needs its own command line', () => {
+    // A gate that names nothing still must not be blocked by a journey the
+    // team has quarantined. tests.yml (the PR gate) sets no E2E_* vars at all,
+    // and every quarantined journey ran there and failed the build.
+    const { grep, grepInvert } = resolveGrepFilters({});
+    expect(grep).toBeUndefined();
+    expect(grepInvert?.source).toBe('@quarantine');
+    expect(grepInvert?.test('08 — Accounts, invites, and project access @quarantine')).toBe(true);
+    expect(grepInvert?.test('09 - Admin console › admin opens the current overview')).toBe(false);
+  });
+
+  it('never injects the default over an explicit include — the nightly lane still runs them', () => {
+    const { grep, grepInvert } = resolveGrepFilters({ E2E_INCLUDE_TAGS: '@quarantine' });
+    expect(grepInvert).toBeUndefined();
+    expect(grep?.test('08 — Accounts, invites, and project access @quarantine')).toBe(true);
   });
 
   it('excludes a quarantined tag for the blocking gate', () => {
@@ -38,7 +51,9 @@ describe('browser lane grep filters', () => {
     expect(grepInvert?.test('17 — OAuth provider initiation')).toBe(true);
   });
 
-  it('ignores empty and whitespace-only entries', () => {
-    expect(resolveGrepFilters({ E2E_EXCLUDE_TAGS: '  ,, ', E2E_GREP: '' })).toEqual({});
+  it('ignores empty and whitespace-only entries, keeping only the quarantine default', () => {
+    const { grep, grepInvert } = resolveGrepFilters({ E2E_EXCLUDE_TAGS: '  ,, ', E2E_GREP: '' });
+    expect(grep).toBeUndefined();
+    expect(grepInvert?.source).toBe('@quarantine');
   });
 });
