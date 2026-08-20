@@ -286,7 +286,7 @@ A change request (CR) merges one branch into another on any git host. It is the 
 
 ### Secrets
 
-Encrypted values stored on the project and injected as plain environment variables into every session sandbox at boot.
+Encrypted values stored on the project. By default a secret injects as a plain environment variable into every session sandbox at boot (environment exposure). Enforced delivery — where the sandbox holds a handle and Kortix substitutes the real value outside it (egress-enforced exposure, and `kortix secrets call`) — is experimental. Enable the `secrets_egress` feature flag (Settings → Feature flags) to use it; with the flag off, `kortix secrets delivery … egress` returns `403` `feature_disabled`. See [Secrets](/docs/project/secrets).
 
 | Command | Effect |
 | --- | --- |

@@ -91,7 +91,13 @@ import {
   setProjectSecretStrategy,
   upsertProjectSecret,
 } from '@kortix/sdk';
-import { contract, qk, refreshProjectProviderState, useProjectConfig } from '@kortix/sdk/react';
+import {
+  contract,
+  qk,
+  refreshProjectProviderState,
+  useFeatureFlag,
+  useProjectConfig,
+} from '@kortix/sdk/react';
 import {
   WarningIcon as DangerTriangleSolid,
   PencilSimpleIcon,
@@ -120,6 +126,7 @@ import {
   secretDeliveryBlockedReason,
   secretDeliveryLegend,
   secretDeliveryPresentation,
+  secretExposure,
   secretDeliverySyncWarning,
   secretDeliveryTarget,
   secretExposureOptions,
@@ -189,6 +196,10 @@ export function SecretsView({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  // Network-Enforced Secrets (`secrets_egress`) is experimental and off by
+  // default. When off, the picker offers only Environment variable and
+  // Disabled — a new secret loads its real value into the sandbox.
+  const egressEnabled = useFeatureFlag(projectId, 'secrets_egress').enabled;
 
   const secretsQuery = useQuery({
     queryKey,
@@ -209,6 +220,13 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE).allowed === true;
   const allRows = useMemo(() => buildRows(normalized), [normalized]);
+
+  // A legacy/enforced row keeps its "Enforce at the network" badge even with the
+  // flag off, so the legend must still explain that value when one exists.
+  const hasEnforcedRow = allRows.some(
+    (r) => secretExposure(r.strategy, r.consumer) === 'enforced',
+  );
+  const showEnforced = egressEnabled || hasEnforcedRow;
 
   const missingRequired = allRows.filter((r) => r.requirement === 'required' && !r.configured);
 
@@ -311,7 +329,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
          under the header that reframes the list below it. Collapsed it is a
          single line, so it costs the table nothing; in the content column it
          would sit between the header and the first row it explains. */
-      filters={<SecretsAccessExplainer />}
+      filters={<SecretsAccessExplainer showEnforced={showEnforced} />}
     >
       <div className="space-y-4">
         {secretsQuery.isLoading ? (
@@ -401,6 +419,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               row={dialogRow}
               connectors={connectorsQuery.data?.connectors ?? []}
               connectorsLoading={connectorsQuery.isLoading}
+              egressEnabled={egressEnabled}
               onSaved={refreshSecretsAndProviders}
             />
           </>
@@ -456,7 +475,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
  * that render each row's badge and each option in the dialog's picker.
  * Restating them here in JSX is how the legend and the badge start disagreeing.
  */
-function SecretsAccessExplainer() {
+function SecretsAccessExplainer({ showEnforced }: { showEnforced: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     /* `w-full` because the shell's filters row is a flex line: without it the
@@ -471,7 +490,7 @@ function SecretsAccessExplainer() {
       </CollapsibleTrigger>
       <CollapsibleContent>
         <dl className="border-border bg-sidebar mt-2 flex flex-col gap-2.5 rounded-md border p-3">
-          {secretDeliveryLegend().map((mode) => (
+          {secretDeliveryLegend(showEnforced).map((mode) => (
             <div key={mode.key} className="flex flex-col gap-1 sm:flex-row sm:gap-3">
               <dt className="shrink-0 sm:w-44">
                 <Badge variant={mode.tone} size="sm">
@@ -500,16 +519,22 @@ function SecretsAccessExplainer() {
               show a badge with no matching option, and that reads as a bug
               unless the page says who set it. */}
           <p className="text-muted-foreground border-border mt-0.5 border-t pt-2.5 text-xs text-pretty">
-            The first three are the exposure you choose. Every one of them except{' '}
-            <span className="text-foreground">Environment variable</span> reaches a session only
-            when its agent lists the identifier under{' '}
-            <code className="font-mono">secrets</code> in{' '}
-            <code className="font-mono">kortix.yaml</code>;{' '}
-            <code className="font-mono">secrets: all</code> does not count. The last three are
-            usages Kortix assigns — <span className="text-foreground">LLM gateway</span> when you
-            connect a model provider, <span className="text-foreground">Connector</span> when you
-            bind a connector, <span className="text-foreground">Git</span> when you connect a
-            repository — and none of them can be chosen or changed here.
+            {showEnforced ? 'The first values' : 'The first two'} are the exposure you choose.
+            {showEnforced ? (
+              <>
+                {' '}
+                <span className="text-foreground">Enforce at the network</span> reaches a session
+                only when its agent lists the identifier under{' '}
+                <code className="font-mono">secrets</code> in{' '}
+                <code className="font-mono">kortix.yaml</code>;{' '}
+                <code className="font-mono">secrets: all</code> does not count.
+              </>
+            ) : null}{' '}
+            The last three are usages Kortix assigns —{' '}
+            <span className="text-foreground">LLM gateway</span> when you connect a model provider,{' '}
+            <span className="text-foreground">Connector</span> when you bind a connector,{' '}
+            <span className="text-foreground">Git</span> when you connect a repository — and each is
+            gated the same way; none of them can be chosen or changed here.
           </p>
         </dl>
       </CollapsibleContent>
@@ -753,6 +778,7 @@ function SecretDialog({
   row,
   connectors,
   connectorsLoading,
+  egressEnabled,
   onSaved,
 }: {
   open: boolean;
@@ -761,6 +787,7 @@ function SecretDialog({
   row: SecretRow | null;
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
+  egressEnabled: boolean;
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -1043,7 +1070,11 @@ function SecretDialog({
   const selectedDelivery = secretDeliveryPresentation(strategy, nextConsumer);
   const bindingIdentifier = (row?.identifier ?? identifier).trim() || key.trim().toUpperCase();
   const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier);
-  const exposureOptions = secretExposureOptions();
+  // Offer "Enforce at the network" only when the experimental flag is on, or
+  // when this row is already enforced (so a legacy secret stays readable and
+  // can be moved off enforcement even after the flag is switched back off).
+  const rowIsEnforced = row ? secretExposure(row.strategy, row.consumer) === 'enforced' : false;
+  const exposureOptions = secretExposureOptions(egressEnabled || rowIsEnforced);
   const echoNotice = enforcedEchoNotice(hosts);
   const legacyDetail = legacyInjectionDetail(legacyInject ? currentPolicy : null);
   // The dialog keeps the row it opened with, so a completed grant clears its own

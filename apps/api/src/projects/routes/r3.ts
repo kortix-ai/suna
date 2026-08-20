@@ -25,6 +25,8 @@ import {
   UpdateSecretStrategyInputSchema,
 } from '@kortix/api-contract';
 import { parseEgressPolicy } from '../../secrets/strategy';
+import { featureDisabledBody } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import {
   findBoundaryDestinationConflict,
   networkBoundaryPolicyError,
@@ -823,6 +825,18 @@ projectsApp.openapi(
   if (!existing && value === null) {
     return c.json({ error: 'value is required' }, 400);
   }
+  // Network-Enforced Secrets is an experimental feature (`secrets_egress`).
+  // With the flag off a project cannot MOVE a secret into egress delivery — a
+  // new egress secret, or an existing non-egress one switched to it. A secret
+  // that is already egress keeps serving and stays editable, so turning the
+  // flag off never strands one. Runtime/broker/denied are unaffected.
+  if (
+    explicitStrategy === 'egress' &&
+    existing?.strategy !== 'egress' &&
+    !resolveFeatureFlag(loaded.row.metadata, 'secrets_egress')
+  ) {
+    return c.json(featureDisabledBody('secrets_egress'), 403);
+  }
   // An identifier is a stable handle to ONE secret — redefining its underlying
   // KEY via upsert would silently retarget every agent grant that references
   // it. Reject instead of a surprising in-place key swap.
@@ -1094,6 +1108,17 @@ projectsApp.openapi(
       )
       .limit(1);
     if (!existing) return c.json({ error: 'Not found' }, 404);
+    // Network-Enforced Secrets (`secrets_egress`) is experimental and off by
+    // default. Moving a secret INTO egress delivery needs the flag; a secret
+    // already on egress can still be edited or moved OFF it, so turning the
+    // flag off never strands one.
+    if (
+      parsed.data.strategy === 'egress' &&
+      existing.strategy !== 'egress' &&
+      !resolveFeatureFlag(loaded.row.metadata, 'secrets_egress')
+    ) {
+      return c.json(featureDisabledBody('secrets_egress'), 403);
+    }
     if (existing.strategyLocked && existing.strategy !== parsed.data.strategy) {
       return c.json(
         { error: 'This secret delivery strategy is locked', code: 'secret_strategy_locked' },

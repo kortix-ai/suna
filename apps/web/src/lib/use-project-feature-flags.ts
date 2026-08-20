@@ -35,6 +35,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const apps = useFeatureFlag(projectId, 'apps');
   const monitors = useFeatureFlag(projectId, 'monitors');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
+  const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
 
   return {
     flags: {
@@ -50,8 +51,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       apps: apps.enabled,
       monitors: monitors.enabled,
       warm_sessions: warmSessions.enabled,
+      secrets_egress: secretsEgress.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: warmSessions.isLoading,
+    isLoading: secretsEgress.isLoading,
   };
 }

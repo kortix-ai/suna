@@ -135,6 +135,7 @@ flow(
       "POST /v1/projects/:projectId/secrets/:identifier/broker",
       "POST /v1/projects/:projectId/secrets/:identifier/grant",
       "POST /v1/projects/:projectId/secrets/sync",
+      "PATCH /v1/projects/:projectId/features",
       "GET /v1/accounts/:accountId/audit",
     ],
   },
@@ -238,6 +239,35 @@ flow(
         .has("$.consumer", "http_broker")
         .has("$.delivery_status", "available")
         .has("$.egress_policy", policy);
+    });
+
+    await ctx.step("egress delivery is refused until the secrets_egress flag is on → 403", async () => {
+      // Network enforcement is experimental and off by default. Entering egress
+      // is gated: the write path returns 403 feature_disabled until the project
+      // enables the `secrets_egress` flag. (broker/runtime/denied above are not
+      // gated — only egress is.)
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          {
+            strategy: "egress",
+            egress_policy: { rules: [{ host: "api.example.com" }], on_no_match: "deny" },
+          },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(403).body().has("$.code", "feature_disabled").has("$.feature", "secrets_egress");
+    });
+
+    await ctx.step("manager enables the experimental secrets_egress flag → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          "/v1/projects/:projectId/features",
+          { feature: "secrets_egress", enabled: true },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.experimental.secrets_egress", true);
     });
 
     await ctx.step("egress-enforced delivery stores a host-list-only policy", async () => {

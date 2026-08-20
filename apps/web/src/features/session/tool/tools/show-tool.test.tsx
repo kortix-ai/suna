@@ -282,7 +282,7 @@ function iconPathData(icon: ReactNode): string {
   return match[1];
 }
 
-describe('ShowTool header shows format-specific icons and avatar groups', () => {
+describe('ShowTool header shows format-specific icons', () => {
   test('a single PDF shows the PDF glyph, not the generic redirect icon', () => {
     const part = makePart({ type: 'file', path: '/workspace/report.pdf', title: 'Report' });
     const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
@@ -301,7 +301,11 @@ describe('ShowTool header shows format-specific icons and avatar groups', () => 
     expect(html).not.toContain(iconPathData(<ArrowSquareOutIcon />));
   });
 
-  test('a multi-item carousel renders an avatar group capped at 3 with a +N overflow', () => {
+  // The show-tool header used to render a per-item avatar group for carousels.
+  // a7c2fd9715 ("use a plain file icon in the show tool header") deleted
+  // `ShowHeaderAvatars` so the show row carries a single file glyph like every
+  // other tool row. These two guard that the avatar group stays gone.
+  test('a multi-item carousel shows a single header glyph, not an avatar group', () => {
     const part = makePart({
       title: 'Deliverables',
       items: [
@@ -314,15 +318,13 @@ describe('ShowTool header shows format-specific icons and avatar groups', () => 
     });
     const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
 
-    expect(html).toContain('data-slot="avatar-group"');
-    // 3 visible avatars + "+2" for the two items past the cap.
-    expect(html.match(/data-slot="avatar"/g)?.length).toBe(3);
-    expect(html).toContain('+2');
-    // The second visible avatar carries the PDF glyph.
-    expect(html).toContain(iconPathData(<FilePdfIcon />));
+    expect(html).not.toContain('data-slot="avatar-group"');
+    expect(html).not.toContain('data-slot="avatar"');
+    expect(html).not.toContain('+2');
+    expect(html).toContain('Deliverables');
   });
 
-  test('a two-item carousel renders two avatars and no overflow count', () => {
+  test('a two-item carousel also shows no avatar group', () => {
     const part = makePart({
       items: [
         { type: 'file', path: '/workspace/report.pdf' },
@@ -331,7 +333,7 @@ describe('ShowTool header shows format-specific icons and avatar groups', () => 
     });
     const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
 
-    expect(html.match(/data-slot="avatar"/g)?.length).toBe(2);
-    expect(html).not.toContain('data-slot="avatar-group-count"');
+    expect(html).not.toContain('data-slot="avatar-group"');
+    expect(html).not.toContain('data-slot="avatar"');
   });
 });

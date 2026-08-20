@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
+import { configureKortix } from '../core/http/config';
 import type { SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
   applyOptimisticPrompt,
@@ -10,6 +11,7 @@ import {
   SESSION_PROMPTS_IDLE_POLL_MS,
   SESSION_PROMPTS_POLL_MS,
   noteInboxObservation,
+  readSessionPromptsInbox,
   sessionPromptsPollMs,
   startSessionWithPrompt,
 } from './use-session-prompts';
@@ -226,5 +228,74 @@ describe('optimistic queue rows', () => {
     const rows = applyOptimisticPrompt([], input, 1_000);
     const merged = reconcileOptimisticPrompts(rows, []);
     expect(merged.map((r) => r.prompt_id)).toEqual(['optimistic:c1']);
+  });
+});
+
+/**
+ * The inbox is PROJECT-scoped, and not every session has a project.
+ *
+ * A sub-session — the "Agent · general: …" panel `SubSessionModal` opens over
+ * the transcript — is a local OpenCode child. It is rendered by `SessionChat`
+ * with a `sessionId` and NOTHING else: no project id, no project session id.
+ * The `enabled` flag on the query covers react-query's own scheduling, but it
+ * is not the only way into the request: `QueryObserver.refetch()` goes
+ * straight to `query.fetch()` with no `enabled` check, and `session-chat.tsx`
+ * calls `promptInbox.refetch()` the moment a new user bubble lands — which is
+ * exactly what a streaming sub-agent produces.
+ *
+ * The two `undefined`s then went into `listSessionPrompts`'s template literal
+ * and came out as text: `GET /projects/undefined/sessions/undefined/prompts`
+ * → 400 `Invalid session id` → a red toast beside a sub-agent that was
+ * rendering perfectly. The read itself has to refuse, so no path can build
+ * that URL.
+ */
+describe('readSessionPromptsInbox', () => {
+  const stubFetch = () => {
+    const urls: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (url: unknown) => {
+      urls.push(String(url));
+      return Response.json({ prompts: [] });
+    }) as unknown as typeof fetch;
+    return { urls, restore: () => void (globalThis.fetch = original) };
+  };
+
+  test('a session with no project issues NO request', async () => {
+    const stub = stubFetch();
+    try {
+      expect(await readSessionPromptsInbox(undefined, undefined, undefined)).toEqual([]);
+      expect(await readSessionPromptsInbox(undefined, 'sess-1', undefined)).toEqual([]);
+      expect(await readSessionPromptsInbox('proj-1', undefined, undefined)).toEqual([]);
+      expect(stub.urls).toEqual([]);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a session with no project keeps the rows already on screen', async () => {
+    const stub = stubFetch();
+    const cached = applyOptimisticPrompt(
+      [],
+      { clientMessageId: 'c1', messageId: 'msg_01', parts: [{ type: 'text', text: 'hi' }] },
+      1_000,
+    );
+    try {
+      expect(await readSessionPromptsInbox(undefined, undefined, cached)).toEqual(cached);
+      expect(stub.urls).toEqual([]);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a project session still reads its own inbox', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const stub = stubFetch();
+    try {
+      expect(await readSessionPromptsInbox('proj-1', 'sess-1', undefined)).toEqual([]);
+      expect(stub.urls).toEqual(['http://api.test/v1/projects/proj-1/sessions/sess-1/prompts']);
+    } finally {
+      stub.restore();
+      configureKortix({ backendUrl: '', getToken: async () => null });
+    }
   });
 });

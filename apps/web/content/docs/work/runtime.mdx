@@ -65,7 +65,7 @@ OpenCode's `HOME` is `/opt/kortix/home`, not `/workspace`. Its object store neve
 
 ## Injected environment
 
-Kortix injects these variables at boot, alongside your project's [secrets](/docs/project/secrets). A secret arrives as an environment variable holding either a handle (egress-enforced exposure, the default) or the real value (environment exposure).
+Kortix injects these variables at boot, alongside your project's [secrets](/docs/project/secrets). A secret arrives as an environment variable holding the real value (environment exposure, the default) or, when the experimental `secrets_egress` flag is on, a handle (egress-enforced exposure).
 
 | Variable | What |
 | --- | --- |

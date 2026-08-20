@@ -12,6 +12,34 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-20 — session `session-ux` — a session with no project never reads a project-scoped inbox — DONE
+
+**Files:** `react/use-session-prompts.ts` (+`readSessionPromptsInbox`, gated
+`refetch`) + `use-session-prompts.test.ts` (+3 tests). No barrel export, so no
+public-surface snapshot change.
+
+**What.** Opening a sub-session (`SubSessionModal` → `SessionChat` with a
+`sessionId` and no project ids) fired
+`GET /projects/undefined/sessions/undefined/prompts` → 400 `Invalid session id`
+→ a red toast beside a sub-agent that was streaming correctly.
+
+`useSessionPrompts`'s `enabled` was already `!!projectId && !!sessionId`, but
+`enabled` governs react-query's SCHEDULING only — `QueryObserver.refetch()`
+calls `query.fetch()` with no `enabled` check (verified against
+`@tanstack/query-core@5.101.2` `queryObserver.js:158`). `session-chat.tsx:2331`
+refetches the inbox on every new user bubble, which is exactly what a streaming
+sub-agent produces. The two `undefined`s then went into `listSessionPrompts`'s
+template literal and came back out as the literal text `undefined`.
+
+Fixed on both paths: the read itself (`readSessionPromptsInbox`) refuses when
+either id is missing and hands back the cached rows, and the hook's `refetch`
+now honours the same gate.
+
+**Gates:** `typecheck` clean (both projects) · `bun test --isolate src` 2354
+pass / 2 skip / 0 fail · `smoke:install` passed.
+
+---
+
 ### 2026-08-20 — session `legacy-billing-truth` — the admin console reads billing truth, not the stored tier — DONE
 
 **Files:** `react/use-admin-accounts.ts` (+`AdminAccountSubscription`,

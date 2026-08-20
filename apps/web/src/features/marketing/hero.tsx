@@ -1,6 +1,5 @@
 'use client';
 
-import { Button } from '@/components/ui/marketing/button';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { Claude } from '@/features/icon/icons/claude';
@@ -10,7 +9,6 @@ import { hero, heroEyebrow } from '@/features/marketing/landing/content';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
-import { ArrowRightIcon } from '@phosphor-icons/react';
 import { type ReactNode, useCallback } from 'react';
 
 /** `heroEyebrow.rivals[].icon` selects a logo by name at runtime, so it can't be
@@ -22,7 +20,10 @@ const RIVAL_ICONS = { Claude, OpenAI } as const;
  *  their marks, so "AI Management System" lands without a paragraph first. */
 function RivalEyebrow() {
   return (
-    <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
+    /* `justify-center` centres the wrapped rows as a unit; each rival stays its
+       own inline `flex items-center` span, so the logo and its label never
+       separate when the row wraps on a phone. */
+    <div className="text-muted-foreground flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-center text-sm">
       <span>{heroEyebrow.lead}</span>
       {heroEyebrow.rivals.map((r, i) => {
         const Glyph = RIVAL_ICONS[r.icon] as ((p: { className?: string }) => ReactNode) | undefined;
@@ -33,7 +34,7 @@ function RivalEyebrow() {
             <span className="text-foreground font-medium">{r.label}</span>
           </span>
         );
-      })}{' '}
+      })}
     </div>
   );
 }
@@ -79,13 +80,18 @@ const Hero = () => {
         <div className="mx-auto w-full max-w-7xl px-6">
           <RivalEyebrow />
 
-          <h1 className="text-foreground mt-5 max-w-3xl text-4xl font-medium tracking-tight text-balance sm:text-5xl">
+          {/* `mx-auto` on the measure is what actually centres the block: without
+              it `max-w-3xl` stays flush left inside max-w-7xl and only the glyphs
+              inside it centre, which leaves the headline off-axis on desktop. */}
+          <h1 className="text-foreground mx-auto mt-5 max-w-3xl text-center text-4xl font-medium tracking-tight text-balance sm:text-5xl">
             {hero.title}
           </h1>
 
-          {/* sub on the left, actions on the right — keeps the fold short */}
-          <div className="mt-6 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between lg:gap-10">
-            <p className="text-muted-foreground max-w-xl text-base leading-relaxed sm:text-lg">
+          {/* One centred column under the headline. It was a left sub / right
+              actions row while the hero owned CTAs; with those gone the row had
+              nothing to justify against. */}
+          <div className="mt-6 flex flex-col items-center gap-5">
+            <p className="text-muted-foreground mx-auto max-w-xl text-center text-base leading-relaxed text-pretty sm:text-lg">
               {hero.sub}
             </p>
 
@@ -99,7 +105,18 @@ const Hero = () => {
                 every mobile platform asks for; h-12 is 44.2px. The override is
                 local because sm and up keeps the 36.8px the rest of the site is
                 drawn to. */}
-            <div className="flex w-full shrink-0 flex-wrap gap-3 sm:w-auto">
+            {/* Hero CTAs (Request demo / Get started) hidden on request. The
+                navbar still carries both at every scroll position, so the page
+                keeps its calls to action.
+
+                To restore: uncomment the block AND re-add the two imports it
+                needs, which were dropped so the file stays lint-clean while it
+                is dead —
+                  import { Button } from '@/components/ui/marketing/button';
+                  import { ArrowRightIcon } from '@phosphor-icons/react';
+                `openDemo` and `handleLaunch` above are kept for the same
+                restore, and are otherwise unused. */}
+            {/* <div className="flex w-full shrink-0 flex-wrap gap-3 sm:w-auto">
               <Button
                 size="lg"
                 variant="secondary"
@@ -112,7 +129,7 @@ const Hero = () => {
                 {hero.ctaPrimary}
                 <ArrowRightIcon className="size-4" />
               </Button>
-            </div>
+            </div> */}
           </div>
         </div>
 

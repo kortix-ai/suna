@@ -1,6 +1,19 @@
 # Secrets: the exposure/usage model
 
-**Status:** approved 2026-08-19, implementation in progress (branch `secrets-exposure`)
+> **Update 2026-08-20 — egress-enforced shipped behind an experimental flag.**
+> The exposure/usage split below shipped, but egress-enforced delivery (network
+> substitution / "Enforce at the network") is gated by a per-project feature
+> flag `secrets_egress` (Settings → Feature flags), **OFF by default**, while it
+> is still in testing across providers. The **default exposure is `environment`**
+> — the real value loads into the sandbox (`strategy: runtime`). With the flag
+> off, the secret-write routes reject entering egress delivery with `403
+> feature_disabled`, the picker offers only Environment variable and Disabled,
+> and no capability is served as a `network` handle. So wherever this spec below
+> says egress-enforced is "the default" or "the primary" mode, read it as "the
+> default **once the flag is enabled**". A secret already on egress keeps
+> serving and stays editable even when the flag is off.
+
+**Status:** approved 2026-08-19, shipped 2026-08-20 with egress-enforced behind the `secrets_egress` flag
 **Supersedes the user-facing model of:** `docs/SECRET_DELIVERY_CONTROL_PLANE.md` (mechanism doc — stays accurate for internals), `docs/NETWORK_BOUNDARY_WITHOUT_PLATINUM.md` (design history — stays as record)
 **Decision owner:** Marko
 
