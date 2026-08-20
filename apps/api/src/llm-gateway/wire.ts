@@ -378,11 +378,6 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     const gateway = createGateway(createInProcessGatewayHooks(), {
       captureBodies: true,
       maxRequestBytes: DEFAULT_MAX_REQUEST_BYTES,
-      // AI-SDK-native ingress (`/language-model`). Mirrors the standalone
-      // gateway's `aiSdkNative: config.aiSdkNative` (apps/llm-gateway server.ts).
-      // OFF (default) → `gateway.languageModel` returns 404, so the route
-      // mounted below is inert; ON → it serves the Vercel AI-Gateway protocol.
-      aiSdkNative: config.aiSdkNative,
     });
     // OpenAPIHono (not a plain Hono) so the inference surface below registers
     // in the shared OpenAPI registry — `.route()` merges a child OpenAPIHono's
@@ -420,8 +415,8 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     // `@ai-sdk/gateway` provider POSTs `LanguageModelV{3,4}CallOptions` here. The
     // model id + spec version + streaming flag are in HEADERS (read via `header`),
     // NOT the path/body — mirrors the standalone server's `languageModel` handler
-    // (apps/llm-gateway/src/server.ts). Inert (404) until `GATEWAY_AI_SDK_NATIVE`
-    // is on, because `gateway.languageModel` enforces the `aiSdkNative` flag.
+    // (apps/llm-gateway/src/server.ts). Always mounted; the native ingress has no
+    // enable flag.
     const languageModel = async (c: import('hono').Context) =>
       gateway.languageModel({
         authorization: c.req.header('authorization'),

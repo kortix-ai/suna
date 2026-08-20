@@ -1,34 +1,24 @@
 import { describe, expect, mock, test } from 'bun:test';
 
-// GAP-B: the in-process gateway (apps/api wire.ts) must SERVE
+// The in-process gateway (apps/api wire.ts) must SERVE
 // `POST /v1/llm/language-model` so opencode's `@ai-sdk/gateway` provider
-// (baseURL `${KORTIX_URL}/v1/llm`) reaches `gateway.languageModel(req)`. wire.ts
-// mounts the route unconditionally and threads `config.aiSdkNative` into
-// `createGateway`; the flag itself is enforced inside `gateway.languageModel`.
-//
-// This drives the REAL mounted route on both sides of the flag:
-//   ON  → the request reaches the gateway auth/decode pipeline (401 without a
-//         token), NOT a route-not-found 404.
-//   OFF → `gateway.languageModel` returns its own flag-gated 404 (JSON body,
-//         code `not_found`) — distinct from a Hono route-404 (plain text). This
-//         proves wire.ts passes `config.aiSdkNative` through rather than
-//         hardcoding it on.
+// (baseURL `${KORTIX_URL}/v1/llm`) reaches `gateway.languageModel(req)`. The
+// native ingress is ALWAYS mounted — there is no enable flag (a per-service
+// toggle used to let the standalone gateway drift off while sessions were baked
+// native, 404-ing every turn). This drives the REAL mounted route: a request
+// reaches the gateway auth/decode pipeline (401 without a token), NOT a route
+// -not-found 404.
 //
 // The config is mocked by SPREADING the real one (it validates fine under
 // scripts/test.env) and overriding only `LLM_GATEWAY_ENABLED` (so the /v1/llm
-// sub-app mounts) and `aiSdkNative` (a live getter over a per-test toggle).
-// No process.env mutation, so the result is deterministic under the parallel
-// isolated runner.
+// sub-app mounts). No process.env mutation, so the result is deterministic
+// under the parallel isolated runner.
 const { config: realConfig } = await import('../config');
 
-let aiSdkNativeFlag = false;
 mock.module('../config', () => ({
   config: {
     ...realConfig,
     LLM_GATEWAY_ENABLED: true,
-    get aiSdkNative() {
-      return aiSdkNativeFlag;
-    },
   },
 }));
 
@@ -73,14 +63,13 @@ function mountedApp() {
   return app;
 }
 
-describe('wire.ts /v1/llm/language-model — GATEWAY_AI_SDK_NATIVE flag', () => {
-  test('flag ON: the route is mounted and reaches auth — no token returns 401, not a route 404', async () => {
-    aiSdkNativeFlag = true;
+describe('wire.ts /v1/llm/language-model — always mounted', () => {
+  test('the route is mounted and reaches auth — no token returns 401, not a route 404', async () => {
     const res = await mountedApp().request(
       languageModelRequest('/v1/llm/language-model', false),
     );
-    // A mounted route with the flag on hits auth/decode. A route-404 would mean
-    // the mount is missing.
+    // A mounted route hits auth/decode. A route-404 would mean the mount is
+    // missing.
     expect(res.status).not.toBe(404);
     expect(res.status).toBe(401);
     const body = (await res.json()) as { code?: string };
@@ -89,22 +78,7 @@ describe('wire.ts /v1/llm/language-model — GATEWAY_AI_SDK_NATIVE flag', () => 
     expect(['missing_token', 'invalid_token']).toContain(body.code ?? '');
   });
 
-  test('flag OFF: the mounted route returns the gateway flag-gated 404, not a route 404', async () => {
-    aiSdkNativeFlag = false;
-    const res = await mountedApp().request(
-      languageModelRequest('/v1/llm/language-model', true),
-    );
-    expect(res.status).toBe(404);
-    const body = (await res.json()) as { code?: string; message?: string };
-    // JSON body (NOT a Hono route-not-found) with the flag-off code — proves the
-    // route is mounted and `gateway.languageModel` returned 404 because
-    // `config.aiSdkNative` was threaded through as false.
-    expect(body.code).toBe('not_found');
-    expect(body.message).toContain('not enabled');
-  });
-
   test('an unmounted /v1/llm path returns a plain 404 — the control for "404 == not found"', async () => {
-    aiSdkNativeFlag = true;
     const res = await mountedApp().request(
       new Request('http://test/v1/llm/definitely-not-a-route', { method: 'POST' }),
     );

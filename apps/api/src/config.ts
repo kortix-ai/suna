@@ -362,16 +362,6 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
-  // AI-SDK-native gateway ingress (`POST /v1/llm/language-model`, Vercel "AI
-  // Gateway" protocol). SAME env name the standalone gateway reads
-  // (apps/llm-gateway config `GATEWAY_AI_SDK_NATIVE`), so one operator switch
-  // turns on BOTH the standalone gateway AND this in-process mount. When ON:
-  // (1) the in-process gateway is created with `aiSdkNative` so
-  // `gateway.languageModel` serves instead of 404ing, and (2) every session gets
-  // `KORTIX_LLM_AI_SDK_NATIVE=true` injected so the daemon's `buildKortixProvider`
-  // selects `@ai-sdk/gateway`. Default ON — native is the default everywhere;
-  // set GATEWAY_AI_SDK_NATIVE=0 to fall back to the OpenAI-compatible path.
-  GATEWAY_AI_SDK_NATIVE: optBoolTrue,
   // CLOUD-ONLY. Whether KORTIX's own managed model lineup exists on this
   // deployment. The lineup routes through Kortix's shared Bedrock, AsterLab,
   // and OpenRouter credentials. Kortix bills each route as platform credits.
@@ -1057,10 +1047,6 @@ export const config = {
   ASTER_API_KEY: env.ASTER_API_KEY,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
-  // Single API-side switch for the AI-SDK-native gateway path — read from env
-  // `GATEWAY_AI_SDK_NATIVE`. Consumed by wire.ts (in-process gateway options +
-  // /language-model mount) and session-sandbox.ts (per-session env injection).
-  aiSdkNative: env.GATEWAY_AI_SDK_NATIVE,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.
   KORTIX_MANAGED_PROVIDER_ENABLED:

@@ -9,7 +9,7 @@
 //   1. Instantiate OUR gateway (`@kortix/llm-gateway` createGateway) with test
 //      hooks that admit a test token and resolve to a REAL Anthropic-direct
 //      upstream (Bedrock creds are invalid locally → 403, so we use
-//      `@ai-sdk/anthropic` with a real `ANTHROPIC_API_KEY`). `aiSdkNative: true`.
+//      `@ai-sdk/anthropic` with a real `ANTHROPIC_API_KEY`). The native ingress is always mounted.
 //   2. Serve it on a real port with `Bun.serve`, mounting the native
 //      `/v1/llm/language-model` route the sandbox provider posts to.
 //   3. Point the REAL `@ai-sdk/gateway` client at it and drive `streamText`,
@@ -97,7 +97,7 @@ interface Served {
 // path here (the same alias apps/llm-gateway/src/server.ts registers).
 function serveGateway(): Served {
   const recorded: RecordedUsage = { events: [] };
-  const gateway = createGateway(makeHooks(recorded), { aiSdkNative: true });
+  const gateway = createGateway(makeHooks(recorded), {});
 
   const server = Bun.serve({
     port: 0,

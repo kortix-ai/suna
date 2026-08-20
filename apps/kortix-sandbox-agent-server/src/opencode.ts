@@ -356,11 +356,12 @@ export async function buildOpencodeConfigContent(
       // mode (cold/Daytona) it's the real gateway base + key, as before.
       baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
       apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
-      // AI-SDK-native transport toggle. OFF (default) keeps the historical
-      // `@ai-sdk/openai-compatible` provider (`/chat/completions`) with ZERO
-      // behavior change; ON emits the `@ai-sdk/gateway` provider that POSTs to
-      // the gateway's native `/language-model` ingress. Pair with the
-      // gateway-side `GATEWAY_AI_SDK_NATIVE` — both must be on together.
+      // AI-SDK-native transport. The API always injects
+      // `KORTIX_LLM_AI_SDK_NATIVE=true`, so this selects the `@ai-sdk/gateway`
+      // provider (POSTs the gateway's native `/language-model` ingress, which is
+      // always served — no enable flag). `@ai-sdk/openai-compatible`
+      // (`/chat/completions`) remains only as the fallback if the env is somehow
+      // absent (e.g. a pre-injection session).
       aiSdkNative: ['1', 'true', 'yes', 'on'].includes(
         (env.KORTIX_LLM_AI_SDK_NATIVE ?? '').trim().toLowerCase(),
       ),
@@ -424,16 +425,14 @@ type KortixProviderOpts = {
   /** Live managed lineup fetched from `${gateway}/models?scope=managed`, or
    *  null when it was unavailable (then the BUNDLED managed set fills gaps). */
   managedOverlay?: Record<string, KortixGatewayModel> | null
-  /** AI-SDK-native transport toggle (env `KORTIX_LLM_AI_SDK_NATIVE`, default OFF).
-   *  OFF → `@ai-sdk/openai-compatible` (opencode POSTs `${baseURL}/chat/completions`,
-   *  the historical path, ZERO behavior change). ON → `@ai-sdk/gateway` (opencode
-   *  POSTs `${baseURL}/language-model` with the model id in the `ai-language-model-id`
-   *  header, hitting the gateway's native ingress). The gateway mounts BOTH
-   *  `/language-model` and the `/v1/llm/language-model` alias, so the SAME baseURL
-   *  works for either transport. Kept flag-selected (not a replacement) so the
-   *  native path can canary + roll back. Must stay in sync with the gateway-side
-   *  `GATEWAY_AI_SDK_NATIVE`: the native provider only works once the gateway's
-   *  native ingress is on, or every call 404s. */
+  /** AI-SDK-native transport (env `KORTIX_LLM_AI_SDK_NATIVE`). The API always
+   *  injects it `true`, selecting `@ai-sdk/gateway`: opencode POSTs
+   *  `${baseURL}/language-model` with the model id in the `ai-language-model-id`
+   *  header, hitting the gateway's native ingress (always served — no enable
+   *  flag). The gateway mounts BOTH `/language-model` and the
+   *  `/v1/llm/language-model` alias, so the SAME baseURL works.
+   *  `@ai-sdk/openai-compatible` (`${baseURL}/chat/completions`) remains only as
+   *  the fallback when the env is absent (a pre-injection session). */
   aiSdkNative?: boolean
 }
 

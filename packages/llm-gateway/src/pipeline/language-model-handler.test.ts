@@ -127,25 +127,17 @@ function req(headers: Record<string, string | undefined>, body: unknown) {
 
 const BODY = { prompt: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] };
 
-describe('handleLanguageModel — flag gating', () => {
-  it('is INERT (404) when the aiSdkNative flag is OFF — zero behavior change', async () => {
-    const gateway = createGateway(baseHooks(), { aiSdkNative: false });
-    const res = await gateway.languageModel(req(HEADERS(), BODY));
-    expect(res.status).toBe(404);
-    const data = (await res.json()) as { code?: string };
-    expect(data.code).toBe('not_found');
-  });
-
-  it('is inert by DEFAULT (flag unset)', async () => {
+describe('handleLanguageModel — always mounted (no enable flag)', () => {
+  it('serves the native ingress by default — a valid request is not a 404', async () => {
     const gateway = createGateway(baseHooks(), {});
     const res = await gateway.languageModel(req(HEADERS(), BODY));
-    expect(res.status).toBe(404);
+    expect(res.status).not.toBe(404);
   });
 });
 
-describe('handleLanguageModel — reuse of the auth/route gate (flag ON)', () => {
+describe('handleLanguageModel — reuse of the auth/route gate', () => {
   it('rejects a missing bearer token with 401', async () => {
-    const gateway = createGateway(baseHooks(), { aiSdkNative: true });
+    const gateway = createGateway(baseHooks(), {});
     const res = await gateway.languageModel({
       ...req(HEADERS({ authorization: undefined }), BODY),
       authorization: undefined,
@@ -154,7 +146,7 @@ describe('handleLanguageModel — reuse of the auth/route gate (flag ON)', () =>
   });
 
   it('rejects an invalid token with 401 (via admit)', async () => {
-    const gateway = createGateway(baseHooks(), { aiSdkNative: true });
+    const gateway = createGateway(baseHooks(), {});
     const res = await gateway.languageModel(req(HEADERS({ authorization: 'Bearer bad' }), BODY));
     expect(res.status).toBe(401);
   });
@@ -167,7 +159,7 @@ describe('handleLanguageModel — reuse of the auth/route gate (flag ON)', () =>
           billed = true;
         },
       }),
-      { aiSdkNative: true },
+      {},
     );
     const res = await gateway.languageModel(
       req(HEADERS({ 'ai-language-model-id': undefined }), BODY),
@@ -177,9 +169,7 @@ describe('handleLanguageModel — reuse of the auth/route gate (flag ON)', () =>
   });
 
   it('returns model_unavailable (400) when no upstream resolves', async () => {
-    const gateway = createGateway(baseHooks({ resolveUpstream: async () => [] }), {
-      aiSdkNative: true,
-    });
+    const gateway = createGateway(baseHooks({ resolveUpstream: async () => [] }), {});
     const res = await gateway.languageModel(req(HEADERS(), BODY));
     expect(res.status).toBe(400);
     const data = (await res.json()) as { code?: string };
@@ -208,7 +198,7 @@ describe('handleLanguageModel — reuse of the auth/route gate (flag ON)', () =>
         // servable Anthropic SSE so the failover probe sees content and commits
         // the candidate (the handler now probes for content before committing).
       }),
-      { aiSdkNative: true },
+      {},
       {
         fetchImpl: async () => anthropicSse('ok', 3, 1),
       },
@@ -254,7 +244,7 @@ describe('handleLanguageModel — per-turn failover + billing (flag ON)', () => 
           billed.push(e);
         },
       }),
-      { aiSdkNative: true },
+      {},
       {
         // Candidate A (a.example) returns a hard 429; candidate B serves.
         fetchImpl: async (url: string) => {
@@ -296,7 +286,7 @@ describe('handleLanguageModel — per-turn failover + billing (flag ON)', () => 
           billed.push(e);
         },
       }),
-      { aiSdkNative: true },
+      {},
       {
         fetchImpl: async (url: string) => {
           if (url.includes('a.example')) {
@@ -330,7 +320,7 @@ describe('handleLanguageModel — per-turn failover + billing (flag ON)', () => 
           billed.push(e);
         },
       }),
-      { aiSdkNative: true },
+      {},
       { fetchImpl: async () => anthropicSse('hello', 12, 7) },
     );
     const res = await gateway.languageModel(req(HEADERS(), BODY));
@@ -380,7 +370,7 @@ describe('handleLanguageModel — admission billing-hold reconciliation (FIX 1)'
     const billed: UsageEvent[] = [];
     const gateway = createGateway(
       heldHooks(billed),
-      { aiSdkNative: true },
+      {},
       {
         fetchImpl: async () => anthropicSse('done', 80, 40),
       },
@@ -408,7 +398,7 @@ describe('handleLanguageModel — admission billing-hold reconciliation (FIX 1)'
     const billed: UsageEvent[] = [];
     const gateway = createGateway(
       heldHooks(billed),
-      { aiSdkNative: true },
+      {},
       {
         // Content streams, but the upstream never sends `finish` — the client
         // disconnects mid-stream (cancel below).
@@ -460,7 +450,7 @@ function captureBodyGateway(descriptor: UpstreamDescriptor) {
   const captured: { url: string; body: Record<string, unknown> | null } = { url: '', body: null };
   const gateway = createGateway(
     baseHooks({ resolveUpstream: async () => [descriptor] }),
-    { aiSdkNative: true },
+    {},
     {
       fetchImpl: async (url: string, init?: { body?: unknown }) => {
         captured.url = url;
@@ -603,7 +593,7 @@ describe('handleLanguageModel — request-size ceiling (FIX 2)', () => {
           return token === 'good' ? PRINCIPAL : null;
         },
       }),
-      { aiSdkNative: true, maxRequestBytes: 16 },
+      { maxRequestBytes: 16 },
     );
     const bigBody = {
       prompt: [{ role: 'user', content: [{ type: 'text', text: 'x'.repeat(500) }] }],
@@ -618,7 +608,6 @@ describe('handleLanguageModel — request-size ceiling (FIX 2)', () => {
 
   it('does NOT reject a normal body when maxRequestBytes is generous', async () => {
     const gateway = createGateway(baseHooks({ resolveUpstream: async () => [] }), {
-      aiSdkNative: true,
       maxRequestBytes: 1_000_000,
     });
     const res = await gateway.languageModel(req(HEADERS(), BODY));

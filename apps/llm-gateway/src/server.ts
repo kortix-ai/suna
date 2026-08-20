@@ -64,7 +64,6 @@ export function buildServer(): GatewayServer {
       maxRequestBytes: config.maxRequestBytes > 0 ? config.maxRequestBytes : undefined,
       streamProbeTimeoutMs:
         config.streamProbeTimeoutMs > 0 ? config.streamProbeTimeoutMs : undefined,
-      aiSdkNative: config.aiSdkNative,
     },
     { logger },
   );
@@ -244,9 +243,9 @@ export function buildServer(): GatewayServer {
   // AI-SDK-native ingress (Vercel "AI Gateway" protocol): opencode's
   // `@ai-sdk/gateway` provider POSTs `LanguageModelV{3,4}CallOptions` here. The
   // model id + spec version + streaming flag are in HEADERS, not the path/body.
-  // Inert (404) until `GATEWAY_AI_SDK_NATIVE` is on — `gateway.languageModel`
-  // enforces the flag. The base URL opencode is configured with may carry a
-  // `/v{N}/ai` prefix, so mount the tolerant aliases too.
+  // Always mounted; the native ingress has no enable flag. The base URL opencode
+  // is configured with may carry a `/v{N}/ai` prefix, so mount the tolerant
+  // aliases too.
   const languageModel = async (c: {
     req: {
       header: (k: string) => string | undefined;
