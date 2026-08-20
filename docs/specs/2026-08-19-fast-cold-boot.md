@@ -61,5 +61,18 @@ in 79 ms. It observed zero clone-credential requests and verified the resulting
 branch, content, and commit. The current managed starter's bundle stays below
 the 24 KiB delivery cap.
 
-The deployed dev benchmark must compare at least five cold sessions after the
-API and sandbox image contain the same merged commit.
+The dev deployment for PR #6650 served merge commit
+`de015e17510d52af2165e31a8c9dbf7c69923429`. One image warm-up was excluded,
+then five new Platinum sessions ran with `warm_sessions=false` against a new
+`general-knowledge-worker` project.
+
+| Milestone | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Repository materialized, p50 | 7,983 ms | 265 ms | -96.7% |
+| Runtime ready, p50 | 25,000 ms | 18,348 ms | -26.6% |
+
+Three of five sessions imported the bundle and materialized the repository in
+257-265 ms. Two sessions exceeded the API's two-second mirror deadline and used
+the existing network fallback in 4,910-5,313 ms. The fallback preserved
+correctness, but making the bundle available before the first session remains
+the next Git-startup improvement.
