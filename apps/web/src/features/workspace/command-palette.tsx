@@ -60,14 +60,14 @@ import {
   type KortixAccount,
   type KortixProject,
   type ProjectSession,
+  featureFlags,
   getProjectDetail,
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
+  normalizeAppPathname,
   systemReload,
 } from '@kortix/sdk';
-import { featureFlags } from '@kortix/sdk/feature-flags';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { contract, qk, useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
 import {
   ArrowDownIcon as ArrowDown,
@@ -544,7 +544,7 @@ export function CommandPalette() {
   // panel rendered nothing unless it was ENABLED — a palette entry that opened
   // a blank pane. It now follows enablement like every other flag.
   // `projectFlags`, not `featureFlags` — the module-scope `featureFlags` import
-  // above is the DEPLOYMENT flag set (`@kortix/sdk/feature-flags`, build-time
+  // above is the DEPLOYMENT flag set (`@kortix/sdk` featureFlags, build-time
   // capabilities like `enableProjects`), a different concept from the
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);

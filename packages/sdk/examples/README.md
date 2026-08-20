@@ -38,6 +38,7 @@ export KORTIX_PROJECT_ID=...                      # the project your agent lives
 | 08 | [`08-cdn.html`](08-cdn.html) | The SDK in a browser with **no build step** (ESM via CDN). | open in a browser |
 | 09 | [`09-kaab-backend-wrapper.ts`](09-kaab-backend-wrapper.ts) | **Kortix as a Backend, end to end**: mint a connector → per-user connection → backend-origin session (`secrets` + `connector_bindings`) → **stream**. One-shot CLI **and** a multi-tenant SSE service. | `bun run examples/09-kaab-backend-wrapper.ts "Summarize my signups"` |
 | 10 | [`10-deploy-app.ts`](10-deploy-app.ts) | Create a stable App URL and deploy a public OCI image through the provider-neutral Apps API. | `bun run examples/10-deploy-app.ts` |
+| 11 | [`11-sign-in-and-run.ts`](11-sign-in-and-run.ts) | Sign a real **user** in through the SDK — `createKortixAuth` discovery + password sign-in — then drive the client with that session. | `KORTIX_EMAIL=… KORTIX_PASSWORD=… bun run examples/11-sign-in-and-run.ts` |
 
 ## Kortix as a Backend
 

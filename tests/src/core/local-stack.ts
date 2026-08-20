@@ -419,8 +419,8 @@ export async function ensureLocalStack(
     );
   }
 
-  const { DB_URL, API_URL, SERVICE_ROLE_KEY, JWT_SECRET } = options.supabase;
-  if (!DB_URL || !API_URL || !SERVICE_ROLE_KEY) {
+  const { DB_URL, API_URL, ANON_KEY, SERVICE_ROLE_KEY, JWT_SECRET } = options.supabase;
+  if (!DB_URL || !API_URL || !ANON_KEY || !SERVICE_ROLE_KEY) {
     throw new Error("local Supabase environment is incomplete");
   }
 
@@ -452,6 +452,10 @@ export async function ensureLocalStack(
           DATABASE_URL: DB_URL,
           SUPABASE_URL: API_URL,
           SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
+          // Public sign-in discovery (GET /v1/auth/config, flow AUTH-3) serves
+          // this value. Without it the route correctly answers 503 and AUTH-3
+          // has nothing to complete a real GoTrue password grant with.
+          SUPABASE_ANON_KEY: ANON_KEY,
           API_KEY_SECRET: "local-flow-runner-api-key-secret",
           INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),

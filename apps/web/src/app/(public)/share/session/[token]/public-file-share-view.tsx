@@ -14,6 +14,7 @@ import {
   type FileContentResult,
   type FileSource,
 } from '@/features/file-viewer';
+import { fetchPublicShareFile, readPublicShareFileBlob } from '@kortix/sdk';
 import { downloadFileFromUrl, fileNameFromPath } from './share-file';
 import { SHARE_FILE_IFRAME_CLASS } from './share-layout';
 
@@ -47,6 +48,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 }
 
 function usePublicFileContent(
+  backendUrl: string,
   token: string,
   filePath: string | null,
   fileUrl: string,
@@ -61,11 +63,9 @@ function usePublicFileContent(
     // failure: keep polling so the shared file loads once the box is up.
     refetchInterval: (query) => (isSandboxNotReadyError(query.state.error) ? 3_000 : false),
     queryFn: async () => {
-      const res = await fetch(fileUrl, { cache: 'no-store' });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(text || res.statusText || `HTTP ${res.status}`);
-      }
+      // The Response, not `readPublicShareFileText`/`...Blob`: which of the two
+      // this is depends on the `content-type`, and a body can only be read once.
+      const res = await fetchPublicShareFile(backendUrl, fileUrl);
       const mimeType = res.headers.get('content-type') || 'application/octet-stream';
       if (isTextResponse(filePath!, mimeType)) {
         return { type: 'text', content: await res.text(), mimeType };
@@ -88,6 +88,7 @@ function usePublicFileContent(
 }
 
 function usePublicBinaryBlob(
+  backendUrl: string,
   token: string,
   filePath: string | null,
   fileUrl: string,
@@ -100,14 +101,7 @@ function usePublicBinaryBlob(
     retry: false,
     // Same readiness poll as usePublicFileContent above.
     refetchInterval: (query) => (isSandboxNotReadyError(query.state.error) ? 3_000 : false),
-    queryFn: async () => {
-      const res = await fetch(fileUrl, { cache: 'no-store' });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(text || res.statusText || `HTTP ${res.status}`);
-      }
-      return res.blob();
-    },
+    queryFn: async () => (await readPublicShareFileBlob(backendUrl, fileUrl)).blob,
   });
 
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -132,10 +126,12 @@ function usePublicBinaryBlob(
 }
 
 export function PublicFileShareView({
+  backendUrl,
   token,
   share,
   fileUrl,
 }: {
+  backendUrl: string;
   token: string;
   share: PublicFileShare;
   fileUrl: string;
@@ -147,9 +143,9 @@ export function PublicFileShareView({
 
   const source = useMemo<FileSource>(
     () => ({
-      useFileContent: (path) => usePublicFileContent(token, path, fileUrl),
-      useBinaryBlob: (path) => usePublicBinaryBlob(token, path, fileUrl),
-      download: (_filePath, name) => downloadFileFromUrl(fileUrl, name || fileName),
+      useFileContent: (path) => usePublicFileContent(backendUrl, token, path, fileUrl),
+      useBinaryBlob: (path) => usePublicBinaryBlob(backendUrl, token, path, fileUrl),
+      download: (_filePath, name) => downloadFileFromUrl(backendUrl, fileUrl, name || fileName),
       upload: async () => {
         throw new Error('Public file shares are read-only');
       },
@@ -157,7 +153,7 @@ export function PublicFileShareView({
       // navigate, and the sender's directory layout is not theirs to see. The
       // file name in the page header is the whole identity of this page.
     }),
-    [fileName, fileUrl, token],
+    [backendUrl, fileName, fileUrl, token],
   );
 
   // HTML renders from the proxy URL directly so its relative assets resolve.

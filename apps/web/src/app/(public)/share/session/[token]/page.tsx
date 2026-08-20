@@ -18,7 +18,11 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
-import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
+import {
+  buildPublicShareFileUrl,
+  getPublicShareByToken,
+  startSessionWithToken,
+} from '@kortix/sdk';
 import { PublicFileShareView } from './public-file-share-view';
 import { downloadFileFromUrl, fileNameFromPath } from './share-file';
 import { SHARE_PAGE_ROOT_CLASS, SHARE_PREVIEW_IFRAME_CLASS } from './share-layout';
@@ -45,9 +49,15 @@ function apiBase() {
   return (getEnv().BACKEND_URL || '').replace(/\/$/, '');
 }
 
-function apiOrigin() {
+/**
+ * Absolute URL for `share.proxy_path` — the SDK joins the API origin to the
+ * root-relative proxy path. An unusable `BACKEND_URL` makes it throw; this page
+ * treats that as "no proxy URL" so the `public_url` fallback still runs.
+ */
+function shareProxyUrl(base: string, proxyPath: string | null | undefined) {
+  if (!proxyPath) return '';
   try {
-    return new URL(apiBase()).origin;
+    return buildPublicShareFileUrl(base, proxyPath);
   } catch {
     return '';
   }
@@ -69,19 +79,16 @@ export default function PublicSessionSharePage() {
   const [fullscreen, setFullscreen] = useState(false);
 
   const base = apiBase();
-  const origin = apiOrigin();
   const iframeSrc = useMemo(() => {
     if (!meta?.share) return '';
     // Prefer the path-based proxy on the same origin we just fetched metadata
     // from — it always resolves. `public_url` is a fallback for older responses.
-    if (meta.share.proxy_path && origin) return `${origin}${meta.share.proxy_path}`;
-    return meta.share.public_url || '';
-  }, [meta, origin]);
+    return shareProxyUrl(base, meta.share.proxy_path) || meta.share.public_url || '';
+  }, [base, meta]);
   const fileSrc = useMemo(() => {
     if (!meta?.share || meta.share.resource_type !== 'file') return '';
-    if (!meta.share.proxy_path || !origin) return '';
-    return `${origin}${meta.share.proxy_path}`;
-  }, [meta, origin]);
+    return shareProxyUrl(base, meta.share.proxy_path);
+  }, [base, meta]);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,8 +157,8 @@ export default function PublicSessionSharePage() {
   const fileName = fileNameFromPath(filePath, meta?.share.label ?? 'Shared file');
   const handleDownload = useCallback(() => {
     if (!fileSrc) return;
-    void downloadFileFromUrl(fileSrc, fileName);
-  }, [fileName, fileSrc]);
+    void downloadFileFromUrl(base, fileSrc, fileName);
+  }, [base, fileName, fileSrc]);
 
   if (loading) {
     return (
@@ -302,7 +309,12 @@ export default function PublicSessionSharePage() {
             </div>
           </div>
         ) : isFileShare ? (
-          <PublicFileShareView token={token} share={meta.share} fileUrl={fileSrc} />
+          <PublicFileShareView
+            backendUrl={base}
+            token={token}
+            share={meta.share}
+            fileUrl={fileSrc}
+          />
         ) : (
           <iframe
             title={title}

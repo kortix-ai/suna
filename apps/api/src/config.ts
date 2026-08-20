@@ -136,6 +136,22 @@ const envSchema = z.object({
     .refine((v) => v === '' || /^https?:\/\//.test(v), { message: 'SUPABASE_PUBLIC_URL must be a valid HTTP(S) URL' })
     .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
+  // The PUBLISHABLE ("anon") Supabase key. Served verbatim by the public
+  // GET /v1/auth/config discovery route so an SDK consumer can reach GoTrue.
+  // This is not a secret: apps/web already ships the same value to every
+  // browser (apps/web/src/lib/env-config.ts) and every GoTrue request sends it
+  // as the `apikey` header. OPTIONAL on purpose — a deployment that has not set
+  // it under ANY of its three names must degrade to a 503 on that one route,
+  // never fail API startup. The other two names are read from process.env in
+  // the config object below (see resolveAnonKey).
+  SUPABASE_ANON_KEY: optStr,
+
+  // ── Public auth surface (optional; drives GET /v1/auth/config) ────────────
+  // Same contract as the frontend's KORTIX_PUBLIC_AUTH_METHODS /
+  // KORTIX_PUBLIC_AUTH_PROVIDERS: comma lists of enabled email methods
+  // ("magic","password") and social providers ("google"). Empty = defaults.
+  AUTH_METHODS: optStr,
+  AUTH_PROVIDERS: optStr,
 
   // ── API Key Hashing (REQUIRED) ───────────────────────────────────────────
   API_KEY_SECRET: z.string().min(1, 'API_KEY_SECRET is required — API key hashing will fail'),
@@ -744,6 +760,35 @@ export function parseAllowedProviders(
   return valid.length > 0 ? valid : fallback;
 }
 
+/**
+ * Resolve the publishable ("anon") Supabase key from the three names a
+ * deployment can already carry, in priority order.
+ *
+ * `SUPABASE_ANON_KEY` is the API-side name and nothing sets it today: the same
+ * value ships in every deployment under the frontend's names
+ * (`KORTIX_PUBLIC_SUPABASE_ANON_KEY`, with the legacy `NEXT_PUBLIC_` alias —
+ * apps/web/src/lib/env-config.ts:30, apps/cli/src/self-host/assets/
+ * kortix-compose.yml:13, infra/scripts/render-web-env.mjs:93-100). Without this
+ * chain GET /v1/auth/config 503s on a box whose operator did configure the key,
+ * just under a different name. Same shape as AUTH_METHODS / AUTH_PROVIDERS
+ * below: the API-side name always wins, then KORTIX_PUBLIC_, then NEXT_PUBLIC_.
+ *
+ * Pure and exported so the order is pinned by test without rebuilding the
+ * config singleton (apps/api/src/auth/config-route.test.ts).
+ */
+export function resolveAnonKey(sources: {
+  SUPABASE_ANON_KEY?: string;
+  KORTIX_PUBLIC_SUPABASE_ANON_KEY?: string;
+  NEXT_PUBLIC_SUPABASE_ANON_KEY?: string;
+}): string {
+  return (
+    sources.SUPABASE_ANON_KEY ||
+    sources.KORTIX_PUBLIC_SUPABASE_ANON_KEY ||
+    sources.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+  );
+}
+
 function validateEnv(): z.infer<typeof envSchema> {
   const result = envSchema.safeParse(process.env);
 
@@ -983,6 +1028,33 @@ export const config = {
   SUPABASE_URL: env.SUPABASE_URL,
   SUPABASE_PUBLIC_URL: env.SUPABASE_PUBLIC_URL,
   SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+  // Falls back to the frontend's names for the SAME publishable value — see
+  // resolveAnonKey. Explicit SUPABASE_ANON_KEY always wins.
+  SUPABASE_ANON_KEY: resolveAnonKey({
+    SUPABASE_ANON_KEY: env.SUPABASE_ANON_KEY,
+    KORTIX_PUBLIC_SUPABASE_ANON_KEY: process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  }),
+
+  // ─── Public auth surface (GET /v1/auth/config) ─────────────────────────────
+  // AUTH_METHODS / AUTH_PROVIDERS are the API-side names. The same two lists
+  // already exist in every deployment under the frontend's names
+  // (KORTIX_PUBLIC_* with a legacy NEXT_PUBLIC_* alias — see
+  // apps/web/src/lib/env-config.ts:40-41 and
+  // apps/cli/src/self-host/shared-runtime-defaults.ts:28). A self-host box puts
+  // them in the single .env that kortix-api also loads, so falling back to them
+  // is what keeps discovery from advertising magic-link sign-in on a box whose
+  // operator turned it off. Explicit AUTH_METHODS/AUTH_PROVIDERS always win.
+  AUTH_METHODS:
+    env.AUTH_METHODS ||
+    process.env.KORTIX_PUBLIC_AUTH_METHODS ||
+    process.env.NEXT_PUBLIC_AUTH_METHODS ||
+    '',
+  AUTH_PROVIDERS:
+    env.AUTH_PROVIDERS ||
+    process.env.KORTIX_PUBLIC_AUTH_PROVIDERS ||
+    process.env.NEXT_PUBLIC_AUTH_PROVIDERS ||
+    '',
 
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,

@@ -100,7 +100,7 @@ try {
   writeFileSync(
     join(workdir, 'smoke.mjs'),
     [
-      "import { createKortix, ApiError, classifyTurn, getSessionCostRecord, listSessionCosts } from '@kortix/sdk';",
+      "import { createKortix, ApiError, classifyTurn, getSessionCostRecord, listSessionCosts, createKortixAuth, createMemoryAuthStorage, fetchKortixAuthConfig, KortixAuthError } from '@kortix/sdk';",
       "import { createScopedKortix } from '@kortix/sdk/server';",
       "import { createExecutorClient, ExecutorClient, ExecutorError } from '@kortix/executor-sdk';",
       "if (typeof createKortix !== 'function') throw new Error('createKortix is not a function');",
@@ -117,6 +117,16 @@ try {
       "if (typeof k.billing.sessionCosts.list !== 'function') throw new Error('sessionCosts.list missing');",
       "if (typeof k.billing.sessionCosts.get !== 'function') throw new Error('sessionCosts.get missing');",
       "if (typeof k.session('project', 'session').cost !== 'function') throw new Error('session.cost missing');",
+      // The auth producer, exercised from the PUBLISHED artifact: it must
+      // construct with no browser globals, hand out an unbound getToken, and
+      // answer null (never throw) when nothing is stored.
+      "if (typeof createKortixAuth !== 'function') throw new Error('createKortixAuth missing');",
+      "if (typeof fetchKortixAuthConfig !== 'function') throw new Error('fetchKortixAuthConfig missing');",
+      "if (typeof createMemoryAuthStorage !== 'function') throw new Error('createMemoryAuthStorage missing');",
+      "if (!(new KortixAuthError('x') instanceof Error)) throw new Error('KortixAuthError is not an Error');",
+      "const auth = createKortixAuth({ backendUrl: 'http://smoke.test/v1', storage: createMemoryAuthStorage(), config: { provider: 'supabase', url: 'http://gotrue.smoke.test', anonKey: 'anon', methods: ['password'], providers: [], signupsEnabled: true } });",
+      "if (await auth.getToken() !== null) throw new Error('getToken should be null with an empty store');",
+      "if (typeof createKortix({ backendUrl: 'http://smoke.test/v1', getToken: auth.getToken }).projects.list !== 'function') throw new Error('unbound getToken seam is broken');",
       "console.log('OK: @kortix/sdk and @kortix/executor-sdk import and construct from packed tarballs');",
     ].join('\n'),
   );

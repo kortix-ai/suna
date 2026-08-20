@@ -15,6 +15,11 @@ const FORBIDDEN_IMPORTS = [
     match: (source) => source === '@opencode-ai/sdk' || source.startsWith('@opencode-ai/sdk/'),
   },
   {
+    // Deprecated `@kortix/sdk/*` aliases whose every symbol is re-exported by
+    // the root entry. `@kortix/sdk/react` and `@kortix/sdk/server` stay legal
+    // (React peer dep / Node-only). `@kortix/sdk/idb-sync-cache` is NOT listed:
+    // `clearSessionIDBCache` lives in `internal/` and is not root-exported, so
+    // two production files still import that subpath legitimately.
     kind: 'deprecated-sdk-runtime',
     match: (source) =>
       source.startsWith('@kortix/sdk/internal/') ||
@@ -29,7 +34,11 @@ const FORBIDDEN_IMPORTS = [
       source === '@kortix/sdk/server-store' ||
       source === '@kortix/sdk/sync-store' ||
       source === '@kortix/sdk/sandbox-connection-store' ||
-      source === '@kortix/sdk/opencode-pending-store',
+      source === '@kortix/sdk/opencode-pending-store' ||
+      source === '@kortix/sdk/turns' ||
+      source === '@kortix/sdk/instance-routes' ||
+      source === '@kortix/sdk/fresh-sessions' ||
+      source === '@kortix/sdk/feature-flags',
   },
   {
     kind: 'host-runtime-module',

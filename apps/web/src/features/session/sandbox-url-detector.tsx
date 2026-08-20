@@ -19,6 +19,7 @@ import {
 } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { openTabAndNavigate } from '@/stores/tab-store';
+import { probePreviewPort } from '@kortix/sdk';
 import {
   ArrowSquareOutIcon as ExternalLink,
   GlobeIcon as Globe,
@@ -45,27 +46,26 @@ function usePortReachability(proxyUrl: string): ReachabilityStatus {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
 
     async function probe() {
-      try {
-        // no-cors gives an opaque response (status 0) but succeeds if the
-        // server is listening. If the port is down, fetch throws a TypeError.
-        await fetch(proxyUrl, {
-          method: 'HEAD',
-          mode: 'no-cors',
-          cache: 'no-store',
-          signal: AbortSignal.timeout(4000),
-        });
-        if (!cancelled) setStatus('reachable');
-      } catch {
-        if (!cancelled) setStatus('unreachable');
-      }
+      // probePreviewPort asks the proxy, which answers 502/503/504 itself when
+      // nothing is listening. 'unknown' (a CORS refusal, an offline browser, an
+      // expired preview cookie) is evidence about us, not about the port, so it
+      // must never overwrite a verdict we already have.
+      const verdict = await probePreviewPort(proxyUrl, {
+        signal: controller.signal,
+        timeoutMs: 4000,
+      });
+      if (cancelled || verdict === 'unknown') return;
+      setStatus(verdict);
     }
 
     probe();
     const interval = setInterval(probe, 10_000);
     return () => {
       cancelled = true;
+      controller.abort();
       clearInterval(interval);
     };
   }, [proxyUrl]);

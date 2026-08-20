@@ -108,6 +108,16 @@ const kortix = createKortix({
       .then((s) => s.data.session?.access_token ?? null),
 });
 
+// Signing your own users in? `createKortixAuth` produces the token instead —
+// one unauthenticated discovery call, then GoTrue sign-in, storage, and
+// exp-aware refresh, all behind the same single seam:
+//
+//   const auth   = createKortixAuth({ backendUrl });
+//   const kortix = createKortix({ backendUrl, getToken: auth.getToken });
+//   await auth.signInWithPassword({ email, password });
+//
+// See examples/11-sign-in-and-run.ts and docs/sdk/auth.
+
 // Projects
 const projects = await kortix.projects.list();
 const detail = await kortix.project(pid).detail();

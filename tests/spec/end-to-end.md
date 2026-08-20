@@ -46,7 +46,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 `SYS-4` `GET /v1/router/health` → router health (no auth).
 `SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
 `SYS-6` `GET /v1/system/maintenance` → public read of the maintenance config (banner + maintenance page); default `{level:"none",…}`. Write is admin-only (`ADM-6`).
-`SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" form; invalid email → 400; valid → 200 `{ok:true, emailed}` (emails `DEMO_LEAD_NOTIFY_EMAIL` via the transactional-email provider chain (SES → Resend → Mailtrap); `emailed:false` when no provider is configured — graceful skip). IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
+`SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" and careers forms; invalid email → 400; valid → 200 `{ok:true, emailed, persisted}`. Owns both side effects of a lead, each best-effort and independent: it emails `DEMO_LEAD_NOTIFY_EMAIL` via the transactional-email provider chain (SES → Resend → Mailtrap) — `emailed:false` when no provider is configured — and stores the submission verbatim (unknown keys included) as one jsonb blob in `public.contact_forms` — `persisted:false` when the deployment has no database or no such table. Neither failure fails the lead. IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
 `DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ### Kortix system skills (`/v1/skills`, `combinedAuth`)
@@ -788,6 +788,7 @@ supplied scope field without restarting the session.
 `BILL-10` per-seat: `POST /billing/sync-seat-quantity` · `claim-per-seat` → no-op/skipped on non-legacy.
 `AUTH-1` `POST /v1/auth/logout` → OWNER 200/204; ANON 200/401.
 `AUTH-2` `POST /v1/webhooks/auth/send-email` — Supabase Auth send-email hook, public + Standard Webhooks HMAC (`AUTH_EMAIL_HOOK_SECRET`, `v1,whsec_…`) over the RAW body. Unsigned → 401 (503 when no secret is configured); valid signature over a tampered body → 401; signed `magiclink` payload → 200 and the mail goes out through the one platform transport (`EMAIL_URL`); unknown `email_action_type` → 400.
+`AUTH-3` `GET /v1/auth/config` → 200 `{provider:'supabase', url, anon_key, methods[], providers[], signups_enabled}` for ANON, with `Cache-Control: public, max-age=60, must-revalidate` + `ETag`; identical body with a bearer token (it never varies per caller); `If-None-Match` → 304; `POST /v1/auth/logout` stays 401 for ANON (the two `/v1/auth` mounts must keep their order). The returned `url` + `anon_key` complete a real GoTrue password grant for a fixture user, and that token is accepted by `GET /v1/accounts`. Unset `SUPABASE_ANON_KEY`, or a `SUPABASE_URL` no browser can resolve with no `SUPABASE_PUBLIC_URL`, → 503 `auth_config_unavailable`.
 `BILL-11` `GET /billing/checkout-session/:sessionId` · `POST /billing/confirm-checkout-session` → unknown/missing → 4xx.
 `BILL-3b` `POST /billing/create-checkout-session` · `create-per-seat-checkout` · `create-portal-session` → Stripe URL or 400/500.
 `BILL-4b` `POST /billing/cancel-subscription` · `sync-seat-quantity` → NONMEMBER → 403.

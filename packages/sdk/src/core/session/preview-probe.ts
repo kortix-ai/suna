@@ -17,7 +17,14 @@
  * browser with the `__preview_session` cookie, and an `Authorization` header
  * would make this a non-simple cross-origin request and cost a CORS preflight
  * on every probe. Same auth path the iframe itself uses.
+ *
+ * `probePreviewReady` at the bottom answers the neighbouring question — "is it
+ * answering OK yet" — for hosts that gate a rendered surface on readiness. See
+ * its own doc for why the two verdicts must stay separate.
  */
+
+import { getAuthToken } from '../http/auth';
+import { appendPreviewToken, isSubdomainPreviewUrl } from './preview';
 
 /**
  * What one probe learned about a port.
@@ -103,5 +110,65 @@ export async function probePreviewPort(
   } finally {
     clearTimeout(timer);
     options?.signal?.removeEventListener('abort', abort);
+  }
+}
+
+/**
+ * Is a preview endpoint answering OK *right now*?
+ *
+ * The sibling `probePreviewPort` answers a different question — "is anything
+ * listening" — and deliberately treats `401/403` as `unknown` because those come
+ * from the proxy's own auth gate. A host that gates a rendered surface on
+ * readiness needs the stricter verdict: only a `2xx` means "show it". Everything
+ * else, including our own auth failing, means "not yet — ask again".
+ *
+ * It also has to survive the auth form `probePreviewPort` cannot use. Subdomain
+ * previews (`p{port}-{sandbox}.host`, the local-dev shape) never receive the
+ * host-only `/v1/p` session cookie, so they authenticate with a one-shot
+ * `?token` on the request itself, which the proxy then trusts in-memory for the
+ * whole subdomain. Without it the probe `401`s forever, the gated surface never
+ * renders, nothing ever carries a token, and the "starting…" state deadlocks.
+ * The token goes in the query string, not an `Authorization` header, so the
+ * request stays simple and costs no CORS preflight.
+ *
+ * Never throws: a rejected fetch is just "not ready", which is the same branch
+ * a caller already has for a non-2xx.
+ *
+ * No timeout of its own — a caller drives this from a bounded retry loop and
+ * owns the deadline. Pass `signal` to cancel an in-flight probe on unmount.
+ */
+export async function probePreviewReady(
+  previewUrl: string,
+  options?: {
+    signal?: AbortSignal;
+    /**
+     * Token source for the subdomain form. Defaults to the SDK's platform
+     * token seam; overridable so a caller (or a test) can supply its own
+     * without reaching through global config.
+     */
+    getToken?: () => Promise<string | null>;
+  },
+): Promise<boolean> {
+  if (!previewUrl) return false;
+  if (options?.signal?.aborted) return false;
+
+  try {
+    let url = previewUrl;
+    if (isSubdomainPreviewUrl(previewUrl)) {
+      const token = await (options?.getToken ?? getAuthToken)();
+      if (options?.signal?.aborted) return false;
+      // No token is not a reason to skip: the proxy may already trust this
+      // subdomain from an earlier tokened request.
+      if (token) url = appendPreviewToken(previewUrl, token);
+    }
+
+    const res = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }

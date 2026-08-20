@@ -65,14 +65,24 @@ That is deliberate, and it is the single most important invariant in the package
 > codebase can have — it sends a user's prompt into someone else's machine.
 
 **Auth is exactly one seam:** `getToken`. It returns a Kortix PAT
-(`kortix_pat_…`) for programmatic use, or a Supabase JWT for a logged-in web
-user. Everything else — REST calls and the proxied runtime alike — flows through
-`authenticatedFetch`, which attaches it. There is no second auth path. Do not add
-one.
+(`kortix_pat_…`), a service-account key (`kortix_sa_…`), or a Supabase JWT for a
+logged-in web user. Everything else — REST calls and the proxied runtime alike —
+flows through `authenticatedFetch`, which attaches it. There is no second auth
+path. Do not add one.
+
+**`createKortixAuth` does not add one.** It is a token *producer* that sits in
+front of the seam: it signs a user in against the deployment's GoTrue and
+returns a `getToken` you hand to `createKortix`. It never calls an
+authenticated Kortix route, never touches `authenticatedFetch`, and never
+reaches the session runtime. Exactly one unauthenticated Kortix call —
+`GET /v1/auth/config` — tells it which GoTrue to talk to. A new *producer* of
+`getToken` is fine; a request path that carries a credential without going
+through `getToken` is the forbidden second seam.
 
 ### The layers, bottom to top
 
 ```
+core/auth (createKortixAuth)          ← optional token PRODUCER. Feeds getToken. Calls no authed Kortix route.
 platform/auth + platform/api-client   ← transport: token, fetch, ApiError
 platform/*-client                     ← typed REST surfaces (one file per domain)
 opencode/client                       ← OpenCode REST compatibility client

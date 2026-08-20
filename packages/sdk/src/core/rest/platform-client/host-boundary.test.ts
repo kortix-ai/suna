@@ -88,6 +88,103 @@ describe('host boundary transport', () => {
     expect(result).toEqual({ connected: false });
   });
 
+  test('public-share file URLs join the API origin to the server-issued proxy path', () => {
+    expect(
+      boundary.buildPublicShareFileUrl(
+        'https://api.example.test/v1',
+        '/v1/p/public-share/kps_abc/file',
+      ),
+    ).toBe('https://api.example.test/v1/p/public-share/kps_abc/file');
+    // The proxy path already carries `/v1`, so a bare or trailing-slash base
+    // must not contribute a second one.
+    expect(
+      boundary.buildPublicShareFileUrl(
+        'https://api.example.test/',
+        '/v1/p/public-share/kps_abc/file',
+      ),
+    ).toBe('https://api.example.test/v1/p/public-share/kps_abc/file');
+    expect(
+      boundary.buildPublicShareFileUrl(
+        'https://api.example.test/v1',
+        'v1/p/public-share/kps_abc/file/nested%20asset.png',
+      ),
+    ).toBe('https://api.example.test/v1/p/public-share/kps_abc/file/nested%20asset.png');
+    // `public_url` fallback: already absolute, so it is passed through.
+    expect(
+      boundary.buildPublicShareFileUrl('https://api.example.test/v1', 'https://cdn.example.test/x'),
+    ).toBe('https://cdn.example.test/x');
+  });
+
+  test('public-share file URL rejects a backend URL it cannot resolve an origin from', () => {
+    try {
+      boundary.buildPublicShareFileUrl('', '/v1/p/public-share/kps_abc/file');
+      throw new Error('expected a rejection');
+    } catch (err) {
+      expect(err).toBeInstanceOf(boundary.HostBoundaryError);
+      expect((err as InstanceType<typeof boundary.HostBoundaryError>).status).toBe(400);
+    }
+  });
+
+  test('public-share file reads stay anonymous and uncached', async () => {
+    responseFactory = () =>
+      new Response('hello', { status: 200, headers: { 'content-type': 'text/plain' } });
+
+    const response = await boundary.fetchPublicShareFile(
+      'https://api.example.test/v1',
+      '/v1/p/public-share/kps_abc/file',
+    );
+
+    expect(await response.text()).toBe('hello');
+    expect(requests[0]?.url).toBe('https://api.example.test/v1/p/public-share/kps_abc/file');
+    expect(requests[0]?.init?.cache).toBe('no-store');
+    expect(new Headers(requests[0]?.init?.headers).get('Authorization')).toBeNull();
+  });
+
+  test('public-share file text read reports the served MIME type', async () => {
+    responseFactory = () =>
+      new Response('# title', {
+        status: 200,
+        headers: { 'content-type': 'text/markdown; charset=utf-8' },
+      });
+
+    const result = await boundary.readPublicShareFileText(
+      'https://api.example.test/v1',
+      '/v1/p/public-share/kps_abc/file',
+    );
+
+    expect(result).toEqual({ text: '# title', mimeType: 'text/markdown; charset=utf-8' });
+  });
+
+  test('public-share file blob read falls back to a binary MIME type', async () => {
+    responseFactory = () => new Response(new Blob([new Uint8Array([1, 2, 3])]), { status: 200 });
+
+    const result = await boundary.readPublicShareFileBlob(
+      'https://api.example.test/v1',
+      '/v1/p/public-share/kps_abc/file',
+    );
+
+    expect(result.mimeType).toBe('application/octet-stream');
+    expect(await result.blob.arrayBuffer()).toEqual(new Uint8Array([1, 2, 3]).buffer);
+  });
+
+  test('a revoked public-share file surfaces the typed boundary error', async () => {
+    responseFactory = () => Response.json({ error: 'Share link revoked' }, { status: 410 });
+
+    try {
+      await boundary.fetchPublicShareFile(
+        'https://api.example.test/v1',
+        '/v1/p/public-share/kps_abc/file',
+      );
+      throw new Error('expected a rejection');
+    } catch (err) {
+      expect(err).toBeInstanceOf(boundary.HostBoundaryError);
+      const boundaryError = err as InstanceType<typeof boundary.HostBoundaryError>;
+      expect(boundaryError.status).toBe(410);
+      expect(boundaryError.message).toBe('Share link revoked');
+      expect(boundaryError.body).toEqual({ error: 'Share link revoked' });
+    }
+  });
+
   test('audit export sends project and session reconstruction filters', async () => {
     responseFactory = () =>
       new Response('', {

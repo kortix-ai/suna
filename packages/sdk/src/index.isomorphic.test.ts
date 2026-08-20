@@ -344,13 +344,69 @@ test('core/ never imports from browser/, node/, or react/', () => {
   }
 });
 
+// A bare global read throws a ReferenceError on React Native, in a CLI, and in
+// a bare browser <script> bundle. Guarded reads (`typeof x !== 'undefined'`)
+// are fine — this only flags a member access with no guard nearby.
+const BARE = /(?<!typeof\s)(?<![.\w])(process|window|document|localStorage|sessionStorage)\s*\./g;
+
+/** Every unguarded bare-global read in `source`, as `path:line` strings. One
+ *  function so the whole-`core/` sweep and the `core/auth/**` sweep below can
+ *  never drift on WHAT counts as guarded. */
+function bareGlobalHits(relativePath: string, source: string): string[] {
+  const lines = source.split('\n');
+  const findings: string[] = [];
+  const GUARD_WINDOW = 3;
+  lines.forEach((line, i) => {
+    if (line.trimStart().startsWith('*') || line.trimStart().startsWith('//')) return;
+    const hit = line.match(BARE);
+    if (!hit) return;
+    const globalName = hit[0].match(/^(process|window|document|localStorage|sessionStorage)/)?.[1];
+    const guardRe = new RegExp(`typeof\\s+${globalName}\\b`);
+    const guardedNearby = lines
+      .slice(Math.max(0, i - GUARD_WINDOW), i + 1)
+      .some(
+        (candidate) =>
+          !candidate.trimStart().startsWith('*') &&
+          !candidate.trimStart().startsWith('//') &&
+          guardRe.test(candidate),
+      );
+    if (!guardedNearby) findings.push(`${relativePath}:${i + 1} bare global \`${hit[0]}\``);
+  });
+  return findings;
+}
+
+test('bareGlobalHits flags an unguarded read and clears a guarded one', () => {
+  // Positive control: without this, a scan that silently matched nothing would
+  // "pass" every file forever.
+  expect(bareGlobalHits('probe.ts', 'const raw = localStorage.getItem(key);')).toHaveLength(1);
+  expect(
+    bareGlobalHits(
+      'probe.ts',
+      "if (typeof localStorage === 'undefined') return null;\nconst raw = localStorage.getItem(key);",
+    ),
+  ).toHaveLength(0);
+  expect(bareGlobalHits('probe.ts', '// localStorage.getItem(key) in a comment')).toHaveLength(0);
+});
+
+test('core/auth/** touches no bare global — the tripwire cannot see globals', () => {
+  // core/auth is the first core module that legitimately WANTS a browser global
+  // (`localStorage` for session persistence, `crypto` for PKCE). The import-graph
+  // tripwire walks IMPORTS and is blind to globals, so this scan is the only
+  // thing standing between a guarded read and a ReferenceError on React Native.
+  const authDir = join(SRC_ROOT, 'core', 'auth');
+  expect(existsSync(authDir)).toBe(true);
+  const files = walkDir(authDir);
+  // A directory scan that walks zero files exits green and proves nothing.
+  expect(files.length).toBeGreaterThan(0);
+  for (const file of files) {
+    const findings = bareGlobalHits(file.slice(SRC_ROOT.length + 1), readFileSync(file, 'utf8'));
+    expect(findings.length === 0 ? null : findings.join(', ')).toBeNull();
+  }
+});
+
 test('core/ never touches a bare process/window/document/localStorage global', () => {
   const coreDir = join(SRC_ROOT, 'core');
   if (!existsSync(coreDir)) return;
-  // A bare global read throws a ReferenceError on React Native, in a CLI, and in
-  // a bare browser <script> bundle. Guarded reads (`typeof x !== 'undefined'`)
-  // are fine — this only flags a member access with no guard on the same line.
-  const BARE = /(?<!typeof\s)(?<![.\w])(process|window|document|localStorage|sessionStorage)\s*\./g;
   // Widened from a same-line-only guard check: in practice the `typeof x !==
   // 'undefined'` guard often sits a line or two above the read it protects —
   // an `if (typeof window !== 'undefined' && window.foo) { … }` block whose
@@ -360,33 +416,12 @@ test('core/ never touches a bare process/window/document/localStorage global', (
   // a `typeof <that specific captured global>` mention before flagging —
   // scoped to the SAME global name (not "any of the four") so an unrelated
   // guard for a different global sitting nearby can't mask a real bare read.
-  const GUARD_WINDOW = 3;
+  // The scan itself lives in `bareGlobalHits` above, shared with the
+  // `core/auth/**` test so the two can never drift on what counts as guarded.
   for (const file of walkDir(coreDir)) {
-    const lines = readFileSync(file, 'utf8').split('\n');
-    lines.forEach((line, i) => {
-      if (line.trimStart().startsWith('*') || line.trimStart().startsWith('//')) return;
-      const hit = line.match(BARE);
-      if (!hit) return;
-      // `hit` comes from a global-flag `.match()`, which returns only whole
-      // matches (no capture groups) — pull the global name back out of the
-      // matched text itself rather than a nonexistent `hit[1]`.
-      const globalName = hit[0].match(/^(process|window|document|localStorage|sessionStorage)/)?.[1];
-      const guardRe = new RegExp(`typeof\\s+${globalName}\\b`);
-      // Only CODE lines count as guards — a comment merely mentioning
-      // `typeof window` (same not-a-comment check as the hit line above)
-      // must not suppress a genuinely bare read sitting below it.
-      const guardedNearby = lines
-        .slice(Math.max(0, i - GUARD_WINDOW), i + 1)
-        .some(
-          (candidate) =>
-            !candidate.trimStart().startsWith('*') &&
-            !candidate.trimStart().startsWith('//') &&
-            guardRe.test(candidate),
-        );
-      expect(
-        guardedNearby ? null : `${file.slice(SRC_ROOT.length + 1)}:${i + 1} bare global \`${hit[0]}\``,
-      ).toBeNull();
-    });
+    for (const finding of bareGlobalHits(file.slice(SRC_ROOT.length + 1), readFileSync(file, 'utf8'))) {
+      expect(finding).toBeNull();
+    }
   }
 });
 
