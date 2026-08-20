@@ -90,8 +90,8 @@ const Hero = () => {
         {/* The headline opens the page — nothing above it. At lg it steps up to
             6xl so it carries the fold the way the navbar carries the chrome. */}
         <div className="mx-auto w-full max-w-7xl px-6">
-          <RivalProof />
-          <h1 className="kx-hero-text text-foreground max-w-4xl text-4xl font-medium tracking-tight text-balance [--kx-enter:70ms] sm:text-5xl lg:text-6xl">
+          {/* <RivalProof /> */}
+          <h1 className="kx-hero-text text-foreground max-w-3xl text-4xl font-medium tracking-tight text-balance [--kx-enter:70ms] sm:text-5xl">
             {hero.title}
           </h1>
         </div>
@@ -105,16 +105,6 @@ const Hero = () => {
               </p>
             </div>
 
-            {/* Primary leads. The two CTAs split the full width on a phone and
-                shrink to their labels from sm up. Left at their intrinsic width
-                they came to 139 and 123 of the 346 available, which is both a
-                small target and an odd ragged pair under a full-bleed headline.
-
-                h-12 on phones only. This theme sets --spacing to 0.23rem, so the
-                shared size="lg" resolves to 36.8px, under the 44px touch target
-                every mobile platform asks for; h-12 is 44.2px. The override is
-                local because sm and up keeps the 36.8px the rest of the site is
-                drawn to. */}
             <div className="kx-hero-text flex w-full shrink-0 flex-wrap gap-3 [--kx-enter:210ms] sm:w-auto">
               <Button
                 size="lg"
@@ -141,10 +131,6 @@ const Hero = () => {
         >
           <HeroSurfaces />
         </div>
-
-        <p className="kx-hero-text text-muted-foreground/60 mx-auto mt-6 max-w-7xl px-6 text-center font-mono text-[11px] tracking-wide [--kx-enter:420ms]">
-          {hero.trust}
-        </p>
       </div>
     </section>
   );

@@ -3,7 +3,7 @@
 import { CopyButton } from '@/components/markdown/copy-button';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Badge } from '@/components/ui/badge';
-import Hint from '@/components/ui/hint';
+import { Button } from '@/components/ui/marketing/button';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { SdkSurface, SurfaceLink } from '@/features/marketing/landing/code-panels';
@@ -485,11 +485,9 @@ function WebSurface() {
  *  prompt. */
 function CopyInstallCommand() {
   return (
-    <Hint label="Copy the install command" side="left">
-      <span className="border-border bg-background/80 absolute top-2 right-2 z-10 inline-flex rounded-md border shadow-sm backdrop-blur-sm sm:top-3 sm:right-3">
-        <CopyButton code={KORTIX_CLI_INSTALL_COMMAND} />
-      </span>
-    </Hint>
+    <span className="border-border bg-background/80 absolute top-2 right-2 z-10 inline-flex rounded-md border shadow-sm backdrop-blur-sm sm:top-3 sm:right-3">
+      <CopyButton code={KORTIX_CLI_INSTALL_COMMAND} />
+    </span>
   );
 }
 
@@ -601,60 +599,26 @@ export function HeroSurfaces() {
 
   return (
     <div className="w-full">
-      {/* The frame is shorter than the 16:10 recording and anchored to the top,
-          so the product bleeds off the fold instead of eating a whole screen.
-
-          One height for all seven surfaces, at every breakpoint. A per-surface
-          height would let the video panels sit at their native aspect, but the
-          row of pills below is what you tap, and it would jump under your thumb
-          on every tab change. So the height is fixed and each panel is made to
-          fit it. Phone gets 360px rather than 300px: the videos are `cover`, so
-          a taller box costs them nothing (it just shows more of the recording),
-          while the five DOM panels need every pixel — at 300px the Slack ask and
-          the Kortix reply could not both be on screen. */}
-      {/* The cap matters more than the floor. On a tall display the frame was
-          running to 620px and the hero read as one enormous slab; 520 keeps the
-          product legible while leaving the fold visibly un-crowded. The
-          subtrahend is everything above and below it — nav, eyebrow, H1, sub,
-          CTAs, the tab row and the trust line. */}
-      {/* shadow-2xl: the frame is the product shot the whole fold exists for,
-          and flat-on-the-page it read as one more bordered panel. Same step the
-          use-case wheel gives its active card, so the page's two hero-scale
-          surfaces sit at one elevation. */}
-      <div className="border-border bg-card h-[340px] overflow-hidden rounded-xl border shadow-2xl sm:h-[360px] lg:h-[clamp(340px,calc(100svh-448px),520px)]">
+      <div className="border-border bg-card h-[340px] overflow-hidden rounded-lg border shadow-2xl lg:h-[clamp(600px,calc(100svh-20px),520px)]">
         <SurfacePanel surface={active} />
       </div>
 
-      {/* Surfaces sit under the frame: a quiet list of where it runs. Nothing
-          may sit between the frame and this row — a per-surface caption made
-          the whole hero jump on every tab change.
-
-          It wraps rather than scrolls. Seven surfaces are the claim being made,
-          so all seven stay on screen at phone width; a scroller would hide
-          three of them behind a swipe nobody is prompted to make. Mobile gets
-          tighter pills so the two rows sit close instead of straggling. */}
       <div className="mt-4 flex w-full flex-wrap items-center justify-center gap-x-0.5 gap-y-1 sm:gap-x-1">
         {SURFACES.map((s) => {
           const isActive = s.id === active;
           return (
-            <button
+            <Button
               key={s.id}
               type="button"
               onClick={() => setActive(s.id)}
               aria-current={isActive ? 'true' : undefined}
-              className={cn(
-                // min-h-9 (the theme's --spacing is 0.23rem, so ~33px) keeps the touch
-                // target usable while the pill stays tight enough for seven at 390px.
-                'duration-fast flex min-h-9 shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs transition-colors',
-                'sm:min-h-0 sm:gap-1.5 sm:px-3 sm:text-[13px]',
-                isActive
-                  ? 'bg-foreground/[0.06] text-foreground font-medium'
-                  : 'text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.03]',
-              )}
+              variant={isActive ? 'secondary' : 'ghost'}
+              size="sm"
+              className="rounded-full border-none"
             >
               <s.icon className="size-3.5" />
               {s.label}
-            </button>
+            </Button>
           );
         })}
       </div>

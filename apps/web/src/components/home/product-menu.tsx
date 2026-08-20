@@ -147,7 +147,7 @@ export function ProductMenu({ name, menu, isNavActive }: ProductMenuProps) {
                                 icon; the plain Company list stays a text list. */}
                             {LinkIcon && (
                               <span className="bg-foreground/5 text-foreground flex size-9 shrink-0 items-center justify-center rounded-sm">
-                                <LinkIcon className="size-4" aria-hidden weight="fill" />
+                                <LinkIcon className="size-5" aria-hidden weight="fill" />
                               </span>
                             )}
                             <span className="flex min-w-0 flex-col gap-0.5">
