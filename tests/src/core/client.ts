@@ -216,6 +216,64 @@ export function isKe2eTransientGatewayResponse(response: Res): boolean {
   );
 }
 
+/**
+ * Methods this client may re-send after an edge-laundered 5xx or a network error.
+ *
+ * The Cloudflare worker launders an origin timeout into a synthetic 503 AFTER
+ * the origin has already COMMITTED the write. Run 32306385663 proved it six
+ * times over: TRG-2, TRG-10, TRG-14, TOK-5, MEM-7, IAM-26 and CLI-TRG each sent
+ * one POST that stalled ~25 s at the origin, took the synthetic 503, were
+ * re-sent by this client, and the second send hit the row the FIRST send had
+ * already written — `409 A trigger with slug "nightly" already exists`,
+ * `409 a role with this key already exists`, `409 Already a member`. Every one
+ * of those flows had provisioned a brand-new project or team microseconds
+ * earlier, so no other shard and no gc debris could have owned that name. The
+ * retry manufactured the collision.
+ *
+ * A retry is only transparent when re-sending cannot create a second resource.
+ * POST is the one method in this API that creates, so POST is never re-sent.
+ * Its laundered 503 is returned to the caller instead, where `.status()` (or
+ * `throwIfEdgeLaundered` for a body-only read) raises a marked-retryable error
+ * and the FLOW-level infra budget re-runs the flow against fresh fixtures — a
+ * fresh project, a fresh team, a fresh name, and therefore no collision.
+ *
+ * GET/HEAD/OPTIONS are safe by definition. PUT, PATCH and DELETE all address an
+ * EXISTING resource by id (upsert-by-key, partial-update-by-id, delete-by-id),
+ * so re-sending them cannot mint a second row; they keep the cheaper in-request
+ * retry. Narrowing the exclusion to POST alone also keeps this change to
+ * exactly the defect the run proved, instead of converting healthy in-request
+ * recoveries into whole-flow re-runs.
+ */
+const REPLAY_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'DELETE']);
+
+/** True when re-sending this method cannot duplicate a server-side create. */
+export function isReplaySafeMethod(method: string): boolean {
+  return REPLAY_SAFE_METHODS.has(method.toUpperCase());
+}
+
+/**
+ * Raise a marked-retryable error when a response is an edge-laundered 5xx.
+ *
+ * `Res.status()` already does this, but fixtures and flows that read a body
+ * WITHOUT asserting a status never reach it: they throw their own plain Error
+ * ("team account create returned no id: …"), which `classifyFlowError` reads as
+ * `fatal` and never retries. IAM-22 died that way on a single attempt while the
+ * identical blip on an asserted route self-healed. Call this before any
+ * body-only read so the edge can never masquerade as a contract failure.
+ */
+export function throwIfEdgeLaundered(response: Res, what: string): void {
+  if (!isKe2eTransientGatewayResponse(response)) return;
+  const breakerOpen = transientBreaker.isOpen();
+  const error = new Error(
+    `${what}: transient gateway status ${response.statusCode} ` +
+      `${describeEdgeResponse(response.statusCode, response.captured.res.headers)}` +
+      (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+  );
+  (error as any).ke2eRetryable = !breakerOpen;
+  (error as any).ke2eRetryAfterMs = retryAfterMs(response.header('retry-after'));
+  throw error;
+}
+
 function retryAfterMs(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const seconds = Number(value);
@@ -478,7 +536,10 @@ export class Client {
 
     const routeTemplate = `${method} ${template}`;
     const timeoutMs = opts?.timeoutMs ?? this.defaultTimeoutMs;
-    const maxAttempts = this.transientGatewayRetries + 1;
+    // A create is never replayed — see REPLAY_SAFE_METHODS. One attempt, then
+    // the laundered response goes back to the caller for a FLOW-level retry.
+    const replaySafe = isReplaySafeMethod(method);
+    const maxAttempts = replaySafe ? this.transientGatewayRetries + 1 : 1;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const started = performance.now();
@@ -570,6 +631,10 @@ export class Client {
         log.warn(
           `ke2e giving up ${routeTemplate} after ${attempt}/${maxAttempts} attempt(s) ` +
             `${describeEdgeResponse(res.status, resHeaders)}` +
+            (replaySafe
+              ? ''
+              : ' — not replayed: the origin may have committed this create; ' +
+                'the flow-level budget retries it against fresh fixtures') +
             (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
         );
       }

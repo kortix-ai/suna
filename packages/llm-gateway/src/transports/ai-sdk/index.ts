@@ -12,6 +12,9 @@ import {
 import { buildAiSdkArgs } from './request';
 import { openAiJsonFromResult, openAiSseFromFullStream } from './sse';
 
+export { applyNativeGatewayShaping } from './request';
+export type { NativeShapableCall } from './request';
+
 export type { AiSdkFetch } from './model';
 export {
   aiSdkFamilyFor,

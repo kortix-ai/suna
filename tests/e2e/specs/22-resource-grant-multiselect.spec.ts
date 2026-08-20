@@ -1,9 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-import { loadEnv } from '../../src/core/env';
-import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
-import { createLocalGitRepository, type LocalGitRepository } from '../../src/fixtures/local-git';
 import { createApiJsonClient } from '../helpers/http';
+import { type ManifestProject, createManifestProject } from '../helpers/manifest-project';
 import {
   createAuthUser,
   deleteAuthUser,
@@ -52,9 +50,11 @@ interface ResourceGrantsResponse {
  * fuller multi-agent case is the natural follow-up if that dimension ever
  * regresses independently.
  *
- * `createLocalGitRepository` seeds `kortix.yaml` with `agents:\n  kortix: {}`
- * (local-git.ts), so every project made through it already has a real
- * "kortix" agent to grant — no extra fixture needed.
+ * The project comes from `createManifestProject`, so its `kortix.yaml` really
+ * declares a "kortix" agent on both lanes: a local bare repo locally, a
+ * starter-seeded managed-git project against a deployed API. The agent
+ * checkboxes are read from that manifest, so a repo the API cannot fetch shows
+ * an empty picker instead of failing loudly.
  */
 test.describe('22 — Resource-grant multi-select', () => {
   test('granting one agent to two members in a single dialog creates two grants', async ({
@@ -72,11 +72,10 @@ test.describe('22 — Resource-grant multi-select', () => {
     const memberA = await createAuthUser(memberAEmail, authOptions);
     const memberB = await createAuthUser(memberBEmail, authOptions);
     const session = await signIn(ownerEmail, authOptions);
-    const env = loadEnv();
 
     let accountId: string | null = null;
     let projectId: string | null = null;
-    let repository: LocalGitRepository | null = null;
+    let project: ManifestProject | null = null;
 
     try {
       const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
@@ -101,12 +100,17 @@ test.describe('22 — Resource-grant multi-select', () => {
         201,
       );
 
-      repository = await createLocalGitRepository(`Resource grant multiselect ${runId}`);
-      const project = await createDatabaseProject(env, {
+      // The agent checkboxes come from GET /projects/:id/resource-grants, which
+      // reads `agents:` out of the project's kortix.yaml. A repo the API cannot
+      // read yields an EMPTY picker rather than an error, so the project must
+      // carry a manifest the deployed API can actually fetch.
+      project = await createManifestProject({
+        api,
+        accessToken: session.access_token,
         accountId,
         userId: owner.id,
         name: `Resource grant multiselect ${runId}`,
-        repoUrl: repository.repoUrl,
+        databaseUrl: databaseUrl!,
       });
       projectId = project.id;
 
@@ -194,8 +198,7 @@ test.describe('22 — Resource-grant multi-select', () => {
         [memberAEmail, memberBEmail].sort(),
       );
     } finally {
-      if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});
-      if (repository) await repository.dispose().catch(() => {});
+      if (project) await project.dispose().catch(() => {});
       await deleteAuthUser(memberB.id, authOptions).catch(() => {});
       await deleteAuthUser(memberA.id, authOptions).catch(() => {});
       await deleteAuthUser(owner.id, authOptions).catch(() => {});

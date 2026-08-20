@@ -58,6 +58,13 @@ env:
   # (worker.mjs CI_PASSTHROUGH_SECRET binding). Diagnosability only; the
   # Worker's public behavior is unchanged.
   KE2E_CI_PASSTHROUGH_SECRET: ${{ secrets.CF_WORKER_CI_PASSTHROUGH_SECRET }}
+  # AUTH-2 signs a Supabase send-email hook payload. It must sign with the
+  # secret the DEPLOYED API verifies with — the runner no longer leaks the
+  # local literal into the target-* lanes (core/local-runner.ts), which is why
+  # AUTH-2 read `401 Invalid signature` as a product bug. When this secret is
+  # unset the flow's signed steps skip themselves and its unsigned
+  # `401 | 503` assertion still runs, so the gate stays green either way.
+  KE2E_AUTH_EMAIL_HOOK_SECRET: ${{ secrets.STAGING_AUTH_EMAIL_HOOK_SECRET }}
 
 jobs:
   # Reclaim debris left by EARLIER runs before this one adds load. `--older-than

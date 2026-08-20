@@ -354,13 +354,27 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   const startedAt = performance.now();
   console.log(`\n[test] START ${lane.name}: ${lane.command.join(' ')}`);
   try {
-    // Every lane can sign a Supabase auth-hook request: the local stack starts
-    // the API with this same fixed secret (see local-stack.ts).
+    // A LOCAL lane can sign a Supabase auth-hook request, because the local
+    // stack starts the API with this same fixed secret (see local-stack.ts).
+    //
+    // A `target-*` lane must NOT: it runs against DEPLOYED staging, which has
+    // its own AUTH_EMAIL_HOOK_SECRET. Injecting the local literal there made
+    // AUTH-2 sign staging with the wrong key and read the resulting
+    // `401 Invalid signature` as a product regression — it has never passed on
+    // a deployed target that has the secret set. On the deployed lane the
+    // secret comes from the environment (the release gate can supply
+    // `KE2E_AUTH_EMAIL_HOOK_SECRET` from the staging secret blob); when it is
+    // absent, AUTH-2's signed steps skip themselves and its unsigned
+    // `401 | 503` assertion still runs.
+    //
     // Widened explicitly: lanes append their own E2E_*/KE2E_* keys below, and
     // the inferred literal type would reject any key not present here (TS2353).
+    const deployedLane = lane.name.startsWith('target-');
     let env: Record<string, string | undefined> = {
       ...process.env,
-      KE2E_AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET,
+      ...(deployedLane
+        ? {}
+        : { KE2E_AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET }),
       ...(lane.env ?? {}),
     };
     if (lane.name === 'browser') {

@@ -451,6 +451,148 @@ describe('handleLanguageModel — admission billing-hold reconciliation (FIX 1)'
   });
 });
 
+// Prove the GATEWAY-SIDE request shaping reaches the UPSTREAM WIRE through the
+// real @ai-sdk provider serialization (not just the pure helper). A capturing
+// fetch double records the outgoing request body; the stream then errors out
+// (the body is already captured), so each test asserts on the wire body
+// regardless of the final response status.
+function captureBodyGateway(descriptor: UpstreamDescriptor) {
+  const captured: { url: string; body: Record<string, unknown> | null } = { url: '', body: null };
+  const gateway = createGateway(
+    baseHooks({ resolveUpstream: async () => [descriptor] }),
+    { aiSdkNative: true },
+    {
+      fetchImpl: async (url: string, init?: { body?: unknown }) => {
+        captured.url = url;
+        try {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        } catch {
+          captured.body = null;
+        }
+        // End the attempt immediately — the body is already captured. A terminal
+        // 400 stops failover; the handler returns an error, which these tests
+        // ignore in favor of the captured wire body.
+        return new Response(JSON.stringify({ error: { message: 'captured' } }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    },
+  );
+  return { gateway, captured };
+}
+
+describe('handleLanguageModel — gateway-side wire shaping (codex store:false)', () => {
+  const CODEX: UpstreamDescriptor = {
+    provider: 'openai-codex',
+    kind: 'openai-responses',
+    baseUrl: 'https://chatgpt.com/backend-api/codex',
+    apiKey: 'sk-codex',
+    resolvedModel: 'gpt-5.6-sol',
+    billingMode: 'credits',
+    markup: 1,
+  };
+
+  it('sends store:false and NO max_output_tokens for a codex model', async () => {
+    const { gateway, captured } = captureBodyGateway(CODEX);
+    await gateway.languageModel(
+      req(HEADERS({ 'ai-language-model-id': 'openai/gpt-5.6-sol' }), {
+        prompt: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+        maxOutputTokens: 4096,
+      }),
+    );
+    expect(captured.body).not.toBeNull();
+    // The confirmed prod bug: without the fix, `store` is dropped and codex 400s
+    // "Store must be set to false".
+    expect(captured.body?.store).toBe(false);
+    // Codex 400s on max_output_tokens — it must be absent.
+    expect('max_output_tokens' in (captured.body ?? {})).toBe(false);
+  });
+});
+
+describe('handleLanguageModel — gateway-side wire shaping (plain openai)', () => {
+  const OPENAI: UpstreamDescriptor = {
+    provider: 'openai',
+    kind: 'openai-compat',
+    npm: '@ai-sdk/openai',
+    baseUrl: 'https://api.openai.com',
+    apiKey: 'sk-openai',
+    resolvedModel: 'gpt-4o',
+    billingMode: 'credits',
+    markup: 1,
+  };
+
+  it('does NOT set store for a non-codex openai model', async () => {
+    const { gateway, captured } = captureBodyGateway(OPENAI);
+    await gateway.languageModel(
+      req(HEADERS({ 'ai-language-model-id': 'openai/gpt-4o' }), {
+        prompt: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+        maxOutputTokens: 512,
+      }),
+    );
+    expect(captured.body).not.toBeNull();
+    // store:false is codex-only; a plain openai chat request must never carry it.
+    expect(captured.body?.store).toBeUndefined();
+  });
+});
+
+describe('handleLanguageModel — gateway-side wire shaping (openrouter bodyExtras)', () => {
+  const OPENROUTER: UpstreamDescriptor = {
+    provider: 'openrouter',
+    kind: 'openai-compat',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKey: 'sk-or',
+    resolvedModel: 'anthropic/claude-x',
+    billingMode: 'credits',
+    markup: 1,
+    bodyExtras: { provider: { order: ['Anthropic'], allow_fallbacks: false } },
+  };
+
+  it('forwards descriptor.bodyExtras (provider routing pins) onto the wire', async () => {
+    const { gateway, captured } = captureBodyGateway(OPENROUTER);
+    await gateway.languageModel(
+      req(HEADERS({ 'ai-language-model-id': 'openrouter/anthropic/claude-x' }), {
+        prompt: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      }),
+    );
+    expect(captured.body).not.toBeNull();
+    // The OpenRouter `provider` routing pin the client cannot send must reach the
+    // upstream verbatim (openai-compatible spreads unknown providerOptions keys).
+    expect(captured.body?.provider).toEqual({ order: ['Anthropic'], allow_fallbacks: false });
+  });
+});
+
+describe('handleLanguageModel — gateway-side wire shaping (anthropic regression)', () => {
+  const ANTHROPIC: UpstreamDescriptor = {
+    provider: 'anthropic',
+    kind: 'anthropic',
+    npm: '@ai-sdk/anthropic',
+    baseUrl: 'https://api.anthropic.com',
+    apiKey: 'sk-anthropic',
+    resolvedModel: 'claude-fable-5',
+    billingMode: 'credits',
+    markup: 1,
+  };
+
+  it('forwards client providerOptions (thinking) + maxOutputTokens, adds no store', async () => {
+    const { gateway, captured } = captureBodyGateway(ANTHROPIC);
+    await gateway.languageModel(
+      req(HEADERS(), {
+        prompt: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+        maxOutputTokens: 1024,
+        providerOptions: { anthropic: { thinking: { type: 'adaptive' }, effort: 'high' } },
+      }),
+    );
+    expect(captured.body).not.toBeNull();
+    // The Anthropic wire carries max_tokens (client cap forwarded unchanged) and
+    // the adaptive-thinking block from the client's own providerOptions.
+    expect(captured.body?.max_tokens).toBe(1024);
+    expect(captured.body?.thinking).toEqual({ type: 'adaptive' });
+    // No codex/openai shaping leaked into a non-openai family.
+    expect(captured.body?.store).toBeUndefined();
+  });
+});
+
 describe('handleLanguageModel — request-size ceiling (FIX 2)', () => {
   it('returns 413 request_too_large when the body exceeds maxRequestBytes, before auth/billing', async () => {
     let authenticated = false;

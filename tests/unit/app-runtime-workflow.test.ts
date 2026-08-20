@@ -24,10 +24,18 @@ describe('app runtime workflow coverage', () => {
       workflow.indexOf('      - name: Normalize outputs'),
       workflow.indexOf('      - name: Summary'),
     );
-    const allSurface = normalize.slice(normalize.indexOf('            else'));
+    // The manual `surface: all` dispatch forces every deployable service. It is
+    // the `all)` case of the dispatch switch (was an if/else `else` before the
+    // schedule+dispatch refactor added a `changed` default).
+    const allSurface = normalize.slice(
+      normalize.indexOf('              all)'),
+      normalize.indexOf('              changed)'),
+    );
 
     expect(allSurface).toContain('api=true');
     expect(allSurface).toContain('gateway=true');
     expect(allSurface).toContain('frontend=true');
+    expect(allSurface).toContain('cli=true');
+    expect(allSurface).toContain('terraform=true');
   });
 });

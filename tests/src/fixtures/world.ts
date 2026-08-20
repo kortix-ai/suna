@@ -9,7 +9,7 @@
  * route contracts are pinned by the audit. OWNER/ANON/PAT_ACCT/APIKEY + the run
  * account are wired here.
  */
-import { Client, type Identity } from '../core/client';
+import { Client, throwIfEdgeLaundered, type Identity } from '../core/client';
 import type { Env } from '../core/env';
 import { log } from '../core/log';
 import type {
@@ -41,9 +41,26 @@ const PUBLIC_DOMAINS = new Set(['system', 'access']);
 export interface World {
   principals: Principals;
   newStack(): ResourceStack;
-  makeFixtures(stack: ResourceStack): Fixtures;
+  /**
+   * Fixtures for ONE flow attempt. `attempt` (1-based) namespaces every
+   * user-chosen name the attempt derives, so a retry cannot collide with the
+   * rows its own previous attempt committed before failing.
+   */
+  makeFixtures(stack: ResourceStack, attempt?: number): Fixtures;
   fixtureStats(): FixtureStats;
   teardownAll(): Promise<void>;
+}
+
+/**
+ * The per-attempt suffix for every derived name.
+ *
+ * Attempt 1 gets NO suffix, so the 100+ existing `fixtures.name()` call sites,
+ * the `e2e-%` gc patterns, and every recorded fixture name keep the exact bytes
+ * they have today. Only a RETRY is renamed, which is the only case that can
+ * collide with itself.
+ */
+export function attemptSuffix(attempt: number): string {
+  return attempt > 1 ? `-r${attempt}` : '';
 }
 
 const ANON_PRINCIPAL: Principal = { label: 'ANON', auth: { mode: 'none' } };
@@ -216,8 +233,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     return { id, name } as CreatedProject;
   }
 
-  const fixturesFor = (stack: ResourceStack): Fixtures => ({
-    name: (slug) => `e2e-${runId}-${slug}`,
+  const fixturesFor = (stack: ResourceStack, attempt = 1): Fixtures => {
+    const suffix = attemptSuffix(attempt);
+    return {
+    name: (slug) => `e2e-${runId}-${slug}${suffix}`,
     sharedProject() {
       if (!sharedProjectPromise) {
         sharedProjectPromise = createProject(sharedStack, {
@@ -243,6 +262,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       const res = await adminClient.post('/v1/accounts', {
         name: opts?.name ?? `e2e-${runId}-team-${rand()}`,
       });
+      // IAM-22 (run 32306385663) died here on ONE attempt: the edge laundered
+      // an origin blip into a MAINTENANCE_MODE 503, this read found no
+      // account_id, and the plain Error below classified as `fatal`.
+      throwIfEdgeLaundered(res, 'team account create');
       const accountId = res.json<any>()?.account_id;
       if (!accountId) throw new Error(`team account create returned no id: ${res.text()}`);
       stack.push('account', accountId);
@@ -269,19 +292,39 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         async addMember(role) {
           const u = await synthUser(env, `MEM-${role}`, runId);
           extraUserIds.push(u.user.id);
-          await adminClient.post(
+          // This response used to be DISCARDED. A failed add then surfaced two
+          // steps later as someone else's bug: MEM-4 read `DELETE member → 404`
+          // and IAM-36 read `expected exactly one account-scope system
+          // assignment, got 0` — both of which mean only "the member was never
+          // added". Because addMember runs OUTSIDE ctx.step(), the request was
+          // not even in the step log. Fail here, where the cause is.
+          const added = await adminClient.post(
             '/v1/accounts/:accountId/members',
             { email: u.user.email, role },
             { params: { accountId } },
           );
+          throwIfEdgeLaundered(added, `team addMember(${role})`);
+          if (added.statusCode !== 201) {
+            throw new Error(
+              `team addMember(${role}) failed: ${added.statusCode} ${added.text()}`,
+            );
+          }
           return u.principal;
         },
         async grantProjectRole(projectId, userId, role) {
-          await adminClient.put(
+          const granted = await adminClient.put(
             '/v1/projects/:projectId/access/:userId',
             { role },
             { params: { projectId, userId } },
           );
+          // Same class as addMember above: a swallowed grant becomes a 403 in
+          // whichever later step relies on the role.
+          throwIfEdgeLaundered(granted, `team grantProjectRole(${role})`);
+          if (granted.statusCode !== 200 && granted.statusCode !== 201) {
+            throw new Error(
+              `team grantProjectRole(${role}) failed: ${granted.statusCode} ${granted.text()}`,
+            );
+          }
         },
         async project(o) {
           return createProject(stack, {
@@ -300,7 +343,8 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       // team, which is exactly what account-deletion flows require.
       const bootstrap = await new Client(env.apiUrl)
         .as(u.principal)
-        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-bootstrap` });
+        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-bootstrap${suffix}` });
+      throwIfEdgeLaundered(bootstrap, 'standalone user bootstrap');
       if (bootstrap.statusCode !== 201) {
         throw new Error(`standalone user bootstrap failed: ${bootstrap.text()}`);
       }
@@ -314,7 +358,8 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       // account-scoped reads (e.g. /v1/accounts/me) work for this identity.
       const bootstrap = await new Client(env.apiUrl)
         .as(u.principal)
-        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-email-bootstrap` });
+        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-email-bootstrap${suffix}` });
+      throwIfEdgeLaundered(bootstrap, 'standalone user-with-email bootstrap');
       if (bootstrap.statusCode !== 201) {
         throw new Error(`standalone user-with-email bootstrap failed: ${bootstrap.text()}`);
       }
@@ -340,6 +385,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           params: { projectId: project.id },
         },
       );
+      throwIfEdgeLaundered(res, 'session create');
       const body = res.json<any>();
       const id = body?.session_id ?? body?.sessionId ?? body?.id;
       if (!id) throw new Error(`session create returned no id: ${res.text()}`);
@@ -350,6 +396,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       const res = await adminClient.post('/v1/accounts/tokens', {
         name: opts?.name ?? `e2e-${runId}-pat-${rand()}`,
       });
+      throwIfEdgeLaundered(res, 'token mint');
       const body = res.json<any>();
       const secret = body?.secret_key ?? body?.token;
       const tokenId = body?.id ?? body?.token_id;
@@ -357,7 +404,8 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       if (tokenId) stack.push('token', tokenId);
       return secret as string;
     },
-  });
+    };
+  };
 
   return {
     principals: principalsProxy(provisioned.principals),

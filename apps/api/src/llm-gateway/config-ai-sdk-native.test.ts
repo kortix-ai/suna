@@ -47,8 +47,8 @@ async function readAiSdkNative(value: string | undefined): Promise<boolean> {
 }
 
 describe('config.aiSdkNative — GATEWAY_AI_SDK_NATIVE parsing', () => {
-  test('default (unset) → false', async () => {
-    expect(await readAiSdkNative(undefined)).toBe(false);
+  test('default (unset) → true (native is the default everywhere)', async () => {
+    expect(await readAiSdkNative(undefined)).toBe(true);
   });
 
   test('"true" → true', async () => {

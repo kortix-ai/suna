@@ -119,6 +119,15 @@ flow(
   "SEC-8",
   {
     domain: "secrets",
+    // SEC-8 provisions a REAL managed GitHub repository, and one provision
+    // request is allowed 180_000ms on its own (fixtures/provision.ts
+    // PROVISION_REQUEST_TIMEOUT_MS). On the deployed lane this flow inherited
+    // the same 180_000ms floor (core/local-runner.ts DEPLOYED_FLOW_TIMEOUT_MS),
+    // so a provision that took its full budget and SUCCEEDED still failed the
+    // flow before its first step ran — which is how run 32306385663 recorded
+    // `flow SEC-8 exceeded 180000ms` twice. The budget must exceed the bounds
+    // the flow itself contains.
+    timeoutMs: 300_000,
     routes: [
       "POST /v1/projects/:projectId/secrets",
       "GET /v1/projects/:projectId/secrets",

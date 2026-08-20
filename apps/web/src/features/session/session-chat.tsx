@@ -2091,7 +2091,8 @@ export function SessionChat({
    */
   const composerAgent = resolveComposerAgent({
     agents,
-    defaultAgent: boundAgentName ?? projectConfig?.open_code_default_agent,
+    boundAgent: boundAgentName,
+    defaultAgent: projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
   const composerAgentName = composerAgent.selected;

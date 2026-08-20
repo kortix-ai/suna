@@ -159,3 +159,72 @@ describe('composerSelectableAgents', () => {
     expect(composerSelectableAgents(undefined)).toEqual([]);
   });
 });
+
+describe('resolveComposerAgent — bound session agent', () => {
+  // A project session is created WITH an agent and the server runs that agent
+  // for it regardless of what any roster or default says. The composer must
+  // therefore show it from the first frame — the boot-time picker used to
+  // render `selectable[0]` ("Meta") until the runtime corrected it.
+
+  test('with no pick, the bound agent outranks the project default', () => {
+    const resolved = resolveComposerAgent({
+      agents: [agent('meta'), agent('kortix'), agent('writer')],
+      boundAgent: 'kortix',
+      defaultAgent: 'writer',
+    });
+
+    expect(resolved).toEqual({ selected: 'kortix', disabled: false, reason: 'bound' });
+  });
+
+  test('an explicit accessible pick still outranks the bound agent', () => {
+    const resolved = resolveComposerAgent({
+      agents: [agent('meta'), agent('kortix'), agent('writer')],
+      boundAgent: 'kortix',
+      selectedAgent: 'writer',
+    });
+
+    expect(resolved).toEqual({ selected: 'writer', disabled: false, reason: 'selected' });
+  });
+
+  test('a bound agent missing from the roster is still the one displayed and sent', () => {
+    // The session runs it server-side either way; showing someone else's first
+    // grant would be a lie.
+    const resolved = resolveComposerAgent({
+      agents: [agent('meta')],
+      boundAgent: 'kortix',
+    });
+
+    expect(resolved).toEqual({ selected: 'kortix', disabled: false, reason: 'bound' });
+  });
+
+  test('a bound session is not refused by an empty roster', () => {
+    const resolved = resolveComposerAgent({ agents: [], boundAgent: 'kortix' });
+
+    expect(resolved).toEqual({ selected: 'kortix', disabled: false, reason: 'bound' });
+  });
+
+  test('while the roster loads, the bound agent is the display value', () => {
+    const resolved = resolveComposerAgent({ agents: undefined, boundAgent: 'kortix' });
+
+    expect(resolved).toEqual({ selected: 'kortix', disabled: false, reason: 'loading' });
+  });
+
+  test('while the roster loads, an existing pick still wins over the bound agent', () => {
+    const resolved = resolveComposerAgent({
+      agents: undefined,
+      boundAgent: 'kortix',
+      selectedAgent: 'writer',
+    });
+
+    expect(resolved.selected).toBe('writer');
+  });
+
+  test('without a bound agent, the roster fallback chain is unchanged', () => {
+    const resolved = resolveComposerAgent({
+      agents: [agent('meta'), agent('writer')],
+      defaultAgent: 'kortix',
+    });
+
+    expect(resolved).toEqual({ selected: 'meta', disabled: false, reason: 'first_accessible' });
+  });
+});

@@ -41,6 +41,8 @@ export type ComposerAgentReason =
   | 'loading'
   /** The caller's own pick is accessible and stands. */
   | 'selected'
+  /** No pick; the session's immutable creation agent stands. */
+  | 'bound'
   /** No pick (or an inaccessible one); the project default is accessible. */
   | 'default'
   /** Neither the pick nor the default is accessible; first grant wins. */
@@ -73,25 +75,49 @@ export function composerSelectableAgents(agents: Agent[] | undefined): Agent[] {
 export function resolveComposerAgent(input: {
   /** The accessible roster. `undefined` means the query is still in flight. */
   agents: Agent[] | undefined;
+  /**
+   * The session's immutable creation agent, when this composer belongs to an
+   * existing project session. It is what the server RUNS for this session
+   * regardless of roster membership, so with no explicit pick it is the truth
+   * to display — never `selectable[0]`, which is somebody else's first grant
+   * and made a booting Kortix session read "Meta" until the runtime corrected
+   * it.
+   */
+  boundAgent?: string | null;
   /** The project's declared default agent, accessible or not. */
   defaultAgent?: string | null;
   /** The caller's current pick (session slot, last-used, …), if any. */
   selectedAgent?: string | null;
 }): ComposerAgentResolution {
+  const bound = input.boundAgent?.trim() || null;
   // A pending roster is not an empty one. Refusing the send here would disable
-  // the composer on every cold mount for a beat, which reads as broken.
+  // the composer on every cold mount for a beat, which reads as broken. Show
+  // the pick, else the session's bound agent — the one name known to be right
+  // before any query lands.
   if (!Array.isArray(input.agents)) {
-    return { selected: input.selectedAgent?.trim() || null, disabled: false, reason: 'loading' };
+    const picked = input.selectedAgent?.trim();
+    if (picked) return { selected: picked, disabled: false, reason: 'loading' };
+    return { selected: bound, disabled: false, reason: 'loading' };
   }
 
   const selectable = composerSelectableAgents(input.agents);
   if (selectable.length === 0) {
+    // A bound session still runs its own agent server-side; an empty roster
+    // refuses only unbound composers.
+    if (bound) return { selected: bound, disabled: false, reason: 'bound' };
     return { selected: null, disabled: true, reason: 'no_access' };
   }
 
   const picked = input.selectedAgent?.trim();
   if (picked && selectable.some((a) => a.name === picked)) {
     return { selected: picked, disabled: false, reason: 'selected' };
+  }
+
+  // No pick: the session's own agent outranks the project default — an
+  // existing session must never re-prompt under a different agent than the
+  // one it was created with just because a default or grant order says so.
+  if (bound) {
+    return { selected: bound, disabled: false, reason: 'bound' };
   }
 
   const declaredDefault = input.defaultAgent?.trim();
