@@ -40,6 +40,19 @@ describe('isInconclusiveVerifyFailure', () => {
   });
 });
 
+/**
+ * These two assert only what holds in BOTH cache states, which is what makes
+ * them safe in CI. With no Supabase reachable the JWKS cache is empty and the
+ * verifier short-circuits at `no-keys`; with keys loaded a symmetric token now
+ * stops at the algorithm check as `unsupported-alg`. Both are inconclusive, so
+ * the routing decision is identical either way.
+ *
+ * Deliberately NOT asserted here: that a malformed token is a definitive
+ * rejection. The verifier reaches the shape check only when keys are loaded, so
+ * that outcome depends on whether Supabase happens to be up — it passed locally
+ * and failed in CI. The semantics it was reaching for are pinned directly on
+ * `isInconclusiveVerifyFailure` above, which needs no environment at all.
+ */
 describe('verifySupabaseJwt — legacy symmetric tokens', () => {
   function jwt(header: Record<string, unknown>, payload: Record<string, unknown>): string {
     const b64 = (o: unknown) =>
@@ -72,12 +85,5 @@ describe('verifySupabaseJwt — legacy symmetric tokens', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(isInconclusiveVerifyFailure(result.reason)).toBe(true);
-  });
-
-  test('a malformed token is still a definitive rejection', async () => {
-    const result = await verifySupabaseJwt('not-a-jwt');
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(isInconclusiveVerifyFailure(result.reason)).toBe(false);
   });
 });
