@@ -60,6 +60,22 @@ mock.module('../shared/db', () => ({
     update: (table: unknown) => ({
       set: (patch: Record<string, unknown>) => ({ where: () => thenableUpdate(table, patch) }),
     }),
+  }, auditDb: {
+    select: (_fields?: unknown) => ({
+      from: (table: unknown) => ({
+        where: () => {
+          if (table === projects) return { limit: async () => projectRows };
+          if (table === projectTriggerRuntime) return { limit: async () => runtimeRows };
+          if (table === projectMonitorEvents) {
+            return { orderBy: () => ({ limit: async () => claimCandidates }) };
+          }
+          throw new Error('unexpected select table');
+        },
+      }),
+    }),
+    update: (table: unknown) => ({
+      set: (patch: Record<string, unknown>) => ({ where: () => thenableUpdate(table, patch) }),
+    }),
   },
 }));
 

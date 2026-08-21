@@ -66,6 +66,26 @@ mock.module('../../shared/db', () => ({
       }),
     }),
     update: () => ({ set: () => ({ where: async () => undefined }) }),
+  }, auditDb: {
+    select: (columns: Record<string, unknown>) => ({
+      from: () => ({
+        where: () => {
+          // `resolveOwnerRawEnv` selects the session row, then the project row.
+          // `resolveProjectLlmGatewayEnabled` selects a project row shaped like
+          // `{ metadata }` only. Route on the requested column set so one fake
+          // `db` satisfies every select on this path, same as the sibling
+          // `sandbox-env-sync.prompt.test.ts`.
+          const wantsSession = 'createdBy' in columns;
+          const rows = wantsSession ? [SESSION_ROW] : [PROJECT_ROW];
+          return {
+            limit: async () => rows,
+            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
+              Promise.resolve(rows).then(resolve, reject),
+          };
+        },
+      }),
+    }),
+    update: () => ({ set: () => ({ where: async () => undefined }) }),
   },
 }));
 

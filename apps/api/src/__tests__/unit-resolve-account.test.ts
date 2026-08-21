@@ -105,7 +105,7 @@ mock.module('@kortix/db', () => ({
   permissions: {},
 }));
 
-mock.module('../shared/db', () => ({ db: fakeDb }));
+mock.module('../shared/db', () => ({ db: fakeDb, auditDb: fakeDb }));
 
 mock.module('../billing/repositories/customers', () => ({
   getCustomerByAccountId: async () => state.legacyCustomer,

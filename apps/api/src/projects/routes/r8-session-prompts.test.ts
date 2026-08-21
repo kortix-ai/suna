@@ -201,7 +201,7 @@ function render(node: unknown): string {
   return '';
 }
 
-mock.module('../../shared/db', () => ({ db: databaseMock, hasDatabase: true }));
+mock.module('../../shared/db', () => ({ db: databaseMock, auditDb: databaseMock, hasDatabase: true }));
 
 mock.module('../../billing/services/billing-gate', () => ({
   checkBillingActive: async () =>

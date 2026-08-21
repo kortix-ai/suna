@@ -55,6 +55,33 @@ mock.module('../shared/db', () => ({
         if (table === oauthAuthorizationCodes) insertedCodes.push(values);
       },
     }),
+  }, auditDb: {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: async () => {
+            if (table === oauthClients) {
+              return [{
+                clientId: CLIENT_ID,
+                name: 'Trusted Client',
+                redirectUris: ['https://client.example/callback'],
+                scopes: ['profile', 'machines:read'],
+                active: true,
+              }];
+            }
+            if (table === accountMembers) {
+              return [{ accountId: ACCOUNT_ID }];
+            }
+            return [];
+          },
+        }),
+      }),
+    }),
+    insert: (table: unknown) => ({
+      values: async (values: Record<string, unknown>) => {
+        if (table === oauthAuthorizationCodes) insertedCodes.push(values);
+      },
+    }),
   },
 }));
 

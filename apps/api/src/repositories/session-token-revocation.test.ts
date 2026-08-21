@@ -30,6 +30,18 @@ mock.module('../shared/db', () => ({
         };
       },
     }),
+  }, auditDb: {
+    update: () => ({
+      set: (values: Record<string, unknown>) => {
+        lastSet = values;
+        return {
+          where: (predicate: unknown) => {
+            lastWhere = predicate;
+            return { returning: async () => [{ tokenId: 't1' }, { tokenId: 't2' }] };
+          },
+        };
+      },
+    }),
   },
 }));
 

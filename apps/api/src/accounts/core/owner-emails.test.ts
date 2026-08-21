@@ -27,6 +27,12 @@ mock.module('../../shared/db', () => ({
       if (state.fail) throw new Error('auth.users unreachable');
       return state.rows;
     },
+  }, auditDb: {
+    execute: async (query: unknown) => {
+      state.calls.push({ ids: paramsOf(query) });
+      if (state.fail) throw new Error('auth.users unreachable');
+      return state.rows;
+    },
   },
   hasDatabase: true,
 }));

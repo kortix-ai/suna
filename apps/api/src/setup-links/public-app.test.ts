@@ -31,6 +31,21 @@ mock.module('../shared/db', () => ({
         }),
       }),
     }),
+  }, auditDb: {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: async () =>
+            table === projectSessions
+              ? sessionRows
+              : table === projects
+                ? projectRows
+                : table === connectors
+                  ? connectorRows
+                  : [],
+        }),
+      }),
+    }),
   },
 }));
 

@@ -89,6 +89,24 @@ mock.module('../../../shared/db', () => ({
       }),
     }),
     update: updater,
+  }, auditDb: {
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+      inTransaction = true;
+      try {
+        return await fn(transactionScope);
+      } finally {
+        inTransaction = false;
+      }
+    },
+    execute: executor,
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: async () => (table === sessionSandboxes && sandboxRow ? [sandboxRow] : []),
+        }),
+      }),
+    }),
+    update: updater,
   },
 }));
 

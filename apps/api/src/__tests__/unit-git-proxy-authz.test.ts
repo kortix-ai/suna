@@ -46,6 +46,21 @@ mock.module('../shared/db', () => ({
         }),
       };
     },
+  }, auditDb: {
+    select: (fields?: Record<string, unknown>) => {
+      const rows = fields?.sessionMetadata
+        ? () => (sandboxRow ? [sandboxRow] : [])
+        : fields?.boxEpoch
+          ? () => (monitorBoxRow ? [monitorBoxRow] : [])
+          : () => (projectRow ? [projectRow] : []);
+      return {
+        from: () => ({
+          innerJoin: () => ({ where: () => ({ limit: async () => rows() }) }),
+          // Monitor-box lookup (loadMonitorBoxForToken) has no join.
+          where: () => ({ limit: async () => rows() }),
+        }),
+      };
+    },
   },
   hasDatabase: true,
 }));

@@ -6,13 +6,8 @@
 import { PROJECT_ACTIONS } from '../../iam';
 import { approvalPageUrl } from '../../setup-links/token';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
-import * as sharedDb from '../../shared/db';
-
-// Namespace import + fallback keeps the ~120 tests that mock '../../shared/db'
-// (with only `db`) working while production uses the isolated audit pool — see
-// shared/audit.ts.
-const auditDb = sharedDb.auditDb ?? db;
+// `auditDb` — dedicated audit pool (named import; mocks provide it). See shared/audit.ts.
+import { auditDb, db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';

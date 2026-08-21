@@ -41,7 +41,7 @@ mock.module('../billing/services/entitlements', () => ({
 mock.module('../shared/account-limits', () => ({
   clearAccountLimitCache: () => {},
 }));
-mock.module('../shared/db', () => ({ db: {} }));
+mock.module('../shared/db', () => ({ db: {} , auditDb: {}}));
 // tiers.ts (grantForSeats lives there) imports the validated env config; stub
 // the two fields it can touch so the test runs without a booted environment.
 mock.module('../config', () => ({

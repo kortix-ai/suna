@@ -247,6 +247,36 @@ mock.module('../shared/db', () => ({
     }),
     update: () => ({ set: () => ({ where: () => ({ returning: async () => [] }) }) }),
     delete: () => ({ where: async () => {} }),
+  }, auditDb: {
+    // `projection` lets us distinguish the count(*) quota query from the
+    // membership / row lookups, which use `.where().limit()`.
+    select: (projection?: any) => ({
+      from: (table: unknown) => ({
+        where: () => {
+          if (table === projects && projection && typeof projection === 'object' && 'count' in projection) {
+            // The enforceProjectQuota count(*) query is awaited directly.
+            return Promise.resolve([{ count: projectCount }]);
+          }
+          return {
+            limit: async () => {
+              if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
+              return [];
+            },
+          };
+        },
+      }),
+    }),
+    insert: (table: unknown) => ({
+      values: (values: any) => ({
+        onConflictDoUpdate: () => {
+          if (table === projectMembers) return Promise.resolve([]);
+          return { returning: async () => (table === projects ? [projectRowFrom(values)] : []) };
+        },
+        returning: async () => (table === projects ? [projectRowFrom(values)] : []),
+      }),
+    }),
+    update: () => ({ set: () => ({ where: () => ({ returning: async () => [] }) }) }),
+    delete: () => ({ where: async () => {} }),
   },
 }));
 

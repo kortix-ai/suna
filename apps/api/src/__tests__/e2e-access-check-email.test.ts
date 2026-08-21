@@ -27,6 +27,8 @@ mock.module('postgres', () => {
 mock.module('../shared/db', () => ({
   db: {
     insert: () => ({ values: async () => {} }),
+  }, auditDb: {
+    insert: () => ({ values: async () => {} }),
   },
 }));
 

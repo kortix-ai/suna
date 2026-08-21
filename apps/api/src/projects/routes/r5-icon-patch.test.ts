@@ -86,6 +86,17 @@ mock.module('../../shared/db', () => ({
         };
       },
     }),
+  }, auditDb: {
+    update: () => ({
+      set: (values: Record<string, unknown>) => {
+        setCalls.push(values);
+        return {
+          where: () => ({
+            returning: async () => [returningRow],
+          }),
+        };
+      },
+    }),
   },
 }));
 

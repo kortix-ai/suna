@@ -73,6 +73,33 @@ mock.module('../../shared/db', () => ({
         };
       },
     }),
+  }, auditDb: {
+    select: () => ({
+      from: (table: unknown) => {
+        const whereResult = () => {
+          const rows = rowsFor(table);
+          return Object.assign(Promise.resolve(rows), {
+            limit: async () => rows.slice(0, 1),
+          });
+        };
+        const query = { where: whereResult };
+        return {
+          ...query,
+          innerJoin: () => query,
+        };
+      },
+    }),
+    insert: (table: unknown) => ({
+      values: (values: Array<Record<string, unknown>>) => {
+        if (table !== auditEvents) throw new Error('unexpected insert table');
+        insertedValues = values;
+        return {
+          onConflictDoNothing: () => ({
+            returning: async () => values.map((value) => ({ eventId: value.eventId })),
+          }),
+        };
+      },
+    }),
   },
 }));
 

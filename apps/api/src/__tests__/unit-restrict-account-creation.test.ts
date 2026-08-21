@@ -72,6 +72,27 @@ mock.module('../shared/db', () => ({
     select: () => {
       throw new Error('db.select should not be reached by these tests');
     },
+  }, auditDb: {
+    insert: (table: any) => ({
+      values: (vals: any) => {
+        // accounts insert: { name } → chained .returning(); accountMembers
+        // insert: { userId, accountId, ... } → no .returning() call site.
+        if ('name' in (vals ?? {})) insertedAccount = vals;
+        return {
+          returning: async () => [
+            {
+              accountId: 'new-account-id',
+              name: vals.name,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          ],
+        };
+      },
+    }),
+    select: () => {
+      throw new Error('db.select should not be reached by these tests');
+    },
   },
 }));
 

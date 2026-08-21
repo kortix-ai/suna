@@ -39,6 +39,20 @@ mock.module('../shared/db', () => ({
     update: () => ({
       set: () => ({ where: async () => undefined, catch: () => undefined }),
     }),
+  }, auditDb: {
+    select: () => ({
+      from: () => ({
+        innerJoin: () => ({
+          where: (cond: unknown) => {
+            capturedWhere = cond;
+            return { limit: async () => rows };
+          },
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({ where: async () => undefined, catch: () => undefined }),
+    }),
   },
 }));
 

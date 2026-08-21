@@ -8,6 +8,10 @@ mock.module('../../shared/db', () => ({
     select: () => ({
       from: () => Promise.resolve(accountRows),
     }),
+  }, auditDb: {
+    select: () => ({
+      from: () => Promise.resolve(accountRows),
+    }),
   },
 }));
 

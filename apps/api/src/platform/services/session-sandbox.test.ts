@@ -204,6 +204,74 @@ mock.module('../../shared/db', () => ({
         },
       }),
     }),
+  }, auditDb: {
+    insert: (table: unknown) => ({
+      values: (v: Record<string, unknown>) => {
+        const result = {
+          returning: async () => (identityConflict && table === sessionSandboxes ? [] : [{ ...v }]),
+          onConflictDoNothing: () => result,
+        };
+        return result;
+      },
+    }),
+    select: (_proj: unknown) => ({
+      from: (table: unknown) => ({
+        where: (_cond: unknown) => ({
+          limit: async (_n: number) => {
+            if (table === projectSessions) {
+              return [
+                {
+                  status: scenario.projectSessionStatusAtCheck,
+                  metadata: scenario.projectSessionMetadataAtCheck,
+                },
+              ];
+            }
+            return [];
+          },
+        }),
+      }),
+    }),
+    update: (table: unknown) => ({
+      set: (updates: Record<string, unknown>) => ({
+        where: (condition: unknown) => {
+          const { sql, params } = compile(condition);
+          updateCalls.push({ table, updates, sql, params });
+          const isSessionSandboxesFinish =
+            table === sessionSandboxes && 'externalId' in updates && 'config' in updates;
+          if (isSessionSandboxesFinish) {
+            return updateResult(scenario.archiveBeforeFinish ? [] : [{ sandboxId: SANDBOX_ID }]);
+          }
+          const isRecoveryClaim =
+            table === sessionSandboxes &&
+            updates.provider === 'daytona' &&
+            updates.status === 'provisioning' &&
+            'config' in updates;
+          if (isRecoveryClaim) {
+            const claimed = recoveryPlaceholder;
+            recoveryPlaceholder = false;
+            return updateResult(
+              claimed
+                ? [
+                    {
+                      sandboxId: SANDBOX_ID,
+                      sessionId: SANDBOX_ID,
+                      accountId: ACCOUNT_ID,
+                      projectId: PROJECT_ID,
+                      provider: 'daytona',
+                      externalId: null,
+                      status: 'provisioning',
+                      baseUrl: null,
+                      config: {},
+                      metadata: { identityRecoveryAuthorizedAt: new Date().toISOString() },
+                    },
+                  ]
+                : [],
+            );
+          }
+          return updateResult([{ ok: true }]);
+        },
+      }),
+    }),
   },
 }));
 

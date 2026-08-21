@@ -36,7 +36,7 @@ function chain(): any {
   return c;
 }
 mock.module('../shared/db', () => ({
-  db: { select: () => chain(), insert: () => chain(), delete: () => chain() },
+  db: { select: () => chain(), insert: () => chain(), delete: () => chain() }, auditDb: { select: () => chain(), insert: () => chain(), delete: () => chain() },
   hasDatabase: () => true,
 }));
 

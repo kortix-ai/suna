@@ -307,6 +307,114 @@ mock.module('../shared/db', () => ({
       }),
     }),
   },
+}, auditDb: {
+    transaction: async function <T>(fn: (tx: any) => Promise<T>): Promise<T> {
+      return fn(this);
+    },
+    // The stop writer settles this sandbox's still-open session_turns rows in
+    // the same transaction that erases its turn authority (see
+    // reaping/sandbox-state-sync.ts). Recorded, not ignored, so a stop that
+    // silently stopped settling the ledger shows up here.
+    execute: async (statement: unknown) => {
+      ledgerSettleStatements.push(describeSql(statement));
+    },
+    select: (projection?: Record<string, unknown>) => ({
+      from: (table: unknown) => {
+        const isCount = !!projection && 'total' in projection;
+        // The last-moment deadline re-read is the only projection that asks for
+        // deadline_at ALONE, and it is keyed by sandbox_id — so answer it with
+        // that row's CURRENT deadline, which is what the TOCTOU tests move under
+        // the reaper's feet.
+        const isDeadlineReread =
+          !!projection && 'deadlineAt' in projection && Object.keys(projection).length === 1;
+        const builder: any = {
+          innerJoin: () => builder,
+          leftJoin: () => builder,
+          where: (predicate?: unknown) => {
+            if (isCount) return hybrid([{ total: candidates.length }]);
+            if (isDeadlineReread) {
+              const asked = new Set(sqlValues(predicate));
+              const id = [...asked].find((v) => v in freshDeadlineBySandbox);
+              if (id) {
+                const fresh = freshDeadlineBySandbox[id];
+                return hybrid(fresh === null ? [] : [{ deadlineAt: fresh }]);
+              }
+              const row = candidates.find((c) => asked.has(c.sandboxId));
+              return hybrid(row ? [{ deadlineAt: row.deadlineAt }] : []);
+            }
+            const predicateText = describeSql(predicate);
+            const boundValues = new Set(sqlValues(predicate));
+            const selectsWithoutTurnAuthority =
+              predicateText.includes('activeTurn') && /\band\s+not\s*\(/i.test(predicateText);
+            const selectedSandboxRows = candidates
+              .filter((row) =>
+                !predicateText.includes('activeTurn')
+                  ? true
+                  : selectsWithoutTurnAuthority
+                    ? !hasTurnAuthority(row)
+                    : hasTurnAuthority(row),
+              )
+              .filter(
+                (row) =>
+                  !predicateText.toLowerCase().includes('not in') ||
+                  !boundValues.has(row.sandboxId),
+              );
+            return hybrid(
+              table === sessionSandboxes
+                ? selectedSandboxRows
+                : table === appRuntimes
+                  ? appRuntimeKeepRows
+                  : table === sandboxComputeSessions
+                    ? computeRows
+                    : table === projectSessions
+                      ? stuckSessions
+                      : [],
+            );
+          },
+        };
+        return builder;
+      },
+    }),
+    update: (table: unknown) => ({
+      set: (updates: Record<string, unknown>) => ({
+        // Awaitable (reconcileRowToStopped), chainable to `.returning()`
+        // (reconcileStuckActiveSessions), and `.catch()`-able (the batched
+        // visit stamp). Records exactly one update call whichever is used.
+        where: (predicate?: unknown) => {
+          let recorded = false;
+          const record = () => {
+            if (recorded) return;
+            recorded = true;
+            updateCalls.push({ table, updates });
+          };
+          record();
+          const p: any = Promise.resolve(undefined);
+          p.returning = async () => {
+            if (
+              describeSql(updates.metadata).includes('jsonb_set') &&
+              isStopClaimBookkeeping({ updates })
+            ) {
+              const asked = new Set(sqlValues(predicate));
+              const id = [...asked].find(
+                (value) =>
+                  value in freshDeadlineBySandbox ||
+                  candidates.some((row) => row.sandboxId === value),
+              );
+              if (!id || stopClaimDeniedBySandbox[id]) return [];
+              const fresh =
+                id in freshDeadlineBySandbox
+                  ? freshDeadlineBySandbox[id]
+                  : (candidates.find((row) => row.sandboxId === id)?.deadlineAt ?? null);
+              if (!fresh || fresh.getTime() > Date.now()) return [];
+              return [{ sandboxId: id }];
+            }
+            return [{ sessionId: 'updated' }];
+          };
+          return p;
+        },
+      }),
+    }),
+  },
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that

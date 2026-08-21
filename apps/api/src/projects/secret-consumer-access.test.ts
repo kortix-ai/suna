@@ -10,6 +10,12 @@ mock.module('../shared/db', () => ({
         where: async () => rows,
       }),
     }),
+  }, auditDb: {
+    select: () => ({
+      from: () => ({
+        where: async () => rows,
+      }),
+    }),
   },
 }));
 

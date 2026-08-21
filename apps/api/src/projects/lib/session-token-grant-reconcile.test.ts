@@ -50,6 +50,34 @@ mock.module('../../shared/db', () => ({
         };
       },
     }),
+  }, auditDb: {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCount += 1;
+            if (selectCount === 1) return [{ agentGrant: storedGrant }];
+            return [
+              {
+                repoUrl: 'https://example.test/acme/repo.git',
+                defaultBranch: 'main',
+                manifestPath: 'kortix.yaml',
+              },
+            ];
+          },
+        }),
+      }),
+    }),
+    update: () => ({
+      set: (values: { agentGrant: AgentGrant | null }) => {
+        writtenGrant = values.agentGrant;
+        return {
+          where: () => ({
+            returning: async () => [{ tokenId: 'token-1' }],
+          }),
+        };
+      },
+    }),
   },
 }));
 

@@ -35,7 +35,7 @@ function makeChain(): any {
   return chain;
 }
 mock.module('../shared/db', () => ({
-  db: { select: () => makeChain() },
+  db: { select: () => makeChain() }, auditDb: { select: () => makeChain() },
   hasDatabase: () => true,
 }));
 mock.module('../channels/slack/turn', () => ({

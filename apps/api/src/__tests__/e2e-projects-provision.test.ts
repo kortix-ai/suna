@@ -375,6 +375,105 @@ mock.module('../shared/db', () => ({
       }),
     }),
     delete: () => ({ where: async () => {} }),
+  }, auditDb: {
+    select: (projection?: any) => ({
+      from: (table: unknown) => ({
+        where: () => {
+          // The project-limit guard's count(*) query is awaited directly
+          // (no .limit()). 0 keeps provision under any plan's cap.
+          if (table === projects && projection && typeof projection === 'object' && 'count' in projection) {
+            return Promise.resolve([{ count: 0 }]);
+          }
+          return {
+            limit: async () => {
+              if (table === accountMembers) {
+                if (canonicalMembership) {
+                  return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
+                }
+                return [];
+              }
+              if (table === projectMembers) {
+                return [{ projectRole: 'manager' }];
+              }
+              if (table === projects) {
+                return [existingProjectRow()];
+              }
+              if (table === projectGitConnections) {
+                return [{
+                  accountId: ACCOUNT_ID,
+                  projectId: PROJECT_ID,
+                  provider: 'github',
+                  repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+                  upstreamUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+                  managed: true,
+                  repoOwner: REPO_OWNER,
+                  repoName: 'existing-managed',
+                  externalRepoId: EXTERNAL_REPO_ID,
+                  defaultBranch: 'main',
+                  authMethod: 'github_app',
+                  installationId: INSTALL_ID,
+                  credentialRef: null,
+                  permissions: {},
+                  visibility: 'private',
+                  webhookId: null,
+                  status: 'connected',
+                  metadata: {},
+                  createdAt: new Date('2026-01-01T00:00:00Z'),
+                  updatedAt: new Date('2026-01-01T00:00:00Z'),
+                }];
+              }
+              return [];
+            },
+          };
+        },
+      }),
+    }),
+    insert: (table: unknown) => ({
+      values: (values: any) => ({
+        onConflictDoNothing: () => {
+          return Promise.resolve([]);
+        },
+        onConflictDoUpdate: () => {
+          if (table === projects) {
+            throw new Error('managed project provisioning must insert a fresh project row');
+          }
+          if (table === projectMembers) {
+            grantedProjectRole = values;
+            return Promise.resolve([]);
+          }
+          return {
+            returning: async () => {
+              if (table !== projects) return [];
+              insertedProject = values;
+              return [projectRowFrom(values)];
+            },
+          };
+        },
+        returning: async () => {
+          if (table !== projects) return [];
+          insertedProject = values;
+          return [projectRowFrom(values)];
+        },
+      }),
+    }),
+    update: (table: unknown) => ({
+      set: (values: any) => ({
+        where: () => {
+          if (table === projects) updatedProjectSets.push(values);
+          // Real drizzle's UPDATE builder is thenable at every chain step
+          // (a caller may `.catch()` it directly without `.returning()` —
+          // see r1.ts's best-effort default_agent metadata mirror write, and
+          // the several other `.where(...).catch(() => {})` call sites this
+          // mirrors), so this stub must be too: a real Promise (which
+          // supplies `.then`/`.catch`) that ALSO exposes `.returning()` for
+          // callers that chain it.
+          const result: any = Promise.resolve([]);
+          result.returning = async () => [];
+          return result;
+        },
+      }),
+    }),
+    delete: () => ({ where: async () => {} }),
   },
 }));
 

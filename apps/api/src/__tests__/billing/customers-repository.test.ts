@@ -69,6 +69,53 @@ mock.module('../../shared/db', () => ({
         async where() {},
       };
     },
+  }, auditDb: {
+    select() {
+      const rows = nextRows();
+      return {
+        from() {
+          return {
+            where() {
+              return {
+                limit(n: number) {
+                  return Promise.resolve(rows.slice(0, n));
+                },
+                then(resolve: (value: Row[]) => unknown, reject?: (reason?: any) => unknown) {
+                  return Promise.resolve(rows).then(resolve, reject);
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+    insert() {
+      return {
+        values(data: Row) {
+          return {
+            async onConflictDoUpdate() {
+              inserted.push({ ...data });
+            },
+          };
+        },
+      };
+    },
+    update() {
+      return {
+        set(data: Partial<Row>) {
+          return {
+            async where() {
+              updated.push({ ...data });
+            },
+          };
+        },
+      };
+    },
+    delete() {
+      return {
+        async where() {},
+      };
+    },
   },
 }));
 

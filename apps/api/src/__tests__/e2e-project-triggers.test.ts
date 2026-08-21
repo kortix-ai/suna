@@ -614,7 +614,7 @@ triggerDbMock.transaction = async (run: (tx: typeof triggerDbMock) => Promise<un
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,
-  db: triggerDbMock,
+  db: triggerDbMock, auditDb: triggerDbMock,
 }));
 
 mock.module('../projects/trigger-execution-store', () => ({

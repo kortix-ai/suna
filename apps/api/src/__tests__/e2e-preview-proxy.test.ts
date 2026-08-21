@@ -111,6 +111,11 @@ mock.module('../middleware/auth', () => ({
 mock.module('../shared/db', () => {
   return {
     hasDatabase: true,
+    // audit writes are best-effort; a chainable no-op keeps this preview-focused
+    // mock free of the full audit schema.
+    auditDb: {
+      insert: () => ({ values: () => ({ onConflictDoNothing: () => ({ returning: async () => [] }) }) }),
+    },
     db: {
       select: (fields: any) => {
         // Determine which table is being queried by inspecting selected fields

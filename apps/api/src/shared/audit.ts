@@ -5,15 +5,12 @@ import { getRequestContext } from '../lib/request-context';
 import type { AppEnv } from '../types';
 import { normalizeAuditClientSource } from './audit-client-source';
 import { type AuditRow, getAuditQueue } from './audit-queue';
-import { db } from './db';
-import * as sharedDb from './db';
-
-// `auditDb` (dedicated audit pool — see shared/db.ts) is accessed via a
-// namespace import with a fallback: the ~120 test files that mock '../shared/db'
-// provide only `db`, so a bare `import { auditDb }` would SyntaxError at load in
-// every one of them. Production exports auditDb; tests transparently reuse their
-// mocked db. Never route auth/app/billing queries here.
-const auditDb = sharedDb.auditDb ?? db;
+// `auditDb` is the dedicated audit-write pool (shared/db.ts). NAMED import so
+// Bun's mock.module intercepts it exactly like `db` — every test that mocks
+// '../shared/db' also provides `auditDb` (helpers/mock-shared-db). Never route
+// auth/app/billing queries here: the point is that an audit lock convoy on this
+// pool can never starve the main pool serving the hot path.
+import { auditDb, db } from './db';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SKIPPED_PATHS = new Set(['/v1/health', '/v1/openapi.json', '/v1/docs']);

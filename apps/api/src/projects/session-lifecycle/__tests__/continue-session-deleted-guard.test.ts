@@ -53,6 +53,25 @@ mock.module('../../../shared/db', () => ({
         },
       }),
     }),
+  }, auditDb: {
+    select: (_proj: unknown) => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: async () => {
+            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
+            if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
+            return [];
+          },
+        }),
+      }),
+    }),
+    update: (table: unknown) => ({
+      set: (updates: Record<string, unknown>) => ({
+        where: async () => {
+          updateCalls.push({ table, updates });
+        },
+      }),
+    }),
   },
 }));
 

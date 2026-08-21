@@ -10,6 +10,12 @@ mock.module('../shared/db', () => ({
         where: async () => nextMemberRows,
       }),
     }),
+  }, auditDb: {
+    select: () => ({
+      from: () => ({
+        where: async () => nextMemberRows,
+      }),
+    }),
   },
   hasDatabase: () => false,
 }));

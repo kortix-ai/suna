@@ -42,6 +42,31 @@ mock.module('../../../shared/db', () => ({
       }),
     }),
     update: () => ({ set: () => ({ where: async () => {} }) }),
+  }, auditDb: {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: async () => {
+            if (table === projectSessions)
+              return [
+                {
+                  accountId: ACCOUNT_ID,
+                  projectId: PROJECT_ID,
+                  status: 'running',
+                  sandboxProvider: 'daytona',
+                  baseRef: 'main',
+                  agentName: 'email-agent',
+                  opencodeSessionId: 'oc-1',
+                  metadata: { email: { inbox_id: 'inbox-1' } },
+                },
+              ];
+            if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
+            return [];
+          },
+        }),
+      }),
+    }),
+    update: () => ({ set: () => ({ where: async () => {} }) }),
   },
 }));
 

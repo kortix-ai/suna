@@ -53,6 +53,26 @@ mock.module('../../../shared/db', () => ({
         },
       }),
     }),
+  }, auditDb: {
+    update: (table: unknown) => ({
+      set: (updates: Record<string, unknown>) => ({
+        // Awaitable (the projectSessions park) AND chainable to `.returning()`
+        // (the sessionLifecycleCommands mark). Records one call either way.
+        where: () => {
+          const record = () => updateCalls.push({ table, updates });
+          return {
+            then: (resolve: (v: unknown) => void) => {
+              record();
+              resolve(undefined);
+            },
+            returning: async () => {
+              record();
+              return commandRow ? [commandRow] : [];
+            },
+          };
+        },
+      }),
+    }),
   },
 }));
 

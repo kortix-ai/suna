@@ -43,6 +43,25 @@ mock.module('../../shared/db', () => ({
         },
       }),
     }),
+  }, auditDb: {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            if (selectShouldThrow) throw new Error('DB hiccup');
+            return row ? [row] : [];
+          },
+        }),
+      }),
+    }),
+    insert: () => ({
+      values: (v: { key: string; value: unknown }) => ({
+        onConflictDoUpdate: async () => {
+          row = { value: v.value };
+          return undefined;
+        },
+      }),
+    }),
   },
 }));
 

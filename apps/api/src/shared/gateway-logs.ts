@@ -1,12 +1,8 @@
 import { gatewayRequestLogs } from '@kortix/db';
-import { db } from './db';
-import * as sharedDb from './db';
+// `auditDb` is the dedicated audit-write pool (named import so Bun's mock.module
+// intercepts it like `db`; every test mocking '../shared/db' also provides it).
+import { auditDb } from './db';
 import { buildGatewayTraceRow, type GatewayTraceInput } from './gateway-trace-row';
-
-// Namespace import + fallback: `auditDb` is optional on the module surface so the
-// ~120 tests that mock '../shared/db' (with only `db`) keep working — see
-// shared/audit.ts for the full rationale.
-const auditDb = sharedDb.auditDb ?? db;
 
 export type { GatewayTraceInput };
 

@@ -10,7 +10,7 @@ mock.module('../../../config', () => ({
     SLACK_REQUIRE_USER_IDENTITY: true,
   },
 }));
-mock.module('../../../shared/db', () => ({ db: {}, hasDatabase: () => true }));
+mock.module('../../../shared/db', () => ({ db: {}, auditDb: {}, hasDatabase: () => true }));
 mock.module('../identity', () => ({
   lookupSlackIdentity: async () => null,
   linkSlackIdentity: async () => {},

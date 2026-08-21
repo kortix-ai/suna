@@ -227,7 +227,7 @@ let capabilityCalls: Array<{ accountId: string; projectId: string; action: strin
  *  Kortix session id, which drives the KaaB sibling-session gate. */
 let visibleSessionCallerIds: Array<string | null> = [];
 
-mock.module('../../shared/db', () => ({ db: databaseMock, hasDatabase: true }));
+mock.module('../../shared/db', () => ({ db: databaseMock, auditDb: databaseMock, hasDatabase: true }));
 mock.module('../lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async (_c: unknown, projectId: string, action: string) => {

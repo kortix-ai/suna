@@ -82,6 +82,17 @@ mock.module('../shared/db', () => ({
     },
     update: updater,
     execute: executor,
+  }, auditDb: {
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+      inTransaction = true;
+      try {
+        return await fn(transactionScope);
+      } finally {
+        inTransaction = false;
+      }
+    },
+    update: updater,
+    execute: executor,
   },
 }));
 

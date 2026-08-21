@@ -42,6 +42,12 @@ mock.module('../shared/db', () => ({
       if (executeThrows) throw executeThrows;
       return executeResult;
     },
+  }, auditDb: {
+    execute: async (query: unknown) => {
+      executed.push(render(query));
+      if (executeThrows) throw executeThrows;
+      return executeResult;
+    },
   },
 }));
 

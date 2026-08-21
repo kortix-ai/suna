@@ -102,7 +102,7 @@ mock.module('@kortix/db', () => ({
   objectPolicies: {},
   permissions: {},
 }));
-mock.module('../shared/db', () => ({ db: fakeDb }));
+mock.module('../shared/db', () => ({ db: fakeDb, auditDb: fakeDb }));
 mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
     auth: { admin: { getUserById: async () => ({ data: { user: null } }) } },
