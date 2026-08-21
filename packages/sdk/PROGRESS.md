@@ -12,6 +12,45 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-21 — session `changes-truth` — the Changes surface has ONE source of truth — DONE
+
+**Files:** `react/use-opencode-sessions/vcs.ts` (NEW: `useOpenCodeVcsDiff`,
+`VcsDiffMode`, re-exported `VcsFileDiff`) + `vcs.test.ts` (NEW, 8 tests) ·
+`react/use-opencode-sessions/keys.ts` (+`opencodeKeys.vcsDiff`, `vcsDiffAll`) ·
+`react/use-opencode-sessions/index.ts` (barrel) · `react/opencode.ts`
+(+`useRuntimeVcsDiff` alias) · `react/use-opencode-events/handle-event.ts`
+(+5 invalidation points) + `handle-event.test.ts` (+5 tests) · both surface
+snapshots. Additive only — no rename, no breaking change, no new subpath.
+
+**What.** A fresh session showed a tab badge reading "Changes 32" directly above
+a body reading "No changes yet". Two sources of truth, contradicting each other
+on screen at the same moment:
+
+- the badge counted `GET /file/status` (`git status --porcelain -uall`);
+- the body read `client.session.diff({ sessionID })`, which answers "what did
+  ONE user message change". Zero user messages on a fresh session → `[]`.
+
+`session.diff` is a message-scoped endpoint, so `useRuntimeSessionDiff` was a
+misnomer for what the panel wanted. The correct endpoint is `GET /vcs/diff`,
+already in the pinned `@opencode-ai/sdk@1.18.19`. `useOpenCodeVcsDiff` wraps it
+with ONE query key per (mode, sandbox), so every Changes surface reads the same
+cache entry and they cannot disagree by construction.
+
+**Mode is `branch`, not `git`.** `git` is the working tree alone and drops to
+zero the moment the agent commits — the badge and the "Propose changes" CTA
+vanished while the work still was not in the base version, which is the exact
+opposite of what the surface's own copy promises. `branch` = branch commits +
+working tree. Verified live against a real `opencode-ai@1.18.19` server: on a
+branch with one commit plus one untracked file, `mode=git` returned 1 entry
+(the untracked file) and `mode=branch` returned 2.
+
+`useRuntimeSessionDiff` / `useOpenCodeSessionDiff` stay exported — public API.
+
+**Gates:** `typecheck` clean (both projects) · `bun test --isolate src` 2401
+pass / 2 skip / 0 fail · `smoke:install` passed.
+
+---
+
 ### 2026-08-20 — session `session-ux` — a session with no project never reads a project-scoped inbox — DONE
 
 **Files:** `react/use-session-prompts.ts` (+`readSessionPromptsInbox`, gated

@@ -160,7 +160,7 @@ function SessionFilesExplorerInner({
         className="min-h-0 flex-1"
       >
         {showDiff ? (
-          <SessionDiffViewer sessionId={chatSessionId!} />
+          <SessionDiffViewer />
         ) : (
           <SandboxFileExplorer
             embedded

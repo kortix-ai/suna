@@ -747,6 +747,83 @@ describe('session.status', () => {
   });
 });
 
+// ============================================================================
+// The Changes surface reads ONE query (`opencodeKeys.vcsDiffAll()`). Every
+// event that means "the files on disk or on this branch moved" must invalidate
+// it, or the tab badge and the diff panel go stale together.
+// ============================================================================
+
+/** Counts invalidations whose key is exactly `key`. */
+function countInvalidations(
+  queryClient: { invalidateQueries: (opts: { queryKey: unknown[] }) => unknown },
+  key: readonly unknown[],
+) {
+  const real = queryClient.invalidateQueries.bind(queryClient);
+  const counter = { n: 0 };
+  queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+    if (JSON.stringify(opts.queryKey) === JSON.stringify(key)) counter.n++;
+    return real(opts);
+  }) as typeof queryClient.invalidateQueries;
+  return counter;
+}
+
+describe('vcs diff invalidation', () => {
+  test('busy → idle invalidates the vcs diff — the agent just finished editing', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
+    const vcs = countInvalidations(queryClient, opencodeKeys.vcsDiffAll());
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.status',
+      properties: { sessionID: 'ses_1', status: { type: 'idle' } },
+    });
+
+    expect(vcs.n).toBe(1);
+  });
+
+  test('session.idle invalidates the vcs diff', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    useSyncStore.getState().setStatus('ses_2', { type: 'busy' });
+    const vcs = countInvalidations(queryClient, opencodeKeys.vcsDiffAll());
+
+    handleEvent({ id: 'evt_1', type: 'session.idle', properties: { sessionID: 'ses_2' } });
+
+    expect(vcs.n).toBe(1);
+  });
+
+  test('file.edited invalidates the vcs diff', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    const vcs = countInvalidations(queryClient, opencodeKeys.vcsDiffAll());
+
+    handleEvent({ id: 'evt_1', type: 'file.edited', properties: { file: 'src/a.ts' } });
+
+    expect(vcs.n).toBe(1);
+  });
+
+  test('session.diff invalidates the vcs diff, so the panel updates mid-turn', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    const vcs = countInvalidations(queryClient, opencodeKeys.vcsDiffAll());
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.diff',
+      properties: { sessionID: 'ses_1', diff: [] },
+    });
+
+    expect(vcs.n).toBe(1);
+  });
+
+  test('vcs.branch.updated invalidates the vcs diff — a new branch is a new base', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    const vcs = countInvalidations(queryClient, opencodeKeys.vcsDiffAll());
+
+    handleEvent({ id: 'evt_1', type: 'vcs.branch.updated', properties: { branch: 'feat/x' } });
+
+    expect(vcs.n).toBe(1);
+  });
+});
+
 describe('session.idle', () => {
   test('busy → idle fires notifyTaskComplete', () => {
     const { handleEvent } = buildHandler();

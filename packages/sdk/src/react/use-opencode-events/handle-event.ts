@@ -341,6 +341,10 @@ export function createEventHandler(deps: {
               type: 'active',
             });
             queryClient.invalidateQueries({
+              queryKey: opencodeKeys.vcsDiffAll(),
+              type: 'active',
+            });
+            queryClient.invalidateQueries({
               queryKey: fileListKeys.all,
               type: 'active',
             });
@@ -360,6 +364,10 @@ export function createEventHandler(deps: {
             // so without this the panel shows stale diff state.
             queryClient.invalidateQueries({
               queryKey: gitStatusKeys.all,
+              type: 'active',
+            });
+            queryClient.invalidateQueries({
+              queryKey: opencodeKeys.vcsDiffAll(),
               type: 'active',
             });
             queryClient.invalidateQueries({
@@ -487,6 +495,14 @@ export function createEventHandler(deps: {
         if (props.sessionID) {
           queryClient.setQueryData(['opencode', 'session-diff', props.sessionID], props.diff);
         }
+        // This event describes ONE message's diff, which is not what the
+        // Changes surface shows (that is the whole version vs. its base). But
+        // it is a precise "files just moved" signal, so it is what keeps the
+        // panel live MID-turn instead of only at idle.
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.vcsDiffAll(),
+          type: 'active',
+        });
         break;
       }
 
@@ -504,6 +520,12 @@ export function createEventHandler(deps: {
         const props = event.properties;
         queryClient.setQueryData(['opencode', 'vcs'], {
           branch: props.branch,
+        });
+        // A different branch is a different base — every `mode: 'branch'` diff
+        // in the cache now describes a comparison that no longer applies.
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.vcsDiffAll(),
+          type: 'active',
         });
         break;
       }
@@ -636,6 +658,10 @@ export function createEventHandler(deps: {
         });
         queryClient.invalidateQueries({
           queryKey: gitStatusKeys.all,
+          type: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: opencodeKeys.vcsDiffAll(),
           type: 'active',
         });
         if (fileProps.file) {

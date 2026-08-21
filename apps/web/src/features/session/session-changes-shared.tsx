@@ -7,19 +7,89 @@
  * and the status badges in one place means the two surfaces never drift.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useChatSendStore } from '@/stores/chat-send-store';
-import { useProjectSession } from '@kortix/sdk/react';
+import {
+  useProjectSession,
+  useRuntimeProjectInfo,
+  useRuntimeReady,
+  useRuntimeVcsDiff,
+  type VcsFileDiff,
+} from '@kortix/sdk/react';
 
-/** git-status status → single-letter badge, using the canonical status tones. */
+/** diff status → single-letter badge, using the canonical status tones. */
 export const CHANGE_STATUS_BADGE: Record<string, { letter: string; cls: string; label: string }> = {
   added: { letter: 'A', cls: STATUS_TEXT.success, label: 'Added' },
   modified: { letter: 'M', cls: STATUS_TEXT.warning, label: 'Modified' },
   deleted: { letter: 'D', cls: STATUS_TEXT.destructive, label: 'Deleted' },
 };
+
+/**
+ * THE session's changes — one query, one array, read by every Changes surface.
+ *
+ * The tab badge (`SessionVersionHeader`), the header chip
+ * (`SessionChangesIndicator`) and the diff panel (`SessionDiffViewer`) all call
+ * this hook. React Query dedupes by key, so the three cannot disagree: "Changes
+ * 32" above "No changes yet" is unreachable once they share a cache entry.
+ *
+ * Mode is `branch`, deliberately. The surface's own copy promises "what this
+ * session changed … these edits stay here and don't affect <base> until you
+ * propose the changes", and "Propose changes" runs `kortix cr open`, which
+ * COMMITS the working tree. So the set that matters is version-vs-base — every
+ * commit on this branch plus the dirty tree — not the working tree alone. A
+ * working-tree-only read drops to zero the moment the agent commits, and the
+ * badge and the CTA vanish while the work is still not in the base version.
+ */
+export interface SessionChanges {
+  /** Every file this version changed against its base. Never undefined. */
+  files: VcsFileDiff[];
+  count: number;
+  /**
+   * True while the answer is genuinely unknown — the runtime is still booting,
+   * or the first read has not landed. A disabled query is NOT an empty result,
+   * so a caller must render a loading state here, never "no changes yet".
+   */
+  isPending: boolean;
+  /** False when the project has no git, so there is nothing to compare. */
+  isTracked: boolean;
+  error: Error | null;
+  refetch: () => void;
+}
+
+export function useSessionChanges(): SessionChanges {
+  // Shares `runtimeKeys.currentProject()` with every other project-info reader.
+  const projectQuery = useRuntimeProjectInfo();
+  const runtimeReady = useRuntimeReady();
+
+  const trackingKnown = projectQuery.data !== undefined || projectQuery.isError;
+  const isTracked = projectQuery.data?.vcs === 'git';
+
+  const diffQuery = useRuntimeVcsDiff('branch', { enabled: isTracked });
+  const error = (diffQuery.error ?? projectQuery.error ?? null) as Error | null;
+
+  const files = diffQuery.data;
+  // `isPending` from react-query stays true forever on a DISABLED query, which
+  // is why the panel used to assert "no changes" during boot without ever
+  // having asked. Ask the three real questions instead.
+  const isPending =
+    !error && (!runtimeReady || !trackingKnown || (isTracked && files === undefined));
+
+  const { refetch } = diffQuery;
+  return useMemo<SessionChanges>(
+    () => ({
+      files: files ?? [],
+      count: files?.length ?? 0,
+      isPending,
+      isTracked,
+      error,
+      refetch: () => void refetch(),
+    }),
+    [files, isPending, isTracked, error, refetch],
+  );
+}
 
 /** The base branch this session forks from (e.g. `main`). Defaults to `main`. */
 export function useSessionBaseRef(

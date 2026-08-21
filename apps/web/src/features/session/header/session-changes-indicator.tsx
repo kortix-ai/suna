@@ -5,12 +5,12 @@ import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
-import { useGitStatus } from '@/features/files/hooks/use-git-status';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import {
   CHANGE_STATUS_BADGE,
   useOpenChangeRequest,
   useSessionBaseRef,
+  useSessionChanges,
 } from '@/features/session/session-changes-shared';
 import { cn } from '@/lib/utils';
 import { GitDiffIcon as FileDiff } from '@phosphor-icons/react';
@@ -25,9 +25,8 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
     sessionId: string;
   }>();
 
-  const statusQuery = useGitStatus();
-  const changedFiles = statusQuery.data ?? [];
-  const changedCount = changedFiles.length;
+  // The SAME query the tab badge and the diff panel read — one array.
+  const { files: changedFiles, count: changedCount } = useSessionChanges();
   const baseRef = useSessionBaseRef(projectId, gitSessionId);
   const { asking, openChangeRequest } = useOpenChangeRequest(sessionId, baseRef);
 
@@ -113,11 +112,12 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
           className="max-h-40 overscroll-contain px-1.5 py-1.5"
         >
           {changedFiles.map((file) => {
-            const badge = CHANGE_STATUS_BADGE[file.status] ?? CHANGE_STATUS_BADGE.modified;
-            const name = file.path.split('/').pop() || file.path;
-            const dir = file.path.slice(0, file.path.length - name.length);
+            const badge =
+              CHANGE_STATUS_BADGE[file.status ?? 'modified'] ?? CHANGE_STATUS_BADGE.modified;
+            const name = file.file.split('/').pop() || file.file;
+            const dir = file.file.slice(0, file.file.length - name.length);
             return (
-              <div key={file.path} className="flex items-center gap-2 rounded-md px-2 py-1 text-xs">
+              <div key={file.file} className="flex items-center gap-2 rounded-md px-2 py-1 text-xs">
                 <span
                   className={cn('w-3 shrink-0 text-center font-mono font-semibold', badge.cls)}
                   title={badge.label}
