@@ -54,6 +54,11 @@ export interface MemoryProbe {
   /** Returns file contents, or null when the path does not exist. */
   read: (path: string) => string | null;
   totalMemory: () => number;
+  /**
+   * The scheduler's declared task memory in MiB, when it declares one.
+   * `KORTIX_CONTAINER_MEMORY_MIB`, stamped by infra/scripts/ecs-deploy.sh.
+   */
+  declaredMiB?: () => string | undefined;
 }
 
 const defaultProbe: MemoryProbe = {
@@ -65,6 +70,7 @@ const defaultProbe: MemoryProbe = {
     }
   },
   totalMemory: () => totalmem(),
+  declaredMiB: () => process.env.KORTIX_CONTAINER_MEMORY_MIB,
 };
 
 /**
@@ -72,6 +78,20 @@ const defaultProbe: MemoryProbe = {
  * is unconstrained. Never throws: a probe failure degrades to host memory.
  */
 export function detectContainerMemoryLimitBytes(probe: MemoryProbe = defaultProbe): number | null {
+  // The scheduler's own number wins, because on Fargate the process CANNOT
+  // derive this correctly: the task runs in a microVM sized above its
+  // allocation and `memory.max` reads "max", so a cgroup probe falls through to
+  // host memory and sees the microVM. Measured on dev 2026-08-21 — a 4096 MiB
+  // task probed 7806 MiB, and the budget came out at 48% of the real ceiling
+  // rather than 25%. ecs-deploy.sh stamps KORTIX_CONTAINER_MEMORY_MIB from the
+  // same value it sets the task size to.
+  try {
+    const declared = Number(probe.declaredMiB?.() ?? '');
+    if (Number.isFinite(declared) && declared > 0) return declared * MiB;
+  } catch {
+    // fall through to the probes below
+  }
+
   let host: number | null = null;
   try {
     const total = probe.totalMemory();
