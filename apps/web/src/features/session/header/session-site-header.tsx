@@ -17,7 +17,6 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
-import { resolveSessionHeaderTitle } from '@/features/session/header/header-title';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import {
   SessionConfigIndicator,
@@ -33,6 +32,7 @@ import {
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
+import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
 import {
@@ -151,15 +151,14 @@ export function SessionSiteHeader({
    * apart the moment opencode auto-titled: the same session read as two
    * different things depending on where you looked.
    *
-   * `resolveSessionHeaderTitle` owns the precedence AND the fallback, because
-   * the fallback was the second half of that same bug — see its doc. On this
-   * route the prop is never reachable; off it (the share viewer) it still is.
+   * Uses the SIDEBAR's helper, not `sessionDisplayLabel`, so the two strings
+   * cannot diverge on the fallback either — they differ for an untitled session
+   * ("New session" vs a branch/id slice).
+   *
+   * Falls back to the prop when there is no project session: the share viewer
+   * and the instant shell render this header without one.
    */
-  const headerTitle = resolveSessionHeaderTitle({
-    projectSession,
-    isProjectSession,
-    fallbackTitle: sessionTitle,
-  });
+  const headerTitle = projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle;
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId!, projectSessionId!),
