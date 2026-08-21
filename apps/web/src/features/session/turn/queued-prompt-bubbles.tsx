@@ -58,11 +58,7 @@ export function queuedPromptStatusLabel(state: QueuedPromptState, lastError?: st
     case 'failed':
       return lastError ? `Not sent — ${lastError}` : 'Not sent';
     case 'interrupted':
-      // Says what happened and what is true, not what the user must go and do.
-      // The old wording ("runs with your next message") described the only
-      // escape there was, because the row carried no controls — see
-      // `queueRemovalId` in session-chat. It has them now.
-      return 'Paused — Stop ended the turn';
+      return 'Queued — runs with your next message';
     default:
       return 'Queued';
   }

@@ -838,25 +838,18 @@ function SessionTurnImpl({
   // What the X removes: the row while it is listed, the message's own wire id
   // after the row left the list (the DELETE route resolves `msg_…` handles) —
   // for any bubble the agent has not reached.
-  //
-  // `interrupted` IS such a bubble, and it used to be excluded here. That left
-  // the one state with no way out: a Stop that lands before a step opens under
-  // a forwarded prompt parks it in the runtime's transcript captioned "Queued —
-  // runs with your next message", with no run control and no remove — three of
-  // them stacked up in the reported case, and the only escape was to send an
-  // unrelated message. The DELETE route already handles it: it resolves the
-  // `msg_…` handle, finds the forwarded row, and `cancelForwardedPrompt` takes
-  // the message back out of an idle box, which is exactly the state a Stop
-  // leaves it in.
   const queueRemovalId =
-    onQueueRemove && statusState && statusState !== 'failed'
+    onQueueRemove && statusState && statusState !== 'interrupted' && statusState !== 'failed'
       ? (queueRow?.prompt_id ?? turn.userMessage.info.id)
       : null;
   // Send-now / retry / remove all live in `UserMessageActions` (`leading`).
   // A pending bubble can outlive its inbox row; the X still has to work, so
   // the action id falls back to the user message's own wire id.
   const queueActionId = queueRemovalId ?? queueRow?.prompt_id ?? null;
-  const showQueueActions = Boolean(queueActionId) && Boolean(statusState);
+  const showQueueActions =
+    Boolean(queueActionId) &&
+    (Boolean(queueRemovalId) ||
+      Boolean(queueRow && queueState && queueState !== 'interrupted'));
 
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;

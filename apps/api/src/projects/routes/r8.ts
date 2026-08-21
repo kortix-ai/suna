@@ -588,17 +588,9 @@ function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   // below would otherwise fall through to `queued` and show a prompt that is
   // already at OpenCode as if it had never been sent.
   if (result.status === 'forwarded') return { state: 'delivering', reason: 'forwarded' };
-  // Then the ADMISSION MARKER, above `running`. A row the gate refused is
-  // CLAIMED (`running`) for the few milliseconds between the claim and
-  // `requeueForAdmission` putting it back, and it is re-claimed on every
-  // retry — every ~300ms while a turn holds it. Reading `running` first
-  // reported a prompt that is merely waiting its turn as `delivering`: the
-  // bubble rendered as in-flight, and `DELETE .../prompts/:id` refused it,
-  // which is what made the queue's Remove button look permanently broken.
-  // Nothing is on the wire for this row; only the drain is holding it.
+  if (row.status === 'running') return { state: 'delivering', reason: null };
   const admission = result.admission_reason;
   if (typeof admission === 'string') return { state: 'waiting', reason: admission };
-  if (row.status === 'running') return { state: 'delivering', reason: null };
   return { state: 'queued', reason: null };
 }
 
