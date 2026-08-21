@@ -178,11 +178,11 @@ export function PublicFileShareView({
   return (
     <FileSourceProvider value={source}>
       <FileContentRenderer
-        codeEditorEditorClassName="bg-card dark:bg-card h-full"
+        codeEditorEditorClassName="bg-background  h-full"
         filePath={filePath}
         readOnly
         showHeader={false}
-        className="bg-card h-dvh"
+        className="bg-background h-dvh"
       />
     </FileSourceProvider>
   );
