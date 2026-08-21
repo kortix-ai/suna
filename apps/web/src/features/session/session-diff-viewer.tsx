@@ -10,9 +10,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat, STATUS_TEXT, StatusBadge } from '@/components/ui/status';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { useSessionChanges } from '@/features/session/session-changes-shared';
 import { cn } from '@/lib/utils';
-import type { ApplyPatchFile, FileDiff } from '@/ui/types';
-import { useRuntimeMessages, useRuntimeSessionDiff } from '@kortix/sdk/react';
+import type { FileDiff } from '@/ui/types';
 import {
   CaretDownIcon as ChevronDown,
   CaretRightIcon as ChevronRight,
@@ -293,96 +293,10 @@ function DiffSummaryBar({
 }
 
 // ============================================================================
-// Extract diffs from message tool parts (fallback)
-// ============================================================================
-
-const EDIT_TOOLS = new Set(['edit', 'morph_edit']);
-const PATCH_TOOLS = new Set(['apply_patch']);
-
-function extractDiffsFromMessages(
-  messages: Array<{ info: { role: string }; parts: Array<any> }> | undefined,
-): FileDiff[] {
-  if (!messages) return [];
-
-  // Track last known state per file so we can build the cumulative diff
-  const fileMap = new Map<string, { before: string; after: string }>();
-
-  for (const msg of messages) {
-    for (const part of msg.parts) {
-      if (part.type !== 'tool') continue;
-      const state = part.state;
-      if (!state || (state.status !== 'completed' && state.status !== 'running')) continue;
-
-      const toolName: string = part.tool ?? '';
-      const input = state.input ?? {};
-      const metadata = (state.metadata as Record<string, unknown>) ?? {};
-
-      if (EDIT_TOOLS.has(toolName)) {
-        const filePath = (input.filePath as string) || '';
-        if (!filePath) continue;
-        const filediff = metadata.filediff as Record<string, unknown> | undefined;
-        const before = (filediff?.before as string) ?? (input.oldString as string) ?? '';
-        const after = (filediff?.after as string) ?? (input.newString as string) ?? '';
-        if (!before && !after) continue;
-
-        const existing = fileMap.get(filePath);
-        if (existing) {
-          existing.after = after;
-        } else {
-          fileMap.set(filePath, { before, after });
-        }
-      } else if (PATCH_TOOLS.has(toolName)) {
-        const files = (Array.isArray(metadata.files) ? metadata.files : []) as ApplyPatchFile[];
-        for (const file of files) {
-          const filePath = file.filePath || file.relativePath || '';
-          if (!filePath) continue;
-          const before = file.before ?? '';
-          const after = file.after ?? '';
-          if (!before && !after) continue;
-
-          const existing = fileMap.get(filePath);
-          if (existing) {
-            existing.after = after;
-          } else {
-            fileMap.set(filePath, { before, after });
-          }
-        }
-      }
-    }
-  }
-
-  const result: FileDiff[] = [];
-  for (const [file, { before, after }] of fileMap) {
-    const beforeLines = before.split('\n');
-    const afterLines = after.split('\n');
-    let additions = 0;
-    let deletions = 0;
-
-    const beforeSet = new Set(beforeLines);
-    const afterSet = new Set(afterLines);
-    for (const line of afterLines) {
-      if (!beforeSet.has(line)) additions++;
-    }
-    for (const line of beforeLines) {
-      if (!afterSet.has(line)) deletions++;
-    }
-
-    let status: 'added' | 'deleted' | 'modified' = 'modified';
-    if (!before) status = 'added';
-    else if (!after) status = 'deleted';
-
-    result.push({ file, before, after, additions, deletions, status });
-  }
-
-  return result;
-}
-
-// ============================================================================
 // Main SessionDiffViewer
 // ============================================================================
 
 interface SessionDiffViewerProps {
-  sessionId: string;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
   /**
@@ -410,22 +324,19 @@ function DiffPanelHeader({ reserveCloseGutter }: { reserveCloseGutter?: boolean 
 }
 
 export function SessionDiffViewer({
-  sessionId,
   isFullscreen,
   onToggleFullscreen,
   reserveCloseGutter,
 }: SessionDiffViewerProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: apiDiffs, isLoading, error, refetch } = useRuntimeSessionDiff(sessionId);
-  const { data: messages } = useRuntimeMessages(sessionId);
+  // The SAME query the tab badge and the header chip count. One array, one key
+  // — the body can no longer say "no changes" under a badge reading 32.
+  const { files: diffs, isPending, error, refetch } = useSessionChanges();
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
 
-  // Fall back to extracting diffs from tool part metadata when the API returns empty
-  const messageDiffs = useMemo(() => extractDiffsFromMessages(messages as any), [messages]);
-
-  const diffs = apiDiffs && apiDiffs.length > 0 ? apiDiffs : messageDiffs;
-
-  if (isLoading) {
+  // A DISABLED query is not an empty result. While the sandbox boots, nothing
+  // has been asked yet, so the honest state is "loading", not "no changes yet".
+  if (isPending) {
     return (
       <div className="flex h-full flex-col">
         <DiffPanelHeader reserveCloseGutter={reserveCloseGutter} />
@@ -440,7 +351,7 @@ export function SessionDiffViewer({
     );
   }
 
-  if (error && diffs.length === 0) {
+  if (error) {
     return (
       <div className="flex h-full flex-col">
         <DiffPanelHeader reserveCloseGutter={reserveCloseGutter} />
@@ -460,7 +371,7 @@ export function SessionDiffViewer({
     );
   }
 
-  if (!diffs || diffs.length === 0) {
+  if (diffs.length === 0) {
     return (
       <div className="flex h-full flex-col">
         <DiffPanelHeader reserveCloseGutter={reserveCloseGutter} />

@@ -25,12 +25,15 @@ import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 
-import { useGitStatus } from '@/features/files/hooks/use-git-status';
 import { cn } from '@/lib/utils';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useOpenChangeRequest, useSessionBaseRef } from '@/features/session/session-changes-shared';
+import {
+  useOpenChangeRequest,
+  useSessionBaseRef,
+  useSessionChanges,
+} from '@/features/session/session-changes-shared';
 
 export type SessionPanelMode = 'changes' | 'files';
 
@@ -114,8 +117,9 @@ export function SessionVersionHeader({
     sessionId: string;
   }>();
 
-  const statusQuery = useGitStatus();
-  const changedCount = statusQuery.data?.length ?? 0;
+  // The SAME query the Changes panel below renders — one array, so the badge
+  // and the body cannot contradict each other.
+  const { count: changedCount } = useSessionChanges();
   const baseRef = useSessionBaseRef(projectId, gitSessionId);
 
   // Short, stable handle for this version — the session id is its identity.

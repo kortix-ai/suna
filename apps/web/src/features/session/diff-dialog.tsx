@@ -43,7 +43,6 @@ export function DiffDialog({ sessionId, open, onOpenChange }: DiffDialogProps) {
         </VisuallyHidden>
         <div className="min-h-0 flex-1 overflow-hidden">
           <SessionDiffViewer
-            sessionId={sessionId}
             isFullscreen={isFullscreen}
             onToggleFullscreen={() => setIsFullscreen((v) => !v)}
             // Only this mount sits under ModalContent's floating close button.
