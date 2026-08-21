@@ -6,7 +6,11 @@ import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
-import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verify';
+import {
+  decodeSupabaseJwtPayload,
+  isInconclusiveVerifyFailure,
+  verifySupabaseJwt,
+} from '../shared/jwt-verify';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 import { syncSsoMembership } from '../iam/sso-sync';
@@ -338,8 +342,9 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     return;
   }
 
-  // Local verification unavailable (JWKS not loaded yet) — fall back to network
-  if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') {
+  // Local verification reached no verdict (JWKS not loaded, unknown kid, or an
+  // algorithm this verifier does not implement) — fall back to the network.
+  if (!isInconclusiveVerifyFailure(local.reason)) {
     // Token is definitively invalid (bad signature, expired, malformed)
     auditLoginFail({ c, reason: `jwt_${local.reason}`, authType: 'jwt' });
     throw new HTTPException(401, { message: 'Invalid or expired token' });
@@ -641,8 +646,9 @@ async function resolveCombinedAuth(c: Context, next: Next) {
     return;
   }
 
-  // Token is definitively bad (bad sig, expired, malformed) — reject immediately
-  if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') {
+  // Token is definitively bad (bad sig, expired, malformed) — reject immediately.
+  // An inconclusive result falls through to the network path below instead.
+  if (!isInconclusiveVerifyFailure(local.reason)) {
     auditLoginFail({ c, reason: `jwt_${local.reason}`, authType: 'jwt' });
     throw new HTTPException(401, { message: 'Invalid or expired token' });
   }

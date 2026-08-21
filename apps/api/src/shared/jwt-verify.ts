@@ -138,6 +138,24 @@ interface VerifyFailure {
 }
 
 /**
+ * Did local verification fail because it could not reach a verdict, rather than
+ * because the token is bad?
+ *
+ * Inconclusive means "this verifier cannot judge it" — JWKS not loaded, no key
+ * for this `kid`, or an algorithm it does not implement (a symmetric HS* token,
+ * which only the auth server can check). Those must fall through to the network
+ * path. Everything else — bad signature, expired, malformed — is a real verdict
+ * and must be rejected.
+ *
+ * Both auth middlewares route on this ONE predicate so they cannot drift apart.
+ */
+export function isInconclusiveVerifyFailure(reason: string): boolean {
+  return (
+    reason === 'no-keys' || reason === 'no-key-for-kid' || reason.startsWith('unsupported-alg')
+  );
+}
+
+/**
  * Verify a Supabase JWT locally using cached JWKS.
  *
  * Returns `{ ok: false, reason: 'no-keys' }` when JWKS is unavailable —
@@ -166,6 +184,16 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
     return { ok: false, reason: 'bad-header' };
   }
 
+  // Reject algorithms this verifier cannot check BEFORE selecting a key.
+  // Order matters: a legacy HS256 token carries no `kid`, and the lookup below
+  // falls back to "first key in the cache" when none is present. Checking the
+  // algorithm afterwards meant such a token selected an unrelated asymmetric
+  // key and failed as `unsupported-alg` — which the caller treats as a hard
+  // rejection — instead of being handed to the network path that can verify it.
+  if (header.alg !== 'ES256' && header.alg !== 'RS256') {
+    return { ok: false, reason: `unsupported-alg:${header.alg}` };
+  }
+
   // Look up key — by kid if present, otherwise first key
   let key: CryptoKey | undefined;
   if (header.kid) {
@@ -183,15 +211,11 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
     return { ok: false, reason: 'no-key-for-kid' };
   }
 
-  // Determine verify algorithm from header
-  let algorithm: AlgorithmIdentifier | EcdsaParams | RsaPssParams;
-  if (header.alg === 'ES256') {
-    algorithm = { name: 'ECDSA', hash: 'SHA-256' } as EcdsaParams;
-  } else if (header.alg === 'RS256') {
-    algorithm = { name: 'RSASSA-PKCS1-v1_5' };
-  } else {
-    return { ok: false, reason: `unsupported-alg:${header.alg}` };
-  }
+  // Determine verify algorithm from header (already narrowed above).
+  const algorithm: AlgorithmIdentifier | EcdsaParams | RsaPssParams =
+    header.alg === 'ES256'
+      ? ({ name: 'ECDSA', hash: 'SHA-256' } as EcdsaParams)
+      : { name: 'RSASSA-PKCS1-v1_5' };
 
   // Verify signature
   const signingInput = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
