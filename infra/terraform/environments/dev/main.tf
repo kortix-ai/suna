@@ -121,9 +121,19 @@ module "api" {
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
-  # dev sizing: small + spot, floor of 1
-  task_cpu         = 512
-  task_memory      = 1024
+  # dev sizing: spot, floor of 1 — but NOT a quarter of every other environment.
+  # 2026-08-21: the API was OOM-killed (exit 137, "OutOfMemoryError: container
+  # killed due to memory usage") three times in eleven minutes while a founder
+  # ran an image-heavy session (Image Search, 5 queries, 40 images). Cloudflare
+  # answered the dead origin with its own 502 page, which the session surfaced
+  # as "Bad Gateway" + "Retrying in 53s". Nothing had regressed: MemoryUtilization
+  # sat under a 65-70% ceiling for ten straight days and broke it only that day
+  # (85.5% max), with the AVERAGE unchanged at ~37% — peak, not drift, which is
+  # what a few large payloads through the in-process LLM gateway look like.
+  # 1024 MiB was simply too small a ceiling to have. prod and staging both run
+  # task_memory 4096; dev now has the same headroom at half their CPU.
+  task_cpu         = 1024
+  task_memory      = 4096
   desired_count    = 2
   min_capacity     = 2
   max_capacity     = 6
