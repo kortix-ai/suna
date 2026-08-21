@@ -1,3 +1,4 @@
+import type { InboxAdmissionReason } from './inbox-admission';
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
@@ -270,7 +271,7 @@ export async function enqueueContinueSessionCommand(
  */
 export async function requeueForAdmission(
   commandId: string,
-  reason: 'older_prompt_pending',
+  reason: InboxAdmissionReason,
   availableAt: Date,
 ): Promise<void> {
   await db

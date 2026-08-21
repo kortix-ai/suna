@@ -12,6 +12,41 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-21 — session `session-busy-flicker` — display order was not an order — DONE
+
+**Files:** `core/turns/grouping.ts` (`compareMessagesForDisplay` rewritten as two
+segments) + `core/turns/display-order.test.ts` (new, 7 tests). No public surface
+change.
+
+**What.** Three prompts sent "who", "are", "you" rendered "who", "you", "are",
+and assistant replies attached to the wrong user messages.
+
+`compareMessagesForDisplay` switched ordering PER PAIR: wire-id order when both
+ids were well-formed wire ids, `time.created` for every pair involving anything
+else. A queued row carries a host-fabricated stamp, so two placed messages A, B
+and one queued row S compared as A < B (by id), S < A (by time), B > S (by
+time) — a cycle. `Array.prototype.sort` may emit any permutation of a cyclic
+comparator and V8 switches algorithm with input length, which is why the order
+looked random. `groupMessagesIntoTurns` walks the same sorted list to attach
+assistant messages with no `parentID`, so the replies re-parented too, and a
+queued row could sort ABOVE the entire transcript.
+
+**Fix.** Two disjoint segments, each internally a total order: everything the
+server has PLACED (it has a wire id) first, in wire-id order; everything still
+only LOCAL (an optimistic stub, a queued inbox row) after all of it, by send
+instant, untimed last. A local placeholder exists precisely because the server
+has not placed it, and gains a wire id the moment it is echoed. No fabricated
+timestamps anywhere, so no clock skew can reorder a conversation.
+
+Two untimed messages stay a TIE so the stable sort keeps the host's input order
+— an id tiebreak there regrouped `groupMessagesIntoTurns`' own sequential
+fallback (`u1`, `a1`, `a2` → `a1`, `a2`, `u1`), caught by its existing test.
+
+**Gates:** `typecheck` clean (both projects) · `bun test --isolate src` 2426
+pass / 0 fail · surface snapshots unchanged.
+
+---
+
 ### 2026-08-21 — session `changes-truth` — the Changes surface has ONE source of truth — DONE
 
 **Files:** `react/use-opencode-sessions/vcs.ts` (NEW: `useOpenCodeVcsDiff`,

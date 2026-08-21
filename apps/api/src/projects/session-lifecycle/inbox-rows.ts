@@ -130,6 +130,21 @@ export async function deleteInboxPrompt(
     .where(and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId)))
     .limit(1);
   if (!existing) return { outcome: 'missing' };
+  // A row the ADMISSION GATE refused is `running` only for the moment between
+  // the claim and `requeueForAdmission` putting it back, and it is re-claimed
+  // on every retry — every ~300ms for as long as a live turn holds it. Nothing
+  // of it is on the wire, so refusing the user's Remove here was refusing a
+  // prompt that had not been sent anywhere: with a turn running, the Remove
+  // button never worked. Delete it and let the drain find it gone.
+  const admissionHeld = typeof (existing.result as Record<string, unknown> | null)
+    ?.admission_reason === 'string';
+  if (existing.status === 'running' && admissionHeld) {
+    const [removed] = await db
+      .delete(sessionLifecycleCommands)
+      .where(and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId)))
+      .returning();
+    if (removed) return { outcome: 'deleted', row: removed };
+  }
   if (existing.status === 'running') return { outcome: 'delivering' };
   // Forwarded, or confirmed `delivered` on persistence (the daemon's
   // acceptance relay — which fires long before a model step reads the

@@ -58,11 +58,23 @@ const row = (overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecy
   }) as SessionLifecycleCommandRow;
 
 describe('admitInboxPrompt', () => {
-  test('a session in the middle of a turn is ADMITTED — the prompt goes to OpenCode now', async () => {
-    // A live turn never holds a prompt back. OpenCode persists it at once and
-    // answers everything queued behind the turn in flight as soon as it ends —
-    // "the queue sends in between". (Holding was tried and reverted: the user
-    // wants what they typed to be WITH the agent immediately.)
+  test('a session in the middle of a turn HOLDS the prompt in the inbox', async () => {
+    // The inbox owns the queue: a prompt stays a durable row — listed,
+    // ordered, and removable — until the runtime is actually free, and only
+    // then is it delivered.
+    //
+    // Forwarding into a live turn was the alternative, and it is what made the
+    // queue uncontrollable. MEASURED 2026-08-21 against a real sandbox: a
+    // prompt queued behind a running turn read `delivering` within one request
+    // of being posted, and `DELETE .../prompts/:id` then answered
+    // 409 "Prompt is already being answered" — because OpenCode parents each
+    // STEP on the newest user message, so the running turn adopts it almost
+    // immediately. The Remove button was dead in the only situation anyone
+    // would use it. The row also left `GET .../prompts` at acceptance, so the
+    // queue could not be rendered either.
+    //
+    // The cost is deliberate: a batch of queued prompts is no longer folded
+    // into one step. Each gets its own turn, in the order it was sent.
     const box = { status: 'active', metadata: { activeTurns: { ...activeTurn('t1'), ...activeTurn('t2') } } };
     expect(sessionHoldsTurnAuthority(box)).toBe(true);
 
@@ -71,7 +83,35 @@ describe('admitInboxPrompt', () => {
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
     });
+    expect(admission).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
+  });
+
+  test('a turn ending admits the next prompt', async () => {
+    // The hold is released by the box no longer holding turn authority. The
+    // turn-stream `end` relay closes the ledger row and kicks
+    // `promoteNextInboxRow`, so this is a state change rather than a poll.
+    const admission = await admitInboxPrompt(row(), {
+      readSandbox: async () => ({ status: 'active', metadata: {} }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+    });
     expect(admission).toEqual({ admit: true });
+  });
+
+  test('a PROMOTED row still waits for the turn — "send now" is about order, not preemption', async () => {
+    // `promoted` lets a row jump the QUEUE. It cannot make the runtime free,
+    // and delivering it into a live turn is the exact thing this gate exists
+    // to stop.
+    const admission = await admitInboxPrompt(row({ result: { promoted: true } } as never), {
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+    });
+    expect(admission).toMatchObject({ admit: false, reason: 'turn_active' });
   });
 
   test('a STOPPED box is admitted — wake-then-deliver, unchanged', async () => {

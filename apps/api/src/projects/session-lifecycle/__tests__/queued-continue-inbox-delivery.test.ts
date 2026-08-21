@@ -406,13 +406,22 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
   });
 
-  test('a prompt delivered INTO A LIVE TURN is re-minted on its FIRST claim', async () => {
-    // The mid-turn path does not wait, so it is not re-minted by having waited
-    // — and the id it carries is the browser clock at Enter, with no lift. The
-    // turn in flight has been writing higher ids ever since it started, so a
-    // browser even slightly behind the sandbox delivers an id that sorts BELOW
-    // them, and OpenCode reads that as already answered. A live turn is exactly
-    // the condition to re-mint on.
+  test('a prompt is HELD, not delivered, while a turn is live', async () => {
+    // The inbox owns the queue now: a live turn refuses admission and the row
+    // goes back on the queue as `queued`, so it stays listed, ordered and
+    // removable until the runtime is free.
+    //
+    // This test used to assert the opposite — that the prompt was delivered
+    // mid-turn under a re-minted id. MEASURED 2026-08-21 against a real
+    // sandbox, that path is what made the queue uncontrollable: the row read
+    // `delivering` within one request of being posted and `DELETE
+    // .../prompts/:id` answered 409 "Prompt is already being answered",
+    // because OpenCode parents each STEP on the newest user message and the
+    // running turn adopts a mid-turn insert almost at once.
+    //
+    // The re-mint machinery itself stays for now: admission and delivery are
+    // two steps, so a turn that opens between them still needs the id lifted.
+    // It is a race guard, no longer the normal path.
     boxRow = {
       status: 'active',
       metadata: {
@@ -433,11 +442,9 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
 
     const outcome = await executeQueuedContinue(baseRow());
 
-    expect(outcome).toBe('succeeded');
-    const sent = capturedBodies[0].messageID as string;
-    expect(sent).not.toBe(SUBMITTED_WIRE_ID);
-    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
-    expect(persistedWireIds()).toEqual([sent]);
+    expect(outcome).toBe('queued');
+    // Nothing reached OpenCode, so nothing was persisted under any id.
+    expect(capturedBodies).toEqual([]);
   });
 
   test('a second prompt sent inside the persistence lag clears the FIRST one’s id', async () => {
