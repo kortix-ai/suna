@@ -167,8 +167,10 @@ async function offlineInstall(stagingDir: string): Promise<void> {
  *      clean online install.
  *
  * A matching, versioned local tool ABI also receives a runtime-only npm lock
- * sentinel. OpenCode sees its optional SDK name as resolved and skips the
- * redundant install. Customized configs keep the normal installer.
+ * sentinel on BOTH paths. OpenCode sees its optional SDK name as resolved and
+ * skips the redundant install, which also stops its `save: true` reify from
+ * writing @opencode-ai/plugin into the tracked config-dir package.json.
+ * Customized configs keep the normal installer.
  *
  * Never throws: a failure here means OpenCode falls back to its self-install.
  */
@@ -219,7 +221,15 @@ export async function ensureOpencodeConfigDeps(
     await replaceNodeModules(configDir, stagedModules)
     const stagedLock = join(stagingDir, 'bun.lock')
     if (await pathExists(stagedLock)) await copyFile(stagedLock, configLock)
-    logger.info('[boot] staged opencode config deps installed', { configDir })
+    // The sentinel belongs to BOTH paths, not just the linked one. The baked
+    // dependency set (dockerfile-layer.ts) is a superset of the lean local tool
+    // ABI, so their bun.lock files never match and the standard image always
+    // lands here. Without the sentinel OpenCode reifies with `save: true` and
+    // writes @opencode-ai/plugin into the config dir's package.json — a TRACKED
+    // file in the user's repository. Convergence must never dirty a working
+    // tree (see runtime-assets.ts `readPluginPin`).
+    const installSentinel = await writeInstallSentinel(configDir)
+    logger.info('[boot] staged opencode config deps installed', { configDir, installSentinel })
   } catch (err) {
     // A stale tree is unsafe after a failed replacement. Remove it so
     // OpenCode starts from an empty path and performs its own clean install.
