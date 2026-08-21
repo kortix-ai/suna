@@ -22,6 +22,7 @@ import {
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
 import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
+import { createCoalescedRunner } from './env-sync-coalescer';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import {
   workspaceModeAllowsFullRepository,
@@ -781,7 +782,29 @@ export async function syncSandboxEnvForPrompt(args: {
   console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ${JSON.stringify(timing)}`);
 }
 
-export async function propagateProjectSecretsToActiveSandboxes(
+/**
+ * The coalesced public entry — see env-sync-coalescer.ts for the incident this
+ * exists for (2026-08-21: looping secret writers × per-write fan-out throttled
+ * the whole Daytona org). Callers keep their await semantics: an awaited call
+ * returns a report from a run that STARTED after their write, so the report
+ * covers it; a burst shares one trailing run instead of stacking N fan-outs.
+ */
+export const propagateProjectSecretsToActiveSandboxes = createCoalescedRunner<
+  ProjectSecretPropagationResult
+>({
+  run: (projectId, opts) => runProjectSecretPropagation(projectId, opts),
+  // 3s, not more: single-flight + burst-collapse are what break a storm (50
+  // writes → 2 runs regardless of this value); the interval only paces a
+  // slow-drip loop. The two AWAITED callers (secret-broker rotation and
+  // POST /secrets/sync) sit behind this cooldown too, so it must stay small
+  // enough that a human never notices it on those endpoints.
+  minIntervalMs: () => {
+    const configured = Number((config as any).KORTIX_ENV_SYNC_MIN_INTERVAL_MS);
+    return Number.isFinite(configured) && configured >= 0 ? Math.floor(configured) : 3_000;
+  },
+});
+
+async function runProjectSecretPropagation(
   projectId: string,
   opts?: { refreshModels?: boolean },
 ): Promise<ProjectSecretPropagationResult> {

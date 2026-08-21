@@ -167,7 +167,46 @@ const voiceTranscriptPollLimiter = new TokenBucketRateLimiter('voice_transcript_
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
 const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter('project_webhook_manifest_refresh');
+const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
+
+/**
+ * Per-project budget on secret WRITES (POST/PUT/PATCH/DELETE under
+ * /:projectId/secrets*). Reads pass untouched.
+ *
+ * INCIDENT 2026-08-21: agents in two projects used secrets as a config store
+ * and wrote them in loops (one made 1,017 writes in a morning). Every write
+ * fans an env push to every active sandbox in the project, so the loops became
+ * a provider-API storm that got the whole Daytona org rate-limited — failing
+ * session creates and wakes for every other customer. No human workflow writes
+ * secrets 100 times in an hour; an agent loop does.
+ *
+ * In-process buckets, so the effective ceiling is limit × API replicas when a
+ * loop happens to spread across pods. That is accepted: the goal is stopping
+ * hundreds-per-hour runaways, not metering exact quotas.
+ */
+export function createProjectSecretWriteRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const method = c.req.method.toUpperCase();
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return next();
+    const projectId = c.req.param('projectId') || 'unknown';
+    const result = projectSecretWriteLimiter.check(projectId, {
+      limit: positiveInt((config as any).KORTIX_PROJECT_SECRET_WRITES_PER_HOUR, 100),
+      windowMs: 60 * 60_000,
+    });
+    setHeaders(c, result);
+    if (!result.allowed) {
+      return c.json({
+        error: 'rate_limit_exceeded',
+        message:
+          'This project has hit its secret-write limit. Secrets are for credentials, not fast-changing state — store loop data elsewhere, or retry later.',
+        code: 'project_secret_write_limit',
+        retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+      }, 429);
+    }
+    await next();
+  };
+}
 
 export function createInviteAcceptRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
@@ -423,5 +462,6 @@ export function resetRateLimiters() {
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();
   projectWebhookManifestRefreshLimiter.reset();
+  projectSecretWriteLimiter.reset();
   sessionLlmLimiter.reset();
 }

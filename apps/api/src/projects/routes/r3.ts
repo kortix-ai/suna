@@ -4,6 +4,7 @@ import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { inferAuditSource, recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
+import { createProjectSecretWriteRateLimitMiddleware } from '../../shared/rate-limit';
 import { db } from '../../shared/db';
 import { kickRoutedPreBuild, templateBuildProviders } from '../../snapshots/builder';
 import { getTemplateById } from '../../snapshots/templates';
@@ -156,6 +157,11 @@ async function connectorSecretBindings(projectId: string, identifier: string): P
     );
   return rows.map((row) => row.slug).sort();
 }
+
+// Registered before this file's routes so it runs for every secret WRITE
+// (including /broker and /sync) and for nothing else. See the middleware's
+// doc comment for the 2026-08-21 storm it exists to stop.
+projectsApp.use('/:projectId/secrets/*', createProjectSecretWriteRateLimitMiddleware());
 
 projectsApp.openapi(
   createRoute({
