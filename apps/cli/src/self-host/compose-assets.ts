@@ -148,13 +148,15 @@ const APPS_SITE_BLOCK = `# *.<apps base domain>: every deployed Kortix App, serv
 		dynamic a {
 			name kortix-api
 			port 8008
-			refresh 5s
+			refresh 2s
 		}
 		lb_policy round_robin
-		fail_duration 10s
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
 		health_uri /v1/health
-		health_interval 10s
-		health_timeout 5s
+		health_interval 3s
+		health_timeout 2s
 	}
 }`;
 
@@ -193,13 +195,15 @@ const PREVIEW_SITE_BLOCK = `# *.<preview base domain>: one origin per sandbox po
 		dynamic a {
 			name kortix-api
 			port 8008
-			refresh 5s
+			refresh 2s
 		}
 		lb_policy round_robin
-		fail_duration 10s
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
 		health_uri /v1/health
-		health_interval 10s
-		health_timeout 5s
+		health_interval 3s
+		health_timeout 2s
 	}
 }`;
 

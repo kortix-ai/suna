@@ -335,6 +335,18 @@ describe('full self-host Docker distribution', () => {
     expect(caddyfile).toContain('fail_duration');
   });
 
+  test('every replicated upstream carries in-request retry so a recreate-window pick failure is retried, not 502ed', () => {
+    const caddyfile = kortixRuntimeAssets.Caddyfile;
+    // One lb_try_duration/lb_try_interval per replicated app upstream
+    // (api, gateway, frontend). Dial-level failures (connection refused / no
+    // upstreams available) are retried against the healthy replica — POST-safe
+    // because the upstream never received the request. See the Bad-Gateway fix.
+    expect((caddyfile.match(/lb_try_duration 5s/g) ?? []).length).toBe(3);
+    expect((caddyfile.match(/lb_try_interval 250ms/g) ?? []).length).toBe(3);
+    // No raw retry_match that would unsafely replay a non-idempotent POST.
+    expect(caddyfile).not.toContain('retry_match');
+  });
+
   test('Caddyfile sends a conservative HSTS header (no preload) on both site blocks', () => {
     const caddyfile = kortixRuntimeAssets.Caddyfile;
     const matches = [...caddyfile.matchAll(/Strict-Transport-Security "([^"]+)"/g)];
