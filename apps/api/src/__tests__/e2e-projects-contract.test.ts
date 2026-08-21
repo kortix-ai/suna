@@ -410,7 +410,6 @@ const projectDbMock = createProjectsContractDbMock(dbState);
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: projectDbMock,
-  auditDb: projectDbMock,
 }));
 
 const { projectsApp } = await import('../projects/index');

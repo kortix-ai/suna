@@ -93,17 +93,6 @@ mock.module('../shared/db', () => ({
     transaction: async (fn: (tx: { execute: () => Promise<void> }) => Promise<unknown>) => fn({
       execute: async () => {},
     }),
-  }, auditDb: {
-    insert: () => ({
-      values: () => ({
-        onConflictDoNothing: () => ({
-          returning: async () => [{ eventId: 'evt_test_canonical' }],
-        }),
-      }),
-    }),
-    transaction: async (fn: (tx: { execute: () => Promise<void> }) => Promise<unknown>) => fn({
-      execute: async () => {},
-    }),
   },
 }));
 

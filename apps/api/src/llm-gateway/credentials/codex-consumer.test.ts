@@ -48,24 +48,6 @@ mock.module('../../shared/db', () => ({
         return { where: async () => [] };
       },
     }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({
-        where: async () => [
-          {
-            secretId: SECRET_ID,
-            ownerUserId: USER_ID,
-            valueEnc: resolvedValue,
-          },
-        ],
-      }),
-    }),
-    update: () => ({
-      set: (value: Record<string, unknown>) => {
-        updates.push(value);
-        return { where: async () => [] };
-      },
-    }),
   },
 }));
 

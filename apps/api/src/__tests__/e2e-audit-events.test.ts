@@ -28,29 +28,6 @@ mock.module('../shared/db', () => ({
       };
       return chain;
     },
-  }, auditDb: {
-    insert: () => ({
-      values: (values: Record<string, unknown>) => {
-        auditRows.push(values);
-        return {
-          returning: async () => [
-            {
-              eventId: 'audit_test',
-              occurredAt: new Date('2026-01-01T00:00:00Z'),
-              ...values,
-            },
-          ],
-        };
-      },
-    }),
-    select: () => {
-      const chain = {
-        from: () => chain,
-        where: () => chain,
-        then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve([])),
-      };
-      return chain;
-    },
   },
 }));
 

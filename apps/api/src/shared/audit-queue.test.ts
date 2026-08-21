@@ -67,8 +67,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 describe('AuditQueue', () => {
   test('defaults match the documented tuning', () => {
     expect(AUDIT_FLUSH_MS_DEFAULT).toBe(250);
-    // 100 (lowered from 500): smaller batches hold each session's FOR UPDATE
-    // lock for a shorter commit window — see the const's comment.
     expect(AUDIT_FLUSH_MAX_DEFAULT).toBe(100);
     expect(AUDIT_QUEUE_MAX_DEFAULT).toBe(5_000);
   });

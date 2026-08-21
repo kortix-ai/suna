@@ -47,7 +47,7 @@ mock.module('../../config', () => ({
 // Importing the real lifecycle export surface must not initialize the actual
 // database module. The route under test replaces every lifecycle write below.
 mock.module('../../shared/db', () => ({
-  db: { execute: async () => [] }, auditDb: { execute: async () => [] },
+  db: { execute: async () => [] },
 }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,

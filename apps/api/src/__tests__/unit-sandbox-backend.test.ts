@@ -14,7 +14,7 @@ mock.module('../config', () => ({
   config: {},
   SANDBOX_VERSION: 'test-version',
 }));
-mock.module('../shared/db', () => ({ db: {} , auditDb: {}}));
+mock.module('../shared/db', () => ({ db: {} }));
 mock.module('../shared/daytona', () => ({
   getDaytona: () => ({}),
   archiveDaytonaSandboxById: async () => ({ ok: true }),

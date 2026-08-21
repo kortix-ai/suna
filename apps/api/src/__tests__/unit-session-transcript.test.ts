@@ -27,8 +27,6 @@ mock.module('../projects/opencode-mapping', () => ({
 mock.module('../shared/db', () => ({
   db: {
     select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [] }) }) }) }),
-  }, auditDb: {
-    select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [] }) }) }) }),
   },
 }));
 

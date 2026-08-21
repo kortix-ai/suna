@@ -21,12 +21,6 @@ mock.module('../shared/db', () => ({
       if (next && '__throw' in next) throw next.__throw;
       return next ?? { rows: [] };
     },
-  }, auditDb: {
-    execute: async () => {
-      const next = executeResults.shift();
-      if (next && '__throw' in next) throw next.__throw;
-      return next ?? { rows: [] };
-    },
   },
 }));
 

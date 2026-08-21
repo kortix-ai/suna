@@ -72,18 +72,6 @@ mock.module('../../shared/db', () => ({
       }),
     }),
     update: () => ({ set: () => ({ where: async () => undefined }) }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          // One row satisfies BOTH the session lookup (resolveOwnerRawEnv) and
-          // the sandbox lookup (the active-sandbox select) — the fake merges
-          // them. The sandbox's externalId/provider/config overlay wins.
-          limit: async () => (activeSandbox ? [{ ...SESSION_ROW, ...activeSandbox }] : []),
-        }),
-      }),
-    }),
-    update: () => ({ set: () => ({ where: async () => undefined }) }),
   },
 }));
 

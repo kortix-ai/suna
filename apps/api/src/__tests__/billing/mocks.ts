@@ -173,12 +173,6 @@ export function registerGlobalMocks() {
           where: async () => [],
         }),
       }),
-    }, auditDb: {
-      select: () => ({
-        from: () => ({
-          where: async () => [],
-        }),
-      }),
     },
     // Real shape is a boolean const, not a function. FALSE on purpose: these
     // billing tests drive the no-DB path, and the stub `db` above answers only

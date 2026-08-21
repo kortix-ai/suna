@@ -230,21 +230,6 @@ mock.module('../../shared/db', () => ({
         return chain;
       },
     }),
-  }, auditDb: {
-    select: () => ({
-      from: (table: unknown) => {
-        const selectRows = table === appRuntimes ? selectMissingApps : selectMissing;
-        const chain: any = {
-          innerJoin: () => chain,
-          leftJoin: () => chain,
-          where: () => ({
-            orderBy: () => ({ limit: selectRows }),
-            limit: selectRows,
-          }),
-        };
-        return chain;
-      },
-    }),
   },
 }));
 

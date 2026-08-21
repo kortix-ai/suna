@@ -12,15 +12,6 @@ mock.module('../../shared/db', () => ({
         },
       }),
     }),
-  }, auditDb: {
-    insert: () => ({
-      values: (data: Record<string, unknown>) => ({
-        returning: async () => {
-          inserted.push(data);
-          return [{ id: 'ledger_row_1', ...data }];
-        },
-      }),
-    }),
   },
   hasDatabase: false,
 }));

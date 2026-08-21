@@ -24,15 +24,6 @@ mock.module('../../shared/db', () => ({
         return undefined;
       },
     }),
-  }, auditDb: {
-    insert: () => ({
-      values: async (v: Record<string, unknown>) => {
-        if (insertDelayMs > 0) await new Promise((r) => setTimeout(r, insertDelayMs));
-        if (insertShouldThrow) throw new Error('DB hiccup');
-        inserted.push(v);
-        return undefined;
-      },
-    }),
   },
 }));
 

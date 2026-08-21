@@ -21,7 +21,7 @@ function makeChain(): any {
 // (they used to be one Supabase admin HTTP call per owner).
 let emailsById: Record<string, string> = {};
 mock.module('../shared/db', () => ({
-  db: { select: () => makeChain(), update: () => makeChain(), insert: () => makeChain(), execute: async () => Object.entries(emailsById).map(([id, email]) => ({ id, email })) }, auditDb: { select: () => makeChain(), update: () => makeChain(), insert: () => makeChain(), execute: async () => Object.entries(emailsById).map(([id, email]) => ({ id, email })) },
+  db: { select: () => makeChain(), update: () => makeChain(), insert: () => makeChain(), execute: async () => Object.entries(emailsById).map(([id, email]) => ({ id, email })) },
   hasDatabase: () => true,
 }));
 

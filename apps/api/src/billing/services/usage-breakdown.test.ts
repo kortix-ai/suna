@@ -24,20 +24,6 @@ mock.module('../../shared/db', () => ({
         }),
       };
     },
-  }, auditDb: {
-    select: (projection: unknown) => {
-      capturedProjection = projection;
-      return {
-        from: () => ({
-          where: () => ({
-            groupBy: async (...args: unknown[]) => {
-              capturedGroupBy = args;
-              return rows;
-            },
-          }),
-        }),
-      };
-    },
   },
 }));
 

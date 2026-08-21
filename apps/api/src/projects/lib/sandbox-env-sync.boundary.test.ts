@@ -56,20 +56,6 @@ mock.module('../../shared/db', () => ({
       }),
     }),
     update: () => ({ set: () => ({ where: async () => undefined }) }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({
-        where: () => {
-          const rows = [{ ...SESSION_ROW, provider: sandboxProvider, metadata: null }];
-          return {
-            limit: async () => rows,
-            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
-              Promise.resolve(rows).then(resolve, reject),
-          };
-        },
-      }),
-    }),
-    update: () => ({ set: () => ({ where: async () => undefined }) }),
   },
 }));
 

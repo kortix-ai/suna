@@ -66,14 +66,6 @@ mock.module('../shared/db', () => ({
       dbWrites.push({ op: 'delete' });
       return makeChain('delete');
     },
-  }, auditDb: {
-    select: () => makeChain('select'),
-    insert: () => makeChain('insert'),
-    update: () => makeChain('update'),
-    delete: () => {
-      dbWrites.push({ op: 'delete' });
-      return makeChain('delete');
-    },
   },
   hasDatabase: () => true,
 }));

@@ -103,7 +103,7 @@ const databaseMock = {
   }),
 };
 
-mock.module('../shared/db', () => ({ db: databaseMock, auditDb: databaseMock, hasDatabase: true }));
+mock.module('../shared/db', () => ({ db: databaseMock, hasDatabase: true }));
 mock.module('../projects/lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({

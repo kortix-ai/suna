@@ -6,8 +6,8 @@
 import { PROJECT_ACTIONS } from '../../iam';
 import { approvalPageUrl } from '../../setup-links/token';
 import { auth, errors, json } from '../../openapi';
-// `auditDb` — dedicated audit pool (named import; mocks provide it). See shared/audit.ts.
-import { auditDb, db } from '../../shared/db';
+import { db } from '../../shared/db';
+import { auditDb } from '../../shared/audit-db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
@@ -286,10 +286,7 @@ projectsApp.openapi(
       return c.json({ accepted: parsed.accepted, inserted: 0, duplicates: 0, suppressed });
     }
 
-    // Isolated audit pool: this OpenCode ingestion batch is the highest-volume
-    // audit writer and the one most prone to the per-session lock convoy. Keep
-    // it off the main pool so a burst can never starve auth/app queries.
-    const inserted = await auditDb
+    const inserted = await auditDb()
       .insert(auditEvents)
       .values(toInsert)
       .onConflictDoNothing()

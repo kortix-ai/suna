@@ -90,50 +90,6 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-  }, auditDb: {
-    select: (_fields?: unknown) => ({
-      from: (table: unknown) => ({
-        where: () => {
-          if (table === projectMonitorBoxes) return { limit: async () => boxRows };
-          if (table === projects) return { limit: async () => projectRows };
-          if (table === projectTriggerRuntime) {
-            return { limit: async () => (runtimeRow ? [runtimeRow] : []) };
-          }
-          // countMonitorRateWindow awaits the query directly (no .limit()).
-          if (table === projectMonitorEvents) return Promise.resolve([rateWindow]);
-          throw new Error('unexpected select table');
-        },
-      }),
-    }),
-    insert: (table: unknown) => ({
-      values: (row: Record<string, unknown>) => ({
-        onConflictDoNothing: () => ({
-          returning: async () => {
-            if (table !== projectMonitorEvents) throw new Error('unexpected insert table');
-            // The real dedup index: (project_id, slug, box_epoch, seq).
-            const duplicate = storedEvents.some(
-              (stored) =>
-                stored.projectId === row.projectId &&
-                stored.slug === row.slug &&
-                stored.boxEpoch === row.boxEpoch &&
-                stored.seq === row.seq,
-            );
-            if (duplicate) return [];
-            storedEvents.push(row);
-            return [{ eventId: `event-${storedEvents.length}` }];
-          },
-        }),
-      }),
-    }),
-    update: (table: unknown) => ({
-      set: (patch: Record<string, unknown>) => ({
-        where: async () => {
-          if (table !== projectTriggerRuntime) throw new Error('unexpected update table');
-          runtimeUpdates.push(patch);
-          if (runtimeRow) Object.assign(runtimeRow, patch);
-        },
-      }),
-    }),
   },
 }));
 

@@ -22,7 +22,7 @@ function makeChain(): any {
   return chain;
 }
 mock.module('../shared/db', () => ({
-  db: { select: () => makeChain() }, auditDb: { select: () => makeChain() },
+  db: { select: () => makeChain() },
   hasDatabase: () => true,
 }));
 

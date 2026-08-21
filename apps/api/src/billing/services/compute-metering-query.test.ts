@@ -19,7 +19,7 @@ mock.module('../../config', () => ({
   parseAllowedProviders: () => [],
 }));
 
-mock.module('../../shared/db', () => ({ db: drizzle, auditDb: drizzle(client) }));
+mock.module('../../shared/db', () => ({ db: drizzle(client) }));
 
 const { selectMissingAppComputeCandidates, selectMissingComputeCandidates } = await import('./compute-metering');
 const { selectOpenComputeInvariantCandidates } = await import('./compute-invariant-sweep');

@@ -617,7 +617,7 @@ starterDbMock.transaction = async (run: (tx: typeof starterDbMock) => Promise<un
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,
-  db: starterDbMock, auditDb: starterDbMock,
+  db: starterDbMock,
 }));
 
 const { projectsApp } = await import('../projects/index');

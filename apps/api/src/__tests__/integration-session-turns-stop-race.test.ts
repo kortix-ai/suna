@@ -53,7 +53,7 @@ const db = new Proxy(realDbModule.db, {
   },
 });
 
-mock.module('../shared/db', () => ({ ...realDbModule, db, auditDb: db }));
+mock.module('../shared/db', () => ({ ...realDbModule, db }));
 
 const { acceptSandboxTurn, beginSandboxTurn, settleOpenSandboxTurns, settleOrphanedSandboxTurns } =
   await import('../projects/sandbox-turn-lifecycle');

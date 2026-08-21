@@ -37,28 +37,6 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({
-        leftJoin: () => ({
-          where: () => ({
-            limit: async () => shareRow ? [shareRow] : [],
-          }),
-        }),
-        innerJoin: () => ({
-          where: () => ({
-            limit: async () => personalBindingRow ? [personalBindingRow] : [],
-          }),
-        }),
-      }),
-    }),
-    update: () => ({
-      set: () => ({
-        where: async () => {
-          updateCalls += 1;
-        },
-      }),
-    }),
   },
 }));
 

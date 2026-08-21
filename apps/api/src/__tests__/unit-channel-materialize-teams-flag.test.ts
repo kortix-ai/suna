@@ -19,14 +19,6 @@ mock.module('../shared/db', () => ({
         }),
       }),
     }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => [{ metadata: projectMetadata }],
-        }),
-      }),
-    }),
   },
 }));
 

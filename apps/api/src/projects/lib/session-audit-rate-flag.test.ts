@@ -20,14 +20,6 @@ mock.module('../../shared/db', () => ({
         return { where: async () => undefined };
       },
     }),
-  }, auditDb: {
-    update: () => ({
-      set: (values: Record<string, unknown>) => {
-        if (updateShouldThrow) throw new Error('database is unavailable');
-        updateCalls.push({ set: values });
-        return { where: async () => undefined };
-      },
-    }),
   },
 }));
 

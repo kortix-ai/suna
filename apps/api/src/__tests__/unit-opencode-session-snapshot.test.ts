@@ -17,17 +17,6 @@ mock.module('../shared/db', () => ({
         }),
       }),
     }),
-  }, auditDb: {
-    update: () => ({
-      set: (values: Record<string, unknown>) => ({
-        where: () => ({
-          returning: async () => {
-            dbUpdates.push(values);
-            return [values];
-          },
-        }),
-      }),
-    }),
   },
 }));
 

@@ -66,7 +66,7 @@ const fakeDb: any = {
   transaction: async (callback: (tx: any) => Promise<unknown>) => callback(fakeDb),
 };
 
-mock.module('../shared/db', () => ({ db: fakeDb, auditDb: fakeDb }));
+mock.module('../shared/db', () => ({ db: fakeDb }));
 mock.module('../projects/lib/git', () => ({
   withProjectGitAuth: async (project: Record<string, unknown>) => ({
     ...project,

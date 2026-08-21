@@ -20,7 +20,7 @@ mock.module('../../config', () => ({
   SANDBOX_VERSION: 'test-version',
 }));
 
-mock.module('../../shared/db', () => ({ db: {} , auditDb: {}}));
+mock.module('../../shared/db', () => ({ db: {} }));
 
 let getDaytonaSandbox: (_externalId: string) => Promise<unknown>;
 let activityRefreshes: string[];

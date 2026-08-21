@@ -92,24 +92,6 @@ mock.module('../../shared/db', () => ({
         where: () => ({ limit: async () => selectedRows }),
       }),
     }),
-  }, auditDb: {
-    transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
-      events.push('tx:begin');
-      inTransaction = true;
-      try {
-        return await fn(transactionScope);
-      } finally {
-        inTransaction = false;
-        events.push('tx:commit');
-      }
-    },
-    update: updater,
-    execute: executor,
-    select: () => ({
-      from: () => ({
-        where: () => ({ limit: async () => selectedRows }),
-      }),
-    }),
   },
 }));
 

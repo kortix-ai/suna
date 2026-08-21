@@ -86,20 +86,6 @@ mock.module('../../shared/db', () => ({
         },
       }),
     }),
-  }, auditDb: {
-    select: () => ({
-      from: (table: unknown) => ({
-        where: () => {
-          const rows = table === sandboxes ? [] : [{ activeCount: 0 }];
-          const resultPromise = trackedDelay(rows);
-          return {
-            limit: async () => resultPromise,
-            then: (resolve: (v: unknown) => void, reject: (e: unknown) => void) =>
-              resultPromise.then(resolve, reject),
-          };
-        },
-      }),
-    }),
   },
 }));
 

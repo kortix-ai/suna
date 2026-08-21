@@ -56,19 +56,6 @@ mock.module('../shared/db', () => ({
         }),
       }),
     }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          orderBy: () => ({
-            limit: async () => {
-              queryCount += 1;
-              return queryCount === 1 ? [] : [canonicalRow];
-            },
-          }),
-        }),
-      }),
-    }),
   },
 }));
 

@@ -14,15 +14,6 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-  }, auditDb: {
-    update: (table: unknown) => ({
-      set: (updates: Record<string, unknown>) => ({
-        where: async () => {
-          if (table === projectSessions) dbUpdates.push(updates);
-          return [];
-        },
-      }),
-    }),
   },
 }));
 

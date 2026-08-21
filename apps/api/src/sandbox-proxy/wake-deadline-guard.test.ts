@@ -72,35 +72,6 @@ mock.module('../shared/db', () => ({
       };
       return chain;
     },
-  }, auditDb: {
-    select: (fields: Record<string, unknown>) => {
-      const isDeadlineProbe = 'deadlineAt' in (fields ?? {});
-      const rows = isDeadlineProbe
-        ? deadlineAt === null
-          ? []
-          : [{ deadlineAt }]
-        : [
-            {
-              sandboxId: 'sb-1',
-              externalId: 'ext-1',
-              sessionId: 'sess-1',
-              agentName: null,
-              projectId: 'proj-1',
-              accountId: 'acct-1',
-              provider: 'daytona',
-              status: 'stopped',
-              baseUrl: null,
-              config: {},
-            },
-          ];
-      const chain = {
-        from: () => chain,
-        where: () => chain,
-        orderBy: () => chain,
-        limit: () => Promise.resolve(rows),
-      };
-      return chain;
-    },
   },
 }));
 

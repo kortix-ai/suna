@@ -51,7 +51,7 @@ function makeChain(): any {
   return chain;
 }
 mock.module('../shared/db', () => ({
-  db: { select: () => makeChain(), insert: () => makeChain(), update: () => makeChain(), delete: () => makeChain() }, auditDb: { select: () => makeChain(), insert: () => makeChain(), update: () => makeChain(), delete: () => makeChain() },
+  db: { select: () => makeChain(), insert: () => makeChain(), update: () => makeChain(), delete: () => makeChain() },
   hasDatabase: () => true,
 }));
 mock.module('../projects/session-lifecycle', () => ({

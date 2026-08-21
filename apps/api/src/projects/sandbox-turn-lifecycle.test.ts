@@ -39,23 +39,6 @@ mock.module('../shared/db', () => ({
     update: () => ({
       set: () => ({ where: () => ({ returning: async () => [] }) }),
     }),
-  }, auditDb: {
-    execute: async (query: unknown) => {
-      const callIndex = executed.length;
-      executed.push(render(query));
-      const scoped = executeErrorByIndex[callIndex];
-      if (scoped) throw scoped;
-      if (executeError) throw executeError;
-      return executeResults.shift() ?? [];
-    },
-    // The inbox consumption bookkeeping `acceptSandboxTurn` /
-    // `completeSandboxTurn` write on the back of their authority writes. This
-    // file asserts the AUTHORITY SQL, so the answer is "no inbox row"; without
-    // the builder at all it threw into the swallow-and-log path, which is the
-    // same result reached by hiding a real failure.
-    update: () => ({
-      set: () => ({ where: () => ({ returning: async () => [] }) }),
-    }),
   },
 }));
 

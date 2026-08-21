@@ -335,6 +335,14 @@ describe('full self-host Docker distribution', () => {
     expect(caddyfile).toContain('fail_duration');
   });
 
+  test('supabase-db gets tunable max_connections headroom (injected, not vendored) so the stack scales past ~4 api replicas', () => {
+    const rendered = renderFullDockerCompose('kortix-default', { domainConfigured: true });
+    // Rendered compose (not the upstream-locked vendored file) carries the override.
+    expect(rendered).toContain('max_connections=${POSTGRES_MAX_CONNECTIONS:-200}');
+    // The vendored asset must stay pristine (upstream-lock guards it).
+    expect(supabaseVendorAssets['docker-compose.yml']).not.toContain('max_connections');
+  });
+
   test('every replicated upstream carries in-request retry so a recreate-window pick failure is retried, not 502ed', () => {
     const caddyfile = kortixRuntimeAssets.Caddyfile;
     // One lb_try_duration/lb_try_interval per replicated app upstream

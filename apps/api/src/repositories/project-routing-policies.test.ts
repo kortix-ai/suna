@@ -16,11 +16,6 @@ mock.module('../shared/db', () => ({
       selectCalls += 1;
       return selectChain();
     },
-  }, auditDb: {
-    select: () => {
-      selectCalls += 1;
-      return selectChain();
-    },
   },
   hasDatabase: () => true,
 }));

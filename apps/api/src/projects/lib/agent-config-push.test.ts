@@ -81,21 +81,6 @@ mock.module('../../shared/db', () => ({
         },
       }),
     }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({
-        where: () => {
-          const rows = activeSandbox
-            ? [{ ...SESSION_ROW, metadata: sessionMetadata, ...activeSandbox }]
-            : [];
-          return {
-            limit: async () => rows,
-            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
-              Promise.resolve(rows).then(resolve, reject),
-          };
-        },
-      }),
-    }),
   },
 }));
 

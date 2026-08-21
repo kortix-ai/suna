@@ -1,20 +1,14 @@
 import { gatewayRequestLogs } from '@kortix/db';
-// `auditDb` is the dedicated audit-write pool (named import so Bun's mock.module
-// intercepts it like `db`; every test mocking '../shared/db' also provides it).
-import { auditDb } from './db';
+// The gateway_request_logs write's AFTER-INSERT trigger fans out an audit row,
+// so route it through the isolated audit pool — its convoy must never starve the
+// gateway's own auth query (the "Bad Gateway"/EOF root cause). See audit-db.ts.
+import { auditDb } from './audit-db';
 import { buildGatewayTraceRow, type GatewayTraceInput } from './gateway-trace-row';
 
 export type { GatewayTraceInput };
 
-// Written on every LLM gateway request. An AFTER-INSERT trigger
-// (`audit_gateway_request`) fans this out into `kortix.audit_events`, so this is
-// the single highest-frequency source of the per-session audit lock convoy. Use
-// the isolated audit pool so that convoy can never pin a main-pool connection
-// the gateway's own auth query needs — the failure that surfaced as "Bad
-// Gateway" (EOF) on the box. This is best-effort request logging; losing a row
-// under extreme load is acceptable, starving auth is not.
 export async function recordGatewayTrace(input: GatewayTraceInput): Promise<void> {
-  await auditDb
+  await auditDb()
     .insert(gatewayRequestLogs)
     .values(buildGatewayTraceRow(input))
     .onConflictDoNothing({ target: gatewayRequestLogs.requestId });

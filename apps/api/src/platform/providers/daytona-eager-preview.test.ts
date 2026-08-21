@@ -13,7 +13,7 @@ mock.module('../../config', () => ({
   SANDBOX_VERSION: 'test-version',
 }));
 
-mock.module('../../shared/db', () => ({ db: {} , auditDb: {}}));
+mock.module('../../shared/db', () => ({ db: {} }));
 
 let previewLinkCalls: number[] = [];
 let processCommands: Array<{ command: string; timeout: number | undefined }> = [];

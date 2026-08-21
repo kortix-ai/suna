@@ -32,13 +32,6 @@ mock.module('../shared/db', () => ({
         return Promise.resolve();
       },
     }),
-  }, auditDb: {
-    delete: (table: unknown) => ({
-      where: (cond: unknown) => {
-        deleteCalls.push({ table, where: cond });
-        return Promise.resolve();
-      },
-    }),
   },
 }));
 

@@ -22,12 +22,6 @@ mock.module('../shared/db', () => ({
         auditRows.push(values);
       },
     }),
-  }, auditDb: {
-    insert: () => ({
-      values: async (values: Record<string, unknown>) => {
-        auditRows.push(values);
-      },
-    }),
   },
 }));
 

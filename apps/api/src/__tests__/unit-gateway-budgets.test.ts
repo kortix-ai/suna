@@ -51,22 +51,6 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-  }, auditDb: {
-    select: (fields?: Record<string, unknown>) => ({
-      from: (table: unknown) => ({
-        where: async () => {
-          if (table === gatewayBudgets) return budgetRows;
-          if (table === gatewayRequestLogs) {
-            if (fields?.cost) {
-              spendExpressions.push(new PgDialect().sqlToQuery(fields.cost as SQL).sql);
-            }
-            const cost = spendQueue.length ? spendQueue.shift()! : 0;
-            return [{ cost }];
-          }
-          throw new Error('unexpected table in mocked db.select().from()');
-        },
-      }),
-    }),
   },
 }));
 

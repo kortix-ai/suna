@@ -39,11 +39,6 @@ mock.module('../shared/db', () => ({
     insert: () => makeChain(),
     update: () => makeChain(),
     delete: () => makeChain(),
-  }, auditDb: {
-    select: () => makeChain(),
-    insert: () => makeChain(),
-    update: () => makeChain(),
-    delete: () => makeChain(),
   },
   hasDatabase: () => true,
 }));

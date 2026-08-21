@@ -67,19 +67,6 @@ mock.module('../../../shared/db', () => ({
       }),
     }),
     update: () => ({ set: () => ({ where: async () => {} }) }),
-  }, auditDb: {
-    select: () => ({
-      from: (table: unknown) => ({
-        where: () => ({
-          limit: async () => {
-            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
-            if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
-            return [];
-          },
-        }),
-      }),
-    }),
-    update: () => ({ set: () => ({ where: async () => {} }) }),
   },
 }));
 

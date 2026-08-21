@@ -56,32 +56,6 @@ mock.module('../../shared/db', () => ({
         }),
       }),
     }),
-  }, auditDb: {
-    select: () => ({
-      from: (table: unknown) => ({
-        where: async (cond: unknown) => {
-          if (table === accountMembers) {
-            if (ownedAccountsQueryError) throw ownedAccountsQueryError;
-            return ownedAccountRows;
-          }
-          sandboxWhereArg = cond;
-          if (sandboxQueryError) throw sandboxQueryError;
-          return sandboxRows;
-        },
-      }),
-    }),
-    update: (table: unknown) => ({
-      set: () => ({
-        where: (cond: unknown) => ({
-          returning: async () => {
-            if (table !== projectSessions) return [];
-            sessionUpdateWhereArg = cond;
-            if (sessionUpdateError) throw sessionUpdateError;
-            return sessionsSettled;
-          },
-        }),
-      }),
-    }),
   },
 }));
 

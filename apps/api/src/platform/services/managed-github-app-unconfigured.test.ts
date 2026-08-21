@@ -14,13 +14,6 @@ mock.module('../../shared/db', () => ({
     insert: () => ({
       values: () => ({ onConflictDoUpdate: async () => undefined }),
     }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({ where: () => ({ limit: async () => [] }) }),
-    }),
-    insert: () => ({
-      values: () => ({ onConflictDoUpdate: async () => undefined }),
-    }),
   },
 }));
 

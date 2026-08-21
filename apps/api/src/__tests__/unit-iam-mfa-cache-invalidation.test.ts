@@ -55,21 +55,6 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => [{ mfaRequired }],
-        }),
-      }),
-    }),
-    update: () => ({
-      set: (patch: { mfaRequired: boolean }) => ({
-        where: async () => {
-          mfaRequired = patch.mfaRequired;
-        },
-      }),
-    }),
   },
 }));
 

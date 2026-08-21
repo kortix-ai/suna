@@ -10,7 +10,7 @@ function makeChain(): any {
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return chain;
 }
-mock.module('../shared/db', () => ({ db: { select: () => makeChain() }, auditDb: { select: () => makeChain() }, hasDatabase: () => true }));
+mock.module('../shared/db', () => ({ db: { select: () => makeChain() }, hasDatabase: () => true }));
 
 // Stub the dispatch graph so importing interactivity stays light.
 const actualDispatch = await import('../channels/slack/dispatch');

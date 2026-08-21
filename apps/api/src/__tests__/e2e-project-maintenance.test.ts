@@ -47,34 +47,6 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-  }, auditDb: {
-    select: () => ({
-      from: (table: unknown) => ({
-        where: () => ({
-          limit: async () => {
-            if (table === sessionSandboxes) return sandboxCandidates;
-            return [];
-          },
-        }),
-        innerJoin: () => ({
-          where: () => ({
-            // The sweep now orders oldest-first (forward-progress guarantee) and
-            // excludes never-deletable rows in SQL; this mock ignores predicates
-            // and returns the fixtures, so orderBy is a passthrough here.
-            orderBy: () => ({
-              limit: async () => branchCandidates,
-            }),
-          }),
-        }),
-      }),
-    }),
-    update: (table: unknown) => ({
-      set: (updates: Record<string, unknown>) => ({
-        where: async () => {
-          updateCalls.push({ table, updates });
-        },
-      }),
-    }),
   },
 }));
 

@@ -193,7 +193,7 @@ const databaseMock = {
   },
 };
 
-mock.module('../shared/db', () => ({ hasDatabase: true, db: databaseMock, auditDb: databaseMock }));
+mock.module('../shared/db', () => ({ hasDatabase: true, db: databaseMock }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in

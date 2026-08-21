@@ -54,18 +54,6 @@ mock.module('../shared/db', () => ({
         throw error;
       }
     },
-  }, auditDb: {
-    transaction: async (operation: (tx: typeof transactionClient) => Promise<unknown>) => {
-      calls.push('begin');
-      try {
-        const result = await operation(transactionClient);
-        calls.push('commit');
-        return result;
-      } catch (error) {
-        calls.push('rollback');
-        throw error;
-      }
-    },
   },
 }));
 

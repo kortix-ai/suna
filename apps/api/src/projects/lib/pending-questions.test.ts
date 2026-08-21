@@ -61,42 +61,6 @@ mock.module('../../shared/db', () => ({
         where: () => ({ orderBy: () => ({ limit: async () => returnRows }) }),
       }),
     }),
-  }, auditDb: {
-    insert: () => ({
-      values: (v: Row) => {
-        inserted.push(v);
-        return {
-          onConflictDoUpdate: (cfg: { target: unknown }) => {
-            conflictTarget = cfg.target;
-            return {
-              returning: async () => [
-                {
-                  id: 'q1',
-                  sessionId: v.sessionId,
-                  requestId: v.requestId,
-                  opencodeSessionId: v.opencodeSessionId ?? null,
-                  questions: v.questions,
-                  askedAt: '2026-08-05T12:00:00.000Z',
-                },
-              ],
-            };
-          },
-        };
-      },
-    }),
-    update: () => ({
-      set: () => ({
-        where: () => {
-          updateWhereCalls++;
-          return { returning: async () => returnRows };
-        },
-      }),
-    }),
-    select: () => ({
-      from: () => ({
-        where: () => ({ orderBy: () => ({ limit: async () => returnRows }) }),
-      }),
-    }),
   },
 }));
 

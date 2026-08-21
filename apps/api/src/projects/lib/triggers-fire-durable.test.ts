@@ -41,17 +41,6 @@ mock.module('../../shared/db', () => ({
         }),
       }),
     }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          // findReusableTriggerSession: where().orderBy().limit()
-          orderBy: () => ({ limit: async () => reusableRows }),
-          // enqueueTriggerPrompt liveness pre-check: where().limit()
-          limit: async () => sessionRows,
-        }),
-      }),
-    }),
   },
 }));
 

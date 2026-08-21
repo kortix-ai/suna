@@ -41,27 +41,6 @@ mock.module('../shared/db', () => ({
       }),
     }),
     selectDistinct: () => ({ from: () => ({ where: async () => [] }) }),
-  }, auditDb: {
-    select: () => ({
-      from: () => ({
-        innerJoin: () => ({
-          where: () => ({
-            // The branch sweep orders before it limits (deterministic drain, so
-            // the planner's scan order can't crowd rows out of the batch), so
-            // the stub has to be chainable through orderBy as well as limit.
-            orderBy: () => ({ limit: async () => [] }),
-            limit: async () => [],
-          }),
-        }),
-        // The monitor-event retention sweep selects straight off one table
-        // (no join) before deleting the batch it found.
-        where: () => ({
-          orderBy: () => ({ limit: async () => [] }),
-          limit: async () => [],
-        }),
-      }),
-    }),
-    selectDistinct: () => ({ from: () => ({ where: async () => [] }) }),
   },
 }));
 mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));
