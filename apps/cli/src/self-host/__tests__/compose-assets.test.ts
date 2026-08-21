@@ -337,10 +337,12 @@ describe('full self-host Docker distribution', () => {
 
   test('supabase-db gets tunable max_connections headroom (injected, not vendored) so the stack scales past ~4 api replicas', () => {
     const rendered = renderFullDockerCompose('kortix-default', { domainConfigured: true });
-    // Rendered compose (not the upstream-locked vendored file) carries the override.
+    // Rendered compose carries the override (injected in renderFullDockerCompose,
+    // NOT in the upstream-locked vendored docker-compose.yml — the separate
+    // upstream-lock test above guards that the vendored file stays pristine).
     expect(rendered).toContain('max_connections=${POSTGRES_MAX_CONNECTIONS:-200}');
-    // The vendored asset must stay pristine (upstream-lock guards it).
-    expect(supabaseVendorAssets['docker-compose.yml']).not.toContain('max_connections');
+    // It rides the postgres command, right after the config_file arg.
+    expect(rendered).toContain('config_file=/etc/postgresql/postgresql.conf');
   });
 
   test('every replicated upstream carries in-request retry so a recreate-window pick failure is retried, not 502ed', () => {
