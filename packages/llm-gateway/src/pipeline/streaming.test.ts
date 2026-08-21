@@ -497,11 +497,14 @@ describe('relayStream client abort propagation', () => {
 
 // Regression coverage for the unbounded-buffer finding: usage/error
 // extraction stays O(1) per chunk (the incremental scanner) regardless of
-// total stream size. The trace preview retained alongside it is a separate
-// concern and is captured in FULL, uncapped — a log must show exactly what
-// was relayed to the client, never a truncated stand-in for it.
+// total stream size. The trace capture retained alongside it is a separate
+// concern and is BOUNDED (head + tail + an honest marker) — an ordinary
+// response is still retained byte-for-byte, but a response large enough to
+// threaten the process is truncated rather than allowed to kill it. An
+// OOM-killed container writes no trace at all, which is the one outcome
+// strictly worse than a truncated one. See bounded-capture.ts.
 describe('relayStream response buffer', () => {
-  test('retains the full response preview for the trace, matching everything relayed to the client', async () => {
+  test('retains an ordinary response byte-for-byte, matching everything relayed to the client', async () => {
     const up = controllableUpstream();
     let settledPreview: unknown = 'unset';
     const out = relayStream({
@@ -526,6 +529,38 @@ describe('relayStream response buffer', () => {
     expect(typeof settledPreview).toBe('string');
     expect((settledPreview as string).length).toBe(text.length);
     expect(settledPreview).toBe(text);
+  });
+
+  test('a response large enough to threaten the process is bounded, and says so', async () => {
+    const up = controllableUpstream();
+    let settledPreview: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: true,
+      requestId: 'r-bounded-1',
+      logger: noop,
+      settle: async (_usage, response) => {
+        settledPreview = response;
+      },
+      heartbeatMs: 10_000,
+    });
+    const collected = drain(out);
+    // 40 MB of streamed content — the shape of an image-heavy turn.
+    for (let i = 0; i < 40; i++) {
+      up.push(`data: {"choices":[{"delta":{"content":"${'z'.repeat(1_000_000)}"}}]}\n\n`);
+    }
+    up.push('data: [DONE]\n\n');
+    up.close();
+    const text = await collected;
+    await delay(10);
+    const retained = settledPreview as string;
+    // Everything still reached the client untouched...
+    expect(text.length).toBeGreaterThan(40_000_000);
+    // ...while what we HOLD is kilobytes, not tens of megabytes.
+    expect(retained.length).toBeLessThan(200_000);
+    // And the trace is honest about the gap rather than pretending.
+    expect(retained).toContain('truncated');
+    expect(retained.endsWith('data: [DONE]\n\n')).toBe(true);
   });
 
   test('extracts usage correctly from a long stream while retaining the full preview alongside it', async () => {

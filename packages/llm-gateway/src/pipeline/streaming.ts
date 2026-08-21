@@ -7,6 +7,11 @@ import {
   sseMayContainSoftFailure,
   sseSoftFailureFrame,
 } from '../usage';
+import {
+  BoundedCapture,
+  CAPTURED_RESPONSE_HEAD_CHARS,
+  CAPTURED_RESPONSE_TAIL_CHARS,
+} from './bounded-capture';
 import { gatewayErrorBody } from './error-response';
 
 export interface StreamRelayOptions {
@@ -312,10 +317,20 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
   // done incrementally per-chunk (memory ~O(1) per stream, not O(total tokens)
   // streamed) instead of re-scanning one ever-growing string at the end.
   const scanner = new IncrementalSseScanner();
-  // Full response text retained for the trace (when `captureBodies` is on) —
-  // independent of the scanner above. Not capped: a log that shows less than
-  // what the gateway actually relayed to the client is a log that lies.
-  let preview = '';
+  // Response text retained for the trace (when `captureBodies` is on) —
+  // independent of the scanner above, and BOUNDED. This used to be an
+  // unbounded `let preview = ''` that grew with every chunk for the whole life
+  // of the stream, on the reasoning that "a log that shows less than what the
+  // gateway actually relayed is a log that lies". The intent was right and the
+  // mechanism defeated it: on 2026-08-21 that buffer helped OOM-kill the dev
+  // API three times in eleven minutes, and a killed container writes no trace
+  // at all. `BoundedCapture` keeps the head and the tail and says exactly what
+  // it dropped — strictly more truth than a trace that never got written. See
+  // bounded-capture.ts.
+  const capture = new BoundedCapture({
+    headChars: CAPTURED_RESPONSE_HEAD_CHARS,
+    tailChars: CAPTURED_RESPONSE_TAIL_CHARS,
+  });
   // Smallest possible state to reproduce the old "are we at an SSE event
   // boundary" check (`sseBuffer === '' || sseBuffer.endsWith('\n\n')`) without
   // keeping the whole buffer around — only the last couple of characters ever
@@ -353,7 +368,7 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
         tailChars = (tailChars + decoded).slice(-2);
       }
       if (captureBodies) {
-        preview += decoded;
+        capture.push(decoded);
       }
       if (downstreamAlive) {
         try {
@@ -523,7 +538,7 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
       // of this detached async task — a failure here would otherwise be an
       // unhandled rejection and silently lose billing/trace for the stream.
       try {
-        await settle(scanner.usage, captureBodies ? preview : null, streamError);
+        await settle(scanner.usage, captureBodies ? capture.value() : null, streamError);
       } catch (err) {
         logger.warn(`[llm-gateway] stream settle failed ${requestId}:`, err);
       }

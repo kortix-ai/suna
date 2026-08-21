@@ -1,5 +1,7 @@
 export { createGateway } from './create-gateway';
 export { DEFAULT_MAX_REQUEST_BYTES } from './domain/config';
+export { readBoundedBody, requestTooLargeResponse } from './pipeline/read-bounded-body';
+export type { BoundedBodyResult } from './pipeline/read-bounded-body';
 export type { ChatCompletionRequest, GatewayDeps } from './pipeline';
 export {
   MAX_RELAYED_RETRY_AFTER_SECONDS,

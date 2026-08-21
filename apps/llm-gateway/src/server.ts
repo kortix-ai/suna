@@ -1,4 +1,10 @@
-import { createGateway, gatewayErrorResponse } from '@kortix/llm-gateway';
+import {
+  DEFAULT_MAX_REQUEST_BYTES,
+  createGateway,
+  gatewayErrorResponse,
+  readBoundedBody,
+  requestTooLargeResponse,
+} from '@kortix/llm-gateway';
 import { Hono } from 'hono';
 import { createApiClient } from './clients/api-client';
 import { config } from './config';
@@ -166,14 +172,23 @@ export function buildServer(): GatewayServer {
     req: {
       header: (k: string) => string | undefined;
       text: () => Promise<string>;
-      raw?: { signal?: AbortSignal };
+      // The standard Request, needed to size-limit the body BEFORE reading it
+      // (readBoundedBody). `signal` is read off the same object for the
+      // client-disconnect abort below.
+      raw: Request;
     };
   }) => {
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     try {
+      // Size-limited BEFORE the body is materialized — see readBoundedBody.
+      const body = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
+      if (!body.ok) {
+        recordOutcome(413);
+        return requestTooLargeResponse(requestId);
+      }
       const res = await gateway.chatCompletions({
         authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
+        rawBody: body.body,
         // `c.req.raw` is Hono's underlying standard Request — its `.signal`
         // fires on client disconnect, so a caller that goes away mid-request
         // stops the upstream fetch/stream instead of running to completion.
@@ -213,12 +228,18 @@ export function buildServer(): GatewayServer {
     req: {
       header: (k: string) => string | undefined;
       text: () => Promise<string>;
+      raw: Request;
     };
   }) => {
     try {
+      const body = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
+      if (!body.ok) {
+        recordOutcome(413);
+        return requestTooLargeResponse();
+      }
       const res = await gateway.messages({
         authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
+        rawBody: body.body,
       });
       recordOutcome(res.status);
       return res;

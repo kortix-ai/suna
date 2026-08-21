@@ -38,6 +38,7 @@ import {
   resolveStreamProbeTimeoutMs,
 } from './streaming';
 import { createTraceEmitter } from './trace';
+import { utf8ByteLength } from './bounded-capture';
 
 export interface ChatCompletionRequest {
   authorization: string | undefined;
@@ -245,7 +246,13 @@ export async function handleChatCompletions(
   const startMs = Date.now();
 
   const emit = createTraceEmitter(hooks, logger, requestId, startedAt, startMs);
-  const requestBytes = new TextEncoder().encode(req.rawBody).byteLength;
+  // Measured WITHOUT allocating the encoded bytes. `new TextEncoder().encode(
+  // req.rawBody).byteLength` built a full second copy of every request body —
+  // on top of the UTF-16 string and the JSON.parse graph below — purely to read
+  // a length off it and throw it away. On an image-heavy turn that is tens of
+  // MiB of garbage per request inside a container that OOM-killed on
+  // 2026-08-21. Same number, no copy. See bounded-capture.ts.
+  const requestBytes = utf8ByteLength(req.rawBody);
 
   let lastMark = startMs;
   const lap = (): number => {

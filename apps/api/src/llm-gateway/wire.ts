@@ -1,5 +1,10 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { DEFAULT_MAX_REQUEST_BYTES, createGateway } from '@kortix/llm-gateway';
+import {
+  DEFAULT_MAX_REQUEST_BYTES,
+  createGateway,
+  readBoundedBody,
+  requestTooLargeResponse,
+} from '@kortix/llm-gateway';
 import { config } from '../config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { createInProcessGatewayHooks } from './hooks';
@@ -387,15 +392,22 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     llm.get('/health', (c) =>
       c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),
     );
-    const chat = async (c: import('hono').Context) =>
-      gateway.chatCompletions({
+    // The size limit is enforced HERE, before the body exists as a string.
+    // `await c.req.text()` used to run unconditionally and the limit was checked
+    // afterwards inside the pipeline — the guard sat downstream of the
+    // allocation it existed to prevent. See readBoundedBody.
+    const chat = async (c: import('hono').Context) => {
+      const body = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
+      if (!body.ok) return requestTooLargeResponse();
+      return gateway.chatCompletions({
         authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
+        rawBody: body.body,
         // `c.req.raw` is the underlying standard Request — its `.signal` fires
         // when the client disconnects, so the gateway can stop reading (and
         // billing for) upstream tokens no one is listening for anymore.
         signal: c.req.raw.signal,
       });
+    };
     // `?scope=managed` serves ONLY the platform-managed lineup (~3KB) instead
     // of the project's full catalog (~3.3MB). Every sandbox calls it on boot to
     // learn the current managed set — the catalog baked into its image is stale
@@ -406,11 +418,14 @@ export function mountLlmGateway(app: OpenAPIHono): void {
       gateway.listModels(c.req.header('authorization'), {
         managedOnly: c.req.query('scope') === 'managed',
       });
-    const messages = async (c: import('hono').Context) =>
-      gateway.messages({
+    const messages = async (c: import('hono').Context) => {
+      const body = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
+      if (!body.ok) return requestTooLargeResponse();
+      return gateway.messages({
         authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
+        rawBody: body.body,
       });
+    };
     // Runtime routes are unchanged plain Hono mounts — same handlers, same
     // signatures, same streaming behavior as before this OpenAPI registration.
     llm.post('/chat/completions', chat);
