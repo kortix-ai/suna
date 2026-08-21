@@ -6,6 +6,7 @@ import {
   OPTIMISTIC_RECEIPT_MAX_MS,
   SERVER_OBSERVATION_MAX_MS,
   STREAM_OBSERVATION_MAX_MS,
+  TURN_END_LEDGER_LAG_MS,
   countLiveInboxPrompts,
   projectWorking,
   workingExpiryAtMs,
@@ -668,6 +669,41 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
     });
 
     expect(projection).toMatchObject({ state: 'working' });
+  });
+
+  test('a RETRY does not un-busy a live turn — the frame stops outranking the ledger', () => {
+    // `session.error` is relayed into the status slot as `idle` ("errors
+    // terminate the response"), and OpenCode emits it while it is RETRYING a
+    // provider — a 429 backoff, a transient upstream 5xx — with the turn still
+    // running. Trusting any idle frame for the stream's whole 45s life
+    // therefore dropped the composer out of `working` mid-turn and held it
+    // there until the next `busy` frame: the reported "it keeps stopping
+    // visually, the chat input doesn't stay connected".
+    //
+    // Past `TURN_END_LEDGER_LAG_MS` a ledger row that is STILL open outranks
+    // the frame again, so a retry blip self-heals in seconds.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 + 60_000 + TURN_END_LEDGER_LAG_MS + 500 },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 60_000 + TURN_END_LEDGER_LAG_MS + 600,
+    });
+
+    expect(projection).toMatchObject({ state: 'working', source: 'server' });
+  });
+
+  test('the projection re-evaluates when the frame stops outranking the ledger', () => {
+    // The rule moves with `nowMs` and nothing else re-renders at that instant,
+    // so the expiry timer has to name it — exactly why the other bounds are
+    // listed there.
+    const inputs = {
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 + 60_100 },
+      stream: { type: 'idle' as const, atMs: T0 + 60_000 },
+      nowMs: T0 + 60_200,
+    };
+    expect(projectWorking(inputs).state).toBe('idle');
+    expect(workingExpiryAtMs(inputs)).toBe(T0 + 60_000 + TURN_END_LEDGER_LAG_MS);
   });
 
   test('a turn with no start instant keeps the ledger its authority', () => {
