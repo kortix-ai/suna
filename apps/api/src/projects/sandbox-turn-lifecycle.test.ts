@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockConfigModule } from './reaping/test-support/mock-config';
+import { WIRE_MESSAGE_ID } from './wire-message-id';
 
 let executed: string[] = [];
 let executeResults: unknown[] = [];
@@ -87,7 +88,7 @@ describe('daemon-delivered initial turn authority', () => {
   test('mints one token-bound delivering record and OpenCode message identity', () => {
     const turn = prepareInitialSandboxTurn(1234);
     expect(turn.token).toBeString();
-    expect(turn.messageId).toStartWith('msg_');
+    expect(turn.messageId).toMatch(WIRE_MESSAGE_ID);
     expect(turn.startedAtMs).toBe(1234);
     expect(initialSandboxTurnMetadata(turn)).toEqual({
       token: turn.token,
