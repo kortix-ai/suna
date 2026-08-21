@@ -837,25 +837,18 @@ function SessionTurnImpl({
   // What the X removes: the row while it is listed, the message's own wire id
   // after the row left the list (the DELETE route resolves `msg_…` handles) —
   // for any bubble the agent has not reached.
-  //
-  // `interrupted` IS such a bubble, and it used to be excluded here. That left
-  // the one state with no way out: a Stop that lands before a step opens under
-  // a forwarded prompt parks it in the runtime's transcript captioned "Queued —
-  // runs with your next message", with no run control and no remove — three of
-  // them stacked up in the reported case, and the only escape was to send an
-  // unrelated message. The DELETE route already handles it: it resolves the
-  // `msg_…` handle, finds the forwarded row, and `cancelForwardedPrompt` takes
-  // the message back out of an idle box, which is exactly the state a Stop
-  // leaves it in.
   const queueRemovalId =
-    onQueueRemove && statusState && statusState !== 'failed'
+    onQueueRemove && statusState && statusState !== 'interrupted' && statusState !== 'failed'
       ? (queueRow?.prompt_id ?? turn.userMessage.info.id)
       : null;
   // Send-now / retry / remove all live in `UserMessageActions` (`leading`).
   // A pending bubble can outlive its inbox row; the X still has to work, so
   // the action id falls back to the user message's own wire id.
   const queueActionId = queueRemovalId ?? queueRow?.prompt_id ?? null;
-  const showQueueActions = Boolean(queueActionId) && Boolean(statusState);
+  const showQueueActions =
+    Boolean(queueActionId) &&
+    (Boolean(queueRemovalId) ||
+      Boolean(queueRow && queueState && queueState !== 'interrupted'));
 
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;
@@ -2682,12 +2675,25 @@ export function SessionChat({
       try {
         removed = await promptInbox.remove(id);
       } catch (error) {
-        // A prompt already on the wire cannot be cancelled — the server
-        // answers 409 rather than lying about it.
+        // Branch on the STATUS, and say what the server said.
+        //
+        // This used to test `/409/` against `error.message` — but `ApiError`
+        // carries the server's prose in `message` and the code in `status`, so
+        // that regex could never match. Every failure rendered the same
+        // "Could not remove that prompt", including the 409 that has a precise
+        // explanation ("Prompt is already being answered") and the 404 that
+        // means something entirely different. Two unrelated causes behind one
+        // dead-end string is why this looked like the button simply never
+        // worked.
+        const status = (error as { status?: number } | null)?.status;
+        const detail =
+          error instanceof Error && error.message.trim() ? error.message.trim() : null;
         errorToast(
-          error instanceof Error && /409/.test(error.message)
-            ? 'The agent is already answering that prompt'
-            : 'Could not remove that prompt',
+          status === 409
+            ? (detail ?? 'The agent is already answering that prompt')
+            : status === 404
+              ? 'That prompt is no longer in the queue'
+              : (detail ?? 'Could not remove that prompt'),
         );
         return;
       }

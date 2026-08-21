@@ -7,25 +7,17 @@ import type { SessionLifecycleCommandRow } from './store';
 /**
  * The inbox's admission gate.
  *
- * THE INBOX OWNS THE QUEUE. A prompt stays a durable row — listed, ordered,
- * visible and removable — until the runtime is actually free, and only then is
- * it delivered. One prompt of a session on the wire at a time, oldest first.
+ * A prompt sits in `session_lifecycle_commands` only until it is this session's
+ * TURN TO BE SENT — not until the session is idle. A live turn does NOT hold a
+ * prompt back: it is forwarded at once, OpenCode persists it (the bubble lands
+ * in the transcript within seconds) and answers everything queued behind the
+ * turn in flight as soon as that turn ends. That is what "the queue sends in
+ * between" means to the user: whatever was typed while the agent worked is
+ * already WITH the agent, and it picks all of it up together.
  *
- * Forwarding into a LIVE turn was the alternative, and it is what made the
- * queue uncontrollable. OpenCode parents each STEP on the newest user message,
- * so a prompt handed over mid-turn is adopted by the running turn almost at
- * once. MEASURED 2026-08-21 against a real sandbox: a prompt queued behind a
- * running turn read `delivering` within one request of being posted, and
- * `DELETE .../prompts/:id` then answered 409 "Prompt is already being
- * answered" — the Remove button was dead in the only situation anyone would
- * use it. The row also left `GET .../prompts` at acceptance, so the queue could
- * not be rendered honestly either, and placing a message inside someone else's
- * turn needed a whole clock-skew id-minting layer plus a strand reconciler to
- * repair what it broke.
- *
- * The cost is deliberate and known: a batch of queued prompts is no longer
- * folded into ONE model step. Each gets its own turn, in the order it was sent.
- * That is the trade for a queue the user can actually see and control.
+ * What is left is ORDER, and only order: one prompt of a session on the wire at
+ * a time, oldest first, so the user's own messages reach OpenCode in the order
+ * they were typed.
  *
  * WAITING IS NOT POLLING. A refused row does not sit out a backoff clock: the
  * instant the blocking delivery lands (engine) or a turn ends (turn-stream),
@@ -63,9 +55,10 @@ function admissionRefusals(result: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-/** Why a prompt is still sitting in the inbox. Written into
- *  `result.admission_reason` and served as `GET .../prompts`' `reason`. */
-export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
+/** The one thing that still holds a prompt back. Kept as a union because it is
+ *  written into `result.admission_reason` and served as `GET .../prompts`'
+ *  `reason`, where a second value may well appear again. */
+export type InboxAdmissionReason = 'older_prompt_pending';
 
 export type InboxAdmission =
   | { admit: true }
@@ -80,8 +73,11 @@ export type InboxAdmission =
  * its metadata still says. Pure over the two fields, so the truth table is
  * testable without a database.
  *
- * ADMISSION READS THIS: it is the hold. `GET .../turn` and
- * `settleOrphanedSandboxTurns` share the same predicate so they cannot drift.
+ * ADMISSION NO LONGER READS THIS — a live turn does not hold a prompt back. It
+ * stays here, and stays exported, because `GET .../turn` and
+ * `settleOrphanedSandboxTurns` share the status filter and would drift apart if
+ * each re-expressed it, and because the DRAIN still asks the question for a
+ * different purpose — see `sessionHoldsLiveTurn` below.
  */
 export function sessionHoldsTurnAuthority(
   box: { status: string; metadata: Record<string, unknown> | null } | null,
@@ -94,8 +90,11 @@ export function sessionHoldsTurnAuthority(
 /**
  * The same question, against the database, for one session.
  *
- * Admission uses the in-process `deps.readSandbox` form; this one serves the
- * drain, which asks the same question on its own path.
+ * ADMISSION still does not ask it — a live turn no longer holds a prompt back.
+ * The DRAIN does, and for a different reason: a prompt delivered into a live
+ * turn has to be re-minted first, because the turn has been writing higher wire
+ * ids ever since it started and OpenCode reads a lower id as already answered.
+ * See `executeQueuedContinue`.
  */
 export async function sessionHoldsLiveTurn(sessionId: string): Promise<boolean> {
   // `session_sandboxes.session_id` is UNIQUE, so this is the session's one box.
@@ -174,26 +173,9 @@ const liveDeps: InboxAdmissionDeps = {
   },
 };
 
-export interface AdmitInboxPromptOptions {
-  /**
-   * This row is being delivered as part of its session's own claimed batch.
-   *
-   * Skips the ORDER checks only. The lane claimed every due row of the session
-   * together and delivers them in order, so "is an older prompt of this session
-   * pending?" would refuse a row for the very siblings it is going out with.
-   *
-   * It does NOT skip the live-turn hold. That gate is about the RUNTIME being
-   * free, which a batch cannot change, and letting the batch lane past it is
-   * what still delivered a queued prompt into a running turn after the hold
-   * was added.
-   */
-  batch?: boolean;
-}
-
 export async function admitInboxPrompt(
   row: SessionLifecycleCommandRow,
   deps: InboxAdmissionDeps = liveDeps,
-  options: AdmitInboxPromptOptions = {},
 ): Promise<InboxAdmission> {
   // A row with no session cannot be ordered or gated. Admit it so the drain
   // reaches its own honest failure instead of requeueing it for ever.
@@ -206,24 +188,13 @@ export async function admitInboxPrompt(
     refusals,
   );
 
-  // THE HOLD, and it is checked FIRST because it binds every lane. A live turn
-  // keeps every prompt in the inbox — including a promoted one ("send now"
-  // decides which message goes first, it cannot make the runtime free) and
-  // including a batch member (the batch bypass is about ORDER, and a batch
-  // cannot free the runtime either). Released by the turn ending: `turn-stream`
-  // `end` closes the ledger row and kicks `promoteNextInboxRow`, so this is a
-  // state change and not a poll.
-  if (sessionHoldsTurnAuthority(await deps.readSandbox(row.sessionId))) {
-    return { admit: false, reason: 'turn_active', retryAfterMs: orderBackoffMs };
-  }
-
   // ONE PROMPT OF A SESSION ON THE WIRE AT A TIME, and this check binds even a
   // promoted row. A claimed row spends up to READY_DEADLINE_MS (5 min) inside
   // `continueSession` waiting for a cold box, with no message written for any
   // of it. Admitting a second prompt into that window races two deliveries of
   // one session, and OpenCode orders what it receives by ARRIVAL — so the loser
   // of that race is the message the user typed FIRST.
-  if (!options.batch && (await deps.hasInFlightPrompt(row.sessionId, row.commandId))) {
+  if (await deps.hasInFlightPrompt(row.sessionId, row.commandId)) {
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
   }
 
@@ -233,7 +204,6 @@ export async function admitInboxPrompt(
   // about which message goes first.
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
   if (
-    !options.batch &&
     !promoted &&
     (await deps.hasOlderPendingPrompt(row.sessionId, row.createdAt, row.commandId))
   ) {

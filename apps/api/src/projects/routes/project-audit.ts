@@ -7,6 +7,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { approvalPageUrl } from '../../setup-links/token';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { auditDb } from '../../shared/audit-db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
@@ -285,7 +286,7 @@ projectsApp.openapi(
       return c.json({ accepted: parsed.accepted, inserted: 0, duplicates: 0, suppressed });
     }
 
-    const inserted = await db
+    const inserted = await auditDb()
       .insert(auditEvents)
       .values(toInsert)
       .onConflictDoNothing()
