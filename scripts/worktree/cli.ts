@@ -21,7 +21,7 @@ import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
   lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, worktreeAddArgs,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
-  writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
+  writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, probeApiOrigin, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
   ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS,
   killTree, stackRoots, stackPids, listenersOn, psTable, cwdTable,
@@ -538,7 +538,11 @@ async function cmdStart(a: Args) {
   }
   console.log(pc.dim('   (Ctrl+C stops the dev servers cleanly)\n'));
 
-  const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl: tunnel?.url, stripeWebhookSecret: stripe?.secret, billing }) }, stdout: 'inherit', stderr: 'inherit' });
+  // Respawnable: the API bakes KORTIX_URL at spawn, so rotating a dead tunnel
+  // means starting it again with the new one. See the watchdog below.
+  const spawnApi = (kortixUrl: string | undefined) =>
+    Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl, stripeWebhookSecret: stripe?.secret, billing }) }, stdout: 'inherit', stderr: 'inherit' });
+  let api = spawnApi(tunnel?.url);
   const gateway = Bun.spawn(['pnpm', '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });
   const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing }) }, stdout: 'inherit', stderr: 'inherit' });
   void waitForGateway(e.ports.gateway, gateway);
@@ -568,7 +572,59 @@ async function cmdStart(a: Args) {
   };
   process.on('SIGINT', () => { void shutdown(); });
   process.on('SIGTERM', () => { void shutdown(); });
-  await Promise.race([api.exited, gateway.exited, web.exited]);
+
+  /**
+   * Quick tunnels rot silently: the hostname stops resolving while
+   * `cloudflared` keeps running, so nothing notices without probing it. Every
+   * sandbox call-back then fails — the API answers
+   * `KORTIX_URL_UNREACHABLE` and the UI says "Cannot connect to API" — and the
+   * only cure was restarting the whole stack by hand. It happened FIVE times in
+   * one session on 2026-08-21.
+   *
+   * `pnpm dev` has had `start_tunnel_watchdog` for exactly this
+   * (`scripts/dev-local.sh`); worktrees never got one, which is the whole gap.
+   * Probe once a minute, and only blame the tunnel when the LOCAL api is
+   * healthy — otherwise the stack is down for some other reason and rotating
+   * would just add noise. Two consecutive misses, then rotate and respawn the
+   * API on the new URL.
+   *
+   * Sessions whose sandboxes baked the OLD url cannot be saved — that env is
+   * gone with it — but everything created afterwards works.
+   */
+  let restartingApi = false;
+  if (tunnel) {
+    void (async () => {
+      let misses = 0;
+      while (!stopping) {
+        await Bun.sleep(60_000);
+        if (stopping || !tunnel) return;
+        if (!(await probeApiOrigin(`http://localhost:${e.ports.api}`, 2_000))) continue;
+        if (await probeApiOrigin(tunnel.url)) { misses = 0; continue; }
+        if (++misses < 2) continue;
+        misses = 0;
+        warn(`sandbox callback ${tunnel.url} is dead — rotating the tunnel`);
+        try { tunnel.proc.kill(); } catch {}
+        const next = await startTunnel(e.ports.api);
+        if (!next) { warn('could not mint a replacement tunnel — will retry'); continue; }
+        tunnel = next;
+        restartingApi = true;
+        try { api.kill(); } catch {}
+        await Promise.race([api.exited, Bun.sleep(5_000)]);
+        api = spawnApi(tunnel.url);
+        restartingApi = false;
+        ok(`sandbox callback restored: KORTIX_URL → ${tunnel.url}`);
+      }
+    })();
+  }
+
+  // Poll rather than race: `api` is replaced by the watchdog, and a race latches
+  // onto the process object it was handed. An intentional restart must not read
+  // as the stack going down.
+  while (!stopping) {
+    await Bun.sleep(1_000);
+    if (restartingApi) continue;
+    if (api.exitCode !== null || gateway.exitCode !== null || web.exitCode !== null) break;
+  }
   await shutdown();
 }
 
