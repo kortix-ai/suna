@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { configureKortix } from '../core/http/config';
+import { INBOX_OBSERVATION_MAX_MS } from '../core/session/working';
 import type { SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
   applyOptimisticPrompt,
@@ -43,6 +44,41 @@ describe('sessionPromptsPollMs', () => {
     expect(sessionPromptsPollMs(2, 500)).toBe(500);
     expect(sessionPromptsPollMs(0, 500)).toBe(SESSION_PROMPTS_IDLE_POLL_MS);
   });
+
+  /**
+   * The cadence is picked from the PREVIOUS result, and that is what opened the
+   * hole this covers.
+   *
+   * `notePromptAccepted` records a believed pending row the instant
+   * `POST .../prompts` returns, because `GET .../turn` cannot see the send yet
+   * and the composer must not swap Stop back to Send underneath it. That belief
+   * is an OBSERVATION like any other, so `projectWorking` expires it at
+   * `INBOX_OBSERVATION_MAX_MS` (10s) — and only a list read can refresh it.
+   *
+   * MEASURED on the local stack 2026-08-21: a first read landed before the row
+   * existed, answered zero, and locked the cadence to `SESSION_PROMPTS_IDLE_POLL_MS`
+   * (15s). Nothing then refreshed the belief inside its 10s life, and the
+   * projection dropped to `idle` at 23:44:18.284 with `inbox=1@10004` while the
+   * user's prompt was still pending — a guaranteed 5s hole between the two
+   * constants, in which the composer offers Send for a prompt already queued.
+   *
+   * The list length alone cannot close it, because at that moment the list is
+   * honestly empty. What the tab BELIEVES is pending has to count too.
+   */
+  test('a believed pending row polls fast even when the fetched list is empty', () => {
+    expect(sessionPromptsPollMs(0, undefined, 1)).toBe(SESSION_PROMPTS_POLL_MS);
+  });
+
+  test('the cadence that refreshes the belief must outlive nothing — it must beat the bound', () => {
+    // The invariant behind the test above, stated so a future change to either
+    // constant cannot silently reopen the hole.
+    expect(sessionPromptsPollMs(0, undefined, 1)).toBeLessThan(INBOX_OBSERVATION_MAX_MS);
+    expect(sessionPromptsPollMs(1)).toBeLessThan(INBOX_OBSERVATION_MAX_MS);
+  });
+
+  test('no belief and no rows still means the idle floor', () => {
+    expect(sessionPromptsPollMs(0, undefined, 0)).toBe(SESSION_PROMPTS_IDLE_POLL_MS);
+  });
 });
 
 /**
@@ -82,6 +118,7 @@ describe('noteInboxObservation', () => {
 
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 500 });
   });
+
 });
 
 /**

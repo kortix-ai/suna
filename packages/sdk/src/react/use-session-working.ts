@@ -45,6 +45,24 @@ export function workingPollMs(projection: WorkingProjection): number {
   return projection.state === 'working' ? WORKING_POLL_ACTIVE_MS : WORKING_POLL_IDLE_MS;
 }
 
+/**
+ * Which side of a turn boundary a status frame is on.
+ *
+ * The runtime does NOT emit one frame per turn. Measured mid-turn on the local
+ * stack, it alternated `busy` → `retry` → `busy` about every 140ms, and an
+ * effect keyed on the observation INSTANT therefore re-invalidated `/turn` and
+ * `/prompts` at that rate, once per mount. A `busy`→`retry` flip is not news
+ * about whether a turn is open; only crossing between `idle` and not-idle is.
+ *
+ * `'none'` is deliberately distinct from `'idle'`: silence is not an
+ * observation, and collapsing them would stop the FIRST frame of a turn from
+ * reading as a change.
+ */
+export function streamTurnPhase(status: SessionStatus | undefined): 'idle' | 'active' | 'none' {
+  if (!status) return 'none';
+  return status.type === 'idle' ? 'idle' : 'active';
+}
+
 /** One `GET .../turn` answer plus the instant the read was ISSUED. Stamping at
  *  issue rather than arrival is what lets the projection tell "this read is
  *  older than the send" from "this read answers the send". */
@@ -207,16 +225,19 @@ export function useSessionWorking(
   // input with a life shorter than its own poll interval, and the turn ending
   // is exactly when a `waiting` row becomes a running one.
   const queryClient = useQueryClient();
-  const streamAtMs = stream?.atMs ?? 0;
+  // Keyed on the PHASE, not on the observation instant. The instant changes on
+  // every frame, and the runtime emits many per turn — see `streamTurnPhase`
+  // for the measured `busy`/`retry` oscillation this stops re-fetching on.
+  const streamPhase = streamTurnPhase(stream?.status);
   useEffect(() => {
-    if (!canRead || !streamAtMs) return;
+    if (!canRead || streamPhase === 'none') return;
     void queryClient.invalidateQueries({
       queryKey: qk.project.sessionTurn(projectId, sessionId),
     });
     void queryClient.invalidateQueries({
       queryKey: qk.project.sessionPrompts(projectId, sessionId),
     });
-  }, [canRead, projectId, sessionId, streamAtMs, queryClient]);
+  }, [canRead, projectId, sessionId, streamPhase, queryClient]);
 
   // Re-evaluated on every render because `nowMs` moves — the projection is
   // pure, so this costs one object and cannot drift from the poll's own view.

@@ -12,6 +12,76 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-21 — session `session-busy-flicker` — the ledger is not timely about the END of a turn — DONE
+
+**Files:** `core/session/working.ts` (`endedByRuntime`, all-rows `openTurn`),
+`react/use-session-working.ts` (+`streamTurnPhase`, phase-keyed invalidation),
+`react/use-session-prompts.ts` (`sessionPromptsPollMs` believed-pending arg)
++ 4 test files. **No public surface change** — both snapshots are byte-identical.
+
+**What.** The agent finished, the reply was on screen, and the spinner and Stop
+button came BACK about 200ms later and stayed for up to 18s.
+
+`projectWorking` ranked its observations by wall-clock: a newer read beat an
+older frame. That is wrong here, because the two observers do not learn the
+same fact at the same time. `session.idle` comes straight off the runtime over
+SSE; the ledger row is closed by a SEPARATE daemon relay
+(`POST .../turn-stream` `kind:"end"`). The idle frame ALSO triggers an immediate
+`/turn` refetch (`use-session-working.ts`), and that refetch is stamped after
+the frame while still reporting the turn the frame just ended → `working`.
+
+MEASURED, local stack, five consecutive turns: ledger lag behind the runtime of
+**6.9s, 10s, 15.2s and 18.5s**, and only ONE of the five turns produced a relay
+POST at all — the rest were closed late by a reconciliation sweep. One captured
+transition: idle frame 00:03:59.964 → `working` again at 00:04:00.150 (read
+stamped +44ms, turn still `active`) → idle at 00:04:15.248. 15.1s of false busy.
+
+**Fix.** A turn whose `started_at` PREDATES the freshest idle frame is the turn
+that frame ended, and no ledger read may report it as working. A turn that
+started after the frame is a new one the frame knows nothing about and keeps the
+ledger's full authority — so a queued prompt draining, a trigger, or a second
+device still lights the composer immediately, with no window and no delay. The
+rule scans every open row, not `turns[0]`: the ledger holds two open turns while
+a prompt is forwarded under a running one, and the list is not newest-first.
+`serverOpenTurnToken` deliberately does NOT move — it answers "does the control
+plane still hold authority", which is what an admission-gate-less `/` command
+checks.
+
+**Also.** (a) `streamTurnPhase` keys the SSE-triggered invalidation on the
+idle/active PHASE instead of the observation instant: the runtime alternates
+`busy`→`retry` about every 140ms mid-turn (measured), and each flip was
+re-invalidating `/turn` AND `/prompts`, once per mount, three mounts per session.
+(b) `sessionPromptsPollMs` now counts what the tab BELIEVES is pending, not only
+the fetched list length — a first read that landed before the row existed
+answered zero, locked the 15s idle cadence, and let the 10s
+`INBOX_OBSERVATION_MAX_MS` belief die under a prompt that was still queued
+(captured: `inbox=1@10004` → `idle`).
+
+**Tried and reverted.** Excluding FORWARDED (`delivering`) inbox rows on the same
+idle frame. A prompt queued behind a running turn is handed to OpenCode early and
+sits in `delivering` ACROSS the turn boundary, so that frame says nothing about
+it; the change put the composer back on Send for 13.8s with the user's queued
+prompt still waiting. Reverted whole, including its `countForwardedInboxPrompts`
+export — the hypothesis it was built on (rows closing late) is also false: rows
+leave `GET .../prompts` at acceptance, ~1.7s after the turn opens.
+
+**Open, server side, NOT fixed here.** The daemon's `kind:"end"` relay is
+missing for most turns on the local stack, which is what makes the ledger 7-18s
+late and also delays `reconcileForwardedTurnsAtEnd` — a prompt queued behind a
+running turn was stranded and re-queued, starting 13.6s after the turn ahead of
+it ended. The client is now correct regardless, but the relay gap is worth its
+own investigation.
+
+**Verification.** Real turns against a live Platinum sandbox, UI sampled at 100ms
+on `[data-testid="session-busy-indicator"]` + the Stop control: **0 busy
+reversals in 1133 samples** on a turn whose ledger lagged 18.5s. Before the fix
+the same measurement showed idle→working→idle with a 15.1s false-busy leg.
+
+**Gates:** `typecheck` clean (both projects) · `bun test --isolate src`
+2402 pass / 2 skip / 0 fail · `smoke:install` — see below.
+
+---
+
 ### 2026-08-20 — session `session-ux` — a session with no project never reads a project-scoped inbox — DONE
 
 **Files:** `react/use-session-prompts.ts` (+`readSessionPromptsInbox`, gated

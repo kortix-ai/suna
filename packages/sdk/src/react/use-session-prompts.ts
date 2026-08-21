@@ -45,9 +45,25 @@ export const SESSION_PROMPTS_POLL_MS = 1_000;
  *  prompt handed back by the server appears while the user is still looking. */
 export const SESSION_PROMPTS_IDLE_POLL_MS = 15_000;
 
-/** The cadence for a list of `count` prompts. Pure, so the floor is testable. */
-export function sessionPromptsPollMs(count: number, pollMs?: number): number {
-  return count > 0 ? (pollMs ?? SESSION_PROMPTS_POLL_MS) : SESSION_PROMPTS_IDLE_POLL_MS;
+/**
+ * The cadence for a list of `count` prompts. Pure, so the floor is testable.
+ *
+ * `believedPending` is what this TAB thinks is in flight — the row
+ * `notePromptAccepted` recorded when `POST .../prompts` returned, before any
+ * list read could see it. It counts toward the cadence because the belief is an
+ * observation with a life (`INBOX_OBSERVATION_MAX_MS`) and only a list read
+ * refreshes it: a first read that landed before the row existed answered zero,
+ * locked the cadence to the 15s idle floor, and let a 10s belief die under a
+ * prompt that was still queued. The list length alone cannot close that hole,
+ * because at that instant the list is honestly empty.
+ */
+export function sessionPromptsPollMs(
+  count: number,
+  pollMs?: number,
+  believedPending = 0,
+): number {
+  const live = Math.max(count, believedPending);
+  return live > 0 ? (pollMs ?? SESSION_PROMPTS_POLL_MS) : SESSION_PROMPTS_IDLE_POLL_MS;
 }
 
 /**
@@ -222,6 +238,11 @@ export function useSessionPrompts(
   const queryClient = useQueryClient();
   const enabled = options?.enabled !== false && !!projectId && !!sessionId;
   const key = qk.project.sessionPrompts(projectId ?? '', sessionId ?? '');
+  // What this tab believes is in flight, so the cadence keeps the belief the
+  // working projection stands on alive — see `sessionPromptsPollMs`.
+  const believedPending = useSessionWorkingStore(
+    (state) => (sessionId ? (state.inbox[sessionId]?.pending ?? 0) : 0),
+  );
 
   const query = useQuery({
     queryKey: key,
@@ -233,7 +254,8 @@ export function useSessionPrompts(
         queryClient.getQueryData<SessionPrompt[]>(key),
       ),
     // Two cadences, never `false` — see the note above.
-    refetchInterval: (q) => sessionPromptsPollMs(q.state.data?.length ?? 0, options?.pollMs),
+    refetchInterval: (q) =>
+      sessionPromptsPollMs(q.state.data?.length ?? 0, options?.pollMs, believedPending),
     // Per-query, because the host disables focus refetching globally. Coming
     // back to a tab is the moment a prompt the server handed back while it was
     // hidden has to be on screen.

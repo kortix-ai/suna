@@ -33,9 +33,19 @@ function turn(overrides: Partial<SessionTurn> = {}): SessionTurn {
  */
 describe('projectWorking', () => {
   test('a turn the server is holding open outranks every OLDER observation', () => {
+    // The turn STARTS AFTER the last idle frame — which is what "the ledger
+    // knows something the stream has not reported yet" actually looks like on
+    // the wire. This test used to start the turn at T0, BEFORE the T0+1s idle
+    // frame, and still assert `working`; that is the defect this file's
+    // "a runtime idle frame ends the turn it names" block was written for, in
+    // miniature, so the scenario moved rather than the intent.
+    const started = T0 + 2_000;
     const projection = projectWorking({
       optimistic: { messageId: 'msg_99', atMs: T0 + 5_000 },
-      server: { turns: [turn()], atMs: T0 + 4_000 },
+      server: {
+        turns: [turn({ started_at: new Date(started).toISOString() })],
+        atMs: T0 + 4_000,
+      },
       stream: { type: 'idle', atMs: T0 + 1_000 },
       nowMs: T0 + 5_000,
     });
@@ -44,7 +54,7 @@ describe('projectWorking', () => {
       state: 'working',
       source: 'server',
       turnId: 'msg_01',
-      since: T0,
+      since: started,
       serverOpenTurnToken: 'tt-1',
     });
   });
@@ -569,6 +579,172 @@ function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
     ...overrides,
   };
 }
+
+/**
+ * The control-plane ledger is not timely about the END of a turn, and the
+ * projection used to believe it was.
+ *
+ * MEASURED on the local stack, 2026-08-21, one ordinary composer turn
+ * (session 08cf8a74, turn token 05e2a176):
+ *
+ *   00:02:55.804  ledger opens the turn
+ *   00:03:59.964  the RUNTIME's `session.idle` frame reaches the tab   → idle
+ *   00:04:00.150  the refetch that frame itself triggers lands, stamped
+ *                 44ms AFTER the frame, and still reports the turn `active`
+ *                                                                     → working
+ *   00:04:15.132  the ledger finally records `ended_at`
+ *   00:04:15.248  the next poll reports no turns                       → idle
+ *
+ * 15.1 seconds of "working" after the reply was already on screen — the
+ * spinner and the Stop button came back a fifth of a second after they left.
+ * The daemon relay that normally closes the row (`POST .../turn-stream`
+ * `kind:"end"`) never arrived for that turn at all; a reconciliation sweep
+ * closed it 15s later. When the relay DOES arrive it lands ~200ms after the
+ * frame — still inside the window the frame's own refetch lands in.
+ *
+ * So the rule cannot be "whichever observation is newer wins". A read ISSUED
+ * after the frame is still ABOUT a turn the frame already ended. The turn's
+ * own `started_at` is what separates them: a turn that began BEFORE the idle
+ * frame is the turn that frame ended.
+ */
+describe('projectWorking — a runtime idle frame ends the turn it names', () => {
+  test('an open ledger turn that STARTED BEFORE the newest idle frame is over', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      // The read is NEWER than the frame by 44ms — exactly the measured race —
+      // and it still reports the turn the frame just ended.
+      server: { turns: [turn({ started_at: new Date(T0).toISOString() })], atMs: T0 + 60_044 },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 60_200,
+    });
+
+    expect(projection.state).toBe('idle');
+  });
+
+  test('a turn that started AFTER the idle frame is a NEW turn and still works', () => {
+    // The whole reason the rule keys on `started_at` instead of a time window:
+    // a queued prompt draining into a fresh turn must light the composer up
+    // again immediately, even though the last frame this tab saw said idle.
+    const projection = projectWorking({
+      optimistic: null,
+      server: {
+        turns: [turn({ turn_token: 'tt-2', started_at: new Date(T0 + 61_000).toISOString() })],
+        atMs: T0 + 61_500,
+      },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 61_600,
+    });
+
+    expect(projection).toMatchObject({ state: 'working', source: 'server' });
+  });
+
+  test('a live turn behind a spent one still reports working', () => {
+    // The ledger holds more than one open row whenever a prompt is forwarded
+    // while another turn runs, and the list is not ordered newest-first.
+    // Measured on the local stack: `turns: [B@00:28:56, A@00:28:22]`. Reading
+    // only `turns[0]` would let the spent row decide for the live one.
+    const projection = projectWorking({
+      optimistic: null,
+      server: {
+        turns: [
+          turn({ turn_token: 'spent', started_at: new Date(T0).toISOString() }),
+          turn({ turn_token: 'live', started_at: new Date(T0 + 61_000).toISOString() }),
+        ],
+        atMs: T0 + 61_500,
+      },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 61_600,
+    });
+
+    expect(projection).toMatchObject({ state: 'working', source: 'server' });
+  });
+
+  test('a BUSY frame never suppresses the ledger — only an idle one ends a turn', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 + 60_044 },
+      stream: { type: 'busy', atMs: T0 + 60_000 },
+      nowMs: T0 + 60_200,
+    });
+
+    expect(projection).toMatchObject({ state: 'working' });
+  });
+
+  test('a turn with no start instant keeps the ledger its authority', () => {
+    // `started_at` is null for a legacy `activeTurn` row. Nothing can be ranked
+    // against the frame there, and inventing an order would hide a live turn.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn({ started_at: null as unknown as string })], atMs: T0 + 60_044 },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 60_200,
+    });
+
+    expect(projection).toMatchObject({ state: 'working' });
+  });
+
+  test('an idle frame too old to decide anything stops suppressing the ledger', () => {
+    // The suppression borrows the stream's OWN freshness bound rather than
+    // inventing a second one: once a frame is too stale to answer, it is too
+    // stale to veto, and a turn the ledger still holds open is the only
+    // observation left.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 + 60_000 + STREAM_OBSERVATION_MAX_MS + 1_000 },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 60_000 + STREAM_OBSERVATION_MAX_MS + 1_100,
+    });
+
+    expect(projection).toMatchObject({ state: 'working', source: 'server' });
+  });
+
+  test('the ledger\'s token survives the frame — only the WORKING answer moves', () => {
+    // `serverOpenTurnToken` answers a different question from `state`: whether
+    // the control plane still holds authority over the turn. A `/` command goes
+    // straight at OpenCode with no admission gate in front of it and must see
+    // that authority for as long as the row exists, even in the window where
+    // the runtime's frame has correctly decided the session is idle.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 + 60_044 },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 60_200,
+    });
+
+    expect(projection.state).toBe('idle');
+    expect(projection.serverOpenTurnToken).toBe('tt-1');
+  });
+});
+
+/**
+ * A prompt queued BEHIND a running turn is not ended by that turn's idle frame.
+ *
+ * This block exists because the opposite was implemented first and measured
+ * wrong. The control plane forwards a queued prompt to OpenCode early — the row
+ * reads `delivering` from the moment it is handed over — and OpenCode runs it
+ * after the turn in front of it finishes. So the row sits in `delivering`
+ * ACROSS the turn boundary, and the idle frame that ends the turn ahead of it
+ * says nothing whatsoever about it.
+ *
+ * MEASURED on the local stack 2026-08-21, prompt B queued behind prompt A:
+ * A ended at 00:24:04.7, B did not start until 00:24:18.9. Excluding forwarded
+ * rows on the idle frame put the composer back on Send for those 13.8 seconds
+ * with B still waiting — the queue's own version of the flicker this branch
+ * removes. Every live row counts, whether or not it has been forwarded.
+ */
+describe('projectWorking — a queued prompt outlives the turn in front of it', () => {
+  test('an inbox row still outranks the idle frame that ended the previous turn', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      inbox: { pending: 1, atMs: T0 + 59_000 },
+      server: { turns: [], atMs: T0 + 59_000 },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      nowMs: T0 + 60_200,
+    });
+
+    expect(projection).toMatchObject({ state: 'working', source: 'server' });
+  });
+});
 
 describe('countLiveInboxPrompts', () => {
   test('counts the rows the server is still going to run', () => {
