@@ -164,6 +164,14 @@ export async function preparePreviewHostWsUpgrade(
   if (!resolved.verified) return { ok: false, status: 403, message: 'unsigned preview host' };
   const { target } = resolved;
 
+  // A WebSocket handshake is a cross-site-capable, cookie-bearing request that
+  // no CORS policy governs: evil.com can open one and the browser attaches the
+  // `SameSite=None` preview cookie. Require the browser's own same-site answer.
+  const wsSite = req.headers.get('sec-fetch-site');
+  if (wsSite && wsSite !== 'same-origin' && wsSite !== 'none') {
+    return { ok: false, status: 403, message: 'cross-site websocket to a preview' };
+  }
+
   let session = sessionFromCookies(req, target);
   if (!session) {
     // No cookie yet — accept the same one-shot credential the HTTP handshake

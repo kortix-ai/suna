@@ -52,13 +52,38 @@ mock.module('../shared/session-public-shares', () => ({
   // refuses — the test asserted an unreachable branch.
   PUBLIC_SHARE_BLOCKED_PORTS: new Set<number>([22, 4096, 8000, 3211]),
   STATIC_FILE_SHARE_PORT: 3211,
-  resolvePublicShare: async (token: string) => shares[token] ?? { ok: false },
+  // Real implementations, not stubs: these decide whether a share may be
+  // written through, so a lenient copy here would test nothing.
+  PUBLIC_SHARE_VIEW_METHODS: new Set(['GET', 'HEAD', 'OPTIONS']),
+  isViewOnlyShare: (share: { mode?: string | null; resourceType?: string | null; filePath?: string | null }) =>
+    share.resourceType === 'file' || !!share.filePath || share.mode !== 'interactive',
+  publicShareToken: (shareId: string) => `kps_${shareId.replaceAll('-', '')}`,
+  resolvePublicShare: async (token: string) =>
+    shares[token] ?? shares[Object.keys(shares)[0] ?? ''] ?? { ok: false },
   touchPublicShare: async () => {},
 }));
 
 const { handlePreviewOriginRequest } = await import('./preview-origin');
+const { mintPreviewSession } = await import('./preview-session');
 
 const HOST = 'p8081-sbx-known.localhost:8008';
+
+/** A real signed cookie for a preview, so cookie-path tests exercise the real verifier. */
+function mintCookieFor(sandboxLabel: string, port: number): string {
+  const token = mintPreviewSession(
+    {
+      kind: 'principal',
+      sandboxLabel,
+      sandboxId: 'sbx_KNOWN',
+      port,
+      userId: 'user-1',
+      callerSessionId: null,
+      sandboxAuthored: false,
+    },
+    3600,
+  );
+  return `__kortix_preview=${token}`;
+}
 
 function request(path: string, init: RequestInit = {}, host = HOST): [Request, URL] {
   const req = new Request(`http://127.0.0.1:8008${path}`, {
@@ -135,11 +160,14 @@ describe('preview origin auth gate', () => {
     expect(principalCalls).toEqual(['nope']);
   });
 
-  test('a CORS preflight is answered before auth', async () => {
+  test('a CORS preflight is answered before auth, but grants nothing to a stranger', async () => {
+    // This test used to assert the Origin was echoed back. That WAS the bug:
+    // with a SameSite=None cookie, echoing any origin plus Allow-Credentials
+    // is a credentialed cross-origin read of someone's preview.
     const [req, url] = request('/api', { method: 'OPTIONS', headers: { Origin: 'https://x.test' } });
     const res = await handlePreviewOriginRequest(req, url);
     expect(res?.status).toBe(204);
-    expect(res?.headers.get('Access-Control-Allow-Origin')).toBe('https://x.test');
+    expect(res?.headers.get('Access-Control-Allow-Origin')).toBeNull();
     expect(principalCalls).toEqual([]);
   });
 
@@ -355,5 +383,82 @@ describe('the blocked-port set applies to the share kind it was written for', ()
       const [req, url] = request('/?public_share=t', {}, `p${port}-sbx-known.localhost:8008`);
       expect((await handlePreviewOriginRequest(req, url))?.status).toBe(401);
     }
+  });
+});
+
+describe('a preview answers only the origins it should', () => {
+  test('an arbitrary site gets NO credentialed CORS grant', async () => {
+    // The cookie is SameSite=None, so echoing Origin back with
+    // Allow-Credentials would hand any website a read of a signed-in user's
+    // preview via fetch(url, {credentials:'include'}).
+    const [req, url] = request('/learn', { headers: { Origin: 'https://evil.example' } });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.headers.get('access-control-allow-origin')).toBeNull();
+    expect(res?.headers.get('access-control-allow-credentials')).toBeNull();
+  });
+
+  test('the Kortix web app IS allowed, and the answer varies by Origin', async () => {
+    // Asserted on a response this module builds itself — the 200 path's CORS
+    // headers come from clientResponseHeaders, which this file mocks away.
+    const [req, url] = request('/api', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://dev.kortix.com' },
+    });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.headers.get('access-control-allow-origin')).toBe('https://dev.kortix.com');
+    expect(res?.headers.get('vary')).toContain('Origin');
+  });
+
+  test('a preflight from an unknown origin is not granted either', async () => {
+    const [req, url] = request('/api', { method: 'OPTIONS', headers: { Origin: 'https://evil.example' } });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(204);
+    expect(res?.headers.get('access-control-allow-origin')).toBeNull();
+  });
+});
+
+describe('the ambient cookie cannot be used for a cross-site write', () => {
+  test('a cross-site POST is refused even with a valid session', async () => {
+    const [req, url] = request('/submit', {
+      method: 'POST',
+      headers: { 'sec-fetch-site': 'cross-site', Authorization: 'Bearer good' },
+    });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(403);
+    expect(forwarded).toBe(0);
+  });
+
+  test('a same-origin POST is forwarded', async () => {
+    const [req, url] = request('/submit', {
+      method: 'POST',
+      headers: { 'sec-fetch-site': 'same-origin', Authorization: 'Bearer good' },
+    });
+    expect((await handlePreviewOriginRequest(req, url))?.status).toBe(200);
+    expect(forwarded).toBe(1);
+  });
+
+  test('a cross-site READ is still allowed — CORS governs whether it can be seen', async () => {
+    const [req, url] = request('/', { headers: { 'sec-fetch-site': 'cross-site', Authorization: 'Bearer good' } });
+    expect((await handlePreviewOriginRequest(req, url))?.status).toBe(200);
+  });
+
+  test('a non-browser client with no Sec-Fetch and no Origin still works', async () => {
+    const [req, url] = request('/submit', { method: 'POST', headers: { Authorization: 'Bearer good' } });
+    expect((await handlePreviewOriginRequest(req, url))?.status).toBe(200);
+  });
+});
+
+describe('the one-shot token never lingers in the address bar', () => {
+  test('a navigation that still carries ?token is bounced clean even WITH a cookie', async () => {
+    // The client appends the token on every render, so a remounting iframe
+    // re-lands the JWT in location.search where same-origin agent code reads it.
+    const cookie = mintCookieFor('sbx-known', 8081);
+    const [req, url] = request('/page?token=good&keep=1', {
+      headers: { 'sec-fetch-dest': 'document', Cookie: cookie },
+    });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(302);
+    expect(res?.headers.get('location')).toBe('/page?keep=1');
+    expect(forwarded).toBe(0);
   });
 });

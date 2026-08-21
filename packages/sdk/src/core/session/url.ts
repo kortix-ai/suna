@@ -399,7 +399,7 @@ function sandboxHostLabel(sandboxId: string): string {
  * quadratically on adversarial input (CodeQL js/polynomial-redos) — the same
  * reason `rewriteLocalhostUrl` strips `apiBaseUrl` this way below.
  */
-function stripTrailingSlashes(value: string): string {
+export function stripTrailingSlashes(value: string): string {
   let end = value.length;
   while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) end--;
   return value.slice(0, end);
@@ -491,11 +491,7 @@ export function rewriteLocalhostUrl(
   // actually on the user's box. Otherwise we always go path-based through the
   // public API base URL (which terminates at whichever ingress fronts the API).
   if (!isBackendOnLocalhost(subdomainOpts.apiBaseUrl)) {
-    // Linear trailing-slash strip — the regex form (/\/+$/) backtracks
-    // quadratically on adversarial input (CodeQL js/polynomial-redos).
-    let baseEnd = subdomainOpts.apiBaseUrl.length;
-    while (baseEnd > 0 && subdomainOpts.apiBaseUrl.charCodeAt(baseEnd - 1) === 47 /* '/' */) baseEnd--;
-    const base = subdomainOpts.apiBaseUrl.slice(0, baseEnd);
+    const base = stripTrailingSlashes(subdomainOpts.apiBaseUrl);
     return `${base}/p/${subdomainOpts.sandboxId}/${port}${safePath}`;
   }
 

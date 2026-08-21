@@ -2,7 +2,21 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["@types/bun"]
+    "types": ["@types/bun"],
+    // `provider-shim-env.test.ts` imports the daemon's egress-shim by relative
+    // path, which pulls the whole daemon tree — including `relay-client.ts` —
+    // into THIS program. That file imports `@kortix/api-contract/secret-relay`,
+    // and resolving it from the daemon's directory depends on where the package
+    // manager happened to put the workspace symlink: a full local install has it
+    // at the repo root, but CI runs `pnpm install --filter "kortix-api..."`,
+    // which never installs the daemon, so nothing resolves by walking up from
+    // `apps/kortix-sandbox-agent-server/` and the typecheck fails there and only
+    // there. A path mapping resolves it from the source tree instead, so this
+    // program no longer cares about the node_modules layout. Mirrors the daemon's
+    // own tsconfig, which maps the same specifier for the same reason.
+    "paths": {
+      "@kortix/api-contract/*": ["../../packages/api-contract/src/*"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"]

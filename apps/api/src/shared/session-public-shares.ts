@@ -16,6 +16,24 @@ export const STATIC_FILE_SHARE_PORT = 3211;
 // Both halves of the opencode port pair — a verified reload swaps which one is
 // live, so blocking only 4096 would leave the conversation API publicly
 // shareable through the other after a single reload. See shared/opencode-ports.
+/**
+ * The methods a view-only share permits. Shared by BOTH proxy edges — the path
+ * form and the preview origin — because a share that is read-only on one and
+ * writable on the other is just writable.
+ */
+export const PUBLIC_SHARE_VIEW_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * True when this share may not be written through, whatever the visitor sends.
+ * Allowlist, not denylist: `mode` is a free-form string on the row, so anything
+ * that is not explicitly `interactive` is read-only, and a future mode cannot
+ * fail open. A FILE share is always read-only — it names one document.
+ */
+export function isViewOnlyShare(share: { mode?: string | null; resourceType?: string | null; filePath?: string | null }): boolean {
+  if (share.resourceType === 'file' || share.filePath) return true;
+  return share.mode !== 'interactive';
+}
+
 export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([
   22,
   ...OPENCODE_PORTS,

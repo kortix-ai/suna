@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { getAuthToken } from '@/lib/auth-token';
+import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { getEnv } from '@/lib/env-config';
 import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
 import { PublicFileShareView } from './public-file-share-view';
@@ -318,9 +319,13 @@ export default function PublicSessionSharePage() {
             title={title}
             src={iframeSrc}
             className={SHARE_PREVIEW_IFRAME_CLASS}
-            sandbox={tI18nHardcoded.raw(
-              'autoAppPublicShareSessionTokenPageJsxAttrSandboxAllow2840c013',
-            )}
+            // A sandbox attribute is a token list the browser parses, not copy.
+            // Sent through i18n it was translated — Spanish shipped
+            // "permitir-mismo-origen", German comma-separated — and an
+            // unrecognized token list means MAXIMALLY restrictive: no scripts,
+            // no same-origin. Every shared preview was a dead blank frame in
+            // seven of eight locales.
+            sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
           />
         )}
       </section>

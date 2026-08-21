@@ -268,7 +268,11 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { previewUrl, displayLabel, handleRefresh, openInBrowser, isLoading, navigationEnabled } =
     preview;
-  const label = previewUrl || displayLabel;
+  // NEVER the previewUrl: on a preview origin it carries a one-shot `?token=`
+  // (the user's live Supabase JWT), and this renders as visible page text —
+  // screenshot- and screen-share-capturable. previewUrl stays in the click
+  // handler, where it is used and not shown.
+  const label = displayLabel;
 
   return (
     <div className="bg-background absolute inset-0 z-10 flex items-center justify-center p-6">

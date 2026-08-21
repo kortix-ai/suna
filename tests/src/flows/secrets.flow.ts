@@ -133,6 +133,7 @@ flow(
       "GET /v1/projects/:projectId/secrets",
       "PUT /v1/projects/:projectId/secrets/:identifier/strategy",
       "POST /v1/projects/:projectId/secrets/:identifier/broker",
+      "POST /v1/projects/:projectId/secrets/:identifier/relay",
       "POST /v1/projects/:projectId/secrets/:identifier/grant",
       "POST /v1/projects/:projectId/secrets/sync",
       "PATCH /v1/projects/:projectId/features",
@@ -389,6 +390,22 @@ flow(
           },
           { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
+      r.status(403).body().has("$.code", "session_agent_token_required");
+    });
+
+    // The STREAMING sibling of the route above. It carries the same
+    // credential-spending authority, so it must refuse the same caller — an
+    // owner's user token is not a session-scoped agent token. Everything past
+    // this gate needs a real sandbox (the shim holds the CA and the session
+    // PAT), which the local profile excludes; the daemon's own shim tests and
+    // apps/api/src/__tests__/unit-project-secret-relay-route.test.ts carry the
+    // transport contract.
+    await ctx.step("streaming relay execution requires a session-scoped agent token", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/secrets/:identifier/relay", undefined, {
+          params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" },
+        });
       r.status(403).body().has("$.code", "session_agent_token_required");
     });
 

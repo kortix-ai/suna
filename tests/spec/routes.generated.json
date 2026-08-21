@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 598,
+  "count": 599,
   "routes": [
     {
       "method": "GET",
@@ -1829,6 +1829,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/secrets/:identifier/broker"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/secrets/:identifier/relay"
     },
     {
       "method": "POST",

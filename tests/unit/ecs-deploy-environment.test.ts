@@ -71,9 +71,15 @@ describe('ECS task environment overrides', () => {
       'utf8',
     );
 
-    expect(apiDeploy).toContain(
-      `KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"true"}'`,
-    );
+    // Assert the KEY is armed, not the exact serialization of the whole object.
+    // Pinning the full JSON made this test fail the moment the preview work
+    // added KORTIX_PREVIEW_BASE_DOMAIN alongside it — a correct config change
+    // read as a regression. What this test is here to protect is that dev's API
+    // task carries the fast-cold-boot flag; anything else sharing the override
+    // map is not its business.
+    const overrides = apiDeploy.match(/KORTIX_ECS_ENV_OVERRIDES: '(\{.*\})'/)?.[1];
+    expect(overrides).toBeDefined();
+    expect(JSON.parse(overrides!)).toMatchObject({ KORTIX_FAST_COLD_BOOT_ENABLED: 'true' });
     const apiFilter = workflow.slice(
       workflow.indexOf('            api:'),
       workflow.indexOf('            gateway:'),

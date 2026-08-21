@@ -2051,6 +2051,7 @@
     "proxyUrlToInternal",
     "rewriteLocalhostUrl",
     "serverCompactionRevalidateAtMs",
+    "stripTrailingSlashes",
     "toInternalUrl",
     "workingExpiryAtMs"
   ],
@@ -2078,6 +2079,7 @@
     "proxyLocalhostUrl",
     "proxyUrlToInternal",
     "rewriteLocalhostUrl",
+    "stripTrailingSlashes",
     "toInternalUrl"
   ],
   "./message-queue": [

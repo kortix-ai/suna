@@ -11,9 +11,9 @@ import { matchRule } from './strategy';
 
 const MAX_REQUEST_BYTES = 1_048_576;
 const MAX_RESPONSE_BYTES = 5_242_880;
-const MAX_REDIRECTS = 3;
+export const MAX_REDIRECTS = 3;
 const REQUEST_TIMEOUT_MS = 30_000;
-const REDACTED = Buffer.from('[REDACTED]');
+export const REDACTED = Buffer.from('[REDACTED]');
 
 // FRAMING / hop-by-hop headers only. These are rejected with a 400 because the
 // broker manages them itself (it sets `host` and `content-length`, forces
@@ -44,7 +44,7 @@ const BLOCKED_REQUEST_HEADERS = new Set([
   'upgrade',
 ]);
 
-const SAFE_RESPONSE_HEADERS = new Set([
+export const SAFE_RESPONSE_HEADERS = new Set([
   'cache-control',
   'content-language',
   'content-type',
@@ -64,12 +64,45 @@ const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 export type SecretBrokerErrorCode =
+  // ── The legacy /broker vocabulary. UNCHANGED — a daemon baked into a sandbox
+  //    image months ago still branches on these strings. ────────────────────
   | 'invalid_request'
   | 'policy_denied'
   | 'unsafe_destination'
   | 'upstream_failed'
   | 'upstream_timeout'
-  | 'response_too_large';
+  | 'response_too_large'
+  // ── Streaming relay only. Additive: nothing above changes meaning. ───────
+  /** `x-kortix-relay-meta` is missing, malformed, or out of contract (400). */
+  | 'relay_meta_invalid'
+  /** The encoded meta header exceeds `RELAY_META_MAX_BYTES` (400). */
+  | 'relay_meta_too_large'
+  /** The guest's request body exceeded `KORTIX_RELAY_MAX_REQUEST_BYTES` (413). */
+  | 'relay_request_too_large'
+  /** The upstream response exceeded `KORTIX_RELAY_MAX_RESPONSE_BYTES` (502). */
+  | 'relay_response_too_large'
+  /** `KORTIX_SECRET_RELAY_STREAM_ENABLED=false` — the kill switch (503). */
+  | 'relay_disabled'
+  /** A 3xx arrived after the request body was already streamed (502). */
+  | 'redirect_not_replayable'
+  /** The upstream body failed mid-stream, after the 200 was committed (502). */
+  | 'upstream_stream_failed'
+  /** A websocket upgrade arrived with the WS relay disabled (501). */
+  | 'websocket_relay_unavailable'
+  /**
+   * The upstream answered with a `content-encoding` despite being asked for
+   * `identity`, so the echo scan cannot see plaintext in its body (502).
+   *
+   * FAIL CLOSED. `prepareRelayHead` forces `accept-encoding: identity` on the
+   * upstream leg precisely so `StreamSubstituter` can find and redact a secret
+   * the upstream reflects back (debug/echo endpoints and several error shapes
+   * echo `Authorization` verbatim). A DEFLATE stream does not contain those
+   * bytes, so nothing matches, nothing is redacted, and the guest inflates the
+   * real credential locally — the exact leak the whole design prevents. The
+   * alternative is decompressing server-side, which reintroduces a
+   * decompression-bomb budget on an intentionally uncapped path.
+   */
+  | 'upstream_encoding_unsupported';
 
 export class SecretBrokerError extends Error {
   constructor(
@@ -281,7 +314,7 @@ export interface SecretSubstitution {
  * its secret. `applied` collects the identifiers that actually matched, for the
  * audit record and for response redaction.
  */
-function substituteBuffer(
+export function substituteBuffer(
   source: Buffer,
   substitutions: readonly SecretSubstitution[],
   primary: SecretEncoding,
@@ -312,7 +345,7 @@ function substituteString(
 }
 
 /** Which encoding a body's own content type says its bytes are written in. */
-function bodyEncoding(contentType: string | undefined): SecretEncoding {
+export function bodyEncoding(contentType: string | undefined): SecretEncoding {
   const type = contentType?.split(';')[0]?.trim().toLowerCase() ?? '';
   if (type === 'application/json' || type.endsWith('+json')) return 'json';
   if (type === 'application/x-www-form-urlencoded') return 'url';
@@ -326,7 +359,7 @@ function bodyEncoding(contentType: string | undefined): SecretEncoding {
  * side for the mirror-image reason (an echoed secret cannot be redacted out of
  * gzip); this asserts the request side rather than failing silently.
  */
-function assertIdentityRequestBody(headers: Record<string, string>): void {
+export function assertIdentityRequestBody(headers: Record<string, string>): void {
   const encoding = headers['content-encoding']?.trim().toLowerCase();
   if (encoding && encoding !== 'identity') {
     throw new SecretBrokerError(
@@ -342,12 +375,108 @@ function assertIdentityRequestBody(headers: Record<string, string>): void {
 // half-encoded into a header or path the upstream reads as two requests.
 const UNSAFE_TARGET = /[\s\u0000-\u001f\u007f]/;
 
-export function prepareSecretBrokerRequest(
+/** The non-body half of an outbound request, as BOTH transports supply it. */
+export interface RelayHeadInput {
+  url: string;
+  method: SecretBrokerRequest['method'];
+  /** Ordered `[name, value]` pairs, duplicates allowed — see `foldHeaders`. */
+  headers: Array<[string, string]>;
+}
+
+export interface PreparedRelayHead {
+  url: URL;
+  method: NonNullable<SecretBrokerRequest['method']>;
+  headers: Record<string, string>;
+  /**
+   * The substitutions admitted on THIS hop's destination. The caller feeds
+   * exactly these — never the full set — to the body substituter, so a handle
+   * the policy does not admit here stays the worthless self-describing string
+   * it is.
+   */
+  admitted: SecretSubstitution[];
+  /** Live and MUTABLE: the caller adds body-side hits before reading it. */
+  applied: Set<string>;
+  /** True when the route's own `inject` slot placed the decrypted secret. */
+  injectedRouteSecret: boolean;
+  /**
+   * A legacy `json` body-injection slot, NOT yet applied — the head does not
+   * own the body. The streaming transport refuses it rather than buffering an
+   * unbounded body to satisfy it.
+   */
+  bodyInject: { path: string } | null;
+  /** Head-side snapshot. Recompute after body substitution. */
+  substituted: string[];
+  /** Head-side snapshot. Recompute after body substitution. */
+  carriesSecret: boolean;
+}
+
+/**
+ * Fold an ordered header list into the `Record<string,string>` both the node
+ * transport and the legacy code path want.
+ *
+ * Duplicates are JOINED, not dropped: RFC 7230 §3.2.2 makes a repeated field
+ * equivalent to one comma-joined field, and `cookie` is the documented
+ * exception that joins with `"; "` (RFC 6265 §5.4). Taking the last value —
+ * which is what Bun's own parser does, and the reason the meta ships an ordered
+ * array in the first place — would silently discard a header the guest sent.
+ */
+function foldHeaders(pairs: readonly [string, string][]): Record<string, string> {
+  const folded: Record<string, string> = {};
+  for (const [rawName, value] of pairs) {
+    const name = rawName.trim().toLowerCase();
+    const existing = folded[name];
+    folded[name] = existing === undefined ? value : `${existing}${name === 'cookie' ? '; ' : ', '}${value}`;
+  }
+  return folded;
+}
+
+/**
+ * Re-match the policy against the path that will ACTUALLY be sent.
+ *
+ * Substitution only rewrites bytes where a handle sat, but a handle in the path
+ * means those bytes are part of the request target — so the admitted path and
+ * the sent path can differ. Exported and called by both transports at the same
+ * point in their own sequence, rather than folded into `prepareRelayHead`, so
+ * neither path's error PRECEDENCE moves: the legacy route still reports its
+ * `413 body exceeds 1 MiB after substitution` before this 403, exactly as it
+ * does today.
+ */
+export function assertPolicyAdmitsPath(
+  policy: SecretEgressPolicy,
+  url: URL,
+  method: NonNullable<SecretBrokerRequest['method']>,
+): void {
+  if (!matchRule(policy, { host: url.hostname, method, path: url.pathname })) {
+    throw new SecretBrokerError(
+      'policy_denied',
+      'outbound request does not match the secret policy',
+      403,
+    );
+  }
+}
+
+/**
+ * Every head-side security check, for BOTH transports.
+ *
+ * The url, the method and the headers are never streamed — the legacy route
+ * gets them in its JSON envelope and the streaming route gets them whole in
+ * `x-kortix-relay-meta`. Only the BODY streams. So the entire policy gate lives
+ * here, in one implementation, called from both: https-only, no userinfo, port
+ * pinned to empty-or-443, `matchRule`, header sanitation, forced
+ * `accept-encoding: identity`, the per-hop `admitted` re-filter, header
+ * substitution with its CRLF re-check, path/query substitution, the
+ * unsafe-target check, and the legacy `inject` slot.
+ *
+ * Duplicating any of it per transport is exactly how the accept-encoding
+ * two-list divergence incident happened. That class of bug is not acceptable on
+ * the policy gate, so there is one function and no second copy.
+ */
+export function prepareRelayHead(
   policy: SecretEgressPolicy,
   secret: string,
-  input: SecretBrokerRequest,
+  input: RelayHeadInput,
   substitutions: readonly SecretSubstitution[] = [],
-): PreparedBrokerRequest {
+): PreparedRelayHead {
   let url: URL;
   try {
     url = new URL(input.url);
@@ -374,11 +503,7 @@ export function prepareSecretBrokerRequest(
     throw new SecretBrokerError('policy_denied', 'outbound request does not match the secret policy', 403);
   }
 
-  let body = decodeBody(input.body_base64);
-  if ((method === 'GET' || method === 'HEAD') && body && body.byteLength > 0) {
-    throw new SecretBrokerError('invalid_request', `${method} requests cannot contain a body`, 400);
-  }
-  const headers = sanitizeHeaders(input.headers);
+  const headers = sanitizeHeaders(foldHeaders(input.headers));
   // Force an uncompressed upstream response so echo redaction scans real bytes.
   headers['accept-encoding'] = 'identity';
 
@@ -415,28 +540,6 @@ export function prepareSecretBrokerRequest(
     if (UNSAFE_TARGET.test(`${url.pathname}${url.search}`)) {
       throw new SecretBrokerError('invalid_request', 'substituted request target is invalid', 400);
     }
-
-    if (body && body.byteLength > 0) {
-      body = substituteBuffer(body, admitted, bodyEncoding(headers['content-type']), applied);
-      if (body.byteLength > MAX_REQUEST_BYTES) {
-        throw new SecretBrokerError(
-          'invalid_request',
-          'request body exceeds 1 MiB after substitution',
-          413,
-        );
-      }
-    }
-
-    // Substitution can only rewrite bytes where a handle sat, but a handle in
-    // the path means those bytes are part of the request target. Re-match so
-    // the path actually sent is the path the policy admitted.
-    if (!matchRule(policy, { host: url.hostname, method, path: url.pathname })) {
-      throw new SecretBrokerError(
-        'policy_denied',
-        'outbound request does not match the secret policy',
-        403,
-      );
-    }
   }
 
   // ── Legacy injection ──────────────────────────────────────────────────────
@@ -446,7 +549,7 @@ export function prepareSecretBrokerRequest(
   // §6 of the exposure model) carries no slot and is served purely by the block
   // above — there is nothing to inject and nothing to name.
   const slot = rule.inject ?? policy.inject;
-  const injectedRouteSecret = slot != null;
+  let bodyInject: { path: string } | null = null;
   if (slot) {
     if (slot.kind === 'header') {
       const name = slot.name.trim().toLowerCase();
@@ -457,9 +560,75 @@ export function prepareSecretBrokerRequest(
     } else if (slot.kind === 'query') {
       url.searchParams.set(slot.name, secret);
     } else {
-      body = injectJsonBody(body, slot.path, secret);
-      headers['content-type'] = 'application/json';
+      bodyInject = { path: slot.path };
     }
+  }
+
+  return {
+    url,
+    method,
+    headers,
+    admitted,
+    applied,
+    injectedRouteSecret: slot != null,
+    bodyInject,
+    substituted: [...applied],
+    carriesSecret: applied.size > 0 || slot != null,
+  };
+}
+
+export function prepareSecretBrokerRequest(
+  policy: SecretEgressPolicy,
+  secret: string,
+  input: SecretBrokerRequest,
+  substitutions: readonly SecretSubstitution[] = [],
+): PreparedBrokerRequest {
+  // ORDER MATTERS, and it is the LEGACY order on purpose.
+  //
+  // `/broker` is frozen: a daemon baked into a sandbox image months ago still
+  // branches on its codes. Before the head/body split, `decodeBody` (base64
+  // validation + the 1 MiB 413) and the GET/HEAD-body check ran BEFORE
+  // `sanitizeHeaders`. Running the head first silently changed the answer for a
+  // request that is wrong in two ways at once — e.g. a 2 MiB body plus a
+  // blocked `host` header went from `413 request body exceeds 1 MiB` to
+  // `400 request header is managed by Kortix: host`. Keep the old precedence.
+  let body = decodeBody(input.body_base64);
+  if ((input.method === 'GET' || input.method === 'HEAD') && body && body.byteLength > 0) {
+    throw new SecretBrokerError(
+      'invalid_request',
+      `${input.method} requests cannot contain a body`,
+      400,
+    );
+  }
+
+  // The url/method/header half is the SHARED gate — see `prepareRelayHead`.
+  // Everything below is body handling, which is the only part the two
+  // transports genuinely do differently.
+  const head = prepareRelayHead(
+    policy,
+    secret,
+    { url: input.url, method: input.method, headers: Object.entries(input.headers ?? {}) },
+    substitutions,
+  );
+  const { url, method, headers, admitted, applied } = head;
+
+  if (admitted.length > 0) {
+    if (body && body.byteLength > 0) {
+      body = substituteBuffer(body, admitted, bodyEncoding(headers['content-type']), applied);
+      if (body.byteLength > MAX_REQUEST_BYTES) {
+        throw new SecretBrokerError(
+          'invalid_request',
+          'request body exceeds 1 MiB after substitution',
+          413,
+        );
+      }
+    }
+    assertPolicyAdmitsPath(policy, url, method);
+  }
+
+  if (head.bodyInject) {
+    body = injectJsonBody(body, head.bodyInject.path, secret);
+    headers['content-type'] = 'application/json';
   }
   if (body) headers['content-length'] = String(body.byteLength);
 
@@ -469,11 +638,11 @@ export function prepareSecretBrokerRequest(
     headers,
     body,
     substituted: [...applied],
-    carriesSecret: applied.size > 0 || injectedRouteSecret,
+    carriesSecret: applied.size > 0 || head.injectedRouteSecret,
   };
 }
 
-async function resolvePinnedAddress(url: URL): Promise<{ address: string; family: 4 | 6 }> {
+export async function resolvePinnedAddress(url: URL): Promise<{ address: string; family: 4 | 6 }> {
   if (isIP(url.hostname) !== 0) {
     if (isPrivateIp(url.hostname)) {
       throw new SecretBrokerError('unsafe_destination', 'destination IP is private or reserved', 403);
@@ -605,7 +774,7 @@ export function redactSecretFromResponse(body: Buffer, secret: string): Buffer {
   return result;
 }
 
-function responseHeaders(
+export function responseHeaders(
   headers: Record<string, string | string[] | undefined>,
 ): Record<string, string> {
   const safe: Record<string, string> = {};

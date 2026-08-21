@@ -40,7 +40,14 @@ import net from 'node:net'
 import type { Duplex } from 'node:stream'
 import zlib from 'node:zlib'
 
+import { BLOCKED_REQUEST_HEADERS } from './blocked-headers'
 import { LeafIssuer, type EphemeralCa } from './ca'
+import {
+  canStreamDecode,
+  probeRelay,
+  relayStreaming,
+  RelayRefusedError,
+} from './relay-client'
 import type { ShimBrokerRule } from './rules'
 
 export interface EgressShimOptions {
@@ -65,36 +72,10 @@ export interface EgressShimOptions {
 
 const BROKER_TIMEOUT_MS = 30_000
 
-/**
- * FRAMING / hop-by-hop headers the broker REJECTS with a 400
- * (apps/api/src/secrets/http-broker.ts BLOCKED_REQUEST_HEADERS). The shim drops
- * them before relaying so an ordinary request does not turn into
- * `400 request header is managed by Kortix: <name>`.
- *
- * `authorization` and `cookie` are DELIBERATELY NOT dropped. They are the
- * credential-carrying headers, and the whole point of this mode is that the
- * agent puts a HANDLE where it would put the real credential — `curl -H
- * 'Authorization: Bearer <handle>'`. Dropping them here stripped the handle
- * before the broker could substitute it, so a Bearer/token/cookie request left
- * carrying nothing and the upstream answered 401. They are forwarded now; the
- * broker swaps the handle for the real value server-side.
- *
- * Kept as a literal copy rather than an import: this binary must not drag
- * apps/api's http-broker (and its DB and config dependencies) into the sandbox.
- * The `blocked-headers` test asserts the two lists still agree.
- */
-export const BLOCKED_REQUEST_HEADERS = new Set([
-  'connection',
-  'content-length',
-  'host',
-  'keep-alive',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'te',
-  'trailer',
-  'transfer-encoding',
-  'upgrade',
-])
+// Re-exported from its own module so `relay-client.ts` can read the same set
+// without importing this file (which imports it). See ./blocked-headers.ts for
+// why the list is a copy and what pins it to the broker's.
+export { BLOCKED_REQUEST_HEADERS } from './blocked-headers'
 
 /**
  * The broker's own request ceiling (`MAX_REQUEST_BYTES`,
@@ -170,35 +151,40 @@ function parseTarget(target: string): { host: string; port: number } | null {
 }
 
 /**
- * Hand the guest's request to Kortix, which holds the credential.
+ * Hand the guest's request to Kortix, which holds the credential — BUFFERED.
  *
- * Deliberately the SAME broker route that `kortix secrets call` and the
- * `secret_call` MCP tool already use, so the shim inherits a path that is
- * shipped, tested and verified live rather than opening a second way to spend a
- * secret. The host/method policy, the injection, and the echo redaction all
- * happen there, server-side.
+ * This is the original transport and it is PERMANENT, not deprecated. The
+ * daemon ships inside the sandbox image and a box booted today can be resumed
+ * months from now, so `/broker` must keep working forever; and a
+ * `content-encoding: deflate` body genuinely needs a buffered retry (its
+ * raw-vs-zlib ambiguity cannot be resolved mid-stream). The construction-time
+ * probe picks the transport; both stay.
+ *
+ * The logic below is unchanged from before the streaming relay existed. Only
+ * the I/O shape moved — from `http.IncomingMessage`/`ServerResponse` to
+ * `Request`/`Response` — because the inner listener is now `Bun.serve` (see
+ * `listenerFor`).
  */
-async function relayToBroker(
+async function relayBuffered(
   options: EgressShimOptions,
   rule: ShimBrokerRule,
   host: string,
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
+  request: Request,
   body: Buffer,
-): Promise<void> {
+): Promise<Response> {
   // Forward only the request's own headers. Nothing secret is added here —
   // that is the entire point of this mode.
   const forwarded: Record<string, string> = {}
-  for (const [name, value] of Object.entries(req.headers)) {
+  for (const [name, value] of request.headers) {
     const lower = name.toLowerCase()
     if (BLOCKED_REQUEST_HEADERS.has(lower)) continue
-    if (typeof value === 'string') forwarded[lower] = value
+    forwarded[lower] = value
   }
   // Force identity, ALWAYS, overriding whatever the guest asked for.
   //
-  // This is a security control, not a compatibility tweak. The broker redacts
-  // an echoed credential by scanning the response bytes; a gzipped body does
-  // not contain those bytes, so the scan finds nothing and the credential is
+  // This is a security control, not a compatibility tweak. Kortix redacts an
+  // echoed credential by scanning the response bytes; a gzipped body does not
+  // contain those bytes, so the scan finds nothing and the credential is
   // returned to the guest intact. The broker itself now forces `identity` on
   // its upstream leg for exactly this reason (it DROPS any caller value rather
   // than 400ing it, so this line and every already-deployed daemon that sends
@@ -212,10 +198,10 @@ async function relayToBroker(
 
   // The REQUEST leg gets the same treatment, for the mirror-image reason:
   // substitution scans the outgoing bytes for the handle, and a compressed
-  // body does not contain them. Undo the encoding here so the broker sees raw
+  // body does not contain them. Undo the encoding here so Kortix sees raw
   // bytes, and drop the header so the upstream is told what it actually gets.
   let payload = body
-  const contentEncoding = req.headers['content-encoding']
+  const contentEncoding = request.headers.get('content-encoding')
   if (typeof contentEncoding === 'string' && contentEncoding.trim().length > 0) {
     delete forwarded['content-encoding']
     // An empty body carries no handle, so there is nothing to make visible and
@@ -225,21 +211,21 @@ async function relayToBroker(
     if (!decoded) {
       // Refuse rather than relay. The alternative is a request whose handle is
       // never substituted, an upstream 401, and an agent with nothing to read.
-      res.writeHead(400, { 'content-type': 'application/json' })
-      res.end(
+      return new Response(
         JSON.stringify({
           error:
             `kortix egress shim: cannot relay a request body encoded as ` +
             `'${contentEncoding}'. Send it uncompressed.`,
           code: 'unsupported_request_encoding',
         }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
       )
-      return
     }
     payload = decoded
   }
 
   const call = options.brokerFetch ?? fetch
+  const target = new URL(request.url)
   const url =
     `${options.apiUrl.replace(/\/$/, '')}/projects/${options.projectId}` +
     `/secrets/${encodeURIComponent(rule.identifier)}/broker`
@@ -247,8 +233,8 @@ async function relayToBroker(
     method: 'POST',
     headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      url: `https://${host}${req.url ?? '/'}`,
-      method: (req.method ?? 'GET').toUpperCase(),
+      url: `https://${host}${target.pathname}${target.search}`,
+      method: request.method.toUpperCase(),
       ...(Object.keys(forwarded).length > 0 ? { headers: forwarded } : {}),
       ...(payload.length > 0 ? { body_base64: payload.toString('base64') } : {}),
     }),
@@ -260,9 +246,10 @@ async function relayToBroker(
     // host must reach the agent as that, not as a generic proxy error it will
     // waste a turn guessing about.
     const detail = await response.text().catch(() => '')
-    res.writeHead(response.status, { 'content-type': 'application/json' })
-    res.end(detail || JSON.stringify({ error: 'broker refused the request' }))
-    return
+    return new Response(detail || JSON.stringify({ error: 'broker refused the request' }), {
+      status: response.status,
+      headers: { 'content-type': 'application/json' },
+    })
   }
 
   const result = (await response.json()) as {
@@ -278,9 +265,7 @@ async function relayToBroker(
   // which reads as a hang with no error anywhere (measured).
   delete headers['transfer-encoding']
   headers['content-length'] = String(out.length)
-  if (/close/i.test(String(req.headers.connection ?? ''))) headers.connection = 'close'
-  res.writeHead(result.status ?? 502, headers)
-  res.end(out)
+  return new Response(out, { status: result.status ?? 502, headers })
 }
 
 /**
@@ -304,29 +289,103 @@ export async function createEgressShim(options: EgressShimOptions): Promise<http
    * unique per connection and is what the inner server sees as
    * `req.socket.remotePort`.
    */
-  const bindings = new Map<number, { rule: ShimBrokerRule; host: string }>()
-  const onTerminatedRequest: http.RequestListener = (req, res) => {
-    const binding = bindings.get(req.socket.remotePort ?? -1)
-    if (!binding) {
-      res.writeHead(500).end('kortix egress shim: no rule bound to connection')
-      return
+  /**
+   * The per-connection rule, keyed by the loopback SOURCE PORT.
+   *
+   * Unique per connection, and — verified through the real CONNECT pipe — equal
+   * to what the inner listener reports as `server.requestIP(req)?.port` and what
+   * this side sees as `inner.localPort`.
+   */
+  interface Binding {
+    rule: ShimBrokerRule
+    host: string
+    /**
+     * Destroy this guest connection.
+     *
+     * The ONLY way to tell the guest "this response is incomplete". Measured on
+     * bun 1.3.14: erroring a `Response` body stream still emits a clean
+     * `0\r\n\r\n` and the client's fetch/curl succeeds, so framing carries no
+     * failure signal in either direction. Killing the TLS connection does: curl
+     * reports `transfer closed with outstanding read data remaining` and exits
+     * non-zero instead of handing the agent half a document.
+     */
+    abort(): void
+  }
+  const bindings = new Map<number, Binding>()
+
+  /**
+   * Which transport this shim uses, decided ONCE at construction.
+   *
+   * Not per request, and that is deliberate: a streamed body that has already
+   * been consumed cannot be replayed onto a fallback, so the choice has to be
+   * made before any body exists. `syncEgressShim` tears the shim down and
+   * rebuilds it on a live capability push, so a re-probe happens naturally
+   * there. See relay-client.ts.
+   */
+  let relaySupported = false
+  /**
+   * The in-flight construction-time probe, or null once its answer is in.
+   *
+   * Awaited on the FIRST relayed request instead of at construction: awaiting it
+   * in `createEgressShim` put a 5 s network round trip in front of
+   * `startProxy()`, so `/kortix/health` answered nothing for that whole window
+   * and the readiness poller saw a closed port — the exact failure the comment
+   * block in main.ts exists to prevent. Same cost is paid again on fork
+   * adoption and on every live capability push through `syncEgressShim`.
+   */
+  let relayProbe: Promise<boolean> | null = null
+
+  async function serveTerminated(request: Request, binding: Binding): Promise<Response> {
+    // `content-encoding: deflate` cannot be undone in a stream (raw vs zlib is
+    // decided by a retry), so those requests take the buffered path and keep
+    // today's 1 MiB decompression-bomb guard. Everything else streams.
+    const contentEncoding = request.headers.get('content-encoding')?.trim() ?? ''
+    const streamable =
+      contentEncoding === '' ||
+      contentEncoding.toLowerCase() === 'identity' ||
+      canStreamDecode(contentEncoding)
+
+    if (relayProbe) {
+      relaySupported = await relayProbe.catch(() => false)
+      relayProbe = null
     }
-    const chunks: Buffer[] = []
-    req.on('data', (chunk: Buffer) => chunks.push(chunk))
-    req.on('end', () => {
-      void relayToBroker(
-        options,
-        binding.rule,
-        binding.host,
-        req,
-        res,
-        Buffer.concat(chunks),
-      ).catch((err: Error) => {
-        fail('broker', err)
-        if (!res.headersSent) res.writeHead(502)
-        res.end('kortix egress shim: broker relay failed')
-      })
-    })
+
+    // A bodyless request is trivially replayable, so a transport downgrade can
+    // be recovered from IN THIS TURN rather than only on the next call.
+    const replayable =
+      request.body === null || request.method === 'GET' || request.method === 'HEAD'
+
+    if (relaySupported && streamable) {
+      try {
+        return await relayStreaming(options, binding.rule, binding.host, request, binding.abort)
+      } catch (err) {
+        if (err instanceof RelayRefusedError) {
+          if (err.downgrade) {
+            // /relay is gone — the kill switch, or an API rolled back under a
+            // live sandbox. `/broker` is permanent and still works; use it for
+            // the rest of this process's life.
+            relaySupported = false
+            if (replayable) {
+              return await relayBuffered(
+                options,
+                binding.rule,
+                binding.host,
+                request,
+                Buffer.alloc(0),
+              )
+            }
+          }
+          return new Response(err.payload, {
+            status: err.status,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        throw err
+      }
+    }
+    // Buffered: read the whole body first, exactly as before.
+    const body = request.body ? Buffer.from(await request.arrayBuffer()) : Buffer.alloc(0)
+    return await relayBuffered(options, binding.rule, binding.host, request, body)
   }
 
   /**
@@ -339,35 +398,80 @@ export async function createEgressShim(options: EgressShimOptions): Promise<http
    * while the same script works under Node — so the certificate has to be fixed
    * at listen() time. Listeners are bounded by the number of distinct hosts
    * carrying a rule, which is small, and are created once.
+   *
+   * ## Why `Bun.serve` and not `https.createServer`
+   *
+   * Two reasons, both measured, and one of them is a hard blocker:
+   *
+   *  1. **Websockets are impossible on the node path.** `inner.on('upgrade')`
+   *     under Bun hands you a socket that is an inert stub in BOTH directions —
+   *     not `instanceof net.Socket`, `_handle.fd` undefined, `write()` returns
+   *     `true` while dropping the bytes, and client bytes sent after the upgrade
+   *     never arrive. Node v22.22.0 delivers all of it. There is no workaround
+   *     at the node:http layer because there is no fd to recover. That is why
+   *     the old code simply destroyed the socket and the client hung with no log
+   *     line.
+   *  2. **Streaming needs a web `ReadableStream` body**, which is what a
+   *     `Bun.serve` `fetch` handler gets and `req.on('data')` is not.
+   *
+   * The outer CONNECT proxy STAYS on node:http — `Bun.serve` cannot handle HTTP
+   * CONNECT, and the node one works (verified: `200 Connection Established`, a
+   * byte-transparent tunnel, and a 101 through it).
+   *
+   * Accepted fidelity loss: Bun's parser lowercases header names and collapses
+   * duplicate non-known headers to the LAST value at the guest edge. No worse
+   * than before — the old code's `if (typeof value === 'string')` already
+   * dropped every multi-value header — and `x-kortix-relay-meta` stops a SECOND
+   * collapse on the shim → API hop.
    */
   const listeners = new Map<string, Promise<number>>()
-  const innerServers: https.Server[] = []
+  const innerServers: Array<{ stop(closeActiveConnections?: boolean): void }> = []
   function listenerFor(host: string): Promise<number> {
     const existing = listeners.get(host)
     if (existing) return existing
     const started = (async () => {
       const leaf = issuer.issue(host)
-      const inner = https.createServer({ cert: leaf.certPem, key: leaf.keyPem })
-      inner.on('request', onTerminatedRequest)
-      inner.on('clientError', (err) => fail('terminated-client', err))
-      // A protocol upgrade (websocket) on a terminated host fires 'upgrade',
-      // never 'request', so nothing above would run and the client would hang
-      // forever with no log line. The relay is request/response and fully
-      // buffered — it cannot carry a socket — so the connection is reset.
-      //
-      // It is RESET rather than answered 501, and that is a Bun limitation, not
-      // a preference. Measured (bun 1.3.14 vs node v22.22.0): Bun fires the
-      // event but a write from this handler never reaches the client, which
-      // then times out; Node delivers the same bytes fine. This is the THIRD
-      // divergence in this file's neighbourhood, after `emit('connection')`
-      // being a no-op and SNICallback never firing.
-      inner.on('upgrade', (_req, socket) => {
-        fail('upgrade', new Error('protocol upgrade is not supported through the egress shim'))
-        socket.destroy()
+      const inner = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        tls: { cert: leaf.certPem, key: leaf.keyPem },
+        // Bun's default is 10s and its MAX is 255s, and it is an IDLE timer that
+        // server->client writes do not reset. Any fixed ceiling kills a healthy
+        // SSE stream — the exact shape of the gateway idleTimeout incident.
+        idleTimeout: 0,
+        async fetch(request: Request, server): Promise<Response> {
+          const sourcePort = server.requestIP(request)?.port ?? -1
+          const binding = bindings.get(sourcePort)
+          if (!binding) {
+            return new Response('kortix egress shim: no rule bound to connection', { status: 500 })
+          }
+          if (request.headers.get('upgrade')?.toLowerCase() === 'websocket') {
+            // A REAL response, which the node:http upgrade handler could not
+            // write at all. Even the unsupported path now tells the agent why
+            // instead of resetting the socket and letting it time out silently.
+            fail('upgrade', new Error('websocket relay is not enabled'))
+            return new Response(
+              JSON.stringify({
+                error: 'kortix egress shim: websocket relay is not enabled',
+                code: 'websocket_relay_unavailable',
+              }),
+              { status: 501, headers: { 'content-type': 'application/json' } },
+            )
+          }
+          try {
+            return await serveTerminated(request, binding)
+          } catch (err) {
+            fail('broker', err as Error)
+            return new Response('kortix egress shim: broker relay failed', { status: 502 })
+          }
+        },
       })
-      await new Promise<void>((resolve) => inner.listen(0, '127.0.0.1', resolve))
       innerServers.push(inner)
-      return (inner.address() as net.AddressInfo).port
+      // `port` is optional in the type because a Bun server can be bound to a
+      // unix socket; ours is always TCP on 127.0.0.1.
+      const bound = inner.port
+      if (bound === undefined) throw new Error('kortix egress shim: inner listener has no port')
+      return bound
     })()
     listeners.set(host, started)
     return started
@@ -413,7 +517,17 @@ export async function createEgressShim(options: EgressShimOptions): Promise<http
         const inner = net.connect(terminatedPort, '127.0.0.1', () => {
           // Bind BEFORE any byte flows, so the request handler can never look
           // up a port that has not been registered yet.
-          bindings.set(inner.localPort ?? -1, { rule, host: target.host })
+          bindings.set(inner.localPort ?? -1, {
+            rule,
+            host: target.host,
+            abort: () => {
+              // Both ends: `inner` is the loopback leg into our TLS listener,
+              // `socket` is the guest's own CONNECT tunnel. Destroying them is
+              // what turns a truncated relay into a visible transport error.
+              inner.destroy()
+              socket.destroy()
+            },
+          })
           socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
           if (head?.length) inner.write(head)
           inner.pipe(socket)
@@ -449,10 +563,31 @@ export async function createEgressShim(options: EgressShimOptions): Promise<http
     issuer.issue(host)
   }
 
+  // Ask ONCE whether Kortix speaks the streaming relay, beside the leaf warm-up
+  // so it costs nothing on the request path. Anything but a 204 — a 404 from an
+  // older self-hosted API, a 503 from the kill switch, a timeout — leaves this
+  // shim on the permanent buffered `/broker` transport for its whole life.
+  const probeIdentifier = options.rules[0]?.identifier
+  if (probeIdentifier) {
+    // NOT awaited: `startEgressShim` is awaited before `startProxy()` binds the
+    // daemon's health port, so blocking here for up to PROBE_TIMEOUT_MS leaves
+    // every readiness poll hitting a closed port. The first relayed request
+    // awaits the answer instead.
+    relayProbe = probeRelay(options, probeIdentifier).then((ok) => {
+      relaySupported = ok
+      return ok
+    })
+    relayProbe.catch(() => undefined)
+  }
+
   // Closing the shim must also close every per-host listener, or the process
   // hangs on open handles after server.close().
   server.on('close', () => {
-    for (const inner of innerServers) inner.close()
+    // Bun.serve servers are NOT https.Server and have no `.close()`. Without
+    // `.stop(true)` the process hangs on open handles after shutdown, and
+    // `syncEgressShim`'s stop-then-start re-arm (which rebinds the same port)
+    // fails on every live capability push.
+    for (const inner of innerServers) inner.stop(true)
   })
   return server
 }
