@@ -641,7 +641,14 @@ interface MemSpec {
 
 const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   'supabase-db': { limit: '1280m', reservation: '512m', oomScoreAdj: -900 },
-  'kortix-api': { limit: '${KORTIX_API_MEMORY_LIMIT:-640m}', reservation: '256m' },
+  // The API HOSTS THE GATEWAY IN-PROCESS (apps/api/src/index.ts mounts
+  // `/v1/llm` via mountLlmGateway), so every byte the note below describes for
+  // the standalone gateway also transits this container. 640m was the same
+  // mistake one service down: on 2026-08-21 the dev API — capped at 1024 MiB,
+  // still under the 2 GiB proven necessary here — was OOM-killed three times
+  // in eleven minutes during an image-heavy session, and the browser was shown
+  // Cloudflare's "Bad Gateway" page. Matched to the gateway's ceiling.
+  'kortix-api': { limit: '${KORTIX_API_MEMORY_LIMIT:-2048m}', reservation: '256m' },
   // Headroom for large multimodal requests: the gateway buffers the raw request
   // body (image-heavy agent turns run tens of MiB — see DEFAULT_MAX_REQUEST_BYTES),
   // so 512m was far too tight once the body ceiling was raised. Give it a generous

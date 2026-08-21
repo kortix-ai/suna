@@ -535,7 +535,9 @@ describe('full self-host Docker distribution', () => {
     }
     const db = document.services['supabase-db'];
     expect(db?.oom_score_adj).toBeLessThan(0);
-    expect(document.services['kortix-api']?.mem_limit).toBe('${KORTIX_API_MEMORY_LIMIT:-640m}');
+    // Matched to the gateway's ceiling on purpose: the API mounts the gateway
+    // in-process, so image-heavy request bodies transit BOTH containers.
+    expect(document.services['kortix-api']?.mem_limit).toBe('${KORTIX_API_MEMORY_LIMIT:-2048m}');
     const analytics = document.services['supabase-analytics'];
     const vector = document.services['supabase-vector'];
     expect(analytics?.oom_score_adj).toBeGreaterThan(0);
