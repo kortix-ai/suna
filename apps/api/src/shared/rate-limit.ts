@@ -168,7 +168,26 @@ const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
 const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter('project_webhook_manifest_refresh');
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
+const projectSessionCreateLimiter = new TokenBucketRateLimiter('project_session_create');
 export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
+
+/**
+ * Per-project budget on session CREATES (the 2026-08-21 storm's other half: a
+ * per-minute trigger created a session every tick, forever — 60 provider
+ * provisions an hour from one project, none ever cleaned up). Checked from the
+ * session-create path (lib/sessions.ts), not a route mount, because creates
+ * arrive through several routes (UI, triggers, channels, KaaB).
+ *
+ * In-process bucket — same replica-multiplied honesty as the secret-write
+ * budget above, and the same verdict: this stops runaway loops, it does not
+ * meter exact quotas.
+ */
+export function consumeProjectSessionCreateBudget(projectId: string): RateLimitResult {
+  return projectSessionCreateLimiter.check(projectId, {
+    limit: positiveInt((config as any).KORTIX_PROJECT_SESSION_CREATES_PER_HOUR, 100),
+    windowMs: 60 * 60_000,
+  });
+}
 
 /**
  * Per-project budget on secret WRITES (POST/PUT/PATCH/DELETE under
@@ -463,5 +482,6 @@ export function resetRateLimiters() {
   projectWebhookLimiter.reset();
   projectWebhookManifestRefreshLimiter.reset();
   projectSecretWriteLimiter.reset();
+  projectSessionCreateLimiter.reset();
   sessionLlmLimiter.reset();
 }

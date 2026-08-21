@@ -12,6 +12,7 @@ import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/sha
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
+import { consumeProjectSessionCreateBudget } from '../../shared/rate-limit';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import {
   loadSessionGrants,
@@ -285,9 +286,9 @@ export async function checkConcurrentSessionCap(
     'X-RateLimit-Remaining': String(remainingAfterCreate),
   };
 
-  // The per-project ceiling runs first: it is the more specific refusal, and
-  // an account big enough to pass the tier check is exactly the account whose
-  // runaway project this exists to clip (see projectActiveSessionLimit).
+  // The per-project ceilings run before the account-tier check: they are the
+  // more specific refusals, and an account big enough to pass the tier check
+  // is exactly the account whose runaway project these exist to clip.
   if (projectId) {
     const projectLimit = projectActiveSessionLimit();
     const activeInProject = await countActiveSessionsInProject(projectId);
@@ -326,6 +327,55 @@ export async function checkConcurrentSessionCap(
             code: 'project_session_limit',
             limit: projectLimit,
             active_sessions: activeInProject,
+          },
+        },
+      };
+    }
+  }
+
+  // The hourly create budget runs AFTER the active-session cap and only
+  // charges REAL creates (reserveSlots === 0). Two genuine-user protections
+  // live in that ordering: a speculative warm pre-create is page-view-driven
+  // and must not drain the budget, and a user retrying against the cap must
+  // not burn budget on refusals — otherwise they clean up their sessions and
+  // find themselves locked out for the rest of the hour anyway.
+  if (projectId && reserveSlots === 0) {
+    const budget = consumeProjectSessionCreateBudget(projectId);
+    if (!budget.allowed) {
+      recordAuditEvent({
+        accountId,
+        actorUserId: userId,
+        action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+        resourceType: 'project_session',
+        resourceId: projectId,
+        ip: request?.ip ?? null,
+        userAgent: request?.userAgent ?? null,
+        metadata: {
+          limiter: 'project_session_creates',
+          limit: budget.limit,
+          retry_after_ms: budget.retryAfterMs ?? null,
+        },
+      }).catch((error) => {
+        console.error('[projects] Failed to record session create budget audit event:', error);
+      });
+      const message = `This project has hit its hourly session-create limit (${budget.limit}/hour). A trigger or automation creating a session on every tick is usually what hits this — reuse sessions instead of spawning new ones.`;
+      return {
+        headers: {
+          'X-RateLimit-Limit': String(budget.limit),
+          'X-RateLimit-Remaining': '0',
+        },
+        error: {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': String(budget.limit),
+            'X-RateLimit-Remaining': '0',
+          },
+          body: {
+            error: message,
+            message,
+            code: 'project_session_create_limit',
+            limit: budget.limit,
+            retry_after_seconds: Math.ceil((budget.retryAfterMs ?? budget.resetMs) / 1000),
           },
         },
       };

@@ -162,3 +162,49 @@ describe('createCoalescedRunner — the env-push storm breaker', () => {
     expect(runsStarted).toBe(2);
   });
 });
+
+describe('createCoalescedRunner — genuine-user safety properties', () => {
+  test('NO LOST UPDATE: a write landing mid-run is always followed by a run that starts after it', async () => {
+    const runStarts: number[] = [];
+    const gates: Array<{ promise: Promise<null>; resolve: (v: null) => void }> = [];
+    const coalesced = createCoalescedRunner<null>({
+      run: () => {
+        runStarts.push(Date.now());
+        let resolve!: (v: null) => void;
+        const promise = new Promise<null>((res) => {
+          resolve = res;
+        });
+        gates.push({ promise, resolve });
+        return promise;
+      },
+      minIntervalMs: () => 0,
+    });
+
+    const first = coalesced('p1');
+    await new Promise((r) => setTimeout(r, 5));
+    const writeAt = Date.now();
+    const midRunWrite = coalesced('p1');
+    gates[0]!.resolve(null);
+    await first;
+    await new Promise((r) => setTimeout(r, 0));
+    gates[1]!.resolve(null);
+    await midRunWrite;
+    expect(runStarts).toHaveLength(2);
+    expect(runStarts[1]!).toBeGreaterThanOrEqual(writeAt);
+  });
+
+  test('a lone write on a quiet project is never delayed by the interval', async () => {
+    let ran = 0;
+    const coalesced = createCoalescedRunner<null>({
+      run: async () => {
+        ran += 1;
+        return null;
+      },
+      minIntervalMs: () => 60_000,
+    });
+    const t0 = Date.now();
+    await coalesced('quiet-project');
+    expect(ran).toBe(1);
+    expect(Date.now() - t0).toBeLessThan(1_000);
+  });
+});

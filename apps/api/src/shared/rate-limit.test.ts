@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 
 import {
   TokenBucketRateLimiter,
+  consumeProjectSessionCreateBudget,
   createProjectSecretWriteRateLimitMiddleware,
   resetRateLimiters,
 } from './rate-limit';
@@ -78,6 +79,31 @@ describe('createProjectSecretWriteRateLimitMiddleware — the 2026-08-21 storm b
     }
     expect((await app.request('/proj-d/secrets', { method: 'POST' })).status).toBe(200);
     delete (config as any).KORTIX_PROJECT_SECRET_WRITES_PER_HOUR;
+    resetRateLimiters();
+  });
+});
+
+describe('consumeProjectSessionCreateBudget — hourly create ceiling', () => {
+  test('the default budget admits exactly 100 creates then refuses with retry timing', () => {
+    resetRateLimiters();
+    for (let i = 0; i < 100; i++) {
+      expect(consumeProjectSessionCreateBudget('proj-x').allowed).toBe(true);
+    }
+    const denied = consumeProjectSessionCreateBudget('proj-x');
+    expect(denied.allowed).toBe(false);
+    expect(denied.limit).toBe(100);
+    expect(denied.retryAfterMs).toBeGreaterThan(0);
+    resetRateLimiters();
+  });
+
+  test('projects never share a budget — one runaway cannot starve a neighbor', () => {
+    resetRateLimiters();
+    (config as any).KORTIX_PROJECT_SESSION_CREATES_PER_HOUR = 2;
+    expect(consumeProjectSessionCreateBudget('runaway').allowed).toBe(true);
+    expect(consumeProjectSessionCreateBudget('runaway').allowed).toBe(true);
+    expect(consumeProjectSessionCreateBudget('runaway').allowed).toBe(false);
+    expect(consumeProjectSessionCreateBudget('innocent').allowed).toBe(true);
+    delete (config as any).KORTIX_PROJECT_SESSION_CREATES_PER_HOUR;
     resetRateLimiters();
   });
 });
