@@ -6,11 +6,11 @@ import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
-import {
-  decodeSupabaseJwtPayload,
-  isInconclusiveVerifyFailure,
-  verifySupabaseJwt,
-} from '../shared/jwt-verify';
+import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verify';
+// From its own module, not '../shared/jwt-verify': five test files replace that
+// module wholesale, and a mock cannot be allowed to change how a real failure is
+// classified.
+import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 import { syncSsoMembership } from '../iam/sso-sync';

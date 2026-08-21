@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isInconclusiveVerifyFailure, verifySupabaseJwt } from '../shared/jwt-verify';
+import { verifySupabaseJwt } from '../shared/jwt-verify';
+import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 
 /**
  * Regression cover for the 2026-08-21 prod near-miss.

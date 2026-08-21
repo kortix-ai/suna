@@ -13,6 +13,7 @@
  */
 
 import { config } from '../config';
+export { isInconclusiveVerifyFailure } from './jwt-verify-outcome';
 
 interface JwkKey {
   alg: string;
@@ -137,23 +138,6 @@ interface VerifyFailure {
   reason: string;
 }
 
-/**
- * Did local verification fail because it could not reach a verdict, rather than
- * because the token is bad?
- *
- * Inconclusive means "this verifier cannot judge it" — JWKS not loaded, no key
- * for this `kid`, or an algorithm it does not implement (a symmetric HS* token,
- * which only the auth server can check). Those must fall through to the network
- * path. Everything else — bad signature, expired, malformed — is a real verdict
- * and must be rejected.
- *
- * Both auth middlewares route on this ONE predicate so they cannot drift apart.
- */
-export function isInconclusiveVerifyFailure(reason: string): boolean {
-  return (
-    reason === 'no-keys' || reason === 'no-key-for-kid' || reason.startsWith('unsupported-alg')
-  );
-}
 
 /**
  * Verify a Supabase JWT locally using cached JWKS.
