@@ -24,6 +24,7 @@ import {
   turnGrantMs,
 } from './sandbox-deadline-policy';
 import { confirmInboxPromptConsumed } from './session-lifecycle/consumption';
+import { mintWireMessageId } from './wire-message-id';
 
 export interface SandboxTurnIdentity {
   opencodeSessionId: string;
@@ -390,7 +391,10 @@ export async function settleOrphanedSandboxTurns(): Promise<number> {
 export function prepareInitialSandboxTurn(nowMs = Date.now()): PreparedInitialSandboxTurn {
   return {
     token: randomUUID(),
-    messageId: `msg_${nowMs.toString(36)}${randomUUID().replaceAll('-', '')}`,
+    // OpenCode <= 1.18.14 compares message ids to decide whether the initial
+    // user message already has an answer. A UUID-like id sorts after every
+    // native assistant id and makes the runtime answer the same prompt forever.
+    messageId: mintWireMessageId({ nowMs }).id,
     startedAtMs: nowMs,
   };
 }
