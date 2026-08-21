@@ -553,3 +553,44 @@ describe('dispatchSlackEvent — exactly-once per inbound user message', () => {
     expect(createSessionCalls).toBe(0);
   });
 });
+
+// ─── THE 2026-08-20 WRONG-BOT REPLY, at the level the damage happened ─────────
+//
+// `@Kortix hey man` in a channel that also has the "Incident reporter" bot, and
+// Incident reporter answered — a session was created inside the wrong project
+// and a message was posted as the wrong bot. classifyEvent's unit test pins the
+// routing decision; this pins the consequence, which is what the user saw:
+// nothing is created and nothing is said by the project that was not addressed.
+describe('dispatchSlackEvent — a mention addressed to another workspace bot', () => {
+  const forBot = (botId: string, ts: string) =>
+    ({
+      team_id: 'T1',
+      event: { type: 'app_mention', channel: 'C1', ts, user: 'U1', text: `<@${botId}> hey man` },
+    }) as any;
+
+  test('THE FIX: no session, no reply, nothing bound to this project', async () => {
+    // Only the channel-binding query is reached; the claim is never attempted,
+    // because the event is declined before it can be claimed.
+    dbResults = [[]];
+    await dispatchSlackEvent('proj-1', forBot('U0B7QL26690', '300.1'));
+
+    expect(createSessionCalls, 'a session was created inside the project that was NOT mentioned').toBe(0);
+    expect(deliverCalls, 'the turn was routed into a session of the wrong project').toBe(0);
+    expect(messages, 'the wrong bot answered in the channel').toHaveLength(0);
+    expect(ephemerals, 'the wrong bot posted an ephemeral').toHaveLength(0);
+  });
+
+  test('the project that WAS mentioned still answers', async () => {
+    deliverOutcome = 'delivered';
+    dbResults = [
+      [], // ensureProjectChannelBinding
+      [{ eventId: 'slack:msg:T1:C1:301.1' }], // claimInboundMessage → WON
+      [project],
+      [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: {} }], // known thread
+      [], // update lastMessageAt
+    ];
+    await dispatchSlackEvent('proj-1', forBot('B1', '301.1'));
+
+    expect(deliverCalls, 'the correctly-addressed bot went silent — this fix must not cost that').toBe(1);
+  });
+});
