@@ -20,6 +20,8 @@ export interface SessionRuntimeEnvInput {
   fastColdBootEnabled?: boolean;
   /** True only for a newly-created session branch that still equals base. */
   freshSession?: boolean;
+  /** Replacement runtime must fetch the existing remote session branch once. */
+  restoreSessionBranch?: boolean;
   /** Server-resolved base tip used to validate the image-baked scaffold. */
   baseSha?: string;
   /** Bounded Git bundle containing the exact base-tip commit above the baked scaffold. */
@@ -60,9 +62,14 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
             : {}),
         }
       : {};
+  const restoreGitEnv: Record<string, string> =
+    allowsFullRepository && input.restoreSessionBranch
+      ? { KORTIX_SESSION_BRANCH_RESTORE: '1' }
+      : {};
   return {
     ...projectGitEnv,
     ...fastGitBootEnv,
+    ...restoreGitEnv,
     ...(input.fastColdBootEnabled ? { KORTIX_OPENCODE_BINARY_PREFETCH: '1' } : {}),
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,

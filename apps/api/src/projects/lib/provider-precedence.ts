@@ -43,9 +43,12 @@ export function warmPrebakeProviders(opts: {
   projectPin: string | null;
   allowed: readonly string[];
   isEnabled: (provider: string) => boolean;
+  /** Legacy warm mode fans out. Explicit FAST mode waits for provider selection. */
+  fanoutWhenUnpinned?: boolean;
 }): string[] {
   if (opts.projectPin && opts.allowed.includes(opts.projectPin) && opts.isEnabled(opts.projectPin)) {
     return [opts.projectPin];
   }
+  if (opts.fanoutWhenUnpinned === false) return [];
   return opts.allowed.filter((p) => opts.isEnabled(p));
 }

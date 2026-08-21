@@ -1223,7 +1223,6 @@ async function maybeCreateInitialOpencodeSession(
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   if (!prompt && !bootstrapSession) return
 
-  const baseUrl = opencode.getInternalUrl()
   const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
 
   // `opencode-session-created` used to be ONE mark covering opencode's entire
@@ -1243,7 +1242,23 @@ async function maybeCreateInitialOpencodeSession(
   // marker (delivery, below, hasn't happened yet) — reflects only a PRIOR
   // boot's successful delivery, never this one's own pending write.
   const priorDeliveredMarker = readInitialPromptDeliveredMarker()
-  const resolved = await resolveExistingRoot(baseUrl, workspace, priorPin, 20_000, onListening)
+  const fastRootReadinessEnabled = process.env.KORTIX_OPENCODE_BINARY_PREFETCH === '1'
+  const rootListDeadlineMs = await waitForFastOpencodeRootReadiness({
+    fastPathEnabled: fastRootReadinessEnabled,
+    firstReadyResponse: opencode.waitForCurrentReadyResponse(),
+  })
+  // A verified reload can promote OpenCode onto the standby port while the
+  // readiness gate waits. Resolve the live URL after that wait so root lookup
+  // never resumes against the retired process.
+  const baseUrl = opencode.getInternalUrl()
+  const resolved = await resolveExistingRoot(
+    baseUrl,
+    workspace,
+    priorPin,
+    rootListDeadlineMs,
+    onListening,
+    fastRootReadinessEnabled,
+  )
   bootMark('opencode-answering')
   if (resolved.status === 'defer') {
     // opencode never answered the root list within the deadline, and a prior
@@ -1538,6 +1553,61 @@ export type ExistingRootResult =
   | { status: 'create' }
   | { status: 'defer' }
 
+const OPENCODE_ROOT_RESOLUTION_DEADLINE_MS = 20_000
+const OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS = 5_000
+const OPENCODE_FIRST_READY_GATE_MAX_MS = OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS
+
+type FastOpencodeRootReadinessInput = {
+  fastPathEnabled: boolean
+  firstReadyResponse: Promise<void>
+  deadlineMs?: number
+}
+
+type FastOpencodeRootReadinessDeps = {
+  now?: () => number
+  waitForSignal?: (signal: Promise<void>, timeoutMs: number) => Promise<void>
+}
+
+async function waitForSignalOrTimeout(signal: Promise<void>, timeoutMs: number): Promise<void> {
+  if (timeoutMs <= 0) return
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      signal.catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
+ * Hold the optional FAST root lookup for the supervisor's first successful
+ * session-API response. The gate replaces at most one doomed five-second
+ * root-list request. Its elapsed time is deducted from the existing 20-second
+ * root-resolution budget, so it cannot extend boot. The unchanged resolver
+ * still owns retries, root selection, and found/create/defer decisions.
+ */
+export async function waitForFastOpencodeRootReadiness(
+  input: FastOpencodeRootReadinessInput,
+  deps: FastOpencodeRootReadinessDeps = {},
+): Promise<number> {
+  const deadlineMs = Math.max(0, input.deadlineMs ?? OPENCODE_ROOT_RESOLUTION_DEADLINE_MS)
+  if (!input.fastPathEnabled) return deadlineMs
+
+  const now = deps.now ?? Date.now
+  const waitForSignal = deps.waitForSignal ?? waitForSignalOrTimeout
+  const startedAt = now()
+  await waitForSignal(
+    input.firstReadyResponse,
+    Math.min(deadlineMs, OPENCODE_FIRST_READY_GATE_MAX_MS),
+  )
+  const elapsedMs = Math.max(0, now() - startedAt)
+  return Math.max(0, deadlineMs - elapsedMs)
+}
+
 /**
  * Resolve a usable existing canonical root for this workspace so a restart
  * reuses it instead of creating a duplicate. Prefers the pinned id (if it still
@@ -1569,13 +1639,20 @@ async function resolveExistingRoot(
   priorPin: string | null = readPinnedOpencodeSessionId(),
   rootListDeadlineMs = 20_000,
   onListening?: () => void,
+  strictAttemptDeadline = false,
 ): Promise<ExistingRootResult> {
   // Wait for a DEFINITIVE answer from opencode before deciding. Treating a slow
   // boot as "no roots" would create a duplicate on restart — the exact bug we're
   // killing — so only conclude "create a fresh root" once opencode has actually
   // answered with an empty list (or never answers within the deadline, and
   // there is no prior pin to protect — see `defer` above).
-  const roots = await waitForRootList(baseUrl, workspace, rootListDeadlineMs, onListening)
+  const roots = await waitForRootList(
+    baseUrl,
+    workspace,
+    rootListDeadlineMs,
+    onListening,
+    strictAttemptDeadline,
+  )
   if (!roots) {
     if (priorPin) {
       logger.warn(
@@ -1621,6 +1698,7 @@ async function waitForRootList(
   workspace: string,
   deadlineMs = 20_000,
   onListening?: () => void,
+  strictAttemptDeadline = false,
 ): Promise<RootLite[] | null> {
   const deadline = Date.now() + deadlineMs
   let listeningSeen = false
@@ -1630,9 +1708,23 @@ async function waitForRootList(
     onListening?.()
   }
   while (Date.now() < deadline) {
-    const roots = await listOpencodeRoots(baseUrl, workspace, markListening)
+    const attemptTimeoutMs = strictAttemptDeadline
+      ? Math.min(
+          OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS,
+          Math.max(1, deadline - Date.now()),
+        )
+      : OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS
+    const roots = await listOpencodeRoots(
+      baseUrl,
+      workspace,
+      markListening,
+      attemptTimeoutMs,
+    )
     if (roots !== null) return roots
-    await new Promise((r) => setTimeout(r, 100))
+    const retryDelayMs = strictAttemptDeadline
+      ? Math.min(100, Math.max(0, deadline - Date.now()))
+      : 100
+    if (retryDelayMs > 0) await new Promise((r) => setTimeout(r, retryDelayMs))
   }
   return null
 }
@@ -1661,6 +1753,7 @@ async function listOpencodeRoots(
   baseUrl: string,
   workspace: string,
   onHttpResponse?: () => void,
+  attemptTimeoutMs = OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS,
 ): Promise<RootLite[] | null> {
   try {
     const res = await fetch(
@@ -1668,7 +1761,7 @@ async function listOpencodeRoots(
       {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(5_000),
+        signal: AbortSignal.timeout(attemptTimeoutMs),
       },
     )
     onHttpResponse?.()

@@ -24,6 +24,7 @@ export interface AllocateSessionRuntimeInput {
   providerName: SandboxProviderName;
   baseRef: string;
   agentName: string;
+  allowProjectImage: boolean;
   sandboxSlug?: string;
   sessionMetadata: Record<string, unknown>;
   runtimeMetadata?: Record<string, unknown>;
@@ -65,6 +66,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       projectId: input.projectId,
       userId: input.userId,
       agentName: input.agentName,
+      allowProjectImage: input.allowProjectImage,
       provider: input.providerName,
       metadata: {
         session_id: input.sessionId,

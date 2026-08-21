@@ -55,6 +55,7 @@ const Schema = z.object({
   KORTIX_REPO_URL: z.string().optional(),
   KORTIX_BRANCH_NAME: z.string().optional(),
   KORTIX_SESSION_FRESH: z.string().optional(),
+  KORTIX_SESSION_BRANCH_RESTORE: z.string().optional(),
   KORTIX_BASE_SHA: z.string().optional(),
   KORTIX_GIT_DELTA_BUNDLE_BASE64: z.string().optional(),
   KORTIX_GIT_DELTA_PARENT_SHA: z.string().optional(),
@@ -122,6 +123,7 @@ export type Config = {
   repoUrl: string | undefined
   branchName: string | undefined
   sessionFresh: boolean
+  sessionBranchRestore?: boolean
   baseSha: string | undefined
   gitDeltaBundleBase64?: string
   gitDeltaParentSha?: string
@@ -159,6 +161,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_REPO_URL: env.KORTIX_REPO_URL,
     KORTIX_BRANCH_NAME: env.KORTIX_BRANCH_NAME,
     KORTIX_SESSION_FRESH: env.KORTIX_SESSION_FRESH,
+    KORTIX_SESSION_BRANCH_RESTORE: env.KORTIX_SESSION_BRANCH_RESTORE,
     KORTIX_BASE_SHA: env.KORTIX_BASE_SHA,
     KORTIX_GIT_DELTA_BUNDLE_BASE64: env.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     KORTIX_GIT_DELTA_PARENT_SHA: env.KORTIX_GIT_DELTA_PARENT_SHA,
@@ -191,6 +194,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     repoUrl: parsed.KORTIX_REPO_URL,
     branchName: parsed.KORTIX_BRANCH_NAME,
     sessionFresh: parsed.KORTIX_SESSION_FRESH === '1',
+    sessionBranchRestore: parsed.KORTIX_SESSION_BRANCH_RESTORE === '1',
     baseSha: parsed.KORTIX_BASE_SHA,
     gitDeltaBundleBase64: parsed.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     gitDeltaParentSha: parsed.KORTIX_GIT_DELTA_PARENT_SHA,

@@ -46,6 +46,7 @@
  */
 import { writeFileSync } from 'node:fs';
 import { SQL } from 'bun';
+import { classifyBootImage, type BootImageKind } from './boot-image-kind';
 
 const API = (process.env.BENCH_API ?? 'https://api.kortix.com').replace(/\/+$/, '');
 const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 3);
@@ -83,7 +84,7 @@ interface Boot {
   provider: string | null;
   /** Snapshot the session actually booted from — distinguishes a warm (ppwarm) image from a cold one. */
   image: string | null;
-  imageKind: 'ppwarm' | 'default-cold' | 'per-project-tpl' | 'unknown';
+  imageKind: BootImageKind;
   apiCreateMs: number | null;
   vmCreatedMs: number | null;
   rowActiveMs: number | null;
@@ -94,14 +95,6 @@ interface Boot {
   /** In-guest BootMark[] read off /kortix/health. */
   bootTimeline: BootMark[] | null;
   error?: string;
-}
-
-function classifyImage(ref: string | null): Boot['imageKind'] {
-  if (!ref) return 'unknown';
-  if (ref.startsWith('kortix-ppwarm-')) return 'ppwarm';
-  if (ref.startsWith('kortix-default-')) return 'default-cold';
-  if (ref.startsWith('kortix-tpl-')) return 'per-project-tpl';
-  return 'unknown';
 }
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
@@ -174,7 +167,7 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
         const md = row.metadata ?? {};
         if (md.provisionTimeline?.marks) boot.hostMarks = md.provisionTimeline.marks;
         const ref = md.runtimeArtifact?.providerArtifactRef ?? null;
-        if (ref) { boot.image = ref; boot.imageKind = classifyImage(ref); }
+        if (ref) { boot.image = ref; boot.imageKind = classifyBootImage(ref); }
         if (row.status === 'error') throw new Error(`sandbox error: ${md.lastInitError ?? 'unknown'}`);
       }
       if (boot.runtimeReadyMs !== null) break;

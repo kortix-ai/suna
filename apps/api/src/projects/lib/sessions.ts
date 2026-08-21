@@ -101,6 +101,7 @@ import {
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditAttribution } from './session-audit';
 import {
+  projectImageAllowedForSession,
   resolveSessionSandboxSlug,
   workspaceModeAllowsFullRepository,
 } from './session-sandbox-metadata';
@@ -303,6 +304,8 @@ export async function buildSessionSandboxEnvVars(input: {
    *  through the dev tunnel (2026-06-13). Restart/resume omit it (their branch
    *  may carry the agent's pushed commits → real fetch needed). */
   freshSession?: boolean;
+  /** Replacement runtime must fetch the existing remote session branch once. */
+  restoreSessionBranch?: boolean;
   /** The project's base-branch tip SHA, resolved from the API's Git mirror. */
   baseSha?: string;
   /** Bounded exact commit delta from the API mirror. The daemon imports it on
@@ -533,6 +536,7 @@ export async function buildSessionSandboxEnvVars(input: {
       workspaceMode: input.workspaceMode,
       fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
       freshSession: input.freshSession,
+      restoreSessionBranch: input.restoreSessionBranch,
       baseSha: input.baseSha,
       gitDeltaBundleBase64: input.gitDeltaBundleBase64,
       gitDeltaParentSha: input.gitDeltaParentSha,
@@ -1602,6 +1606,7 @@ export async function createProjectSession(input: {
         projectId,
         userId,
         agentName,
+        allowProjectImage: projectImageAllowedForSession(agentName, workspaceMode),
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
         initialTurn,

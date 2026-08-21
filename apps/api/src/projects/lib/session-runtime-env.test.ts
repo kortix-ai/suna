@@ -116,6 +116,26 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
 });
 
 describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
+  test('marks replacement runtimes for remote session-branch restoration', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      restoreSessionBranch: true,
+    });
+
+    expect(env.KORTIX_SESSION_BRANCH_RESTORE).toBe('1');
+    expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
+  });
+
+  test('does not emit branch-restore authority for repository-free workspaces', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      workspaceMode: 'runtime',
+      restoreSessionBranch: true,
+    });
+
+    expect(env).not.toHaveProperty('KORTIX_SESSION_BRANCH_RESTORE');
+  });
+
   test('sends fresh-session and base-tip hints when the experiment is enabled', () => {
     const baseSha = 'a'.repeat(40);
     const gitDeltaBundleBase64 = 'R0lUIEJVTkRMRQ==';

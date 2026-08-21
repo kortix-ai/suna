@@ -24,7 +24,17 @@ import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type BuildLogTap, type BuildSnapshotResult, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config, type SandboxProviderName } from '../config';
 import { warmPrebakeProviders } from '../projects/lib/provider-precedence';
-import { PPWARM_REAP_PROTECT_MS, excludePinnedTargets, legacyPerProjectWarmImageName, perProjectWarmImageName, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
+import { PPWARM_REAP_PROTECT_MS, excludePinnedTargets, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
+import {
+  projectImageNameMatchesIdentity,
+  projectImageReadCandidates,
+  projectImageWriteName,
+  type ProjectImageReadCandidate,
+  type ProjectImageRollout,
+} from './project-image-routing';
+import { currentProjectImageDataPlaneScope } from './project-image-scope';
+import { assessFastProjectImageBuildAdmission } from './project-image-admission';
+import { cleanupOrphanedFastProjectImageBuild } from './project-image-orphan-cleanup';
 import { collectPinnedImageRefs } from './pinned-images';
 import {
   computeTemplateIdentity,
@@ -92,6 +102,34 @@ export async function waitForProviderBuild(
   } while (true);
 }
 
+export async function findFirstActiveSnapshot(
+  provider: Pick<SandboxProviderAdapter, 'getSnapshotState' | 'findFirstActiveSnapshot'>,
+  names: readonly string[],
+): Promise<string | null> {
+  if (names.length === 0) return null;
+  if (provider.findFirstActiveSnapshot) {
+    const activeName = await provider.findFirstActiveSnapshot(names);
+    if (activeName !== null && !names.includes(activeName)) {
+      throw new Error(`provider returned an active snapshot outside the requested candidate set`);
+    }
+    return activeName;
+  }
+
+  const observations = names.map(async (name) => {
+    try {
+      return { ok: true as const, state: await provider.getSnapshotState(name) };
+    } catch (error) {
+      return { ok: false as const, error };
+    }
+  });
+  for (let index = 0; index < observations.length; index += 1) {
+    const observation = await observations[index]!;
+    if (!observation.ok) throw observation.error;
+    if (observation.state === 'active') return names[index]!;
+  }
+  return null;
+}
+
 const snapshotReusePreparations = new WeakMap<object, Map<string, Promise<void>>>();
 
 export async function prepareSnapshotForReuse<T>(
@@ -135,23 +173,105 @@ export interface EnsureSandboxImageResult {
   contentHash: string;
   built: boolean;
   isDefault: boolean;
+  /** The runtime is standard, but the image adds this project's exact repo tip. */
+  isProjectImage?: boolean;
   runtimeProfile?: 'standard' | 'fast' | 'meta';
 }
+
+type PerProjectColdImageFlags = Pick<
+  typeof config,
+  | 'KORTIX_WARM_SNAPSHOT_ENABLED'
+  | 'KORTIX_FAST_COLD_BOOT_ENABLED'
+  | 'KORTIX_FAST_COLD_BOOT_CONFIGURED'
+>;
+
+/**
+ * Resolve the stopped, content-addressed per-project image rollout.
+ *
+ * An explicitly configured FAST flag is authoritative. This makes `false` one
+ * complete rollback switch even when a deployment still carries the legacy
+ * WARM flag. When FAST is absent, the legacy WARM flag keeps its prior behavior.
+ */
+export function perProjectColdImageEnabled(
+  flags: PerProjectColdImageFlags = config,
+): boolean {
+  if (flags.KORTIX_FAST_COLD_BOOT_CONFIGURED) {
+    return flags.KORTIX_FAST_COLD_BOOT_ENABLED;
+  }
+  return flags.KORTIX_WARM_SNAPSHOT_ENABLED;
+}
+
+/**
+ * Keep legacy cleanup unchanged when FAST is absent. FAST cleanup is safe only
+ * while FAST is enabled because every new name carries its data-plane scope and
+ * `ppwarmReapTargets` rejects foreign scopes. Explicit rollback performs no
+ * FAST cleanup and therefore cannot delete images still used by another plane.
+ */
+export function perProjectWarmReapEnabled(
+  flags: Pick<
+    typeof config,
+    'KORTIX_FAST_COLD_BOOT_CONFIGURED' | 'KORTIX_FAST_COLD_BOOT_ENABLED'
+  > = config,
+): boolean {
+  if (!flags.KORTIX_FAST_COLD_BOOT_CONFIGURED) return true;
+  return flags.KORTIX_FAST_COLD_BOOT_ENABLED;
+}
+
+function currentProjectImageRollout(): ProjectImageRollout {
+  const fastConfigured = config.KORTIX_FAST_COLD_BOOT_CONFIGURED;
+  const fastEnabled = config.KORTIX_FAST_COLD_BOOT_ENABLED;
+  return {
+    fastConfigured,
+    fastEnabled,
+    dataPlaneScope:
+      fastConfigured && fastEnabled ? currentProjectImageDataPlaneScope() : '',
+  };
+}
+
+export function routedPerProjectWarmImageName(
+  projectId: string,
+  tip: string,
+  baseSnapshotName: string,
+  templateSlug: string = DEFAULT_SANDBOX_SLUG,
+): string {
+  return projectImageWriteName(
+    projectId,
+    tip,
+    baseSnapshotName,
+    templateSlug,
+    currentProjectImageRollout(),
+  );
+}
+
+function routedProjectImageReadCandidates(
+  projectId: string,
+  tip: string,
+  baseSnapshotName: string,
+  templateSlug: string,
+  includeLegacy: boolean,
+): ProjectImageReadCandidate[] {
+  return projectImageReadCandidates(
+    projectId,
+    tip,
+    baseSnapshotName,
+    templateSlug,
+    includeLegacy,
+    currentProjectImageRollout(),
+  );
+}
+
+type PerProjectWarmEligibilityFlags = Pick<typeof config, 'KORTIX_WARM_SNAPSHOT_ENABLED'>;
 
 /**
  * Whether `template` is allowed to get a per-project WARM image on
  * `buildProvider` (the read-side gate for `ensureSandboxImage`'s warm-HIT
  * lookup, and by extension the write-side bake it kicks on a miss).
  *
- * The shared default is always eligible — it's the pre-existing, already-safe
- * 66%-hit-rate path. A CUSTOM (non-default-slug) template is eligible only on
- * a provider allowlisted via `KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS`
- * (default: platinum only). Platinum's per-project templates warm-MISS 100% of
- * the time today precisely because this gate used to be `template.isShared`
- * unconditionally; Daytona's shared-default path is untouched by default and
- * stays that way until its quota-gc cache-floor math (quota-gc-select.ts) is
- * re-measured against real Daytona custom-template counts — a separate,
- * later ops decision, not part of this change.
+ * The shared default is eligible for the FAST and legacy WARM rollouts. A
+ * CUSTOM template requires the legacy WARM flag and a provider allowlisted via
+ * `KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS`. This keeps the new FAST
+ * rollout within one known runtime shape. It also preserves existing custom
+ * image behavior for deployments that use the legacy flag.
  *
  * TWO RESIDUAL RISKS accepted for custom-template warming (both narrow,
  * bounded, self-healing — not blockers):
@@ -174,9 +294,13 @@ export interface EnsureSandboxImageResult {
 export function perProjectWarmEligible(
   template: Pick<ResolvedTemplate, 'isShared'>,
   buildProvider: string,
+  flags: PerProjectWarmEligibilityFlags = config,
+  isCustomTemplateWarmEligible: (provider: SandboxProviderName) => boolean = (provider) =>
+    config.isCustomTemplateWarmEligible(provider),
 ): boolean {
   if (template.isShared) return true;
-  return config.isCustomTemplateWarmEligible(buildProvider as SandboxProviderName);
+  if (!flags.KORTIX_WARM_SNAPSHOT_ENABLED) return false;
+  return isCustomTemplateWarmEligible(buildProvider as SandboxProviderName);
 }
 
 /**
@@ -189,6 +313,8 @@ export async function ensureSandboxImage(
     slug?: string;
     accountId?: string;
     source?: SnapshotBuildSource;
+    /** False when the session may not receive full repository bytes. */
+    allowProjectImage?: boolean;
     /**
      * The provider the SESSION will run on (its sandbox provider). Build there,
      * not on the template row's last-built provider — otherwise a template built
@@ -217,78 +343,46 @@ export async function ensureSandboxImage(
   // session on this commit boots warm; this boot never blocks on the bake and
   // falls through to the normal cold path when no warm image exists yet.
   if (
-    config.KORTIX_WARM_SNAPSHOT_ENABLED &&
+    opts.allowProjectImage !== false &&
+    perProjectColdImageEnabled() &&
     (opts.source ?? 'session-start') === 'session-start' &&
     perProjectWarmEligible(template, buildProvider)
   ) {
     try {
       const warmTip = await resolveCommitSha(project, project.defaultBranch);
       if (warmTip) {
-        const warmName = perProjectWarmImageName(project.projectId, warmTip, identity.snapshotName, template.slug);
-        if ((await provider.getSnapshotState(warmName)) === 'active') {
+        const candidates = routedProjectImageReadCandidates(
+          project.projectId,
+          warmTip,
+          identity.snapshotName,
+          template.slug,
+          !!template.isShared,
+        );
+        const warmName = candidates[0]!.name;
+        const activeName = await findFirstActiveSnapshot(
+          provider,
+          candidates.map((candidate) => candidate.name),
+        );
+        if (activeName) {
+          const candidate = candidates.find(({ name }) => name === activeName)!;
           console.log(
-            `[snapshots] per-project warm HIT: booting ${template.slug} from ${warmName} ` +
-            `(project ${project.projectId.slice(0, 8)}, tip ${warmTip.slice(0, 8)}, provider ${buildProvider})`,
+            `[snapshots] per-project warm HIT (${candidate.format}): booting ${template.slug} ` +
+            `from ${candidate.name} (project ${project.projectId.slice(0, 8)}, ` +
+            `tip ${warmTip.slice(0, 8)}, provider ${buildProvider})`,
           );
           return prepareSnapshotForReuse(
             provider,
-            warmName,
+            candidate.name,
             {
-              snapshotName: warmName,
+              snapshotName: candidate.name,
               slug: template.slug,
               contentHash: identity.contentHash,
               built: false,
               isDefault: !!template.isShared,
+              isProjectImage: true,
             },
             { blocking: blockingPreparation },
           );
-        }
-        // LEGACY-FORMAT FALLBACK. The ppwarm name gained a `<tpl8>` segment when
-        // warm images became (project, template)-scoped, so no image baked before
-        // that release can be recomputed under the new name. Without this lookup,
-        // that release would invalidate EVERY warm image simultaneously: ~65% of
-        // Daytona sessions currently hit one, so the first session per project
-        // would miss, clone cold, and kick a bake — a fleet-wide bake burst inside
-        // one deploy window, against a hard 100-snapshot org cap and with a
-        // 2026-07-22 storm already on record.
-        //
-        // A legacy image is already built and — for the SHARED DEFAULT only —
-        // already exactly right: same project, same tip, same base identity. Serve
-        // it. It keeps serving until this project's default branch actually moves,
-        // at which point the new-format name misses and bakes once; the stale
-        // legacy tip then ages out through quota-gc's idle/LRU rules (which match
-        // both name shapes). The fleet migrates at the natural rate of pushes
-        // instead of all at once.
-        //
-        // Gated on `isShared` because a legacy name encodes NO template: every
-        // caller that ever minted one passed the default slug, so resolving it for
-        // a custom template would hand that template a different one's image.
-        if (template.isShared) {
-          const legacyName = legacyPerProjectWarmImageName(
-            project.projectId,
-            warmTip,
-            identity.snapshotName,
-          );
-          if ((await provider.getSnapshotState(legacyName)) === 'active') {
-            console.log(
-              `[snapshots] per-project warm HIT (legacy name): booting ${template.slug} from ` +
-              `${legacyName} (project ${project.projectId.slice(0, 8)}, tip ${warmTip.slice(0, 8)}, ` +
-              `provider ${buildProvider}) — pre-dates template scoping; will re-bake under the ` +
-              `new name when this branch next moves`,
-            );
-            return prepareSnapshotForReuse(
-              provider,
-              legacyName,
-              {
-                snapshotName: legacyName,
-                slug: template.slug,
-                contentHash: identity.contentHash,
-                built: false,
-                isDefault: true,
-              },
-              { blocking: blockingPreparation },
-            );
-          }
         }
         // MISS — no warm image for this (project, tip) yet. Kick a fire-and-forget
         // background bake so the NEXT session on this commit boots warm, and fall
@@ -1105,11 +1199,51 @@ export function warmBakeCooldownGate(
 }
 
 /**
+ * Release a recorded warm-bake kick when no provider build started. Admission
+ * denials are retryable, so they must not consume the cooldown window.
+ */
+export function releaseWarmBakeCooldown(
+  projectId: string,
+  provider: string,
+  registry: Map<string, number> = warmBakeLastKickAt,
+): void {
+  registry.delete(`${projectId}:${provider}`);
+}
+
+/**
  * Warm bakes currently running, keyed by (project, provider) — a hot project
  * whose tip moves mid-bake must NOT start a second concurrent bake for the new
  * tip (the name-keyed inflight set can't see that: new tip = new name).
  */
 const inflightWarmBakesByProject = new Set<string>();
+
+/**
+ * Bound optional FAST fan-out across different projects on one API process.
+ * Provider organizations span data planes, so this is not the capacity
+ * authority; the provider reserve remains required. It limits each replica to
+ * one unregistered optional build per provider while preserving required
+ * provider-transition builds, which call `ensurePerProjectWarmImage` directly.
+ */
+const inflightFastWarmBakesByProvider = new Set<string>();
+
+export function claimFastWarmBuildProviderSlot(
+  provider: string,
+  fastEnabled: boolean,
+  registry: Set<string> = inflightFastWarmBakesByProvider,
+): boolean {
+  if (!fastEnabled) return true;
+  if (registry.has(provider)) return false;
+  registry.add(provider);
+  return true;
+}
+
+export function releaseFastWarmBuildProviderSlot(
+  provider: string,
+  fastEnabled: boolean,
+  registry: Set<string> = inflightFastWarmBakesByProvider,
+): void {
+  if (fastEnabled) registry.delete(provider);
+}
 
 /**
  * Cluster-wide cooldown: the in-memory gate above is per-replica (the api runs
@@ -1183,7 +1317,14 @@ function kickBackgroundWarmBuild(
   const scopedProjectId = warmBakeScopeId(project.projectId, slug);
   const projectKey = `${scopedProjectId}:${opts.provider}`;
   if (inflightWarmBakesByProject.has(projectKey)) return;
-  if (!warmBakeCooldownGate(scopedProjectId, opts.provider)) return;
+  const fastEnabled =
+    config.KORTIX_FAST_COLD_BOOT_CONFIGURED &&
+    config.KORTIX_FAST_COLD_BOOT_ENABLED;
+  if (!claimFastWarmBuildProviderSlot(opts.provider, fastEnabled)) return;
+  if (!warmBakeCooldownGate(scopedProjectId, opts.provider)) {
+    releaseFastWarmBuildProviderSlot(opts.provider, fastEnabled);
+    return;
+  }
   inflightBackgroundBuilds.add(key);
   inflightWarmBakesByProject.add(projectKey);
   void (async () => {
@@ -1194,12 +1335,32 @@ function kickBackgroundWarmBuild(
       );
       return;
     }
-    await ensurePerProjectWarmImage(project, {
+    if (fastEnabled) {
+      const admission = await assessFastProjectImageBuildAdmission(
+        getSandboxProvider(opts.provider),
+      );
+      if (!admission.allowed) {
+        console.warn(
+          `[snapshots] optional FAST warm bake skipped for ${project.projectId.slice(0, 8)} ` +
+            `(${opts.provider}): ${admission.reason}`,
+        );
+        releaseWarmBakeCooldown(scopedProjectId, opts.provider);
+        return;
+      }
+    }
+    const result = await ensurePerProjectWarmImage(project, {
       accountId: opts.accountId,
       provider: opts.provider,
       source: 'background',
       slug: opts.slug,
     });
+    if (fastEnabled && result.built) {
+      await cleanupOrphanedFastProjectImageBuild({
+        projectId: project.projectId,
+        snapshotName: result.snapshotName,
+        provider: opts.provider,
+      });
+    }
   })()
     .catch((err) =>
       console.warn(
@@ -1210,6 +1371,7 @@ function kickBackgroundWarmBuild(
     .finally(() => {
       inflightBackgroundBuilds.delete(key);
       inflightWarmBakesByProject.delete(projectKey);
+      releaseFastWarmBuildProviderSlot(opts.provider, fastEnabled);
     });
 }
 
@@ -1240,7 +1402,7 @@ export async function kickProjectWarmPrebake(
   project: GitBackedProject,
   opts: { accountId?: string; provider?: string; projectPin?: string | null } = {},
 ): Promise<void> {
-  if (!config.KORTIX_WARM_SNAPSHOT_ENABLED) return;
+  if (!perProjectColdImageEnabled()) return;
 
   const providers = opts.provider
     ? [opts.provider]
@@ -1251,6 +1413,10 @@ export async function kickProjectWarmPrebake(
         projectPin: opts.projectPin ?? null,
         allowed: config.ALLOWED_SANDBOX_PROVIDERS,
         isEnabled: (p) => config.isProviderEnabled(p as SandboxProviderName),
+        // The experimental path must not create one private image on every
+        // provider before a session has selected one. Legacy WARM keeps its
+        // established fanout behavior for compatibility.
+        fanoutWhenUnpinned: !config.KORTIX_FAST_COLD_BOOT_CONFIGURED,
       });
   // Per-provider: content-addressed name, own getSnapshotState check, own dedup
   // in kickBackgroundWarmBuild. Independent + best-effort — one provider failing
@@ -1271,15 +1437,26 @@ async function prebakeForProvider(
     const identity = await computeTemplateIdentity(project, template);
     const tip = await resolveCommitSha(project, project.defaultBranch);
     if (!tip) return;
-    const warmName = perProjectWarmImageName(project.projectId, tip, identity.snapshotName, template.slug);
-    // Tip unchanged (or already warm for this commit) → nothing to do.
-    if ((await provider.getSnapshotState(warmName)) === 'active') {
-      await prepareSnapshotForReuse(provider, warmName, undefined, { blocking: false });
+    const candidates = routedProjectImageReadCandidates(
+      project.projectId,
+      tip,
+      identity.snapshotName,
+      template.slug,
+      true,
+    );
+    const warmName = candidates[0]!.name;
+    // Tip unchanged (or already warm under a compatibility name) → nothing to do.
+    const activeName = await findFirstActiveSnapshot(
+      provider,
+      candidates.map((candidate) => candidate.name),
+    );
+    if (activeName) {
+      await prepareSnapshotForReuse(provider, activeName, undefined, { blocking: false });
       return;
     }
     kickBackgroundWarmBuild(project, { accountId, provider: buildProvider, snapshotName: warmName });
     console.log(
-      `[snapshots] warm prebake-on-push kicked: project ${project.projectId.slice(0, 8)} ` +
+      `[snapshots] warm prebake-on-push queued: project ${project.projectId.slice(0, 8)} ` +
       `tip ${tip.slice(0, 8)} (${buildProvider})`,
     );
   } catch (err) {
@@ -1845,6 +2022,12 @@ export async function ensurePerProjectWarmImage(
     /** Lease-renewal hook, forwarded into the provider's build-wait poll loop so
      *  a long build never lets the caller's lease TTL lapse. */
     heartbeat?: () => void | Promise<void>;
+    /**
+     * Durable provider-transition identity. A transition keeps the exact name
+     * it persisted before a feature-flag or data-plane-scope rollout. The name
+     * is accepted only when it recomputes to this project/template/tip/runtime.
+     */
+    snapshotName?: string;
   } = {},
 ): Promise<PerProjectWarmResult> {
   if (!project.repoUrl) throw new SnapshotBuildError('project has no repo url — cannot bake per-project warm image');
@@ -1870,14 +2053,42 @@ export async function ensurePerProjectWarmImage(
   const tip = await resolveCommitSha(project, project.defaultBranch);
   if (!tip) throw new SnapshotBuildError(`could not resolve ${project.defaultBranch} tip for per-project warm`);
 
-  const snapshotName = perProjectWarmImageName(project.projectId, tip, baseIdentity.snapshotName, template.slug);
+  const routedSnapshotName = routedPerProjectWarmImageName(
+    project.projectId,
+    tip,
+    baseIdentity.snapshotName,
+    template.slug,
+  );
+  if (
+    opts.snapshotName &&
+    !projectImageNameMatchesIdentity(
+      opts.snapshotName,
+      project.projectId,
+      tip,
+      baseIdentity.snapshotName,
+      template.slug,
+      !!template.isShared,
+    )
+  ) {
+    throw new SnapshotBuildError(
+      `persisted project image ${opts.snapshotName} does not match the current project identity`,
+    );
+  }
+  const snapshotName = opts.snapshotName ?? routedSnapshotName;
+  // A pre-FAST durable transition can resume under FAST with an unscoped name.
+  // Do not run FAST's predecessor cleanup for that compatibility build because
+  // an unscoped name cannot prove data-plane ownership.
+  const canReapProjectImagePredecessors =
+    opts.snapshotName === undefined || snapshotName === routedSnapshotName;
 
   // Idempotency: active image under this (project, tip, runtime) → reuse it.
   // Still reap here — this path also runs when a prior bake's reap failed or a
   // moved-then-restored tip races to active, so it cleans lingering old tips.
   const existingState = await provider.getSnapshotState(snapshotName);
   if (existingState === 'active') {
-    await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
+    if (canReapProjectImagePredecessors) {
+      await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
+    }
     return prepareSnapshotForReuse(
       provider,
       snapshotName,
@@ -1970,7 +2181,9 @@ export async function ensurePerProjectWarmImage(
       buildResult = await provider.buildSnapshot(fullRebuildInput, buildTap);
     }
     if (buildId) await closeBuildLogReady(buildId);
-    await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
+    if (canReapProjectImagePredecessors) {
+      await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
+    }
     // FIX-B: carry the build-proven external template id up to the transition runner.
     return { snapshotName, tip, built: true, provider: buildProvider, externalTemplateId: buildResult?.externalTemplateId };
   } catch (err) {
@@ -2053,9 +2266,19 @@ async function resolveWarmRepoContext(project: GitBackedProject, tip: string): P
  * bake. Listing/deletion are provider-adapter capabilities, so cleanup remains
  * identical for Daytona, Platinum, and E2B.
  */
-async function reapOldPerProjectWarm(projectId: string, currentName: string, buildProvider: string): Promise<void> {
+export async function reapOldPerProjectWarm(
+  projectId: string,
+  currentName: string,
+  buildProvider: string,
+  deps: {
+    provider?: Pick<SandboxProviderAdapter, 'listSnapshots' | 'deleteSnapshot'>;
+    collectPinnedImageRefs?: () => Promise<Set<string>>;
+    recentBuildLookup?: (names: string[], withinMs: number) => Promise<Set<string>>;
+  } = {},
+): Promise<void> {
+  if (!perProjectWarmReapEnabled()) return;
   try {
-    const provider = getSandboxProvider(buildProvider);
+    const provider = deps.provider ?? getSandboxProvider(buildProvider);
     const names = (await provider.listSnapshots()).map((snapshot) => snapshot.name);
     const rawTargets = ppwarmReapTargets(projectId, currentName, names);
     if (rawTargets.length === 0) return;
@@ -2063,7 +2286,7 @@ async function reapOldPerProjectWarm(projectId: string, currentName: string, bui
     // scoped selection over an ORG-WIDE list could pick another project's LIVE
     // pinned image on a proj8 collision. Cross-check against the active pins of
     // EVERY project and never delete one — a collision then just skips a reap.
-    const pinned = await collectPinnedImageRefs();
+    const pinned = await (deps.collectPinnedImageRefs ?? collectPinnedImageRefs)();
     const targets = excludePinnedTargets(rawTargets, pinned);
     for (const name of rawTargets) {
       if (pinned.has(name)) {
@@ -2077,7 +2300,10 @@ async function reapOldPerProjectWarm(projectId: string, currentName: string, bui
     // it makes that runtime re-bake — and its reap symmetrically deletes OURS:
     // an infinite loop of full image builds. Freshly-built names are skipped;
     // once a name stops being rebuilt it ages out and is reaped normally.
-    const recent = await recentlyBuiltSnapshotNames(targets, PPWARM_REAP_PROTECT_MS);
+    const recent = await (deps.recentBuildLookup ?? recentlyBuiltStrict)(
+      targets,
+      PPWARM_REAP_PROTECT_MS,
+    );
     for (const name of targets) {
       if (recent.has(name)) {
         console.log(`[snapshots] per-project warm: keeping ${name} (built recently — likely a live runtime's current tip)`);

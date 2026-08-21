@@ -13,6 +13,7 @@ import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
 import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
+  projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
   workspaceModeFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
@@ -221,6 +222,10 @@ export async function restartSession(input: {
       providerName,
       baseRef: session.baseRef ?? loaded.row.defaultBranch,
       agentName: session.agentName ?? 'default',
+      allowProjectImage: projectImageAllowedForSession(
+        session.agentName,
+        workspaceModeFromSessionMetadata(session.metadata),
+      ),
       sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
       runtimeMetadata,
       initialTurn,
@@ -246,6 +251,7 @@ export async function restartSession(input: {
           // workspace and wipes /workspace/AGENTS.md.
           platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
           workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+          restoreSessionBranch: true,
         }),
       resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
       beforeActive: rehydrate

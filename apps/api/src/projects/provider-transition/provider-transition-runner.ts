@@ -109,7 +109,12 @@ export interface TransitionDeps {
    *  a double-drive. Threaded down into the provider's waitForActive poll loop. */
   ensureWarmImage: (
     project: GitBackedProject,
-    opts: { provider: string; accountId?: string; heartbeat?: () => Promise<void> },
+    opts: {
+      provider: string;
+      accountId?: string;
+      heartbeat?: () => Promise<void>;
+      snapshotName?: string;
+    },
   ) => Promise<{ snapshotName: string; built: boolean; externalTemplateId?: string | null }>;
   /** Resolve the CURRENT prep identity (tip + base runtime + ppwarm name). */
   resolvePrepIdentity: (project: GitBackedProject, targetProvider: string) => Promise<ResolvedPrepIdentity>;
@@ -388,7 +393,16 @@ export async function driveProviderTransition(
     }
 
     const provider = deps.getProvider(leased.targetProvider);
-    const snapshotName = current.snapshotName;
+    // The row's snapshot name is part of its durable, immutable build identity.
+    // A FAST false→true rollout changes the freshly-derived name without
+    // changing repository or runtime content. Finish the stored identity instead
+    // of ignoring an active/in-flight image and starting a duplicate build.
+    const snapshotName =
+      leased.snapshotName &&
+      leased.commitSha === current.commitSha &&
+      leased.baseRuntimeIdentity === current.baseRuntimeIdentity
+        ? leased.snapshotName
+        : current.snapshotName;
     // FIX-B: the EXACT external template id a FRESH build proved, threaded from
     // the provider build (Platinum's requireExternalTemplateId) through
     // ensureWarmImage. Stays null on the existing-image-reuse path (no build ran)
@@ -441,6 +455,7 @@ export async function driveProviderTransition(
           provider: leased.targetProvider,
           accountId: leased.accountId,
           heartbeat: heartbeatCb,
+          snapshotName,
         });
         // FIX-B: keep the id the build PROVED (never re-derive it by name below).
         builtExternalTemplateId = buildResult.externalTemplateId ?? null;
@@ -643,6 +658,28 @@ export async function driveProviderTransition(
     // Fenced out at activation (a newer owner re-acquired at the SAME generation) —
     // the pin was NOT touched. Cease silently; the current owner activates.
     if (result.reason === 'lost_lease') return 'not_leased';
+    if (result.reason === 'project_archived') {
+      await provider.deleteSnapshot(snapshotName).catch((error) =>
+        console.warn(
+          `[provider-transition] could not delete ${snapshotName} after project ` +
+            `${leased.projectId} was archived during activation:`,
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
+      await mustOwn(
+        failTransition(
+          deps.db,
+          transitionId,
+          {
+            attempts: leased.attempts ?? 0,
+            lastError: 'project archived during activation',
+            errorClass: 'gone',
+          },
+          myEpoch,
+        ),
+      );
+      return 'gone';
+    }
     await mustOwn(failTransition(deps.db, transitionId, {
       attempts: (leased.attempts ?? 0) + 1,
       lastError: 'project missing at activation',

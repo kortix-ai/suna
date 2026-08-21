@@ -150,9 +150,9 @@ export interface KortixToolchainLayerOpts {
    * `${target}/.git` whose HEAD matches the session base. Requires NO memory
    * snapshot: the checkout is plain rootfs bytes that BOTH Daytona and Platinum
    * boot cold. When set, the layer clones the repo into /workspace BEFORE the
-   * opencode instance warm-up (so opencode indexes the REAL project) and does
-   * NOT wipe /workspace afterward. Omit for the shared, project-independent
-   * default image (workspace stays empty; the daemon clones at boot).
+   * opencode instance warm-up (so opencode indexes the REAL project). The
+   * warm-up then restores the exact tracked checkout and removes every generated
+   * or ignored file. Omit for the shared, project-independent default image.
    */
   warmRepo?: WarmRepoConfig;
 }
@@ -180,7 +180,8 @@ export interface WarmRepoConfig {
   /**
    * Path (relative to the build context root) to the pre-staged,
    * credential-free repo checkout produced API-side. The image `COPY`s these
-   * bytes verbatim into /workspace — nothing here is secret.
+   * non-Git bytes verbatim into /workspace — nothing here is secret. The
+   * staged directory excludes `.git`; `stagedGitPath` restores it separately.
    */
   stagedPath: string;
   /**
@@ -261,7 +262,7 @@ export interface BuildLayeredDockerfileOpts
 const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 
 /**
- * The per-project COLD warm bake step: `COPY` the credential-free repo checkout
+ * The per-project COLD warm bake step: copy the credential-free repo checkout
  * that Suna already cloned, origin-reset, and scrubbed API-side
  * (`stageWarmRepoCheckout`) into /workspace. NO auth material is present — this
  * is the PHASE 1 fix for the credential leak that the old in-Dockerfile clone
@@ -281,7 +282,7 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
     '# ─── Per-project COLD warm: bake repo checkout into /workspace ──────',
     '# The repo was cloned with the git-host credential, origin-reset to the',
     '# Kortix proxy, and scrubbed of ALL auth material API-side in Suna before',
-    '# this Dockerfile was rendered. This image only COPYs the sanitized plain',
+    '# this Dockerfile was rendered. This image only imports sanitized plain',
     '# bytes — no git credential ever enters the Dockerfile, build args, image',
     '# history, or build logs. See PHASE 1 provider-migration hardening.',
     // Empty whatever an earlier layer left in /workspace, then COPY the baked
@@ -292,12 +293,14 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
     // runtime user (COPY defaults to uid/gid 0). opencode + the daemon run as
     // `kortix` and must be able to write /workspace and its `.git` at runtime.
     `COPY --chown=kortix:kortix ${warmRepo.stagedPath}/ /workspace/`,
-    // Daytona uploads each COPY source as a separate context object. Transfer
-    // Git metadata as one visible file, then restore the canonical directory.
-    // Daytona exposes that copied context object as non-removable during RUN.
-    // Keep the credential-free archive instead of failing the image build.
-    `COPY ${warmRepo.stagedGitPath} /tmp/kortix-warm-repo-git.tar`,
-    'RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git',
+    // Provider uploaders transfer Git metadata as one visible tar file. ADD
+    // extracts the local archive without retaining the archive in the final
+    // rootfs. The archive contains one top-level `.git` directory, so extracting
+    // at /workspace restores the canonical checkout shape and file modes.
+    'RUN rm -rf /workspace/.git',
+    `ADD ${warmRepo.stagedGitPath} /workspace/`,
+    // E2B can discard ADD/COPY --chown. Correct ownership explicitly as root.
+    'RUN sudo chown -R kortix:kortix /workspace/.git',
     // Verify the baked checkout is a real repo. The branch is shell-quoted via
     // `shq` (never interpolated raw), so a hostile branch name cannot inject a
     // build-time shell command — closing the latent sink in the old echo.
@@ -317,8 +320,8 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
  * runtime path (/workspace) so Bun's content-addressed transpile cache hits at
  * boot. For the SHARED default image we then wipe /workspace (the session
  * clones into it). For a PER-PROJECT COLD warm (warmRepo set) the repo is
- * already baked at /workspace and we KEEP it — the daemon boots off the baked
- * checkout with NO clone. For a CUSTOM template we remove only the config we
+ * already baked at /workspace. We restore its exact pre-warm state, then the
+ * daemon boots from it with NO clone. For a CUSTOM template we remove only the config we
  * staged: /workspace is the user's. Either way the warmed caches under
  * the `kortix` user's home persist in the image layer. Measured: cold first-instance
  * 6–60s → ~2–4s after this bake. Requires opencode + bun + the baked config
@@ -339,7 +342,7 @@ function buildOpencodeInstanceWarmupLines(opts: {
 }): string[] {
   const { opencodeConfigPath, opencodeWarmupScriptPath, warmRepo, isSharedDefault } = opts;
   if (!opencodeConfigPath || !opencodeWarmupScriptPath) return [];
-  const cleanup = warmRepo ? 'keep' : isSharedDefault ? 'wipe' : 'targeted';
+  const cleanup = warmRepo ? 'repo' : isSharedDefault ? 'wipe' : 'targeted';
   return [
     `COPY --chown=kortix:kortix ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
     // Same "does it actually bundle" check as the opencode-config-deps
@@ -363,15 +366,15 @@ function buildOpencodeInstanceWarmupLines(opts: {
     '',
     `COPY --chown=kortix:kortix ${opencodeWarmupScriptPath} /tmp/kortix-opencode-warmup`,
     // Stage the canonical starter opencode config so the instance warm-up
-    // has the pty plugin + tools to load. For a per-project warm the baked
-    // repo may already ship its own .kortix/opencode — keep it (its config
-    // is what the session actually resolves at runtime) and only fall back
-    // to the staged starter when the repo has none.
+    // has the pty plugin + tools to load. In repo mode the script hides any
+    // repository-controlled `.kortix` tree and points OPENCODE_CONFIG_DIR at
+    // this canonical tree. Git cleanup restores the repository tree afterward.
     // The warm-up script records whether the starter config in /workspace is
     // ours and limits cleanup accordingly.
     // Three cases, and only one of them may delete indiscriminately:
-    //  • per-project COLD warm (warmRepo): KEEP the baked repo checkout so
-    //    the daemon boots off it with no clone.
+    //  • per-project COLD warm (warmRepo): restore the exact baked checkout
+    //    after OpenCode warms its caches. The daemon then boots from the clean
+    //    checkout with no clone.
     //  • SHARED default: /workspace contains only what this warm-up put
     //    there (the base is `PLATFORM_DEFAULT_USER_DOCKERFILE` — a FROM and a
     //    WORKDIR), so wiping it is exact, and it also clears anything opencode

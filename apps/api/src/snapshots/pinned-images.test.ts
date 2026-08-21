@@ -45,11 +45,21 @@ d('collectPinnedImageRefs (throwaway Postgres)', () => {
     await project({ active_sandbox_external_template_id: 'tpl_only_456' });
     // An unpinned project contributes nothing.
     await project({ default_agent: 'writer', triggers_paused: true });
+    const archivedProjectId = await project({
+      active_sandbox_snapshot_name: 'kortix-ppwarm-archived-deadbeefcafe',
+      active_sandbox_external_template_id: 'tpl_archived_789',
+    });
+    await db
+      .update(projects)
+      .set({ status: 'archived' })
+      .where(eq(projects.projectId, archivedProjectId));
 
     const refs = await collectPinnedImageRefs(db);
     expect(refs.has('kortix-ppwarm-abcd1234-deadbeefcafe')).toBe(true);
     expect(refs.has('tpl_live_123')).toBe(true);
     expect(refs.has('tpl_only_456')).toBe(true);
+    expect(refs.has('kortix-ppwarm-archived-deadbeefcafe')).toBe(false);
+    expect(refs.has('tpl_archived_789')).toBe(false);
     // No stray values from the unpinned project.
     expect(refs.has('writer')).toBe(false);
   });

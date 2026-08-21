@@ -133,7 +133,7 @@ describe('runtime artifact integrity', () => {
     for (const { opts } of CASES) {
       const image = buildLayeredDockerfile(opts);
       expect(image).toMatch(
-        /RUN bash \/tmp\/kortix-opencode-warmup instance (?:keep|wipe|targeted) && rm -f \/tmp\/kortix-opencode-warmup/,
+        /RUN bash \/tmp\/kortix-opencode-warmup instance (?:keep|repo|wipe|targeted) && rm -f \/tmp\/kortix-opencode-warmup/,
       );
       expect(image).not.toMatch(/kortix-opencode-warmup instance \w+; rm -f/);
     }
@@ -285,8 +285,10 @@ describe('PHASE 1: no git credential is ever rendered into the Dockerfile', () =
     expect(warm).not.toContain('git clone');
     expect(warm).toContain('COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/');
     expect(warm).toContain(
-      'COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar',
+      'ADD kortix-warm-repo-git.tar /workspace/',
     );
+    expect(warm.match(/kortix-warm-repo-git\.tar/g)).toHaveLength(1);
+    expect(warm).not.toContain('/tmp/kortix-warm-repo-git.tar');
   });
 
   test('a sentinel-shaped branch name is shell-quoted, not interpolated raw', () => {
@@ -333,10 +335,10 @@ describe('the /workspace cleanup is scoped to the shared default image', () => {
     expect(custom).toContain('kortix-opencode-warmup instance targeted');
   });
 
-  test('a per-project warm keeps the baked checkout (unchanged)', () => {
+  test('a per-project warm restores the baked checkout after cache warming', () => {
     const warm = buildLayeredDockerfile(CASES[2]!.opts);
     expect(warm).not.toContain(WIPE);
-    expect(warm).toContain('kortix-opencode-warmup instance keep');
+    expect(warm).toContain('kortix-opencode-warmup instance repo');
   });
 
   test('warmRepo outranks isSharedDefault — a baked checkout is never wiped', () => {
@@ -442,18 +444,15 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
     expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
     // MY credential-free COPY of the sanitized staged checkout …
     expect(rendered).toContain('COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/');
-    // Provider uploaders transfer the visible archive as one context object.
-    expect(rendered).toContain(
-      'COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar',
-    );
-    expect(rendered).toContain(
-      'tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1',
-    );
-    expect(rendered).not.toContain('rm -f /tmp/kortix-warm-repo-git.tar');
+    expect(rendered).toContain('RUN rm -rf /workspace/.git\nADD kortix-warm-repo-git.tar /workspace/');
+    expect(rendered).toContain('RUN sudo chown -R kortix:kortix /workspace/.git');
+    expect(rendered.match(/kortix-warm-repo-git\.tar/g)).toHaveLength(1);
+    expect(rendered).not.toContain('/tmp/kortix-warm-repo-git.tar');
+    expect(rendered).not.toContain('tar -xf');
     // … and MAIN's opencode instance re-warm via the cache-only warm-up script,
-    // which for a per-project warm keeps the baked /workspace checkout.
+    // which restores the exact baked /workspace checkout after warming.
     expect(rendered).toContain(
-      'RUN bash /tmp/kortix-opencode-warmup instance keep && rm -f /tmp/kortix-opencode-warmup',
+      'RUN bash /tmp/kortix-opencode-warmup instance repo && rm -f /tmp/kortix-opencode-warmup',
     );
   });
 

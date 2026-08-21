@@ -344,6 +344,7 @@ mock.module('../snapshots/builder', () => ({
     built: false,
     provider: 'daytona',
   }),
+  routedPerProjectWarmImageName: () => 'kpp2-test',
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
@@ -2161,6 +2162,14 @@ describe('project session API contract', () => {
       {
         body: { metadata: { trigger_slug: 'forged-trigger' } },
         message: 'metadata key is server-managed: trigger_slug',
+      },
+      {
+        body: { metadata: { workspace_mode: 'branch' } },
+        message: 'metadata key is server-managed: workspace_mode',
+      },
+      {
+        body: { metadata: { sandbox_slug: 'default' } },
+        message: 'metadata key is server-managed: sandbox_slug',
       },
       {
         body: { random: 'field' },

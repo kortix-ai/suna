@@ -110,4 +110,34 @@ describe('warmPrebakeProviders (build-on-push provider parity)', () => {
       warmPrebakeProviders({ projectPin: null, allowed: ALLOWED, isEnabled: (p) => p === 'daytona' }),
     ).toEqual(['daytona']);
   });
+
+  test('explicit fast mode skips unpinned push fanout', () => {
+    expect(
+      warmPrebakeProviders({
+        projectPin: null,
+        allowed: ALLOWED,
+        isEnabled: bothEnabled,
+        fanoutWhenUnpinned: false,
+      }),
+    ).toEqual([]);
+    expect(
+      warmPrebakeProviders({
+        projectPin: 'disabled-provider',
+        allowed: ALLOWED,
+        isEnabled: bothEnabled,
+        fanoutWhenUnpinned: false,
+      }),
+    ).toEqual([]);
+  });
+
+  test('explicit fast mode still prebuilds one enabled pinned provider', () => {
+    expect(
+      warmPrebakeProviders({
+        projectPin: 'platinum',
+        allowed: ALLOWED,
+        isEnabled: bothEnabled,
+        fanoutWhenUnpinned: false,
+      }),
+    ).toEqual(['platinum']);
+  });
 });

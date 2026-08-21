@@ -50,10 +50,19 @@ const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'title_source',
 ] as const;
 
-function serverManagedSessionMetadataKey(value: unknown): string | null {
+const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
+  ...SERVER_MANAGED_SESSION_METADATA_KEYS,
+  'workspace_mode',
+  'sandbox_slug',
+] as const;
+
+function serverManagedSessionMetadataKey(
+  value: unknown,
+  keys: readonly string[] = SERVER_MANAGED_SESSION_METADATA_KEYS,
+): string | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const metadata = value as Record<string, unknown>;
-  return SERVER_MANAGED_SESSION_METADATA_KEYS.find((key) => hasOwn(metadata, key)) ?? null;
+  return keys.find((key) => hasOwn(metadata, key)) ?? null;
 }
 
 // Session routes. Invariant: session_id == sandbox_id == git branch name.
@@ -542,7 +551,10 @@ projectsApp.openapi(
   // a non-placeholder name pre-empts titling permanently, since `needsTitle` and
   // the CAS both then refuse; renaming is `body.name` → metadata.custom_name,
   // which is the supported, non-destructive override.
-  const forgedKey = serverManagedSessionMetadataKey(body.metadata);
+  const forgedKey = serverManagedSessionMetadataKey(
+    body.metadata,
+    PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
+  );
   if (forgedKey) {
     return c.json({ error: `metadata key is server-managed: ${forgedKey}` }, 400);
   }
