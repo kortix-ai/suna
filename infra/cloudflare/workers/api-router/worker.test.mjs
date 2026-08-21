@@ -288,6 +288,71 @@ describe('api-router worker', () => {
     expect(response.headers.get('X-Backend-Service')).toBe('api');
   });
 
+  test.each([
+    '/v1/webhooks/projects/00000000-0000-4000-a000-000000000000/hook',
+    '/v1/webhooks/slack',
+    '/v1/billing/webhook/stripe',
+    '/v1/billing/webhooks/stripe',
+    '/v1/connectors/webhook/pipedream',
+  ])('adds a relay User-Agent only when webhook ingress omits it: %s', async (path) => {
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({ accepted: true });
+    };
+
+    const response = await worker.fetch(
+      new Request(`https://api.kortix.com${path}`, {
+        method: 'POST',
+        body: '{"event":"test"}',
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(proxiedRequest.headers.get('User-Agent')).toBe(
+      'Kortix-Webhook-Relay/1.0',
+    );
+    expect(await proxiedRequest.text()).toBe('{"event":"test"}');
+  });
+
+  test('preserves a webhook sender User-Agent', async () => {
+    let proxiedUserAgent = '';
+    globalThis.fetch = async (request) => {
+      proxiedUserAgent = request.headers.get('User-Agent');
+      return Response.json({ accepted: true });
+    };
+
+    await worker.fetch(
+      new Request('https://api.kortix.com/v1/webhooks/slack', {
+        method: 'POST',
+        headers: { 'User-Agent': 'Slackbot 1.0' },
+        body: '{}',
+      }),
+      env,
+    );
+
+    expect(proxiedUserAgent).toBe('Slackbot 1.0');
+  });
+
+  test('does not add User-Agent to non-webhook requests', async () => {
+    let proxiedUserAgent;
+    globalThis.fetch = async (request) => {
+      proxiedUserAgent = request.headers.get('User-Agent');
+      return Response.json({ accepted: true });
+    };
+
+    await worker.fetch(
+      new Request('https://api.kortix.com/v1/projects', {
+        method: 'POST',
+        body: '{}',
+      }),
+      env,
+    );
+
+    expect(proxiedUserAgent).toBeNull();
+  });
+
   test('routes gateway hostnames to the gateway backend, independent of the API toggle', async () => {
     let proxiedUrl = '';
     globalThis.fetch = async (request) => {

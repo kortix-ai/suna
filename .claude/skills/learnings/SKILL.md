@@ -21,6 +21,17 @@ linked, not inlined.
 
 ## Register
 
+### Normalize missing User-Agent at webhook ingress before AWS WAF (2026-08-21)
+
+**When:** proxying public provider webhooks through the API router to an AWS
+WAF-protected origin. Providers may omit `User-Agent`; signatures, not that
+informational header, authenticate these requests. AWS Managed Rules reject the
+request before the API can verify its signature. Add a relay `User-Agent` only
+for POST webhook routes and only when absent. Preserve sender headers elsewhere.
+*Incident:* Agency webhooks returned origin `403`; the same body with any
+`User-Agent` reached Suna. *Enforcer:* `api-router/worker.test.mjs` covers every
+webhook path family, sender-header preservation, and non-webhook exclusion.
+
 ### A JWKS is not evidence of how tokens are signed, and publishing a key changes behavior before you promote it (2026-08-21)
 
 **When:** migrating a Supabase project to asymmetric JWT signing keys, or
