@@ -1399,11 +1399,7 @@ export async function executeQueuedContinue(
     // it first (see the gate below), so the admission read — "is an older
     // prompt of this session in flight?" — would only ever refuse it for the
     // siblings it is being delivered with.
-    // `batch` skips the ORDER checks only — never the live-turn hold. See
-    // `AdmitInboxPromptOptions`: the lane claimed these rows together, so the
-    // ordering read would refuse a row for its own siblings, but a batch
-    // cannot make the runtime free.
-    admission = await admitInboxPrompt(row, undefined, { batch: !!opts.batch });
+    admission = opts.batch ? { admit: true } : await admitInboxPrompt(row);
     tl.mark('admission');
   } catch (err) {
     await markCommandFailed(

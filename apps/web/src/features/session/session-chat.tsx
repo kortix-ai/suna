@@ -2652,12 +2652,25 @@ export function SessionChat({
       try {
         removed = await promptInbox.remove(id);
       } catch (error) {
-        // A prompt already on the wire cannot be cancelled — the server
-        // answers 409 rather than lying about it.
+        // Branch on the STATUS, and say what the server said.
+        //
+        // This used to test `/409/` against `error.message` — but `ApiError`
+        // carries the server's prose in `message` and the code in `status`, so
+        // that regex could never match. Every failure rendered the same
+        // "Could not remove that prompt", including the 409 that has a precise
+        // explanation ("Prompt is already being answered") and the 404 that
+        // means something entirely different. Two unrelated causes behind one
+        // dead-end string is why this looked like the button simply never
+        // worked.
+        const status = (error as { status?: number } | null)?.status;
+        const detail =
+          error instanceof Error && error.message.trim() ? error.message.trim() : null;
         errorToast(
-          error instanceof Error && /409/.test(error.message)
-            ? 'The agent is already answering that prompt'
-            : 'Could not remove that prompt',
+          status === 409
+            ? (detail ?? 'The agent is already answering that prompt')
+            : status === 404
+              ? 'That prompt is no longer in the queue'
+              : (detail ?? 'Could not remove that prompt'),
         );
         return;
       }
