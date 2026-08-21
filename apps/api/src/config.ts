@@ -197,14 +197,20 @@ const envSchema = z.object({
   // 0 = unlimited, for self-host operators who want no ceiling at all.
   KORTIX_RELAY_MAX_REQUEST_BYTES: optInt(1_073_741_824),
   /**
-   * Total request bytes (BEFORE amplification) the in-process LLM gateway will
-   * hold at once. Beyond this it answers 503 + Retry-After instead of accepting
-   * work it cannot hold — see InflightBudget. 0 disables admission control.
+   * Estimated process memory, in AMPLIFIED bytes, that the in-process LLM
+   * gateway will hold for request bodies at once. Beyond this it answers 503 +
+   * Retry-After instead of accepting work it cannot hold — see InflightBudget.
+   * 0 disables admission control.
    *
-   * 512 MiB is sized for the smallest container that runs this code (self-host
-   * kortix-api at 2048m); a host with more memory can raise it. Bounding ONE
-   * request is not enough on its own: unbounded concurrency multiplies a
-   * bounded per-request cost straight back into an OOM.
+   * AMPLIFIED, not wire bytes: a body costs a UTF-16 string plus a JSON.parse
+   * graph, which InflightBudget charges at 3x by default. So this 512 MiB
+   * admits roughly 170 MiB of concurrent request bodies. Reading it as raw
+   * request bytes over-provisions the host by 3x.
+   *
+   * Sized for the smallest container that runs this code (self-host kortix-api
+   * at 2048m); a host with more memory can raise it. Bounding ONE request is
+   * not enough on its own: unbounded concurrency multiplies a bounded
+   * per-request cost straight back into an OOM.
    */
   GATEWAY_INFLIGHT_BUDGET_BYTES: optInt(536_870_912),
   KORTIX_RELAY_MAX_RESPONSE_BYTES: optInt(1_073_741_824),

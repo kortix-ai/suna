@@ -116,11 +116,17 @@ export class InflightBudget {
 }
 
 /**
- * Default in-flight budget, in WIRE bytes before amplification.
+ * Default in-flight budget, in AMPLIFIED bytes — the same unit `maxBytes` is
+ * compared against, i.e. an estimate of real process memory, NOT wire bytes.
+ *
+ * Stated explicitly because getting it wrong is a silent 3x error in either
+ * direction: at the default amplification this 512 MiB admits roughly 170 MiB
+ * of concurrent WIRE bytes, and an operator who reads it as "512 MiB of request
+ * body" will size a host for three times the traffic it can really take.
  *
  * Sized for the smallest container that runs this code (self-host kortix-api at
  * 2048m). A host with more memory should raise it; a host with less must lower
- * it. The relationship to enforce is the point: this is a fraction of process
- * memory, never a number picked in isolation.
+ * it. The relationship is the point: this is a fraction of process memory,
+ * never a number picked in isolation.
  */
 export const DEFAULT_INFLIGHT_BUDGET_BYTES = 512 * 1024 * 1024;

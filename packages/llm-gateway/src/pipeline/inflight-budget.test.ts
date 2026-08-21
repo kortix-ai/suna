@@ -106,4 +106,18 @@ describe('InflightBudget', () => {
     b.admit(250);
     expect(b.utilisation).toBeCloseTo(0.25, 5);
   });
+
+  // The unit of `maxBytes` is AMPLIFIED bytes, not wire bytes. Pinning it here
+  // because the two differ by 3x by default and the difference is invisible at
+  // a call site -- a host sized on the wrong reading takes 3x the traffic it
+  // can actually hold.
+  test('maxBytes is denominated in AMPLIFIED bytes, not wire bytes', () => {
+    const b = new InflightBudget({ maxBytes: 300, perRequestMaxBytes: 1_000, amplification: 3 });
+    // 100 wire bytes costs 300 amplified -> exactly fills a 300 budget.
+    expect(b.admit(100).ok).toBe(true);
+    expect(b.inflightBytes).toBe(300);
+    expect(b.utilisation).toBe(1);
+    // If maxBytes were wire-denominated, another 100 would still fit.
+    expect(b.admit(100).ok).toBe(false);
+  });
 });
