@@ -27,7 +27,12 @@ import { forwardToSandbox } from './routes/preview';
 import { resolveExternalIdFromHostLabel } from './backend';
 import { config } from '../config';
 import { PREVIEW_STATE_HEADER, previewStatePage, type PreviewState } from './preview-state-page';
-import { resolvePreviewHost, type ResolvedPreviewHost } from './preview-hosts';
+import {
+  isAllowedPreviewOrigin,
+  previewCorsHeaders as corsHeaders,
+  resolvePreviewHost,
+  type ResolvedPreviewHost,
+} from './preview-hosts';
 import {
   PREVIEW_EDGE_HEADERS,
   edgeSecret,
@@ -44,7 +49,10 @@ import {
 } from './preview-session';
 import {
   PUBLIC_SHARE_BLOCKED_PORTS,
+  PUBLIC_SHARE_VIEW_METHODS,
   STATIC_FILE_SHARE_PORT,
+  isViewOnlyShare,
+  publicShareToken as publicShareTokenFor,
   resolvePublicShare,
   touchPublicShare,
 } from '../shared/session-public-shares';
@@ -112,13 +120,6 @@ export function isPreviewHost(req: Request, url: URL): boolean {
 
 /** Query parameters that carry a one-shot credential, never forwarded upstream. */
 const CREDENTIAL_PARAMS = ['token', 'public_share'] as const;
-
-function corsHeaders(origin: string): Record<string, string> {
-  return {
-    'Access-Control-Allow-Origin': origin || '*',
-    'Access-Control-Allow-Credentials': 'true',
-  };
-}
 
 function jsonError(status: number, message: string, origin: string): Response {
   return new Response(JSON.stringify({ error: message }), {
@@ -303,6 +304,33 @@ export function cookiesForSession(session: PreviewSession, secure: boolean): str
   return previewSessionCookies(mintPreviewSession(payload, ttl), { secure, maxAgeSeconds: ttl });
 }
 
+/**
+ * True when this request may carry the ambient preview cookie into a write.
+ *
+ * `Sec-Fetch-Site` is the browser's own answer and is unforgeable from script;
+ * `same-origin` and `none` (a typed URL or a bookmark) are ours. Where it is
+ * absent — a non-browser client, an old browser — fall back to `Origin`, and
+ * allow a request that carries no Origin at all, which is what curl and the CLI
+ * send. Reads are never gated: the danger is a state change, and a cross-origin
+ * READ is already governed by the CORS allowlist.
+ */
+function isSameSiteRequest(req: Request, publicHost: string): boolean {
+  const method = req.method.toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return true;
+
+  const site = req.headers.get('sec-fetch-site');
+  if (site) return site === 'same-origin' || site === 'none';
+
+  const origin = req.headers.get('origin');
+  if (!origin) return true;
+  try {
+    const host = new URL(origin).host;
+    return host === publicHost || isAllowedPreviewOrigin(origin);
+  } catch {
+    return false;
+  }
+}
+
 /** True when the request is a top-level navigation (not a subresource/XHR). */
 function isDocumentNavigation(req: Request): boolean {
   const dest = req.headers.get('sec-fetch-dest');
@@ -368,21 +396,52 @@ export async function handlePreviewOriginRequest(
     }
     session = established.session;
     setCookies = cookiesForSession(session, secure);
+  }
 
-    // The credential arrived in the URL. On a top-level navigation, get it out
-    // of the address bar (and out of every Referer the app then sends) by
-    // bouncing once to the clean URL now that the cookie exists.
-    const carriedInUrl = CREDENTIAL_PARAMS.some((p) => url.searchParams.has(p));
-    if (carriedInUrl && isDocumentNavigation(req) && (req.method === 'GET' || req.method === 'HEAD')) {
-      const clean = new URL(url);
-      for (const p of CREDENTIAL_PARAMS) clean.searchParams.delete(p);
-      const headers = new Headers({
-        Location: `${clean.pathname}${clean.search}${clean.hash}`,
-        ...corsHeaders(origin),
-      });
-      for (const cookie of setCookies) headers.append('Set-Cookie', cookie);
-      return new Response(null, { status: 302, headers });
+  // Get the credential out of the URL on ANY navigation that still carries one,
+  // not just the one that minted the cookie. The client appends `?token=` on
+  // every render, so an iframe that remounts re-lands the JWT in
+  // `location.search` — where same-origin code written by the agent can read
+  // it, and where it reaches history and same-origin Referers. Bouncing once to
+  // the clean URL is cheap and idempotent.
+  const carriedInUrl = CREDENTIAL_PARAMS.some((p) => url.searchParams.has(p));
+  if (carriedInUrl && isDocumentNavigation(req) && (req.method === 'GET' || req.method === 'HEAD')) {
+    const clean = new URL(url);
+    for (const p of CREDENTIAL_PARAMS) clean.searchParams.delete(p);
+    const headers = new Headers({
+      Location: `${clean.pathname}${clean.search}${clean.hash}`,
+      ...corsHeaders(origin),
+    });
+    for (const cookie of setCookies) headers.append('Set-Cookie', cookie);
+    return new Response(null, { status: 302, headers });
+  }
+
+  // A cross-site WRITE must not ride the ambient cookie.
+  //
+  // `SameSite=None` is what lets the session panel embed a preview, and it also
+  // means a form auto-submitted from evil.com arrives with the cookie attached.
+  // The app's own CSRF defence cannot help: the proxy deliberately rewrites
+  // `Origin` to the upstream so frameworks see a consistent pair (see
+  // routes/preview.ts), so the check has to live here.
+  if (!isSameSiteRequest(req, publicHost)) {
+    return jsonError(403, 'Cross-site request to a preview', origin);
+  }
+
+  if (session.kind === 'public_share') {
+    // A view-only share stays view-only on this edge too. The path form has
+    // refused writes since the SSR-PV1 pentest finding; the origin form now
+    // serves the same links, so without this the gate simply moved aside.
+    if (isViewOnlyShare({ mode: session.mode, filePath: session.filePath }) &&
+        !PUBLIC_SHARE_VIEW_METHODS.has(req.method.toUpperCase())) {
+      return jsonError(405, 'This public share is view-only', origin);
     }
+
+    // Revocation has to be live. The signed cookie carries its own expiry, so
+    // without re-reading the row a revoked or expired link keeps working for
+    // the rest of the cookie's life — the path form re-checks on every request
+    // and this must not be the weaker door.
+    const still = await resolvePublicShare(publicShareTokenFor(session.shareId));
+    if (!still.ok) return jsonError(410, 'This share is no longer available', origin);
   }
 
   // Body (read once, before the retries inside forwardToSandbox).

@@ -170,6 +170,39 @@ const envSchema = z.object({
    * off-sandbox token use`.
    */
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: optBoolTrue,
+
+  // ── Streaming secret relay (POST /v1/projects/:id/secrets/:id/relay) ──────
+  //
+  // The kill switch. `false` makes /relay answer 503 `relay_disabled` with no
+  // image rebuild; the in-guest shim probes once at construction, so NEW
+  // sessions fall back to the permanent buffered /broker route immediately.
+  // In-flight relay-mode sessions get a 503 per request and the agent retries —
+  // the honest, documented limitation of a construction-time probe. The
+  // alternative (a capability header on every request) costs a round trip per
+  // relayed request and still cannot un-consume a body already streamed.
+  KORTIX_SECRET_RELAY_STREAM_ENABLED: optBoolTrue,
+  /** Websocket relay, gated separately so it can roll out behind the HTTP leg. */
+  KORTIX_RELAY_WS_ENABLED: optBoolTrue,
+  // Byte budgets. These are a RESOURCE guard, not a product limit: 1 GiB is
+  // 1024x the legacy request cap and 205x the response cap — effectively
+  // uncapped for any real API call — but it stops one runaway sandbox.
+  //
+  // They are MANDATORY because Bun applies NO inbound flow control. Measured on
+  // bun 1.3.14: a 200 MiB body into a 50 ms/chunk consumer produced 12 chunks,
+  // one of them 23,003,148 bytes, and +113.6 MiB RSS. Neither documented lever
+  // helps — `getReader({mode:'byob'})` throws (it needs a
+  // ReadableByteStreamController) and `pipeTo` with
+  // `CountQueuingStrategy({highWaterMark:1})` is byte-for-byte identical to
+  // manual reads. The counter in the read loop is the ONLY guard that exists.
+  // 0 = unlimited, for self-host operators who want no ceiling at all.
+  KORTIX_RELAY_MAX_REQUEST_BYTES: optInt(1_073_741_824),
+  KORTIX_RELAY_MAX_RESPONSE_BYTES: optInt(1_073_741_824),
+  // Time to the upstream's RESPONSE HEADERS, not to completion. The legacy
+  // broker's flat 30 s `REQUEST_TIMEOUT_MS` cannot become a total-duration
+  // timeout here or every SSE stream would die at 30 s.
+  KORTIX_RELAY_HEADERS_TIMEOUT_MS: optInt(30_000),
+  // IDLE on the upstream response socket — never a total duration. 0 = off.
+  KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: optInt(600_000),
   // Kortix-owned session titles: the moment a session's first prompt text is
   // known server-side (at create when it carries one, else on the first HTTP
   // prompt), generate the title ourselves via the internal LLM gateway instead
@@ -968,6 +1001,12 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
+  KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
+  KORTIX_RELAY_WS_ENABLED: env.KORTIX_RELAY_WS_ENABLED,
+  KORTIX_RELAY_MAX_REQUEST_BYTES: env.KORTIX_RELAY_MAX_REQUEST_BYTES,
+  KORTIX_RELAY_MAX_RESPONSE_BYTES: env.KORTIX_RELAY_MAX_RESPONSE_BYTES,
+  KORTIX_RELAY_HEADERS_TIMEOUT_MS: env.KORTIX_RELAY_HEADERS_TIMEOUT_MS,
+  KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,

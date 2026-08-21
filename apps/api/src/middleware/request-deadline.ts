@@ -104,7 +104,24 @@ const EXEMPT_METHOD_PATHS: Array<{ method: string; path: string }> = [
   { method: 'POST', path: '/v1/projects' }, // create + seed + provision
 ];
 
-const EXEMPT_METHOD_PATH_PATTERNS: Array<{ method: string; path: RegExp }> = [];
+const EXEMPT_METHOD_PATH_PATTERNS: Array<{ method: string; path: RegExp }> = [
+  // The streaming secret relay. An SSE or long-body relay legitimately outlives
+  // any fixed deadline, and `/v1/projects` is not an exempt PREFIX, so without
+  // this every relay over 25s dies with a 503 `request_deadline`.
+  //
+  // A REGEX, not an `EXEMPT_FRAGMENTS` entry: fragments match with
+  // `path.includes()`, so a `/relay` fragment would also un-bound anything
+  // merely CONTAINING that substring (`/v1/accounts/relayed-billing`). An
+  // exemption that is too broad silently removes the guard from routes nobody
+  // meant to exempt, which is worse than not having it.
+  //
+  // The buffered `/broker` sibling is deliberately NOT exempt: it is capped at
+  // 1 MiB / 5 MiB and answers in one shot.
+  { method: 'POST', path: /\/secrets\/[^/]+\/relay$/ },
+  { method: 'POST', path: /\/secrets\/[^/]+\/relay\/ws-ticket$/ },
+  // The ws UPGRADE needs no entry — `isExempt` returns true for any request
+  // carrying `Upgrade: websocket` before it reaches these lists.
+];
 
 export function isExempt(c: Context): boolean {
   // WebSocket upgrade (defensive — these are handled before app.fetch).

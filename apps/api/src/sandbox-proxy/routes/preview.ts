@@ -29,6 +29,7 @@ import {
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
 import { config } from '../../config';
+import { previewCorsHeaders } from '../preview-hosts';
 import { appCookieHeader } from '../preview-session';
 import {
   PREVIEW_STATE_HEADER,
@@ -183,8 +184,12 @@ function stripFrameAncestors(csp: string): string | null {
 // default to these) would otherwise refuse to load in the panel. Stripping them
 // at the proxy makes embedding work for ANY project without per-app config —
 // the same project-agnostic approach as the origin/host re-origination above.
-// This is safe for previews: access is already gated by the preview token +
-// ownership check, so they aren't world-framable.
+// Framing is intentionally OPEN, and that is not the same as unprotected. The
+// credential is now an ambient `SameSite=None` cookie, so any site can frame a
+// signed-in user's live preview — what stops that being useful is the
+// cross-site gate in preview-origin.ts (reads are governed by the CORS
+// allowlist, writes and WebSocket upgrades require a same-site Sec-Fetch-Site),
+// not a framing restriction.
 function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Headers {
   const headers = new Headers(upstreamHeaders);
   headers.delete('x-frame-options');
@@ -196,9 +201,32 @@ function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Header
       else headers.delete(key);
     }
   }
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
+  // One allowlist for both edges — see previewCorsHeaders. An arbitrary origin
+  // gets nothing, because the preview cookie is ambient on cross-site requests.
+  for (const [key, value] of Object.entries(previewCorsHeaders(origin))) {
+    headers.set(key, value);
+  }
+
+  // The app inside the sandbox writes its own cookies, and they are forwarded —
+  // that is what makes a cookie-session app work. What it may NOT do is widen
+  // their scope: `p.kortix.com` is not on the Public Suffix List, so a
+  // `Domain=kortix.com` cookie from a preview would be accepted for the web app
+  // and the API too. Strip `Domain` (leaving a host-only cookie, which is what
+  // the app actually needs) and drop any attempt to overwrite ours.
+  const setCookies = headers.getSetCookie?.() ?? [];
+  if (setCookies.length) {
+    headers.delete('set-cookie');
+    for (const cookie of setCookies) {
+      const name = cookie.split('=', 1)[0]?.trim();
+      if (name === '__kortix_preview' || name === '__kortix_preview_chips') continue;
+      headers.append(
+        'set-cookie',
+        cookie
+          .split(';')
+          .filter((attr) => !/^\s*domain\s*=/i.test(attr))
+          .join(';'),
+      );
+    }
   }
   return headers;
 }
@@ -212,95 +240,6 @@ function isBrowserNavigation(incomingHeaders: Headers): boolean {
   if (accept.includes('text/html')) return true;
   const dest = incomingHeaders.get('sec-fetch-dest') || '';
   return dest === 'document' || dest === 'iframe' || dest === 'frame';
-}
-
-// Minimal, dependency-free HTML shown when a sandbox port can't be reached —
-// instead of the browser's bare "HTTP ERROR 502" interstitial. Self-contained
-// (inline CSS/JS), dark-mode aware, and gently auto-retries a few times to ride
-// out the boot window before falling back to a manual Retry button. Colors and
-// the button mirror the web app's tokens (globals.css --background/--foreground/
-// --secondary/--muted-foreground; Button variant="secondary" size="sm").
-function portUnreachableHtml(port: number): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Port ${port} isn't responding</title>
-<style>
-  :root {
-    color-scheme: light dark;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0 0 0);
-    --secondary: oklch(0.9431 0 0);
-    --muted-foreground: oklch(0.5103 0 0);
-    --kortix-yellow: oklch(0.732 0.15 90.688);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --background: oklch(0.1398 0 0);
-      --foreground: oklch(1 0 0);
-      --secondary: oklch(0.2264 0 0);
-      --muted-foreground: oklch(0.683 0 0);
-    }
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    display: flex; align-items: center; justify-content: center;
-    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: var(--secondary); color: var(--foreground); padding: 24px;
-    -webkit-font-smoothing: antialiased;
-  }
-  .card { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;  }
-  h1 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; margin: 0; }
-  .dot {
-    width: 8px; height: 8px; border-radius: 999px; background: var(--kortix-yellow);
-    animation: pulse 1.4s ease-in-out infinite;
-  }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-  button {
-    display: inline-flex; align-items: center; justify-content: center;
-    height: 28px; padding: 0 12px; border: 0; border-radius: 8px;
-    font: inherit; font-weight: 500; cursor: pointer;
-    background: var(--background); color: var(--foreground);
-    transition: background-color .15s;
-  }
-  button:hover { background: color-mix(in oklab, var(--secondary) 90%, transparent); }
-  .status { font-size: 12px; color: var(--muted-foreground); min-height: 18px; margin: 0; }
-</style>
-</head>
-<body>
-  <div class="card">
-    <h1><span class="dot"></span>Port ${port} isn't responding</h1>
-    <button id="retry" type="button">Retry</button>
-    <p class="status" id="status"></p>
-  </div>
-  <script>
-    (function () {
-      var KEY = 'kortix-preview-retries-${port}';
-      var MAX = 5, DELAY = 4000;
-      var n = parseInt(sessionStorage.getItem(KEY) || '0', 10) || 0;
-      var statusEl = document.getElementById('status');
-      function reload() { sessionStorage.setItem(KEY, String(n + 1)); location.reload(); }
-      document.getElementById('retry').addEventListener('click', function () {
-        sessionStorage.setItem(KEY, '0'); location.reload();
-      });
-      if (n < MAX) {
-        var left = Math.round(DELAY / 1000);
-        statusEl.textContent = 'Retrying in ' + left + 's\\u2026';
-        var t = setInterval(function () {
-          left -= 1;
-          statusEl.textContent = left > 0 ? 'Retrying in ' + left + 's\\u2026' : 'Retrying\\u2026';
-        }, 1000);
-        setTimeout(function () { clearInterval(t); reload(); }, DELAY);
-      } else {
-        statusEl.textContent = 'Still not responding.';
-      }
-    })();
-  </script>
-</body>
-</html>`;
 }
 
 /**
@@ -350,9 +289,11 @@ export function portUnreachableResponse(opts: {
   if (upstreamStatus !== null) {
     headers.set(PROXY_UPSTREAM_STATUS_HEADER, String(upstreamStatus));
   }
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
+  // The SAME allowlist as every other preview response — this was a third copy
+  // of the policy and it still echoed any origin back with credentials.
+  const cors = previewCorsHeaders(origin);
+  for (const [key, value] of Object.entries(cors)) headers.set(key, value);
+  if (Object.keys(cors).length) {
     // Without this the browser hides both headers from JS and the probe is back
     // to guessing — the web app and the API are always different origins.
     headers.set(

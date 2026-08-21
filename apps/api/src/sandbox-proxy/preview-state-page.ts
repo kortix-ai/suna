@@ -38,6 +38,13 @@
  */
 export const PREVIEW_STATE_HEADER = 'x-kortix-preview-state';
 
+/** Linear strip; the regex form backtracks on adversarial input. */
+function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return value.slice(0, end);
+}
+
 export type PreviewState =
   | 'signed-out'
   | 'forbidden'
@@ -125,7 +132,7 @@ export function previewStatePage(input: {
   frontendUrl?: string;
 }): string {
   const copy = previewStateCopy(input.state, input.port);
-  const base = (input.frontendUrl || '').replace(/\/+$/, '');
+  const base = stripTrailingSlashes(input.frontendUrl || '');
   const href = `${base}/preview/authorize?to=${encodeURIComponent(input.returnTo)}`;
 
   // `target="_top"`: a preview is usually an iframe inside the session panel,

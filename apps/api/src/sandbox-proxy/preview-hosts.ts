@@ -144,3 +144,35 @@ export function resolvePreviewHost(hostname: string): ResolvedPreviewHost | null
   if (port < 1 || port > 65535) return null;
   return { port, sandboxLabel: match[3]!, local: false };
 }
+
+/**
+ * Cross-origin access to a preview, granted to the Kortix web app and nobody
+ * else.
+ *
+ * The preview cookie is `SameSite=None` — it must be, for the session panel to
+ * embed a preview — so the browser ATTACHES it to cross-site requests. Echoing
+ * an arbitrary `Origin` back with `Allow-Credentials: true` therefore hands any
+ * website a credentialed read of a signed-in user's preview. An allowlist is
+ * the only safe form, and it lives here, once, because BOTH edges answer with
+ * these headers and a policy in two places is a policy that drifts.
+ *
+ * Same-origin requests need none of this and are given none: callers pass ''.
+ */
+export function isAllowedPreviewOrigin(origin: string): boolean {
+  const frontend = (config.FRONTEND_URL || '').trim();
+  if (!frontend) return false;
+  try {
+    return new URL(origin).origin === new URL(frontend).origin;
+  } catch {
+    return false;
+  }
+}
+
+export function previewCorsHeaders(origin: string): Record<string, string> {
+  if (!origin || !isAllowedPreviewOrigin(origin)) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Credentials': 'true',
+    Vary: 'Origin',
+  };
+}

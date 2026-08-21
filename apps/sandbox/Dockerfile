@@ -15,7 +15,7 @@
 # Three-stage build:
 #   1. `builder`     — installs the daemon's deps and runs
 #                      `bun build --compile` for the target image architecture
-#                      to produce /agent/dist/kortix-agent.
+#                      to produce dist/kortix-agent.
 #   2. `cli-builder` — assembles a minimal workspace (apps/cli + the two
 #                      `@kortix/*` packages it imports) and compiles the
 #                      `kortix` CLI to a self-contained /cli/kortix binary.
@@ -34,9 +34,19 @@ FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a02
 
 ARG TARGETARCH
 
-WORKDIR /agent
+# The daemon builds STANDALONE — its own package.json + bun.lock, no workspace
+# root. It does share ONE module with apps/api: the relay wire contract
+# (packages/api-contract/src/secret-relay.ts, dependency-free by design and
+# asserted so by blocked-headers.test.ts). That is reached through a tsconfig
+# `paths` mapping rather than a `"workspace:*"` dependency, because a workspace
+# dependency makes `bun install --frozen-lockfile` in this directory fail
+# outright ("Workspace dependency ... not found / Searched in ./*") and no
+# sandbox image can be built at all. So mirror the repo layout here and copy the
+# one package the mapping points at.
+WORKDIR /repo/apps/kortix-sandbox-agent-server
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
 RUN bun install --frozen-lockfile
+COPY packages/api-contract /repo/packages/api-contract
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN case "${TARGETARCH:-}" in \
         amd64) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \
@@ -220,7 +230,7 @@ RUN mkdir -p /opt/kortix/opencode-config-deps \
     && rm -rf /tmp/opencode-deps-bundle-check
 
 USER root
-COPY --from=builder /agent/dist/kortix-agent /usr/local/bin/kortix-agent
+COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent /usr/local/bin/kortix-agent
 # The admin CLI every in-sandbox agent reaches for: `kortix cr open`,
 # `kortix secrets`, `kortix sessions`, … Pre-authenticated at runtime via the
 # project-scoped token the platform injects (KORTIX_CLI_TOKEN).
