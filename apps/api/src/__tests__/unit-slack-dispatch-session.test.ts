@@ -487,7 +487,7 @@ describe('inboundMessageKey — one message ⇒ one identity', () => {
 
 describe('dispatchSlackEvent — exactly-once per inbound user message', () => {
   const mention = (ts: string) =>
-    ({ team_id: 'T1', event: { type: 'app_mention', channel: 'C1', ts, user: 'U1', thread_ts: '90.0', text: 'hi' } }) as any;
+    ({ team_id: 'T1', event: { type: 'app_mention', channel: 'C1', ts, user: 'U1', thread_ts: '90.0', text: '<@B1> hi' } }) as any;
 
   test('a LOST message claim → the agent does NOT run (duplicate suppressed)', async () => {
     deliverOutcome = 'delivered';
