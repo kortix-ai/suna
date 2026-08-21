@@ -141,13 +141,62 @@ const APPS_SITE_BLOCK = `# *.<apps base domain>: every deployed Kortix App, serv
 		dynamic a {
 			name kortix-api
 			port 8008
-			refresh 5s
+			refresh 2s
 		}
 		lb_policy round_robin
-		fail_duration 10s
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
 		health_uri /v1/health
-		health_interval 10s
-		health_timeout 5s
+		health_interval 3s
+		health_timeout 2s
+	}
+}`;
+
+/**
+ * The wildcard preview-serving site block. Every sandbox port a browser can
+ * open publishes on <env>-p<port>-<sandbox-label>.{$KORTIX_PREVIEW_BASE_DOMAIN},
+ * so the app is alone on its own origin and root-absolute links, XHR to `/api`,
+ * `history.pushState`, service workers and WebSockets all resolve to the origin
+ * the browser is already on — none of which survive a path prefix.
+ *
+ * The API matches the real Host header (KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true —
+ * this reverse proxy is the trust boundary, there is no Cloudflare Worker to
+ * sign the claim). Caddy preserves the inbound Host and sets X-Forwarded-Proto
+ * by default, so resolvePreviewHost(Host) names the right sandbox and port with
+ * no header_up override.
+ *
+ * TLS is issued PER HOSTNAME on first request; a 2nd-level wildcard certificate
+ * is as impractical here as it is for Apps.
+ *
+ * Caddy's reverse_proxy passes WebSocket upgrades through unchanged, which the
+ * API needs — a dev server's hot reload opens one, and it is the only
+ * credential-carrying request an app's own code can make.
+ */
+const PREVIEW_SITE_BLOCK = `# *.<preview base domain>: one origin per sandbox port, served over
+# per-hostname on-demand TLS. Only present when KORTIX_PREVIEW_BASE_DOMAIN is
+# configured — see renderCaddyfile() in compose-assets.ts. The global
+# on_demand_tls \`ask\` above bounds certificate issuance to real preview hosts.
+*.{$KORTIX_PREVIEW_BASE_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		on_demand
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name kortix-api
+			port 8008
+			refresh 2s
+		}
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
+		health_uri /v1/health
+		health_interval 3s
+		health_timeout 2s
 	}
 }`;
 
@@ -370,6 +419,26 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
       retries: 20,
       start_period: '10s',
     };
+    // Connection headroom for horizontal scaling (Essentia scale work,
+    // 2026-08-21). Each kortix-api replica opens DB_POOL_MAX (15) main +
+    // DB_AUDIT_POOL_MAX (3) audit = 18 DIRECT Postgres backends; the Supabase
+    // data plane adds ~30. The image default of 100 caps the stack at ~4 api
+    // replicas; 200 (each backend ~10 MiB → ~2 GiB, fine on a typical box)
+    // lifts that to ~8-9. Injected here, NOT in the upstream-locked vendored
+    // docker-compose.yml, so it survives a Supabase bump. We keep the api on
+    // DIRECT connections rather than the supavisor transaction pooler because
+    // supavisor does NOT propagate the per-connection statement_timeout
+    // (verified on the box: a stuck query is never killed) — that timeout is the
+    // anti-cascade lever in packages/db/src/client.ts. Scale further by raising
+    // POSTGRES_MAX_CONNECTIONS (needs a db restart) and DB_POOL_MAX per replica.
+    if (Array.isArray(database.command)) {
+      const cmd = database.command as string[];
+      if (!cmd.some((arg) => String(arg).startsWith('max_connections='))) {
+        const cfgIdx = cmd.findIndex((arg) => String(arg).startsWith('config_file='));
+        const insertAt = cfgIdx >= 0 ? cfgIdx + 1 : cmd.length;
+        cmd.splice(insertAt, 0, '-c', 'max_connections=${POSTGRES_MAX_CONNECTIONS:-200}');
+      }
+    }
   }
   const supavisor = services['supabase-supavisor'];
   if (supavisor) {

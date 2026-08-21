@@ -6,6 +6,7 @@ import type { AppEnv } from '../types';
 import { normalizeAuditClientSource } from './audit-client-source';
 import { type AuditRow, getAuditQueue } from './audit-queue';
 import { db } from './db';
+import { auditDb } from './audit-db';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SKIPPED_PATHS = new Set(['/v1/health', '/v1/openapi.json', '/v1/docs']);
@@ -403,22 +404,22 @@ function auditWritesAreSynchronous(): boolean {
  */
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
   if (auditWritesAreSynchronous()) {
-    await insertAuditEvent(db, input);
+    await insertAuditEvent(auditDb(), input);
     return;
   }
-  getAuditQueue(db).enqueue(buildAuditRow(input));
+  getAuditQueue(auditDb()).enqueue(buildAuditRow(input));
 }
 
 /** Drain buffered audit events. Called on shutdown and by tests. */
 export async function flushAuditEvents(): Promise<void> {
   if (auditWritesAreSynchronous()) return;
-  await getAuditQueue(db).flush();
+  await getAuditQueue(auditDb()).flush();
 }
 
 /** Flush and stop the flush timer. Shutdown path only. */
 export async function shutdownAuditEvents(): Promise<void> {
   if (auditWritesAreSynchronous()) return;
-  await getAuditQueue(db).shutdown();
+  await getAuditQueue(auditDb()).shutdown();
 }
 
 /**

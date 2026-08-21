@@ -17,6 +17,20 @@
 # until it starts passing; `fail_duration` additionally ejects a replica for a
 # few seconds after any failed proxy attempt (passive check) as a second line
 # of defense, e.g. mid-way through a container being stopped.
+#
+# In-request retry (Essentia "Bad Gateway" fix, 2026-08-21): every app upstream
+# carries `lb_try_duration`/`lb_try_interval` so a single failed pick during a
+# container recreate window — `dial tcp: connection refused` (an old/not-ready
+# IP) or `no upstreams available` (both replicas momentarily failing the active
+# check) — is retried against the healthy replica instead of returning 502 to
+# the client. Caddy retries these dial-level failures for EVERY method including
+# POST, because the upstream never received the request, so there is no
+# duplicate-turn risk. Write-side failures after bytes were sent (EOF/reset) are
+# still only retried for idempotent GET/HEAD by Caddy's default and are NOT
+# force-retried here — a re-sent chat/turn/prompt POST could double-charge.
+# Health/eject cadence is tightened (`health_interval 3s`, `refresh 2s`,
+# `fail_duration 30s`) so the recreate window that produces those failures is
+# small and a torn-down replica stays parked well past it.
 {
 	email {$KORTIX_ACME_EMAIL}
 }
@@ -39,13 +53,15 @@
 			dynamic a {
 				name llm-gateway
 				port 8090
-				refresh 5s
+				refresh 2s
 			}
 			lb_policy round_robin
-			fail_duration 10s
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
 			health_uri /health
-			health_interval 10s
-			health_timeout 5s
+			health_interval 3s
+			health_timeout 2s
 		}
 	}
 	handle {
@@ -53,13 +69,15 @@
 			dynamic a {
 				name kortix-api
 				port 8008
-				refresh 5s
+				refresh 2s
 			}
 			lb_policy round_robin
-			fail_duration 10s
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
 			health_uri /v1/health
-			health_interval 10s
-			health_timeout 5s
+			health_interval 3s
+			health_timeout 2s
 		}
 	}
 }
@@ -74,7 +92,7 @@
 	@supabase path /rest/v1* /auth/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*
 	handle @supabase {
 		reverse_proxy supabase-kong:8000 {
-			fail_duration 10s
+			fail_duration 30s
 		}
 	}
 	handle {
@@ -82,13 +100,15 @@
 			dynamic a {
 				name frontend
 				port 3000
-				refresh 5s
+				refresh 2s
 			}
 			lb_policy round_robin
-			fail_duration 10s
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 30s
 			health_uri /
-			health_interval 10s
-			health_timeout 5s
+			health_interval 3s
+			health_timeout 2s
 		}
 	}
 }
