@@ -1,6 +1,12 @@
 import { gatewayRequestLogs } from '@kortix/db';
-import { auditDb } from './db';
+import { db } from './db';
+import * as sharedDb from './db';
 import { buildGatewayTraceRow, type GatewayTraceInput } from './gateway-trace-row';
+
+// Namespace import + fallback: `auditDb` is optional on the module surface so the
+// ~120 tests that mock '../shared/db' (with only `db`) keep working — see
+// shared/audit.ts for the full rationale.
+const auditDb = sharedDb.auditDb ?? db;
 
 export type { GatewayTraceInput };
 

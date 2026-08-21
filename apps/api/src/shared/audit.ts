@@ -5,7 +5,15 @@ import { getRequestContext } from '../lib/request-context';
 import type { AppEnv } from '../types';
 import { normalizeAuditClientSource } from './audit-client-source';
 import { type AuditRow, getAuditQueue } from './audit-queue';
-import { auditDb, db } from './db';
+import { db } from './db';
+import * as sharedDb from './db';
+
+// `auditDb` (dedicated audit pool — see shared/db.ts) is accessed via a
+// namespace import with a fallback: the ~120 test files that mock '../shared/db'
+// provide only `db`, so a bare `import { auditDb }` would SyntaxError at load in
+// every one of them. Production exports auditDb; tests transparently reuse their
+// mocked db. Never route auth/app/billing queries here.
+const auditDb = sharedDb.auditDb ?? db;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SKIPPED_PATHS = new Set(['/v1/health', '/v1/openapi.json', '/v1/docs']);
