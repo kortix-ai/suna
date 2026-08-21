@@ -47,6 +47,11 @@ on:
           - changed   # only surfaces stale vs what dev currently runs (fast — the default)
           - all       # force-rebuild + redeploy every surface
           - frontend  # frontend only
+      enable_fast_cold_boot:
+        description: Enable staged fast cold boot (requires surface=all)
+        type: boolean
+        required: true
+        default: false
 
 # Cancel a superseded deploy so dev always converges to the newest commit.
 #
@@ -84,6 +89,11 @@ jobs:
       apps_router: ${{ steps.outputs.outputs.apps_router }}
       terraform: ${{ steps.outputs.outputs.terraform }}
     steps:
+      - name: Validate fast cold boot activation
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && inputs.surface != 'all' }}
+        run: |
+          echo "::error::Activation requires surface=all so the API and sandbox runtime deploy together."
+          exit 1
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -515,8 +525,11 @@ jobs:
       # (see apps/api/src/sandbox-proxy/preview-hosts.ts). Setting it is what
       # makes clients stop using the path proxy, so it goes in only once the
       # certificate pack for that wildcard is active. Unset = path proxy, which
-      # is also the complete rollback.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"true","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com"}'
+      # is also the complete rollback. Keep the fast-boot flag false for the
+      # first kpp2 rollout. Automatic pushes remain false. A deliberate manual
+      # surface=all dispatch can enable it after the rollout gates pass.
+      KORTIX_ECS_ENV_OVERRIDES: >-
+        {"KORTIX_FAST_COLD_BOOT_ENABLED":"${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && 'true' || 'false' }}","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

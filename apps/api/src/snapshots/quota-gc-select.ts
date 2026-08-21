@@ -1,3 +1,12 @@
+import {
+  PPWARM_PREFIX,
+  SCOPED_PPWARM_PREFIX,
+  parseExactPpwarmImageName as parsePpwarmName,
+  type ParsedPpwarmName,
+} from './ppwarm-names';
+
+export { PPWARM_PREFIX, SCOPED_PPWARM_PREFIX };
+
 /**
  * Pure selection logic for the snapshot quota GC.
  *
@@ -27,11 +36,11 @@
  * hits the snapshot-missing auto-heal and rebuilds (one slow boot, no data loss).
  *
  * ── Cross-environment safety ────────────────────────────────────────────────
- * dev / staging / prod / laptops share ONE Daytona org but have SEPARATE databases.
- * This process can only see its own DB. So "no project row for this proj8" does NOT
- * mean the project is gone — it may be another environment's. `lastUsedAt` is the
- * only cross-env liveness signal we have, and it is the sole basis on which a
- * ppwarm tip belonging to nobody-we-know is reclaimed.
+ * dev / staging / prod / laptops can share ONE provider org but have SEPARATE
+ * databases. Scoped ppwarm names carry the owning database's 12-hex key, so this
+ * selector can reject foreign scoped names before every deletion rule. Legacy
+ * and unscoped names have no ownership key. For those names, `lastUsedAt` remains
+ * the only cross-environment liveness signal.
  *
  * ── Why ppwarm needs an LRU budget, not just a liveness rule ────────────────
  * `kortix-ppwarm-<proj8>-<hash>` is minted unconditionally on session-start of the
@@ -51,16 +60,12 @@
  * gating the warm bake; GC can only buy time.
  *
  * ── Template scoping (ppwarm-names.ts FORMAT MIGRATION) ─────────────────────
- * A ppwarm name is scoped to (project, template): `kortix-ppwarm-<proj8>-<tpl8>-
- * <hash12>` for names minted after that migration, `kortix-ppwarm-<proj8>-
- * <hash12>` (no tpl8) for names minted before it. `ppwarmProj8` matches both
- * shapes (every rule below that only needs "is this a ppwarm tip" is unaffected);
- * `ppwarmTpl8` distinguishes them for the one rule that groups tips against each
- * other (rule 2, superseded-tip pruning) — grouping by proj8 ALONE there would
- * let one template's bake prune another template's live tip out from under it.
- * Old-format names (no tpl8) are never treated as impossible to reap: they still
- * pass through the idle-time (rule 3) and LRU-budget (rule 6) sweeps below, same
- * as before this migration — those never needed tpl8 to begin with.
+ * `kortix-ppwarm-` supports legacy `(project8, hash12)` and unscoped
+ * `(project8, template8, hash12)` names. `kpp2-` supports scoped
+ * `(database12, project12, template16, hash16)` names. Rule 2 groups by the
+ * complete ownership tuple for that format. A scoped template can therefore
+ * never supersede a different template or a different database's image. Legacy
+ * and unscoped names keep their previous grouping, idle, and LRU behavior.
  */
 
 /** The Daytona org-wide snapshot cap. Counts every snapshot, ours or not. */
@@ -94,8 +99,8 @@ export const QUOTA_GC_PPWARM_EVICT_PROTECT_MS = 6 * 60 * 60 * 1000;
 /**
  * A "superseded" ppwarm tip created/used this recently is likely another live
  * runtime's CURRENT tip (mixed code versions → mixed base identities). Mirrors
- * PPWARM_REAP_PROTECT_MS in ppwarm-names.ts (kept as a local constant because
- * this module deliberately imports nothing).
+ * PPWARM_REAP_PROTECT_MS in ppwarm-names.ts. This selector keeps the threshold
+ * as an explicit policy constant.
  */
 export const QUOTA_GC_PPWARM_FRESH_PROTECT_MS = 45 * 60 * 1000;
 
@@ -103,13 +108,13 @@ export const QUOTA_GC_PPWARM_FRESH_PROTECT_MS = 45 * 60 * 1000;
 export const QUOTA_GC_MAX_PER_PASS = 15;
 
 export const DEFAULT_PREFIX = 'kortix-default-';
-export const PPWARM_PREFIX = 'kortix-ppwarm-';
 /** Namespaces we own and may reap. Anything else (stock/bench images) is untouched. */
 export const MANAGED_PREFIXES = [
   DEFAULT_PREFIX,
   'kortix-tpl-',
   'kortix-wproj-',
   PPWARM_PREFIX,
+  SCOPED_PPWARM_PREFIX,
 ] as const;
 
 /** States that mean a build is IN FLIGHT — deleting these would break a live boot. */
@@ -143,6 +148,18 @@ export interface SelectInput {
    * table); defaults to empty so pure-unit callers keep the prior behavior.
    */
   pinnedImages?: ReadonlySet<string>;
+  /**
+   * False when the IO layer could not load the complete active-pin set. Every
+   * ppwarm image is then excluded from this pass. Non-ppwarm namespaces retain
+   * their independent reference and freshness protections.
+   */
+  ppwarmPinProtectionAvailable?: boolean;
+  /**
+   * Exact 12-hex data-plane scope this database owns. Scoped ppwarm images from
+   * every other scope are excluded from all deletion rules. When absent, every
+   * scoped ppwarm image is excluded.
+   */
+  ownedPpwarmDataPlaneScope?: string;
   now: number;
 }
 
@@ -170,32 +187,38 @@ export function isManaged(name: string): boolean {
   return MANAGED_PREFIXES.some((p) => name.startsWith(p));
 }
 
-/**
- * proj8 scope key of a ppwarm name. Matches BOTH shapes — old
- * `kortix-ppwarm-<proj8>-<hash12>` and new (template-scoped)
- * `kortix-ppwarm-<proj8>-<tpl8>-<hash12>` — proj8 is always the first segment
- * regardless of format, so every rule keyed only on "is this project's ppwarm
- * cache" (idle sweep, LRU budget) is unaffected by the format migration.
- */
+/** Project scope key: 8 hex for legacy/unscoped names, 12 hex for scoped names. */
 export function ppwarmProj8(name: string): string | null {
-  if (!name.startsWith(PPWARM_PREFIX)) return null;
-  const rest = name.slice(PPWARM_PREFIX.length);
-  const proj8 = rest.split('-')[0];
-  return proj8 || null;
+  return parsePpwarmName(name)?.projectKey ?? null;
 }
 
 /**
- * tpl8 scope key of a ppwarm name, or null for an OLD-format name that predates
- * the template-scoping migration — see ppwarm-names.ts's FORMAT MIGRATION note
- * (mirrored here, not imported, because this module deliberately imports
- * nothing). Distinguished by segment count: old names have exactly 2
- * dash-delimited segments after the prefix (proj8, hash12); new names have 3
- * (proj8, tpl8, hash12).
+ * Template scope key: null for legacy names, 8 hex for unscoped names, and
+ * 16 hex for data-plane-scoped names.
  */
 export function ppwarmTpl8(name: string): string | null {
-  if (!name.startsWith(PPWARM_PREFIX)) return null;
-  const segments = name.slice(PPWARM_PREFIX.length).split('-');
-  return segments.length >= 3 ? (segments[1] || null) : null;
+  return parsePpwarmName(name)?.templateKey ?? null;
+}
+
+function ppwarmGroupKey(parsed: ParsedPpwarmName): string {
+  if (parsed.format === 'scoped') {
+    return `scoped|${parsed.dataPlaneScope}|${parsed.projectKey}|${parsed.templateKey}`;
+  }
+  if (parsed.format === 'unscoped') {
+    return `unscoped|${parsed.projectKey}|${parsed.templateKey}`;
+  }
+  return `legacy|${parsed.projectKey}`;
+}
+
+function isPpwarmNamespaceName(name: string): boolean {
+  return name.startsWith(PPWARM_PREFIX) || name.startsWith(SCOPED_PPWARM_PREFIX);
+}
+
+function isOwnedPpwarm(name: string, ownedDataPlaneScope: string | undefined): boolean {
+  if (!isPpwarmNamespaceName(name)) return true;
+  const parsed = parsePpwarmName(name);
+  if (!parsed) return false;
+  return parsed.format !== 'scoped' || parsed.dataPlaneScope === ownedDataPlaneScope;
 }
 
 function lastTouch(s: SnapshotLike): number {
@@ -221,6 +244,7 @@ function byFreshestFirst(a: SnapshotLike, b: SnapshotLike): number {
 export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   const { all, referenced, now } = input;
   const pinned = input.pinnedImages ?? new Set<string>();
+  const ppwarmPinProtectionAvailable = input.ppwarmPinProtectionAvailable ?? true;
 
   const orgTotal = all.length;
   const managed = all.filter((s) => isManaged(s.name));
@@ -240,7 +264,13 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   // and NEVER a live pinned image of any project (FIX-K-lite: guards a proj8
   // collision from deleting another project's active cache; matched by name OR id).
   const pool = managed.filter(
-    (s) => !referenced.has(s.name) && !IN_FLIGHT_STATES.has(s.state) && !pinned.has(s.name) && !pinned.has(s.id),
+    (s) =>
+      !referenced.has(s.name) &&
+      !IN_FLIGHT_STATES.has(s.state) &&
+      !pinned.has(s.name) &&
+      !pinned.has(s.id) &&
+      (ppwarmPinProtectionAvailable || !isPpwarmNamespaceName(s.name)) &&
+      isOwnedPpwarm(s.name, input.ownedPpwarmDataPlaneScope),
   );
 
   const candidates: ReapCandidate[] = [];
@@ -259,21 +289,16 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
     claim(s, `state=${s.state}`);
   }
 
-  // 2. Superseded ppwarm tips: exactly one tip per (project, template) is live.
-  //    The on-bake reaper already does this, but it misses stragglers when a
-  //    bake fails midway. Grouped by (proj8, tpl8) — NOT proj8 alone — so a
-  //    second template's tip is never compared against, and never "supersedes",
-  //    the default's; see ppwarm-names.ts's FORMAT MIGRATION note. OLD-format
-  //    tips (tpl8 = null) all share the SAME empty tpl8 slot for a given proj8,
-  //    so they still group and supersede each other exactly as before this
-  //    change — the migration only ADDS separation for template-scoped names,
-  //    it never removes the pre-existing proj8-only grouping for legacy ones.
+  // 2. Superseded ppwarm tips: exactly one tip per ownership tuple is live.
+  //    Legacy names group by project8. Unscoped names group by
+  //    (project8, template8). Scoped names group by
+  //    (database12, project12, template16).
   const byScope = new Map<string, SnapshotLike[]>();
   for (const s of pool) {
     if (s.name.includes('__deleted')) continue; // soft-delete tombstone; not quota-counting
-    const proj8 = ppwarmProj8(s.name);
-    if (!proj8) continue;
-    const scopeKey = `${proj8}|${ppwarmTpl8(s.name) ?? ''}`;
+    const parsed = parsePpwarmName(s.name);
+    if (!parsed) continue;
+    const scopeKey = ppwarmGroupKey(parsed);
     const group = byScope.get(scopeKey);
     if (group) group.push(s);
     else byScope.set(scopeKey, [s]);
@@ -289,9 +314,12 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
       // PPWARM_REAP_PROTECT_MS (ppwarm-names.ts) for the incident writeup.
       const t = lastTouch(s);
       if (Number.isFinite(t) && now - t < QUOTA_GC_PPWARM_FRESH_PROTECT_MS) continue;
-      const proj8 = ppwarmProj8(s.name);
-      const tpl8 = ppwarmTpl8(s.name);
-      claim(s, `superseded ppwarm tip for project ${proj8}${tpl8 ? ` (template ${tpl8})` : ''}`);
+      const parsed = parsePpwarmName(s.name)!;
+      claim(
+        s,
+        `superseded ppwarm tip for project ${parsed.projectKey}` +
+          (parsed.templateKey ? ` (template ${parsed.templateKey})` : ''),
+      );
     }
   }
 
@@ -300,7 +328,7 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   //    reaped tip re-bakes on the project's next background sync.
   for (const s of pool) {
     const t = lastTouch(s);
-    if (!ppwarmProj8(s.name)) continue;
+    if (!parsePpwarmName(s.name)) continue;
     if (!Number.isFinite(t)) continue; // can't prove idle → keep
     if (now - t > QUOTA_GC_PPWARM_MAX_IDLE_MS) {
       claim(s, `ppwarm idle ${Math.floor((now - t) / 86_400_000)}d`);
@@ -318,7 +346,7 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   //    conservative idle gate. These can encode real user intent, so they get the
   //    benefit of the doubt that a content-addressed default does not.
   for (const s of pool) {
-    if (s.name.startsWith(DEFAULT_PREFIX) || ppwarmProj8(s.name)) continue;
+    if (s.name.startsWith(DEFAULT_PREFIX) || parsePpwarmName(s.name)) continue;
     const t = lastTouch(s);
     if (!Number.isFinite(t)) continue;
     if (now - t > QUOTA_GC_MIN_IDLE_MS) {
@@ -334,7 +362,7 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   const stillOver = () => orgTotal - candidates.length - QUOTA_GC_ORG_TARGET;
   if (stillOver() > 0) {
     const evictable = pool
-      .filter((s) => ppwarmProj8(s.name) && !claimed.has(s.id))
+      .filter((s) => parsePpwarmName(s.name) && !claimed.has(s.id))
       .filter((s) => {
         const t = lastTouch(s);
         return Number.isFinite(t) && now - t > QUOTA_GC_PPWARM_EVICT_PROTECT_MS;

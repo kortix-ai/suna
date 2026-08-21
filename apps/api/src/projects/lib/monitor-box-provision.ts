@@ -114,6 +114,10 @@ export async function provisionMonitorBox(
         accountId: project.accountId,
         source: 'session-start',
         provider: MONITOR_PROVIDER,
+        // A monitor box has no immutable base SHA or session branch restore
+        // contract. A repository-baked image can therefore become stale before
+        // this persistent box starts and stay stale for its entire lifetime.
+        allowProjectImage: false,
       }),
     ]);
 

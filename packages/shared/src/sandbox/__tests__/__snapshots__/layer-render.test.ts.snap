@@ -523,13 +523,14 @@ RUN cd /opt/kortix/opencode-config-deps \\
 # ─── Per-project COLD warm: bake repo checkout into /workspace ──────
 # The repo was cloned with the git-host credential, origin-reset to the
 # Kortix proxy, and scrubbed of ALL auth material API-side in Suna before
-# this Dockerfile was rendered. This image only COPYs the sanitized plain
+# this Dockerfile was rendered. This image only imports sanitized plain
 # bytes — no git credential ever enters the Dockerfile, build args, image
 # history, or build logs. See PHASE 1 provider-migration hardening.
 RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/
-COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar
-RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git
+RUN rm -rf /workspace/.git
+ADD kortix-warm-repo-git.tar /workspace/
+RUN sudo chown -R kortix:kortix /workspace/.git
 RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
 COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
@@ -542,7 +543,7 @@ RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && echo "opencode-config-deps: starter tool files bundle cleanly"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup instance keep && rm -f /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup instance repo && rm -f /tmp/kortix-opencode-warmup
 
 USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz
@@ -586,13 +587,14 @@ USER kortix
 # ─── Per-project COLD warm: bake repo checkout into /workspace ──────
 # The repo was cloned with the git-host credential, origin-reset to the
 # Kortix proxy, and scrubbed of ALL auth material API-side in Suna before
-# this Dockerfile was rendered. This image only COPYs the sanitized plain
+# this Dockerfile was rendered. This image only imports sanitized plain
 # bytes — no git credential ever enters the Dockerfile, build args, image
 # history, or build logs. See PHASE 1 provider-migration hardening.
 RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/
-COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar
-RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git
+RUN rm -rf /workspace/.git
+ADD kortix-warm-repo-git.tar /workspace/
+RUN sudo chown -R kortix:kortix /workspace/.git
 RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
 COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
@@ -605,7 +607,7 @@ RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && echo "opencode-config-deps: starter tool files bundle cleanly"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup instance keep && rm -f /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup instance repo && rm -f /tmp/kortix-opencode-warmup
 
 "
 `;

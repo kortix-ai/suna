@@ -259,9 +259,10 @@ describe('syncOpencodeConfigDirToBase', () => {
  * that with no user action — and every commit the session made is reset away.
  * The command exits 0 and prints only "Switched to and reset branch".
  *
- * The guard meant to catch this (`mismatched`, keyed on cfg.sessionFresh +
- * cfg.baseSha) is dead: KORTIX_SESSION_FRESH and KORTIX_BASE_SHA have no
- * producer left in apps/api, so it is always false.
+ * The fresh-image guard cannot identify a restart by itself because provider
+ * env persists. materializeRepo therefore records one-time checkout adoption
+ * in local Git config and also recognizes the existing session ref during the
+ * marker rollout.
  *
  * These exercise real git, because the whole defect is a property of what
  * `checkout -B` does versus what `checkout` does.

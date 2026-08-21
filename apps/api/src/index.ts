@@ -118,6 +118,7 @@ import {
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
 import { kickStartupPreBuild } from './snapshots/builder';
+import { projectImageRolloutDiagnostic } from './snapshots/project-image-scope';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { edgeApp } from './edge/tls-check';
@@ -1395,6 +1396,10 @@ let draining = false;
 // service serve request-path needs (per-node caches + the WS acceptor), so they
 // must be live on each node behind the load balancer.
 async function startReplicaServices() {
+  appLogger.info(
+    '[snapshots] project image rollout',
+    projectImageRolloutDiagnostic(),
+  );
   startAccessControlCache();
   startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel

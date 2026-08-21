@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  projectImageAllowedForSession,
   resolveSessionSandboxSlug,
   sandboxSlugFromSessionMetadata,
   workspaceModeFromSessionMetadata,
@@ -46,6 +47,14 @@ describe('restricted workspace repository boundary', () => {
     expect(workspaceMetadataAllowsRepositoryAccess({ workspace_mode: 'all' })).toBe(false);
     expect(workspaceMetadataAllowsRepositoryAccess({ workspace_mode: 'branch' })).toBe(true);
     expect(workspaceMetadataAllowsRepositoryAccess({})).toBe(true);
+  });
+
+  test('project images require a full-repository non-meta session', () => {
+    expect(projectImageAllowedForSession('default', 'branch')).toBe(true);
+    expect(projectImageAllowedForSession('default', undefined)).toBe(true);
+    expect(projectImageAllowedForSession('default', 'runtime')).toBe(false);
+    expect(projectImageAllowedForSession('default', 'read')).toBe(false);
+    expect(projectImageAllowedForSession('meta', 'branch')).toBe(false);
   });
 
   test('classifies every repository-backed project capability', () => {

@@ -67,8 +67,21 @@ const accelerator = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnap
   });
 
 describe('project accelerator build presentation', () => {
-  test('identifies only ppwarm snapshots as project accelerators', () => {
+  test('identifies historical and exact scoped project images as accelerators', () => {
     expect(isProjectAcceleratorBuild(accelerator())).toBe(true);
+    expect(
+      isProjectAcceleratorBuild(
+        accelerator({ snapshot_name: 'kortix-ppwarm-historical-provider-value' }),
+      ),
+    ).toBe(true);
+    expect(
+      isProjectAcceleratorBuild(
+        accelerator({
+          snapshot_name:
+            'kpp2-111111111111-222222222222-3333333333333333-4444444444444444',
+        }),
+      ),
+    ).toBe(true);
     expect(
       isProjectAcceleratorBuild(
         build({
@@ -80,11 +93,20 @@ describe('project accelerator build presentation', () => {
     ).toBe(false);
   });
 
-  test('labels a ppwarm build as a repository accelerator', () => {
+  test('does not label malformed kpp2 values as project accelerators', () => {
+    expect(
+      isProjectAcceleratorBuild(accelerator({ snapshot_name: 'kpp2-not-an-image' })),
+    ).toBe(false);
+  });
+
+  test.each([
+    'kortix-ppwarm-00ead866-f5c859f984f2',
+    'kpp2-111111111111-222222222222-3333333333333333-4444444444444444',
+  ])('labels project image %s as a repository accelerator', (snapshotName) => {
     const html = renderBuildRow('automatic', {
       slug: 'default-warm',
       template_slug: 'default',
-      snapshot_name: 'kortix-ppwarm-00ead866-f5c859f984f2',
+      snapshot_name: snapshotName,
     });
 
     expect(html).toContain('Repository accelerator');

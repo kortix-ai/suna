@@ -239,13 +239,13 @@ describe('prepareSnapshotForReuse', () => {
 test('wires every active-reuse path through source-aware preparation', async () => {
   const source = await Bun.file(new URL('./builder.ts', import.meta.url)).text();
 
-  expect(source.match(/prepareSnapshotForReuse\(/g)).toHaveLength(11);
-  expect(source.match(/blocking: blockingPreparation/g)).toHaveLength(6);
+  expect(source.match(/prepareSnapshotForReuse\(/g)).toHaveLength(10);
+  expect(source.match(/blocking: blockingPreparation/g)).toHaveLength(5);
   expect(
     source.match(/blocking: \(opts\.source \?\? 'session-start'\) !== 'session-start'/g),
   ).toHaveLength(2);
   expect(source.match(/blocking: true/g)).toHaveLength(2);
-  expect(source.match(/warmName, undefined, \{ blocking: false \}/g)).toHaveLength(1);
+  expect(source.match(/activeName, undefined, \{ blocking: false \}/g)).toHaveLength(1);
 });
 
 test('a fast session reuse never joins startup preparation', async () => {

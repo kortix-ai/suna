@@ -1533,6 +1533,8 @@ export type Opencode = {
   getBinaryPath(): string | null
   getState(): OpencodeState
   markReady(): void
+  /** Resolves when the active supervised process answers the real session API. */
+  waitForCurrentReadyResponse(): Promise<void>
 }
 
 export interface OpencodeSupervisorOptions {
@@ -1585,6 +1587,8 @@ export function createOpencodeSupervisor(
   let state: OpencodeState = 'starting'
   let readinessTimer: ReturnType<typeof setTimeout> | null = null
   let firstReadyResponseReported = false
+  let readyResponseProcess: ChildProcess | null = null
+  const readyResponseWaiters = new Set<() => void>()
   let opencodeCwd = cfg.workspace
   const startupMark = options.onStartupMark ?? (() => {})
   let binaryResolutionPromise: Promise<string | null> | null = null
@@ -1769,15 +1773,33 @@ export function createOpencodeSupervisor(
       stdio: ['ignore', 'inherit', 'inherit'],
       detached: true,
     })
-    proc.once('spawn', () => startupMark('runtime-process-spawned'))
-
     proc.on('error', (err) => {
       logger.error('[opencode] spawn error', err)
     })
 
     if (supervise) {
+      readyResponseProcess = null
       child = proc
       superviseChild(proc)
+    }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        proc.once('spawn', () => {
+          startupMark('runtime-process-spawned')
+          resolve()
+        })
+        proc.once('error', reject)
+      })
+    } catch (err) {
+      // Node does not guarantee an `exit` event after an asynchronous spawn
+      // error. Detach the failed generation here and reject into the caller's
+      // existing retry path. This also makes candidate verification fail fast.
+      if (supervise && child === proc) {
+        readyResponseProcess = null
+        child = null
+        state = stopping ? 'down' : 'starting'
+      }
+      throw err
     }
     return proc
   }
@@ -1796,6 +1818,7 @@ export function createOpencodeSupervisor(
         logger.info('[opencode] retired child exit ignored', { pid: proc.pid })
         return
       }
+      if (readyResponseProcess === proc) readyResponseProcess = null
       child = null
       state = stopping ? 'down' : 'starting'
       if (stopping) return
@@ -1841,10 +1864,15 @@ export function createOpencodeSupervisor(
     restartDelayMs = 500
   }
 
-  function reportFirstReadyResponse() {
-    if (firstReadyResponseReported) return
-    firstReadyResponseReported = true
-    options.onFirstReadyResponse?.()
+  function reportReadyResponse(proc: ChildProcess) {
+    if (stopping || child !== proc) return
+    readyResponseProcess = proc
+    for (const resolve of readyResponseWaiters) resolve()
+    readyResponseWaiters.clear()
+    if (!firstReadyResponseReported) {
+      firstReadyResponseReported = true
+      options.onFirstReadyResponse?.()
+    }
   }
 
   /**
@@ -2108,13 +2136,19 @@ export function createOpencodeSupervisor(
     readinessTimer = setTimeout(async () => {
       if (stopping) return
       const probedPort = activePort
+      const probedChild = child
       const ready = await checkReady(probedPort)
+      if (stopping) return
       if (probedPort !== activePort) {
         scheduleReadinessProbe()
         return
       }
+      if (probedChild !== child) {
+        scheduleReadinessProbe()
+        return
+      }
       if (ready) {
-        reportFirstReadyResponse()
+        if (probedChild) reportReadyResponse(probedChild)
         markReady()
       } else if (state !== 'starting') {
         state = 'starting'
@@ -2176,6 +2210,7 @@ export function createOpencodeSupervisor(
     async stop(signal: NodeJS.Signals = 'SIGTERM') {
       stopping = true
       state = 'down'
+      readyResponseProcess = null
       if (readinessTimer) {
         clearTimeout(readinessTimer)
         readinessTimer = null
@@ -2308,6 +2343,7 @@ export function createOpencodeSupervisor(
           reason: 'the verified opencode exited before promotion; the previous one is still running',
         }
       }
+      reportReadyResponse(proven.candidate)
       markReady()
       if (previous) await killProcessGroup(previous, 'SIGTERM').catch(() => {})
       logger.info('[opencode] candidate promoted', {
@@ -2373,6 +2409,13 @@ export function createOpencodeSupervisor(
     },
 
     markReady,
+
+    waitForCurrentReadyResponse() {
+      if (!stopping && child && readyResponseProcess === child) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        readyResponseWaiters.add(resolve)
+      })
+    },
   }
 }
 

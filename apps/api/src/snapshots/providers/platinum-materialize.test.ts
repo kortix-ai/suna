@@ -211,8 +211,8 @@ describe('Platinum template materialization', () => {
     const swap = source.slice(swapStart, stateStart);
 
     for (const [flow, body, waitCall] of [
-      ['build', build, 'await waitForActive(input.snapshotName, tap, externalId);'],
-      ['agent swap', swap, 'await waitForActive(newSnapshotName, undefined, externalId);'],
+      ['build', build, 'await waitForActive(input.snapshotName, tap, externalId, this.client);'],
+      ['agent swap', swap, 'await waitForActive(newSnapshotName, undefined, externalId, this.client);'],
     ] as const) {
       const waitIndex = body.indexOf(waitCall);
       const materializeIndex = body.indexOf('await this.materializeTemplate(externalId).catch(');

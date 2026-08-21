@@ -22,6 +22,7 @@ import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
+  projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
   workspaceModeFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
@@ -347,6 +348,10 @@ export async function allocateRuntimeOnOpen(
     providerName,
     baseRef: session.baseRef ?? loaded.row.defaultBranch,
     agentName: session.agentName ?? 'default',
+    allowProjectImage: projectImageAllowedForSession(
+      session.agentName,
+      workspaceModeFromSessionMetadata(session.metadata),
+    ),
     sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
     runtimeMetadata,
     sessionMetadata,
@@ -364,6 +369,7 @@ export async function allocateRuntimeOnOpen(
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+        restoreSessionBranch: true,
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
     beforeActive: rehydrate

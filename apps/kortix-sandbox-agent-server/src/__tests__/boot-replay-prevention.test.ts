@@ -153,6 +153,58 @@ describe('finalizeOrphanedTurn — the abort gate fed by known (hole 1, orphan h
 })
 
 describe('resolveExistingRoot — waitForRootList timeout (hole 2)', () => {
+  test('the legacy path lets an in-flight request use its full attempt timeout', async () => {
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        if (req.method === 'GET' && /\/session$/.test(new URL(req.url).pathname)) {
+          await Bun.sleep(180)
+          return Response.json([])
+        }
+        return new Response('not found', { status: 404 })
+      },
+    })
+    servers.push(server)
+    const startedAt = Date.now()
+
+    const result = await resolveExistingRoot(
+      `http://127.0.0.1:${server.port}`,
+      '/workspace',
+      'ses_prior_pin',
+      50,
+    )
+
+    expect(result.status).toBe('create')
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(150)
+  })
+
+  test('an in-flight root request cannot extend the root-resolution deadline', async () => {
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        if (req.method === 'GET' && /\/session$/.test(new URL(req.url).pathname)) {
+          await Bun.sleep(1_000)
+          return Response.json([])
+        }
+        return new Response('not found', { status: 404 })
+      },
+    })
+    servers.push(server)
+    const startedAt = Date.now()
+
+    const result = await resolveExistingRoot(
+      `http://127.0.0.1:${server.port}`,
+      '/workspace',
+      'ses_prior_pin',
+      120,
+      undefined,
+      true,
+    )
+
+    expect(result.status).toBe('defer')
+    expect(Date.now() - startedAt).toBeLessThan(500)
+  })
+
   test('reports the first HTTP response once while OpenCode is still not ready', async () => {
     const { port } = rootServer({ hangRootList: true })
     const baseUrl = `http://127.0.0.1:${port}`
@@ -204,7 +256,7 @@ describe('the boot path is wired to the defer outcome, not just resolveExistingR
     const end = SRC.indexOf('\nasync function resolveExistingRoot', start)
     const body = SRC.slice(start, end)
     const resolveAt = body.indexOf('await resolveExistingRoot(')
-    const listeningAt = body.indexOf('onListening)', resolveAt)
+    const listeningAt = body.indexOf('onListening,', resolveAt)
     const answeringAt = body.indexOf("bootMark('opencode-answering')")
 
     expect(resolveAt).toBeGreaterThan(-1)

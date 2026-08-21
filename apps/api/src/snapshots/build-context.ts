@@ -100,6 +100,18 @@ export interface StagedContext {
   dockerfileName: string;
 }
 
+async function removeStagedContextOnFailure<T>(
+  contextDir: string,
+  stage: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await stage();
+  } catch (error) {
+    await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
 /**
  * Stage one provider-neutral Kortix App build context. The user's Dockerfile
  * remains the base. This function adds only the supervisor, ingress binary,
@@ -512,7 +524,9 @@ export function warmCloneProtocolPinArgs(cloneUrl: string): string[] {
  *   3. drop any credential helper / http.extraHeader that could have persisted,
  *   4. ASSERT the baked HEAD equals the pinned tip (belt-and-braces),
  *   5. ASSERT `.git/config` carries no `authorization`/`http.extraheader`/
- *      embedded userinfo before returning.
+ *      embedded userinfo,
+ *   6. archive `.git`, then remove the directory so the build context carries
+ *      one canonical metadata copy for the Dockerfile to restore.
  *
  * Returns the staged dir basename + the exact baked HEAD sha (for the caller's
  * verification / logging). Throws if the checkout still contains credentials —
@@ -631,6 +645,7 @@ export async function stageWarmRepoCheckout(
     timeout: 300_000,
     maxBuffer: 64 * 1024 * 1024,
   });
+  await rm(join(dest, '.git'), { recursive: true, force: true });
   return {
     stagedPath: WARM_REPO_STAGED_DIR,
     stagedGitPath: WARM_REPO_STAGED_GIT_ARCHIVE,
@@ -735,79 +750,81 @@ export async function stageBuildContext(
   });
 
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
-  await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
-  await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
-  await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
-  await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
-  await copyFile(MACHINE_DOC_SRC_PATH, join(contextDir, 'MACHINE.md'));
-  await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
-  // Stage the starter opencode config for the build-time instance warm-up.
-  // Best effort: if it's missing, skip the warm-up (the build still succeeds and
-  // sessions just pay the first-instance cost at runtime as before).
-  let opencodeConfigPath: string | undefined;
-  if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
-    await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
-      recursive: true,
+  return removeStagedContextOnFailure(contextDir, async () => {
+    await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
+    await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
+    await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
+    await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
+    await copyFile(MACHINE_DOC_SRC_PATH, join(contextDir, 'MACHINE.md'));
+    await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
+    // Stage the starter opencode config for the build-time instance warm-up.
+    // Best effort: if it's missing, skip the warm-up (the build still succeeds and
+    // sessions just pay the first-instance cost at runtime as before).
+    let opencodeConfigPath: string | undefined;
+    if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
+      await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
+        recursive: true,
+      });
+      opencodeConfigPath = 'kortix-opencode-config';
+    }
+
+    // PHASE 1: for a per-project COLD warm, clone the repo API-side into a
+    // SANITIZED, credential-free checkout the Dockerfile only COPYs. The git auth
+    // header is used here (Suna host) and NEVER embedded in the built image.
+    let warmRepoBake: { stagedPath: string; stagedGitPath: string; branch: string } | undefined;
+    if (warmRepo) {
+      const { stagedPath, stagedGitPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
+      warmRepoBake = { stagedPath, stagedGitPath, branch: warmRepo.branch };
+    }
+
+    // Bake the FULL gateway model catalog into the image. The no-restart warm seed
+    // has no sandbox token / projectId to fetch the catalog at PARK, so without this
+    // its opencode picker would fall back to the daemon's minimal (~11) set. Computed
+    // server-side at build time → full picker, no token, no runtime fetch. The shared
+    // seed's captureEnv (builder.ts) points KORTIX_LLM_CATALOG_FILE at the COPY target.
+    await writeFileFs(
+      join(contextDir, 'kortix-llm-catalog.json'),
+      JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
+    );
+
+    // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
+    // DEFAULT starter with the SAME pinned commit metadata the project seeder
+    // uses (git-backends/seed.ts), so its root SHA equals every seeded project's
+    // root — the daemon then materializes a project repo as local-clone +
+    // delta-fetch instead of a full clone over the (slow) git path. Non-matching
+    // repos (imported, other starters) share no ancestor and transparently fall
+    // back to a full fetch through the same code.
+    await stageScaffoldRepo(contextDir);
+
+    const dockerfileName = '.kortix-snapshot.Dockerfile';
+    const composedPath = join(contextDir, dockerfileName);
+    const composed = buildLayeredDockerfile({
+      userDockerfile,
+      opencodeVersion: OPENCODE_VERSION,
+      agentBrowserVersion: AGENT_BROWSER_VERSION,
+      agentBinaryPath: 'kortix-agent.gz',
+      cliBinaryPath: 'kortix.gz',
+      entrypointScriptPath: 'kortix-entrypoint',
+      machineDocPath: 'MACHINE.md',
+      slackCliPath: 'kortix-slack-cli',
+      opencodeConfigPath,
+      opencodeWarmupScriptPath: 'kortix-opencode-warmup',
+      catalogPath: 'kortix-llm-catalog.json',
+      isSharedDefault,
+      warmRepo: warmRepoBake,
     });
-    opencodeConfigPath = 'kortix-opencode-config';
-  }
 
-  // PHASE 1: for a per-project COLD warm, clone the repo API-side into a
-  // SANITIZED, credential-free checkout the Dockerfile only COPYs. The git auth
-  // header is used here (Suna host) and NEVER embedded in the built image.
-  let warmRepoBake: { stagedPath: string; stagedGitPath: string; branch: string } | undefined;
-  if (warmRepo) {
-    const { stagedPath, stagedGitPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
-    warmRepoBake = { stagedPath, stagedGitPath, branch: warmRepo.branch };
-  }
-
-  // Bake the FULL gateway model catalog into the image. The no-restart warm seed
-  // has no sandbox token / projectId to fetch the catalog at PARK, so without this
-  // its opencode picker would fall back to the daemon's minimal (~11) set. Computed
-  // server-side at build time → full picker, no token, no runtime fetch. The shared
-  // seed's captureEnv (builder.ts) points KORTIX_LLM_CATALOG_FILE at the COPY target.
-  await writeFileFs(
-    join(contextDir, 'kortix-llm-catalog.json'),
-    JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
-  );
-
-  // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
-  // DEFAULT starter with the SAME pinned commit metadata the project seeder
-  // uses (git-backends/seed.ts), so its root SHA equals every seeded project's
-  // root — the daemon then materializes a project repo as local-clone +
-  // delta-fetch instead of a full clone over the (slow) git path. Non-matching
-  // repos (imported, other starters) share no ancestor and transparently fall
-  // back to a full fetch through the same code.
-  await stageScaffoldRepo(contextDir);
-
-  const dockerfileName = '.kortix-snapshot.Dockerfile';
-  const composedPath = join(contextDir, dockerfileName);
-  const composed = buildLayeredDockerfile({
-    userDockerfile,
-    opencodeVersion: OPENCODE_VERSION,
-    agentBrowserVersion: AGENT_BROWSER_VERSION,
-    agentBinaryPath: 'kortix-agent.gz',
-    cliBinaryPath: 'kortix.gz',
-    entrypointScriptPath: 'kortix-entrypoint',
-    machineDocPath: 'MACHINE.md',
-    slackCliPath: 'kortix-slack-cli',
-    opencodeConfigPath,
-    opencodeWarmupScriptPath: 'kortix-opencode-warmup',
-    catalogPath: 'kortix-llm-catalog.json',
-    isSharedDefault,
-    warmRepo: warmRepoBake,
+    await guardBuildahPortable(composed);
+    await writeComposedDockerfile(composedPath, composed);
+    // Fail-loud completeness guard: a context missing scaffold.git / the agent
+    // binary / the composed Dockerfile reaches the provider as a confusing remote
+    // "Path does not exist", and the auto-build can't tell it's a staging miss to
+    // recover from. Assert at the source so a miss is caught here AND is retryable
+    // (the daytona adapter re-stages on "staging incomplete").
+    await assertContextComplete(contextDir, dockerfileName, warmRepoBake?.stagedPath);
+    console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
+    return { contextDir, composedPath, dockerfileName };
   });
-
-  await guardBuildahPortable(composed);
-  await writeComposedDockerfile(composedPath, composed);
-  // Fail-loud completeness guard: a context missing scaffold.git / the agent
-  // binary / the composed Dockerfile reaches the provider as a confusing remote
-  // "Path does not exist", and the auto-build can't tell it's a staging miss to
-  // recover from. Assert at the source so a miss is caught here AND is retryable
-  // (the daytona adapter re-stages on "staging incomplete").
-  await assertContextComplete(contextDir, dockerfileName, warmRepoBake?.stagedPath);
-  console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
-  return { contextDir, composedPath, dockerfileName };
 }
 
 /**
@@ -837,37 +854,39 @@ export async function stageWarmFromBaseContext(
   const OPENCODE_WARMUP_SRC_PATH = opencodeWarmupSrcPath();
   await assertExists(OPENCODE_WARMUP_SRC_PATH, 'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH');
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-warm-'));
-  await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
-  let opencodeConfigPath: string | undefined;
-  if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
-    await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
-      recursive: true,
+  return removeStagedContextOnFailure(contextDir, async () => {
+    await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
+    let opencodeConfigPath: string | undefined;
+    if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
+      await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
+        recursive: true,
+      });
+      opencodeConfigPath = 'kortix-opencode-config';
+    }
+
+    // PHASE 1: sanitized, credential-free repo checkout — cloned API-side, only
+    // COPY'd by the rendered Dockerfile (no git auth header in the image).
+    const { stagedPath, stagedGitPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
+
+    const dockerfileName = '.kortix-snapshot.Dockerfile';
+    const composedPath = join(contextDir, dockerfileName);
+    const composed = buildPerProjectWarmFromBaseDockerfile({
+      baseImageRef,
+      warmRepo: { stagedPath, stagedGitPath, branch: warmRepo.branch },
+      opencodeConfigPath,
+      opencodeWarmupScriptPath: 'kortix-opencode-warmup',
     });
-    opencodeConfigPath = 'kortix-opencode-config';
-  }
 
-  // PHASE 1: sanitized, credential-free repo checkout — cloned API-side, only
-  // COPY'd by the rendered Dockerfile (no git auth header in the image).
-  const { stagedPath, stagedGitPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
-
-  const dockerfileName = '.kortix-snapshot.Dockerfile';
-  const composedPath = join(contextDir, dockerfileName);
-  const composed = buildPerProjectWarmFromBaseDockerfile({
-    baseImageRef,
-    warmRepo: { stagedPath, stagedGitPath, branch: warmRepo.branch },
-    opencodeConfigPath,
-    opencodeWarmupScriptPath: 'kortix-opencode-warmup',
+    await guardBuildahPortable(composed);
+    await writeComposedDockerfile(composedPath, composed);
+    try {
+      await stat(composedPath);
+    } catch {
+      throw new Error(`build context staging incomplete: ${dockerfileName} missing in ${contextDir}`);
+    }
+    console.info(`[snapshots] ${snapshotName}: FROM-base warm context staged at ${contextDir} (base=${baseImageRef})`);
+    return { contextDir, composedPath, dockerfileName };
   });
-
-  await guardBuildahPortable(composed);
-  await writeComposedDockerfile(composedPath, composed);
-  try {
-    await stat(composedPath);
-  } catch {
-    throw new Error(`build context staging incomplete: ${dockerfileName} missing in ${contextDir}`);
-  }
-  console.info(`[snapshots] ${snapshotName}: FROM-base warm context staged at ${contextDir} (base=${baseImageRef})`);
-  return { contextDir, composedPath, dockerfileName };
 }
 
 // ── Buildah-portability guard ──────────────────────────────────────────────
@@ -927,11 +946,10 @@ async function assertContextComplete(
     'kortix-llm-catalog.json',
     dockerfileName,
   ];
-  // A per-project warm bake COPYs the staged checkout — verify it (and its
-  // baked .git) actually landed, so a staging miss fails HERE rather than as an
-  // opaque remote "Path does not exist" mid-build.
+  // A per-project warm bake COPYs the staged checkout and restores its archived
+  // Git metadata. Verify both sources before the provider sees the context.
   if (warmRepoStagedPath) {
-    required.push(join(warmRepoStagedPath, '.git'));
+    required.push(warmRepoStagedPath);
     required.push(WARM_REPO_STAGED_GIT_ARCHIVE);
   }
   for (const rel of required) {

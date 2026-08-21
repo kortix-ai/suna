@@ -22,7 +22,7 @@ import { db as appDb } from '../shared/db';
 
 /**
  * Every active pinned image ref (ppwarm NAME + provider external template id)
- * across all projects in THIS environment's database. Best-effort: the callers
+ * across active projects in THIS environment's database. Best-effort: callers
  * treat a throw as "no protection available" only where skipping the whole reap
  * is the safe default (the on-bake reaper). Cross-environment note: dev/staging/
  * prod share one provider org but separate DBs, so this only sees THIS env's pins
@@ -33,8 +33,11 @@ export async function collectPinnedImageRefs(database: Database = appDb): Promis
     SELECT metadata ->> 'active_sandbox_snapshot_name' AS snapshot_name,
            metadata ->> 'active_sandbox_external_template_id' AS external_id
     FROM kortix.projects
-    WHERE metadata ->> 'active_sandbox_snapshot_name' IS NOT NULL
-       OR metadata ->> 'active_sandbox_external_template_id' IS NOT NULL
+    WHERE status = 'active'
+      AND (
+        metadata ->> 'active_sandbox_snapshot_name' IS NOT NULL
+        OR metadata ->> 'active_sandbox_external_template_id' IS NOT NULL
+      )
   `);
   const list = ((result as unknown as { rows?: unknown[] }).rows ?? (result as unknown as unknown[])) as Array<{
     snapshot_name: string | null;

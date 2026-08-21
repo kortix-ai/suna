@@ -39,6 +39,54 @@ afterEach(async () => {
 })
 
 describe('OpenCode supervisor first ready response', () => {
+  test('keeps readiness pending across asynchronous spawn errors and later recovery', async () => {
+    const workspace = join(root, 'workspace')
+    const configDir = join(root, 'config')
+    const binary = join(root, 'opencode-missing-at-first')
+    mkdirSync(workspace)
+    mkdirSync(configDir)
+
+    const cfg = {
+      workspace,
+      projectTarget: workspace,
+      opencodeInternalPort: reservePort(),
+      opencodeStandbyPort: reservePort(),
+      gitUserName: 'Kortix Agent',
+      gitUserEmail: 'agent@kortix.ai',
+    } as Config
+    let spawnAttempts = 0
+    supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
+      binaryPathOverride: binary,
+      configPathOverride: join(root, 'runtime-config.json'),
+      onStartupMark: (label) => {
+        if (label === 'runtime-config-ready') spawnAttempts += 1
+      },
+    })
+
+    await supervisor.start()
+    let readySettled = false
+    const ready = supervisor.waitForCurrentReadyResponse().then(() => {
+      readySettled = true
+    })
+
+    await waitFor(() => spawnAttempts >= 2, 3_000)
+    expect(readySettled).toBe(false)
+    expect(supervisor.getPid()).toBeNull()
+
+    writeFileSync(
+      binary,
+      `#!/usr/bin/env bun
+const port = Number(Bun.argv[Bun.argv.indexOf('--port') + 1])
+Bun.serve({ port, hostname: '127.0.0.1', fetch: () => Response.json([]) })
+`,
+    )
+    chmodSync(binary, 0o755)
+
+    await ready
+    await waitFor(() => supervisor?.getState() === 'ok')
+    expect(spawnAttempts).toBeGreaterThanOrEqual(3)
+  }, 15_000)
+
   test('reports the first successful readiness response once', async () => {
     const workspace = join(root, 'workspace')
     const configDir = join(root, 'config')
@@ -87,11 +135,53 @@ Bun.serve({
     await waitFor(() => existsSync(probedFile))
     expect(reports).toBe(0)
 
+    let firstReadySettled = false
+    const firstReady = supervisor.waitForCurrentReadyResponse().then(() => {
+      firstReadySettled = true
+    })
+    await Bun.sleep(25)
+    expect(firstReadySettled).toBe(false)
+
     writeFileSync(readyFile, 'ready')
+    await firstReady
     await waitFor(() => reports === 1)
     expect(supervisor.getState()).toBe('ok')
 
+    let repeatedWaitSettled = false
+    await supervisor.waitForCurrentReadyResponse().then(() => {
+      repeatedWaitSettled = true
+    })
+    expect(repeatedWaitSettled).toBe(true)
+
+    rmSync(readyFile)
     await supervisor.restart()
+    let restartedReadySettled = false
+    const restartedReady = supervisor.waitForCurrentReadyResponse().then(() => {
+      restartedReadySettled = true
+    })
+    await Bun.sleep(25)
+    expect(restartedReadySettled).toBe(false)
+
+    writeFileSync(readyFile, 'ready')
+    await restartedReady
+    await waitFor(() => supervisor?.getState() === 'ok')
+    expect(reports).toBe(1)
+
+    rmSync(readyFile)
+    const livePid = supervisor.getPid()
+    expect(livePid).not.toBeNull()
+    process.kill(livePid as number, 'SIGKILL')
+    await waitFor(() => supervisor?.getPid() === null)
+
+    let respawnReadySettled = false
+    const respawnReady = supervisor.waitForCurrentReadyResponse().then(() => {
+      respawnReadySettled = true
+    })
+    await Bun.sleep(25)
+    expect(respawnReadySettled).toBe(false)
+
+    writeFileSync(readyFile, 'ready')
+    await respawnReady
     await waitFor(() => supervisor?.getState() === 'ok')
     expect(reports).toBe(1)
   }, 15_000)

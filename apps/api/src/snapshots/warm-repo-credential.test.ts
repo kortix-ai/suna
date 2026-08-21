@@ -112,9 +112,7 @@ describe('PHASE 1: warm-repo checkout is staged credential-free', () => {
     expect(headSha).toMatch(/^[0-9a-f]{40}$/);
 
     const dest = join(ctx, stagedPath);
-    // The checkout is a real repo at the requested tip.
-    const gitDir = await stat(join(dest, '.git'));
-    expect(gitDir.isDirectory()).toBe(true);
+    await expect(stat(join(dest, '.git'))).rejects.toMatchObject({ code: 'ENOENT' });
     const visibleGitArchive = await stat(join(ctx, stagedGitPath));
     expect(visibleGitArchive.isFile()).toBe(true);
     const extractedGit = await mkdtemp(join(tmpdir(), 'warm-git-'));
@@ -127,12 +125,28 @@ describe('PHASE 1: warm-repo checkout is staged credential-free', () => {
       'HEAD',
     ]);
     expect(visibleHead.trim()).toBe(headSha);
-    const { stdout: head } = await exec('git', ['-C', dest, 'rev-parse', 'HEAD']);
-    expect(head.trim()).toBe(headSha);
+    await exec('git', [
+      `--git-dir=${join(extractedGit, '.git')}`,
+      `--work-tree=${dest}`,
+      'fsck',
+      '--full',
+    ]);
+    const { stdout: readmeMode } = await exec('git', [
+      `--git-dir=${join(extractedGit, '.git')}`,
+      'ls-tree',
+      'HEAD',
+      'README.md',
+    ]);
+    expect(readmeMode).toMatch(/^100644 blob [0-9a-f]{40}\tREADME\.md\n$/);
 
     // origin was reset to the runtime proxy — the build credential is not
     // persisted for runtime use.
-    const { stdout: origin } = await exec('git', ['-C', dest, 'remote', 'get-url', 'origin']);
+    const { stdout: origin } = await exec('git', [
+      `--git-dir=${join(extractedGit, '.git')}`,
+      'remote',
+      'get-url',
+      'origin',
+    ]);
     expect(origin.trim()).toBe(PROXY_ORIGIN);
 
     // THE proof: the sentinel token appears NOWHERE in the staged bytes
@@ -143,7 +157,7 @@ describe('PHASE 1: warm-repo checkout is staged credential-free', () => {
     expect(allBytes.toLowerCase()).not.toContain('extraheader');
 
     // .git/config specifically carries no auth material.
-    const config = await readFile(join(dest, '.git', 'config'), 'utf8');
+    const config = await readFile(join(extractedGit, '.git', 'config'), 'utf8');
     expect(config).not.toContain(SENTINEL);
     expect(config.toLowerCase()).not.toContain('authorization');
     expect(config.toLowerCase()).not.toContain('extraheader');
@@ -322,7 +336,7 @@ describe('FIX-G: the warm checkout is pinned to the EXACT cache-key sha', () => 
     const src = await makeSourceRepo();
     const ctx = await mkdtemp(join(tmpdir(), 'warm-ctx-'));
     cleanup.push(ctx);
-    const { headSha } = await stageWarmRepoCheckout(ctx, {
+    const { stagedGitPath, headSha } = await stageWarmRepoCheckout(ctx, {
       cloneUrl: `file://${src.dir}`,
       cloneHeaders: {},
       branch: 'main',
@@ -330,7 +344,14 @@ describe('FIX-G: the warm checkout is pinned to the EXACT cache-key sha', () => 
       originUrl: PROXY_ORIGIN,
     });
     expect(headSha).toBe(src.sha);
-    const { stdout: head } = await exec('git', ['-C', join(ctx, WARM_REPO_STAGED_DIR), 'rev-parse', 'HEAD']);
+    const extractedGit = await mkdtemp(join(tmpdir(), 'warm-git-'));
+    cleanup.push(extractedGit);
+    await exec('tar', ['-xf', join(ctx, stagedGitPath), '-C', extractedGit]);
+    const { stdout: head } = await exec('git', [
+      `--git-dir=${join(extractedGit, '.git')}`,
+      'rev-parse',
+      'HEAD',
+    ]);
     expect(head.trim()).toBe(src.sha);
   }, 30_000);
 

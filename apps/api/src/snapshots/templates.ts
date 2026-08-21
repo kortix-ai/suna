@@ -35,6 +35,7 @@ type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
 import { metadataMerge } from '../projects/lib/metadata-merge';
+import { isReapableTemplatePredecessor } from './predecessor-reap-policy';
 import { readManifest } from '../projects/triggers';
 import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
 import { SANDBOX_VERSION, config } from '../config';
@@ -221,7 +222,10 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // does not survive provider startup.
 // v41: store durable daemon state under /home/kortix/.local/state/kortix. This
 // path remains writable when a provider replaces /run or discards image USER.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v42';
+// v43: per-project warm images extract the single Git metadata archive directly
+// into /workspace without retaining it. Repo warm-up uses only canonical
+// OpenCode config while it indexes /workspace, then restores the exact checkout.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v43';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -692,18 +696,14 @@ export async function recordTemplateBuilt(
   }
 }
 
-/** Managed snapshot namespaces we own and may reap. Anything else (Daytona's
- *  own base/sample images, etc.) is left strictly alone. */
-const REAPABLE_SNAPSHOT_PREFIXES = ['kortix-default-', 'kortix-tpl-', 'kortix-wproj-', 'kortix-ppwarm-'];
-
 /**
  * Delete a snapshot a template row just stopped pointing at. Best-effort and
  * heavily guarded: gated by KORTIX_SNAPSHOT_REAP_PREDECESSOR, restricted to our
- * managed namespaces, and skipped if ANY other template row still references the
- * name (snapshots are content-addressed, so two projects with byte-identical
- * inputs share one image). Never throws — a failed reap just falls back to the
- * quota GC, and a cross-env row that still pointed at this (identical) name
- * self-heals via the boot-time rebuild-and-retry path.
+ * legacy managed namespaces, and skipped if ANY other template row still
+ * references the name. Scoped `kpp2-` project images are excluded because this
+ * path has no data-plane ownership proof. The ownership-aware per-project
+ * reaper handles them; Daytona quota GC is the provider-specific pressure
+ * backstop. Never throws — a failed reap falls back to later cleanup.
  */
 async function reapPredecessorSnapshot(
   templateId: string,
@@ -712,7 +712,7 @@ async function reapPredecessorSnapshot(
 ): Promise<void> {
   try {
     if (!config.KORTIX_SNAPSHOT_REAP_PREDECESSOR) return;
-    if (!REAPABLE_SNAPSHOT_PREFIXES.some((p) => snapshotName.startsWith(p))) return;
+    if (!isReapableTemplatePredecessor(snapshotName)) return;
     // Still referenced by a DIFFERENT template row? Leave it shared.
     const stillUsed = await db
       .select({ id: sandboxTemplates.templateId })
