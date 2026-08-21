@@ -1,4 +1,4 @@
-import { createDb, type Database } from '@kortix/db';
+import type { Database } from '@kortix/db';
 import { config } from '../config';
 import { db } from './db';
 
@@ -33,6 +33,11 @@ const AUDIT_STATEMENT_TIMEOUT_MS = intFromEnv('DB_AUDIT_STATEMENT_TIMEOUT_MS', 1
 let dedicatedPool: Database | null = null;
 function dedicated(): Database {
   if (!dedicatedPool) {
+    // Lazy require, NOT a top-level `import { createDb }`: dedicated() only runs
+    // in production (auditDb() returns `db` when NODE_ENV=test), and the ~3 unit
+    // tests that mock '@kortix/db' without createDb would SyntaxError on a
+    // load-time value import. Resolving it here keeps them untouched.
+    const { createDb } = require('@kortix/db') as typeof import('@kortix/db');
     dedicatedPool = createDb(config.DATABASE_URL, {
       max: AUDIT_POOL_MAX,
       connection: { statement_timeout: AUDIT_STATEMENT_TIMEOUT_MS },
