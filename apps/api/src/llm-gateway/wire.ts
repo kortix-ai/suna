@@ -1,7 +1,9 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import {
   DEFAULT_MAX_REQUEST_BYTES,
+  InflightBudget,
   createGateway,
+  gatewayOverloadedResponse,
   readBoundedBody,
   requestTooLargeResponse,
 } from '@kortix/llm-gateway';
@@ -396,18 +398,58 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     // `await c.req.text()` used to run unconditionally and the limit was checked
     // afterwards inside the pipeline — the guard sat downstream of the
     // allocation it existed to prevent. See readBoundedBody.
-    const chat = async (c: import('hono').Context) => {
-      const body = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
-      if (!body.ok) return requestTooLargeResponse();
-      return gateway.chatCompletions({
-        authorization: c.req.header('authorization'),
-        rawBody: body.body,
-        // `c.req.raw` is the underlying standard Request — its `.signal` fires
-        // when the client disconnects, so the gateway can stop reading (and
-        // billing for) upstream tokens no one is listening for anymore.
-        signal: c.req.raw.signal,
-      });
+    // ONE budget per process, alongside the one gateway instance — it is
+    // process memory it is rationing, so a per-request budget would ration
+    // nothing. Bounding a single request is necessary but NOT sufficient:
+    // unbounded concurrency turns a bounded per-request cost straight back into
+    // an OOM. Over capacity the answer is a loud 503 + Retry-After, never a
+    // silently accepted request that kills the container.
+    const budget = new InflightBudget({
+      maxBytes: config.GATEWAY_INFLIGHT_BUDGET_BYTES,
+      perRequestMaxBytes: DEFAULT_MAX_REQUEST_BYTES,
+    });
+
+    /**
+     * Read the body under its ceiling, then reserve capacity for it.
+     *
+     * The lease is returned to the caller rather than stashed anywhere shared:
+     * these handlers run concurrently, so a module-scoped "current lease" would
+     * let two requests release each other's bytes and corrupt the budget.
+     */
+    const guard = async (
+      c: import('hono').Context,
+    ): Promise<{ body: string; release: () => void } | Response> => {
+      const read = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
+      if (!read.ok) return requestTooLargeResponse();
+      const lease = budget.admit(read.body.length);
+      if (!lease.ok) {
+        return lease.reason === 'too_large'
+          ? requestTooLargeResponse()
+          : gatewayOverloadedResponse(lease.retryAfterSeconds);
+      }
+      return { body: read.body, release: lease.release };
     };
+
+    const chat = async (c: import('hono').Context) => {
+      const guarded = await guard(c);
+      if (guarded instanceof Response) return guarded;
+      try {
+        return await gateway.chatCompletions({
+          authorization: c.req.header('authorization'),
+          rawBody: guarded.body,
+          // `c.req.raw` is the underlying standard Request — its `.signal` fires
+          // when the client disconnects, so the gateway can stop reading (and
+          // billing for) upstream tokens no one is listening for anymore.
+          signal: c.req.raw.signal,
+        });
+      } finally {
+        // Released once the handler settles: the request string and its parsed
+        // graph — the expensive part — are dead by then. The streamed response
+        // that continues after this point is bounded by BoundedCapture.
+        guarded.release();
+      }
+    };
+
     // `?scope=managed` serves ONLY the platform-managed lineup (~3KB) instead
     // of the project's full catalog (~3.3MB). Every sandbox calls it on boot to
     // learn the current managed set — the catalog baked into its image is stale
@@ -419,12 +461,16 @@ export function mountLlmGateway(app: OpenAPIHono): void {
         managedOnly: c.req.query('scope') === 'managed',
       });
     const messages = async (c: import('hono').Context) => {
-      const body = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
-      if (!body.ok) return requestTooLargeResponse();
-      return gateway.messages({
-        authorization: c.req.header('authorization'),
-        rawBody: body.body,
-      });
+      const guarded = await guard(c);
+      if (guarded instanceof Response) return guarded;
+      try {
+        return await gateway.messages({
+          authorization: c.req.header('authorization'),
+          rawBody: guarded.body,
+        });
+      } finally {
+        guarded.release();
+      }
     };
     // Runtime routes are unchanged plain Hono mounts — same handlers, same
     // signatures, same streaming behavior as before this OpenAPI registration.

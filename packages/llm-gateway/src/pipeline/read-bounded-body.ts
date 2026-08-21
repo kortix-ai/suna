@@ -90,3 +90,31 @@ export function requestTooLargeResponse(requestId = 'req_ingress'): Response {
     suggestion: 'Start a new session or reduce the conversation and attachment size, then retry.',
   });
 }
+
+/**
+ * The canonical 503 for a gateway that is at capacity.
+ *
+ * Distinct from the 413 above on purpose. 413 says "this can never work, do not
+ * retry"; this says "this would work if I were quieter, retry shortly". Sending
+ * one when the other is true either wedges a legitimate caller in a permanent
+ * retry loop or makes it give up on work that was about to succeed.
+ *
+ * Digit-free for the same reason as the 413: OpenCode decides retryability by
+ * regexing the response body, and `retryAfterSeconds` below is the structured
+ * channel for that, not prose.
+ */
+export function gatewayOverloadedResponse(
+  retryAfterSeconds = 1,
+  requestId = 'req_ingress',
+): Response {
+  return gatewayErrorResponse(503, {
+    message: 'Gateway is at capacity for large requests; retry shortly',
+    code: 'gateway_overloaded',
+    provider: '',
+    requestedModel: '',
+    resolvedModel: '',
+    requestId,
+    retryAfterSeconds,
+    suggestion: 'Retry after a short delay, or reduce the size of the request.',
+  });
+}
