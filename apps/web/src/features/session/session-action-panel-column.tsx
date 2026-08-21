@@ -82,7 +82,18 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 const ENTER = { duration: 0.2, ease: EASE_OUT } as const;
 const EXIT = { duration: 0.16, ease: EASE_OUT } as const;
 
-export function SessionActionPanelColumn() {
+export function SessionActionPanelColumn({
+  /**
+   * Own the ⌘I / Ctrl+I binding. False for the instant boot shell: it and the
+   * real chat are BOTH mounted for the length of the crossfade, and two
+   * listeners on one key call `toggleRight()` twice — the panel opens and shuts
+   * in the same tick, so the shortcut reads as dead for that whole window. The
+   * shell yields it; the surface that outlives the fade keeps it.
+   */
+  hotkey = true,
+}: {
+  hotkey?: boolean;
+} = {}) {
   const panel = useOptionalSessionPanel();
   const isMobile = useIsMobile();
   const isOpen = useIsActionPanelOpen();
@@ -103,7 +114,7 @@ export function SessionActionPanelColumn() {
   const isActiveTab = useTabStore((s) => (sessionId ? s.activeTabId === sessionId : false));
   // Inactive session tabs stay mounted. Only the visible tab may own ⌘I, or
   // every background layout would flip the shared `isActionPanelOpen` flag.
-  const shouldHandleHotkey = !!panel && !isMobile && (isInTabSystem ? isActiveTab : true);
+  const shouldHandleHotkey = hotkey && !!panel && !isMobile && (isInTabSystem ? isActiveTab : true);
 
   useEffect(() => {
     if (!shouldHandleHotkey) return;

@@ -87,14 +87,18 @@ describe('resolveSessionOverlay', () => {
       resolveSessionOverlay({
         newSessionHint: false,
         hasTranscript: false,
-        submittedOnShell: false,
+        shellShowsFirstPrompt: false,
       }),
     ).toBe('boot-loader');
   });
 
   test('a session with history never shows the new-session shell', () => {
     expect(
-      resolveSessionOverlay({ newSessionHint: true, hasTranscript: true, submittedOnShell: false }),
+      resolveSessionOverlay({
+        newSessionHint: true,
+        hasTranscript: true,
+        shellShowsFirstPrompt: false,
+      }),
     ).toBe('boot-loader');
   });
 
@@ -103,9 +107,26 @@ describe('resolveSessionOverlay', () => {
       resolveSessionOverlay({
         newSessionHint: true,
         hasTranscript: false,
-        submittedOnShell: false,
+        shellShowsFirstPrompt: false,
       }),
     ).toBe('new-session-shell');
+  });
+
+  test('the pin does not care WHICH surface the prompt was sent from', () => {
+    // Regression guard. This input once meant "typed into the shell", so it was
+    // false for a prompt sent from the project home — which is how most sessions
+    // start. Same bubble on screen, same transcript arriving under it, and the
+    // shell was torn down for a boot spinner anyway. The route now feeds
+    // `useFirstPromptPreviewStore` in here alongside the local send.
+    const pinned = {
+      newSessionHint: true,
+      hasTranscript: true,
+      shellShowsFirstPrompt: true,
+    };
+    expect(resolveSessionOverlay(pinned)).toBe('new-session-shell');
+    // The same session WITHOUT the pin is the broken behaviour, stated rather
+    // than implied.
+    expect(resolveSessionOverlay({ ...pinned, shellShowsFirstPrompt: false })).toBe('boot-loader');
   });
 
   test('the shell keeps the floor once the user has sent from it', () => {
@@ -113,7 +134,11 @@ describe('resolveSessionOverlay', () => {
     // crossfaded in. Without this the overlay would swap the optimistic bubble
     // they are looking at for a boot spinner, mid-send.
     expect(
-      resolveSessionOverlay({ newSessionHint: true, hasTranscript: true, submittedOnShell: true }),
+      resolveSessionOverlay({
+        newSessionHint: true,
+        hasTranscript: true,
+        shellShowsFirstPrompt: true,
+      }),
     ).toBe('new-session-shell');
   });
 });

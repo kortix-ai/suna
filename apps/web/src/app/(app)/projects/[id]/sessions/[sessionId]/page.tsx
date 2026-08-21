@@ -5,13 +5,14 @@ import { useTranslations } from 'next-intl';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { isLegacyMigratedSession, sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
@@ -25,9 +26,9 @@ import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
   canMountSessionChat,
-  canShowSessionChat,
   findInitialSessionPin,
   gatedRuntimeError,
+  sessionErrorSurfaceReady,
 } from '@/features/session/session-load-state';
 import {
   isAutoResuming,
@@ -46,8 +47,8 @@ import {
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
-import { ErrorState } from '@/features/layout/section/error-state';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
+import { projectSessionsRefetchInterval } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
@@ -60,12 +61,12 @@ import {
 import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
+import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import {
   shouldShowSessionSwitchLoading,
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { projectSessionsRefetchInterval } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
   type ProjectSession,
   formatRuntimeError,
@@ -192,10 +193,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     ...contract('inventory'),
   });
   const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
-  const pendingPrompt = pendingSessionPromptForRecovery(
-    sessionId,
-    currentProjectSession?.metadata,
-  );
+  const pendingPrompt = pendingSessionPromptForRecovery(sessionId, currentProjectSession?.metadata);
   const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
@@ -281,9 +279,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           }).catch(() => undefined);
         })
         .catch((error) => {
-          errorToast(
-            error instanceof Error ? error.message : 'Could not queue the saved prompt',
-          );
+          errorToast(error instanceof Error ? error.message : 'Could not queue the saved prompt');
         });
     }
     handleRestart();
@@ -348,6 +344,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // resume) occupies a SINGLE stable tree position for the whole pre-ready
   // lifecycle, so nothing under it remounts as the boot advances.
   const [chatReady, setChatReady] = useState(false);
+  // Stable: it rides an effect dependency inside SessionChat, and a fresh arrow
+  // every render would re-run that effect on every render of this route.
+  const handleChatReady = useCallback(() => setChatReady(true), []);
   const [loaderMounted, setLoaderMounted] = useState(true);
   // Belt and braces for the `onTransitionEnd` unmount below: `transitionend`
   // never fires when the tab is backgrounded mid-fade, nor under
@@ -369,17 +368,46 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // key it lives under — it replaced two raw legacy-key checks
   // (`opencode_pending_prompt:<id>` / `project_pending_prompt:<id>`).
   const [handoff] = useState(() => {
-    if (typeof window === 'undefined') return { pending: false, newSessionHint: false };
+    if (typeof window === 'undefined')
+      return { pending: false, newSessionHint: false, firstPrompt: false };
     const pending = !!readStartStash(sessionId)?.prompt;
-    return { pending, newSessionHint: pending || isSessionFresh(sessionId) };
+    // The project-home composer writes this before it navigates, so it is
+    // already in the store on this component's first render — read here, with
+    // the rest of the hand-off, rather than latched from an effect afterwards.
+    const firstPrompt = !!useFirstPromptPreviewStore.getState().previewBySession[sessionId];
+    return { pending, firstPrompt, newSessionHint: pending || isSessionFresh(sessionId) };
   });
   const [submittedOnShell, setSubmittedOnShell] = useState(false);
-  // Arriving with a stashed prompt counts as submitted for the purpose of
-  // mounting the chat (the message is already committed and needs a runtime to
-  // send it), but NOT for holding the shell in place — a stash can outlive the
-  // hand-off it describes, and only a send made HERE means the user is watching
-  // their own optimistic bubble on this shell.
-  const shellSubmitted = handoff.pending || submittedOnShell;
+  // "The shell is painting this session's first prompt right now." TWO producers
+  // put a prompt on that surface and only one of them is a send made here:
+  //
+  //  • `submittedOnShell` — typed into the shell and sent from it.
+  //  • the first-prompt preview — sent from the PROJECT HOME, which created the
+  //    session, POSTed the prompt as a durable inbox row, navigated here, and
+  //    left the text in memory for the shell to draw from its first frame (see
+  //    `useFirstPromptPreviewStore`).
+  //
+  // Only the first used to count, and the second is the flow most sessions
+  // start with — so the pin that keeps the shell on screen was false for
+  // exactly the case it exists for. See `resolveSessionOverlay` for what that
+  // cost: the user's own bubble replaced by a boot spinner, for the length of a
+  // SessionChat mount.
+  //
+  // Read live AND once at mount. Live so a preview planted a tick late still
+  // counts; at mount because `SessionChat` CLEARS the preview the instant the
+  // transcript shows the text — and that clear can land in the same commit as
+  // `chatReady`, so a purely live read would drop the pin on the exact frame
+  // the fade starts and unmount the shell instead of dissolving it.
+  const hasFirstPromptPreview = useFirstPromptPreviewStore(
+    (state) => !!state.previewBySession[sessionId],
+  );
+  const shellShowsFirstPrompt = submittedOnShell || hasFirstPromptPreview || handoff.firstPrompt;
+  // Mounting the chat takes the same evidence plus one weaker source: a stashed
+  // prompt means the message is committed and needs a runtime, so the chat
+  // should be warming up. It does NOT pin the shell — a stash can outlive the
+  // hand-off it describes, and a stale one must not hold a real session on a
+  // bubble it no longer owns.
+  const shellSubmitted = handoff.pending || shellShowsFirstPrompt;
 
   // Transcript evidence — the veto that keeps a stale hint from stranding a real
   // session on the empty new-session surface. It comes from `useSession`'s own
@@ -393,7 +421,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   }, [session.messages.length]);
   const hasTranscript = session.messages.length > 0 || sawTranscript;
   const surface = { newSessionHint: handoff.newSessionHint, hasTranscript };
-  const overlay = resolveSessionOverlay({ ...surface, submittedOnShell });
+  const overlay = resolveSessionOverlay({ ...surface, shellShowsFirstPrompt });
 
   // Drop the local hint as soon as it has done its job OR been proven wrong.
   // This used to wait on `chatReady`, which the hint itself could withhold — so
@@ -599,7 +627,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           title="Couldn't start session"
           message="This session is no longer available, or you do not have access to it."
           action={
-            <Button variant="outline" size="sm" onClick={() => router.push(`/projects/${projectId}`)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/projects/${projectId}`)}
+            >
               Back to project
             </Button>
           }
@@ -721,8 +753,18 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         {canMountChat && (
           <div
             className={cn(
-              'absolute inset-0 flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity duration-300 ease-out',
-              chatReady ? 'opacity-100' : 'pointer-events-none opacity-0',
+              'absolute inset-0 flex min-h-0 flex-1 flex-col overflow-hidden',
+              // NO fade in. Two opacity transitions running against each other
+              // do not sum to one: at the midpoint both layers sit at 0.5, so
+              // the composite covers 1 - 0.5x0.5 = 75% and a quarter of the
+              // page behind them shows through. Identical content on both
+              // layers does not save it — the text itself washes out to 75% and
+              // back. That dip IS the "everything vanished for a millisecond".
+              //
+              // So only ONE layer animates. This one is painted, opaque, and
+              // complete underneath the whole time; the overlay above
+              // dissolves off it. Coverage is 1 at every frame of the fade.
+              !chatReady && 'pointer-events-none',
             )}
           >
             <ProjectSessionRuntimeConnection>
@@ -732,7 +774,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                   sessionId={sessionId}
                   sessionState={session}
                   boundAgentName={boundAgentName}
-                  onChatReady={() => setChatReady(true)}
+                  chatReady={chatReady}
+                  onChatReady={handleChatReady}
                 />
               )}
             </ProjectSessionRuntimeConnection>
@@ -745,7 +788,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               if (chatReady) setLoaderMounted(false);
             }}
             className={cn(
-              'absolute inset-0 flex flex-col transition-opacity duration-300 ease-out',
+              // `bg-background` is load-bearing now that the chat below is
+              // always painted: this layer has to hide it completely until the
+              // fade starts. The instant shell brings its own opaque root
+              // (SessionLayout), but the boot loader is a transparent centred
+              // block — under it you would see the chat's own compact loader
+              // through the gaps, two spinners deep.
+              'bg-background absolute inset-0 flex flex-col transition-opacity duration-300 ease-out',
               chatReady ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
           >
@@ -873,6 +922,7 @@ function ActiveSessionChat({
   sessionId,
   sessionState,
   boundAgentName,
+  chatReady,
   onChatReady,
 }: {
   projectId: string;
@@ -881,6 +931,9 @@ function ActiveSessionChat({
   /** The session's immutable creation agent, resolved by the page (sessions
    *  list row, falling back to /start's `agent_name`). */
   boundAgentName?: string | null;
+  /** The route has crossfaded onto this chat. Until then it is painted behind
+   *  an opaque overlay and must not take focus — see `deferComposerFocus`. */
+  chatReady?: boolean;
   onChatReady?: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -900,9 +953,9 @@ function ActiveSessionChat({
   // benign 503 racing a live `/start` wake (a parked sandbox resuming), which
   // `derivePhase` (@kortix/sdk) holds as `'starting'` until `/start` itself
   // settles or gives up (~61.5s worst case). Reading the raw field rendered
-  // the panic card — and marked `chatShowable` below true, ending the loading
+  // the panic card — and marked the chat showable below, ending the loading
   // skeleton with nothing to show — for every such race; `phase === 'error'`
-  // is the SDK's own answer to "is this real." `canShowSessionChat` below
+  // is the SDK's own answer to "is this real." `sessionErrorSurfaceReady` below
   // gets this SAME gated value, so both consumers agree.
   const runtimeError = gatedRuntimeError({
     phase: sessionState.phase,
@@ -973,14 +1026,19 @@ function ActiveSessionChat({
     finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
   }, [chatSessionId, sessionId, projectId, queryClient]);
 
-  const chatShowable = canShowSessionChat({
-    chatSessionId,
-    runtimeError,
-    runtimeBootError,
-  });
+  // The ERROR surfaces below are ready the moment they exist — they render an
+  // `InlineSessionError` immediately, so holding the shell over one would just
+  // hide the message. The conversation is not: `chatSessionId` resolving only
+  // means SessionChat can MOUNT, and for a beat after that it still paints its
+  // own compact "starting" loader. Crossfading onto that loader replaced the
+  // instant shell's live thread — the user's bubble and its "Thinking" row —
+  // with a spinner, then swapped again a moment later. So the chat's own
+  // `onContentReady` drives the fade for the ordinary path, and this covers the
+  // two terminal ones.
+  const errorSurfaceReady = sessionErrorSurfaceReady({ runtimeError, runtimeBootError });
   useEffect(() => {
-    if (chatShowable) onChatReady?.();
-  }, [chatShowable, onChatReady]);
+    if (errorSurfaceReady) onChatReady?.();
+  }, [errorSurfaceReady, onChatReady]);
 
   useEffect(() => {
     if (!selectedOpenCodeSessionId) return;
@@ -1050,6 +1108,8 @@ function ActiveSessionChat({
           projectSessionId={sessionId}
           projectId={projectId}
           boundAgentName={boundAgentName}
+          onContentReady={onChatReady}
+          deferComposerFocus={!chatReady}
           sessionState={chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined}
         />
       </ClientErrorBoundary>

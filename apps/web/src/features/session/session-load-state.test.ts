@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   canMountSessionChat,
-  canShowSessionChat,
   findInitialSessionPin,
   gatedRuntimeError,
   resolveSessionContentState,
+  sessionErrorSurfaceReady,
 } from './session-load-state';
 
 describe('session load state', () => {
@@ -40,13 +40,13 @@ describe('session load state', () => {
     ).toBe(false);
   });
 
-  test('shows the chat as soon as a transcript pin is available', () => {
+  test('a transcript pin alone does not end the boot shell', () => {
+    expect(sessionErrorSurfaceReady({ runtimeError: null, runtimeBootError: null })).toBe(false);
+  });
+
+  test('a settled runtime error ends the boot shell so the card can be read', () => {
     expect(
-      canShowSessionChat({
-        chatSessionId: 'opencode-cached',
-        runtimeError: null,
-        runtimeBootError: null,
-      }),
+      sessionErrorSurfaceReady({ runtimeError: new Error('gone'), runtimeBootError: null }),
     ).toBe(true);
   });
 
