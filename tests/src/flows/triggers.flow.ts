@@ -923,3 +923,91 @@ flow(
     });
   },
 );
+
+flow(
+  'TRG-15',
+  {
+    domain: 'triggers',
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project({ managedGit: false });
+    const manager = await team.addMember('member');
+    if (!manager.userId) throw new Error('cleanup manager fixture has no user id');
+    await team.grantProjectRole(project.id, manager.userId, 'manager');
+    const teammate = await team.addMember('member');
+    if (!teammate.userId) throw new Error('cleanup teammate fixture has no user id');
+    await team.grantProjectRole(project.id, teammate.userId, 'user');
+
+    const triggerSession = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: crypto.randomUUID(),
+      visibility: 'private',
+      metadata: {
+        source: 'trigger:scheduler',
+        trigger_kind: 'git',
+        trigger_slug: 'hourly-heartbeat',
+      },
+    });
+    const siblingTriggerSession = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: crypto.randomUUID(),
+      visibility: 'private',
+      metadata: {
+        source: 'trigger:scheduler',
+        trigger_kind: 'git',
+        trigger_slug: 'hourly-heartbeat',
+      },
+    });
+    const automationSession = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: crypto.randomUUID(),
+      visibility: 'project',
+      metadata: { source: 'agent:harness' },
+    });
+
+    await ctx.step('manager reads a private trigger session before pruning it', async () => {
+      const r = await ctx.client.as(manager).get('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: project.id, sessionId: triggerSession },
+      });
+      r.status(200).body().has('$.session_id', triggerSession);
+    });
+
+    await ctx.step('manager deletes a private trigger session', async () => {
+      const r = await ctx.client.as(manager).del('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: project.id, sessionId: triggerSession },
+      });
+      r.status(200);
+    });
+
+    await ctx.step('ordinary member cannot discover the sibling trigger session to delete it', async () => {
+      const r = await ctx.client.as(teammate).del('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: project.id, sessionId: siblingTriggerSession },
+      });
+      r.status(404);
+    });
+
+    await ctx.step('non-manager delete of a project-visible automation session is refused', async () => {
+      const r = await ctx.client.as(teammate).del('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: project.id, sessionId: automationSession },
+      });
+      r.status(403)
+        .body()
+        .has('$.error', 'Only the session owner or a project manager can stop this session');
+    });
+
+    await ctx.step('manager deletes the project-visible automation session', async () => {
+      const r = await ctx.client.as(manager).del('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: project.id, sessionId: automationSession },
+      });
+      r.status(200);
+    });
+  },
+);

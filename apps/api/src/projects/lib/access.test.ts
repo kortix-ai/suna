@@ -4,6 +4,7 @@ import {
   callerHasManagerStanding,
   isAdminBypassEligible,
   shouldApplyAdminBypass,
+  viewerManagerStanding,
 } from './access';
 
 describe('callerHasManagerStanding', () => {
@@ -30,6 +31,38 @@ describe('callerHasManagerStanding', () => {
     // value would return false and 403 every dashboard manager. Callers must
     // pass `callerKortixSessionId(c)`, which is null for authType 'supabase'.
     expect(callerHasManagerStanding('manager', null)).toBe(true);
+  });
+});
+
+describe('viewerManagerStanding', () => {
+  // The list/serialization path derives `can_manage_lifecycle` from this, and
+  // DELETE derives its 403 from loadVisibleSession's stripped standing — this
+  // predicate exists so the two can never disagree again (the 2026-08-20
+  // "can_manage_lifecycle:true but deletion denied" incident evidence).
+
+  const probeNever = () => {
+    throw new Error('capability probe must not run');
+  };
+
+  test('a bound credential is denied before any I/O, whatever the role', async () => {
+    expect(await viewerManagerStanding('manager', 'agent-session-a', probeNever as any)).toBe(
+      false,
+    );
+  });
+
+  test('the capability probe cannot resurrect standing for a bound credential', async () => {
+    expect(
+      await viewerManagerStanding('member', 'agent-session-a', async () => true),
+    ).toBe(false);
+  });
+
+  test('an unbound manager passes on role alone — no probe', async () => {
+    expect(await viewerManagerStanding('manager', null, probeNever as any)).toBe(true);
+  });
+
+  test('an unbound non-manager falls through to the capability probe', async () => {
+    expect(await viewerManagerStanding('member', null, async () => true)).toBe(true);
+    expect(await viewerManagerStanding('member', null, async () => false)).toBe(false);
   });
 });
 

@@ -184,6 +184,33 @@ export function callerHasManagerStanding(
   return boundCredentialSessionId === null && roleAllows(effectiveRole, 'manage');
 }
 
+/**
+ * Manager standing for the session LIST/serialization path: role standing, or a
+ * `project.members.manage` capability probe — both behind the same binding gate
+ * as `callerHasManagerStanding`.
+ *
+ * The list route used to compute this from the role alone, so a session-bound
+ * agent credential launched by a manager saw `can_manage_lifecycle: true` on
+ * every row while DELETE — which derives standing through `loadVisibleSession`
+ * and strips bound credentials — refused it with the owner-or-manager 403. One
+ * caller, two answers. Deriving both from this predicate ends the disagreement,
+ * and it also closes the `scope=project` inventory to bound credentials, which
+ * were never meant to wield the launching user's manage role.
+ *
+ * The probe is injected, not imported: it needs the request context, and taking
+ * it as a thunk keeps this decidable in a unit test without one. It is never
+ * invoked for a bound credential — standing there is false before any I/O.
+ */
+export async function viewerManagerStanding(
+  effectiveRole: ProjectRole,
+  boundCredentialSessionId: string | null,
+  probeManageCapability: () => Promise<boolean>,
+): Promise<boolean> {
+  if (boundCredentialSessionId !== null) return false;
+  if (roleAllows(effectiveRole, 'manage')) return true;
+  return probeManageCapability();
+}
+
 export async function loadVisibleSession(
   loaded: {
     row: ProjectRow;

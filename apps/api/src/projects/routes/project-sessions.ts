@@ -17,11 +17,11 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { roleAllows } from '../access';
+
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, resolveSessionOwnerIdentities } from '../lib/access';
+import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, resolveSessionOwnerIdentities, viewerManagerStanding } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
   UUID_V4_REGEX,
@@ -186,7 +186,7 @@ projectsApp.openapi(
   return c.json(
       serializeSession(result.row, {
       viewerId: loaded.userId,
-      canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+      canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
     }),
     201,
   );
@@ -273,15 +273,24 @@ projectsApp.openapi(
   const runtimeStatusBySession = new Map(runtimeRows.map((row) => [row.sessionId, row.status]));
 
   const subject = await resolveShareSubject(loaded.userId);
-  const canManageProject =
-    roleAllows(loaded.effectiveRole, 'manage') ||
-    (await projectCapabilityAllowed(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      'project.members.manage',
-    ));
+  // Manager standing must be derived exactly as the lifecycle routes derive it
+  // (loadVisibleSession): a session-bound agent credential never inherits the
+  // launching user's `manage` role. Computing it from the role alone made every
+  // list row report `can_manage_lifecycle: true` to a credential whose DELETE
+  // would then 403 — the two answers must come from one predicate.
+  const boundCredentialSessionId = callerKortixSessionId(c);
+  const canManageProject = await viewerManagerStanding(
+    loaded.effectiveRole,
+    boundCredentialSessionId,
+    () =>
+      projectCapabilityAllowed(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        'project.members.manage',
+      ),
+  );
   const grantsBySession = await loadSessionGrants(
     rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
   );
@@ -292,8 +301,8 @@ projectsApp.openapi(
     subject,
     grantsBySession,
     runtimeStatusBySession,
-    callerSessionId: callerKortixSessionId(c),
-    boundCredentialSessionId: callerKortixSessionId(c),
+    callerSessionId: boundCredentialSessionId,
+    boundCredentialSessionId,
   });
   if (!selected.authorized) {
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
