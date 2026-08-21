@@ -10,7 +10,6 @@ import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
 import { ModelSelector } from '../model-selector';
 import { ReasoningEffortSelector } from '../reasoning-effort-selector';
-import { VoiceRecorder } from '../voice-recorder';
 import { SendStopControl } from './send-stop-control';
 
 /**
@@ -222,12 +221,6 @@ export function ComposerToolbar({
         )}
 
         {toolbarSlot}
-
-        <VoiceRecorder
-          onTranscription={onTranscription}
-          disabled={voiceDisabled}
-          startRequestId={voiceStartRequestId}
-        />
 
         <SendStopControl
           isSending={isSending}

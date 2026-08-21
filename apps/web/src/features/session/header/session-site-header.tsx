@@ -246,18 +246,12 @@ export function SessionSiteHeader({
         </>
       )}
 
-      <DropdownMenuItem
-        className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
-        onClick={() => setExportOpen(true)}
-      >
+      <DropdownMenuItem className="cursor-pointer" onClick={() => setExportOpen(true)}>
         <FileDown />
         Export conversation
       </DropdownMenuItem>
 
-      <DropdownMenuItem
-        className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
-        onClick={() => setCompactOpen(true)}
-      >
+      <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
         <Layers />
         Summarize conversation
       </DropdownMenuItem>
