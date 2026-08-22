@@ -10,11 +10,7 @@ import { useCallback, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   type SandboxAlertSeverity,
@@ -24,6 +20,13 @@ import {
   selectCurrentSandboxFailure,
   selectSandboxStatus,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import {
+  SidebarAlert,
+  SidebarAlertActions,
+  SidebarAlertBody,
+  SidebarAlertText,
+  type SidebarAlertTone,
+} from '@/features/workspace/project-sidebar/footer/sidebar-alert';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
 import { useProjectCans } from '@/lib/use-project-can';
@@ -43,22 +46,17 @@ import {
 
 export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];
 
-const SEVERITY_TONE: Record<SandboxAlertSeverity, { text: string; icon: string; dot: string }> = {
-  critical: {
-    text: 'text-destructive',
-    icon: 'text-destructive',
-    dot: 'bg-destructive',
-  },
-  warning: {
-    text: 'text-kortix-orange',
-    icon: 'text-kortix-orange',
-    dot: 'bg-kortix-orange',
-  },
-  building: {
-    text: 'text-muted-foreground',
-    icon: 'text-muted-foreground',
-    dot: 'bg-kortix-yellow',
-  },
+/**
+ * Severity picks a tone from the shared footer palette — it no longer carries
+ * its own colour strings. The old map spelled out a `text`, an `icon` and a
+ * `dot` class per severity; `dot` and `icon` only ever fed the collapsed icon
+ * rail, which no longer exists, and `text` was one hand-copy of what every
+ * other footer alert already declares.
+ */
+const SEVERITY_TONE: Record<SandboxAlertSeverity, SidebarAlertTone> = {
+  critical: 'critical',
+  warning: 'warning',
+  building: 'neutral',
 };
 
 const SEVERITY_LABEL: Record<SandboxAlertSeverity, string> = {
@@ -77,6 +75,16 @@ const CATEGORY_LABEL: Record<string, string> = {
   runtime: 'Runtime artifact missing',
   unknown: 'Build failed',
 };
+
+/**
+ * "Details" appears twice — under the message when there is nothing to show,
+ * and beside the error when there is. It used to be a `transparent` button in
+ * one place and a `link` button with `hover:no-underline` in the other: two
+ * descriptions of one word, and the second spent a class undoing its own
+ * variant. One recipe, and `text-muted-foreground` instead of the
+ * `text-foreground/70` opacity hack it was approximating.
+ */
+const DETAILS_LINK = 'text-muted-foreground hover:text-foreground h-fit w-fit p-0 text-xs';
 
 /**
  * One honest sentence about what the user can do right now. Never present-tense
@@ -190,26 +198,24 @@ function SandboxAlertContent({
   const canFixWithAgent = status?.fix_with_agent_available ?? false;
 
   return (
-    <div className="w-full overflow-hidden">
-      <div className="px-2 pb-3">
-        <p className="text-muted-foreground text-xs text-balance">
-          {describeSandboxSeverity(severity, status)}
-        </p>
+    <>
+      <SidebarAlertBody>
+        <SidebarAlertText>{describeSandboxSeverity(severity, status)}</SidebarAlertText>
         {!failure && severity !== 'building' && canOpenDetails && (
           <Button
             variant="transparent"
             size="sm"
-            className="text-foreground/70 m-0 inline-flex h-fit w-fit p-0 align-baseline text-xs"
+            className={cn(DETAILS_LINK, 'mt-1')}
             onClick={openSandboxSection}
           >
             Details
           </Button>
         )}
-      </div>
+      </SidebarAlertBody>
 
       {failure && (
-        <div className="border-border/60 border-t px-2 py-3">
-          <div className="mb-1.5 flex min-w-0 items-center gap-2">
+        <div className="border-border/60 space-y-1.5 border-t px-2 py-2.5">
+          <div className="flex min-w-0 items-center gap-2">
             <Badge variant={severity === 'critical' ? 'destructive' : 'warning'} size="sm">
               {CATEGORY_LABEL[failure.error_category ?? 'unknown'] ?? failure.error_category}
             </Badge>
@@ -221,9 +227,9 @@ function SandboxAlertContent({
             ) : null}
             {canOpenDetails ? (
               <Button
-                variant="link"
+                variant="transparent"
                 size="sm"
-                className="text-foreground/70 m-0 ml-auto inline-flex h-fit w-fit p-0 text-xs hover:no-underline"
+                className={cn(DETAILS_LINK, 'ml-auto')}
                 onClick={openSandboxSection}
               >
                 Details
@@ -231,7 +237,7 @@ function SandboxAlertContent({
             ) : null}
           </div>
           {failure.error && (
-            <pre className="bg-muted text-muted-foreground max-h-32 overflow-auto rounded-lg p-2 text-xs wrap-break-word whitespace-pre-wrap">
+            <pre className="bg-muted text-muted-foreground max-h-32 overflow-auto overscroll-contain rounded-md p-2 text-xs wrap-break-word whitespace-pre-wrap">
               {failure.error}
             </pre>
           )}
@@ -241,60 +247,55 @@ function SandboxAlertContent({
       {/* Nothing left to offer once both gates close — drop the divider too, so
           a member sees a clean informational card instead of an empty tray. */}
       {!canOpenDetails && !canRecover ? null : (
-      <div className="border-border flex flex-col gap-2 border-t p-3">
-        {severity === 'building' ? (
-          canOpenDetails ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="w-full border"
-              onClick={openSandboxSection}
-            >
-              Details
-            </Button>
-          ) : null
-        ) : (
-          <>
-            {canFixWithAgent && canRecover && (
-              <Button
-                size="sm"
-                className="w-full"
-                disabled={fixWithAgent.isPending}
-                onClick={() => fixWithAgent.mutate()}
-              >
-                {fixWithAgent.isPending ? (
-                  <Loading className="text-foreground! size-3.5" />
-                ) : (
-                  <SparklesSolid weight="fill" className="size-3.5" />
-                )}
-                {tI18nHardcoded.raw(
-                  'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsxe7d8ac75',
-                )}
+        <SidebarAlertActions>
+          {severity === 'building' ? (
+            canOpenDetails ? (
+              <Button size="sm" variant="outline" className="w-full" onClick={openSandboxSection}>
+                Details
               </Button>
-            )}
-            {canRecover ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="w-full border"
-              disabled={retry.isPending}
-              onClick={() => retry.mutate(failure?.template_slug)}
-            >
-              {retry.isPending ? (
-                <Loading className="text-foreground! size-3.5" />
-              ) : (
-                <RefreshCw className="size-3.5" />
+            ) : null
+          ) : (
+            <>
+              {canFixWithAgent && canRecover && (
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={fixWithAgent.isPending}
+                  onClick={() => fixWithAgent.mutate()}
+                >
+                  {fixWithAgent.isPending ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
+                  )}
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsxe7d8ac75',
+                  )}
+                </Button>
               )}
-              {tI18nHardcoded.raw(
-                'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsx8794c0a3',
-              )}
-            </Button>
-            ) : null}
-          </>
-        )}
-      </div>
+              {canRecover ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  disabled={retry.isPending}
+                  onClick={() => retry.mutate(failure?.template_slug)}
+                >
+                  {retry.isPending ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <RefreshCw className="size-3.5 shrink-0" />
+                  )}
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsx8794c0a3',
+                  )}
+                </Button>
+              ) : null}
+            </>
+          )}
+        </SidebarAlertActions>
       )}
-    </div>
+    </>
   );
 }
 
@@ -303,64 +304,22 @@ export function ProjectSandboxAlert({ projectId }: { projectId: string }) {
   const { data } = useSandboxHealth(projectId);
   const severity = resolveSandboxAlertSeverity(data);
   if (!severity || !data) return null;
-  const tone = SEVERITY_TONE[severity];
 
   return (
-    <SidebarMenuItem>
-      <Disclosure
-        variant="outline"
-        open={isOpen}
-        onOpenChange={setIsOpen}
-        className={cn(
-          'w-full overflow-hidden rounded-md border-none text-sm shadow-none',
-          isOpen && 'bg-foreground/5',
-        )}
-      >
-        <DisclosureTrigger>
-          <SidebarMenuButton
-            className={cn('px-2.5 text-sm! font-medium [&_svg]:size-3.5!', tone.text)}
-          >
-            {severity === 'building' ? (
-              <Loading className="text-muted-foreground!" />
-            ) : (
-              <DangerTriangleSolid weight="fill" className="size-4" />
-            )}
-            <span>{SEVERITY_LABEL[severity]}</span>
-          </SidebarMenuButton>
-        </DisclosureTrigger>
-        <DisclosureContent variant="outline">
-          <SandboxAlertContent projectId={projectId} health={data} severity={severity} />
-        </DisclosureContent>
-      </Disclosure>
-    </SidebarMenuItem>
-  );
-}
-
-export function ProjectSandboxAlertRailItem({ projectId }: { projectId: string }) {
-  const { data } = useSandboxHealth(projectId);
-  const severity = resolveSandboxAlertSeverity(data);
-  if (!severity || !data) return null;
-  const tone = SEVERITY_TONE[severity];
-
-  return (
-    <Popover>
-      <Hint label={SEVERITY_LABEL[severity]}>
-        <PopoverTrigger asChild>
-          <SidebarMenuButton type="button" aria-label={SEVERITY_LABEL[severity]}>
-            {severity === 'building' ? (
-              <Loading className={cn('size-4', tone.icon)} />
-            ) : (
-              <DangerTriangleSolid weight="fill" className={cn('size-4', tone.icon)} />
-            )}
-            {severity !== 'building' && (
-              <span className={cn('absolute top-1.5 right-1.5 size-1.5 rounded-full', tone.dot)} />
-            )}
-          </SidebarMenuButton>
-        </PopoverTrigger>
-      </Hint>
-      <PopoverContent side="right" align="end" sideOffset={12} className="w-96 p-0">
-        <SandboxAlertContent projectId={projectId} health={data} severity={severity} />
-      </PopoverContent>
-    </Popover>
+    <SidebarAlert
+      tone={SEVERITY_TONE[severity]}
+      icon={
+        severity === 'building' ? (
+          <Loading className="in-[button]:text-foreground size-3.5 shrink-0" variant="spokes" />
+        ) : (
+          <DangerTriangleSolid weight="fill" className="size-4 shrink-0" />
+        )
+      }
+      label={SEVERITY_LABEL[severity]}
+      open={isOpen}
+      onOpenChange={setIsOpen}
+    >
+      <SandboxAlertContent projectId={projectId} health={data} severity={severity} />
+    </SidebarAlert>
   );
 }

@@ -5,10 +5,17 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
-import Loading from '@/components/ui/loading';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -19,14 +26,19 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { RadioGroup } from '@/components/ui/radio-group';
+import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
+import {
+  sidebarOpenerLabel,
+  useShowPageSidebarOpener,
+} from '@/features/workspace/project-layout/sidebar-opener';
 import { ShareOption, SubjectPicker } from '@/features/workspace/shared/sharing-picker';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { relativeTime } from '@/lib/relative-time';
 import {
   CLIPBOARD_IFRAME_ALLOW,
   INTERACTIVE_PREVIEW_IFRAME_SANDBOX,
@@ -40,45 +52,157 @@ import {
   type AppAccessMode,
   type AppDeployment,
 } from '@kortix/sdk';
-import {
-  qk,
-  useAppAccess,
-  useAppDeployments,
-  useFeatureFlag,
-  useProjectApps,
-} from '@kortix/sdk/react';
+import { useAppAccess, useAppDeployments, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon,
+  ArrowUpRightIcon,
   ClockCounterClockwiseIcon,
+  DotsThreeIcon,
   GlobeIcon,
   LockKeyIcon,
+  SidebarSimpleIcon as PanelLeft,
   PauseIcon,
   PlayIcon,
   TrashIcon,
   XIcon,
 } from '@phosphor-icons/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useLayoutEffect, useState } from 'react';
 
-function deploymentTone(
-  status: AppDeployment['status'],
-): 'success' | 'destructive' | 'warning' | 'muted' {
-  if (status === 'ready') return 'success';
-  if (status === 'failed' || status === 'cancelled') return 'destructive';
-  if (
-    status === 'queued' ||
-    status === 'validating' ||
-    status === 'building' ||
-    status === 'provisioning' ||
-    status === 'checking'
-  )
-    return 'warning';
-  return 'muted';
+type DeploymentTone = 'success' | 'destructive' | 'warning' | 'muted';
+
+/**
+ * Every deployment status, in words a person who did not build this can read.
+ *
+ * The raw values are pipeline stages — `validating`, `provisioning`, `checking`
+ * — and they were rendered verbatim into a badge. That is the vocabulary of the
+ * thing that runs the build, not of the person watching it, and `provisioning`
+ * in particular tells a reader nothing they can act on.
+ *
+ * One table instead of the if-chain this replaces: the chain listed five of the
+ * eight statuses by hand to reach one tone, so adding a status to the union got
+ * `muted` and silence rather than a type error. A `Record` over the union does
+ * not compile until every new status is given a label and a tone.
+ */
+export const DEPLOYMENT_COPY: Record<
+  AppDeployment['status'],
+  { label: string; tone: DeploymentTone }
+> = {
+  queued: { label: 'Waiting', tone: 'warning' },
+  validating: { label: 'Checking files', tone: 'warning' },
+  building: { label: 'Building', tone: 'warning' },
+  provisioning: { label: 'Starting up', tone: 'warning' },
+  checking: { label: 'Final checks', tone: 'warning' },
+  ready: { label: 'Live', tone: 'success' },
+  failed: { label: 'Failed', tone: 'destructive' },
+  cancelled: { label: 'Cancelled', tone: 'muted' },
+};
+
+/**
+ * What the HEADER says about the newest deployment — or nothing at all.
+ *
+ * Deliberately coarser than the table above. A header badge is read at a glance
+ * while you are using the App, and at that moment the difference between
+ * `validating` and `provisioning` is not a difference the reader can do
+ * anything with: both mean "a new version is on its way". The version list is
+ * where the stage-by-stage detail belongs, and it has it.
+ *
+ * `null` is the common case, and it is the point. A finished deployment is what
+ * every App looks like almost all of the time, so saying "Live" there would put
+ * a permanent badge in the header restating the green dot beside it. Cancelled
+ * is silent for the same reason: nothing is happening and nothing is broken.
+ */
+export function deployNotice(
+  latest: AppDeployment | undefined,
+): { label: string; tone: DeploymentTone } | null {
+  if (!latest || latest.status === 'ready' || latest.status === 'cancelled') return null;
+  if (latest.status === 'failed') return { label: 'Update failed', tone: 'destructive' };
+  return { label: 'Updating', tone: 'warning' };
 }
 
 function appCommand(app: App): string {
   return `kortix apps deploy . --app ${app.app_id}`;
+}
+
+/** The command that puts a first App on this page. Shown in the empty state. */
+const FIRST_DEPLOY_COMMAND = 'kortix apps deploy .';
+
+/**
+ * The hostname a person reads an App by.
+ *
+ * `app.url` is a full origin (`https://seed.apps.kortix.com`). The scheme is
+ * the same on every App and the trailing slash is noise, so both are dropped —
+ * a card's second line is 300px wide and every character it spends on `https://`
+ * is a character the actual subdomain loses to truncation.
+ *
+ * Exported for its own test: this is pure string work with a live input shape,
+ * which is exactly what `apps/web` can assert without a DOM.
+ */
+export function appHost(url: string): string {
+  return url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+}
+
+/**
+ * Everything the UI says about an App's state, derived in ONE place.
+ *
+ * `desired_state` defaults to `'running'` the moment an App row is created, so
+ * it is intent, not fact — an App that has never been deployed reports
+ * `running` and has no runtime at all. Every surface must therefore read
+ * `active_deployment_id` first, and it does so here rather than in each of the
+ * three places that used to re-derive it.
+ */
+function appStatus(app: App): { deployed: boolean; live: boolean; label: string; dot: string } {
+  const deployed = Boolean(app.active_deployment_id);
+  const live = deployed && app.desired_state === 'running';
+  return {
+    deployed,
+    live,
+    label: !deployed ? 'Not deployed' : live ? 'Running' : 'Suspended',
+    // Three states, three weights of the same neutral-vs-green pair: running is
+    // the only one that earns colour.
+    dot: live ? 'bg-kortix-green' : deployed ? 'bg-muted-foreground/50' : 'bg-muted-foreground/25',
+  };
+}
+
+/**
+ * Who can open an App, in the words the picker shows.
+ *
+ * Module scope, above every consumer. It used to be declared BELOW
+ * `AppDetailModal`, the component that reads it — legal, because the read
+ * happens at render rather than at module evaluation, and confusing for exactly
+ * as long as it takes to check whether it is.
+ */
+const ACCESS_COPY: Record<AppAccessMode, { label: string; desc: string }> = {
+  private: { label: 'Only you', desc: 'Only the App creator can open it' },
+  project: { label: 'Whole team', desc: 'Every member of this project' },
+  restricted: { label: 'Select members', desc: 'Chosen members and groups' },
+  public: { label: 'Public', desc: 'Anyone with the URL' },
+  password: { label: 'Password', desc: 'Anyone with the App password' },
+};
+
+/**
+ * A shell command, shown as the thing you would actually type.
+ *
+ * Radius is concentric: `rounded-md` (6px) outer, `py-1` (4px) padding, so the
+ * copy button inside takes `rounded-sm` (2px) — which is what `CopyButton`'s
+ * `size="sm"` already carries.
+ */
+function DeployCommand({ code, className }: { code: string; className?: string }) {
+  return (
+    <span
+      className={cn(
+        'bg-popover inline-flex max-w-full items-center gap-2 rounded-md border py-1 pr-1 pl-2.5',
+        className,
+      )}
+    >
+      <span aria-hidden className="text-muted-foreground/50 shrink-0 font-mono text-xs select-none">
+        $
+      </span>
+      <code className="text-foreground truncate font-mono text-xs">{code}</code>
+      <CopyButton code={code} size="sm" className="shrink-0" />
+    </span>
+  );
 }
 
 /**
@@ -153,9 +277,11 @@ export function AppPreviewOverlay({
 }
 
 /**
- * The logical viewport a CARD thumbnail renders the App into.
+ * The logical viewport a CARD thumbnail renders the App into, and the shape of
+ * the tile it lands in. These three constants are ONE decision — see the ratio
+ * note below — so they live together.
  *
- * A card tile is 300-450px wide, and an iframe that wide is a 300-450px
+ * A card tile is 230-300px wide, and an iframe that wide is a 230-300px
  * viewport — so the App answers with its mobile layout. Every thumbnail on the
  * page was a hamburger over a single stacked column: the one view of the App
  * nobody deploys an App for, and nothing like what opening it actually shows.
@@ -164,18 +290,29 @@ export function AppPreviewOverlay({
  * out at 1280px, the tile shows that layout in miniature, and the thumbnail
  * finally looks like the App — the same thing a screenshot would give you.
  *
- * 1280x720 is 16:9 exactly, which is the tile's own `aspect-video`, so the
- * scaled frame fills it edge to edge with no letterboxing and no cropping.
+ * **The ratio is load-bearing.** The frame is scaled to the tile's WIDTH, so
+ * any mismatch between the viewport's aspect and the tile's shows up as dead
+ * space at the bottom of every tile (viewport shorter) or a crop (taller).
+ * 1280x1600 is 4:5 exactly, which is `PREVIEW_TILE_ASPECT`, so the scaled frame
+ * fills the tile edge to edge. Change one, change the other — the parity is
+ * asserted in `app-preview.test.tsx`.
+ *
+ * The tile went from 16:9 landscape to 4:5 portrait with the gallery grid, and
+ * the viewport followed it from 720 to 1600. That is a better capture as well
+ * as a matching one: 1600 logical pixels of a desktop layout is a page's whole
+ * first screen and then some, where 720 was the hero and nothing else.
  *
  * This is the house pattern, not a new one: `presentations/engine/deck.tsx`
- * renders its slide thumbnails into the same fixed 1280x720 box scaled from
- * `origin-top-left`, and `FullScreenPresentationViewer` does it at 1920x1080.
- * Note what does NOT solve this — `showAspectRatioToCSS` in
- * `show-content-renderer.tsx` reshapes the BOX and leaves the guest laying out
- * at the host's width, which is the thing that produced the mobile layout here.
+ * renders its slide thumbnails into a fixed box scaled from `origin-top-left`,
+ * and `FullScreenPresentationViewer` does it at 1920x1080. Note what does NOT
+ * solve this — `showAspectRatioToCSS` in `show-content-renderer.tsx` reshapes
+ * the BOX and leaves the guest laying out at the host's width, which is the
+ * thing that produced the mobile layout here.
  */
 export const PREVIEW_VIEWPORT_WIDTH = 1280;
-export const PREVIEW_VIEWPORT_HEIGHT = 720;
+export const PREVIEW_VIEWPORT_HEIGHT = 1600;
+/** The tile's shape, written once so the class and the viewport cannot drift. */
+export const PREVIEW_TILE_ASPECT = 'aspect-[4/5]';
 
 /**
  * How far to shrink the desktop frame so it fits the tile. `null` for a width
@@ -260,7 +397,7 @@ export function AppPreview({
   const [attachViewport, viewportScale] = useDesktopViewportScale(!interactive);
   const frame = cn(
     'bg-muted/20 relative overflow-hidden',
-    !interactive && 'aspect-video',
+    !interactive && PREVIEW_TILE_ASPECT,
     className,
   );
 
@@ -335,7 +472,7 @@ export function AppPreview({
             : // Anchored top-left because that is the scale's origin: the frame
               // shrinks toward the corner it starts in, so the miniature lands
               // flush in the tile instead of drifting toward the middle.
-              'top-0 left-0 origin-top-left pointer-events-none',
+              'pointer-events-none top-0 left-0 origin-top-left',
         )}
         {...(interactive ? {} : { tabIndex: -1, 'aria-hidden': true })}
         data-testid="app-live-preview"
@@ -353,6 +490,67 @@ export function AppPreview({
   );
 }
 
+/**
+ * Sidebar opener — same rule as the capability tab bar, session header and
+ * project home: always on mobile (the sheet has no docked affordance), on
+ * desktop only while the panel is undocked. `useShowPageSidebarOpener` is the
+ * single source of that rule and already covers the "no sidebar" case.
+ *
+ * In flow, never absolutely positioned. The settings-section shell this page
+ * used to sit in put its opener over the content at the top-left corner, which
+ * on the desktop shell lands on the macOS traffic lights.
+ */
+function AppsSidebarToggle() {
+  const sidebar = useOptionalSidebar();
+  const show = useShowPageSidebarOpener();
+  if (!sidebar || !show) return null;
+
+  const label = sidebarOpenerLabel(sidebar);
+
+  return (
+    <Hint label={label} side="bottom">
+      <Button
+        type="button"
+        aria-label={label}
+        variant="ghost"
+        size="icon"
+        onClick={sidebar.toggleSidebar}
+        onPointerEnter={sidebar.state === 'collapsed' ? sidebar.peekEnter : undefined}
+        onPointerLeave={sidebar.state === 'collapsed' ? sidebar.peekLeave : undefined}
+        className="hover:bg-sidebar-accent hover:text-sidebar-foreground shrink-0 cursor-pointer active:scale-[0.96]"
+      >
+        <PanelLeft className="cn-rtl-flip size-4" />
+      </Button>
+    </Hint>
+  );
+}
+
+function AppsHeader() {
+  const sidebar = useOptionalSidebar();
+
+  return (
+    <div
+      className="kx-titlebar-row relative flex shrink-0 items-center gap-1 border-b px-2"
+      data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
+    >
+      <AppsSidebarToggle />
+      <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3">
+        <h1 className="text-foreground shrink-0 text-sm font-medium">Apps</h1>
+      </div>
+      <Link
+        href="/docs/feature-flags/apps"
+        target="_blank"
+        rel="noopener noreferrer"
+        prefetch={false}
+        className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-3 text-sm font-medium whitespace-nowrap transition-colors"
+      >
+        Docs
+        <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
+      </Link>
+    </div>
+  );
+}
+
 export function AppsView({ projectId }: { projectId: string }) {
   // One gating primitive, fail-closed. Apps NEVER enables itself from here:
   // activation lives only in Customize → Feature flags, so this page has no
@@ -365,10 +563,8 @@ export function AppsView({ projectId }: { projectId: string }) {
   // public hostname serves. Gating on project.customize.write let a custom role
   // that granted Apps still render read-only, and one that revoked Apps still
   // render the controls.
-  const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_WRITE).allowed === true;
-  const canDeploy =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_DEPLOY).allowed === true;
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_WRITE).allowed === true;
+  const canDeploy = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_DEPLOY).allowed === true;
   // Which App the detail modal is showing. Held by id, not by object, so a
   // refetch (a lifecycle toggle, a rollback) re-renders the modal against the
   // fresh row instead of a stale copy captured at click time.
@@ -382,89 +578,77 @@ export function AppsView({ projectId }: { projectId: string }) {
     if (!app) return;
     void createAppAccessSession(projectId, app.app_id)
       .then((session) => window.location.replace(session.url))
-      .catch((error) =>
-        errorToast(error instanceof Error ? error.message : 'App access denied'),
-      );
+      .catch((error) => errorToast(error instanceof Error ? error.message : 'App access denied'));
   }, [apps.data, projectId, searchParams]);
 
   return (
-    <CustomizeSectionWrapper
-      title="Apps"
-      docs="/docs/feature-flags/apps"
-      // `CustomizeSectionWrapper`'s content column carries no horizontal
-      // padding of its own — every other consumer stays inside `max-w-2xl`,
-      // narrow enough that the column's own margin (`mx-auto` against a much
-      // wider viewport) reads as a gutter. This page overrides to `max-w-5xl`
-      // for its card grid, and once viewport width gets close to that 1024px
-      // cap — an ordinary laptop window, not just a phone — the column fills
-      // the full width and "Learn more." presses flush against the browser
-      // edge. `px-4` matches `CapabilityPageShell`'s own gutter (the sibling
-      // shell the other capability routes use), so the header never touches
-      // the edge regardless of viewport width.
-      className="max-w-5xl px-4"
-      showSidebarToggleButton
-    >
-      {appsGate.isLoading ? (
-        <ul className="space-y-2">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <li
-              key={index}
-              className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3"
-            >
-              <Skeleton className="size-9 shrink-0 rounded-sm" />
-              <div className="min-w-0 flex-1 space-y-2">
-                <Skeleton className="h-3.5 w-1/3 rounded-sm" />
-                <Skeleton className="h-3 w-2/3 rounded-sm" />
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : !appsGate.enabled ? (
-        <FeatureGateScreen
-          featureName="Apps"
-          description="Apps deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Each App wakes on its next request and suspends after its idle timeout."
-        />
-      ) : apps.isLoading ? (
-        <ul className="grid gap-4 md:grid-cols-2">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <li key={index} className="bg-popover overflow-hidden rounded-md border">
-              <Skeleton className="aspect-video w-full rounded-none" />
-              <div className="space-y-2 px-4 py-3">
-                <Skeleton className="h-3.5 w-1/3 rounded-sm" />
-                <Skeleton className="h-3 w-2/3 rounded-sm" />
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : apps.isError ? (
-        <ErrorState
-          size="sm"
-          title="Failed to load Apps"
-          description={(apps.error as Error).message}
-          action={
-            <Button size="sm" variant="outline" onClick={() => apps.refetch()}>
-              Retry
-            </Button>
-          }
-        />
-      ) : apps.data?.length ? (
-        <ul className="grid gap-4 md:grid-cols-2">
-          {apps.data.map((app) => (
-            <AppCard
-              key={app.app_id}
-              projectId={projectId}
-              app={app}
-              onOpen={() => setOpenAppId(app.app_id)}
+    // `h-svh`, for the same reason the `(capabilities)` layout carries it:
+    // nothing above this box has a definite height (every ancestor from
+    // `<body>` down is `min-h-*` or `flex-1 overflow-hidden`), so without one
+    // the body below would never have a bound to scroll within and the WINDOW
+    // would scroll — taking the header bar with it. Bounded here, the bar needs
+    // no `sticky` and no `fixed`: it is a sibling above the only scrolling
+    // element on the page, so it structurally cannot move. `svh` (not `dvh`)
+    // assumes mobile browser chrome is visible, so the bar can never be pushed
+    // under a toolbar that reappears.
+    <div className="flex h-svh flex-col overflow-hidden">
+      <AppsHeader />
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* `max-w-7xl px-4` — the gallery's column. It was `max-w-5xl` while
+            the grid was 2-up; at four columns that 1024px cap gives 230px
+            tiles, small enough that a scaled-down desktop layout stops being
+            readable as one. `px-4` matches `CapabilityPageShell`'s gutter so
+            the grid never presses flush against the browser edge.
+
+            `flex min-h-full flex-col` so the one child that asks for height
+            gets it: `EmptyState`/`ErrorState` are built on `Empty`, which is
+            `flex-1 … justify-center`, and with no bound to grow into they
+            collapsed to their own content and clung to the top of a tall,
+            otherwise blank page. The grid, the skeleton and the feature gate
+            take their natural height and stay at the top, unaffected. */}
+        <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-4 py-6 pb-20">
+          {appsGate.isLoading ? (
+            <AppGridSkeleton />
+          ) : !appsGate.enabled ? (
+            <FeatureGateScreen
+              featureName="Apps"
+              description="Apps deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Each App wakes on its next request and suspends after its idle timeout."
             />
-          ))}
-        </ul>
-      ) : (
-        <EmptyState
-          icon={GlobeIcon}
-          title="No Apps deployed"
-          description="Deploy a static site, JavaScript bundle, Dockerfile, or OCI image with the Kortix CLI. Deployed Apps appear here."
-        />
-      )}
+          ) : apps.isLoading ? (
+            <AppGridSkeleton />
+          ) : apps.isError ? (
+            <ErrorState
+              size="sm"
+              title="Failed to load Apps"
+              description={(apps.error as Error).message}
+              action={
+                <Button size="sm" variant="outline" onClick={() => apps.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : apps.data?.length ? (
+            /* A gallery grid: four tall tiles across at full width, stepping
+               down to one on a phone. `gap-y` is larger than `gap-x` because
+               each tile's caption hangs BELOW it with no border to close it
+               off — an equal gap would let the next row's thumbnail crowd the
+               previous row's text. */
+            <ul className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {apps.data.map((app) => (
+                <AppCard
+                  key={app.app_id}
+                  projectId={projectId}
+                  app={app}
+                  onOpen={() => setOpenAppId(app.app_id)}
+                />
+              ))}
+            </ul>
+          ) : (
+            <AppsEmptyState />
+          )}
+        </div>
+      </div>
 
       {openApp ? (
         <AppDetailModal
@@ -479,19 +663,52 @@ export function AppsView({ projectId }: { projectId: string }) {
           }}
         />
       ) : null}
-    </CustomizeSectionWrapper>
+    </div>
   );
 }
 
-function AppCard({
-  projectId,
-  app,
-  onOpen,
-}: {
-  projectId: string;
-  app: App;
-  onOpen: () => void;
-}) {
+/**
+ * Shape-matched placeholder: same grid, same 4:5 tile, same two-line caption
+ * hanging below it as `AppCard`. Four tiles, because four is the widest row —
+ * fewer would reflow the grid the moment real data lands.
+ */
+function AppGridSkeleton() {
+  return (
+    <ul className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <li key={index}>
+          <Skeleton className={cn(PREVIEW_TILE_ASPECT, 'w-full rounded-lg')} />
+          <div className="mt-3 space-y-1">
+            <Skeleton className="h-3.5 w-1/2 rounded-sm" />
+            <Skeleton className="h-3 w-3/4 rounded-sm" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Nothing here yet — so hand over the exact command that changes that.
+ *
+ * The old empty state described the feature and stopped, which left the one
+ * question it raises ("how do I get an App onto this page?") unanswered on the
+ * one screen that has room to answer it. The command is copyable, not prose:
+ * `kortix apps deploy .` run in a project directory is the whole path from
+ * this screen to a card.
+ */
+function AppsEmptyState() {
+  return (
+    <EmptyState
+      icon={GlobeIcon}
+      title="No Apps yet"
+      description="Deploy a static site, JavaScript bundle, Dockerfile, or OCI image from your project directory. It shows up here the moment it goes live."
+      action={<DeployCommand code={FIRST_DEPLOY_COMMAND} />}
+    />
+  );
+}
+
+function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOpen: () => void }) {
   // SESSION only, and only when the viewer may actually open this App. The
   // access POLICY is an administrative read that 403s for an ordinary member,
   // and the card never renders it — the detail modal asks. The SESSION 403s for
@@ -499,25 +716,29 @@ function AppCard({
   // reports up front instead of leaving the card to discover it by failing.
   const canAccess = app.viewer_can_access !== false;
   const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess });
-  const deployed = Boolean(app.active_deployment_id);
-  const live = deployed && app.desired_state === 'running';
+  const status = appStatus(app);
 
   return (
     <li>
-      {/* One control per card. Everything that used to be a row of six icon
-          buttons now lives at the top of the detail modal, so there is exactly
-          one thing to click and no nested hit areas. */}
+      {/* Still ONE control per card, and that is why there is no hover `⋯`
+          menu on the tile: the whole card is the button, and a second button
+          inside it is invalid HTML and a nested hit area. Every per-App action
+          lives in the detail modal's header instead. */}
       <button
         type="button"
         onClick={onOpen}
         aria-label={`Open ${app.name}`}
-        className={cn(
-          'group bg-popover w-full overflow-hidden rounded-md border text-left',
-          'transition-[box-shadow,border-color] hover:border-border hover:shadow-sm',
-          'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
-        )}
+        className="group w-full text-left focus-visible:outline-none"
       >
-        <div className="relative border-b">
+        {/* The thumbnail is the ONLY bordered surface. The card used to be one
+            panel with the text inside it under a divider, which framed the
+            name and the host as card chrome; here they sit on the page like a
+            caption under a picture, and the picture is the object. */}
+        <div
+          className={cn(
+            'relative overflow-hidden rounded-lg border transition-transform duration-150 ease-out group-hover:-translate-y-1',
+          )}
+        >
           <AppPreview
             key={app.active_deployment_id ?? app.app_id}
             app={app}
@@ -525,29 +746,21 @@ function AppCard({
             accessError={!canAccess || access.session.isError}
             interactive={false}
           />
-          {/* Hairline so the thumbnail never bleeds into the panel edge. */}
-          <span className="pointer-events-none absolute inset-0 outline outline-black/10 -outline-offset-1 dark:outline-white/10" />
         </div>
 
-        <div className="flex items-center gap-3 px-4 py-3">
-          <span
-            className={cn(
-              'flex size-9 shrink-0 items-center justify-center rounded-sm',
-              live ? 'bg-kortix-green/15' : 'bg-muted',
-            )}
-          >
-            <GlobeIcon
-              weight="fill"
-              className={cn('size-5', live ? 'text-kortix-green' : 'text-muted-foreground')}
-            />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-foreground truncate text-sm font-medium">{app.name}</p>
-            <p className="text-muted-foreground truncate font-mono text-xs">{app.url}</p>
+        {/* The caption. Title and status share a baseline row; the host sits
+            under it, quieter. No padding of its own — it is page text now, not
+            the inside of a panel. */}
+        <div className="mt-3 space-y-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
+              {app.name}
+            </h3>
+            <Badge size="xs" variant={status.live ? 'success' : 'muted'} className="shrink-0">
+              {status.label}
+            </Badge>
           </div>
-          <Badge size="xs" variant={live ? 'success' : 'muted'}>
-            {!deployed ? 'Not deployed' : app.desired_state === 'running' ? 'Running' : 'Suspended'}
-          </Badge>
+          <p className="text-muted-foreground truncate font-mono text-xs">{appHost(app.url)}</p>
         </div>
       </button>
     </li>
@@ -584,8 +797,8 @@ function AppDetailModal({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const latest = deployments.data?.[0];
-  const deployed = Boolean(app.active_deployment_id);
-  const live = deployed && app.desired_state === 'running';
+  const status = appStatus(app);
+  const notice = deployNotice(latest);
   const running = app.desired_state === 'running';
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
   const liveUrl = access.session.data?.url ?? app.url;
@@ -615,106 +828,138 @@ function AppDetailModal({
           event.preventDefault();
           (event.currentTarget as HTMLElement | null)?.focus?.();
         }}
-        className="border-border bg-background! focus:outline-none focus-visible:outline-none inset-0! h-dvh! max-h-none! min-h-dvh! w-auto! max-w-none! translate-x-0! translate-y-0! gap-0! space-y-0! overflow-hidden! rounded-none! border-0! md:inset-4! md:h-auto! md:min-h-0! md:rounded-md! md:border!"
+        className="border-border bg-background! inset-0! h-dvh! max-h-none! min-h-dvh! w-auto! max-w-none! translate-x-0! translate-y-0! gap-0! space-y-0! overflow-hidden! rounded-none! border-0! focus:outline-none focus-visible:outline-none md:inset-4! md:h-auto! md:min-h-0! md:rounded-md! md:border!"
         aria-label={`${app.name} App`}
       >
         <div className="flex h-full min-h-0 flex-col">
+          {/* Name, and what the name needs qualifying with — nothing else.
+              This row carried five things: a dot, the name, the status word, a
+              raw pipeline-stage badge, an access-mode badge, and the hostname
+              in monospace underneath. Four of those are answers to questions
+              nobody asked while looking at their own App, and together they
+              read as a debug readout rather than a title bar.
+
+              What each one became:
+               - the status WORD now appears only when it is not "Running" —
+                 the green dot already says the happy path, and a permanent
+                 label restating it is the noisiest kind of quiet;
+               - the pipeline stage became one plain badge, and only while
+                 something is actually happening (`deployNotice`);
+               - the access mode moved onto the control that changes it, where
+                 it reads as a current value instead of a floating label;
+               - the hostname moved into the Open button's tooltip. It is a
+                 thing you act on, not a thing you read. */}
           <header className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
-            <span
-              className={cn(
-                'flex size-8 shrink-0 items-center justify-center rounded-sm',
-                live ? 'bg-kortix-green/15' : 'bg-muted',
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', status.dot)} />
+              <h2 className="text-foreground truncate text-sm font-medium">{app.name}</h2>
+              {/* One announcement, either way. The dot is `aria-hidden`, so the
+                  running case needs a screen-reader-only label — but rendering
+                  it unconditionally alongside the visible one made every
+                  non-running state read its status out twice. */}
+              {status.live ? (
+                <span className="sr-only">{status.label}</span>
+              ) : (
+                <span className="text-muted-foreground shrink-0 text-xs">{status.label}</span>
               )}
-            >
-              <GlobeIcon
-                weight="fill"
-                className={cn('size-4', live ? 'text-kortix-green' : 'text-muted-foreground')}
-              />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <p className="text-foreground truncate text-sm font-medium">{app.name}</p>
-                <Badge size="xs" variant={live ? 'success' : 'muted'}>
-                  {!deployed ? 'Not deployed' : running ? 'Running' : 'Suspended'}
+              {notice ? (
+                <Badge size="xs" variant={notice.tone} className="shrink-0">
+                  {notice.label}
                 </Badge>
-                {latest ? (
-                  <Badge size="xs" variant={deploymentTone(latest.status)}>
-                    {latest.status}
-                  </Badge>
-                ) : null}
-                <Badge size="xs" variant="outline">
-                  {ACCESS_COPY[app.access_mode].label}
-                </Badge>
-              </div>
-              <p className="text-muted-foreground truncate font-mono text-xs">{app.url}</p>
+              ) : null}
             </div>
 
-            <ButtonGroup>
-              {canDeploy ? (
-                <Hint label={running ? 'Suspend App' : 'Wake App'}>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    disabled={busy || !deployed}
-                    aria-label={running ? 'Suspend App' : 'Wake App'}
-                    onClick={() => lifecycle(running ? 'stop' : 'start')}
+            {/* Two registers, and the gap is what separates them: the App's own
+                actions on the left, the window's Close on the right. Close was
+                the fifth button inside the group, which made "stop this App"
+                and "shut this panel" look like peers of each other. It is
+                `ghost` for the same reason — chrome, not an action. */}
+            <div className="flex shrink-0 items-center gap-2">
+              <ButtonGroup>
+                {canDeploy ? (
+                  <Hint
+                    label={running ? 'Put this App to sleep' : 'Wake this App up'}
+                    side="bottom"
                   >
-                    {busy ? (
-                      <Loading className="size-4 shrink-0" />
-                    ) : running ? (
-                      <PauseIcon className="size-4 shrink-0" />
-                    ) : (
-                      <PlayIcon className="size-4 shrink-0" />
-                    )}
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      disabled={busy || !status.deployed}
+                      aria-label={running ? 'Put this App to sleep' : 'Wake this App up'}
+                      onClick={() => lifecycle(running ? 'stop' : 'start')}
+                    >
+                      {busy ? (
+                        <Loading className="size-4 shrink-0" />
+                      ) : running ? (
+                        <PauseIcon weight="fill" className="size-4 shrink-0" />
+                      ) : (
+                        <PlayIcon className="size-4 shrink-0" />
+                      )}
+                    </Button>
+                  </Hint>
+                ) : null}
+                <Hint label={`Open ${appHost(app.url)} in a new tab`} side="bottom">
+                  <Button asChild size="icon" variant="outline">
+                    <a
+                      href={liveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Open in a new tab"
+                    >
+                      <ArrowSquareOutIcon className="size-4 shrink-0" />
+                    </a>
                   </Button>
                 </Hint>
-              ) : null}
-              {canWrite ? (
-                <Hint label="App access">
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    aria-label="App access"
-                    onClick={() => setAccessOpen(true)}
-                  >
-                    <LockKeyIcon className="size-4 shrink-0" />
-                  </Button>
-                </Hint>
-              ) : null}
-              <Hint label="Versions">
+                {/* Everything rare or configural, behind one control. Three
+                    icon buttons became one, and Delete came UP out of the
+                    version drawer — a destructive action does not belong
+                    hidden behind a history toggle, where you find it by
+                    looking for something else. */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon" variant="outline" aria-label="More actions">
+                      <DotsThreeIcon className="size-4 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-60">
+                    {canWrite ? (
+                      <DropdownMenuItem onClick={() => setAccessOpen(true)}>
+                        <LockKeyIcon className="size-3.5 shrink-0" />
+                        Who can open this
+                        {/* The current value, on the row that changes it. */}
+                        <span className="text-muted-foreground ml-auto pl-3 text-xs">
+                          {ACCESS_COPY[app.access_mode].label}
+                        </span>
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
+                      <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
+                      {versionsOpen ? 'Hide earlier versions' : 'Earlier versions'}
+                    </DropdownMenuItem>
+                    {canWrite ? (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
+                          <TrashIcon className="size-3.5 shrink-0" />
+                          Delete App
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </ButtonGroup>
+
+              <Hint label="Close" side="bottom">
                 <Button
                   size="icon"
-                  variant="outline"
-                  aria-label="Show versions"
-                  aria-expanded={versionsOpen}
-                  onClick={() => setVersionsOpen((value) => !value)}
-                >
-                  <ClockCounterClockwiseIcon className="size-4 shrink-0" />
-                </Button>
-              </Hint>
-              <Hint label="Open in a new tab">
-                <Button asChild size="icon" variant="outline">
-                  <a
-                    href={liveUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="Open in a new tab"
-                  >
-                    <ArrowSquareOutIcon className="size-4 shrink-0" />
-                  </a>
-                </Button>
-              </Hint>
-              <Hint label="Close">
-                <Button
-                  size="icon"
-                  variant="outline"
+                  variant="ghost"
                   aria-label="Close"
                   onClick={() => onOpenChange(false)}
                 >
                   <XIcon className="size-4 shrink-0" />
                 </Button>
               </Hint>
-            </ButtonGroup>
+            </div>
           </header>
 
           <div className="relative min-h-0 flex-1">
@@ -730,24 +975,17 @@ function AppDetailModal({
 
           {versionsOpen ? (
             <div className="bg-muted/20 max-h-[40vh] shrink-0 overflow-y-auto border-t px-4 py-3">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-foreground text-xs font-medium">Versions</p>
-                <div className="flex items-center gap-2">
-                  <Hint label="Copy deploy command">
-                    <CopyButton code={appCommand(app)} size="md" />
-                  </Hint>
-                  {canWrite ? (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="text-destructive"
-                      onClick={() => setDeleteOpen(true)}
-                    >
-                      <TrashIcon className="size-3.5 shrink-0" />
-                      Delete App
-                    </Button>
-                  ) : null}
-                </div>
+              {/* One thing, so no `justify-between` row to hold it. Delete used
+                  to sit on the right of this line: a destructive action parked
+                  inside a history panel, reachable only by opening something
+                  else. It lives in the header's overflow menu now.
+
+                  The command is spelled out rather than hidden behind a copy
+                  glyph — it is the only way a new version gets here, and a bare
+                  icon made the reader guess what it would put on their
+                  clipboard. */}
+              <div className="mb-2 flex items-center gap-3">
+                <DeployCommand code={appCommand(app)} className="min-w-0" />
               </div>
               {deployments.isLoading ? (
                 <Loading className="text-muted-foreground" />
@@ -812,15 +1050,6 @@ function AppDetailModal({
     </Modal>
   );
 }
-
-
-const ACCESS_COPY: Record<AppAccessMode, { label: string; desc: string }> = {
-  private: { label: 'Only you', desc: 'Only the App creator can open it' },
-  project: { label: 'Whole team', desc: 'Every member of this project' },
-  restricted: { label: 'Select members', desc: 'Chosen members and groups' },
-  public: { label: 'Public', desc: 'Anyone with the URL' },
-  password: { label: 'Password', desc: 'Anyone with the App password' },
-};
 
 function AppAccessModal({
   projectId,
@@ -995,19 +1224,36 @@ function DeploymentRow({
 }) {
   return (
     <div className="hover:bg-muted/40 flex items-center gap-3 rounded-md px-2 py-1.5">
-      <span className="text-foreground w-8 font-mono text-xs">v{deployment.version}</span>
-      <Badge size="xs" variant={deploymentTone(deployment.status)}>
-        {deployment.status}
-      </Badge>
-      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-        {deployment.source_kind}
-        {deployment.hosting_provider ? ` · ${deployment.hosting_provider}` : ''}
+      <span className="text-foreground w-8 shrink-0 font-mono text-xs tabular-nums">
+        v{deployment.version}
       </span>
-      {active ? <span className="text-muted-foreground text-xs">Live</span> : null}
+      {/* "Live" is the state of THIS version, so the active one says so and the
+          rest report their own build outcome. Showing both — a `ready` badge
+          and a separate "Live" word on the same row — said one thing twice. */}
+      <Badge size="xs" variant={active ? 'success' : DEPLOYMENT_COPY[deployment.status].tone}>
+        {active ? 'Live' : DEPLOYMENT_COPY[deployment.status].label}
+      </Badge>
+      {/* Age, not `hosting_provider`. That field is the name of the sandbox
+          fleet the build landed on ("daytona", "platinum") — infrastructure
+          this reader neither chose nor can change, printed where the one fact
+          they actually want ("when was this?") was missing. */}
+      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+        {relativeTime(deployment.created_at)}
+      </span>
       {canDeploy && deployment.status === 'ready' && !active ? (
-        <Button size="xs" variant="ghost" disabled={rollbackPending} onClick={onRollback}>
-          {rollbackPending ? <Loading /> : <ClockCounterClockwiseIcon className="size-3.5" />}
-          Roll back
+        <Button
+          size="xs"
+          variant="ghost"
+          className="shrink-0"
+          disabled={rollbackPending}
+          onClick={onRollback}
+        >
+          {rollbackPending ? (
+            <Loading className="size-3.5 shrink-0" />
+          ) : (
+            <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
+          )}
+          Restore
         </Button>
       ) : null}
     </div>

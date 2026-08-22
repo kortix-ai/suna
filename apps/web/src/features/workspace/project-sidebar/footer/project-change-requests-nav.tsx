@@ -1,12 +1,12 @@
 'use client';
 
 import { useFeatureFlag } from '@kortix/sdk/react';
-import { ArrowRightIcon as ArrowRight, GitDiffIcon as FileDiff } from '@phosphor-icons/react';
+import { CaretRightIcon, GitDiffIcon as ChangesIcon } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { MENU_LABEL, menuRow } from '@/components/ui/menu-recipe';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import type { ChangeRequest } from '@/features/project-files/api/change-requests';
@@ -16,6 +16,7 @@ import { useChangeRequests } from '@/features/project-files/hooks/use-change-req
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { relativeTime } from '@/lib/relative-time';
 
 interface CrController {
   crs: ChangeRequest[];
@@ -51,68 +52,50 @@ function useOpenCrController(): CrController {
   };
 }
 
-function OpenCrChooser({
-  crs,
-  baseRef,
-  onPick,
-}: {
-  crs: ChangeRequest[];
-  baseRef: string;
-  onPick: (id: string) => void;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+/**
+ * The chooser that opens when more than one change is waiting.
+ *
+ * It is a plain list of what is waiting, in the words a person outside the team
+ * uses. Branch names (`into main`), SHAs and the word "merge" stay out: whoever
+ * clicks this pill is deciding *which* change to look at, and the base branch is
+ * the same for every row anyway — it costs a line and tells them nothing. The
+ * age does the opposite, so it takes that line instead. A change proposed 20
+ * minutes ago and one sitting there for 11 days are different decisions, and an
+ * undated row reads as a fresh one.
+ *
+ * Rows wear the app-wide `menuRow` recipe rather than local padding, so this
+ * list lines up with every other floating list in the product — and shares the
+ * label's `px-2.5` left edge, which a hand-rolled `px-3.5` did not.
+ */
+function OpenCrChooser({ crs, onPick }: { crs: ChangeRequest[]; onPick: (id: string) => void }) {
   return (
-    <div className="w-full overflow-hidden py-1">
-      <div className="border-border flex items-center justify-between gap-3 border-b px-3.5 py-1.5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="bg-kortix-green/10 text-kortix-green grid size-8 shrink-0 place-items-center rounded-md">
-            <FileDiff className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <h3 className="text-foreground truncate text-sm font-medium">
-              {tI18nHardcoded.raw(
-                'autoFeaturesCoWorkerProjectSidebarFooterProjectChangeRequestsNav63c4c66f',
-              )}
-            </h3>
-            <p className="text-muted-foreground truncate text-xs">
-              {crs.length}{' '}
-              {tI18nHardcoded.raw(
-                'autoFeaturesCoWorkerProjectSidebarFooterProjectChangeRequestsNavafed4c1a',
-              )}
-              {baseRef || 'main'}
-            </p>
-          </div>
-        </div>
-      </div>
-      <div className="max-h-[50vh] overflow-y-auto">
+    <>
+      <p className={MENU_LABEL}>Proposed changes</p>
+      <div className="max-h-[50vh] overflow-y-auto overscroll-contain">
         {crs.map((cr) => (
           <button
             key={cr.cr_id}
             type="button"
             onClick={() => onPick(cr.cr_id)}
-            className="group hover:bg-muted/50 focus-visible:bg-muted/50 flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-[background-color,transform] duration-150 ease-out focus-visible:outline-none active:scale-[0.99]"
+            className={menuRow('sm', 'default', 'group cursor-pointer py-2 text-left')}
           >
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="text-muted-foreground shrink-0 font-mono text-[11px] tabular-nums">
-                  #{cr.number}
+            <span className="min-w-0 flex-1">
+              <span className="text-foreground block truncate text-sm font-medium">
+                {cr.title || 'Untitled change'}
+              </span>
+              <span className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
+                <span className="shrink-0 tabular-nums">#{cr.number}</span>
+                <span className="text-muted-foreground/40" aria-hidden="true">
+                  &bull;
                 </span>
-                <span className="text-foreground truncate text-sm leading-5 font-medium">
-                  {cr.title}
-                </span>
-              </div>
-              <div className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
-                <span className="shrink-0">into</span>
-                <Badge variant="kortix" size="xs" className="truncate">
-                  {cr.base_ref}
-                </Badge>
-              </div>
-            </div>
-            <ArrowRight className="text-muted-foreground/50 group-hover:text-foreground size-3.5 shrink-0 transition-colors" />
+                <span className="truncate">{relativeTime(cr.created_at)}</span>
+              </span>
+            </span>
+            <CaretRightIcon className="text-muted-foreground/50 group-hover:text-muted-foreground shrink-0 transition-transform duration-150 ease-out group-hover:translate-x-0.5" />
           </button>
         ))}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -136,12 +119,15 @@ function NavItemInner({ projectId }: { projectId: string }) {
   if (count === 0) return null;
 
   const label = reviewEnabled ? 'Review' : count === 1 ? 'Review change' : 'Review changes';
-  const baseRef = c.crs[0]?.base_ref ?? '';
+  // The pill is one sidebar row: a three-digit count would push the label into
+  // an ellipsis, so it clamps instead. The exact number lives in the list.
+  const countLabel = count > 99 ? '99+' : String(count);
+  const hasChooser = !reviewEnabled && c.count > 1;
 
   const menuButton = (
     <SidebarMenuButton
       variant="success"
-      className="text-sm! font-medium [&_svg]:size-4!"
+      className="font-medium"
       onClick={
         reviewEnabled
           ? // Review is a section of the Customize bar's Settings tab now.
@@ -151,9 +137,22 @@ function NavItemInner({ projectId }: { projectId: string }) {
             : undefined
       }
     >
-      <FileDiff />
-      <span>{label}</span>
-      <span className="ml-auto pr-1 text-xs tabular-nums">{count}</span>
+      <ChangesIcon className="size-4" />
+      {/* `truncate` sits on the label, not on the trailing group: the sidebar's
+          base recipe truncates the last child, which used to be the count. */}
+      <span className="truncate">{label}</span>
+      <span className="ml-auto flex shrink-0 items-center gap-1">
+        <Badge
+          variant="transparent"
+          size="tabular"
+          className="bg-kortix-green/15 dark:bg-kortix-green/25 text-current"
+        >
+          {countLabel}
+        </Badge>
+        {/* Only when clicking opens a list — a caret on a row that goes straight
+            somewhere would promise a menu that never appears. */}
+        {hasChooser ? <CaretRightIcon className="size-3.5 opacity-50" /> : null}
+      </span>
     </SidebarMenuButton>
   );
 
@@ -161,20 +160,20 @@ function NavItemInner({ projectId }: { projectId: string }) {
   // CR shortcut (button for a single CR, popover chooser for several).
   return (
     <SidebarMenuItem>
-      {reviewEnabled || c.count === 1 ? (
-        menuButton
-      ) : (
+      {hasChooser ? (
         <Popover open={c.listOpen} onOpenChange={c.setListOpen}>
           <PopoverTrigger asChild>{menuButton}</PopoverTrigger>
           <PopoverContent
             side={isMobile ? 'top' : 'right'}
             align={isMobile ? 'start' : 'end'}
             sideOffset={12}
-            className="w-[340px] overflow-hidden p-0"
+            className="w-80 p-1"
           >
-            <OpenCrChooser crs={c.crs} baseRef={baseRef} onPick={c.openCr} />
+            <OpenCrChooser crs={c.crs} onPick={c.openCr} />
           </PopoverContent>
         </Popover>
+      ) : (
+        menuButton
       )}
 
       {!reviewEnabled && (
