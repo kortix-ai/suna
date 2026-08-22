@@ -8,8 +8,8 @@
  * (profile, connected, snapshots, groups, roles, identity, audit,
  * experimental, upgrades), `pref-general`'s "profile name email" keywords
  * opened the project WORKSPACE General tab, and `proj-llm` hid the Models row
- * behind `llm_gateway` even though `rail.ts` documents that the Models row is
- * deliberately ungated. Reading `railGroups()` — the same function the rail
+ * behind a since-retired flag even though `rail.ts` documents that the Models
+ * row is deliberately ungated. Reading `railGroups()` — the same function the rail
  * and every pane heading already read — makes "a tab exists" and "the palette
  * can reach it" one fact instead of two.
  *

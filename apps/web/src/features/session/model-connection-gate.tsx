@@ -37,8 +37,8 @@ export function ModelConnectionGate({
         title="Connect a model to start chatting"
         description={
           showUpgradeOption
-            ? "This session needs an LLM connected before it can respond. Upgrade for instant access to Kortix's managed models, or bring your own API key from any provider."
-            : 'This session needs an LLM connected before it can respond. Bring your own API key from any provider.'
+            ? "This session needs a model before it can respond. Upgrade for instant access to Kortix's managed models, or add your own provider key to the Kortix gateway."
+            : 'This session needs a model before it can respond. Add your own provider key to the Kortix gateway.'
         }
         action={
           showUpgradeOption ? (
@@ -49,7 +49,7 @@ export function ModelConnectionGate({
           ) : (
             <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
               <KeyIcon className="size-3.5" />
-              Bring your own key
+              Add your key to the Kortix gateway
             </Button>
           )
         }
@@ -62,7 +62,7 @@ export function ModelConnectionGate({
               onClick={() => openConnectProvider('providers')}
             >
               <KeyIcon className="size-3.5" />
-              Bring your own key
+              Add your key to the Kortix gateway
             </Button>
           ) : undefined
         }

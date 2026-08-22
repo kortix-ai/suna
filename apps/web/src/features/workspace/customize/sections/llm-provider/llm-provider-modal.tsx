@@ -3,13 +3,14 @@
 /**
  * `ProjectProviderModal` — the `Modal` SHELL around `provider-connect.tsx`.
  * It owns no connect UI of its own any more: JAY-510 collapsed the old
- * "Add provider" and "Connected" tabs into `ProviderConnect`'s four sections
- * (Connected / Add a provider / More providers / Custom provider), and deleted
- * the always-on search bar that used to sit above the tab row — the search now
- * lives inside the More-providers disclosure where it belongs.
+ * "Add provider" and "Connected" tabs into `ProviderConnect`'s sections
+ * (Connected / Add a provider / More providers), and deleted the always-on
+ * search bar that used to sit above the tab row — the search now lives inside
+ * the More-providers disclosure where it belongs.
  *
- * Two tabs remain, because they are two different questions:
- *   - **Providers** — `ProviderConnect`: which providers this project can call.
+ * Two tabs, because they are two different questions:
+ *   - **Providers** — `ProviderConnect`: which provider keys the Kortix
+ *                     gateway holds for this project (BYOK).
  *   - **Models**    — `ModelsTab`: which of the connected providers' models the
  *                     picker offers. Kept as its own tab rather than nested one
  *                     level deeper, which is where it used to live.
@@ -31,7 +32,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProviderConnect } from '@/features/providers/provider-connect';
 import { useState } from 'react';
-import { CustomProviderPanel } from './custom-provider-panel';
 import { ModelsTab } from './models-tab';
 import type { ActiveTab, ProjectProviderModalProps } from './types';
 import { pickInitialTab } from './utils';
@@ -52,8 +52,8 @@ export function ProjectProviderModal({
           carries `lg:h-auto` (modal.tsx), which twMerge does NOT collapse
           into the unprefixed `h-[…]` (different modifier group) — so the
           modal silently became content-sized at `lg:` and its height jumped
-          with every tab switch (3 key rows vs 34 model rows vs the Custom
-          form). `lg:min-h` + `lg:max-h` clamp that `h-auto` to a constant.
+          with every tab switch (3 key rows vs 34 model rows). `lg:min-h` +
+          `lg:max-h` clamp that `h-auto` to a constant.
           The unprefixed mobile sheet keeps its own `max-h-[90%]` cap. */}
       <ModalContent className="flex h-(--provider-modal-h) w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 [--provider-modal-h:min(680px,calc(100dvh-2rem))] lg:max-h-(--provider-modal-h) lg:min-h-(--provider-modal-h) lg:max-w-4xl">
         <ModalHeader className="shrink-0">
@@ -87,10 +87,8 @@ export function ProjectProviderModal({
  * exactly as the uncontrolled version did, with no `setState` in an effect
  * body (`react-hooks/set-state-in-effect`).
  *
- * Controlled at all because the Custom tab has to be able to hand the reader
- * back: saving a custom provider gives it a key like any other, and the API
- * keys list is where it now has a row. A "Done" that leaves you on the form
- * you just submitted is not done.
+ * Controlled so a later caller can move the reader between the two tabs
+ * without remounting the shell.
  */
 function ProviderModalTabs({
   projectId,
@@ -123,12 +121,6 @@ function ProviderModalTabs({
           <TabsTrigger value="models" className="w-auto flex-none text-xs" size="sm">
             Models
           </TabsTrigger>
-          {/* Third, and last, because it is the rarest. "Custom" rather than
-              "Advanced": it names WHAT is on the tab, where "Advanced" only
-              warns you off it. */}
-          <TabsTrigger value="custom" className="w-auto flex-none text-xs" size="sm">
-            Custom
-          </TabsTrigger>
         </TabsList>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -137,13 +129,6 @@ function ProviderModalTabs({
         </TabsContent>
         <TabsContent value="models" className="mt-0">
           <ModelsTab projectId={projectId} />
-        </TabsContent>
-        <TabsContent value="custom" className="mt-0">
-          <CustomProviderPanel
-            projectId={projectId}
-            canWrite={canWrite}
-            onDone={() => setTab('providers')}
-          />
         </TabsContent>
       </div>
     </Tabs>

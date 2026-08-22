@@ -79,18 +79,13 @@ describe('menu registry feature-flag gating', () => {
     }
   });
 
-  test('the Models tab is NOT gated on llm_gateway', () => {
-    // Two separate bugs met here, historically. `proj-llm` declared
-    // `requiresFlag: 'llm_gateway'`, so the palette hid Models for every
-    // project without the gateway — while the rail showed Models
-    // unconditionally (availability only controls the `llm-*` sub-sections
-    // INSIDE the pane, via `llmGatewayEnabled` — see `models-tab.tsx`). Models
-    // has since graduated a second time, off `/config` and onto its own
-    // top-level Customize tab (`capability-tab-routes.ts`), but the same rule
-    // holds: no flag reaches it.
+  test('the Models tab is NOT gated on any flag', () => {
+    // `proj-llm` once declared `requiresFlag: 'llm_gateway'`, so the palette hid
+    // Models for every project without the gateway. That flag is retired
+    // (gateway mode is the only mode) and Models lives on its own top-level
+    // Customize tab (`capability-tab-routes.ts`): no flag reaches it.
     expect(CAPABILITY_TABS.map((t) => t.key)).toContain('models');
-
-    expect(menuRegistry.filter((item) => item.requiresFlag === 'llm_gateway')).toEqual([]);
+    expect(menuRegistry.filter((item) => item.id === 'proj-llm' && item.requiresFlag)).toEqual([]);
   });
 
   test('the palette honours requiresFlag for the entries that still declare one', () => {

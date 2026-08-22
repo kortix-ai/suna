@@ -35,9 +35,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
  * and back has lost nothing, which is the test an ambient loop has to pass.
  *
  * ACCURACY GATE — checked against shipped code, not the manifesto:
- *   - The custom-provider form takes any base URL and drives it through
- *     `@ai-sdk/openai-compatible`, which is why vLLM / LiteLLM / Ollama are ONE
- *     entry and not three logos we do not integrate with.
+ *   - The fourth row is BYOK through the Kortix gateway: any catalog provider
+ *     with an API key (`provider-connect.tsx`, `LLM_PROVIDERS`), which is why
+ *     the long tail is ONE entry and not a wall of logos. There is no custom
+ *     base-URL form — OpenCode sees exactly one provider, `kortix`, and the
+ *     gateway resolves the upstream from the models.dev catalog.
  *   - The ChatGPT row is the Codex device-grant OAuth
  *     (`apps/api/src/projects/codex-device-auth.ts`) and is real. Cursor is NOT
  *     — there is no Cursor auth path anywhere in the codebase, however often a
@@ -76,10 +78,10 @@ const PROVIDERS: {
     connected: true,
   },
   {
-    id: 'custom',
+    id: 'byok',
     glyph: GlobeIcon as Glyph,
-    name: 'Your endpoint',
-    models: 'anything OpenAI-compatible',
+    name: 'Any provider',
+    models: 'Grok · Mistral · DeepSeek · more',
     connected: false,
   },
 ];

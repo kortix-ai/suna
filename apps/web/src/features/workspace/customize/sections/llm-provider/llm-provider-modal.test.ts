@@ -24,32 +24,22 @@ describe('LLM provider modal shell', () => {
    * is that Providers comes before Models and that nothing else remains.
    */
   /**
-   * Three tabs now. `custom` is third and last because it is the rarest job
-   * on this modal — it was a fourth SECTION stacked under the provider list,
-   * where everyone who was not connecting a self-hosted endpoint had to scroll
-   * past a form they would never fill.
+   * Two tabs. The third, `custom`, generated an OpenCode `provider:{...}`
+   * block for `.opencode/opencode.jsonc` — an OpenCode-native provider. No
+   * session can use one: OpenCode sees exactly one provider, `kortix`, and the
+   * daemon strips provider keys from its env. Gateway mode is the only mode.
    */
-  test('has exactly three tabs: API keys, then Models, then Custom', () => {
+  test('has exactly two tabs: API keys, then Models — no Custom', () => {
     const providers = modalSource.indexOf('<TabsTrigger value="providers"');
     const models = modalSource.indexOf('<TabsTrigger value="models"');
-    const custom = modalSource.indexOf('<TabsTrigger value="custom"');
 
     expect(providers).toBeGreaterThan(-1);
     expect(models).toBeGreaterThan(providers);
-    expect(custom).toBeGreaterThan(models);
-    expect(modalSource.match(/<TabsTrigger/g)).toHaveLength(3);
+    expect(modalSource.match(/<TabsTrigger/g)).toHaveLength(2);
+    expect(modalSource).not.toContain('value="custom"');
+    expect(modalSource).not.toContain('CustomProviderPanel');
     expect(modalSource).not.toContain('value="catalog"');
     expect(modalSource).not.toContain('value="connected"');
-  });
-
-  /**
-   * The Custom tab has to be able to hand the reader back: a saved custom
-   * provider now has a key like any other and a row on the API keys list, so
-   * a "Done" that leaves you on the form you just submitted is not done.
-   */
-  test('finishing the custom form returns to the API keys tab', () => {
-    expect(modalSource).toContain('<CustomProviderPanel');
-    expect(modalSource).toContain("onDone={() => setTab('providers')}");
   });
 
   test('owns no connect UI of its own — it delegates to the one shared component', () => {

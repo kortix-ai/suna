@@ -31,9 +31,8 @@ export function useLlmProviderCatalogRevision(): number {
  * live data once it lands, since the exported bindings are reassigned in
  * place (see llm-providers.ts's module doc comment).
  *
- * Not gated by the project's llm_gateway flag — see the route's doc comment;
- * this must work for native-mode projects too, which is the majority case
- * and exactly the connect-modal's audience.
+ * Same auth as `/llm-catalog`; non-secret model metadata, so it is read
+ * wherever the connect modal is — see the route's doc comment.
  *
  * staleTime is long: this is catalog metadata (env vars, model names), not a
  * hot path — matching the API's own 24h refresh cadence is plenty fresh.
