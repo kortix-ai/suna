@@ -439,11 +439,18 @@ Eight row kinds, discriminated on `kind` (never on `type` — that is the part
 discriminant): `turn-gap`, `user-message`, `turn-divider` (`compaction` |
 `interrupted`), `assistant-part`, `thinking`, `retry`, `diff-summary`, `error`.
 Per turn they are emitted in exactly that order, with the interrupted divider
-placed inside the assistant run at the aborted message's position. `thinking` is
-the pre-first-token placeholder, so it never appears below an `assistant-part`
-row. A session whose first message is an orphan assistant message (a session-init
-failure) renders that assistant run — parts, divider, error — with no
-`user-message` row.
+placed inside the assistant run at the interrupted message's position. `thinking`
+is the pre-first-token placeholder, so it never appears below an `assistant-part`
+row, and never on an interrupted turn. An abort is the interrupted divider only
+when it is a user Stop (`reason: 'user'`) or a reason-less wire abort; a
+`reason: 'runtime-disposed'` abort (OpenCode respawned mid-stream) renders
+nothing — no divider, no error row — the same gate `abortErrorReason` gives
+every host. A session whose first message is an orphan assistant message (a
+session-init failure) renders that assistant run — parts, divider, error — with
+no `user-message` row. When user messages exist, such orphans lead the FIRST
+turn in their own order, and their error renders as a second `error` row
+(`error:<userMessageID>:orphan`) right after their parts: a clean reply clears
+an earlier failed reply (a retry), never a failure that preceded the prompt.
 
 Three properties make the list usable:
 

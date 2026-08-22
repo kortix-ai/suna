@@ -1331,3 +1331,264 @@ describe('reuseTimelineRows allocates nothing on a no-change frame', () => {
     expect(new Set(keys(out)).size).toBe(out.length);
   });
 });
+
+// ============================================================================
+// Round-2 adversarial-review regressions
+// ============================================================================
+
+describe('abort reason gates the interrupted divider', () => {
+  const USER_STOP = {
+    name: 'AbortError',
+    data: { message: 'The operation was aborted.', reason: 'user' },
+  };
+  /** What `markSessionAbortedLocally` stamps on every non-idle session when
+   *  OpenCode disposes and respawns. Infrastructure, not a user action. */
+  const RUNTIME_DISPOSED = {
+    name: 'AbortError',
+    data: {
+      message: 'The operation was aborted because the server instance was disposed.',
+      reason: 'runtime-disposed',
+    },
+  };
+
+  test("reason 'user' renders the interrupted divider", () => {
+    const rows = constructTimelineRows([
+      user(wireId(1)),
+      assistant(wireId(2), wireId(1), [text('a', 'p1')], USER_STOP),
+    ]);
+    expect(kinds(rows)).toEqual(['user-message', 'turn-divider', 'assistant-part']);
+    expect((rows[1] as TimelineTurnDividerRow).label).toBe('interrupted');
+  });
+
+  test('a reason-less wire abort renders the interrupted divider', () => {
+    const rows = constructTimelineRows([
+      user(wireId(1)),
+      assistant(wireId(2), wireId(1), [text('a', 'p1')], ABORT),
+    ]);
+    expect(kinds(rows)).toEqual(['user-message', 'turn-divider', 'assistant-part']);
+  });
+
+  test("reason 'runtime-disposed' renders NO divider and NO error row — a clean respawn must not scar the transcript", () => {
+    const rows = constructTimelineRows([
+      user(wireId(1)),
+      assistant(wireId(2), wireId(1), [text('a', 'p1')], RUNTIME_DISPOSED),
+    ]);
+    expect(kinds(rows)).toEqual(['user-message', 'assistant-part']);
+    expect(rowOfKind(rows, 'turn-divider')).toBeUndefined();
+    expect(rowOfKind(rows, 'error')).toBeUndefined();
+  });
+
+  test("an assistant-only turn aborted with reason 'runtime-disposed' renders nothing but its parts", () => {
+    const rows = constructTimelineRows([
+      assistant(wireId(2), 'nope', [text('half', 'p1')], RUNTIME_DISPOSED),
+    ]);
+    expect(kinds(rows)).toEqual(['assistant-part']);
+  });
+
+  test('an unknown reason string is treated as reason-less — the divider renders', () => {
+    // `abortErrorReason` validates against `ABORT_REASONS`; a typo must fail
+    // open to the divider, never silently to nothing.
+    const rows = constructTimelineRows([
+      user(wireId(1)),
+      assistant(wireId(2), wireId(1), [text('a', 'p1')], {
+        name: 'AbortError',
+        data: { message: 'x', reason: 'runtime-dispozed' },
+      }),
+    ]);
+    expect(kinds(rows)).toEqual(['user-message', 'turn-divider', 'assistant-part']);
+  });
+});
+
+describe('orphan assistant messages — order, dedupe, and their error', () => {
+  const orphan = (n: number, parts: Part[], error?: unknown): Msg =>
+    assistant(wireId(n), 'no-such-parent', parts, error);
+
+  test('[orphan(error), user, assistant(clean)] renders the orphan error row — a later clean REPLY does not clear a pre-prompt failure', () => {
+    const rows = constructTimelineRows([
+      orphan(1, [], { message: 'session init failed' }),
+      user(wireId(2)),
+      assistant(wireId(3), wireId(2), [text('hello', 'p1')]),
+    ]);
+    const error = rowOfKind(rows, 'error') as TimelineErrorRow;
+    expect(error).toBeDefined();
+    expect(error.text).toBe('session init failed');
+    expect(error.userMessageID).toBe(wireId(2));
+    // The orphan failed BEFORE the prompt, so its error renders at the
+    // orphan's position in the run — ahead of the reply's parts.
+    expect(kinds(rows)).toEqual(['user-message', 'error', 'assistant-part']);
+    expect(new Set(keys(rows)).size).toBe(rows.length);
+  });
+
+  test('an orphan error and a reply error both render, each at its own position', () => {
+    const rows = constructTimelineRows([
+      orphan(1, [text('init', 'p0')], { message: 'session init failed' }),
+      user(wireId(2)),
+      assistant(wireId(3), wireId(2), [text('partial', 'p1')], { message: 'model boom' }),
+    ]);
+    expect(kinds(rows)).toEqual([
+      'user-message',
+      'assistant-part',
+      'error',
+      'assistant-part',
+      'error',
+    ]);
+    const errors = rows.filter((r): r is TimelineErrorRow => r.kind === 'error');
+    expect(errors.map((e) => e.text)).toEqual(['session init failed', 'model boom']);
+    expect(new Set(keys(rows)).size).toBe(rows.length);
+  });
+
+  test('a later clean REPLY still clears an earlier failed reply in the same turn', () => {
+    // The retry case must not regress: the orphan carve-out is for messages
+    // that precede the prompt, not for any earlier run member.
+    const rows = constructTimelineRows([
+      orphan(1, [], { message: 'session init failed' }),
+      user(wireId(2)),
+      assistant(wireId(3), wireId(2), [text('a', 'p1')], { message: 'first try failed' }),
+      assistant(wireId(4), wireId(2), [text('b', 'p2')]),
+    ]);
+    const errors = rows.filter((r): r is TimelineErrorRow => r.kind === 'error');
+    expect(errors.map((e) => e.text)).toEqual(['session init failed']);
+  });
+
+  test('three orphans render their parts in order 1, 2, 3 — never reversed', () => {
+    const rows = constructTimelineRows([
+      orphan(1, [text('one', 'p1')]),
+      orphan(2, [text('two', 'p2')]),
+      orphan(3, [text('three', 'p3')]),
+      user(wireId(4)),
+      assistant(wireId(5), wireId(4), [text('reply', 'p5')]),
+    ]);
+    expect(partRows(rows).map(groupPartIds)).toEqual([['p1'], ['p2'], ['p3'], ['p5']]);
+  });
+
+  test('the same orphan object passed twice renders ONCE', () => {
+    const o = orphan(1, [text('one', 'p1')], { message: 'session init failed' });
+    const rows = constructTimelineRows([
+      o,
+      o,
+      user(wireId(2)),
+      assistant(wireId(3), wireId(2), [text('reply', 'p3')]),
+    ]);
+    expect(partRows(rows).map(groupPartIds)).toEqual([['p1'], ['p3']]);
+    expect(rows.filter((r) => r.kind === 'error')).toHaveLength(1);
+    expect(new Set(keys(rows)).size).toBe(rows.length);
+    // No suffixed key: nothing collided, because nothing was duplicated.
+    expect(keys(rows).some((k) => /:1$/.test(k))).toBe(false);
+  });
+
+  test('the orphan error row is reused by identity across an unchanged frame', () => {
+    const build = () =>
+      constructTimelineRows([
+        orphan(1, [], { message: 'session init failed' }),
+        user(wireId(2)),
+        assistant(wireId(3), wireId(2), [text('hello', 'p1')]),
+      ]);
+    const prev = build();
+    expect(reuseTimelineRows(prev, build())).toBe(prev);
+  });
+});
+
+describe('an aborted turn is not thinking', () => {
+  const USER_STOP = {
+    name: 'AbortError',
+    data: { message: 'The operation was aborted.', reason: 'user' },
+  };
+
+  test('a busy, active, user-aborted turn with zero parts emits the interrupted divider and NO thinking row', () => {
+    const rows = constructTimelineRows(
+      [user(wireId(1)), assistant(wireId(2), wireId(1), [], USER_STOP)],
+      { status: 'busy', activeUserMessageID: wireId(1) },
+    );
+    expect(kinds(rows)).toEqual(['user-message', 'turn-divider']);
+    expect(rowOfKind(rows, 'thinking')).toBeUndefined();
+  });
+
+  test('a compaction turn that was aborted still emits no thinking row, even though it emits no divider', () => {
+    const rows = constructTimelineRows(
+      [user(wireId(1), [compaction()]), assistant(wireId(2), wireId(1), [], USER_STOP)],
+      { status: 'busy', activeUserMessageID: wireId(1) },
+    );
+    expect(kinds(rows)).toEqual(['user-message', 'turn-divider']);
+    expect((rows[1] as TimelineTurnDividerRow).label).toBe('compaction');
+  });
+
+  test("a 'runtime-disposed' abort does not suppress thinking — the respawned runtime is still working", () => {
+    const rows = constructTimelineRows(
+      [
+        user(wireId(1)),
+        assistant(wireId(2), wireId(1), [], {
+          name: 'AbortError',
+          data: { message: 'disposed', reason: 'runtime-disposed' },
+        }),
+      ],
+      { status: 'busy', activeUserMessageID: wireId(1) },
+    );
+    expect(kinds(rows)).toEqual(['user-message', 'thinking']);
+  });
+});
+
+describe('allocation accounting is exactly what the docs claim', () => {
+  const countMaps = (fn: () => TimelineRow[]): { out: TimelineRow[]; constructed: number } => {
+    const OriginalMap = globalThis.Map;
+    let constructed = 0;
+    class CountingMap<K, V> extends OriginalMap<K, V> {
+      constructor(entries?: Iterable<readonly [K, V]> | null) {
+        super(entries);
+        constructed += 1;
+      }
+    }
+    (globalThis as { Map: MapConstructor }).Map = CountingMap as unknown as MapConstructor;
+    let out: TimelineRow[];
+    try {
+      out = fn();
+    } finally {
+      (globalThis as { Map: MapConstructor }).Map = OriginalMap;
+    }
+    return { out, constructed };
+  };
+
+  test('a no-change frame with NO context group constructs exactly ONE Map — the prev key index', () => {
+    const prev = constructTimelineRows([
+      user(wireId(1)),
+      assistant(wireId(2), wireId(1), [text('x', 'p1'), tool('bash', 'p2')]),
+    ]);
+    const { out, constructed } = countMaps(() => reuseTimelineRows(prev, prev));
+    expect(out).toBe(prev);
+    expect(constructed).toBe(1);
+  });
+
+  test('a no-change frame WITH a context group constructs exactly THREE Maps — key index, context index, reserved keys', () => {
+    const opts = { groupPart: groupContextTools };
+    const prev = constructTimelineRows(
+      [user(wireId(1)), assistant(wireId(2), wireId(1), [tool('read', 'p1'), tool('grep', 'p2')])],
+      opts,
+    );
+    expect(partRows(prev).filter((r) => r.group.type === 'context')).toHaveLength(1);
+    const { out, constructed } = countMaps(() => reuseTimelineRows(prev, prev));
+    expect(out).toBe(prev);
+    expect(constructed).toBe(3);
+  });
+});
+
+describe('isPositionalPartRef boundary — exact shape, no prefix sloppiness', () => {
+  // Pure refactor pin (template-string → length/charCode): these pass before
+  // and after, and exist so the boundary cannot drift.
+  const build = (getPartId: (index: number) => string): TimelineRow[] =>
+    constructTimelineRows([user(wireId(1)), assistant(wireId(2), wireId(1), [text('x')])], {
+      getPartId: (_part, _message, index) => getPartId(index),
+    });
+
+  test('`<messageID>:#<n>` is positional — never reused', () => {
+    const prev = build(() => `${wireId(2)}:#0`);
+    const next = build(() => `${wireId(2)}:#0`);
+    expect(reuseTimelineRows(prev, next)).not.toBe(prev);
+  });
+
+  test('`<messageID>:<n>`, `<messageID>#<n>` and a different message prefix are NOT positional — reused', () => {
+    for (const id of [`${wireId(2)}:0`, `${wireId(2)}#0`, `${wireId(3)}:#0`, 'prt_abc']) {
+      const prev = build(() => id);
+      const next = build(() => id);
+      expect(reuseTimelineRows(prev, next)).toBe(prev);
+    }
+  });
+});

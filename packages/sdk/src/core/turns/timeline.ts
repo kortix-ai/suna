@@ -29,9 +29,9 @@
  */
 
 import { getPartText, isCompactionPart, isReasoningPart, isToolPart, shouldShowToolPart } from './parts';
-import { groupMessagesIntoTurns } from './grouping';
+import { compareMessagesForDisplay, groupMessagesIntoTurns } from './grouping';
 import { unwrapError } from './errors';
-import { isAbortError } from '../http/abort-error';
+import { abortErrorReason, isAbortError } from '../http/abort-error';
 import type { MessageInfoLike, MessageWithPartsLike, PartLike, ToolPartLike, TurnLike } from './types';
 
 // ============================================================================
@@ -161,7 +161,17 @@ export interface TimelineDiffSummaryRow {
   diffs: readonly TimelineDiffStat[];
 }
 
-/** The turn's failure. An abort is NOT an error — it is the interrupted divider. */
+/**
+ * A failure. An abort is NOT an error — it is the interrupted divider.
+ *
+ * A turn emits up to TWO: one for its ORPHAN preamble (assistant messages that
+ * precede the prompt — a session-init failure grouped under the first turn,
+ * see `groupMessagesIntoTurns`), keyed `error:<userMessageID>:orphan` and
+ * placed right after the preamble's parts; and one for the turn's REPLY,
+ * keyed `error:<userMessageID>` and placed last. A clean reply clears an
+ * earlier failed reply (a retry); it never clears a preamble failure, which
+ * happened before the prompt was sent and was not retried by it.
+ */
 export interface TimelineErrorRow {
   kind: 'error';
   key: string;
@@ -323,27 +333,85 @@ function uniqueSummaryDiffs(raw: unknown): TimelineDiffStat[] {
 }
 
 /**
+ * Is this abort one the transcript shows as "Interrupted"?
+ *
+ * `isAbortError` answers "was this an abort"; `abortErrorReason` answers WHY.
+ * Only a user Stop (`reason: 'user'`, patched by `applyOptimisticAbort`) or a
+ * reason-less real wire `MessageAbortedError` is a cut turn. A
+ * `reason: 'runtime-disposed'` abort is the one `markSessionAbortedLocally`
+ * stamps on EVERY non-idle session when OpenCode respawns — pure
+ * infrastructure, and per `ABORT_REASONS` it "must render nothing: a respawn
+ * that recovers cleanly should not scar the transcript". So it is neither a
+ * divider nor an error row. This is the same gate
+ * `apps/web/.../session-error-banner.tsx` applies (`abortReason !== 'user'`
+ * → null); the row model honours it so no host has to.
+ */
+function isInterruptingAbort(error: unknown): boolean {
+  if (!isAbortError(error)) return false;
+  const reason = abortErrorReason(error);
+  return reason === undefined || reason === 'user';
+}
+
+/**
  * The id of the first assistant message the user interrupted, if any.
  *
  * Takes the turn's assistant RUN, not the turn: an assistant-only turn's run
  * starts at `turn.userMessage` (see `assistantRunOf`), and reading
  * `turn.assistantMessages` there would scan an empty array and miss the abort.
  */
-function firstAbortedMessageId<M extends TimelineMessageLike>(
+function firstInterruptedMessageId<M extends TimelineMessageLike>(
   run: readonly M[],
 ): string | undefined {
   for (const message of run) {
-    if (isAbortError(message.info.error)) return message.info.id;
+    if (isInterruptingAbort(message.info.error)) return message.info.id;
   }
   return undefined;
 }
 
-/** The run's error text, or `undefined`. An abort is not an error. */
-function turnErrorText<M extends TimelineMessageLike>(run: readonly M[]): string | undefined {
-  const last = run[run.length - 1];
-  const error = last?.info.error;
+/**
+ * The error text of the run segment `[start, end)`, or `undefined`. Reads the
+ * segment's LAST member only: a later clean message in the same segment is a
+ * retry that cleared the earlier failure. An abort is not an error.
+ */
+function segmentErrorText<M extends TimelineMessageLike>(
+  run: readonly M[],
+  start: number,
+  end: number,
+): string | undefined {
+  if (end <= start) return undefined;
+  const error = run[end - 1].info.error;
   if (!error || isAbortError(error)) return undefined;
   return unwrapError(error);
+}
+
+/**
+ * How many leading run members are ORPHANS — assistant messages that precede
+ * the turn's prompt in display order and are not its replies.
+ *
+ * `groupMessagesIntoTurns` attaches an assistant message that precedes every
+ * user message (a session-init failure with no resolvable `parentID`) to the
+ * FIRST turn, at the head of `assistantMessages`, in display order. Those
+ * messages are not replies to the prompt: the prompt came AFTER them, and a
+ * clean reply does not retry them. So the run is two segments — the orphan
+ * preamble and the replies — and each carries its own error. Without this
+ * split, `run.at(-1)`'s error was the whole turn's, and one clean reply
+ * deleted the init failure from the transcript (F2).
+ *
+ * Zero for an assistant-only turn: its head IS the first assistant message.
+ */
+function preambleLength<M extends TimelineMessageLike>(
+  turn: TurnLike<M>,
+  run: readonly M[],
+): number {
+  if (isAssistantOnlyTurn(turn)) return 0;
+  const prompt = turn.userMessage;
+  let count = 0;
+  for (const message of run) {
+    if (message.info.parentID === prompt.info.id) break;
+    if (compareMessagesForDisplay(message, prompt) >= 0) break;
+    count += 1;
+  }
+  return count;
 }
 
 /**
@@ -380,14 +448,20 @@ function assistantRunOf<M extends TimelineMessageLike>(turn: TurnLike<M>): reado
  *
  * Per turn, in this exact order:
  *   `turn-gap` (never on the first turn) · [reserved: CommentStrip] ·
- *   `user-message` · `turn-divider{compaction}` · the assistant parts, with
- *   `turn-divider{interrupted}` at the aborted message's position ·
- *   `thinking` · `retry` · `diff-summary` · `error`.
+ *   `user-message` · `turn-divider{compaction}` · the ORPHAN preamble's parts ·
+ *   the preamble's `error` (see `preambleLength`) · the reply parts, with
+ *   `turn-divider{interrupted}` at the interrupted message's position ·
+ *   `thinking` · `retry` · `diff-summary` · the reply's `error`.
  *
  * An ASSISTANT-ONLY turn — the synthetic turn `groupMessagesIntoTurns` builds
  * for an orphan assistant message that precedes every prompt — emits no
  * `user-message` row and no compaction divider. Its head message leads the
  * assistant run, so its parts, its abort divider and its error all render.
+ *
+ * An abort renders as the interrupted divider ONLY when it is a user Stop or a
+ * reason-less wire abort (`isInterruptingAbort`); a `'runtime-disposed'` abort
+ * renders nothing — no divider, no error row. An interrupted turn never emits
+ * `thinking`: it is not thinking, it was stopped.
  *
  * Deterministic: the same `messages` and `options` always produce structurally
  * identical rows in the same order. Never mutates its input.
@@ -477,8 +551,13 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
       });
     }
 
-    // A compaction turn suppresses the interrupted divider entirely.
-    const abortedMessageId = compacted ? undefined : firstAbortedMessageId(assistantRun);
+    // An interrupted turn is not thinking, compacted or not. A compaction
+    // turn additionally suppresses the interrupted DIVIDER.
+    const interruptedMessageId = firstInterruptedMessageId(assistantRun);
+    const abortedMessageId = compacted ? undefined : interruptedMessageId;
+    const preamble = preambleLength(turn, assistantRun);
+    const preambleErrorText = segmentErrorText(assistantRun, 0, preamble);
+    const errorText = segmentErrorText(assistantRun, preamble, assistantRun.length);
 
     let partRowCount = 0;
     let openGroup: { id: string; refs: TimelinePartRef[] } | null = null;
@@ -505,7 +584,22 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
       openGroup = null;
     };
 
-    for (const message of assistantRun) {
+    // The preamble's failure renders where it happened — after the preamble's
+    // parts, before the first reply. A group must not span it.
+    const pushPreambleError = (): void => {
+      if (preambleErrorText === undefined) return;
+      flushGroup();
+      rows.push({
+        kind: 'error',
+        key: uniqueKey(`error:${userMessageID}:orphan`),
+        userMessageID,
+        text: preambleErrorText,
+      });
+    };
+
+    for (let messageIndex = 0; messageIndex < assistantRun.length; messageIndex++) {
+      const message = assistantRun[messageIndex];
+      if (messageIndex === preamble) pushPreambleError();
       if (abortedMessageId !== undefined && message.info.id === abortedMessageId) {
         // A group must not span the divider. The divider does NOT advance
         // `partRowCount` — it is not a part row.
@@ -543,8 +637,9 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
       }
     }
     flushGroup();
-
-    const errorText = turnErrorText(assistantRun);
+    // A run that is ONLY the preamble (the prompt has no reply yet): the loop
+    // never reached index `preamble`, so the preamble error is emitted here.
+    if (preamble === assistantRun.length) pushPreambleError();
 
     // `partRowCount === 0` unconditionally — `thinking` is the PRE-first-token
     // placeholder. The condition used to be `showReasoning ? partRowCount === 0
@@ -552,7 +647,19 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
     // rendered BELOW parts that had already streamed. A hidden reasoning part
     // produces no part row, so the reasoning-heavy case this was reaching for
     // is already covered by the count itself.
-    if (isActive && status === 'busy' && errorText === undefined && partRowCount === 0) {
+    //
+    // `interruptedMessageId === undefined` — an interrupted turn is not
+    // thinking. Without it a busy, active, stopped turn with zero parts showed
+    // "Interrupted" above a live spinner. A `'runtime-disposed'` abort does NOT
+    // suppress it: it renders as if it never happened, and the respawned
+    // runtime may well be working on this very turn.
+    if (
+      isActive &&
+      status === 'busy' &&
+      errorText === undefined &&
+      partRowCount === 0 &&
+      interruptedMessageId === undefined
+    ) {
       rows.push({ kind: 'thinking', key: uniqueKey(`thinking:${userMessageID}`), userMessageID });
     }
 
@@ -603,7 +710,17 @@ function samePartRef(a: TimelinePartRef, b: TimelinePartRef): boolean {
  * the conservative direction.
  */
 function isPositionalPartRef(ref: TimelinePartRef): boolean {
-  return ref.partID.startsWith(`${ref.messageID}:#`);
+  // Length + charCode, not `startsWith(`${messageID}:#`)`: that template
+  // allocated a string per ref per equality check, on a path that runs for
+  // every part row on every frame.
+  const { messageID, partID } = ref;
+  const prefix = messageID.length;
+  return (
+    partID.length >= prefix + 2 &&
+    partID.charCodeAt(prefix) === 58 /* ':' */ &&
+    partID.charCodeAt(prefix + 1) === 35 /* '#' */ &&
+    partID.startsWith(messageID)
+  );
 }
 
 /** Does any ref in this group carry a positional-fallback id? */
@@ -715,28 +832,32 @@ function isContextRow(row: TimelineRow): row is TimelineAssistantPartRow & {
  * it the measured height, the expand state and the mounted component. Ported
  * from OpenCode's `stabilizeContextKey`.
  *
- * Returns `next` ITSELF — no map, no per-row allocation — as soon as the `prev`
- * scan finds no context group, which is every caller that does not pass
- * `options.groupPart`. The scan over `prev` always runs: whether a prior row is
- * a context group is not knowable without looking. It also returns `next`
- * itself when context groups exist but no key needs rewriting, so the common
- * steady-state frame allocates nothing here either.
+ * What it allocates, exactly:
+ *   - NOTHING when `prev` holds no context group, which is every caller that
+ *     does not pass `options.groupPart`: the `prev` scan runs (whether a prior
+ *     row is a context group is not knowable without looking) and returns
+ *     `next` ITSELF. The context index is created lazily on the FIRST context
+ *     row found, so the scan itself allocates no map.
+ *   - When `prev` holds a context group: the context index (`contextByPart`,
+ *     one `Map`), the natural-owner index (`reserved`, one `Map`), and the
+ *     `claimed` set. Still no per-row allocation and no output array unless a
+ *     key is actually rewritten; a steady-state frame returns `next` itself.
  */
 function stabilizeContextKeys(prev: readonly TimelineRow[], next: TimelineRow[]): TimelineRow[] {
   // Keyed by `userMessageID`, never by `messageID`, so one turn's context
-  // identity can never be adopted by another turn's row.
-  const contextByPart = new Map<string, { index: number; row: TimelineAssistantPartRow }>();
-  let hasContextGroup = false;
+  // identity can never be adopted by another turn's row. Allocated on the
+  // first context row, not up front: the no-context frame must cost nothing.
+  let contextByPart: Map<string, { index: number; row: TimelineAssistantPartRow }> | undefined;
   for (let index = 0; index < prev.length; index++) {
     const row = prev[index];
     if (!isContextRow(row)) continue;
-    hasContextGroup = true;
+    contextByPart ??= new Map();
     for (const ref of row.group.refs) {
       const lookup = `${row.userMessageID}:${ref.partID}`;
       if (!contextByPart.has(lookup)) contextByPart.set(lookup, { index, row });
     }
   }
-  if (!hasContextGroup) return next;
+  if (contextByPart === undefined) return next;
 
   // A prior key a NEW row already carries naturally: its natural owner
   // outranks any would-be inheritor.
@@ -801,7 +922,10 @@ function stabilizeContextKeys(prev: readonly TimelineRow[], next: TimelineRow[])
  *
  * Allocates at most ONE array — the output — and only when a row is actually
  * swapped or a context key actually rewritten. A frame that changes nothing
- * allocates nothing beyond the `prev` key index.
+ * allocates exactly the `prev` key index (`byKey`, one `Map`) — plus, only
+ * when `prev` holds a context group, the two indexes and one set
+ * `stabilizeContextKeys` documents. `timeline.test.ts` counts the `Map`
+ * constructions and pins both numbers.
  *
  * Idempotent — `reuseTimelineRows(reuseTimelineRows(p, n), n)` yields the same
  * objects — so it is safe to call during render, including under React

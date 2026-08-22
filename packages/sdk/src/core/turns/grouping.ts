@@ -138,6 +138,13 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
 
   // Second pass: link assistant messages via parentID or sequential
   let lastTurn: TurnLike<M> | null = null;
+  // Assistant ids are deduped the same way user ids are: a message that
+  // transiently appears twice (an optimistic stub beside its reconciled copy,
+  // a hydrate racing a `part.updated`) must land in its turn ONCE, or every
+  // list keyed by message id renders it twice.
+  const seenAssistantIds = new Set<string>();
+  // How many orphans `turns[0]` has received so far — see the orphan branch.
+  let orphanCount = 0;
   for (const msg of messages) {
     if (msg.info.role === 'user') {
       lastTurn = turnsByUserMsgId.get(msg.info.id) ?? null;
@@ -145,6 +152,9 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
     }
 
     if (msg.info.role !== 'assistant') continue;
+
+    if (seenAssistantIds.has(msg.info.id)) continue;
+    seenAssistantIds.add(msg.info.id);
 
     const assistantMsg = msg.info;
 
@@ -171,8 +181,16 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
     // user prompt. Attach to the FIRST turn instead so it renders at its
     // real chronological position — or create a synthetic turn if no user
     // messages exist at all.
+    //
+    // Orphans LEAD the first turn, in DISPLAY order. The walk is already in
+    // display order, so the k-th orphan goes to slot k — ahead of any reply
+    // a `parentID` hit may have pushed earlier (a placed reply whose parent
+    // is a still-local stub sorts before that stub), and after every orphan
+    // before it. This used to `unshift` each one, which reversed them:
+    // three init failures 1, 2, 3 rendered 3, 2, 1.
     if (turns.length > 0) {
-      turns[0].assistantMessages.unshift(msg);
+      turns[0].assistantMessages.splice(orphanCount, 0, msg);
+      orphanCount += 1;
       continue;
     }
 

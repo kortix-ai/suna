@@ -4800,6 +4800,68 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 
 ## Session log
 
+### 2026-08-22 — session `sdk-timeline-rows` — B51 follow-up 2: round-2 adversarial-review findings A–F — DONE
+
+**Files:** `core/turns/grouping.ts` · `core/turns/timeline.ts` ·
+`core/turns/turns.test.ts` (+3) · `core/turns/timeline.test.ts` (72 → 90) ·
+`README.md`. No public surface change — no export added, renamed or removed.
+Every fix landed RED first (14 new tests failed on the stated cause), then GREEN.
+
+- **A (MEDIUM regression) — runtime-disposed aborts scarred the transcript.**
+  `timeline.ts` classified with `isAbortError` only, never `abortErrorReason`,
+  so the `{name:'AbortError', data:{reason:'runtime-disposed'}}`
+  `markSessionAbortedLocally` stamps on EVERY non-idle session at an OpenCode
+  respawn rendered the interrupted divider. New `isInterruptingAbort`: divider
+  only when the reason is absent or `'user'` (the `session-error-banner.tsx:235`
+  gate). Tests: `'user'` → divider; reason-less wire abort → divider;
+  `'runtime-disposed'` → no divider, no error row (incl. assistant-only turn);
+  unknown reason string → divider (fails open).
+- **B (F2 at its root) — orphans reversed + orphan error dropped.**
+  `grouping.ts` `unshift`ed each orphan into `turns[0].assistantMessages`
+  (three init failures 1,2,3 rendered 3,2,1) and `timeline.ts` read only
+  `run.at(-1)`'s error, so one clean reply deleted the init failure. Grouping
+  now `splice`s orphans at `orphanCount` (display order, ahead of any
+  parentID-linked reply) and dedupes assistant ids like user ids. Timeline
+  splits the run into the orphan PREAMBLE (`preambleLength`: leading members
+  that sort before the prompt and are not its replies) and the REPLIES; each
+  segment's LAST member carries its error; the preamble error renders as a
+  second row `error:<userMessageID>:orphan` right after the preamble parts.
+  Rule: a clean reply clears an earlier failed reply (retry); it never clears a
+  pre-prompt failure. NOTE — the review's literal phrasing ("an error carried
+  by ANY run member not followed by a later non-error assistant message")
+  contradicts its own required test `[orphan(error), user, assistant(clean)]
+  → error row` (the orphan IS followed by a clean message); the segment rule is
+  what satisfies all required tests and keeps the retry semantics. All 5
+  pre-existing orphan/grouping tests pass unchanged.
+- **C (LOW) — "Interrupted" above a live spinner.** `thinking` is now also
+  gated on `interruptedMessageId === undefined` (computed BEFORE the compaction
+  suppression, so a compacted aborted turn is not thinking either). A
+  `'runtime-disposed'` abort does NOT suppress it — it renders as if it never
+  happened.
+- **D (F6) — allocation docs lied.** `stabilizeContextKeys` allocated
+  `contextByPart` above its early return. It is now lazy (`??=` on the first
+  context row), so the no-context frame allocates nothing there, and both
+  docs state exactly what is allocated. Pinned by swapping `globalThis.Map`
+  for a counting subclass: no-change frame, no context group → exactly 1 Map
+  (`byKey`; was 2); with a context group → exactly 3 (`byKey`, `contextByPart`,
+  `reserved`).
+- **E (F3) — perf claim pinned.** Already pinned: `timeline.test.ts` "4000
+  colliding part ids still key uniquely, and do it in linear time" asserts
+  `elapsedMs < 50` at k=4000, not skipped (`bun test -t "4000 colliding"` →
+  1 pass, 0 fail). No change.
+- **F (nit) — `isPositionalPartRef`** no longer allocates a template string
+  per ref per compare: length + `charCodeAt` (`:` = 58, `#` = 35) +
+  `startsWith(messageID)`. Pure refactor; boundary tests added
+  (`<id>:#n` positional; `<id>:n`, `<id>#n`, other-message prefix, `prt_…` not).
+
+**Gates** (from `packages/sdk`): `pnpm --filter @kortix/sdk typecheck` →
+clean, both projects · `bun test --isolate src` → **2519 pass / 0 fail**, 163
+files (baseline this session 2498) · `pnpm --filter @kortix/sdk run
+smoke:install` → "✔ install smoke test passed" · `bun run
+examples/timeline-rows.ts` → unchanged output, array identity preserved.
+
+---
+
 ### 2026-08-22 — session `sdk-timeline-rows` — B51 follow-up: six adversarial-review defects in `timeline.ts` — DONE
 
 **Files:** `core/turns/timeline.ts` · `core/turns/timeline.test.ts` (61 → 72
