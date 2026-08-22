@@ -177,6 +177,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const requestHeaders = await headers();
   const isDesktopApp = requestHeaders.get('user-agent')?.includes(DESKTOP_UA_TOKEN) ?? false;
 
+  // The visitor pixel below loads ONLY on the production site host — never on
+  // localhost (CI, local dev) or preview hosts. Host-based rather than
+  // NODE_ENV so a production BUILD run locally or in CI still skips it.
+  const requestHost = (requestHeaders.get('host') ?? '').toLowerCase().split(':')[0] ?? '';
+  const isKortixSiteHost = requestHost === 'kortix.com' || requestHost.endsWith('.kortix.com');
+
   // Locale-routed marketing pages (/de, /fr, …) are rewritten onto the
   // unprefixed route by the middleware, which records the locale in x-locale.
   const requestLocale = requestHeaders.get('x-locale');
@@ -317,8 +323,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         />
 
         {/* Domain integration — script tag verification.
-            Skipped in the desktop app (visitor de-anonymization pixel). */}
-        {!isDesktopApp && (
+            Skipped in the desktop app (visitor de-anonymization pixel), and
+            loaded only on the real site: on localhost it fires anyway and the
+            vendor 400s the beacon, which failed every PR's browser lane at the
+            admin console's "no bad responses" guard — a tracking pixel has no
+            business in CI, local dev, or preview deploys to begin with. */}
+        {!isDesktopApp && isKortixSiteHost && (
           <script
             src="https://d2mvefebd70kbz.cloudfront.net/scripts/019e82ba-9ec3-733e-8a8e-9ff5cc2e1d35.js"
             async

@@ -80,6 +80,9 @@ flow(
         );
       primary.status([200, 201]);
       primary.body().has("identifier", "GMAPS-primary").has("name", "GOOGLE_MAPS_API_KEY");
+      // The per-project secret-write budget (2026-08-21 storm control) must be
+      // armed on this route: its limiter stamps every allowed write.
+      primary.headerEquals("X-RateLimit-Limit", /^\d+$/);
 
       const backup = await ctx.client
         .as(ctx.P.OWNER)
