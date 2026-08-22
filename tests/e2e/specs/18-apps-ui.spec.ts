@@ -158,7 +158,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
-      await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
+      await expect(page.getByText('No Apps yet', { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(
         session.access_token,
