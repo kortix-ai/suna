@@ -158,7 +158,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
-      await expect(page.getByText('No Apps yet', { exact: true })).toBeVisible();
+      await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(
         session.access_token,
@@ -214,7 +214,7 @@ test.describe('18 — Kortix Apps UI', () => {
       // Same assertions as before — they just live where the controls do.
       const seededCard = page.getByRole('button', { name: 'Open Seed App' });
       await expect(seededCard).toBeVisible();
-      await expect(seededCard.getByText(seededUrl.host, { exact: true })).toBeVisible();
+      await expect(seededCard.getByText(seeded.url, { exact: true })).toBeVisible();
       await expect(seededCard.getByText('Deploy to see a live preview.')).toBeVisible();
       // Never deployed, so it must not claim to be running.
       await expect(seededCard.getByText('Not deployed', { exact: true })).toBeVisible();
@@ -224,13 +224,10 @@ test.describe('18 — Kortix Apps UI', () => {
       const appModal = page.getByRole('dialog', { name: 'Seed App App' });
       await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
-      await expect(
-        appModal.getByRole('button', { name: 'Put this App to sleep' }),
-      ).toBeDisabled();
+      await expect(appModal.getByRole('button', { name: 'Suspend App' })).toBeDisabled();
       await expect(appModal.getByRole('link', { name: 'Open in a new tab' })).toBeVisible();
 
-      await appModal.getByRole('button', { name: 'More actions' }).click();
-      await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
+      await appModal.getByRole('button', { name: 'Show versions' }).click();
       await expect(appModal.getByText('No deployments yet.')).toBeVisible();
 
       const copy = appModal.getByRole('button', { name: 'Copy code' });
