@@ -21,6 +21,43 @@ linked, not inlined.
 
 ## Register
 
+### Assert monotonic timestamps when later writes can advance one field (2026-08-22)
+
+**When:** a test reads two timestamps written by one statement after asynchronous
+lifecycle work starts. Require the invariant's monotonic order. Do not require
+equality when later writes can advance one field before read-back. *Near-miss:*
+release gate run 32598056475 failed `SESS-18` after `updated_at` advanced 223 ms
+past `last_activity_at`. *Enforcer:* `SESS-18` requires
+`last_activity_at > created_at` and `updated_at >= last_activity_at`.
+
+### Prove the gated query ran after enabling its feature (2026-08-22)
+
+**When:** enabling a feature on one page, then navigating to its data page in a
+browser test. A route render does not prove the gated query ran. Wait for the
+exact API response around an explicit reload before asserting its empty state.
+*Near-miss:* release PR #6746 browser shard 2 failed twice with a permanent Apps
+skeleton after a `200` feature PATCH and zero `GET /apps` requests. *Enforcer:*
+`18-apps-ui.spec.ts` requires the Apps list response before the empty state.
+
+### Assert an asynchronous timestamp write on its own row (2026-08-22)
+
+**When:** proving that one request advances a row timestamp while asynchronous
+lifecycle work can update sibling rows. Compare the target row before and after,
+or compare two fields written by the same statement. Do not infer the write from
+relative list order. *Near-miss:* release gate run 32588846407 failed `SESS-18`
+twice after a later sandbox transition advanced the older session's `updated_at`.
+*Enforcer:* `SESS-18` requires adoption `updated_at == last_activity_at` and
+`updated_at > created_at` on the adopted row.
+
+### Bind public Vercel runtime metadata to the deployment, not the project environment (2026-08-22)
+
+**When:** passing public release metadata to a Vercel Production deployment.
+Use `vercel deploy --env KORTIX_PUBLIC_<NAME>=<value>`. Do not add a
+`NEXT_PUBLIC_*` Production project variable. Vercel CLI 59.4.0 infers secret
+visibility and rejects public framework prefixes. *Incident:* v0.13.3 left
+`kortix.com` on v0.13.2 after `env add NEXT_PUBLIC_KORTIX_VERSION` failed.
+*Enforcer:* `web-ecs-workflow.test.ts` pins the deployment-scoped runtime value.
+
 ### A selective capacity release must include the pool isolation it budgets (2026-08-22)
 
 **When:** selecting database-capacity commits for a release. Do not ship pool

@@ -158,6 +158,17 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
+      // A feature mutation can leave this client route mounted without starting
+      // its newly-enabled query. Reload and require the exact list response
+      // before asserting the empty state.
+      const emptyListResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'GET' &&
+          response.url().endsWith(`/v1/projects/${project.id}/apps`),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      expect((await emptyListResponse).status()).toBe(200);
+      await dismissOnboarding(page);
       await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(
