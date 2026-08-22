@@ -1,5 +1,6 @@
 import type { Database } from '@kortix/db';
 import { config } from '../config';
+import { DEFAULT_AUDIT_POOL_MAX } from './database-capacity';
 import { db } from './db';
 
 /**
@@ -27,7 +28,7 @@ function intFromEnv(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-const AUDIT_POOL_MAX = intFromEnv('DB_AUDIT_POOL_MAX', 3);
+const AUDIT_POOL_MAX = intFromEnv('DB_AUDIT_POOL_MAX', DEFAULT_AUDIT_POOL_MAX);
 const AUDIT_STATEMENT_TIMEOUT_MS = intFromEnv('DB_AUDIT_STATEMENT_TIMEOUT_MS', 10_000);
 
 let dedicatedPool: Database | null = null;
