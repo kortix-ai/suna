@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 599,
+  "count": 597,
   "routes": [
     {
       "method": "GET",
@@ -1937,14 +1937,6 @@
     {
       "method": "DELETE",
       "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/question"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/question"
     },
     {
       "method": "POST",

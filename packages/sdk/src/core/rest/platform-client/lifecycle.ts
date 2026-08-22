@@ -100,12 +100,6 @@ export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | 
   return row?.sandbox ?? null;
 }
 
-export async function renameSandbox(sandboxId: string, _name: string): Promise<SandboxInfo> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('Project session sandbox not found');
-  throw new Error('Renaming project-session sandboxes is not exposed by the current API');
-}
-
 /**
  * List all sandboxes for the user's account.
  */
@@ -181,19 +175,4 @@ export async function stopSandbox(sandboxId?: string): Promise<void> {
   const row = await findProjectSessionSandbox(sandboxId);
   if (!row) throw new Error('Project session sandbox not found');
   await stopProjectSession(row.project.project_id, row.session.session_id);
-}
-
-/**
- * Schedule a sandbox for cancellation at end of billing period.
- * The instance keeps running until then; reactivate to reverse.
- */
-export async function cancelSandbox(sandboxId?: string): Promise<{ cancel_at: string | null }> {
-  throw new Error('Cancellation is not exposed for project-session sandboxes');
-}
-
-/**
- * Reverse a scheduled cancellation — subscription continues as normal.
- */
-export async function reactivateSandbox(sandboxId?: string): Promise<void> {
-  throw new Error('Reactivation is not exposed for project-session sandboxes');
 }
