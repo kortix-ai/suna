@@ -21,6 +21,71 @@ linked, not inlined.
 
 ## Register
 
+### A self-host has TWO version axes — the images and the CLI binary. Updating one never updates the other (2026-08-22)
+
+**When:** diagnosing a self-host that is "on latest", or shipping any feature
+whose config the CLI renders (Caddyfile, `.env` keys, compose services).
+
+Essentia ran API/gateway/frontend images from `main` while `/usr/local/bin/kortix`
+was **1565 commits stale**. The CLI renders the Caddyfile and owns the `.env`
+schema, so the box silently lacked every CLI-side feature that had shipped since:
+preview origins could not be configured (no such flag existed), and the Caddy
+half of the "Bad Gateway" retry fix (PR #6702) had never landed even though its
+API half was live in the image. **Check `kortix --version` before believing any
+self-host diagnosis.** Upgrade with `curl -fsSL https://kortix.com/install | bash`
+(needs `HOME` set under SSM, or it dies on `HOME: unbound variable`).
+
+**Three update-semantics traps found in the same box:**
+1. `resolveTag()` reads `KORTIX_CHANNEL`, **never** `KORTIX_VERSION`. A bare
+   `kortix self-host update` on a box pinned to `dev-latest` with
+   `KORTIX_CHANNEL=stable` rolled it **back 758 commits** to a 3-week-old
+   release. Always pass `--version <ref>` explicitly on a pinned box.
+2. `KORTIX_IMAGE_PULL=never` (set by a past `--local-images`) makes every update
+   a silent no-op against the local Docker cache — `status` still reports
+   "no drift", because drift compares config to running images, not to the registry.
+3. `status`/`version` say "up to date" while tracking a floating tag. Compare the
+   **registry manifest digest** to the local `RepoDigests`, or the `/health`
+   `commit` to `origin/main`. A version string is not evidence.
+
+*Incident:* no outage from the staleness itself; it hid a shipped fix for ~1 day
+and blocked a customer feature.
+
+### Validate a config offline before applying it, and never trust a probe whose SNI you did not choose (2026-08-22)
+
+**When:** enabling a wildcard site block, or writing any "did it come back up?"
+check against a server doing on-demand TLS.
+
+Enabling preview origins on Essentia crash-looped Caddy for ~4 minutes:
+`subject does not qualify for certificate: '*.'`. A wildcard site address and the
+env var it interpolates are **two separate writes** — the Caddyfile gained
+`*.{$KORTIX_PREVIEW_BASE_DOMAIN}` while the running container's baked env still
+had that var empty, and Caddy refuses to adapt a config containing a bare `*.`.
+
+**Rules.**
+1. Render the target config and run `caddy validate --config … --adapter caddyfile`
+   in a throwaway container with the exact env **before** touching the live stack.
+   The failing and passing cases both reproduce in seconds, with no blast radius.
+2. After a config write, `--force-recreate` the container so its env is rebuilt
+   from `.env`. A plain restart reuses the env baked at creation time.
+3. **A probe to `https://localhost` is not a health check** against on-demand TLS:
+   it presents SNI `localhost`, the issuance `ask` gate correctly rejects it, and
+   TLS fails — so the probe returns `000` whether the service is healthy or not.
+   It fired a needless rollback here. Use `--resolve <real-host>:443:127.0.0.1`.
+   Prove any guard by running it against the *known-good* state first.
+4. **Never infer "no DNS" from a bare-label lookup when the record is a wildcard.**
+   `dig apps.essentia.kortix.cloud` returns nothing while `*.apps.essentia…`
+   exists and serves live traffic. That inference led to clearing a live
+   `KORTIX_APPS_BASE_DOMAIN` and taking deployed Apps down for ~25 min. Confirm
+   with the *authoritative* NS and a synthesized name, and prefer an empirical
+   before/after test to any reasoning about config intent.
+5. Querying a name before its record exists poisons public resolvers for the
+   SOA negative TTL (1800s here). Create the record first, then resolve.
+
+*Incident:* Essentia self-host, 2026-08-22. Two self-inflicted outages (~4 min
+API, ~25 min Apps), both caused by the operator's own verification, not by the
+change. Enforcer: `kortix self-host doctor` now fails on a domain-mode instance
+with no preview base domain (PR #6732).
+
 ### A selective capacity release must include the pool isolation it budgets (2026-08-22)
 
 **When:** selecting database-capacity commits for a release. Do not ship pool
