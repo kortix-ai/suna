@@ -124,3 +124,45 @@ describe('deriveInflightBudgetBytes', () => {
     expect(deriveInflightBudgetBytes(64 * MiB)).toBeGreaterThan(0);
   });
 });
+
+// The Fargate case, which is why this precedence exists at all: the cgroup and
+// host both report the microVM, and only the scheduler knows the task limit.
+describe('declared task memory wins over any probe', () => {
+  test('uses KORTIX_CONTAINER_MEMORY_MIB when the scheduler declares it', () => {
+    const limit = detectContainerMemoryLimitBytes({
+      read: () => 'max',
+      totalMemory: () => 7806 * MiB,
+      declaredMiB: () => '4096',
+    });
+    expect(limit).toBe(4096 * MiB);
+  });
+
+  test('a declared limit beats even a readable cgroup value', () => {
+    const limit = detectContainerMemoryLimitBytes({
+      read: (p) => (p === '/sys/fs/cgroup/memory.max' ? String(7806 * MiB) : null),
+      totalMemory: () => 7806 * MiB,
+      declaredMiB: () => '4096',
+    });
+    expect(limit).toBe(4096 * MiB);
+  });
+
+  test('garbage or empty declarations fall through to the probes', () => {
+    for (const bad of ['', 'not-a-number', '0', '-5', undefined]) {
+      const limit = detectContainerMemoryLimitBytes({
+        read: () => null,
+        totalMemory: () => 2 * GiB,
+        declaredMiB: () => bad,
+      });
+      expect(limit).toBe(2 * GiB);
+    }
+  });
+
+  test('the real dev numbers now derive 25% of 4096, not of 7806', () => {
+    const limit = detectContainerMemoryLimitBytes({
+      read: () => 'max',
+      totalMemory: () => 7806 * MiB,
+      declaredMiB: () => '4096',
+    });
+    expect(deriveInflightBudgetBytes(limit)).toBe(1024 * MiB);
+  });
+});

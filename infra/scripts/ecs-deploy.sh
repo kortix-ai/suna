@@ -310,6 +310,19 @@ else
   echo "▶ task size ${DESIRED_CPU} cpu / ${DESIRED_MEMORY} MiB (unchanged)"
 fi
 
+# ── tell the app its REAL task memory ────────────────────────────────────────
+# Stamped as KORTIX_CONTAINER_MEMORY_MIB below, from the same $DESIRED_MEMORY the
+# task size uses, because the app CANNOT read this correctly on its own.
+#
+# On Fargate the task runs in a microVM sized ABOVE the task allocation, and
+# `/sys/fs/cgroup/memory.max` reads "max" — so a process probing its own cgroup
+# falls through to host memory and sees the microVM, not its limit. Measured on
+# dev 2026-08-21: a 4096 MiB task reported a 7806 MiB "container limit", and the
+# gateway sized its in-flight budget against that — 48% of the real ceiling
+# instead of the intended 25%.
+#
+# The scheduler knows the number; the process does not. So the scheduler tells
+# it, and container-memory.ts prefers this over any probe.
 NEW_TD_JSON="$(printf '%s' "$CURRENT_TD_JSON" \
   | jq --arg img "$IMAGE" --arg c "$CONTAINER" --arg ver "$VERSION_OVERRIDE" \
        --arg version_env "$VERSION_ENV_NAME" \
@@ -341,10 +354,12 @@ NEW_TD_JSON="$(printf '%s' "$CURRENT_TD_JSON" \
                     .name != "KORTIX_VERSION" and
                     .name != "KORTIX_PUBLIC_VERSION" and
                     .name != "NEXT_PUBLIC_KORTIX_VERSION" and
-                    .name != "KORTIX_COMMIT"
+                    .name != "KORTIX_COMMIT" and
+                    .name != "KORTIX_CONTAINER_MEMORY_MIB"
                   )
                 ))
-                + (if $ver == "" then [] else [{name: $version_env, value: $ver}] end))
+                + (if $ver == "" then [] else [{name: $version_env, value: $ver}] end)
+                + (if $memory == "" then [] else [{name: "KORTIX_CONTAINER_MEMORY_MIB", value: $memory}] end))
           else . end)')"
 
 if [ "$DRY_RUN" = "1" ]; then
