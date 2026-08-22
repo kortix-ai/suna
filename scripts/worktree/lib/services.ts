@@ -66,7 +66,13 @@ export async function tunnelAnswers(url: string, apiPath = '/v1/health', timeout
 
 export async function startTunnel(apiPort: number): Promise<Tunnel | null> {
   if (!which('cloudflared')) return null;
-  const proc = spawn(['cloudflared', 'tunnel', '--no-autoupdate', '--url', `http://localhost:${apiPort}`], {
+  // `--protocol http2`: quick tunnels default to QUIC, and on a UDP-hostile or
+  // congested path the single QUIC connection drops and never re-registers —
+  // the hostname dies while the process lives (2026-08-22: five quick tunnels
+  // died within 10–30 min each; cloudflared metrics showed
+  // quic_client_congestion_state 3 on every one). HTTP/2 rides TCP/443 and
+  // reconnects like any HTTPS client. The watchdog still covers a real death.
+  const proc = spawn(['cloudflared', 'tunnel', '--no-autoupdate', '--protocol', 'http2', '--url', `http://localhost:${apiPort}`], {
     stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
   });
   const url = await waitForOutputMatch(proc, /https:\/\/[a-z0-9.-]+\.trycloudflare\.com/, 30);
