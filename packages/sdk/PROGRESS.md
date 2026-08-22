@@ -4745,6 +4745,7 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 
 | Date       | Session                  | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Where                                                                                                             |
 | ---------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 2026-08-22 | `sdk-timeline-rows`      | **`core/http/api-client.ts` still carries its own abort classifier.** `isAbortError` at `:147` matches `name === 'AbortError'`, `name === 'AbortSignal'`, or `message.includes('aborted')` — the loose substring sniff the canonical detector (`core/http/abort-error.ts`) exists to kill: it mislabels a transport failure whose prose reads "upstream unreachable … The operation was aborted" as a user Stop, and it also shadows the canonical export by name. It gates retry (`:268`) and the `ABORTED` code (`:452`), so switching it changes retry behaviour and needs its own tests. Found while deleting the same shape from `core/turns/timeline.ts`. | `packages/sdk/src/core/http/api-client.ts:147,268,452` |
 | 2026-08-08 | `feature-flags-web`      | **`apps/mobile` and `apps/whitelabel-demo` still say "Experimental" for the whole feature-flag system.** Both render the catalog off the deprecated `ExperimentalFeatureView` alias, call `updateExperimentalFeature` (the legacy `/experimental` route), and label the section "Experimental" — the platform now calls the system "Feature flags" and treats experimental/beta/stable as a per-flag stability badge. They compile unchanged (alias + widened union are both backwards-compatible) so nothing is broken, but the copy and the route are now behind the web app. Neither was redesigned in this session by instruction. | `apps/mobile/components/pages/SettingsNavPage.tsx:268,314-318`, `apps/mobile/lib/projects/hooks.ts:216-225`, `apps/whitelabel-demo/src/app/projects/[id]/settings/page.tsx:223-278` |
 | 2026-07-30 | `bugbash-model-resilience` | **Any ACP send failure replaces the whole chat surface with the page-level "OpenCode failed to load" card.** `executeSend`'s catch patches `error` onto the controller snapshot, `useSession` republishes it as `runtimeError`, and `apps/web`'s session page renders `InlineSessionError` + Restart INSTEAD of `SessionLayout`/`SessionChat` for it. Model-not-found is now recovered before it can reach that path, but a gateway 500 or a provider error on a send still nukes a healthy session's transcript and composer. The send failure is ALREADY surfaced inline as `sendError`; the controller should not also mark the runtime dead | `packages/sdk/src/core/acp/session-controller.ts:575-589` (patch `error`), `packages/sdk/src/react/use-session.ts:884` (`runtimeSessionError`), `apps/web/src/app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:775-800` (full-page card) |
 | 2026-07-30 | `bugbash-model-picker`   | **An explicit model pick has nowhere to persist on a composer with no `sessionId` and no loaded agent** (project home). `setModel` writes the per-agent slot only `if (currentAgent)` and the per-session slot only `if (scopedSessionModelKey)`; with neither it writes `visibility` + `recent` only, both of which lose to `serverDefaultKey` in the read chain — so the picker trigger never moves. Verified in a real browser: after clicking "Claude Sonnet 4.6" on `/projects/<id>`, `localStorage['opencode-model-store-v1']` held only `user` + `recent`, no `selectedModel`/`sessionModel`, and the trigger stayed on the platform default. The read chain's own comment (`:470`) claims selection "must NOT depend on a loaded agent", which the write side does not honour | `packages/sdk/src/react/use-opencode-local.ts:512-545` (write), `:443-459` (read) |
@@ -4798,6 +4799,80 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 ---
 
 ## Session log
+
+### 2026-08-22 — session `sdk-timeline-rows` — B51 follow-up: six adversarial-review defects in `timeline.ts` — DONE
+
+**Files:** `core/turns/timeline.ts` · `core/turns/timeline.test.ts` (61 → 72
+tests) · `README.md` (timeline-rows section). No public surface change — no
+export added, renamed or removed.
+
+Six findings from an adversarial review of the B51 row model. Every fix landed
+RED first (test written, run, watched fail for the stated reason), then GREEN.
+
+1. **A FIFTH abort classifier (HIGH).** `timeline.ts` defined a local
+   `isAbortError` matching only `name === 'MessageAbortedError'` — and it
+   SHADOWED the canonical `isAbortError` (`core/http/abort-error.ts`), whose own
+   header records the four divergent detectors it exists to replace. A user Stop
+   is patched as `name: 'AbortError'` (`applyOptimisticAbort`), so every
+   user-initiated stop rendered `['user-message','assistant-part','error']` with
+   the text "The operation was aborted." instead of the interrupted divider.
+   Local helper deleted; the canonical one imported.
+   `MESSAGE_ABORTED_ERROR_NAME` stays exported and is now documented as
+   informational only.
+2. **Assistant-only turns dropped their content (MEDIUM).**
+   `groupMessagesIntoTurns` synthesizes a turn whose `userMessage` IS an
+   assistant message (an orphan session-init failure, no `parentID`, ahead of
+   every prompt). The row builder emitted an unconditional `user-message` row,
+   never walked `turn.userMessage.parts`, and `turnErrorText` read
+   `assistantMessages.at(-1) === undefined`. An orphan with 2 parts and
+   `{message:'session init failed'}` rendered `['user-message']` — 0 part rows,
+   0 error rows. Now the head message leads the assistant run: no
+   `user-message` row, no compaction check, parts + abort divider + error all
+   render. **`timeline.test.ts` had CODIFIED the drop as expected**; that test
+   was wrong and is rewritten.
+3. **`uniqueKey` was O(n²) on the render path (MEDIUM).** The suffix search
+   restarted at `:1` on every collision. Measured per call: 9.1ms @ k=500,
+   35.0ms @ k=1000, 155.6ms @ k=2000, 745.5ms @ k=4000 — and
+   `constructTimelineRows` runs every frame while streaming. Added
+   `nextSuffix: Map<candidate, number>`; the `usedKeys` probe stays, so a suffix
+   that is also another part's natural key is still skipped. After: 1.4ms @
+   k=4000.
+4. **The positional part-id fallback was reused across a prepend (MEDIUM).**
+   `defaultGetPartId` mints `${messageID}:#${index}`, which names a SLOT. Insert
+   a part at the head and `:#0` refs a different part while key and ref stay
+   byte-identical, so `reuseTimelineRows` handed back the PREVIOUS row object —
+   a memoized subtree pinned to stale content. `timelineRowsEqual` now refuses
+   to call any `assistant-part` row built on positional ids equal, so such a row
+   is re-taken every frame. Rows with real wire ids are untouched. The README's
+   "appending or removing a row never renames its neighbours" carries the
+   caveat now.
+5. **The `thinking` placeholder rendered below streamed parts (LOW).** The emit
+   condition was `showReasoning ? partRowCount === 0 : true`, so with the
+   DEFAULT `showReasoning: false` the documented "pre-first-token placeholder"
+   appeared under content that had already arrived. Now `partRowCount === 0`
+   unconditionally. A hidden reasoning part produces no part row, so the
+   reasoning case that motivated the branch is covered by the count itself.
+6. **Three doc/behaviour mismatches in `reuseTimelineRows` (LOW).** The
+   "skipped entirely when no prior row is a context group" claim was false (the
+   `prev` scan always runs) — the doc now says what the code does. Both
+   `stabilizeContextKeys` and the identity swap allocated an array per call,
+   even on a frame that changed nothing; both are lazy now, so a no-change frame
+   allocates nothing beyond the `prev` key index.
+
+**Gates** (from `packages/sdk`):
+`pnpm --filter @kortix/sdk typecheck` → clean, both projects ·
+`pnpm --filter @kortix/sdk test` → **2498 pass / 0 fail**, 163 files ·
+`bun test src/index.isomorphic.test.ts` → 70 pass / 0 fail (the new
+`../http/abort-error` import is isomorphic — that file imports nothing) ·
+`bun run examples/timeline-rows.ts` → unchanged output, array identity still
+preserved on an unchanged frame.
+
+**Still open (NOT this task's scope).** `core/http/api-client.ts:147` defines
+its own `isAbortError` (`name === 'AbortError' || name === 'AbortSignal' ||
+message.includes('aborted')` — the loose substring sniff the canonical detector
+exists to kill). Appended to *Discovered this session*.
+
+---
 
 ### 2026-08-22 — session `sdk-timeline-rows` — B51: the transcript has a row model — DONE
 

@@ -439,7 +439,11 @@ Eight row kinds, discriminated on `kind` (never on `type` — that is the part
 discriminant): `turn-gap`, `user-message`, `turn-divider` (`compaction` |
 `interrupted`), `assistant-part`, `thinking`, `retry`, `diff-summary`, `error`.
 Per turn they are emitted in exactly that order, with the interrupted divider
-placed inside the assistant run at the aborted message's position.
+placed inside the assistant run at the aborted message's position. `thinking` is
+the pre-first-token placeholder, so it never appears below an `assistant-part`
+row. A session whose first message is an orphan assistant message (a session-init
+failure) renders that assistant run — parts, divider, error — with no
+`user-message` row.
 
 Three properties make the list usable:
 
@@ -447,7 +451,12 @@ Three properties make the list usable:
   `userMessageID` (+ the divider's `label`, + the part group's key). It contains
   no index, no timestamp and no content hash, so appending or removing a row
   never renames its neighbours. `kind` is encoded in the key, so a row's kind
-  can never change under a stable key.
+  can never change under a stable key. **One caveat, and it is the caveat:** a
+  part with no wire `id` falls back to the POSITIONAL id `<messageID>:#<index>`,
+  which names a slot rather than a part — insert a part ahead of it and the
+  following rows do rename. Those rows are therefore never reused across a
+  frame (`:#0` can silently mean a different part), so give parts real ids, or
+  pass `options.getPartId`, whenever you can.
 - **Rows hold ids and refs, never part content.** The only value-bearing fields
   in the entire union are `error.text` and `diff-summary.diffs` — and `diffs` is
   a projection (`file`, `additions`, `deletions`, `status`) that deliberately

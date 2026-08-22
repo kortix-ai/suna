@@ -213,11 +213,14 @@ describe('constructTimelineRows — row kinds', () => {
   });
 
   test('emits a thinking row only while the ACTIVE turn is busy with no error', () => {
+    // The active turn has produced no part row yet — the state the placeholder
+    // exists for. The settled first turn has one, so this also pins that the
+    // placeholder is scoped to the ACTIVE turn.
     const messages = [
       user(wireId(1)),
       assistant(wireId(2), wireId(1), [text('a', 'p1')]),
       user(wireId(3)),
-      assistant(wireId(4), wireId(3), [text('b', 'p2')]),
+      assistant(wireId(4), wireId(3), []),
     ];
     const thinking = constructTimelineRows(messages, {
       status: 'busy',
@@ -233,12 +236,13 @@ describe('constructTimelineRows — row kinds', () => {
       ),
     ).toHaveLength(0);
 
-    // Busy with an error on the active turn: no thinking.
+    // Busy with an error on the active turn: no thinking. Same part-less
+    // fixture, so the ERROR is the only thing suppressing it.
     const withError = [
       messages[0],
       messages[1],
       messages[2],
-      assistant(wireId(4), wireId(3), [text('b', 'p2')], { message: 'boom' }),
+      assistant(wireId(4), wireId(3), [], { message: 'boom' }),
     ];
     expect(
       constructTimelineRows(withError, { status: 'busy', activeUserMessageID: wireId(3) }).filter(
@@ -247,21 +251,30 @@ describe('constructTimelineRows — row kinds', () => {
     ).toHaveLength(0);
   });
 
-  test('showReasoning suppresses the thinking row once the turn has a renderable part', () => {
-    const messages = [user(wireId(1)), assistant(wireId(2), wireId(1), [text('a', 'p1')])];
+  // REWRITTEN. The previous version asserted that with the DEFAULT
+  // `showReasoning: false` the thinking row still renders after a part row has
+  // streamed — i.e. it codified the bug, not the contract. `thinking` is
+  // documented as "the pre-first-token placeholder", so it must never render
+  // below content that already exists, in either reasoning mode.
+  test('the thinking placeholder renders only before the first part row, in BOTH reasoning modes', () => {
+    const streamed = [user(wireId(1)), assistant(wireId(2), wireId(1), [text('a', 'p1')])];
     const opts = { status: 'busy' as const, activeUserMessageID: wireId(1) };
-    expect(constructTimelineRows(messages, opts).some((r) => r.kind === 'thinking')).toBe(true);
-    expect(
-      constructTimelineRows(messages, { ...opts, showReasoning: true }).some(
-        (r) => r.kind === 'thinking',
-      ),
-    ).toBe(false);
-    // …but with no renderable part yet, showReasoning still shows it.
-    expect(
-      constructTimelineRows([user(wireId(1))], { ...opts, showReasoning: true }).some(
-        (r) => r.kind === 'thinking',
-      ),
-    ).toBe(true);
+    const hasThinking = (msgs: Msg[], o: ConstructTimelineRowsOptions<Msg>): boolean =>
+      constructTimelineRows(msgs, o).some((r) => r.kind === 'thinking');
+
+    expect(hasThinking(streamed, opts)).toBe(false);
+    expect(hasThinking(streamed, { ...opts, showReasoning: true })).toBe(false);
+
+    // Pre-first-token: no renderable part yet → the placeholder is the point.
+    const empty = [user(wireId(1)), assistant(wireId(2), wireId(1), [])];
+    expect(hasThinking(empty, opts)).toBe(true);
+    expect(hasThinking(empty, { ...opts, showReasoning: true })).toBe(true);
+
+    // A reasoning part hidden by `showReasoning: false` produces NO part row,
+    // so the placeholder is still the only thing on the turn.
+    const reasoningOnly = [user(wireId(1)), assistant(wireId(2), wireId(1), [reasoning('hmm', 'p1')])];
+    expect(hasThinking(reasoningOnly, opts)).toBe(true);
+    expect(hasThinking(reasoningOnly, { ...opts, showReasoning: true })).toBe(false);
   });
 
   test('emits a retry row only when the active turn status is retry', () => {
@@ -397,25 +410,21 @@ describe('constructTimelineRows — ordering', () => {
       return true;
     };
 
-    const base = (extra?: unknown) => [
+    const base = (extra?: unknown, parts: Part[] = [text('a', 'p1')]) => [
       user(wireId(1)),
       user(wireId(2), [compaction(), text('go', 'u2')], {
         diffs: [{ file: 'a.ts', additions: 1, deletions: 0 }],
       }),
-      assistant(wireId(3), wireId(2), [text('a', 'p1')], extra),
+      assistant(wireId(3), wireId(2), parts, extra),
     ];
 
-    const busy = constructTimelineRows(base(), {
+    // `thinking` is the PRE-first-token placeholder, so its variant is the turn
+    // that has no part row yet — it can never sit below `assistant-part`.
+    const busy = constructTimelineRows(base(undefined, []), {
       status: 'busy',
       activeUserMessageID: wireId(2),
     }).slice(1);
-    expect(kinds(busy)).toEqual([
-      'turn-gap',
-      'user-message',
-      'turn-divider',
-      'assistant-part',
-      'thinking',
-    ]);
+    expect(kinds(busy)).toEqual(['turn-gap', 'user-message', 'turn-divider', 'thinking']);
     expect(isSubsequence(kinds(busy))).toBe(true);
 
     const retrying = constructTimelineRows(base(), {
@@ -1004,12 +1013,31 @@ describe('empty and degenerate input', () => {
     expect(out).not.toBe(prev);
   });
 
-  test('a session with only assistant messages renders the synthetic turn groupMessagesIntoTurns produces', () => {
+  // REWRITTEN. The previous version asserted `kinds === ['user-message']` for a
+  // session whose only message is an ASSISTANT message — i.e. it codified the
+  // drop: the turn's parts and its error rendered as nothing, under a row
+  // mislabelled `user-message`. `groupMessagesIntoTurns` puts that orphan in
+  // `turn.userMessage` (a synthetic turn), so the timeline must read the role.
+  test('a session with only assistant messages renders that assistant run — parts and error, no user-message row', () => {
     const rows = constructTimelineRows([
-      assistant(wireId(2), 'nope', [text('orphan', 'p1')], { message: 'session init failed' }),
+      assistant(wireId(2), 'nope', [text('orphan', 'p1'), text('more', 'p2')], {
+        message: 'session init failed',
+      }),
     ]);
-    expect(kinds(rows)).toEqual(['user-message']);
-    expect(rows[0].userMessageID).toBe(wireId(2));
+    expect(kinds(rows)).toEqual(['assistant-part', 'assistant-part', 'error']);
+    expect(partRows(rows).map(groupPartIds)).toEqual([['p1'], ['p2']]);
+    expect((rowOfKind(rows, 'error') as TimelineErrorRow).text).toBe('session init failed');
+    for (const row of rows) expect(row.userMessageID).toBe(wireId(2));
+    expect(new Set(keys(rows)).size).toBe(rows.length);
+  });
+
+  test('an assistant-only turn that was aborted renders the interrupted divider, not an error row', () => {
+    const rows = constructTimelineRows([
+      assistant(wireId(2), 'nope', [text('half', 'p1')], ABORT),
+    ]);
+    expect(kinds(rows)).toEqual(['turn-divider', 'assistant-part']);
+    expect((rows[0] as TimelineTurnDividerRow).label).toBe('interrupted');
+    expect(rowOfKind(rows, 'error')).toBeUndefined();
   });
 
   test('a user message with no assistant reply emits only turn-gap and user-message', () => {
@@ -1125,5 +1153,181 @@ describe('purity', () => {
     ).toBe(9);
     expect(JSON.parse(JSON.stringify(input))).toEqual(snapshot);
     input.forEach((m, i) => expect(m.parts).toBe(partsArrays[i]));
+  });
+});
+
+// ============================================================================
+// Adversarial-review regressions
+// ============================================================================
+
+describe('abort classification is the SDK-wide one', () => {
+  /** What `applyOptimisticAbort` patches onto the message when the user hits
+   *  Stop — `name: 'AbortError'`, never `MessageAbortedError`. */
+  const USER_STOP = {
+    name: 'AbortError',
+    data: { message: 'The operation was aborted.', reason: 'user' },
+  };
+
+  test('a user Stop (name AbortError) renders the interrupted divider and never an error row', () => {
+    const rows = constructTimelineRows([
+      user(wireId(1)),
+      assistant(wireId(2), wireId(1), [text('a', 'p1')], USER_STOP),
+    ]);
+    expect(kinds(rows)).toEqual(['user-message', 'turn-divider', 'assistant-part']);
+    expect((rows[1] as TimelineTurnDividerRow).label).toBe('interrupted');
+    expect(rowOfKind(rows, 'error')).toBeUndefined();
+  });
+
+  test('the wire MessageAbortedError is still an abort, so both producers agree', () => {
+    const rows = constructTimelineRows([
+      user(wireId(1)),
+      assistant(wireId(2), wireId(1), [text('a', 'p1')], ABORT),
+    ]);
+    expect(rowOfKind(rows, 'error')).toBeUndefined();
+    expect(MESSAGE_ABORTED_ERROR_NAME).toBe('MessageAbortedError');
+  });
+
+  test('a TRANSPORT failure whose prose contains "aborted" is still an error row', () => {
+    // The canonical classifier disqualifies abort-ish prose that names a
+    // transport failure. A loose `/abort/i` sniff would mislabel this as a
+    // user Stop and silently delete the failure from the transcript.
+    const rows = constructTimelineRows([
+      user(wireId(1)),
+      assistant(wireId(2), wireId(1), [text('a', 'p1')], {
+        name: 'ApiError',
+        message: 'upstream unreachable: The operation was aborted',
+      }),
+    ]);
+    const error = rowOfKind(rows, 'error') as TimelineErrorRow;
+    expect(error).toBeDefined();
+    expect(error.text).toContain('unreachable');
+    expect(rowOfKind(rows, 'turn-divider')).toBeUndefined();
+  });
+});
+
+describe('uniqueKey stays linear', () => {
+  const collidingSession = (count: number): Msg[] => [
+    user(wireId(1)),
+    assistant(
+      wireId(2),
+      wireId(1),
+      Array.from({ length: count }, (_, i) => text(`t${i}`, 'dup')),
+    ),
+  ];
+
+  test('4000 colliding part ids still key uniquely, and do it in linear time', () => {
+    const messages = collidingSession(4000);
+    const started = performance.now();
+    const rows = constructTimelineRows(messages);
+    const elapsedMs = performance.now() - started;
+    expect(partRows(rows)).toHaveLength(4000);
+    expect(new Set(keys(rows)).size).toBe(rows.length);
+    // Measured on the quadratic version: 745ms at k=4000. Linear: <5ms. The
+    // guard is coarse on purpose — it catches the algorithm, not the machine.
+    expect(elapsedMs).toBeLessThan(50);
+  });
+
+  test('a suffix key that is ALSO another part\'s natural key is not handed out twice', () => {
+    // The second `dup` resolves to `…:dup:1` — which is exactly the natural key
+    // of the third part, whose id IS `dup:1`. Remembering where a candidate got
+    // to must not skip the `usedKeys` probe that catches this.
+    const rows = constructTimelineRows([
+      user(wireId(1)),
+      assistant(wireId(2), wireId(1), [
+        text('a', 'dup'),
+        text('b', 'dup'),
+        text('c', 'dup:1'),
+        text('d', 'dup'),
+      ]),
+    ]);
+    const partKeys = keys(partRows(rows));
+    expect(partKeys).toHaveLength(4);
+    expect(new Set(partKeys).size).toBe(4);
+    expect(partKeys[1]).toBe(`assistant-part:${wireId(1)}:part:${wireId(2)}:dup:1`);
+    expect(new Set(keys(rows)).size).toBe(rows.length);
+  });
+});
+
+describe('positional-fallback part ids are never reused across a prepend', () => {
+  const build = (parts: Part[]): TimelineRow[] =>
+    constructTimelineRows([user(wireId(1)), assistant(wireId(2), wireId(1), parts)]);
+
+  test('a part PREPENDED ahead of an id-less part does not hand back the previous row object', () => {
+    const prev = build([text('first')]);
+    const next = build([text('inserted'), text('first')]);
+    // The positional fallback gives the NEW head part the key the old row had.
+    expect(groupPartIds(partRows(next)[0])).toEqual([`${wireId(2)}:#0`]);
+    expect(partRows(next)[0].key).toBe(partRows(prev)[0].key);
+
+    const out = reuseTimelineRows(prev, next);
+    // `:#0` now resolves to a DIFFERENT part, so serving the previous object
+    // would hold a memoized subtree on stale content.
+    expect(partRows(out)[0]).not.toBe(partRows(prev)[0]);
+    expect(out).not.toBe(prev);
+  });
+
+  test('an unchanged id-less frame is also not reused — the fallback carries no identity', () => {
+    const prev = build([text('only')]);
+    const next = build([text('only')]);
+    expect(partRows(next)[0].key).toBe(partRows(prev)[0].key);
+    expect(reuseTimelineRows(prev, next)).not.toBe(prev);
+  });
+
+  test('parts WITH wire ids are still reused across the same prepend', () => {
+    // p2 keeps both its key AND its `previousAssistantPart: true`, so nothing
+    // about its row changed — the identity must survive the prepend.
+    const prev = build([text('first', 'p1'), text('second', 'p2')]);
+    const next = build([text('inserted', 'p0'), text('first', 'p1'), text('second', 'p2')]);
+    const out = reuseTimelineRows(prev, next);
+    const prevRow = partRows(prev).find((r) => groupPartIds(r)[0] === 'p2');
+    const outRow = partRows(out).find((r) => groupPartIds(r)[0] === 'p2');
+    expect(prevRow).toBeDefined();
+    expect(outRow).toBe(prevRow as TimelineAssistantPartRow);
+  });
+});
+
+describe('reuseTimelineRows allocates nothing on a no-change frame', () => {
+  test('a frame whose rows are already the previous objects allocates no intermediate array', () => {
+    const opts = { groupPart: groupContextTools };
+    const prev = constructTimelineRows(
+      [
+        user(wireId(1)),
+        assistant(wireId(2), wireId(1), [tool('read', 'p1'), tool('grep', 'p2'), text('x', 'p3')]),
+      ],
+      opts,
+    );
+    expect(partRows(prev).filter((r) => r.group.type === 'context')).toHaveLength(1);
+
+    const originalMap = Array.prototype.map;
+    let mapCalls = 0;
+    // White-box on purpose: `stabilizeContextKeys` + the identity swap used to
+    // build two throwaway arrays per call, on EVERY frame, including one that
+    // changes nothing — and this runs once per render while streaming.
+    (Array.prototype as unknown as { map: unknown }).map = function (
+      this: unknown[],
+      ...args: unknown[]
+    ) {
+      mapCalls += 1;
+      return (originalMap as (...a: unknown[]) => unknown).apply(this, args);
+    };
+    let out: TimelineRow[];
+    try {
+      out = reuseTimelineRows(prev, prev);
+    } finally {
+      (Array.prototype as unknown as { map: unknown }).map = originalMap;
+    }
+    expect(out).toBe(prev);
+    expect(mapCalls).toBe(0);
+  });
+
+  test('a frame that DOES rename a context key still stabilizes it', () => {
+    const opts = { groupPart: groupContextTools };
+    const build = (parts: Part[]) =>
+      constructTimelineRows([user(wireId(1)), assistant(wireId(2), wireId(1), parts)], opts);
+    const prev = build([tool('read', 'p1'), tool('grep', 'p2')]);
+    const next = build([tool('grep', 'p2')]);
+    const out = reuseTimelineRows(prev, next);
+    expect(partRows(out)[0].key).toBe(partRows(prev)[0].key);
+    expect(new Set(keys(out)).size).toBe(out.length);
   });
 });

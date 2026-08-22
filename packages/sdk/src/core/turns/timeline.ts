@@ -3,7 +3,8 @@
  * transcript, plus an identity-preserving reuse pass.
  *
  * PURE AND FRAMEWORK-FREE. This module imports only `./types`, `./parts`,
- * `./grouping` and `./errors`, all `isomorphic-core`. It reads no global —
+ * `./grouping`, `./errors` and `../http/abort-error`, all `isomorphic-core`
+ * (`abort-error.ts` imports nothing at all). It reads no global —
  * no `process.env`, no `window`, no `Date.now()`, no `Math.random()` — so the
  * same input always produces the same rows on every host. A clock read here
  * would make the output non-deterministic and every row non-reusable.
@@ -30,6 +31,7 @@
 import { getPartText, isCompactionPart, isReasoningPart, isToolPart, shouldShowToolPart } from './parts';
 import { groupMessagesIntoTurns } from './grouping';
 import { unwrapError } from './errors';
+import { isAbortError } from '../http/abort-error';
 import type { MessageInfoLike, MessageWithPartsLike, PartLike, ToolPartLike, TurnLike } from './types';
 
 // ============================================================================
@@ -37,12 +39,21 @@ import type { MessageInfoLike, MessageWithPartsLike, PartLike, ToolPartLike, Tur
 // ============================================================================
 
 /**
- * The `info.error.name` OpenCode stamps on a message the user interrupted.
+ * The `info.error.name` OpenCode stamps on a message the RUNTIME interrupted.
  *
  * It is a wire string, not a typed constant in this repo, so it lives here once
- * and is asserted in `timeline.test.ts`. An upstream rename would otherwise
- * silently turn every abort into an `error` row. Re-check on each
- * `@opencode-ai/sdk` bump.
+ * and is asserted in `timeline.test.ts`. Re-check on each `@opencode-ai/sdk`
+ * bump.
+ *
+ * INFORMATIONAL ONLY — this module does not classify with it. Aborts are
+ * classified by `isAbortError` (`core/http/abort-error.ts`), the SDK's single
+ * abort detector, whose own header records the four divergent detectors that
+ * preceded it. A local `name === MESSAGE_ABORTED_ERROR_NAME` check lived here
+ * and was a FIFTH: it missed `name: 'AbortError'` — the shape
+ * `applyOptimisticAbort` patches on when the USER hits Stop — so every
+ * user-initiated stop rendered as an `error` row reading "The operation was
+ * aborted." instead of the interrupted divider. It also shadowed the canonical
+ * export by name, so the two could never be compared side by side.
  */
 export const MESSAGE_ABORTED_ERROR_NAME = 'MessageAbortedError';
 
@@ -86,7 +97,10 @@ export interface TimelineTurnGapRow {
   userMessageID: string;
 }
 
-/** The user's prompt. Exactly one per turn, unconditional. */
+/**
+ * The user's prompt. One per turn — except an assistant-only turn (see
+ * `constructTimelineRows`), which has no prompt and emits none.
+ */
 export interface TimelineUserMessageRow {
   kind: 'user-message';
   key: string;
@@ -113,7 +127,12 @@ export interface TimelineAssistantPartRow {
   previousAssistantPart: boolean;
 }
 
-/** The pre-first-token placeholder on the active, busy turn. */
+/**
+ * The pre-first-token placeholder on the active, busy turn. Emitted ONLY while
+ * that turn has no `assistant-part` row yet, in either reasoning mode — it is a
+ * placeholder for content that has not arrived, never a footer under content
+ * that has.
+ */
 export interface TimelineThinkingRow {
   kind: 'thinking';
   key: string;
@@ -211,7 +230,11 @@ export interface ConstructTimelineRowsOptions<M extends TimelineMessageLike = Ti
   activeUserMessageID?: string;
   /** The session's status. Defaults to `'idle'`. */
   status?: 'idle' | 'busy' | 'retry' | (string & {});
-  /** Render `reasoning` parts, and suppress `thinking` once a part exists. */
+  /**
+   * Render `reasoning` parts. Does NOT gate the `thinking` row: that is the
+   * pre-first-token placeholder and is suppressed by the first part row of the
+   * turn in either mode.
+   */
   showReasoning?: boolean;
   /**
    * Which parts get a row. Runs BEFORE grouping, so a hidden tool never
@@ -232,10 +255,15 @@ export interface ConstructTimelineRowsOptions<M extends TimelineMessageLike = Ti
    * Part identity. Default: `part.id` when it is a non-empty string, else the
    * POSITIONAL fallback `` `${message.info.id}:#${index}` ``.
    *
-   * The fallback is best-effort, never the intended path: it renames every
-   * following row when a part is inserted ahead of it, which is the scroll-jump
-   * and remount the key model exists to prevent. Override this when your parts
-   * have no wire id.
+   * The fallback is best-effort, never the intended path. `msg:#0` names a
+   * SLOT, not a part: insert a part ahead of it and every following row is
+   * renamed (the scroll-jump and remount the key model exists to prevent),
+   * while the HEAD row keeps `:#0` even though that slot now holds a different
+   * part — key and ref stay byte-identical while the content behind them
+   * changed. That is why `reuseTimelineRows` never hands back a previous row
+   * object for a positional-fallback row (see `isPositionalPartRef`): such a
+   * row costs one allocation per frame, which is the price of having no wire
+   * id. Override this when your parts have no wire id.
    */
   getPartId?: (part: PartLike, message: M, index: number) => string;
 }
@@ -259,11 +287,6 @@ function defaultGetPartId(part: PartLike, messageID: string, index: number): str
 // ============================================================================
 // Turn-level derivations
 // ============================================================================
-
-function isAbortError(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  return (error as { name?: unknown }).name === MESSAGE_ABORTED_ERROR_NAME;
-}
 
 /**
  * Deduplicate `summary.diffs` by `file`, last write wins, and project away
@@ -299,20 +322,53 @@ function uniqueSummaryDiffs(raw: unknown): TimelineDiffStat[] {
   return out.reverse();
 }
 
-/** The id of the first assistant message the user interrupted, if any. */
-function firstAbortedMessageId<M extends TimelineMessageLike>(turn: TurnLike<M>): string | undefined {
-  for (const message of turn.assistantMessages) {
+/**
+ * The id of the first assistant message the user interrupted, if any.
+ *
+ * Takes the turn's assistant RUN, not the turn: an assistant-only turn's run
+ * starts at `turn.userMessage` (see `assistantRunOf`), and reading
+ * `turn.assistantMessages` there would scan an empty array and miss the abort.
+ */
+function firstAbortedMessageId<M extends TimelineMessageLike>(
+  run: readonly M[],
+): string | undefined {
+  for (const message of run) {
     if (isAbortError(message.info.error)) return message.info.id;
   }
   return undefined;
 }
 
-/** The turn's error text, or `undefined`. An abort is not an error. */
-function turnErrorText<M extends TimelineMessageLike>(turn: TurnLike<M>): string | undefined {
-  const last = turn.assistantMessages[turn.assistantMessages.length - 1];
+/** The run's error text, or `undefined`. An abort is not an error. */
+function turnErrorText<M extends TimelineMessageLike>(run: readonly M[]): string | undefined {
+  const last = run[run.length - 1];
   const error = last?.info.error;
   if (!error || isAbortError(error)) return undefined;
   return unwrapError(error);
+}
+
+/**
+ * Is this turn's `userMessage` actually an ASSISTANT message?
+ *
+ * `groupMessagesIntoTurns` synthesizes such a turn when the session's first
+ * message is an orphan assistant message — a session-init failure that carries
+ * no `parentID` and precedes every user prompt — and there is no user message
+ * to attach it to. Its head is the assistant run, not a prompt.
+ */
+function isAssistantOnlyTurn<M extends TimelineMessageLike>(turn: TurnLike<M>): boolean {
+  return turn.userMessage.info.role === 'assistant';
+}
+
+/**
+ * The assistant messages of a turn, in render order.
+ *
+ * For an assistant-only turn the head message IS the first assistant message,
+ * so it leads the run. Allocates a new array ONLY in that degenerate case; the
+ * normal path returns `turn.assistantMessages` itself.
+ */
+function assistantRunOf<M extends TimelineMessageLike>(turn: TurnLike<M>): readonly M[] {
+  return isAssistantOnlyTurn(turn)
+    ? [turn.userMessage, ...turn.assistantMessages]
+    : turn.assistantMessages;
 }
 
 // ============================================================================
@@ -327,6 +383,11 @@ function turnErrorText<M extends TimelineMessageLike>(turn: TurnLike<M>): string
  *   `user-message` · `turn-divider{compaction}` · the assistant parts, with
  *   `turn-divider{interrupted}` at the aborted message's position ·
  *   `thinking` · `retry` · `diff-summary` · `error`.
+ *
+ * An ASSISTANT-ONLY turn — the synthetic turn `groupMessagesIntoTurns` builds
+ * for an orphan assistant message that precedes every prompt — emits no
+ * `user-message` row and no compaction divider. Its head message leads the
+ * assistant run, so its parts, its abort divider and its error all render.
  *
  * Deterministic: the same `messages` and `options` always produce structurally
  * identical rows in the same order. Never mutates its input.
@@ -354,17 +415,25 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
   // duplicate `part.id` inside one message's `parts` array would still collide,
   // and duplicate keys crash list renderers. NEVER throws: this is a render path.
   const usedKeys = new Set<string>();
+  // The next suffix to TRY for a candidate that already collided. Without it
+  // the search restarted at `:1` on every collision, so k duplicates of one id
+  // cost O(k^2) set probes — 745ms at k=4000, on a function that runs once per
+  // frame while a turn streams. Remembering where each candidate got to makes
+  // the whole run amortized O(k). The `while` still guards the case where a
+  // suffix key is ALSO some other part's natural key.
+  const nextSuffix = new Map<string, number>();
   const uniqueKey = (candidate: string): string => {
     if (!usedKeys.has(candidate)) {
       usedKeys.add(candidate);
       return candidate;
     }
-    let n = 1;
+    let n = nextSuffix.get(candidate) ?? 1;
     let next = `${candidate}:${n}`;
     while (usedKeys.has(next)) {
       n += 1;
       next = `${candidate}:${n}`;
     }
+    nextSuffix.set(candidate, n + 1);
     usedKeys.add(next);
     return next;
   };
@@ -373,6 +442,12 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
     const turn = turns[turnIndex];
     const userMessageID = turn.userMessage.info.id;
     const isActive = userMessageID === activeUserMessageID;
+    // An assistant-only turn has no prompt: its head message is the first
+    // ASSISTANT message. Emitting a `user-message` row for it both mislabels
+    // the row and drops the message's parts and error, because neither the
+    // part loop nor `turnErrorText` ever looked at `turn.userMessage`.
+    const assistantOnly = isAssistantOnlyTurn(turn);
+    const assistantRun = assistantRunOf(turn);
 
     if (turnIndex > 0) {
       rows.push({
@@ -384,13 +459,15 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
 
     // [reserved] CommentStrip belongs here, between turn-gap and user-message.
 
-    rows.push({
-      kind: 'user-message',
-      key: uniqueKey(`user-message:${userMessageID}`),
-      userMessageID,
-    });
+    if (!assistantOnly) {
+      rows.push({
+        kind: 'user-message',
+        key: uniqueKey(`user-message:${userMessageID}`),
+        userMessageID,
+      });
+    }
 
-    const compacted = turn.userMessage.parts.some(isCompactionPart);
+    const compacted = !assistantOnly && turn.userMessage.parts.some(isCompactionPart);
     if (compacted) {
       rows.push({
         kind: 'turn-divider',
@@ -401,7 +478,7 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
     }
 
     // A compaction turn suppresses the interrupted divider entirely.
-    const abortedMessageId = compacted ? undefined : firstAbortedMessageId(turn);
+    const abortedMessageId = compacted ? undefined : firstAbortedMessageId(assistantRun);
 
     let partRowCount = 0;
     let openGroup: { id: string; refs: TimelinePartRef[] } | null = null;
@@ -428,7 +505,7 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
       openGroup = null;
     };
 
-    for (const message of turn.assistantMessages) {
+    for (const message of assistantRun) {
       if (abortedMessageId !== undefined && message.info.id === abortedMessageId) {
         // A group must not span the divider. The divider does NOT advance
         // `partRowCount` — it is not a part row.
@@ -467,14 +544,15 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
     }
     flushGroup();
 
-    const errorText = turnErrorText(turn);
+    const errorText = turnErrorText(assistantRun);
 
-    if (
-      isActive &&
-      status === 'busy' &&
-      errorText === undefined &&
-      (showReasoning ? partRowCount === 0 : true)
-    ) {
+    // `partRowCount === 0` unconditionally — `thinking` is the PRE-first-token
+    // placeholder. The condition used to be `showReasoning ? partRowCount === 0
+    // : true`, so with the DEFAULT `showReasoning: false` the placeholder
+    // rendered BELOW parts that had already streamed. A hidden reasoning part
+    // produces no part row, so the reasoning-heavy case this was reaching for
+    // is already covered by the count itself.
+    if (isActive && status === 'busy' && errorText === undefined && partRowCount === 0) {
       rows.push({ kind: 'thinking', key: uniqueKey(`thinking:${userMessageID}`), userMessageID });
     }
 
@@ -511,6 +589,28 @@ export function constructTimelineRows<M extends TimelineMessageLike>(
 
 function samePartRef(a: TimelinePartRef, b: TimelinePartRef): boolean {
   return a.messageID === b.messageID && a.partID === b.partID;
+}
+
+/**
+ * Did this ref's `partID` come from `defaultGetPartId`'s POSITIONAL fallback?
+ *
+ * A positional id encodes a slot (`<messageID>:#<index>`), not a part, so two
+ * refs can be byte-identical and still name different parts across a prepend —
+ * exactly the case where reusing the previous row object pins a memoized
+ * subtree to content that has moved. No wire part id can collide with this
+ * shape: every real id is a `prt_…`-style token with no `:#` in it. A custom
+ * `options.getPartId` that mints this shape is treated the same way, which is
+ * the conservative direction.
+ */
+function isPositionalPartRef(ref: TimelinePartRef): boolean {
+  return ref.partID.startsWith(`${ref.messageID}:#`);
+}
+
+/** Does any ref in this group carry a positional-fallback id? */
+function hasPositionalPartRef(group: TimelinePartGroup): boolean {
+  return group.type === 'part'
+    ? isPositionalPartRef(group.ref)
+    : group.refs.some(isPositionalPartRef);
 }
 
 function samePartGroup(a: TimelinePartGroup, b: TimelinePartGroup): boolean {
@@ -556,6 +656,11 @@ function sameDiffStats(
  * ninth row kind without adding its comparison is a COMPILE error, not a
  * silently stale row. It cannot force a comparison for a new FIELD on an
  * existing kind — which is the other half of why rows stay content-free.
+ *
+ * ONE deliberate asymmetry: an `assistant-part` row built on POSITIONAL part
+ * ids is never equal to another row, even to a byte-identical one. A
+ * positional id names a slot, so identical scalars do not prove identical
+ * content. See `isPositionalPartRef`.
  */
 function timelineRowsEqual(a: TimelineRow, b: TimelineRow): boolean {
   if (a === b) return true;
@@ -577,9 +682,13 @@ function timelineRowsEqual(a: TimelineRow, b: TimelineRow): boolean {
       return sameDiffStats(a.diffs, (b as TimelineDiffSummaryRow).diffs);
     case 'assistant-part': {
       const other = b as TimelineAssistantPartRow;
-      return (
-        a.previousAssistantPart === other.previousAssistantPart && samePartGroup(a.group, other.group)
-      );
+      if (a.previousAssistantPart !== other.previousAssistantPart) return false;
+      if (!samePartGroup(a.group, other.group)) return false;
+      // Equal-LOOKING is not equal when the ids are positional: `msg:#0` after
+      // a prepend refs a different part under the same key. Reuse would hand
+      // back the previous object — the stale direction — so refuse. Rows with
+      // real wire ids are unaffected, which is every non-fixture caller.
+      return !hasPositionalPartRef(a.group);
     }
     default: {
       const _never: never = a;
@@ -606,8 +715,12 @@ function isContextRow(row: TimelineRow): row is TimelineAssistantPartRow & {
  * it the measured height, the expand state and the mounted component. Ported
  * from OpenCode's `stabilizeContextKey`.
  *
- * Skipped entirely when no prior row is a context group, which is every caller
- * that does not pass `options.groupPart`.
+ * Returns `next` ITSELF — no map, no per-row allocation — as soon as the `prev`
+ * scan finds no context group, which is every caller that does not pass
+ * `options.groupPart`. The scan over `prev` always runs: whether a prior row is
+ * a context group is not knowable without looking. It also returns `next`
+ * itself when context groups exist but no key needs rewriting, so the common
+ * steady-state frame allocates nothing here either.
  */
 function stabilizeContextKeys(prev: readonly TimelineRow[], next: TimelineRow[]): TimelineRow[] {
   // Keyed by `userMessageID`, never by `messageID`, so one turn's context
@@ -635,28 +748,42 @@ function stabilizeContextKeys(prev: readonly TimelineRow[], next: TimelineRow[])
   }
 
   const claimed = new Set<string>();
-  return next.map((row, i) => {
-    if (!isContextRow(row)) return row;
+  // Written lazily: `out` is allocated on the FIRST row whose key is actually
+  // rewritten, so a frame that renames nothing returns `next` itself.
+  let out: TimelineRow[] | undefined;
+  for (let i = 0; i < next.length; i++) {
+    const row = next[i];
+    let replacement: TimelineRow = row;
 
-    let best: { index: number; row: TimelineAssistantPartRow } | undefined;
-    for (const ref of row.group.refs) {
-      const candidate = contextByPart.get(`${row.userMessageID}:${ref.partID}`);
-      if (!candidate) continue;
-      if (claimed.has(candidate.row.key)) continue;
-      const naturalOwner = reserved.get(candidate.row.key);
-      if (naturalOwner !== undefined && naturalOwner !== i) continue;
-      if (!best || candidate.index < best.index) best = candidate;
+    if (isContextRow(row)) {
+      let best: { index: number; row: TimelineAssistantPartRow } | undefined;
+      for (const ref of row.group.refs) {
+        const candidate = contextByPart.get(`${row.userMessageID}:${ref.partID}`);
+        if (!candidate) continue;
+        if (claimed.has(candidate.row.key)) continue;
+        const naturalOwner = reserved.get(candidate.row.key);
+        if (naturalOwner !== undefined && naturalOwner !== i) continue;
+        if (!best || candidate.index < best.index) best = candidate;
+      }
+      if (best) {
+        claimed.add(best.row.key);
+        if (best.row.key !== row.key) {
+          replacement = {
+            ...row,
+            key: best.row.key,
+            group: { ...row.group, key: best.row.group.key },
+          };
+        }
+      }
     }
-    if (!best) return row;
 
-    claimed.add(best.row.key);
-    if (best.row.key === row.key) return row; // zero allocation
-    return {
-      ...row,
-      key: best.row.key,
-      group: { ...row.group, key: best.row.group.key },
-    };
-  });
+    if (out === undefined) {
+      if (replacement === row) continue;
+      out = next.slice(0, i);
+    }
+    out.push(replacement);
+  }
+  return out ?? next;
 }
 
 // ============================================================================
@@ -672,10 +799,18 @@ function stabilizeContextKeys(prev: readonly TimelineRow[], next: TimelineRow[])
  * skipped) and the ARRAY identity (so the caller's `useMemo` on `rows` does not
  * fire at all).
  *
+ * Allocates at most ONE array — the output — and only when a row is actually
+ * swapped or a context key actually rewritten. A frame that changes nothing
+ * allocates nothing beyond the `prev` key index.
+ *
  * Idempotent — `reuseTimelineRows(reuseTimelineRows(p, n), n)` yields the same
  * objects — so it is safe to call during render, including under React
  * StrictMode's double render. Same precedent as
  * `apps/web/src/features/session/turn/stable-turns.ts`.
+ *
+ * One row kind opts OUT of reuse: an `assistant-part` row whose part ids came
+ * from the positional fallback (`isPositionalPartRef`). Its key cannot prove
+ * its content, so it is re-taken every frame.
  */
 export function reuseTimelineRows(
   prev: TimelineRow[] | undefined,
@@ -695,17 +830,26 @@ export function reuseTimelineRows(
   // PHASE 2 — context-group key stabilization.
   const stabilized = stabilizeContextKeys(prev, next);
 
-  // PHASE 3 — per-row identity swap. Three outcomes, no fourth.
-  const out = stabilized.map((row) => {
+  // PHASE 3 — per-row identity swap. Three outcomes, no fourth. Allocated
+  // lazily, same as phase 2: a frame on which no row resolves to a different
+  // object than `stabilized` already holds allocates no array at all.
+  let out: TimelineRow[] | undefined;
+  for (let i = 0; i < stabilized.length; i++) {
+    const row = stabilized[i];
     const existing = byKey.get(row.key);
-    if (!existing) return row;
-    return timelineRowsEqual(existing, row) ? existing : row;
-  });
+    const resolved = existing !== undefined && timelineRowsEqual(existing, row) ? existing : row;
+    if (out === undefined) {
+      if (resolved === row) continue;
+      out = stabilized.slice(0, i);
+    }
+    out.push(resolved);
+  }
+  const resolved = out ?? stabilized;
 
-  // PHASE 4 — array collapse. Reference compare against `out`, NOT `next`:
-  // phase 3 already normalized to the prior objects wherever possible, and
-  // comparing `next` here would still return correct DATA while never
+  // PHASE 4 — array collapse. Reference compare against the RESOLVED rows, NOT
+  // `next`: phase 3 already normalized to the prior objects wherever possible,
+  // and comparing `next` here would still return correct DATA while never
   // returning `prev` — silently delivering none of the benefit.
-  if (prev.length === out.length && prev.every((row, i) => row === out[i])) return prev;
-  return out;
+  if (prev.length === resolved.length && prev.every((row, i) => row === resolved[i])) return prev;
+  return resolved;
 }
