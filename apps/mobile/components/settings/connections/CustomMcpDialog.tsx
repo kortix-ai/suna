@@ -3,6 +3,7 @@ import { View, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-nat
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ArrowLeft, Globe, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
@@ -203,29 +204,32 @@ export function CustomMcpContent({
 
           <View className={noPadding ? 'pb-6' : 'pb-6'}>
             <View className="space-y-6">
-              <Input
-                label={t('connections.customMcp.serverUrl')}
-                value={url}
-                onChangeText={(text) => {
-                  setUrl(text);
-                  if (validationError) setValidationError(null);
-                }}
-                placeholder={t('connections.customMcp.serverUrlPlaceholder')}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-              />
+              <View className="space-y-2">
+                <Label>{t('connections.customMcp.serverUrl')}</Label>
+                <Input
+                  value={url}
+                  onChangeText={(text) => {
+                    setUrl(text);
+                    if (validationError) setValidationError(null);
+                  }}
+                  placeholder={t('connections.customMcp.serverUrlPlaceholder')}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                />
+              </View>
 
-              <Input
-                label={t('connections.customMcp.serverName')}
-                value={manualServerName}
-                onChangeText={(text) => {
-                  setManualServerName(text);
-                  if (validationError) setValidationError(null);
-                }}
-                placeholder={t('connections.customMcp.serverNamePlaceholder')}
-                containerClassName="mt-4 mb-6"
-              />
+              <View className="space-y-2">
+                <Label>{t('connections.customMcp.serverName')}</Label>
+                <Input
+                  value={manualServerName}
+                  onChangeText={(text) => {
+                    setManualServerName(text);
+                    if (validationError) setValidationError(null);
+                  }}
+                  placeholder={t('connections.customMcp.serverNamePlaceholder')}
+                />
+              </View>
 
               {validationError && (
                 <View className="mb-6 mt-3">
@@ -425,28 +429,32 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
                 </View>
 
                 <View className="space-y-6">
-                  <Input
-                    label={t('connections.customMcp.serverUrl')}
-                    value={url}
-                    onChangeText={(text) => {
-                      setUrl(text);
-                      setValidationError(null);
-                    }}
-                    placeholder={t('connections.customMcp.serverUrlPlaceholder')}
-                    keyboardType="url"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
+                  <View className="space-y-2">
+                    <Label>{t('connections.customMcp.serverUrl')}</Label>
+                    <Input
+                      value={url}
+                      onChangeText={(text) => {
+                        setUrl(text);
+                        setValidationError(null);
+                      }}
+                      placeholder={t('connections.customMcp.serverUrlPlaceholder')}
+                      keyboardType="url"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </View>
 
-                  <Input
-                    label={t('connections.customMcp.serverName')}
-                    value={manualServerName}
-                    onChangeText={(text) => {
-                      setManualServerName(text);
-                      setValidationError(null);
-                    }}
-                    placeholder={t('connections.customMcp.serverNamePlaceholder')}
-                  />
+                  <View className="space-y-2">
+                    <Label>{t('connections.customMcp.serverName')}</Label>
+                    <Input
+                      value={manualServerName}
+                      onChangeText={(text) => {
+                        setManualServerName(text);
+                        setValidationError(null);
+                      }}
+                      placeholder={t('connections.customMcp.serverNamePlaceholder')}
+                    />
+                  </View>
 
                   {validationError && (
                     <View className="mt-3">

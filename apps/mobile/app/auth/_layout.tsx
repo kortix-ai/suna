@@ -7,10 +7,10 @@ import { log } from '@/lib/logger';
 
 /**
  * Auth Layout
- * 
+ *
  * Stack navigation for authentication screens.
  * CRITICAL: Authenticated users should NEVER see auth screens.
- * This layout immediately redirects authenticated users to /home.
+ * This layout immediately redirects authenticated users to /projects.
  */
 export default function AuthLayout() {
   const { colorScheme } = useColorScheme();

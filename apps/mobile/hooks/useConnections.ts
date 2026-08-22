@@ -217,13 +217,11 @@ async function fetchSandboxes(connectionId: string): Promise<ConnectionSandboxes
 async function linkSandbox({ connectionId, sandboxId }: { connectionId: string; sandboxId: string }): Promise<void> {
   const session = await getSession();
   const url = `${API_URL}/pipedream/connections/${connectionId}/link`;
-  console.log('[linkSandbox] POST', url, { sandbox_id: sandboxId });
   const res = await fetch(url, {
     method: 'POST',
     headers: authHeaders(session.access_token),
     body: JSON.stringify({ sandbox_id: sandboxId }),
   });
-  console.log('[linkSandbox] Response:', res.status, res.statusText);
   if (!res.ok) {
     const text = await res.text();
     console.error('[linkSandbox] Error body:', text);

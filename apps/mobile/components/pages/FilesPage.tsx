@@ -366,7 +366,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     [],
   );
 
-  // File context actions (exposed via ref for BottomBar menu)
+  // File context actions (exposed via ref for menu)
   const handleOpenSelectedFile = useCallback(() => {
     if (!selectedFile) return;
     if (selectedFile.type === 'directory') {
@@ -585,7 +585,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     }
   }, [sandboxUrl, writeFileMutation, currentPath, newFileName, fileNameExists]);
 
-  // Expose actions to parent via ref (for BottomBar menu)
+  // Expose actions to parent via ref (for menu)
   useImperativeHandle(ref, () => ({
     showHidden,
     viewMode,

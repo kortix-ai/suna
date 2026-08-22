@@ -89,7 +89,7 @@ export default function SettingsLayout() {
         if (router.canGoBack()) {
           router.back();
         } else {
-          router.replace('/home');
+          router.replace('/projects');
         }
         return true;
       });
@@ -168,13 +168,6 @@ export default function SettingsLayout() {
         name="notifications"
         options={{
           header: () => <SubpageHeader title={t('notifications.title', 'Notifications')} />,
-          headerShown: true,
-        }}
-      />
-      <Stack.Screen
-        name="billing"
-        options={{
-          header: () => <SubpageHeader title="Billing" />,
           headerShown: true,
         }}
       />
