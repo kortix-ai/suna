@@ -22,6 +22,9 @@
  * authentication and IAM; they run on the ordinary Hono path, and the websocket
  * upgrade receives their verdict through a signed ticket rather than redoing
  * them.
+ *
+ * Note: the `KORTIX_RELAY_WS_ENABLED` kill switch was removed from config.ts
+ * (never read). Whoever lands the websocket leg (3)+(4) re-adds a kill switch.
  */
 import { createHash } from 'node:crypto';
 import {
