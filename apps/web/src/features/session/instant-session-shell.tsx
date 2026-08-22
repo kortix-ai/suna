@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 
 import { errorToast } from '@/components/ui/toast';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
@@ -225,6 +226,10 @@ export function InstantSessionShell({
     [handleSend],
   );
 
+  // Keyed by the session this shell is booting, so a reload mid-boot finds the
+  // same draft the real composer will pick up once it crossfades in.
+  const draftScope = useMemo<DraftScope>(() => ({ kind: 'session', sessionId }), [sessionId]);
+
   // Defined once and slotted into either the hero position (pre-submit, inside
   // the welcome body) or the regular bottom position (post-submit thread view).
   const composerEl = (
@@ -233,6 +238,7 @@ export function InstantSessionShell({
       onCommand={handleCommand}
       sessionId={sessionId}
       projectId={projectId}
+      draftScope={draftScope}
       prefill={prefill}
       boundAgentName={boundAgentName}
       // While the computer boots after the first send the input stays fully
