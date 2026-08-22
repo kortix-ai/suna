@@ -1350,3 +1350,79 @@ describe('a turn ending reconciles the transcript tail', () => {
     expect(calls).toEqual([]);
   });
 });
+
+// ── the transcript is reconciled when the stream RECONNECTS ─────────────────
+// The OpenCode desktop app re-bootstraps every active directory on each
+// `server.connected` frame (packages/app/src/context/server-sync.tsx: the
+// event pushes every active directory onto the sync queue, guarded only by a
+// 1.5s "just booted" window). Ours re-read busy sessions after a > 5s gap and
+// nothing else. A turn that ENDS inside a short disconnect leaves the session
+// idle by the time the stream is back — the gap path skips it, the turn-end
+// path never saw the transition, and the tail stays short until a remount.
+describe('a reconnect (server.connected) reconciles every loaded session', () => {
+  const connected = (n: number) =>
+    ({ id: `evt_conn_${n}`, type: 'server.connected', properties: {} }) as never;
+  const load = (sessionID: string) =>
+    useSyncStore
+      .getState()
+      .hydrate(sessionID, [
+        {
+          info: {
+            id: `msg_${sessionID}`,
+            sessionID,
+            role: 'user',
+            time: { created: 1 },
+            agent: 'build',
+            model: { providerID: 'kortix', modelID: 'm' },
+          } as never,
+          parts: [],
+        },
+      ]);
+
+  test('the FIRST server.connected is the initial connect — nothing to reconcile', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    load('ses_rc1');
+    handleEvent(connected(1));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([]);
+  });
+
+  test('a LATER server.connected re-reads every loaded session, busy or idle', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    load('ses_rc2_idle');
+    load('ses_rc2_busy');
+    useSyncStore.getState().setStatus('ses_rc2_idle', { type: 'idle' });
+    useSyncStore.getState().setStatus('ses_rc2_busy', { type: 'busy' });
+    handleEvent(connected(1));
+    handleEvent(connected(2));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls.sort()).toEqual([
+      ['ses_rc2_busy', 'reconnect'],
+      ['ses_rc2_idle', 'reconnect'],
+    ]);
+  });
+
+  test('a session that was never loaded is not fetched on reconnect', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    useSyncStore.getState().setStatus('ses_rc3_status_only', { type: 'busy' });
+    handleEvent(connected(1));
+    handleEvent(connected(2));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([]);
+  });
+});

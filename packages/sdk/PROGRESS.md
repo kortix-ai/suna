@@ -12116,3 +12116,27 @@ assistant-turn-open 10 pass / 0 fail; `tsc --noEmit` 15 lines, all the known
 on both touched web files.
 
 **Shippable to production: YES.**
+
+### 2026-08-22 — `server.connected` reconnect resync (branch `feat/sse-reconnect-resync`, stacks on `timeline-parity`)
+Parity gap vs the OpenCode desktop app: `packages/app/src/context/server-sync.tsx`
+re-bootstraps every active directory on each `server.connected`; ours only
+re-read BUSY sessions after a `> 5s` gap. A turn that ended inside the
+disconnect is idle by reconnect time → never reconciled → short transcript
+until remount.
+
+Change: `handle-event.ts` `case 'server.connected'` — first frame per handler
+is the initial connect (skipped; mount `hydrateCore()` covers it); every later
+one reconciles every session in `useSyncStore.messages` with the new reason
+`'reconnect'` (additive member of `SessionSyncReason`).
+
+TDD: test written first, run RED for the right reason (`Expected
+[[busy,'reconnect'],[idle,'reconnect']], Received []`), then GREEN 58/58 in
+`handle-event.test.ts`.
+
+**Evidence** — `pnpm -s typecheck` clean; `bun test --isolate src` → 2510 tests,
+0 fail, 162 files (baseline on `timeline-parity`: 2505/0); smoke:install in the
+commit body.
+
+**Shippable to production: YES** (SDK-only, additive, behind an event the
+runtime already emits on every connection).
+

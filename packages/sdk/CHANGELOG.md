@@ -6,6 +6,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `SessionSyncReason` gains `'reconnect'`: on every `server.connected` frame
+  after the initial connect, the event handler re-reads the tail of EVERY
+  loaded session (busy or idle) — the OpenCode desktop app's re-bootstrap on
+  reconnect. Closes the "turn ended inside a short disconnect, transcript
+  short until hard refresh" hole the `> 5s`/busy-only gap path and the
+  turn-end path both miss.
 - Typed unified session-cost reads through
   `billing.sessionCosts.{list,get}` and `session(pid,sid).cost()`. The response
   combines finalized LLM and compute costs, model usage, and ledger entries.

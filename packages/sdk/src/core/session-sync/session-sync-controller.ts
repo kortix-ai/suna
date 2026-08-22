@@ -59,6 +59,12 @@ export type SessionSyncReason =
   // short — cured only by a remount. Turn end is the one moment the tail is
   // both final and cheap to verify, so it is reconciled there.
   | 'turn-end'
+  // The event stream reconnected. Every loaded session is re-read, busy or
+  // idle — a turn that ended INSIDE the disconnect left the session idle by
+  // the time the stream was back, so neither the gap path (busy-only) nor
+  // the turn-end path (never saw the transition) would reconcile it. This is
+  // the OpenCode desktop app's `server.connected` → re-bootstrap behaviour.
+  | 'reconnect'
   | 'compaction'
   | 'session-error'
   | 'send-recovery'
