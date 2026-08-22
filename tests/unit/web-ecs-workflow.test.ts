@@ -190,9 +190,18 @@ describe('web ECS migration', () => {
   it('deploys the prod Vercel frontend only after the API serves the release', () => {
     const workflow = read('.github/workflows/deploy-prod.yml');
     expect(workflow).toContain('deploy-web-vercel:');
-    expect(workflow).toMatch(/deploy-web-vercel:\s*\n\s*name:[^\n]*\n\s*needs: \[version, verify-live-version\]/);
+    expect(workflow).toMatch(
+      /deploy-web-vercel:\s*\n\s*name:[^\n]*\n\s*needs: \[version, verify-live-version\]/,
+    );
     expect(workflow).toContain('prj_SoUUSNJPvOTDneE0E7faWHFuWMAY');
-    expect(workflow).toMatch(/frontend-auth-proof:\s*\n\s*name:[^\n]*\n\s*needs: \[[^\]]*deploy-web-vercel\]/);
+    expect(workflow).toContain(
+      '--env "KORTIX_PUBLIC_VERSION=${{ needs.version.outputs.version }}"',
+    );
+    expect(workflow).not.toContain('env add NEXT_PUBLIC_KORTIX_VERSION production');
+    expect(workflow).not.toContain('env rm NEXT_PUBLIC_KORTIX_VERSION production');
+    expect(workflow).toMatch(
+      /frontend-auth-proof:\s*\n\s*name:[^\n]*\n\s*needs: \[[^\]]*deploy-web-vercel\]/,
+    );
   });
 
   it('carries both Basic auth credentials and the Vercel SSO bypass in QA', () => {
