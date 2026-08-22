@@ -91,6 +91,11 @@ export function createEventHandler(deps: {
       if (result.data) useSyncStore.getState().hydrate(sessionID, result.data);
     });
 
+  // `server.connected` is the first frame of EVERY stream connection. The
+  // first one this handler sees is the initial connect — `hydrateCore()` ran
+  // at mount and covers it. Each later one is a reconnect.
+  let serverConnects = 0;
+
   // Helper: look up a session title from the React Query cache for notifications
   function getSessionTitle(sessionID: string): string | undefined {
     const sessions = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
@@ -547,6 +552,23 @@ export function createEventHandler(deps: {
       }
 
       // ---- Server disposed ----
+      // ---- Stream reconnect — re-read every loaded transcript ----
+      // The desktop app (packages/app/src/context/server-sync.tsx) pushes every
+      // active directory onto its sync queue on each `server.connected`. The
+      // > 5s gap path below only re-reads BUSY sessions: a turn that ended
+      // during the disconnect is idle by now, its turn-end transition was
+      // never delivered, and the tail stays short until a remount. So on a
+      // reconnect, every session with messages loaded is reconciled, busy or
+      // idle — one bounded tail read each, deduped in-flight by its controller.
+      case 'server.connected': {
+        serverConnects += 1;
+        if (serverConnects === 1) break;
+        for (const sid of Object.keys(useSyncStore.getState().messages)) {
+          void reconcileTail(sid, 'reconnect');
+        }
+        break;
+      }
+
       case 'server.instance.disposed': {
         for (const [sessionID, status] of Object.entries(useSyncStore.getState().sessionStatus)) {
           if (status?.type !== 'idle') {
