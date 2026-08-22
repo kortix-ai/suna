@@ -27,6 +27,7 @@ import {
   workspaceModeFromSessionMetadata,
 } from './session-sandbox-metadata';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
+import { sandboxBelongsToThisInstance } from '../instance-scope';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
@@ -804,15 +805,20 @@ async function runProjectSecretPropagation(
     results: [],
   };
   try {
-    const rows = await db
+    const allRows = await db
       .select({
         externalId: sessionSandboxes.externalId,
         sessionId: sessionSandboxes.sessionId,
         provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
+        metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
       .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
+    // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): a box another
+    // API instance provisioned must not receive THIS instance's env (its
+    // `KORTIX_URL`-derived gateway URL). No-op when KORTIX_INSTANCE_ID is unset.
+    const rows = allRows.filter((r) => sandboxBelongsToThisInstance(r.metadata));
 
     report.active_sandboxes = rows.length;
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);

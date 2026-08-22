@@ -1782,16 +1782,40 @@ In local development, run one stack against the shared DB, or create the
 worktree with `--db`. When an OpenCode error names a host, grep EVERY stack
 log on the machine for that host before suspecting the branch.
 
-**The enforcement.** `pnpm worktree start` (`scripts/worktree/cli.ts`,
-`warnOnSharedDbCrosstalk`) now warns at start when another stack — a worktree
-in `shared` DB mode or the primary `pnpm dev` on `:8008` — is live on the
-same database, names it, and states the remedy. The product fix (persist the
-provisioning API origin on `session_sandboxes` and make env sync / delivery
-use it, or scope workers by instance) is an open follow-up.
+**Second incident, same night (~23:00 UTC).** Same worktree, same symptom,
+different culprit: the PRIMARY `pnpm dev` stack on `:8008`. Its quick tunnel
+(`patches-….trycloudflare.com`) had died; its 1 s lifecycle drain tick still
+claimed the worktree's queued prompt, its env sync pushed the dead
+`patches…/v1/llm-gateway` URL into the worktree's sandbox, and OpenCode failed
+the turn with `Cannot connect to API`. The worktree's log again showed no env
+sync and no prompt POST. Two instances in one evening proves this is the
+default failure mode of a shared DB, not a one-off.
 
-*Incident:* session `b090016e…` on worktree `timeline-parity`, first prompt
-`APIError` to a dead tunnel; prompts 2–3 succeeded after the owning instance's
-env sync rewrote the URL.
+**The enforcement.** Two layers, both shipped:
+1. `pnpm worktree start` (`scripts/worktree/cli.ts`, `warnOnSharedDbCrosstalk`)
+   warns at start when another stack is live on the same database, names it,
+   and states the remedy.
+2. **Instance scoping is the product fix.** `KORTIX_INSTANCE_ID`
+   (`apps/api/src/config.ts`, optional, unset in every deployed env) is set by
+   the launchers only: `scripts/dev-local.sh` exports `primary`,
+   `scripts/worktree/lib/launch-env.ts` exports the worktree name.
+   `provisionSessionSandbox` stamps `session_sandboxes.metadata.instanceId`;
+   `sandboxBelongsToThisInstance()` (`apps/api/src/projects/instance-scope.ts`)
+   is consulted by the lifecycle drain (`drainSessionLifecycleQueue` RELEASES a
+   claimed command whose sandbox another instance owns — `queued`, due in 2 s,
+   attempt given back, never dead-lettered), by the env-sync project fan-out
+   (`propagateProjectSecretsToActiveSandboxes` skips foreign boxes), by the box
+   reaper (`reapAndReconcileSandboxes` skips them) and by Platinum's
+   `listManagedRunningSandboxes` (`kortix.instance` marker beside `kortix.env`).
+   Unset id, or a row with no stamp (legacy), means "mine" — a strict no-op in
+   production and never a stranded sandbox. HTTP-path work (proxy, `/start`,
+   `prompt_async`) is deliberately unscoped: the browser talks to one stack on
+   purpose.
+
+*Incidents:* session `b090016e…` on worktree `timeline-parity` (20:16 UTC,
+`mw-perf`'s dead `subdivision-marine-acne-shorter` tunnel) and the same
+worktree at ~23:00 UTC (primary `pnpm dev`'s dead `patches…` tunnel); in both,
+prompts after the owning instance's own env sync succeeded.
 
 ## Every stack launcher needs the tunnel watchdog, not only `pnpm dev`
 

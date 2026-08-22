@@ -568,7 +568,7 @@ async function cmdStart(a: Args) {
   // The API's KORTIX_URL is baked at spawn, so a tunnel rotation has to
   // respawn it — keep the spawn in a function and the handle mutable.
   const spawnApi = (kortixUrl: string | undefined) =>
-    Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl, stripeWebhookSecret: stripe?.secret, billing }) }, stdout: 'inherit', stderr: 'inherit' });
+    Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl, stripeWebhookSecret: stripe?.secret, billing, instanceId: name }) }, stdout: 'inherit', stderr: 'inherit' });
   let api = spawnApi(tunnel?.url);
   let apiRestarting = false;
   const gateway = Bun.spawn(['pnpm', '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });

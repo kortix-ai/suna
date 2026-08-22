@@ -190,12 +190,14 @@ const visitStamps = () => updateCalls.filter(isVisitStamp);
 // `mock.module` is process-global in bun, so a factory returning only `{ config }`
 // strips every other named export (e.g. SANDBOX_VERSION) for every sibling suite
 // in the same process — which is what made this whole directory unrunnable.
-mock.module('../config', () =>
-  mockConfigModule({
-    KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
-    ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
-  }),
-);
+// Hoisted so a test can flip `KORTIX_INSTANCE_ID` at call time (the
+// instance-scope helper reads config per call, never at import).
+const reaperConfigModule = mockConfigModule({
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
+  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
+});
+const reaperConfig = reaperConfigModule.config as Record<string, unknown>;
+mock.module('../config', () => reaperConfigModule);
 
 mock.module('../shared/db', () => ({
   db: {
@@ -756,6 +758,69 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(
       updateCalls.some((c) => c.table === projectSessions && c.updates.status === 'stopped'),
     ).toBe(true);
+  });
+
+  test('INSTANCE SCOPE: a box stamped by ANOTHER API instance is never probed or stopped here', async () => {
+    // Shared local DB (projects/instance-scope.ts): instance A must never stop
+    // instance B's boxes, however expired they look from here.
+    reaperConfig.KORTIX_INSTANCE_ID = 'wt-a';
+    try {
+      candidates = [
+        candidate({
+          deadlineAt: new Date(NOW.getTime() - 1),
+          metadata: { instanceId: 'primary' },
+        }),
+      ];
+      statusByExternal['ext-1'] = 'running';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(statusCalls).toEqual([]);
+      expect(stops).toEqual([]);
+      expect(r.stopped).toBe(0);
+      expect(
+        updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+      ).toBe(false);
+    } finally {
+      delete reaperConfig.KORTIX_INSTANCE_ID;
+    }
+  });
+
+  test('INSTANCE SCOPE: own-stamped and legacy (unstamped) boxes are reaped as before', async () => {
+    reaperConfig.KORTIX_INSTANCE_ID = 'wt-a';
+    try {
+      candidates = [
+        candidate({ deadlineAt: new Date(NOW.getTime() - 1), metadata: { instanceId: 'wt-a' } }),
+        candidate({
+          sandboxId: 'sb-2',
+          sessionId: 'sess-2',
+          externalId: 'ext-2',
+          deadlineAt: new Date(NOW.getTime() - 1),
+          metadata: null,
+        }),
+      ];
+      statusByExternal['ext-1'] = 'running';
+      statusByExternal['ext-2'] = 'running';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(stops.sort()).toEqual(['ext-1', 'ext-2']);
+      expect(r.stopped).toBe(2);
+    } finally {
+      delete reaperConfig.KORTIX_INSTANCE_ID;
+    }
+  });
+
+  test('INSTANCE SCOPE off (unset): a foreign-looking stamp changes nothing', async () => {
+    candidates = [
+      candidate({ deadlineAt: new Date(NOW.getTime() - 1), metadata: { instanceId: 'primary' } }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(stops).toEqual(['ext-1']);
+    expect(r.stopped).toBe(1);
   });
 
   test('a box with an observed turn SURVIVES — its deadline is still ahead', async () => {

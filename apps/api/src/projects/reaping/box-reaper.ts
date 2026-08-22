@@ -37,6 +37,7 @@ import { markComputeSessionAlive } from '../../billing/services/compute-metering
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { REAP_CONCURRENCY } from '../reaper-constants';
+import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
 import { turnDeliveryGraceMs, turnGrantMs } from '../sandbox-deadline-policy';
@@ -223,6 +224,11 @@ export async function reapAndReconcileSandboxes(
   const worker = async () => {
     while (cursor < rows.length) {
       const row = rows[cursor++];
+      // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): instance A
+      // never probes or stops a box instance B provisioned. Sits beside the
+      // provider-level `kortix.env` filter in listManagedRunningSandboxes.
+      // No-op when KORTIX_INSTANCE_ID is unset.
+      if (!sandboxBelongsToThisInstance(row.metadata)) continue;
       try {
         const provider = getProvider(row.provider);
         const providerStatus: SandboxStatus = await provider.getStatus(row.externalId);
