@@ -238,6 +238,29 @@ override (map `cr.*`→`gitops.*` dedup-aware, purge uncataloged, then VALIDATE)
 *Enforcer:* `migration-runtime-overrides.test.ts` pins the override; nothing
 yet lints "VALIDATE without reconciliation" — prose only.
 
+||||||| parent of 4e96394ae2 (docs(learnings): a failed migration gate skips the API deploy while the frontend still ships)
+
+### A failed migration gate skips the API deploy while the frontend still ships (2026-08-19)
+
+**When:** verifying that a merge reached dev/staging/prod. In `deploy-dev.yml`
+the API rollout is gated on `Apply DB migrations`, but `Deploy frontend` is
+NOT — so a migration failure yields a HALF-deployed environment: new web
+bundle, old API image, and a workflow that is merely red rather than loud.
+A `/health` 200 proves nothing, and checking only the API SHA hides the
+inverse case. Verify BOTH surfaces against the merge commit —
+`dev-api.kortix.com/v1/health` and `dev.kortix.com/api/health` — with
+`git merge-base --is-ancestor <merge-sha> <deployed-sha>`, never by eyeballing
+a version string. Also read the JOB list, not the run conclusion: `Deploy API
+to dev (ECS Fargate): skipped` beside a green `Build API image` is the tell.
+*Incident:* 2026-08-19 — #6594's `rbac_cutover_views` failed its `VALIDATE
+CONSTRAINT` on dev (runs 32278453790, 32281594823), skipping the API deploy
+twice while the frontend shipped; dev ran a split API/web pair ~40 min and
+every merge in that window was stranded. Half-applied is the nastier half: the
+preceding `.concurrent` backfill COMMITS and is ledger-recorded, so retries
+re-run only the failing file and wedge in that state.
+*Enforcer:* none — the two-surface ancestry check is prose. Build it into the
+deploy workflow's own verify step.
+
 ### `drizzle-kit generate` reports a TTY prompt as "no schema changes" (2026-08-19)
 
 **When:** running `bun packages/db/scripts/generate.ts <slug>` from any
