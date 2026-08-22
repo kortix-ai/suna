@@ -348,6 +348,14 @@ export function createEventHandler(deps: {
               queryKey: fileListKeys.all,
               type: 'active',
             });
+            // AND the transcript itself. Files and diffs were refreshed here
+            // for years while the messages were not, on the assumption that
+            // every message event arrives. They do not: the stream can stay
+            // CONNECTED and still drop one, so `onGapRehydrate` (> 5s gap)
+            // never fires and nothing reconciles. The tail then stays short
+            // until the page is remounted — the "hard refresh fixes it" bug.
+            // Turn end is exactly when the tail is final, so verify it once.
+            void reconcileTail(sessionID, 'turn-end');
           }
         }
         break;
@@ -374,6 +382,14 @@ export function createEventHandler(deps: {
               queryKey: fileListKeys.all,
               type: 'active',
             });
+            // AND the transcript itself. Files and diffs were refreshed here
+            // for years while the messages were not, on the assumption that
+            // every message event arrives. They do not: the stream can stay
+            // CONNECTED and still drop one, so `onGapRehydrate` (> 5s gap)
+            // never fires and nothing reconciles. The tail then stays short
+            // until the page is remounted — the "hard refresh fixes it" bug.
+            // Turn end is exactly when the tail is final, so verify it once.
+            void reconcileTail(sessionID, 'turn-end');
           }
         }
         break;
