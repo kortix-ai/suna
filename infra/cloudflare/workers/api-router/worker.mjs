@@ -42,6 +42,7 @@ const AUTOMATIC_MAINTENANCE = {
 // the real origin response instead. Compared against the CI_PASSTHROUGH_SECRET
 // binding; absent or wrong, the request is treated as ordinary public traffic.
 const CI_PASSTHROUGH_HEADER = 'X-Kortix-CI-Passthrough';
+const WEBHOOK_RELAY_USER_AGENT = 'Kortix-Webhook-Relay/1.0';
 
 // Constant-time over the compared bytes. The length is not secret (a mismatched
 // length returns false immediately), the contents are.
@@ -77,6 +78,16 @@ function isReadOnlyRequest(request) {
     request.method === 'GET' ||
     request.method === 'HEAD' ||
     request.method === 'OPTIONS'
+  );
+}
+
+function isWebhookIngressRequest(request, url) {
+  if (request.method !== 'POST') return false;
+  return (
+    url.pathname.startsWith('/v1/webhooks/') ||
+    url.pathname.startsWith('/v1/billing/webhook/') ||
+    url.pathname.startsWith('/v1/billing/webhooks/') ||
+    url.pathname === '/v1/connectors/webhook/pipedream'
   );
 }
 
@@ -300,9 +311,21 @@ export default {
     // `302 → kortix.com/projects/...` got followed here, kortix.com bounced to
     // /auth, and the worker returned that /auth HTML as a 200, so the browser
     // never saw the redirect (blank page, URL stuck on the callback).
+    const originHeaders = new Headers(request.headers);
+    // AWSManagedRulesCommonRuleSet rejects a missing User-Agent before the API
+    // can verify the webhook signature. External webhook providers are not
+    // required to send this informational header. Supply a relay identity only
+    // on public POST webhook routes and only when the sender omitted the header.
+    if (
+      !isGateway &&
+      isWebhookIngressRequest(request, url) &&
+      !originHeaders.has('User-Agent')
+    ) {
+      originHeaders.set('User-Agent', WEBHOOK_RELAY_USER_AGENT);
+    }
     const modifiedRequest = new Request(targetUrl, {
       method: request.method,
-      headers: request.headers,
+      headers: originHeaders,
       body: request.body,
       redirect: 'manual',
     });
