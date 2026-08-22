@@ -1104,15 +1104,23 @@ flow(
       if (typeof (row.metadata ?? {}).last_activity_at !== 'string') {
         throw new Error('Adoption did not stamp last_activity_at — the session sorts at create time');
       }
-      // Adoption also bumps updated_at (the API list's ORDER BY), so
-      // API-order consumers — CLI `sessions list`, mobile, external SDK —
-      // see the adopted session as newest. Deterministic even in the shared
-      // project: both rows belong to THIS flow, and the /claim of the first
-      // session happened strictly before this adoption.
-      const ids = sessionRows(visible).map((s: any) => s.session_id);
-      if (ids.indexOf(replacementId) > ids.indexOf(warmSessionId)) {
+      // Adoption also bumps updated_at in the SAME statement as
+      // last_activity_at. Compare the adopted row's two stamps directly.
+      // Relative order against another session is not deterministic because
+      // that session's asynchronous provisioning can advance its updated_at
+      // after this adoption completes.
+      const updatedAtMs = Date.parse(row.updated_at);
+      const lastActivityAtMs = Date.parse(row.metadata.last_activity_at);
+      const createdAtMs = Date.parse(row.created_at);
+      if (
+        !Number.isFinite(updatedAtMs) ||
+        updatedAtMs !== lastActivityAtMs ||
+        updatedAtMs <= createdAtMs
+      ) {
         throw new Error(
-          'The adopted session sorts below a session used earlier — adoption did not bump updated_at',
+          `Adoption did not atomically bump updated_at with last_activity_at ` +
+            `(created_at=${row.created_at}, updated_at=${row.updated_at}, ` +
+            `last_activity_at=${row.metadata.last_activity_at})`,
         );
       }
     });

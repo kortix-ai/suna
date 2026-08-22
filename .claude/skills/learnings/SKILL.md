@@ -21,6 +21,25 @@ linked, not inlined.
 
 ## Register
 
+### Assert an asynchronous timestamp write on its own row (2026-08-22)
+
+**When:** proving that one request advances a row timestamp while asynchronous
+lifecycle work can update sibling rows. Compare the target row before and after,
+or compare two fields written by the same statement. Do not infer the write from
+relative list order. *Near-miss:* release gate run 32588846407 failed `SESS-18`
+twice after a later sandbox transition advanced the older session's `updated_at`.
+*Enforcer:* `SESS-18` requires adoption `updated_at == last_activity_at` and
+`updated_at > created_at` on the adopted row.
+
+### Bind public Vercel runtime metadata to the deployment, not the project environment (2026-08-22)
+
+**When:** passing public release metadata to a Vercel Production deployment.
+Use `vercel deploy --env KORTIX_PUBLIC_<NAME>=<value>`. Do not add a
+`NEXT_PUBLIC_*` Production project variable. Vercel CLI 59.4.0 infers secret
+visibility and rejects public framework prefixes. *Incident:* v0.13.3 left
+`kortix.com` on v0.13.2 after `env add NEXT_PUBLIC_KORTIX_VERSION` failed.
+*Enforcer:* `web-ecs-workflow.test.ts` pins the deployment-scoped runtime value.
+
 ### A selective capacity release must include the pool isolation it budgets (2026-08-22)
 
 **When:** selecting database-capacity commits for a release. Do not ship pool
