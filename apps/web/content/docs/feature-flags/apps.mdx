@@ -81,6 +81,7 @@ The full subcommand list:
 | `kortix apps list` | List the project's Apps. `--json`. |
 | `kortix apps create <slug>` | Create an App without deploying it. |
 | `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. |
+| `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--budget`. |
 | `kortix apps show <id\|slug>` | Show the App and its deployments. `--json`. |
 | `kortix apps logs <id\|slug> [deployment]` | Read runtime logs. `--after N --limit N`. |
 | `kortix apps start <id\|slug>` | Permit requests and start the App. |
@@ -91,6 +92,11 @@ The full subcommand list:
 | `kortix apps delete <id\|slug>` | Delete the App and its runtimes. `--yes`. |
 
 `--project`, `--host`, and `--json` work on every subcommand.
+
+`kortix apps set` sends only the flags you pass, and needs project write
+access. `--memory-gb` accepts `--memory` and `--disk-gb` accepts `--disk` as
+aliases. `--idle-timeout` takes 120-86400 seconds. A machine or budget change
+applies to the next deployment, not to the running runtime.
 
 ### Deployment defaults from `kortix.yaml`
 
