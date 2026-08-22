@@ -152,13 +152,14 @@ COPY --chown=kortix:kortix ${options.lazyToolsPath}/ /opt/kortix/lazy-tools/
 COPY ${options.machineDocPath} /MACHINE.md
 COPY ${options.entrypointScriptPath} /usr/local/bin/kortix-entrypoint
 COPY ${options.slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/
-COPY ${options.agentBinaryPath} /tmp/kortix-agent.gz
+COPY ${options.agentBinaryPath} /tmp/kortixd.gz
 COPY ${options.cliBinaryPath} /tmp/kortix.gz
 
-RUN gzip -dc /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \
+RUN gzip -dc /tmp/kortixd.gz > /usr/local/bin/kortixd \
+ && ln -sfn /usr/local/bin/kortixd /usr/local/bin/kortix-agent \
  && gzip -dc /tmp/kortix.gz > /usr/local/bin/kortix \
- && rm /tmp/kortix-agent.gz /tmp/kortix.gz \
- && chmod 0755 /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \
+ && rm /tmp/kortixd.gz /tmp/kortix.gz \
+ && chmod 0755 /usr/local/bin/kortixd /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \
       /opt/kortix/lazy-tools/install /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
  && ln -sf /opt/kortix/lazy-tools/install /usr/local/bin/kortix-toolpack \
  && for tool in python python3 make gcc g++ cc c++ pkg-config chromium agent-browser anydoc libreoffice pandoc pdftotext qpdf tesseract ffmpeg latexmk; do \

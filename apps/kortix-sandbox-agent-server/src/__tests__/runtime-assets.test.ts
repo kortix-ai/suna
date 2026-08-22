@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { createHash } from 'node:crypto'
+import { createHash, generateKeyPairSync, sign } from 'node:crypto'
+import { runtimeManifestSigningPayload } from '@kortix/api-contract/runtime-manifest'
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -122,6 +123,28 @@ describe('overlay hashing and path safety', () => {
 })
 
 describe('reconcileRuntimeAssets', () => {
+  test('an enrollment-pinned key rejects unsigned and tampered manifests before download', async () => {
+    const ws = await workspace()
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+    const unsigned = { cli_version: null, cli_sha256: null, cli_size: null, managed_skills_hash: '', build: 7, components: {}, policy: { agent_self_update: true } }
+    const signature = sign(null, Buffer.from(runtimeManifestSigningPayload(unsigned)), privateKey).toString('base64')
+    const tampered = { ...unsigned, build: 8, signature: { algorithm: 'ed25519', key_id: 'test', value: signature } }
+    const fetchImpl = (async () => Response.json(tampered)) as unknown as typeof fetch
+    const result = await reconcileRuntimeAssets({ apiUrl: API_URL, token: TOKEN, cliPath: ws.cliPath, managedSkillsDir: ws.skillsDir, statePath: ws.statePath, manifestSigningPublicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString(), fetchImpl })
+    expect(result).toEqual({ cli: 'failed', skills: 'failed', reason: 'runtime manifest signature is missing or invalid' })
+  })
+
+  test('an enrollment-pinned key accepts the exact signed manifest', async () => {
+    const ws = await workspace()
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+    const unsigned = { cli_version: null, cli_sha256: null, cli_size: null, managed_skills_hash: '', build: 7, components: {}, policy: { agent_self_update: true } }
+    const manifest = { ...unsigned, signature: { algorithm: 'ed25519', key_id: 'test', value: sign(null, Buffer.from(runtimeManifestSigningPayload(unsigned)), privateKey).toString('base64') } }
+    const fetchImpl = (async () => Response.json(manifest)) as unknown as typeof fetch
+    const result = await reconcileRuntimeAssets({ apiUrl: API_URL, token: TOKEN, cliPath: ws.cliPath, managedSkillsDir: ws.skillsDir, statePath: ws.statePath, manifestSigningPublicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString(), fetchImpl })
+    expect(result.build).toBe(7)
+    expect(result.cli).toBe('skipped')
+  })
+
   test('no api url or token → skipped, no fetch at all', async () => {
     const ws = await workspace()
     const stub = stubFetch()

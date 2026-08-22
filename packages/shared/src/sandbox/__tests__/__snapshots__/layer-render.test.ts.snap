@@ -161,18 +161,19 @@ COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup instance wipe && rm -f /tmp/kortix-opencode-warmup
 
 USER root
-COPY kortix-agent.gz /tmp/kortix-agent.gz
+COPY kortixd.gz /tmp/kortixd.gz
 COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
-RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
+RUN gunzip -c /tmp/kortixd.gz > /usr/local/bin/kortixd \\
+    && ln -sfn /usr/local/bin/kortixd /usr/local/bin/kortix-agent \\
     && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\
-    && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\
+    && rm /tmp/kortixd.gz /tmp/kortix.gz \\
     && bash -n /usr/local/bin/kortix-entrypoint \\
-    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
+    && chmod +x /usr/local/bin/kortixd /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\
@@ -346,18 +347,19 @@ COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup instance targeted && rm -f /tmp/kortix-opencode-warmup
 
 USER root
-COPY kortix-agent.gz /tmp/kortix-agent.gz
+COPY kortixd.gz /tmp/kortixd.gz
 COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
-RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
+RUN gunzip -c /tmp/kortixd.gz > /usr/local/bin/kortixd \\
+    && ln -sfn /usr/local/bin/kortixd /usr/local/bin/kortix-agent \\
     && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\
-    && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\
+    && rm /tmp/kortixd.gz /tmp/kortix.gz \\
     && bash -n /usr/local/bin/kortix-entrypoint \\
-    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
+    && chmod +x /usr/local/bin/kortixd /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\
@@ -546,18 +548,19 @@ COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup instance repo && rm -f /tmp/kortix-opencode-warmup
 
 USER root
-COPY kortix-agent.gz /tmp/kortix-agent.gz
+COPY kortixd.gz /tmp/kortixd.gz
 COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
-RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
+RUN gunzip -c /tmp/kortixd.gz > /usr/local/bin/kortixd \\
+    && ln -sfn /usr/local/bin/kortixd /usr/local/bin/kortix-agent \\
     && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\
-    && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\
+    && rm /tmp/kortixd.gz /tmp/kortix.gz \\
     && bash -n /usr/local/bin/kortix-entrypoint \\
-    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
+    && chmod +x /usr/local/bin/kortixd /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\
         /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\
     && kortix --version \\

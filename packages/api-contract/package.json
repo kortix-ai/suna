@@ -7,7 +7,9 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./secret-relay": "./src/secret-relay.ts"
+    "./secret-relay": "./src/secret-relay.ts",
+    "./node-channel": "./src/node-channel.ts",
+    "./runtime-manifest": "./src/runtime-manifest.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

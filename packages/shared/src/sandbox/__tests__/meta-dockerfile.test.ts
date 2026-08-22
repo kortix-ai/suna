@@ -5,7 +5,7 @@ import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
 describe('buildMetaSandboxDockerfile', () => {
   test('contains only the platform coordination runtime', () => {
     const dockerfile = buildMetaSandboxDockerfile({
-      agentBinaryPath: 'artifacts/kortix-agent.gz',
+      agentBinaryPath: 'artifacts/kortixd.gz',
       cliBinaryPath: 'artifacts/kortix.gz',
       entrypointScriptPath: 'artifacts/kortix-entrypoint.sh',
       catalogPath: 'artifacts/llm-catalog.json',
@@ -28,7 +28,7 @@ describe('buildMetaSandboxDockerfile', () => {
     );
     expect(dockerfile).toContain('PNPM_HOME=/home/kortix/.local/share/pnpm');
     expect(dockerfile).toContain('PATH="/home/kortix/.local/share/pnpm/bin:${PATH}"');
-    expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
+    expect(dockerfile).toContain('/usr/local/bin/kortixd');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/workspace/AGENTS.md');
     expect(dockerfile).toContain('# Kortix Meta Agent');

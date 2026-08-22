@@ -178,7 +178,7 @@ describe('the daemon still builds standalone', () => {
     expect(builder).toContain('WORKDIR /repo/apps/kortix-sandbox-agent-server')
     // …and the runtime stage must copy the binary from where it now lands.
     expect(dockerfile).toContain(
-      'COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent',
+      'COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortixd',
     )
   })
 })

@@ -74,7 +74,7 @@ describe('runtime version drift guards', () => {
       userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
       opencodeVersion: OPENCODE_VERSION,
       agentBrowserVersion: AGENT_BROWSER_VERSION,
-      agentBinaryPath: 'kortix-agent.gz',
+      agentBinaryPath: 'kortixd.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
       machineDocPath: 'MACHINE.md',

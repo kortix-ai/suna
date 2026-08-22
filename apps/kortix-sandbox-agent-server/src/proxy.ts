@@ -187,6 +187,30 @@ export function buildOpencodeApp(
     kortixRouter.route('/env/', envRouter)
   }
 
+  // Terminate the namespace. Without this, an UNMATCHED `/kortix/*` path falls
+  // through to the reverse-proxy catch-all below — and the auth gate that sits
+  // between them deliberately skips anything under `/kortix/`, so the request
+  // reaches opencode with NO signed context at all.
+  //
+  // Measured before the fix (src/node/__tests__/route-contract.test.ts):
+  //   GET /kortix/zzz      -> 200, upstream saw "/kortix/zzz"
+  //   GET /kortix/session  -> 200, upstream saw "/kortix/session"
+  // both with no `X-Kortix-User-Context`.
+  //
+  // Not exploitable today: the `/kortix/` prefix is forwarded verbatim and
+  // opencode serves nothing under it, so every such request 404s upstream. Path
+  // traversal does not widen it either — `/kortix/../session` normalizes to
+  // `/session` and is correctly rejected 401. It is closed anyway because the
+  // gate having ANY bypass surface is the defect: the day opencode gains a
+  // prefix-tolerant route, this becomes a real unauthenticated path into it.
+  //
+  // No legitimate caller relies on the fallthrough. Every real control route is
+  // matched above, and an unmatched one is a caller bug that should say 404
+  // rather than silently proxy.
+  kortixRouter.all('*', (c) =>
+    c.json({ error: 'not found', detail: 'unknown /kortix control route' }, 404),
+  )
+
   app.route('/kortix', kortixRouter)
 
   // Auth gate for everything except /kortix/*. Spec §3.5: the daemon MUST

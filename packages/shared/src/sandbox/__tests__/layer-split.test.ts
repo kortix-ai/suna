@@ -24,7 +24,7 @@ import {
 const COMMON = {
   opencodeVersion: OPENCODE_VERSION,
   agentBrowserVersion: AGENT_BROWSER_VERSION,
-  agentBinaryPath: 'kortix-agent.gz',
+  agentBinaryPath: 'kortixd.gz',
   cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
@@ -117,7 +117,7 @@ describe('the halves join without a seam', () => {
 
   test('the artifact half is the contiguous staged-artifact tail', () => {
     const artifact = kortixArtifactLayer(opts);
-    expect(artifact.startsWith('USER root\nCOPY kortix-agent.gz /tmp/kortix-agent.gz\n')).toBe(true);
+    expect(artifact.startsWith('USER root\nCOPY kortixd.gz /tmp/kortixd.gz\n')).toBe(true);
     expect(artifact.endsWith('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]\n')).toBe(true);
   });
 

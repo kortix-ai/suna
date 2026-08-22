@@ -120,7 +120,7 @@ export async function cancelForwardedPrompt(
 
   let tip: TipEntry[];
   try {
-    const res = await fetch(
+    const res = await resolved.endpoint.fetch(
       `${base}/message?directory=${encodeURIComponent(WORKSPACE)}&limit=${TIP_LIMIT}`,
       { method: 'GET', headers, signal: AbortSignal.timeout(5_000) },
     );
@@ -167,7 +167,7 @@ export async function cancelForwardedPrompt(
   for (const message of present) {
     let removed = false;
     try {
-      const res = await fetch(
+      const res = await resolved.endpoint.fetch(
         `${base}/message/${encodeURIComponent(message.id)}?directory=${encodeURIComponent(WORKSPACE)}`,
         { method: 'DELETE', headers, signal: AbortSignal.timeout(5_000) },
       );
@@ -178,7 +178,7 @@ export async function cancelForwardedPrompt(
     if (removed) continue;
     for (const partId of message.partIds) {
       try {
-        const res = await fetch(
+        const res = await resolved.endpoint.fetch(
           `${base}/message/${encodeURIComponent(message.id)}/part/${encodeURIComponent(partId)}?directory=${encodeURIComponent(WORKSPACE)}`,
           { method: 'DELETE', headers, signal: AbortSignal.timeout(5_000) },
         );

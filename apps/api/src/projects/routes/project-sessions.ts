@@ -19,7 +19,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { computeNodeAssignments, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, resolveSessionOwnerIdentities, viewerManagerStanding } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
@@ -37,6 +37,8 @@ import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindi
 import { createSession, deleteSession } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
+import { computeNodeChannel, rpcComputeNode } from '../../compute-nodes';
+import { recordAuditEvent } from '../../shared/audit';
 
 const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'deletedAt',
@@ -55,6 +57,76 @@ const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'workspace_mode',
   'sandbox_slug',
 ] as const;
+
+const NODE_RPC_METHODS = new Set([
+  'fs.read', 'fs.write', 'fs.list', 'fs.stat', 'fs.delete', 'shell.exec',
+  'desktop.cua.call',
+]);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/node/rpc',
+    tags: ['compute-nodes'],
+    summary: 'Run an authorized capability on the session compute node',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      body: { content: { 'application/json': { schema: z.object({ method: z.string(), params: z.record(z.string(), z.any()).optional() }) } } },
+    },
+    responses: {
+      200: json(z.object({ result: z.any() }), 'Capability result'),
+      ...errors(400, 403, 404, 502, 504),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    const body = await c.req.json();
+    if (!NODE_RPC_METHODS.has(body.method) && !body.method.startsWith('desktop.cua.')) return c.json({ error: 'Unsupported node capability method' }, 400);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    if (body.method === 'fs.read' || body.method === 'fs.list' || body.method === 'fs.stat') {
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
+    } else if (body.method === 'fs.write' || body.method === 'fs.delete') {
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_WRITE);
+    } else if (!visible.canManageLifecycle) {
+      return c.json({ error: 'Manager access is required for shell and desktop capabilities' }, 403);
+    }
+
+    const startedAt = Date.now();
+    let outcome: 'success' | 'failure' = 'failure';
+    try {
+      const [assignment] = await db.select({ nodeId: computeNodeAssignments.nodeId }).from(computeNodeAssignments).where(and(eq(computeNodeAssignments.sessionId, sessionId), eq(computeNodeAssignments.status, 'ready'))).limit(1);
+      const nodeId = assignment?.nodeId ?? (computeNodeChannel.isConnected(sessionId) ? sessionId : null);
+      if (!nodeId) return c.json({ error: 'Session has no ready compute-node assignment' }, 502);
+      const result = await rpcComputeNode(nodeId, body.method, body.params ?? {});
+      outcome = 'success';
+      return c.json({ result }, 200);
+    } catch (error) {
+      const code = typeof (error as { code?: unknown }).code === 'number' ? (error as { code: number }).code : -32003;
+      return c.json({ error: error instanceof Error ? error.message : String(error), code }, code === -32002 ? 504 : 502);
+    } finally {
+      void recordAuditEvent({
+        accountId: loaded.row.accountId,
+        projectId,
+        sessionId,
+        actorUserId: loaded.userId,
+        actorType: 'human',
+        action: `compute_node.${body.method}`,
+        resourceType: 'compute_node',
+        resourceId: sessionId,
+        outcome,
+        durationMs: Date.now() - startedAt,
+        inputSummary: { method: body.method },
+        authoritativeSource: 'kortix-api',
+      }).catch((auditError) => console.error('[compute-node] capability audit failed', auditError));
+    }
+  },
+);
 
 function serverManagedSessionMetadataKey(
   value: unknown,

@@ -30,6 +30,7 @@ import {
   type Opencode,
 } from './opencode'
 import { relayBootTimelineToApi } from './boot-timeline-relay'
+import { selectWorkloadId } from './node/workload'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { ensureInjectedManagedSkills } from './injected-skills'
@@ -67,6 +68,12 @@ import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
 import { opencodeDeliveryInFlight, opencodeTurnInFlight } from './opencode-turn-state'
+import { KortixNodeChannel } from './node/channel/client'
+import { createNodeCapabilityRegistry, createSandboxCapabilityRegistry } from './node/capabilities'
+import { NodeAssignmentManager } from './node/assignment-manager'
+import { loadNodeLocalPolicy } from './node/policy-store'
+import { startNodeConvergence } from './node/convergence'
+import { readStoredNodeConfig } from './node/config-store'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
@@ -75,9 +82,42 @@ const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'north-mini-code-free',
 ])
 
-async function main() {
+/** Run the node daemon in the current process. */
+export async function runKortixDaemon(): Promise<void> {
   const bootTime = Date.now()
   const cfg = loadConfig()
+  const assignedSessionId = process.env.KORTIX_SESSION_ID?.trim()
+  // The sandbox has no inbound runtime path. kortixd opens the one authenticated
+  // control-plane connection and relays signed requests to loopback services.
+  if (cfg.apiUrl && cfg.computeNodeId && cfg.nodeToken && process.env.KORTIXD_ASSIGNED_CHILD !== '1') {
+    let channel: KortixNodeChannel
+    const assignmentManager = new NodeAssignmentManager({ onFrame: (frame) => channel.send(frame) })
+    channel = new KortixNodeChannel({
+      apiUrl: cfg.apiUrl,
+      nodeId: cfg.computeNodeId,
+      token: cfg.nodeToken,
+      // A signed API frame is the authorization decision. The transport still
+      // hardcodes 127.0.0.1, so it cannot become an SSRF path to another host.
+      ports: { has: (port: number) => assignmentManager.hasPort(port) || (Boolean(assignedSessionId) && port === cfg.servicePort) },
+      capabilities: assignedSessionId
+        ? createSandboxCapabilityRegistry()
+        : createNodeCapabilityRegistry({ assignmentRoots: () => assignmentManager.writableRoots, policy: () => loadNodeLocalPolicy() }),
+      assignments: assignmentManager,
+      onAuthenticated: () => assignmentManager.restore(),
+    })
+    channel.connect()
+    // An enrolled workstation starts without a session. It remains a node
+    // supervisor until the API assigns a workload over the outbound channel.
+    if (!assignedSessionId) {
+      const convergence = startNodeConvergence({ apiUrl: cfg.apiUrl, token: cfg.nodeToken, busy: () => assignmentManager.isBusy(), manifestSigningPublicKey: readStoredNodeConfig()?.artifact_signing_public_key ?? process.env.KORTIX_RUNTIME_ASSET_SIGNING_PUBLIC_KEY ?? undefined })
+      await new Promise<void>((resolve) => {
+        const stop = () => { convergence.stop(); channel.disconnect(); resolve() }
+        process.once('SIGINT', stop)
+        process.once('SIGTERM', stop)
+      })
+      return
+    }
+  }
   const prompt = (process.env.KORTIX_INITIAL_PROMPT ?? '').trim()
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   const bootState: SandboxBootState = {
@@ -109,7 +149,21 @@ async function main() {
   // Warm snapshot seed capture. This boots a session-less runtime, warms
   // opencode, writes the capture pin, and later adopts the forked session env
   // written by Platinum restore.
-  if ((process.env.KORTIX_WARM_SEED ?? '').trim() === '1') {
+  // ── Workload selection ──────────────────────────────────────────────────
+  // One decision, in one place (src/node/workload.ts). Extracted from the two
+  // inline branches that used to live here; `selectWorkloadId` reproduces them
+  // exactly, including precedence, and a test compares it against a transcript
+  // of the originals across the whole input space.
+  //
+  // `warm-seed` wins over `monitor`: a seed builder boots a session-less
+  // runtime for snapshot capture and must never be mistaken for another
+  // workload. Anything unrecognized is a session — an older control plane that
+  // knows no workload names must keep booting sessions, so this can never fail
+  // closed. See docs/specs/2026-08-21-kortixd.md §6.
+  const workloadId = selectWorkloadId(cfg)
+  logger.info('[boot] workload selected', { workload: workloadId })
+
+  if (workloadId === 'warm-seed') {
     await runWarmSeedMode(cfg, bootTime, bootState, bootMark, staticWeb)
     return
   }
@@ -117,7 +171,7 @@ async function main() {
   // Monitor box (docs/specs/2026-08-12-monitors.md D4). Same daemon, same
   // image, same repo checkout — but it supervises the project's monitor
   // processes instead of opencode, and never starts an LLM at all.
-  if (cfg.workload === 'monitor') {
+  if (workloadId === 'monitor') {
     await runMonitorMode(cfg, bootTime, bootState, bootMark, staticWeb)
     return
   }
@@ -2888,7 +2942,7 @@ if (import.meta.main) {
       .then((code) => process.exit(code))
       .catch(() => process.exit(0))
   } else {
-    main().catch((err) => {
+    runKortixDaemon().catch((err) => {
       logger.error('[boot] fatal', err)
       process.exit(1)
     })

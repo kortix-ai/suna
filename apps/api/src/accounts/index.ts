@@ -12,6 +12,7 @@ import { auditRouter } from './audit';
 import { registerTokenRoutes } from './core/tokens';
 import { registerAccountRoutes } from './core/accounts';
 import { registerMemberRoutes } from './core/members';
+import { registerComputeNodeRoutes } from './core/compute-nodes';
 import { resolveAccountId } from '../shared/resolve-account';
 
 accountsRouter.use('/*', supabaseAuth);
@@ -45,5 +46,6 @@ accountsRouter.route('/', auditRouter);
 registerTokenRoutes();
 registerAccountRoutes();
 registerMemberRoutes();
+registerComputeNodeRoutes();
 
 export { accountsRouter };

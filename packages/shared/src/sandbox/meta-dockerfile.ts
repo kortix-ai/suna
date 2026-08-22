@@ -88,12 +88,13 @@ RUN curl -fsSL https://get.pnpm.io/install.sh \\
  && ln -sf "\$(command -v node)" /usr/local/bin/node \\
  && chown -R kortix:kortix /home/kortix
 
-COPY ${options.agentBinaryPath} /tmp/kortix-agent.gz
+COPY ${options.agentBinaryPath} /tmp/kortixd.gz
 COPY ${options.cliBinaryPath} /tmp/kortix.gz
-RUN gzip -dc /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
+RUN gzip -dc /tmp/kortixd.gz > /usr/local/bin/kortixd \\
+ && ln -sfn /usr/local/bin/kortixd /usr/local/bin/kortix-agent \\
  && gzip -dc /tmp/kortix.gz > /usr/local/bin/kortix \\
- && chmod 0755 /usr/local/bin/kortix-agent /usr/local/bin/kortix \\
- && rm /tmp/kortix-agent.gz /tmp/kortix.gz
+ && chmod 0755 /usr/local/bin/kortixd /usr/local/bin/kortix \\
+ && rm /tmp/kortixd.gz /tmp/kortix.gz
 COPY ${options.entrypointScriptPath} /usr/local/bin/kortix-entrypoint
 RUN chmod 0755 /usr/local/bin/kortix-entrypoint
 COPY --chown=kortix:kortix <<'KORTIX_META_AGENT_GUIDE' /workspace/AGENTS.md

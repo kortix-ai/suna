@@ -48,6 +48,10 @@ let preflightCalls: Array<{ sessionAgent: string; requestedAgent: string | null 
 class PromptConnectorPreflightUnresolved extends Error {}
 
 mock.module('../../config', () => ({ config: {} }));
+mock.module('../../compute-nodes', () => ({
+  fetchComputeNode: async (_externalId: string, _port: number, path: string, init?: RequestInit) =>
+    fetch(`http://sandbox.local${path}`, init),
+}));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),

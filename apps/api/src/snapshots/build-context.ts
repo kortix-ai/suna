@@ -53,7 +53,7 @@ const REPO_ROOT = resolve(__dirname, '../../../..');
 // first-imported suite's fixtures win and break sibling suites in a combined run.
 // In production the env is set once, so reading per-call is behaviour-neutral.
 const agentBinPath = () => process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
-  || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
+  || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortixd');
 const cliBinPath = () => process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
   || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
 const cliAttestationPath = () => process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH
@@ -225,7 +225,7 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   await assertExists(entrypointPath, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
 
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-meta-snap-'));
-  await gzipFile(agentPath, join(contextDir, 'kortix-agent.gz'));
+  await gzipFile(agentPath, join(contextDir, 'kortixd.gz'));
   await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
   await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
   await stageManagedSkills(join(contextDir, 'managed-skills'));
@@ -239,7 +239,7 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   await writeFileFs(
     composedPath,
     buildMetaSandboxDockerfile({
-      agentBinaryPath: 'kortix-agent.gz',
+      agentBinaryPath: 'kortixd.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
       catalogPath: 'kortix-llm-catalog.json',
@@ -274,7 +274,7 @@ export async function stageFastBuildContext(): Promise<StagedContext> {
 
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-fast-snap-'));
   try {
-    await gzipFile(agentPath, join(contextDir, 'kortix-agent.gz'));
+    await gzipFile(agentPath, join(contextDir, 'kortixd.gz'));
     await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
     await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
     await copyFile(opencodeWarmupPath, join(contextDir, 'kortix-opencode-warmup'));
@@ -296,7 +296,7 @@ export async function stageFastBuildContext(): Promise<StagedContext> {
     const dockerfileName = 'Dockerfile';
     const composedPath = join(contextDir, dockerfileName);
     const composed = buildFastSandboxDockerfile({
-      agentBinaryPath: 'kortix-agent.gz',
+      agentBinaryPath: 'kortixd.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
       opencodeWarmupScriptPath: 'kortix-opencode-warmup',
@@ -313,7 +313,7 @@ export async function stageFastBuildContext(): Promise<StagedContext> {
     await writeComposedDockerfile(composedPath, composed);
     for (const required of [
       dockerfileName,
-      'kortix-agent.gz',
+      'kortixd.gz',
       'kortix.gz',
       'kortix-entrypoint',
       'kortix-opencode-warmup',
@@ -751,7 +751,7 @@ export async function stageBuildContext(
 
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
   return removeStagedContextOnFailure(contextDir, async () => {
-    await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
+    await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortixd.gz'));
     await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
     await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
     await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
@@ -802,7 +802,7 @@ export async function stageBuildContext(
       userDockerfile,
       opencodeVersion: OPENCODE_VERSION,
       agentBrowserVersion: AGENT_BROWSER_VERSION,
-      agentBinaryPath: 'kortix-agent.gz',
+      agentBinaryPath: 'kortixd.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',
       machineDocPath: 'MACHINE.md',
@@ -934,7 +934,7 @@ async function assertContextComplete(
 ): Promise<void> {
   const required = [
     'scaffold.git',
-    'kortix-agent.gz',
+    'kortixd.gz',
     'kortix-opencode-warmup',
     'MACHINE.md',
     // The baked model catalog is what keeps `opencode serve` off the network at
@@ -1019,8 +1019,8 @@ async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
 }
 
 /**
- * Gzip ONLY the kortix-agent binary to a temp .gz — for the Platinum agent-swap
- * fast path, which ships just the agent (not a whole build context) and has the
+ * Gzip only the kortixd binary to a temporary archive for Platinum fast-swap.
+ * This path ships only the daemon and has the
  * host debugfs-swap it into the predecessor's rootfs. Caller cleans up.
  */
 export async function stageAgentBinaryGz(): Promise<{ gzPath: string; cleanup: () => Promise<void> }> {
@@ -1032,8 +1032,8 @@ export async function stageAgentBinaryGz(): Promise<{ gzPath: string; cleanup: (
   if ((await stat(AGENT_BIN_PATH)).size === 0) {
     throw new Error(`agent binary ${AGENT_BIN_PATH} is empty — refusing to stage for agent-swap`);
   }
-  const dir = await mkdtemp(join(tmpdir(), 'kortix-agent-swap-'));
-  const gzPath = join(dir, 'kortix-agent.gz');
+  const dir = await mkdtemp(join(tmpdir(), 'kortixd-swap-'));
+  const gzPath = join(dir, 'kortixd.gz');
   await gzipFile(AGENT_BIN_PATH, gzPath);
   return { gzPath, cleanup: async () => { await rm(dir, { recursive: true, force: true }).catch(() => {}); } };
 }

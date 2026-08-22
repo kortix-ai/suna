@@ -137,14 +137,14 @@ bun install
 bash scripts/build.sh
 ```
 
-Produces `dist/kortix-agent` — a single-file Bun binary targeting the current
-host architecture by default (`bun-linux-x64` or `bun-linux-arm64`). Set
+Produces only `dist/kortixd`. This standalone executable targets Linux x64 by
+default. Set
 `BUN_COMPILE_TARGET` when building for a specific Docker/runtime architecture.
 The binary built on macOS will not execute locally; that's expected. To
 smoke-test the daemon on macOS, run from source:
 
 ```
-KORTIX_PROJECT_AUTO_CLONE=0 KORTIX_SERVICE_PORT=9999 bun run src/main.ts
+KORTIX_PROJECT_AUTO_CLONE=0 KORTIX_SERVICE_PORT=9999 bun run src/kortixd.ts run
 curl -s http://localhost:9999/kortix/health
 ```
 

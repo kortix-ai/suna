@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { buildFastSandboxDockerfile } from '../fast-dockerfile';
 
 const DEFAULT_OPTIONS = {
-  agentBinaryPath: 'artifacts/kortix-agent.gz',
+  agentBinaryPath: 'artifacts/kortixd.gz',
   cliBinaryPath: 'artifacts/kortix.gz',
   entrypointScriptPath: 'artifacts/kortix-entrypoint',
   opencodeWarmupScriptPath: 'artifacts/opencode-warmup',
@@ -37,7 +37,7 @@ expect(dockerfile).toContain('FROM ubuntu:24.04');
     expect(dockerfile).toContain('bun-v1.3.14');
     expect(dockerfile).toContain('aarch64|arm64) bun_arch=aarch64');
     expect(dockerfile).toContain('uv-${uv_arch}-unknown-linux-gnu.tar.gz');
-    expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
+    expect(dockerfile).toContain('/usr/local/bin/kortixd');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/opt/kortix/scaffold.git');
     expect(dockerfile).toContain('/opt/kortix/opencode-config-deps');

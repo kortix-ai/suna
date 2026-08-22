@@ -183,7 +183,7 @@ mock.module('../store', () => ({
 }));
 
 mock.module('../../opencode-mapping', () => ({
-  sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
+  sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {}, fetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init) }),
 }));
 
 const { drainSessionLifecycleQueue, executeQueuedContinue } = await import('../engine');

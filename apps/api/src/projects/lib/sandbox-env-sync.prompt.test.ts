@@ -85,6 +85,10 @@ mock.module('./network-secret-boundary', () => ({
 mock.module('../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
+mock.module('../../compute-nodes', () => ({
+  fetchComputeNode: async (_externalId: string, _port: number, path: string, init?: RequestInit) =>
+    fetch(`http://sandbox.test${path}`, init),
+}));
 
 const ORIGINAL_FETCH = globalThis.fetch;
 (globalThis as { fetch: unknown }).fetch = async (url: unknown, init?: { body?: string }) => {

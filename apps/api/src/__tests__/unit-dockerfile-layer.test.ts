@@ -29,7 +29,7 @@ import {
 const COMMON = {
   opencodeVersion: OPENCODE_VERSION,
   agentBrowserVersion: AGENT_BROWSER_VERSION,
-  agentBinaryPath: 'kortix-agent.gz',
+  agentBinaryPath: 'kortixd.gz',
   cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
@@ -102,7 +102,7 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).not.toContain('XDG_DATA_HOME=');
     expect(merged).not.toContain('XDG_CONFIG_HOME=');
     expect(merged).not.toContain('XDG_CACHE_HOME=');
-    expect(merged).toContain('USER root\nCOPY kortix-agent.gz');
+    expect(merged).toContain('USER root\nCOPY kortixd.gz');
     expect(merged).toContain('ENV KORTIX_WORKSPACE=/workspace\nUSER kortix\nWORKDIR /workspace');
   });
 
@@ -120,8 +120,8 @@ describe('buildLayeredDockerfile', () => {
     );
     expect(merged).toContain(`"pillow==${PYTHON_PACKAGE_FLOOR.pillow}"`);
     expect(merged).toContain('python package floor OK');
-    expect(merged).toContain('COPY kortix-agent.gz /tmp/kortix-agent.gz');
-    expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
+    expect(merged).toContain('COPY kortixd.gz /tmp/kortixd.gz');
+    expect(merged).toContain('gunzip -c /tmp/kortixd.gz > /usr/local/bin/kortixd');
     // The admin CLI is baked alongside the daemon and verified at build time.
     expect(merged).toContain('COPY kortix.gz /tmp/kortix.gz');
     expect(merged).toContain('COPY MACHINE.md /MACHINE.md');

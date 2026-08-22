@@ -7,7 +7,7 @@
  *
  *   1. apt-get install ca-certificates curl git nodejs npm
  *   2. npm install -g opencode-ai@<pinned-version>
- *   3. COPY the kortix-agent + kortix-entrypoint binaries to /usr/local/bin
+ *   3. COPY the kortixd + kortix-entrypoint binaries to /usr/local/bin
  *   4. ENV KORTIX_WORKSPACE=/workspace, WORKDIR /workspace, EXPOSE 8000
  *   5. ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]
  *
@@ -737,7 +737,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
 
   return [
     'USER root',
-    `COPY ${agentBinaryPath} /tmp/kortix-agent.gz`,
+    `COPY ${agentBinaryPath} /tmp/kortixd.gz`,
     `COPY ${cliBinaryPath} /tmp/kortix.gz`,
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
     `COPY ${machineDocPath} /MACHINE.md`,
@@ -750,11 +750,12 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     // project's root (pinned dates, seed.ts), enabling local-clone +
     // delta-fetch repo materialization in the daemon (git.ts).
     `COPY scaffold.git /opt/kortix/scaffold.git`,
-    'RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\',
+    'RUN gunzip -c /tmp/kortixd.gz > /usr/local/bin/kortixd \\',
+    '    && ln -sfn /usr/local/bin/kortixd /usr/local/bin/kortix-agent \\',
     '    && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\',
-    '    && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\',
+    '    && rm /tmp/kortixd.gz /tmp/kortix.gz \\',
     '    && bash -n /usr/local/bin/kortix-entrypoint \\',
-    '    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\',
+    '    && chmod +x /usr/local/bin/kortixd /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\',
     '        /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\',
     '    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\',
     // Fail the build loudly if the CLI didn't land — every sandbox must ship it.

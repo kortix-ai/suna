@@ -247,7 +247,7 @@ export async function getPublicSessionMessages(
   // resolved); a provider throw must NEVER bubble up and 500 the public share
   // route (sibling of the #3567 title-sync fix — same class of bug on a
   // different post-#3567 call site). Degrade to an unavailable digest.
-  let endpoint: { url: string; headers: Record<string, string> } | null;
+  let endpoint: Awaited<ReturnType<typeof sandboxOpencodeEndpoint>>;
   try {
     endpoint = await sandboxOpencodeEndpoint(row.externalId, undefined);
   } catch (err) {
@@ -268,7 +268,7 @@ export async function getPublicSessionMessages(
     const url = new URL(`${endpoint.url}/session/${encodeURIComponent(opencodeSessionId)}/message`);
     url.searchParams.set('directory', WORKSPACE_DIRECTORY);
     url.searchParams.set('limit', String(MAX_MESSAGES));
-    const res = await fetch(url, {
+    const res = await endpoint.fetch(url, {
       method: 'GET',
       headers: endpoint.headers,
       signal: AbortSignal.timeout(8_000),

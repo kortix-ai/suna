@@ -1,19 +1,19 @@
 {
   "name": "@kortix/sandbox-agent-server",
   "version": "0.1.0",
-  "description": "Sandbox-side OpenCode REST supervisor and Kortix API surface.",
+  "description": "Standalone Kortix compute-node daemon and runtime supervisor.",
   "type": "module",
   "main": "src/main.ts",
   "engines": {
     "bun": "1.3.11"
   },
   "bin": {
-    "kortix-agent": "./dist/kortix-agent"
+    "kortixd": "./dist/kortixd"
   },
   "scripts": {
     "dev": "bun run --hot src/main.ts",
     "build": "bash scripts/build.sh",
-    "start": "./dist/kortix-agent",
+    "start": "./dist/kortixd run",
     "typecheck": "bun tsc --noEmit",
     "test": "bun test"
   },

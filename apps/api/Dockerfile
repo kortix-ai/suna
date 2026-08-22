@@ -240,7 +240,7 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 # migrate-db job (pnpm migrate, from the checkout) before the new code serves.
 
 # Copy runtime artifacts used by the layered snapshot builder.
-COPY --from=sandbox-agent /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
+COPY --from=sandbox-agent /repo/apps/kortix-sandbox-agent-server/dist/kortixd ./apps/kortix-sandbox-agent-server/dist/kortixd
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix.version ./apps/cli/dist/kortix.version
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json
@@ -286,7 +286,7 @@ RUN rm -rf \
     packages/starter/src/__tests__ \
     packages/manifest-schema/src/__tests__ \
     packages/api-contract/src/__tests__ && \
-    touch apps/kortix-sandbox-agent-server/dist/kortix-agent
+    touch apps/kortix-sandbox-agent-server/dist/kortixd
 
 WORKDIR /app/${SERVICE}
 

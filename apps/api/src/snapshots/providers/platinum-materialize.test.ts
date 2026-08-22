@@ -225,4 +225,11 @@ describe('Platinum template materialization', () => {
 
     expect(source).toContain('enabled: config.KORTIX_FAST_COLD_BOOT_ENABLED');
   });
+
+  test('agent-swap replaces the canonical kortixd executable', async () => {
+    const source = await Bun.file(new URL('./platinum.ts', import.meta.url)).text();
+
+    expect(source).toContain("guest_path: '/usr/local/bin/kortixd'");
+    expect(source).toContain("guest_path: '/usr/local/bin/kortix-agent'");
+  });
 });

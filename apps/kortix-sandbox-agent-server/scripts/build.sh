@@ -2,6 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p dist
+# Remove the retired artifact name from incremental build directories.
+rm -f dist/kortix-agent
 
 if [ -n "${BUN_COMPILE_TARGET:-}" ]; then
   target="$BUN_COMPILE_TARGET"
@@ -17,7 +19,7 @@ else
 fi
 
 case "$target" in
-  bun-linux-x64|bun-linux-arm64) ;;
+  bun-linux-x64|bun-linux-arm64|bun-darwin-x64|bun-darwin-arm64|bun-windows-x64) ;;
   *)
     echo "Unsupported Bun compile target: $target" >&2
     exit 1
@@ -30,7 +32,11 @@ compile_with_retry() {
   local delay=5
 
   while true; do
-    if bun build --compile --target="$target" --outfile=dist/kortix-agent src/main.ts; then
+    define_args=()
+    if [ -n "${KORTIXD_VERSION:-}" ]; then
+      define_args+=(--define "process.env.KORTIXD_VERSION=\"${KORTIXD_VERSION}\"")
+    fi
+    if bun build --compile --target="$target" ${define_args[@]+"${define_args[@]}"} --outfile=dist/kortixd src/kortixd.ts; then
       return 0
     fi
 
@@ -58,6 +64,6 @@ echo "Typechecking (tsc --noEmit) before compile…"
 bun run typecheck
 
 compile_with_retry
-chmod +x dist/kortix-agent
-size="$(stat -f%z dist/kortix-agent 2>/dev/null || stat -c%s dist/kortix-agent)"
-echo "Built dist/kortix-agent for ${target} (${size} bytes)"
+chmod +x dist/kortixd
+size="$(stat -f%z dist/kortixd 2>/dev/null || stat -c%s dist/kortixd)"
+echo "Built dist/kortixd for ${target} (${size} bytes)"

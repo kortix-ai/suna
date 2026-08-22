@@ -11,7 +11,7 @@
  * Two choices make this an honest reproduction rather than a lookalike:
  *
  *   • The layer is `kortixToolchainLayer` ONLY — not the artifact tail. That
- *     tail COPYs staged Kortix build outputs (kortix-agent.gz, scaffold.git, …)
+ *     tail COPYs staged Kortix build outputs (kortixd.gz, scaffold.git, …)
  *     that a consumer developer has no way to produce, and it installs nothing:
  *     everything that can FAIL on a user's base image lives in the toolchain
  *     half. Skipping it costs no coverage and makes the command runnable by

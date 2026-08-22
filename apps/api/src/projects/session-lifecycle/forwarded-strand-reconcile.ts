@@ -121,7 +121,7 @@ const liveDeps: StrandReconcileDeps = {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     if (!resolved) return null;
     const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}&limit=${TIP_LIMIT}`;
-    const res = await fetch(url, {
+    const res = await resolved.endpoint.fetch(url, {
       method: 'GET',
       headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
       signal: AbortSignal.timeout(5_000),
@@ -133,7 +133,7 @@ const liveDeps: StrandReconcileDeps = {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     if (!resolved) return false;
     const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message/${encodeURIComponent(messageId)}?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
+    const res = await resolved.endpoint.fetch(url, {
       method: 'DELETE',
       headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
       signal: AbortSignal.timeout(5_000),

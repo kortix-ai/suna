@@ -15,7 +15,7 @@
 # Three-stage build:
 #   1. `builder`     — installs the daemon's deps and runs
 #                      `bun build --compile` for the target image architecture
-#                      to produce dist/kortix-agent.
+#                      to produce dist/kortixd.
 #   2. `cli-builder` — assembles a minimal workspace (apps/cli + the two
 #                      `@kortix/*` packages it imports) and compiles the
 #                      `kortix` CLI to a self-contained /cli/kortix binary.
@@ -238,7 +238,8 @@ RUN mkdir -p /opt/kortix/opencode-config-deps \
     && rm -rf /tmp/opencode-deps-bundle-check
 
 USER root
-COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent /usr/local/bin/kortix-agent
+COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortixd /usr/local/bin/kortixd
+RUN ln -s /usr/local/bin/kortixd /usr/local/bin/kortix-agent
 # The admin CLI every in-sandbox agent reaches for: `kortix cr open`,
 # `kortix secrets`, `kortix sessions`, … Pre-authenticated at runtime via the
 # project-scoped token the platform injects (KORTIX_CLI_TOKEN).
@@ -251,7 +252,7 @@ COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 COPY apps/sandbox/MACHINE.md /MACHINE.md
 # Channel shims delegate Connector calls to the compiled `kortix` CLI.
 COPY apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
+RUN chmod +x /usr/local/bin/kortixd /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version \
     && chown -R kortix:kortix /opt/kortix /workspace /ephemeral

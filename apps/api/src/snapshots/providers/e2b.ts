@@ -108,7 +108,7 @@ class E2BAdapter implements SandboxProviderAdapter {
           cpuCount: input.spec.cpu ?? DEFAULT_CPU,
           memoryMB: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           // E2B's remote cache can report COPY layers as restored while omitting
-          // their files from the next RUN layer (observed with kortix-agent.gz and
+          // their files from the next RUN layer (observed with kortixd.gz and
           // kortix.gz on a second identical live build). A missing runtime binary
           // is worse than the extra build time, so E2B templates fail safe with a
           // complete rebuild until the provider cache preserves COPY outputs.

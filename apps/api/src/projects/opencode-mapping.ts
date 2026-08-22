@@ -16,9 +16,8 @@
  *   3. If the sandbox holds no root at all, report not_ready. The sandbox
  *      daemon owns root creation during boot; the API only adopts/persists it.
  *
- * Reachability mirrors the preview proxy exactly (the path the live session's
- * OpenCode traffic already uses): resolve the per-sandbox service key + provider
- * ingress for the daemon port, and sign an X-Kortix-User-Context header so
+ * Reachability mirrors the preview proxy exactly: resolve the per-sandbox
+ * service key, use the outbound kortixd channel, and sign an X-Kortix-User-Context header so
  * the daemon authorizes the proxied call into OpenCode.
  */
 
@@ -32,7 +31,8 @@ import {
   encodeKortixUserContext,
 } from '../shared/kortix-user-context';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
-import { resolveSandboxIngress, resolveServiceKey } from '../sandbox-proxy/backend';
+import { resolveServiceKey } from '../sandbox-proxy/backend';
+import { fetchComputeNode } from '../compute-nodes';
 import {
   pickCanonicalRoot,
   resolveRootSessionId,
@@ -52,18 +52,41 @@ const DAEMON_PORT = 8000;
 export async function sandboxOpencodeEndpoint(
   externalId: string,
   userId: string | undefined,
-): Promise<{ url: string; headers: Record<string, string> } | null> {
+): Promise<SandboxOpencodeEndpoint | null> {
   const serviceKey = await resolveServiceKey(externalId);
   if (!serviceKey) return null;
-  const ingress = await resolveSandboxIngress(externalId, { port: DAEMON_PORT, transport: 'http' });
   const headers: Record<string, string> = {
-    ...ingress.headers,
     'Content-Type': 'application/json',
     Authorization: `Bearer ${serviceKey}`,
   };
   const payload = await resolvePreviewUserContext(externalId, userId);
   if (payload) headers[KORTIX_USER_CONTEXT_HEADER] = encodeKortixUserContext(payload, serviceKey);
-  return { url: ingress.url.replace(/\/$/, ''), headers };
+  const endpoint: SandboxOpencodeEndpoint = {
+    externalId,
+    port: DAEMON_PORT,
+    url: `http://127.0.0.1:${DAEMON_PORT}`,
+    headers,
+    fetch(input, init) { return fetchSandboxOpencode(endpoint, input, init); },
+  };
+  return endpoint;
+}
+
+export interface SandboxOpencodeEndpoint {
+  externalId: string;
+  port: number;
+  /** Virtual loopback base used only to resolve relative paths. */
+  url: string;
+  headers: Record<string, string>;
+  fetch(input: string | URL, init?: RequestInit): Promise<Response>;
+}
+
+export function fetchSandboxOpencode(
+  endpoint: SandboxOpencodeEndpoint,
+  input: string | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  const url = new URL(input, `${endpoint.url}/`);
+  return fetchComputeNode(endpoint.externalId, endpoint.port, url.pathname + url.search, init);
 }
 
 export type ListResult =
@@ -82,7 +105,7 @@ export async function listSandboxOpencodeSessions(
     // call stack and 500ing the caller (e.g. the session list title-sync).
     const ep = await sandboxOpencodeEndpoint(externalId, userId);
     if (!ep) return { ok: false, reason: 'no_key' };
-    const res = await fetch(
+    const res = await fetchSandboxOpencode(ep,
       `${ep.url}/session?directory=${encodeURIComponent(WORKSPACE)}`,
       // Fail FAST: a healthy daemon answers this list in <300ms; an 8s budget
       // only ever bought riding out a wedged first connection to a freshly

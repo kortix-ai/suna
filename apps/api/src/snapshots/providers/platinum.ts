@@ -753,7 +753,7 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
 
   /**
    * Agent-only fast path: build NEW snapshot from a PREDECESSOR snapshot by
-   * swapping ONLY the kortix-agent binary inside its rootfs (no podman rebuild).
+   * swapping ONLY the kortixd binary inside its rootfs (no podman rebuild).
    * Ships just the agent .gz via the same presign path; the host debugfs-swaps it
    * into the predecessor's materialized rootfs + re-chunks (CAS delta). The caller
    * uses this ONLY when the user image is unchanged AND the predecessor is active
@@ -771,8 +771,8 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
         gzPath,
       );
       // Platinum's GENERAL file-patch primitive: patch our one changed file (the
-      // kortix-agent binary) into the predecessor's rootfs — no rebuild. The guest
-      // path is OURS to specify (Platinum is file-agnostic); /usr/local/bin/kortix-agent
+      // kortixd binary) into the predecessor's rootfs — no rebuild. The guest
+      // path is OURS to specify (Platinum is file-agnostic); /usr/local/bin/kortixd
       // is where our runtime layer (dockerfile-layer.ts) installs it. mode 0100755 =
       // executable (debugfs `write` lands 0644 otherwise).
       const patched = await this.client.json<PlatinumTemplate>('/v1/templates/from-patch', {
@@ -780,7 +780,12 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
         body: JSON.stringify({
           name: newSnapshotName,
           source_template_name: sourceSnapshotName,
-          files: [{ s3_key: context_s3_key, guest_path: '/usr/local/bin/kortix-agent', mode: 0o100755 }],
+          files: [
+            { s3_key: context_s3_key, guest_path: '/usr/local/bin/kortixd', mode: 0o100755 },
+            // Old snapshot entrypoints still launch this path. Remove this patch
+            // after no active predecessor predates the kortixd image contract.
+            { s3_key: context_s3_key, guest_path: '/usr/local/bin/kortix-agent', mode: 0o100755 },
+          ],
         }),
       });
       // PHASE 2 EXACT ID: from-patch MUST return a non-empty id — poll it, never

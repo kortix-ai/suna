@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { readStoredNodeConfig } from './node/config-store'
 
 /**
  * Env contract for kortix-sandbox-agent-server.
@@ -52,6 +53,8 @@ const Schema = z.object({
   KORTIX_PROJECT_AUTO_CLONE: BoolFlag.default(false),
   KORTIX_PROJECT_ID: z.string().optional(),
   KORTIX_API_URL: z.string().optional(),
+  KORTIX_COMPUTE_NODE_ID: z.string().optional(),
+  KORTIX_NODE_TOKEN: z.string().optional(),
   KORTIX_REPO_URL: z.string().optional(),
   KORTIX_BRANCH_NAME: z.string().optional(),
   KORTIX_SESSION_FRESH: z.string().optional(),
@@ -120,6 +123,8 @@ export type Config = {
   autoClone: boolean
   projectId: string | undefined
   apiUrl: string | undefined
+  computeNodeId?: string
+  nodeToken?: string
   repoUrl: string | undefined
   branchName: string | undefined
   sessionFresh: boolean
@@ -144,6 +149,7 @@ export type Config = {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const storedNode = readStoredNodeConfig(env)
   const parsed = Schema.parse({
     KORTIX_SERVICE_PORT: env.KORTIX_SERVICE_PORT,
     KORTIX_OPENCODE_INTERNAL_PORT: env.KORTIX_OPENCODE_INTERNAL_PORT,
@@ -157,7 +163,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_DEFAULT_OPENCODE_CONFIG_DIR: env.KORTIX_DEFAULT_OPENCODE_CONFIG_DIR,
     KORTIX_PROJECT_AUTO_CLONE: env.KORTIX_PROJECT_AUTO_CLONE,
     KORTIX_PROJECT_ID: env.KORTIX_PROJECT_ID,
-    KORTIX_API_URL: env.KORTIX_API_URL,
+    KORTIX_API_URL: env.KORTIX_API_URL ?? storedNode?.api_url,
+    KORTIX_COMPUTE_NODE_ID: env.KORTIX_COMPUTE_NODE_ID ?? storedNode?.compute_node_id,
+    KORTIX_NODE_TOKEN: env.KORTIX_NODE_TOKEN ?? storedNode?.credential,
     KORTIX_REPO_URL: env.KORTIX_REPO_URL,
     KORTIX_BRANCH_NAME: env.KORTIX_BRANCH_NAME,
     KORTIX_SESSION_FRESH: env.KORTIX_SESSION_FRESH,
@@ -191,6 +199,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     autoClone: parsed.KORTIX_PROJECT_AUTO_CLONE,
     projectId: parsed.KORTIX_PROJECT_ID,
     apiUrl: parsed.KORTIX_API_URL,
+    computeNodeId: parsed.KORTIX_COMPUTE_NODE_ID,
+    nodeToken: parsed.KORTIX_NODE_TOKEN,
     repoUrl: parsed.KORTIX_REPO_URL,
     branchName: parsed.KORTIX_BRANCH_NAME,
     sessionFresh: parsed.KORTIX_SESSION_FRESH === '1',

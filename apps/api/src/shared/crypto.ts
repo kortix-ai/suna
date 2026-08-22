@@ -23,6 +23,8 @@ export function randomAlphanumeric(length: number): string {
 export const KEY_PREFIX = 'kortix_';
 export const KEY_PREFIX_SANDBOX = 'kortix_sb_';
 export const KEY_PREFIX_TUNNEL = 'kortix_tnl_';
+export const KEY_PREFIX_NODE = 'kortix_node_';
+export const KEY_PREFIX_NODE_ENROLL = 'kortix_node_enroll_';
 export const KEY_PREFIX_PAT = 'kortix_pat_';
 export const KEY_PREFIX_SA = 'kortix_sa_';
 export const KEY_PREFIX_GATEWAY = 'kortix_gw_';
@@ -68,6 +70,26 @@ export function generateSandboxKeyPair(): { publicKey: string; secretKey: string
  */
 export function generateTunnelToken(): string {
   return `${KEY_PREFIX_TUNNEL}${randomAlphanumeric(SECRET_RANDOM_LENGTH)}`;
+}
+
+export function generateNodeCredential(): { secret: string; publicPrefix: string } {
+  const body = randomAlphanumeric(SECRET_RANDOM_LENGTH);
+  return {
+    secret: `${KEY_PREFIX_NODE}${body}`,
+    publicPrefix: `${KEY_PREFIX_NODE}${body.slice(0, 8)}…`,
+  };
+}
+
+export function generateNodeEnrollmentToken(): string {
+  return `${KEY_PREFIX_NODE_ENROLL}${randomAlphanumeric(SECRET_RANDOM_LENGTH)}`;
+}
+
+export function isNodeCredential(token: string): boolean {
+  return token.startsWith(KEY_PREFIX_NODE) && !token.startsWith(KEY_PREFIX_NODE_ENROLL);
+}
+
+export function isNodeEnrollmentToken(token: string): boolean {
+  return token.startsWith(KEY_PREFIX_NODE_ENROLL);
 }
 
 /**

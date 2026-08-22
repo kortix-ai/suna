@@ -5,7 +5,7 @@ The base Docker image for every Kortix project-session sandbox.
 ```
 apps/sandbox/
   Dockerfile         # two-stage: builds the agent binary, bakes runtime
-  entrypoint.sh      # exec /usr/local/bin/kortix-agent "$@"
+  entrypoint.sh      # supervises /usr/local/bin/kortixd
   README.md          # this file
 ```
 
@@ -13,7 +13,7 @@ The image bundles **only what the sandbox needs to run a session**:
 
 - `git`, `ca-certificates`, `curl` — for cloning the project repo at boot.
 - `opencode-ai` — the OpenCode REST runtime.
-- `kortix-agent` — the compiled daemon from
+- `kortixd` — the standalone node daemon from
   [`apps/kortix-sandbox-agent-server`](../kortix-sandbox-agent-server). Its
   source is built in a Docker pre-stage so the final image carries only
   the single Bun-compiled binary.
@@ -35,7 +35,7 @@ docker build -f apps/sandbox/Dockerfile -t kortix/kortix-sandbox:dev .
 Production sessions do **not** use a shared snapshot. The snapshot builder
 (`apps/api/src/snapshots/builder.ts`) reads each project's
 `.kortix/Dockerfile`, layers the Kortix runtime (OpenCode REST, the
-`kortix-agent` binary, and the entrypoint) on
+`kortixd` binary, and the entrypoint) on
 top, and creates a per-project
 Daytona snapshot named `kortix-snap-{project[:8]}-{contentHash[:12]}`.
 Each session boots from that project's latest `ready` snapshot.

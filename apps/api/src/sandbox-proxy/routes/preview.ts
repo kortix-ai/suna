@@ -47,6 +47,7 @@ import {
   routeSandboxIngress,
   wakeSandbox,
 } from '../backend';
+import { fetchComputeNode } from '../../compute-nodes';
 import {
   DEFAULT_AGENT_SENTINEL,
   type PrePromptEnvSyncDeps,
@@ -817,7 +818,7 @@ export async function forwardToSandbox(
     path: remainingPath,
     transport: 'http' as const,
   };
-  const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
+  const upstreamPort = port;
   // Did the BOX author this request? It holds two credentials that authenticate
   // perfectly well, and every deadline decision below — the turn-start
   // observation, the preview-use extend, the auto-resume — must exclude them or
@@ -1106,9 +1107,12 @@ export async function forwardToSandbox(
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
-      lastAttemptHop = 'provider_ingress';
-      const ingress = await resolveSandboxIngress(record, ingressRequest);
-      ptl.mark('ingress');
+      lastAttemptHop = portFailureHop(upstreamPort);
+      const ingress = {
+        url: `http://127.0.0.1:${upstreamPort}`,
+        headers: {} as Record<string, string>,
+      };
+      ptl.mark('node-channel');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
@@ -1198,7 +1202,12 @@ export async function forwardToSandbox(
         const readUrl =
           previewUrl.replace(/\/$/, '') +
           promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
-        const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+        const newestKnownTime = await readNewestWireIdTime({
+          url: readUrl,
+          headers: authHeaders,
+          fetchImpl: ((_url: string | URL | Request, init?: RequestInit) =>
+            fetchComputeNode(record.externalId, upstreamPort, new URL(readUrl).pathname + new URL(readUrl).search, init)) as typeof fetch,
+        });
         ptl.mark('wire-id-read');
         const placed = repairPromptWireId({
           body: requestBody,
@@ -1331,7 +1340,7 @@ export async function forwardToSandbox(
           );
         }
         if (nonReplayableWrite) promptDeliveryMayHaveReachedUpstream = true;
-        upstream = await fetch(targetUrl, {
+        upstream = await fetchComputeNode(record.externalId, upstreamPort, remainingPath + queryString, {
           method,
           headers,
           body: requestBody,
@@ -1639,7 +1648,7 @@ export async function resolvePreviewWsUpstream(opts: {
    *  override reads it (connectors/share.ts). REQUIRED, same reasoning. */
   boundCredentialSessionId: string | null;
 }): Promise<
-  | { ok: true; url: string; headers: Record<string, string> }
+  | { ok: true; externalId: string; port: number; path: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
   const { sandboxId, userId, remainingPath, queryString } = opts;
@@ -1649,12 +1658,7 @@ export async function resolvePreviewWsUpstream(opts: {
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
 
-  const ingressRequest = {
-    port: opts.upstreamPort,
-    path: remainingPath,
-    transport: 'websocket' as const,
-  };
-  const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
+  const upstreamPort = opts.upstreamPort;
 
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
@@ -1685,31 +1689,14 @@ export async function resolvePreviewWsUpstream(opts: {
     return { ok: false, status: 503, message: 'sandbox not ready' };
   }
 
-  const ingress = await resolveSandboxIngress(record, ingressRequest);
-  const previewUrl = ingress.url;
-  const wsBase = previewUrl
-    .replace(/\/$/, '')
-    .replace(/^http:/i, 'ws:')
-    .replace(/^https:/i, 'wss:');
+  if (!record.externalId) return { ok: false, status: 503, message: 'sandbox node is unavailable' };
   const headers = await buildSandboxUpstreamHeaders({
     sandboxId,
     userId,
     serviceKey: record.serviceKey,
-    providerHeaders: ingress.headers,
+    providerHeaders: {},
   });
-
-  const upstreamUrl = new URL(wsBase + remainingPath + queryString);
-  if (ingress.websocket?.userContextQueryParam) {
-    const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
-    if (signedContext) {
-      upstreamUrl.searchParams.set(ingress.websocket.userContextQueryParam, signedContext);
-    }
-  }
-  for (const [key, value] of Object.entries(ingress.websocket?.queryDefaults ?? {})) {
-    if (!upstreamUrl.searchParams.has(key)) upstreamUrl.searchParams.set(key, value);
-  }
-
-  return { ok: true, url: upstreamUrl.toString(), headers };
+  return { ok: true, externalId: record.externalId, port: upstreamPort, path: remainingPath + queryString, headers };
 }
 
 // The largest body the proxy will accept, matching Bun's own default socket

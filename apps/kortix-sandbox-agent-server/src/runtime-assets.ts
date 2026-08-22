@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, createPublicKey, verify } from 'node:crypto'
+import { runtimeManifestSigningPayload, type RuntimeManifestSignature } from '@kortix/api-contract/runtime-manifest'
 import {
   chmod,
   mkdir,
@@ -66,7 +67,7 @@ const DEFAULT_STATE_PATH = '/opt/kortix/runtime-assets-state.json'
  * merely unlikely. Updates install BESIDE it, in the kortix-owned state dir
  * below, and the supervisor prefers `agent.current` when one is present.
  */
-const DEFAULT_AGENT_BAKED_PATH = '/usr/local/bin/kortix-agent'
+const DEFAULT_AGENT_BAKED_PATH = '/usr/local/bin/kortixd'
 /**
  * kortix-owned state dir. Holds this module's digest cache plus the four files
  * the supervisor owns: `agent.current` (the installed update), `agent.next`
@@ -173,6 +174,8 @@ export interface RuntimeAssetsOptions {
   opencodeDepsDir?: string
   /** Test seam for the `bun install` that materializes a refreshed plugin pin. */
   installPluginDeps?: (dir: string) => Promise<void>
+  /** Enrollment-pinned Ed25519 key. When present, unsigned manifests fail closed. */
+  manifestSigningPublicKey?: string
 }
 
 /** One entry of the v2 `components` map. Every field is optional by contract. */
@@ -195,6 +198,7 @@ interface RuntimeAssetsManifest {
   build?: unknown
   components?: unknown
   policy?: unknown
+  signature?: RuntimeManifestSignature | null
 }
 
 interface OverlayFile {
@@ -778,6 +782,10 @@ export async function reconcileRuntimeAssets(
   if (!manifest) {
     return { cli: 'skipped', skills: 'skipped', reason: 'manifest unavailable' }
   }
+  const publicKey = options.manifestSigningPublicKey ?? process.env.KORTIX_RUNTIME_ASSET_SIGNING_PUBLIC_KEY?.replace(/\\n/g, '\n')
+  if (publicKey && !verifyRuntimeManifest(manifest, publicKey)) {
+    return { cli: 'failed', skills: 'failed', reason: 'runtime manifest signature is missing or invalid' }
+  }
 
   const state = await readState(statePath)
   const nextState: RuntimeAssetsState = { ...state }
@@ -1110,6 +1118,13 @@ export async function reconcileRuntimeAssets(
   return result
 }
 
+export function verifyRuntimeManifest(manifest: RuntimeAssetsManifest, publicKey: string): boolean {
+  try {
+    if (manifest.signature?.algorithm !== 'ed25519' || typeof manifest.signature.value !== 'string') return false
+    return verify(null, Buffer.from(runtimeManifestSigningPayload(manifest as unknown as Record<string, unknown>)), createPublicKey(publicKey), Buffer.from(manifest.signature.value, 'base64'))
+  } catch { return false }
+}
+
 // ── Requesting the swap ────────────────────────────────────────────────────
 
 /**
@@ -1153,6 +1168,18 @@ const swapBlockers = new Map<string, () => boolean>()
 
 export function registerAgentSwapBlocker(name: string, isBusy: () => boolean): void {
   swapBlockers.set(name, isBusy)
+}
+
+/**
+ * Drop a blocker when the thing it spoke for is gone.
+ *
+ * Without this a stopped workload blocks convergence forever. The concrete case:
+ * a warm seed registers `busy = !captureReady()`, capture never completes (the
+ * 2026-06-11 failure), the box is later adopted by a session — and the seed's
+ * blocker still answers "busy", so the node never converges again.
+ */
+export function unregisterAgentSwapBlocker(name: string): void {
+  swapBlockers.delete(name)
 }
 
 /** Test seam: drop every registered blocker. */

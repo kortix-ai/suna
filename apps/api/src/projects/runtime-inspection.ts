@@ -1,8 +1,8 @@
 import {
   buildSandboxUpstreamHeaders,
-  resolveSandboxIngress,
   resolveServiceKey,
 } from '../sandbox-proxy/backend';
+import { fetchComputeNode } from '../compute-nodes';
 
 const DAEMON_PORT = 8000;
 
@@ -25,17 +25,13 @@ export async function inspectSandboxRuntime(
   try {
     const serviceKey = await resolveServiceKey(externalId);
     if (!serviceKey) return null;
-    const ingress = await resolveSandboxIngress(externalId, {
-      port: DAEMON_PORT,
-      transport: 'http',
-    });
     const headers = await buildSandboxUpstreamHeaders({
       sandboxId: externalId,
       userId: userId ?? '',
       serviceKey,
-      providerHeaders: ingress.headers,
+      providerHeaders: {},
     });
-    const response = await fetch(`${ingress.url.replace(/\/$/, '')}/kortix/health`, {
+    const response = await fetchComputeNode(externalId, DAEMON_PORT, '/kortix/health', {
       headers,
       signal: AbortSignal.timeout(3_000),
     });

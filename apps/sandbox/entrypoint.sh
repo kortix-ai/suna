@@ -136,7 +136,7 @@ cd /
 #
 # Overridable so the supervisor logic is testable without root or a real image;
 # production never sets these. See apps/sandbox/scripts/test-entrypoint-swap.sh.
-AGENT_BAKED="${KORTIX_AGENT_BIN:-/usr/local/bin/kortix-agent}"
+AGENT_BAKED="${KORTIX_AGENT_BIN:-/usr/local/bin/kortixd}"
 AGENT_STATE_DIR="${KORTIX_AGENT_STATE_DIR:-/opt/kortix}"
 AGENT_CURRENT="${AGENT_STATE_DIR}/agent.current"
 AGENT_NEXT="${AGENT_STATE_DIR}/agent.next"

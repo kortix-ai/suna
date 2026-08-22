@@ -457,6 +457,15 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
   );
 }
 
+const realComputeNodes = await import('../compute-nodes');
+mock.module('../compute-nodes', () => ({
+  ...realComputeNodes,
+  fetchComputeNode: async (_externalId: string, _port: number, path: string, init?: RequestInit) =>
+    globalThis.fetch(`${mockPreviewUrl.replace(/\/$/, '')}${path}`, init),
+  fetchComputeNodeById: async (_nodeId: string, _port: number, path: string, init?: RequestInit) =>
+    globalThis.fetch(`${mockPreviewUrl.replace(/\/$/, '')}${path}`, init),
+}));
+
 // ─── Import proxy app AFTER mocks ────────────────────────────────────────────
 
 const { sandboxProxyApp } = await import('../sandbox-proxy/index');
@@ -547,7 +556,7 @@ afterEach(() => {
 });
 
 describe('Preview proxy: websocket upstream resolution', () => {
-  test('keeps Daytona PTY websocket upstreams on direct OpenCode port 4096', async () => {
+  test('routes Daytona PTY websocket upstreams through kortixd to OpenCode port 4096', async () => {
     const upstream = await resolvePreviewWsUpstream({
       sandboxId: TEST_SANDBOX_ID,
       upstreamPort: 4096,
@@ -559,9 +568,9 @@ describe('Preview proxy: websocket upstream resolution', () => {
     });
 
     expect(upstream.ok).toBe(true);
-    expect(mockResolvedPreviewPorts).toEqual([4096]);
+    expect(mockResolvedPreviewPorts).toEqual([]);
     if (upstream.ok) {
-      expect(upstream.url).toBe('wss://preview.daytona.io/proxy-url/pty/pty_test/connect');
+      expect(upstream).toMatchObject({ port: 4096, path: '/pty/pty_test/connect' });
     }
   });
 
@@ -599,7 +608,7 @@ describe('Preview proxy: websocket upstream resolution', () => {
     if (!upstream.ok) expect(upstream.status).toBe(403);
   });
 
-  test('routes Platinum PTY websocket upstreams through the signed agent bridge on 8000', async () => {
+  test('routes Platinum PTY websocket upstreams through kortixd to OpenCode port 4096', async () => {
     mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
     mockPreviewUrl = 'https://8000-platinum.sbx.example';
     mockPreviewToken = null;
@@ -615,20 +624,16 @@ describe('Preview proxy: websocket upstream resolution', () => {
     });
 
     expect(upstream.ok).toBe(true);
-    expect(mockResolvedPreviewPorts).toEqual([8000]);
+    expect(mockResolvedPreviewPorts).toEqual([]);
     if (upstream.ok) {
-      const url = new URL(upstream.url);
-      expect(`${url.origin}${url.pathname}`).toBe(
-        'wss://8000-platinum.sbx.example/pty/pty_test/connect',
-      );
-      const queryContext = url.searchParams.get('__kortix_user_context');
-      expect(queryContext).toBeTruthy();
-      expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
-      expect(upstream.headers[KORTIX_USER_CONTEXT_HEADER]).toBe(queryContext!);
+      expect(upstream).toMatchObject({ port: 4096, path: '/pty/pty_test/connect' });
+      const signedContext = upstream.headers[KORTIX_USER_CONTEXT_HEADER];
+      expect(signedContext).toBeTruthy();
+      expect(verifyKortixUserContext(signedContext!, TEST_SERVICE_KEY).ok).toBe(true);
     }
   });
 
-  test('signs the user context into Platinum Kortix-native PTY websocket URLs', async () => {
+  test('signs the user context header for Kortix-native PTY websocket relays', async () => {
     mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
     mockPreviewUrl = 'https://8000-platinum.sbx.example';
     mockPreviewToken = null;
@@ -644,15 +649,12 @@ describe('Preview proxy: websocket upstream resolution', () => {
     });
 
     expect(upstream.ok).toBe(true);
-    expect(mockResolvedPreviewPorts).toEqual([8000]);
+    expect(mockResolvedPreviewPorts).toEqual([]);
     if (upstream.ok) {
-      const url = new URL(upstream.url);
-      expect(`${url.origin}${url.pathname}`).toBe(
-        'wss://8000-platinum.sbx.example/kortix/pty/kpty_test/connect',
-      );
-      const queryContext = url.searchParams.get('__kortix_user_context');
-      expect(queryContext).toBeTruthy();
-      expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
+      expect(upstream).toMatchObject({ port: 8000, path: '/kortix/pty/kpty_test/connect' });
+      const signedContext = upstream.headers[KORTIX_USER_CONTEXT_HEADER];
+      expect(signedContext).toBeTruthy();
+      expect(verifyKortixUserContext(signedContext!, TEST_SERVICE_KEY).ok).toBe(true);
     }
   });
 });
@@ -844,13 +846,7 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls).toHaveLength(1);
   });
 
-  test('routes Platinum opencode(4096) HTTP through the in-box agent on 8000', async () => {
-    // opencode binds 127.0.0.1:4096 (loopback-only); Platinum's edge dials the
-    // guest eth0 IP, so :4096 is unreachable → 502. The proxy must resolve the
-    // agent's :8000 preview link (it bridges to localhost:4096 in-box). This is
-    // what makes `kortix sessions connect` / `opencode attach` work on Platinum.
-    // Distinct id so the module-level previewLinkCache can't collide with the
-    // PTY test above (which caches a non-preview.* URL for the same id:8000 key).
+  test('routes Platinum opencode HTTP through kortixd to loopback port 4096', async () => {
     mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
     mockFetchResponses = [{ status: 200, body: '{"sessions":[]}' }];
     const app = createProxyTestApp();
@@ -858,20 +854,17 @@ describe('Preview proxy: forwarding', () => {
       headers: { Authorization: 'Bearer test' },
     });
     expect(res.status).toBe(200);
-    // opencode's loopback-only 4096 is unreachable from the Platinum edge, so the
-    // proxy must resolve the agent's :8000 preview link instead of :4096.
-    expect(mockResolvedPreviewPorts).toEqual([8000]);
+    expect(mockResolvedPreviewPorts).toEqual([]);
   });
 
-  test('keeps Daytona opencode(4096) HTTP on the direct port 4096', async () => {
-    // provider defaults to 'daytona' — reaches opencode's 4096 directly, no reroute.
+  test('routes Daytona opencode HTTP through kortixd to loopback port 4096', async () => {
     mockFetchResponses = [{ status: 200, body: '{"sessions":[]}' }];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/daytona-oc-http/4096/session`, {
       headers: { Authorization: 'Bearer test' },
     });
     expect(res.status).toBe(200);
-    expect(mockResolvedPreviewPorts).toEqual([4096]);
+    expect(mockResolvedPreviewPorts).toEqual([]);
   });
 
   test('syncs latest project secrets before forwarding prompt_async', async () => {
@@ -898,7 +891,7 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0].method).toBe('POST');
     expect(mockFetchCalls[0].headers['authorization']).toBe(`Bearer ${TEST_SERVICE_KEY}`);
     expect(mockFetchCalls[0].headers['content-type']).toBe('application/json');
-    expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBe('daytona-preview-token-123');
+    expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBeUndefined();
     expect(JSON.parse(mockFetchCalls[0].body ?? '{}')).toEqual({
       env: {
         OPENROUTER_API_KEY: 'sk-live',
@@ -1182,18 +1175,18 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0].headers['x-request-id']).not.toBe('caller-controlled');
   });
 
-  test('injects Daytona headers', async () => {
+  test('does not inject Daytona ingress headers into the node channel', async () => {
     mockFetchResponses = [{ status: 200, body: 'OK' }];
     const app = createProxyTestApp();
     await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
       headers: { Authorization: 'Bearer test' },
     });
-    expect(mockFetchCalls[0].headers['x-daytona-skip-preview-warning']).toBe('true');
-    expect(mockFetchCalls[0].headers['x-daytona-disable-cors']).toBe('true');
-    expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBe('daytona-preview-token-123');
+    expect(mockFetchCalls[0].headers['x-daytona-skip-preview-warning']).toBeUndefined();
+    expect(mockFetchCalls[0].headers['x-daytona-disable-cors']).toBeUndefined();
+    expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBeUndefined();
   });
 
-  test('forwards E2B private-traffic auth without any provider branch in the proxy', async () => {
+  test('does not forward E2B ingress auth through the node channel', async () => {
     mockDbSandbox = { ...mockDbSandbox, provider: 'e2b' };
     mockPreviewUrl = 'https://8080-e2b-sandbox.e2b.test';
     mockPreviewToken = 'e2b-traffic-token';
@@ -1204,9 +1197,9 @@ describe('Preview proxy: forwarding', () => {
       headers: { Authorization: 'Bearer test' },
     });
 
-    expect(mockFetchCalls[0].headers['e2b-traffic-access-token']).toBe('e2b-traffic-token');
+    expect(mockFetchCalls[0].headers['e2b-traffic-access-token']).toBeUndefined();
     expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBeUndefined();
-    expect(mockResolvedPreviewPorts).toEqual([TEST_PORT]);
+    expect(mockResolvedPreviewPorts).toEqual([]);
   });
 
   test('forwards signed user context for session sandbox access', async () => {

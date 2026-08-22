@@ -65,6 +65,10 @@ mock.module('../../sandbox-proxy/backend', () => ({
     websocket: false,
   }),
 }));
+mock.module('../../compute-nodes', () => ({
+  fetchComputeNode: async (_externalId: string, _port: number, path: string, init?: RequestInit) =>
+    globalThis.fetch(`https://daemon.example.test${path}`, init),
+}));
 
 const { stopExpiredBox } = await import('./stop-box');
 

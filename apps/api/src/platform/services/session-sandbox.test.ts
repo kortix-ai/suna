@@ -509,6 +509,14 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(envVars).not.toHaveProperty('KORTIX_LLM_AI_SDK_NATIVE');
   });
 
+  test('injects the stable logical compute-node id used by the kortixd channel', async () => {
+    const opened = waitFor((resolve) => { onComputeOpened = resolve; });
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_COMPUTE_NODE_ID).toBe(SANDBOX_ID);
+  });
+
   test('the fast flag keeps the standard image so the edge optimization stays isolated', async () => {
     process.env.KORTIX_FAST_COLD_BOOT_ENABLED = 'true';
     const opened = waitFor((resolve) => {

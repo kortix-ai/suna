@@ -234,8 +234,8 @@ jobs:
 
       - name: Verify binary exists
         run: |
-          test -x apps/kortix-sandbox-agent-server/dist/kortix-agent
-          ls -lh apps/kortix-sandbox-agent-server/dist/kortix-agent
+          test -x apps/kortix-sandbox-agent-server/dist/kortixd
+          ls -lh apps/kortix-sandbox-agent-server/dist/kortixd
 
   cli-binary-smoke:
     name: CLI binary smoke

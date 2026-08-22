@@ -294,7 +294,7 @@ ensure_dev_gateway() {
 # not abort dev — the previous binary stays in place.
 ensure_agent_binary() {
   local dir="$ROOT_DIR/apps/kortix-sandbox-agent-server"
-  local bin="$dir/dist/kortix-agent"
+  local bin="$dir/dist/kortixd"
 
   if [[ -f "$bin" ]]; then
     local newer

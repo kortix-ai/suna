@@ -4,9 +4,10 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 // simulates a Daytona 429 `ThrottlerException` / archived box on preview-link
 // resolution (the post-#3567 recurrence path).
 let endpointThrow: Error | null = null;
-let endpointResult: { url: string; headers: Record<string, string> } | null = {
+let endpointResult: { url: string; headers: Record<string, string>; fetch(input: string | URL, init?: RequestInit): Promise<Response> } | null = {
   url: 'http://daemon.local',
   headers: {},
+  fetch: (input, init) => globalThis.fetch(input, init),
 };
 let ensuredPin: string | null = 'oc-root-1';
 let ensuredReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
@@ -34,7 +35,7 @@ const { buildSessionTranscriptDigest } = await import('../projects/lib/session-t
 
 afterEach(() => {
   endpointThrow = null;
-  endpointResult = { url: 'http://daemon.local', headers: {} };
+  endpointResult = { url: 'http://daemon.local', headers: {}, fetch: (input, init) => globalThis.fetch(input, init) };
   ensuredPin = 'oc-root-1';
   ensuredReason = 'unchanged';
 });

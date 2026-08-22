@@ -44,7 +44,7 @@ import {
 const COMMON = {
   opencodeVersion: OPENCODE_VERSION,
   agentBrowserVersion: AGENT_BROWSER_VERSION,
-  agentBinaryPath: 'kortix-agent.gz',
+  agentBinaryPath: 'kortixd.gz',
   cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
@@ -479,7 +479,7 @@ describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
 
   test('does not COPY or reference any staged artifact paths — everything is inherited', () => {
     const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
-    expect(rendered).not.toContain('COPY kortix-agent.gz');
+    expect(rendered).not.toContain('COPY kortixd.gz');
     expect(rendered).not.toContain('COPY kortix.gz');
     expect(rendered).not.toContain('scaffold.git');
     expect(rendered).not.toContain('ENTRYPOINT');

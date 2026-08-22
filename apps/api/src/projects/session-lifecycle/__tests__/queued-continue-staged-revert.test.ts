@@ -40,9 +40,10 @@ let succeededCalls: Array<{ commandId: string; result: unknown; sessionId?: stri
 // automation rows in this file (`baseRow`) have no wire id and still close.
 let forwardedCalls: Array<{ commandId: string; sessionId: string; wireMessageId: string }> = [];
 let failedCalls: Array<{ commandId: string; message: string; opts: unknown }> = [];
-let endpointResult: { url: string; headers: Record<string, string> } | null = {
+let endpointResult: { url: string; headers: Record<string, string>; fetch(input: string | URL, init?: RequestInit): Promise<Response> } | null = {
   url: 'https://sandbox.test',
   headers: {},
+  fetch: (input, init) => globalThis.fetch(input, init),
 };
 let sessionInfoBody: unknown = null;
 let sessionInfoStatus = 200;
@@ -202,7 +203,7 @@ beforeEach(() => {
   succeededCalls = [];
   forwardedCalls = [];
   failedCalls = [];
-  endpointResult = { url: 'https://sandbox.test', headers: {} };
+  endpointResult = { url: 'https://sandbox.test', headers: {}, fetch: (input, init) => globalThis.fetch(input, init) };
   sessionInfoBody = null;
   sessionInfoStatus = 200;
   globalThis.fetch = (async (url: string | URL) => {

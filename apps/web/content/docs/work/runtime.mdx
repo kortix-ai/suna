@@ -56,7 +56,7 @@ The session header reports each server-confirmed reload phase in real time. A we
 ```
 /workspace                       ← WORKDIR. The project repo is cloned here.
 /workspace/.kortix/              ← Repo-internal Kortix folder (Dockerfile + opencode config dir).
-/usr/local/bin/kortix-agent      ← The daemon (supervisor + reverse proxy).
+/usr/local/bin/kortixd           ← The standalone node daemon.
 /usr/local/bin/kortix-entrypoint ← The container ENTRYPOINT (PID 1).
 /opt/kortix/home                 ← OpenCode's HOME — its object store lives here, off the repo.
 ```

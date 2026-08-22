@@ -26,7 +26,7 @@
 import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
-import { sandboxOpencodeEndpoint } from '../../projects/opencode-mapping';
+import { sandboxOpencodeEndpoint, type SandboxOpencodeEndpoint } from '../../projects/opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../../projects/sandbox-fetch';
 import { promptVoiceAgent, settleAsk } from './runtime';
 import { kortixError, kortixResult } from './utterance';
@@ -84,7 +84,7 @@ function spokenText(message: OpencodeMessageLite): string {
 
 async function resolveOpencode(
   sessionId: string,
-): Promise<{ url: string; headers: Record<string, string>; opencodeSessionId: string } | null> {
+): Promise<(SandboxOpencodeEndpoint & { opencodeSessionId: string }) | null> {
   const [session] = await db
     .select({
       createdBy: projectSessions.createdBy,
@@ -109,10 +109,10 @@ async function resolveOpencode(
 }
 
 async function fetchMessages(
-  endpoint: { url: string; headers: Record<string, string>; opencodeSessionId: string },
+  endpoint: SandboxOpencodeEndpoint & { opencodeSessionId: string },
 ): Promise<OpencodeMessageLite[] | null> {
   try {
-    const res = await fetch(
+    const res = await endpoint.fetch(
       `${endpoint.url}/session/${encodeURIComponent(endpoint.opencodeSessionId)}/message?limit=20`,
       {
         method: 'GET',
@@ -150,7 +150,7 @@ async function fetchMessages(
 class FetchTickError extends Error {}
 
 async function tryFetchMessages(
-  endpoint: { url: string; headers: Record<string, string>; opencodeSessionId: string },
+  endpoint: SandboxOpencodeEndpoint & { opencodeSessionId: string },
 ): Promise<{ messages: OpencodeMessageLite[] | null; error: string | null }> {
   try {
     return { messages: await fetchMessages(endpoint), error: null };

@@ -12,7 +12,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { getProvider } from '../../platform/providers';
-import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
+import { resolveServiceKey } from '../../sandbox-proxy/backend';
+import { fetchComputeNode } from '../../compute-nodes';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import type { StopReason } from '../stop-reason';
 import {
@@ -48,13 +49,8 @@ const ABORT_TIMEOUT_MS = 4_000;
  * Shared by `stopSession` and `stopExpiredBox` — the only two call sites that
  * power a box off.
  *
- * Reuses the exact primitives the rest of apps/api uses to reach a sandbox
- * daemon directly server-to-server — `resolveServiceKey` +
- * `resolveSandboxIngress` (sandbox-proxy/backend.ts) and
- * `encodeKortixUserContext` (shared/kortix-user-context.ts), the same trio
- * `opencode-mapping.ts`'s `sandboxOpencodeEndpoint` and
- * `sandbox-proxy/backend.ts`'s `buildSandboxUpstreamHeaders` compose — not a
- * new client.
+ * Reuses the authenticated compute-node channel and the same signed user
+ * context as every other API-to-kortixd request.
  *
  * `userId` is omitted for system-triggered stops (the idle reaper). The
  * daemon's `/kortix/abort` only verifies the
@@ -79,9 +75,7 @@ export async function abortLiveTurnBeforeStop(input: {
     const serviceKey = await resolveServiceKey(externalId);
     if (!serviceKey) return; // nothing to sign with — box has no key on record
 
-    const ingress = await resolveSandboxIngress(externalId, { port: DAEMON_PORT, transport: 'http' });
     const headers: Record<string, string> = {
-      ...ingress.headers,
       Authorization: `Bearer ${serviceKey}`,
       [KORTIX_USER_CONTEXT_HEADER]: encodeKortixUserContext(
         {
@@ -94,7 +88,7 @@ export async function abortLiveTurnBeforeStop(input: {
       ),
     };
 
-    const res = await fetch(`${ingress.url.replace(/\/$/, '')}/kortix/abort`, {
+    const res = await fetchComputeNode(externalId, DAEMON_PORT, '/kortix/abort', {
       method: 'POST',
       headers,
       signal: AbortSignal.timeout(ABORT_TIMEOUT_MS),

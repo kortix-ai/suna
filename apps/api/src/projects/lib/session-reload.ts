@@ -32,7 +32,7 @@
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { fetchComputeNode } from '../../compute-nodes';
 import { invalidateProjectMirror, type GitBackedProject } from '../git';
 import {
   agentConfigEtag,
@@ -242,14 +242,12 @@ export async function readSandboxConfigState(input: {
     const serviceKey = (row.config as Record<string, unknown> | null)?.serviceKey;
     if (typeof serviceKey !== 'string') return unreachable;
 
-    const { url, headers } = await resolveSandboxIngress(row.externalId, {
-      port: SANDBOX_SERVICE_PORT,
-      transport: 'http',
-    });
-    const res = await fetch(
-      `${url.replace(/\/$/, '')}/kortix/health${input.includeTurnState ? '?turn=1' : ''}`,
+    const res = await fetchComputeNode(
+      row.externalId,
+      SANDBOX_SERVICE_PORT,
+      `/kortix/health${input.includeTurnState ? '?turn=1' : ''}`,
       {
-        headers: { ...headers, Authorization: `Bearer ${serviceKey}` },
+        headers: { Authorization: `Bearer ${serviceKey}` },
         signal: AbortSignal.timeout(10_000),
       },
     );
@@ -523,17 +521,13 @@ async function refreshSandboxWorkspace(sessionId: string): Promise<{
     const serviceKey = (row?.config as Record<string, unknown> | null)?.serviceKey;
     if (!row?.externalId || typeof serviceKey !== 'string') return unreachable;
 
-    const { url, headers } = await resolveSandboxIngress(row.externalId, {
-      port: SANDBOX_SERVICE_PORT,
-      transport: 'http',
-    });
     // `config_dir=1` is the half that makes a reload change behaviour — see the
     // comment above. Sent unconditionally: a daemon built before it shipped just
     // ignores the query parameter and answers without `config_dir`, which reads
     // back as `null` ("could not tell") rather than `false`.
-    const res = await fetch(`${url.replace(/\/$/, '')}/kortix/refresh?restart=0&config_dir=1`, {
+    const res = await fetchComputeNode(row.externalId, SANDBOX_SERVICE_PORT, '/kortix/refresh?restart=0&config_dir=1', {
       method: 'POST',
-      headers: { ...headers, Authorization: `Bearer ${serviceKey}` },
+      headers: { Authorization: `Bearer ${serviceKey}` },
       signal: AbortSignal.timeout(120_000),
     });
     if (!res.ok) return unreachable;

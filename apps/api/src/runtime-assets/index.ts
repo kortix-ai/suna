@@ -86,6 +86,7 @@ const ManifestSchema = z
       'managed-skills': z.object({ hash: z.string(), count: z.number().int() }),
     }),
     policy: z.object({ agent_self_update: z.boolean() }),
+    signature: z.object({ algorithm: z.literal('ed25519'), key_id: z.string(), value: z.string() }).nullable().optional(),
   })
   .openapi('RuntimeAssetsManifest');
 

@@ -17,6 +17,8 @@ import { syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
 import { applyImpersonation } from './impersonation';
 import { buildActor } from '../iam/actor';
+import { validateNodeCredentialAny } from '../repositories/compute-node-credentials';
+import { isNodeCredential } from '../shared/crypto';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -419,6 +421,22 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
  */
 export async function combinedAuth(c: Context, next: Next) {
   return resolveCombinedAuth(c, () => applyImpersonation(c, () => withActor(c, next)));
+}
+
+/** Runtime assets accept node credentials without widening node authority. */
+export async function nodeOrCombinedAuth(c: Context, next: Next) {
+  const header = c.req.header('Authorization');
+  const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (isNodeCredential(token)) {
+    const node = await validateNodeCredentialAny(token);
+    if (!node) throw new HTTPException(401, { message: 'Node credential is invalid' });
+    c.set('accountId', node.accountId);
+    c.set('authType', 'node');
+    c.set('computeNodeId', node.nodeId);
+    await next();
+    return;
+  }
+  return combinedAuth(c, next);
 }
 
 async function resolveCombinedAuth(c: Context, next: Next) {

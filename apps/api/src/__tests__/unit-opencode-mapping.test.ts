@@ -25,6 +25,10 @@ mock.module('../sandbox-proxy/backend', () => ({
     effectivePort: 8000,
   }),
 }));
+mock.module('../compute-nodes', () => ({
+  fetchComputeNode: async (_externalId: string, _port: number, path: string, init?: RequestInit) =>
+    globalThis.fetch(`http://sandbox.test${path}`, init),
+}));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in

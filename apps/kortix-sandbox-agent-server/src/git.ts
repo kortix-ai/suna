@@ -335,7 +335,7 @@ function deriveAuthHost(repoUrl: string): string | null {
 // The compiled daemon binary is its own credential helper. In dev (`bun run
 // src/main.ts`) execPath is `bun`, which can't re-dispatch the subcommand — but
 // credential help is only needed in the real sandbox, where execPath is the
-// baked /usr/local/bin/kortix-agent.
+// baked /usr/local/bin/kortixd.
 function credentialHelperSpec(): string {
   return `!'${process.execPath}' git-credential`
 }

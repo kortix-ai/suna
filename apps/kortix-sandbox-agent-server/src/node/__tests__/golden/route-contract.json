@@ -1,0 +1,398 @@
+{
+  "GET /kortix/health": {
+    "unauthenticated": {
+      "status": 200,
+      "keys": [
+        "agent_config_etag",
+        "auth",
+        "boot_error",
+        "boot_timeline",
+        "branch",
+        "commit_sha",
+        "daemon",
+        "opencode",
+        "opencode_pid",
+        "opencode_port",
+        "opencode_session_id",
+        "opencode_session_required",
+        "repo",
+        "repo_ready",
+        "repo_required",
+        "runtime",
+        "runtimeReady",
+        "static_web_port",
+        "status",
+        "uptime_s",
+        "workload"
+      ]
+    },
+    "authenticated": {
+      "status": 200,
+      "keys": [
+        "agent_config_etag",
+        "auth",
+        "boot_error",
+        "boot_timeline",
+        "branch",
+        "commit_sha",
+        "daemon",
+        "opencode",
+        "opencode_pid",
+        "opencode_port",
+        "opencode_session_id",
+        "opencode_session_required",
+        "repo",
+        "repo_ready",
+        "repo_required",
+        "runtime",
+        "runtimeReady",
+        "static_web_port",
+        "status",
+        "uptime_s",
+        "workload"
+      ]
+    }
+  },
+  "GET /kortix/health/": {
+    "unauthenticated": {
+      "status": 200,
+      "keys": [
+        "agent_config_etag",
+        "auth",
+        "boot_error",
+        "boot_timeline",
+        "branch",
+        "commit_sha",
+        "daemon",
+        "opencode",
+        "opencode_pid",
+        "opencode_port",
+        "opencode_session_id",
+        "opencode_session_required",
+        "repo",
+        "repo_ready",
+        "repo_required",
+        "runtime",
+        "runtimeReady",
+        "static_web_port",
+        "status",
+        "uptime_s",
+        "workload"
+      ]
+    },
+    "authenticated": {
+      "status": 200,
+      "keys": [
+        "agent_config_etag",
+        "auth",
+        "boot_error",
+        "boot_timeline",
+        "branch",
+        "commit_sha",
+        "daemon",
+        "opencode",
+        "opencode_pid",
+        "opencode_port",
+        "opencode_session_id",
+        "opencode_session_required",
+        "repo",
+        "repo_ready",
+        "repo_required",
+        "runtime",
+        "runtimeReady",
+        "static_web_port",
+        "status",
+        "uptime_s",
+        "workload"
+      ]
+    }
+  },
+  "POST /kortix/refresh": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 409,
+      "keys": [
+        "error",
+        "message"
+      ]
+    }
+  },
+  "POST /kortix/abort": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 409,
+      "keys": [
+        "error",
+        "ok"
+      ]
+    }
+  },
+  "GET /kortix/pty": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 200,
+      "keys": []
+    }
+  },
+  "GET /kortix/git": {
+    "unauthenticated": {
+      "status": 404,
+      "keys": [
+        "detail",
+        "error"
+      ]
+    },
+    "authenticated": {
+      "status": 404,
+      "keys": [
+        "detail",
+        "error"
+      ]
+    }
+  },
+  "GET /kortix/env": {
+    "unauthenticated": {
+      "status": 404,
+      "keys": [
+        "detail",
+        "error"
+      ]
+    },
+    "authenticated": {
+      "status": 404,
+      "keys": [
+        "detail",
+        "error"
+      ]
+    }
+  },
+  "POST /kortix/env": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error"
+      ]
+    },
+    "authenticated": {
+      "status": 401,
+      "keys": [
+        "error"
+      ]
+    }
+  },
+  "GET /kortix": {
+    "unauthenticated": {
+      "status": 404,
+      "keys": [
+        "detail",
+        "error"
+      ]
+    },
+    "authenticated": {
+      "status": 404,
+      "keys": [
+        "detail",
+        "error"
+      ]
+    }
+  },
+  "POST /kortix": {
+    "unauthenticated": {
+      "status": 404,
+      "keys": [
+        "detail",
+        "error"
+      ]
+    },
+    "authenticated": {
+      "status": 404,
+      "keys": [
+        "detail",
+        "error"
+      ]
+    }
+  },
+  "GET /file?path=/": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 403,
+      "keys": [
+        "error"
+      ]
+    }
+  },
+  "GET /file/content?path=/nope.txt": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 403,
+      "keys": [
+        "error"
+      ]
+    }
+  },
+  "GET /file/raw?path=/nope.txt": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 403,
+      "keys": [
+        "error"
+      ]
+    }
+  },
+  "GET /file/status": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 200,
+      "keys": []
+    }
+  },
+  "POST /file/mkdir": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 403,
+      "keys": [
+        "error"
+      ]
+    }
+  },
+  "GET /find?q=nothing": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 400,
+      "keys": [
+        "error"
+      ]
+    }
+  },
+  "GET /find/file?q=nothing": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 200,
+      "keys": []
+    }
+  },
+  "GET /proxy/8000/": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 403,
+      "keys": [
+        "error",
+        "port"
+      ]
+    }
+  },
+  "GET /web-proxy/http/127.0.0.1:8000/": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 403,
+      "keys": [
+        "code",
+        "error"
+      ]
+    }
+  },
+  "GET /global/health": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 502,
+      "keys": [
+        "details",
+        "error"
+      ]
+    }
+  },
+  "GET /session": {
+    "unauthenticated": {
+      "status": 401,
+      "keys": [
+        "error",
+        "reason"
+      ]
+    },
+    "authenticated": {
+      "status": 502,
+      "keys": [
+        "details",
+        "error"
+      ]
+    }
+  }
+}

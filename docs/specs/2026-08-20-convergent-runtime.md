@@ -94,20 +94,19 @@ rebuild).
 
 ## Self-update: the supervisor owns the swap
 
-`apps/sandbox/entrypoint.sh` currently ends with `exec /usr/local/bin/kortix-agent`.
-`exec` replaces the shell, so nothing supervises the daemon and it has nowhere to
-hand control back to. A process also cannot safely overwrite its own running
-binary.
+`apps/sandbox/entrypoint.sh` supervises `/usr/local/bin/kortixd`. The daemon
+returns exit code `75` when a verified update is ready. The entrypoint then
+performs the swap and restarts the daemon.
 
 ### The baked binary is an immutable floor
 
-`/usr/local/bin/kortix-agent` is **root-owned**, and the daemon runs as `kortix`
+`/usr/local/bin/kortixd` is **root-owned**, and the daemon runs as `kortix`
 after the privilege drop. That is not an obstacle to work around — it is the
 safety property. Updates are therefore installed *beside* it:
 
 | Path | Owner | Role |
 |---|---|---|
-| `/usr/local/bin/kortix-agent` | root | baked floor; runtime code cannot write it |
+| `/usr/local/bin/kortixd` | root | baked floor; runtime code cannot write it |
 | `/opt/kortix/agent.current` | kortix | the updated binary, when one is installed |
 | `/opt/kortix/agent.next` | kortix | staged by the daemon, promoted at next start |
 | `/opt/kortix/agent.prev` | kortix | previous `agent.current`, for rollback |

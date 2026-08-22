@@ -106,7 +106,7 @@ export async function buildSessionTranscriptDigest(input: {
   // throw must NEVER bubble up and 500 the transcript read (see #3567 for the
   // sibling title-sync fix — this is the same class of bug on a different
   // post-#3567 call site). Degrade to an unavailable digest instead.
-  let endpoint: { url: string; headers: Record<string, string> } | null;
+  let endpoint: Awaited<ReturnType<typeof sandboxOpencodeEndpoint>>;
   try {
     endpoint = await sandboxOpencodeEndpoint(externalId, userId);
   } catch (err) {
@@ -129,7 +129,7 @@ export async function buildSessionTranscriptDigest(input: {
     );
     url.searchParams.set('directory', WORKSPACE_DIRECTORY);
     url.searchParams.set('limit', String(limit));
-    const res = await fetch(url, {
+    const res = await endpoint.fetch(url, {
       method: 'GET',
       headers: sandboxRuntimeRequestHeaders(endpoint.headers),
       signal: AbortSignal.timeout(8_000),
