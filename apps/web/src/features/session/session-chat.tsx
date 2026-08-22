@@ -1807,7 +1807,7 @@ function SessionTurnImpl({
  * three reverting silently turns this memo back into a no-op — it would still
  * compile, still pass tests, and simply never bail out.
  */
-const SessionTurn = memo(SessionTurnImpl);
+export const SessionTurn = memo(SessionTurnImpl);
 SessionTurn.displayName = 'SessionTurn';
 
 // ============================================================================
@@ -1867,7 +1867,7 @@ interface SessionChatProps {
  * places (the optimistic pass and the first turn after a landed compaction);
  * they were byte-identical copies, so they live here to stay that way.
  */
-function CompactionDivider(): React.ReactElement {
+export function CompactionDivider(): React.ReactElement {
   return (
     <div className="my-3 flex items-center gap-3 py-4">
       <div className="bg-border h-px flex-1" />
