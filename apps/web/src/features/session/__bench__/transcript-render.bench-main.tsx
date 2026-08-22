@@ -6,17 +6,25 @@
  * five component sources, a happy-dom global document), which is why this runs
  * as its own `bun run` process and never inside the shared `bun test` one.
  *
+ * What is mounted: the REAL `SessionTimelineList` (timeline/session-timeline-list.tsx)
+ * over rows from `buildChatRows`, wired the way `SessionChat` wires it —
+ * `stabilizeTurns` for turn identity, `reuseTimelineRows` for row identity,
+ * stable host facts. The list sits in a scroll container; when the list can
+ * virtualize (Stage 3: `scrollElement` + `virtualizerTestSeam`) it does, under
+ * an injected viewport rect and per-item estimate (happy-dom has no layout, so
+ * the window is estimate-sized); a list without those props renders flat
+ * (Stage 2), so the SAME bench measures both trees.
+ *
  * How the REAL components are reached without editing them:
- * - `SessionTurn` is module-private in `session-chat.tsx`. A `Bun.plugin`
- *   `onLoad` rewrites that file in memory to also export it as
- *   `__benchSessionTurn`. The file on disk is untouched.
- * - Render counting uses the same loader: each probed component's plain
- *   function body (`SessionTurnImpl`, `UserMessage`, `ActivityBurstImpl`,
- *   `ThrottledMarkdownImpl`, `ToolPartRendererImpl`, `TurnViewport`) is wrapped
- *   by `globalThis.__kortixBenchProbe(name, Impl)` BEFORE any `memo()` is
- *   applied, so the memo boundaries are the production ones and the counter
- *   increments exactly when a body runs. Every rewrite asserts a single match;
- *   a refactor that moves a declaration fails this bench loudly.
+ * - Render counting uses a `Bun.plugin` `onLoad` rewrite: each probed
+ *   component's plain function body (`TurnFrame`, `UserMessage`,
+ *   `ActivityBurstImpl`, `ThrottledMarkdownImpl`, `ToolPartRendererImpl`,
+ *   `TurnViewport`) is wrapped by `globalThis.__kortixBenchProbe(name, Impl)`
+ *   BEFORE any `memo()` is applied, so the memo boundaries are the production
+ *   ones and the counter increments exactly when a body runs. `TurnFrame` is
+ *   also wrapped in a per-turn context provider so every body under it is
+ *   attributed to its turn. Every rewrite asserts a single match; a refactor
+ *   that moves a declaration fails this bench loudly. Files on disk are untouched.
  */
 import type { ComponentType, ReactNode } from 'react';
 
@@ -86,7 +94,7 @@ function resolveConfig() {
 
 const PROBE_NAMES = [
   'TurnViewport',
-  'SessionTurn',
+  'TurnFrame',
   'UserMessage',
   'ActivityBurst',
   'ThrottledMarkdown',
@@ -105,7 +113,7 @@ interface ProbeState {
 function emptyCounts(): ProbeCounts {
   return {
     TurnViewport: 0,
-    SessionTurn: 0,
+    TurnFrame: 0,
     UserMessage: 0,
     ActivityBurst: 0,
     ThrottledMarkdown: 0,
@@ -141,6 +149,7 @@ function resetProbes() {
 // which turn they render under (the bench wraps every turn in this context).
 let BenchTurnContext: import('react').Context<string | null> | null = null;
 let reactUseContext: typeof import('react').useContext | null = null;
+let reactCreateElement: typeof import('react').createElement | null = null;
 
 function installProbeFactory() {
   (globalThis as any).__kortixBenchProbe = (name: ProbeName, Impl: (props: any) => any) => {
@@ -164,6 +173,22 @@ function installProbeFactory() {
     (Probed as any).displayName = name;
     return Probed;
   };
+  // `TurnFrame` gets the probe AND provides the per-turn context every body
+  // under it reads (the real host has no such provider; it is bench-only and
+  // adds one context value per mounted turn).
+  (globalThis as any).__kortixBenchTurnFrame = (Impl: (props: any) => any) => {
+    const Probed = (globalThis as any).__kortixBenchProbe('TurnFrame', Impl);
+    const TurnFrameBench = function TurnFrameBench(props: any) {
+      if (!BenchTurnContext || !reactCreateElement) throw new Error('bench: React not loaded');
+      return reactCreateElement(
+        BenchTurnContext.Provider,
+        { value: props.group.userMessageID },
+        reactCreateElement(Probed, props),
+      );
+    };
+    (TurnFrameBench as any).displayName = 'TurnFrame';
+    return TurnFrameBench;
+  };
 }
 
 /** Replace exactly one occurrence or throw — a moved declaration must fail loudly. */
@@ -177,13 +202,13 @@ function replaceOnce(src: string, file: string, from: string, to: string): strin
 }
 
 const PROBE_REWRITES: Record<string, (src: string, file: string) => string> = {
-  'session-chat.tsx': (src, file) =>
-    replaceOnce(
-      src,
-      file,
-      'const SessionTurn = memo(SessionTurnImpl);',
-      "const SessionTurn = memo(globalThis.__kortixBenchProbe('SessionTurn', SessionTurnImpl));",
-    ) + '\nexport { SessionTurn as __benchSessionTurn };\n',
+  // `TurnFrame` is module-private and un-memoized (it re-runs with the list by
+  // design; its memo'd rows are what hold). It becomes a `const` initialized
+  // after every function that references it is DEFINED but before any is
+  // CALLED (render time), so the hoisting change is safe.
+  'session-timeline-list.tsx': (src, file) =>
+    replaceOnce(src, file, 'function TurnFrame({', 'function TurnFrameBenchImpl({') +
+    '\nconst TurnFrame = globalThis.__kortixBenchTurnFrame(TurnFrameBenchImpl);\n',
   'user-message.tsx': (src, file) =>
     replaceOnce(src, file, 'export function UserMessage({', 'function UserMessageBenchImpl({') +
     "\nexport const UserMessage = globalThis.__kortixBenchProbe('UserMessage', UserMessageBenchImpl);\n",
@@ -214,7 +239,7 @@ const PROBE_REWRITES: Record<string, (src: string, file: string) => string> = {
 };
 
 const PROBE_FILTER =
-  /features\/session\/(session-chat|turn\/user-message|turn\/activity-burst|turn\/throttled-markdown|turn\/turn-viewport|tool\/tool-part-renderer)\.tsx$/;
+  /features\/session\/(timeline\/session-timeline-list|turn\/user-message|turn\/activity-burst|turn\/throttled-markdown|turn\/turn-viewport|tool\/tool-part-renderer)\.tsx$/;
 
 function installSourceProbes() {
   installProbeFactory();
@@ -364,7 +389,7 @@ interface StepRecord {
   settledTurnBodyRenders: number;
   settledImgIdentityKept: boolean;
   settledImgCount: number;
-  profilerMs?: { working: number; settled: number; settledCount: number };
+  profilerMs?: { list: number };
 }
 
 interface VariantRep {
@@ -376,8 +401,7 @@ interface VariantRep {
   settledTurnBodyRenders: number[];
   newTurnObjects: number[];
   imgIdentityViolations: number;
-  profilerSettledMs: number[];
-  profilerWorkingMs: number[];
+  profilerListMs: number[];
 }
 
 interface RepResult {
@@ -392,6 +416,9 @@ interface RepResult {
   b2: VariantRep;
   domNodes: number;
   imgNodes: number;
+  /** `[data-turn-id]` elements in the DOM after the mount settled — every
+   *  turn for a flat list, the window + overscan + pinned tail for a virtual one. */
+  mountedTurns: number;
 }
 
 interface Violation {
@@ -426,11 +453,18 @@ export async function main(): Promise<number> {
 
   BenchTurnContext = React.createContext<string | null>(null);
   reactUseContext = React.useContext;
+  reactCreateElement = React.createElement;
 
-  const sessionChat = (await import('../session-chat')) as any;
-  const SessionTurn = sessionChat.__benchSessionTurn as ComponentType<any>;
-  if (!SessionTurn) throw new Error('bench: __benchSessionTurn export missing — source probe did not apply');
-  const { TurnViewport } = await import('../turn/turn-viewport');
+  const { SessionTimelineList } = await import('../timeline/session-timeline-list');
+  const { buildChatRows } = await import('../timeline/build-chat-rows');
+  const { deriveAnsweredQuestionIds } = await import('../timeline/project-rows');
+  // Touch the remaining probed modules so every rewrite is asserted to have run
+  // even for a list whose first render mounts none of them.
+  await import('../turn/turn-viewport');
+  await import('../turn/user-message');
+  await import('../turn/activity-burst');
+  await import('../turn/throttled-markdown');
+  await import('../tool/tool-part-renderer');
   assertProbesRan();
 
   const reactBuild = process.env.NODE_ENV === 'production' ? 'production' : 'development';
@@ -443,81 +477,136 @@ export async function main(): Promise<number> {
   const EMPTY_PERMISSIONS: any[] = [];
   const EMPTY_QUESTIONS: any[] = [];
   const EMPTY_COMMANDS: any[] = [];
+  const EMPTY_SET = new Set<string>();
+  const EMPTY_INBOX = new Map<string, any>();
   const COMMAND_MESSAGES = new Map<string, { name: string; args?: string }>();
   // next-intl derives its context value from the `messages` object identity; a
   // fresh `{}` per render would re-render every `useTranslations` consumer
-  // (SessionTurnImpl, UserMessage) through context and bypass their memo.
+  // (TurnFrame, UserMessage) through context and bypass their memo.
   // The real host passes one stable messages object, so the bench does too.
   const INTL_MESSAGES: Record<string, never> = {};
 
   interface TranscriptProps {
     turns: Turn[];
+    messages: MessageWithParts[];
     planAnchorId: string | null;
     working: boolean;
     onProfilerRender?: (id: string, phase: string, actualDuration: number) => void;
   }
 
+  /** Bench viewport: the injected scroll rect (happy-dom lays nothing out). */
+  const VIEWPORT_HEIGHT = 900;
+  const VIEWPORT_WIDTH = 800;
+  /** Every turn measures this tall under happy-dom (no layout → estimate path). */
+  const TURN_ESTIMATE_PX = 160;
+
   /**
-   * The `turns.map(...)` block of `SessionChat` (session-chat.tsx) with every
-   * host-derived prop pinned: the last turn is the working turn while `working`,
-   * no queue rows, no permissions, no compaction.
+   * The `SessionTimelineList` mount of `SessionChat` (session-chat.tsx) with
+   * every host-derived prop pinned: rows from `buildChatRows` over the spliced
+   * messages with the previous frame's rows (`rowsRef`), `turnsById` and
+   * `turnRenderKeys` memo'd on `turns`, the last turn working while `working`,
+   * no queue rows, no permissions, no compaction. The list sits in a scroll
+   * container; the virtual props (Stage 3) are passed through an untyped
+   * spread so this one file also runs on a tree whose list ignores them.
    */
-  const TurnCtx = BenchTurnContext;
-  function Transcript({ turns, planAnchorId, working, onProfilerRender }: TranscriptProps) {
+  function Transcript({ turns, messages, planAnchorId, working, onProfilerRender }: TranscriptProps) {
     const lastId = turns.length ? turns[turns.length - 1].userMessage.info.id : null;
+    const workingTurnId = working ? lastId : null;
+    const rowsRef = React.useRef<any[]>([]);
+    const rows = React.useMemo(
+      () =>
+        buildChatRows({
+          messages,
+          activeUserMessageID: workingTurnId,
+          status: working ? 'busy' : 'idle',
+          standaloneCallIds: EMPTY_SET,
+          answeredQuestionIds: deriveAnsweredQuestionIds(turns, EMPTY_QUESTIONS, fixture.SESSION_ID),
+          prev: rowsRef.current,
+        }),
+      [messages, workingTurnId, working, turns],
+    );
+    React.useEffect(() => {
+      rowsRef.current = rows;
+    }, [rows]);
+    const turnsById = React.useMemo(() => {
+      const byId = new Map<string, Turn>();
+      for (const turn of turns) byId.set(turn.userMessage.info.id, turn);
+      return byId;
+    }, [turns]);
+    const turnRenderKeys = React.useMemo(() => {
+      const keys = new Map<string, string>();
+      for (const turn of turns) keys.set(turn.userMessage.info.id, turn.userMessage.info.id);
+      return keys;
+    }, [turns]);
+
+    // The scroll container, as STATE (the list virtualizes against it).
+    const [scrollEl, setScrollEl] = React.useState<HTMLDivElement | null>(null);
+    const virtualProps = React.useMemo<Record<string, unknown>>(
+      () => ({
+        scrollElement: scrollEl,
+        initialAtEnd: true,
+        virtualizerTestSeam: {
+          initialRect: { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
+          observeElementRect: (_instance: unknown, cb: (rect: { width: number; height: number }) => void) => {
+            cb({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT });
+          },
+          measureElement: () => TURN_ESTIMATE_PX,
+          // A browser clamps scrollTop to the scrollable range and reports it
+          // through a scroll event on the next frame; happy-dom does neither.
+          scrollToFn: (offset: number, _opts: unknown, instance: any) => {
+            if (!scrollEl) return;
+            const max = Math.max(0, instance.getTotalSize() - VIEWPORT_HEIGHT);
+            scrollEl.scrollTop = Math.max(0, Math.min(offset, max));
+            setTimeout(() => scrollEl.dispatchEvent(new Event('scroll')), 0);
+          },
+        },
+      }),
+      [scrollEl],
+    );
+
+    let list: ReactNode = (
+      <SessionTimelineList
+        rows={rows}
+        turnsById={turnsById}
+        turnRenderKeys={turnRenderKeys}
+        pendingTurnIds={EMPTY_SET}
+        interruptedTurnIds={EMPTY_SET}
+        sessionWorking={working}
+        workingTurnId={workingTurnId}
+        planAnchorId={planAnchorId}
+        inboxRowsByMessageId={EMPTY_INBOX}
+        queueHeld={false}
+        onQueueRemove={noop}
+        onQueueSendNow={noop}
+        onQueueRetry={noop}
+        sessionId={fixture.SESSION_ID}
+        sessionStatus={undefined}
+        permissions={EMPTY_PERMISSIONS}
+        questions={EMPTY_QUESTIONS}
+        agentNames={undefined}
+        providers={undefined}
+        commandMessages={COMMAND_MESSAGES}
+        commands={EMPTY_COMMANDS}
+        disableToolNavigation={false}
+        onPermissionReply={noopAsync}
+        onRewind={noop}
+        rewindDisabled={working}
+        {...(virtualProps as any)}
+      />
+    );
+    if (onProfilerRender) {
+      list = (
+        <React.Profiler
+          id="list"
+          onRender={(pid, phase, actualDuration) => onProfilerRender(pid, phase, actualDuration)}
+        >
+          {list}
+        </React.Profiler>
+      );
+    }
     return (
-      <div className="flex flex-col">
-        {turns.map((turn, turnIndex) => {
-          const id = turn.userMessage.info.id;
-          const isLast = id === lastId;
-          let node: ReactNode = (
-            <TurnCtx.Provider value={id}>
-              <SessionTurn
-                turn={turn}
-                isLast={isLast}
-                ownsPlan={id === planAnchorId}
-                sessionId={fixture.SESSION_ID}
-                sessionStatus={undefined}
-                permissions={EMPTY_PERMISSIONS}
-                questions={EMPTY_QUESTIONS}
-                agentNames={undefined}
-                isFirstTurn={turnIndex === 0}
-                sessionWorking={working}
-                isWorkingTurn={working && isLast}
-                pending={false}
-                queueRow={null}
-                queueHeld={false}
-                onQueueRemove={noop}
-                onQueueSendNow={noop}
-                onQueueRetry={noop}
-                interruptedBeforeRun={false}
-                isCompaction={false}
-                providers={undefined}
-                commandMessages={COMMAND_MESSAGES}
-                commands={EMPTY_COMMANDS}
-                disableToolNavigation={false}
-                onPermissionReply={noopAsync}
-                onRewind={noop}
-                rewindDisabled={working}
-              />
-            </TurnCtx.Provider>
-          );
-          if (onProfilerRender) {
-            node = (
-              <React.Profiler
-                id={id}
-                onRender={(pid, phase, actualDuration) => onProfilerRender(pid, phase, actualDuration)}
-              >
-                {node}
-              </React.Profiler>
-            );
-          }
-          return (
-            <TurnViewport key={id} turnId={id} className={turnIndex === 0 ? '' : 'mt-12'}>
-              {node}
-            </TurnViewport>
-          );
-        })}
+      <div ref={setScrollEl} data-bench-scroll style={{ height: VIEWPORT_HEIGHT, overflowY: 'auto' }}>
+        <div className="flex flex-col">{list}</div>
       </div>
     );
   }
@@ -610,8 +699,7 @@ export async function main(): Promise<number> {
         ...(config.profiler
           ? {
               profilerMs: {
-                settledTurnsPerStepP50: median(reps.flatMap((r) => v(r).profilerSettledMs.slice(config.warmup))),
-                workingTurnPerStepP50: median(reps.flatMap((r) => v(r).profilerWorkingMs.slice(config.warmup))),
+                listPerStepP50: median(reps.flatMap((r) => v(r).profilerListMs.slice(config.warmup))),
               },
             }
           : {}),
@@ -628,6 +716,7 @@ export async function main(): Promise<number> {
       imageBase64MiB: round(session0.imageChars / 1024 / 1024),
       domNodes: reps[0].domNodes,
       imgNodes: reps[0].imgNodes,
+      mountedTurns: reps[0].mountedTurns,
       ssrFirstRenderMs: median(pick((r) => r.ssrFirstRenderMs)),
       firstRenderMs: median(pick((r) => r.firstRenderMs)),
       firstRenderMsReps: pick((r) => round(r.firstRenderMs)),
@@ -655,7 +744,12 @@ export async function main(): Promise<number> {
       const html = renderToStaticMarkup(
         <App
           queryClient={queryClient}
-          initial={{ turns: frame.turns, planAnchorId: frame.planAnchorId, working: false }}
+          initial={{
+            turns: frame.turns,
+            messages: session.messages,
+            planAnchorId: frame.planAnchorId,
+            working: false,
+          }}
           handle={{ set: noop }}
         />,
       );
@@ -675,16 +769,12 @@ export async function main(): Promise<number> {
         onRecoverableError: (err) => renderErrors.push(`recoverable: ${String((err as Error)?.stack ?? err)}`),
       });
 
-      let profilerAcc: { working: number; settled: number; settledCount: number } | null = null;
+      let profilerAcc: { list: number } | null = null;
       let workingTurnId: string | null = null;
       const onProfilerRender = config.profiler
-        ? (id: string, _phase: string, actualDuration: number) => {
+        ? (_id: string, _phase: string, actualDuration: number) => {
             if (!profilerAcc) return;
-            if (id === workingTurnId) profilerAcc.working += actualDuration;
-            else {
-              profilerAcc.settled += actualDuration;
-              profilerAcc.settledCount++;
-            }
+            profilerAcc.list += actualDuration;
           }
         : undefined;
 
@@ -694,8 +784,13 @@ export async function main(): Promise<number> {
         },
       };
       let mounted = false;
-      const render = (turns: Turn[], planAnchorId: string | null, working: boolean) => {
-        const props: TranscriptProps = { turns, planAnchorId, working, onProfilerRender };
+      const render = (
+        turns: Turn[],
+        messages: MessageWithParts[],
+        planAnchorId: string | null,
+        working: boolean,
+      ) => {
+        const props: TranscriptProps = { turns, messages, planAnchorId, working, onProfilerRender };
         flushSync(() => {
           if (!mounted) {
             mounted = true;
@@ -707,7 +802,7 @@ export async function main(): Promise<number> {
       };
 
       const t0 = performance.now();
-      render(frame.turns, frame.planAnchorId, false);
+      render(frame.turns, session.messages, frame.planAnchorId, false);
       const firstRenderMs = performance.now() - t0;
       const mountProbeCounts = { ...probeState.counts };
 
@@ -723,12 +818,19 @@ export async function main(): Promise<number> {
 
       const domNodes = container.querySelectorAll('*').length;
       const imgNodes = container.querySelectorAll('img').length;
+      const mountedTurns = container.querySelectorAll('[data-turn-id]').length;
       if (repIndex === 0) {
-        const turnNodes = container.querySelectorAll('[data-turn-id]').length;
-        if (turnNodes !== frame.turns.length) {
-          throw new Error(`bench: expected ${frame.turns.length} [data-turn-id] nodes, found ${turnNodes}`);
+        // A flat list mounts every turn; a virtual one mounts the window at the
+        // end (+ overscan + the pinned tail). Either way the LAST turn is in the
+        // DOM — it is the working turn every step measures.
+        if (mountedTurns < 1 || mountedTurns > frame.turns.length) {
+          throw new Error(`bench: expected 1..${frame.turns.length} [data-turn-id] nodes, found ${mountedTurns}`);
         }
-        if (cell.m > 0 && imgNodes === 0) {
+        const lastId = frame.turns[frame.turns.length - 1].userMessage.info.id;
+        if (!container.querySelector(`[data-turn-id="${lastId}"]`)) {
+          throw new Error(`bench: the last turn ${lastId} is not mounted after the mount settle`);
+        }
+        if (cell.m > 0 && imgNodes === 0 && mountedTurns === frame.turns.length) {
           throw new Error('bench: image file parts produced no <img> — attachment path changed');
         }
       }
@@ -738,7 +840,7 @@ export async function main(): Promise<number> {
       // from the streaming steps so those stay clean.
       resetProbes();
       const bf0 = performance.now();
-      render(frame.turns, frame.planAnchorId, true);
+      render(frame.turns, session.messages, frame.planAnchorId, true);
       const busyFlipMs = performance.now() - bf0;
       const busyFlipProbeCounts = { ...probeState.counts };
       flushSync(() => drainRaf());
@@ -784,18 +886,17 @@ export async function main(): Promise<number> {
           settledTurnBodyRenders: [],
           newTurnObjects: [],
           imgIdentityViolations: 0,
-          profilerSettledMs: [],
-          profilerWorkingMs: [],
+          profilerListMs: [],
         };
         for (let step = 0; step < config.steps; step++) {
           const before = settledImgs();
           const next = mutate(session, step);
           const nf = fixture.pipelineFrame(next.session.messages, frame.turns);
           resetProbes();
-          profilerAcc = { working: 0, settled: 0, settledCount: 0 };
+          profilerAcc = { list: 0 };
 
           const f0 = performance.now();
-          render(nf.turns, nf.planAnchorId, true);
+          render(nf.turns, next.session.messages, nf.planAnchorId, true);
           const frameMs = performance.now() - f0;
 
           const st0 = performance.now();
@@ -810,8 +911,8 @@ export async function main(): Promise<number> {
           const working = probeState.perTurn.get(workingTurnId!) ?? emptyCounts();
           const settled = settledTurnRenders(probeState, workingTurnId);
           const renderedTurnIds = [...probeState.perTurn.keys()];
-          const workingTurnBodyRenders = working.SessionTurn;
-          const settledTurnBodyRenders = settled.counts.SessionTurn;
+          const workingTurnBodyRenders = working.TurnFrame;
+          const settledTurnBodyRenders = settled.counts.TurnFrame;
 
           const after = settledImgs();
           const identityKept =
@@ -834,15 +935,12 @@ export async function main(): Promise<number> {
           v.frameMs.push(rec.frameMs);
           v.settleMs.push(rec.settleMs);
           v.counts.push(rec.counts);
-          v.renderedTurnCounts.push(rec.counts.SessionTurn);
+          v.renderedTurnCounts.push(rec.counts.TurnFrame);
           v.workingTurnBodyRenders.push(rec.workingTurnBodyRenders);
           v.settledTurnBodyRenders.push(rec.settledTurnBodyRenders);
           v.newTurnObjects.push(rec.newTurnObjects);
           if (!identityKept) v.imgIdentityViolations++;
-          if (rec.profilerMs) {
-            v.profilerSettledMs.push(rec.profilerMs.settled);
-            v.profilerWorkingMs.push(rec.profilerMs.working);
-          }
+          if (rec.profilerMs) v.profilerListMs.push(rec.profilerMs.list);
 
           // Invariants — every rep, every step past warm-up (they do not
           // depend on timing). Warm-up steps are excluded because step 0 is a
@@ -852,15 +950,18 @@ export async function main(): Promise<number> {
             const fail = (rule: string, actual: string) =>
               violations.push({ cell: cellName, rep: repIndex, variant: name, step, rule, actual });
             if (rec.newTurnObjects !== 1) fail('stabilizeTurns yields exactly 1 new turn object', String(rec.newTurnObjects));
-            // The load-bearing fact: nothing under a settled turn renders.
+            // The load-bearing fact: nothing MEMO'D under a settled turn renders.
+            // `TurnFrame` and `TurnViewport` are not memoized — they re-run with
+            // the list by design (their memo'd rows are what hold) — and are
+            // reported, not asserted.
             for (const k of PROBE_NAMES) {
-              if (k === 'TurnViewport') continue; // not memoized; re-renders with the list by design
+              if (k === 'TurnViewport' || k === 'TurnFrame') continue;
               if (settled.counts[k] !== 0) {
                 fail(`settled-turn ${k} bodies render 0 times per step`, `${settled.counts[k]} in ${settled.turnIds.join(',')}`);
               }
             }
             // The working turn renders, and exactly its streaming segment re-parses.
-            if (working.SessionTurn < 1) fail('working-turn SessionTurn body renders at least once per step', '0');
+            if (working.TurnFrame < 1) fail('working-turn TurnFrame body renders at least once per step', '0');
             if (working.UserMessage < 1) fail('working-turn UserMessage renders at least once per step', '0');
             if (working.ThrottledMarkdown < 1) fail('working-turn ThrottledMarkdown renders at least once per step', '0');
             // The burst (bash, read) is untouched by either step shape once the
@@ -898,6 +999,7 @@ export async function main(): Promise<number> {
         b2,
         domNodes,
         imgNodes,
+        mountedTurns,
       };
     }
   }
@@ -965,6 +1067,7 @@ function printTable(result: any, outPath: string) {
   lines.push('');
   const head = [
     'cell'.padEnd(16),
+    'mounted'.padStart(8),
     'dom'.padStart(6),
     'img'.padStart(4),
     'ssr ms'.padStart(8),
@@ -991,6 +1094,7 @@ function printTable(result: any, outPath: string) {
     lines.push(
       [
         c.cell.padEnd(16),
+        `${c.mountedTurns}/${c.turns}`.padStart(8),
         String(c.domNodes).padStart(6),
         String(c.imgNodes).padStart(4),
         fmt(c.ssrFirstRenderMs).padStart(8),
@@ -1018,7 +1122,10 @@ function printTable(result: any, outPath: string) {
     '      pipe=groupMessagesIntoTurns+stabilizeTurns+planAnchorMessageId per frame (no React); b1=append one text part; b2=delta on trailing text;',
   );
   lines.push(
-    '      settled/work=SessionTurn bodies rendered per b1 step in settled turns / in the working turn (min-max), of total turns; rows/step=TurnViewport wrappers rendered;',
+    '      mounted=[data-turn-id] elements in the DOM after mount / total turns (a virtual list mounts the window at the end + overscan + pinned tail);',
+  );
+  lines.push(
+    '      settled/work=TurnFrame bodies rendered per b1 step in settled turns / in the working turn (min-max), of total turns (un-memoized; re-run with the list); rows/step=TurnViewport wrappers rendered;',
   );
   lines.push('      UM/TM/AB/TPR=max UserMessage/ThrottledMarkdown/ActivityBurst/ToolPartRenderer bodies per b1 step');
   if (result.violations.length) {
@@ -1032,7 +1139,7 @@ function printTable(result: any, outPath: string) {
     for (const [k, n] of shown) lines.push(`  ${k} ×${n}`);
   } else {
     lines.push('');
-    lines.push('invariants: OK (1 new turn object per step; 0 bodies rendered under settled turns; working-turn burst memo holds; settled <img> identity kept)');
+    lines.push('invariants: OK (1 new turn object per step; 0 memo\'d bodies rendered under settled turns; working-turn burst memo holds; settled <img> identity kept)');
   }
   lines.push('');
   lines.push(`json: ${outPath}`);

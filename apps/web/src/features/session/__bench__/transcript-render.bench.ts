@@ -1,30 +1,33 @@
 #!/usr/bin/env bun
 /**
- * Transcript render benchmark — the BEFORE measurement for turn-based rendering.
+ * Transcript render benchmark — turn-based rendering, flat (Stage 2) or
+ * virtualized (Stage 3), from ONE harness.
  *
- * Mounts the REAL `SessionTurn` list (session-chat.tsx, unmodified) under a
- * happy-dom document with `react-dom/profiling`, feeds it a deterministic
- * synthetic session (`fixture.ts`), and measures:
+ * Mounts the REAL `SessionTimelineList` (timeline/session-timeline-list.tsx,
+ * unmodified) over `buildChatRows` rows under a happy-dom document, feeds it a
+ * deterministic synthetic session (`fixture.ts`), and measures:
  *
  *   1. first render ms        — `flushSync(root.render(turns))` for the whole transcript
  *   2. append-one-part ms     — one `message.part.updated` frame (b1) and one
  *                               `message.part.delta` frame (b2), K steps each
- *   3. rendered components    — how many SessionTurn / UserMessage / ActivityBurst /
+ *   3. rendered components    — how many TurnFrame / UserMessage / ActivityBurst /
  *                               ThrottledMarkdown / ToolPartRenderer bodies ran on
  *                               that append, split settled turns vs the working turn
  *                               (source-level counting wrappers, see
  *                               `installSourceProbes` in transcript-render.bench-main.tsx)
  *   4. pipeline-only ms       — groupMessagesIntoTurns + stabilizeTurns + planAnchorMessageId
  *                               per frame, no React
+ *   5. mounted turns + DOM    — `[data-turn-id]` elements and total DOM nodes after the
+ *                               mount settled (all turns flat; window + overscan + pinned
+ *                               tail virtual)
  *
  * Invariants (exit 1 when violated; checked on every step past warm-up, every rep):
  *   - exactly 1 new turn object per streaming step (stabilizeTurns)
- *   - 0 probed bodies render under any SETTLED turn (SessionTurn, UserMessage,
- *     ActivityBurst, ThrottledMarkdown, ToolPartRenderer) — the memo boundary holds
- *   - the working turn renders: SessionTurn >= 1, UserMessage >= 1, ThrottledMarkdown >= 1
- *     (SessionTurn body runs 1-2×: the second pass is the `setLiveDuration` effect on
- *     `[working, turn]`, whose eager bail-out holds only every other update; its
- *     children do not re-render on that pass. A 1 s timer tick adds one real pass.)
+ *   - 0 MEMO'D bodies render under any SETTLED turn (UserMessage, ActivityBurst,
+ *     ThrottledMarkdown, ToolPartRenderer) — the memo boundary holds. `TurnFrame` and
+ *     `TurnViewport` are un-memoized by design (they re-run with the list; their
+ *     memo'd rows hold) and are reported, not asserted.
+ *   - the working turn renders: TurnFrame >= 1, UserMessage >= 1, ThrottledMarkdown >= 1
  *   - the working turn's ActivityBurst and ToolPartRenderer bodies render 0× (the
  *     bash/read burst is untouched by both step shapes)
  *   - settled-turn <img> elements keep identity across a step
