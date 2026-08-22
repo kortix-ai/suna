@@ -230,6 +230,14 @@ export async function runApps(argv: string[]): Promise<number> {
   }
   const subcommand = argv[0];
   const rest = argv.slice(1);
+  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
+  // subcommands below own dedicated help text, so without this a bare
+  // `--help` falls through as an ordinary positional arg and the command
+  // runs (or fails on auth) instead of printing usage.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   try {
     const common = takeCommon(rest);
     switch (subcommand) {

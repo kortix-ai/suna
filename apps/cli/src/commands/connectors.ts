@@ -258,6 +258,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
     process.stdout.write(CONNECTIONS_HELP);
     return rest.length === 0 ? 2 : 0;
   }
+  // The root help promises `kortix connectors <subcommand> --help`. Only
+  // `connections` (handled above) owns dedicated help text; every other
+  // subcommand would otherwise treat `--help` as an ordinary positional arg.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   if (sub === 'discover' || sub === 'call' || sub === 'mcp') {
     return runConnector([sub, ...rest]);
   }
