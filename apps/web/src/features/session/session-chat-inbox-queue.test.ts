@@ -8,6 +8,10 @@ import { fileURLToPath } from 'node:url';
 // through `between()`, which FAILS on a missing anchor rather than yielding ''
 // and passing.
 const chat = readFileSync(fileURLToPath(new URL('./session-chat.tsx', import.meta.url)), 'utf8');
+const timelineList = readFileSync(
+  fileURLToPath(new URL('./timeline/session-timeline-list.tsx', import.meta.url)),
+  'utf8',
+);
 const composer = readFileSync(
   fileURLToPath(new URL('./composer/composer.tsx', import.meta.url)),
   'utf8',
@@ -131,8 +135,12 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     // transcript from the first frame under the id the inbox row carries;
     // its turn renders dimmed until the agent reaches it (`pending`).
     const send = between(chat, "playSound('send');", 'anchorTurn(messageID);');
-    expect(send).toContain('const messageID = mintSessionWireMessageId(sessionId, clientMessageId);');
-    expect(send).toContain('beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);');
+    expect(send).toContain(
+      'const messageID = mintSessionWireMessageId(sessionId, clientMessageId);',
+    );
+    expect(send).toContain(
+      'beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);',
+    );
     expect(send).not.toContain('willWaitInInbox');
     expect(chat).not.toContain('willWaitInInbox');
   });
@@ -143,7 +151,11 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     expect(send).toContain('recoverFromSendFailure(sessionId, messageID, cause');
     // Marked in the SAME tick as the paint, before the first await: an idle
     // frame from a short previous turn used to sweep the bubble mid-send.
-    const paint = between(chat, 'beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);', 'const sendingIntoRunningTurn');
+    const paint = between(
+      chat,
+      'beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);',
+      'const sendingIntoRunningTurn',
+    );
     expect(paint).toContain('markOptimisticSendInboxBacked(sessionId, messageID);');
   });
 
@@ -156,7 +168,10 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     // The origin key keeps one element across the re-mint swap; the
     // uniqueness pass keeps React sane when an old echo and its re-placed
     // copy transiently share an origin (duplicate keys corrupt the list).
-    expect(chat).toContain('key={turnRenderKeys.get(turn.userMessage.info.id)}');
+    // The turn list moved to `timeline/session-timeline-list.tsx`; the key is
+    // read there from the SAME `turnRenderKeys` map `SessionChat` builds.
+    expect(timelineList).toContain('key={turnRenderKeys.get(group.userMessageID)');
+    expect(chat).toContain('turnRenderKeys={turnRenderKeys}');
     expect(chat).toContain('const origin = optimisticOriginOf(sessionId, id);');
     expect(chat).toContain('while (used.has(key)) key = `${key}~`;');
   });
@@ -186,7 +201,11 @@ describe('a `/` command is REFUSED mid-turn, not queued', () => {
   });
 
   test('a PROMPT is never refused for being mid-turn — the server orders it', () => {
-    const promptBranch = between(composer, 'const reset = resolveComposerResetOnSend(', '} catch {');
+    const promptBranch = between(
+      composer,
+      'const reset = resolveComposerResetOnSend(',
+      '} catch {',
+    );
     expect(promptBranch).toContain('await onSend(trimmed, filesToSend, mentionsToSend)');
     expect(promptBranch).not.toContain('onQueueMessage(');
     // The shared blocker set has no `session_working` member for a prompt:

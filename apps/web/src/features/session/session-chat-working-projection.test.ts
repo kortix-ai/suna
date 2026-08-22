@@ -7,6 +7,16 @@ import { fileURLToPath } from 'node:url';
 // wiring under test is which value reaches which call. `between()` FAILS on a
 // missing anchor rather than yielding '' and passing.
 const chat = readFileSync(fileURLToPath(new URL('./session-chat.tsx', import.meta.url)), 'utf8');
+// The turn card moved out of `session-chat.tsx`: its derivations live in
+// `timeline/project-rows.ts`, its components in `timeline/session-timeline-list.tsx`.
+const projectRows = readFileSync(
+  fileURLToPath(new URL('./timeline/project-rows.ts', import.meta.url)),
+  'utf8',
+);
+const timelineList = readFileSync(
+  fileURLToPath(new URL('./timeline/session-timeline-list.tsx', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -45,7 +55,11 @@ describe('the composer reads ONE working answer', () => {
   });
 
   test('the send receipt is taken before the row is created and dropped if it never lands', () => {
-    const send = between(chat, 'const clientMessageId = overrides?.clientMessageId', 'return messageID;');
+    const send = between(
+      chat,
+      'const clientMessageId = overrides?.clientMessageId',
+      'return messageID;',
+    );
     expect(send).toContain('noteSendReceipt(clientMessageId)');
     // Acceptance is what lets a `/turn` read answer for the send AT ALL: until
     // `POST .../prompts` returns there is no row for it to see.
@@ -76,7 +90,11 @@ describe('the composer reads ONE working answer', () => {
     // full-prompt stash is POSTed to the inbox rather than dropped.
     expect(chat).not.toContain('replayStartStash');
     expect(chat).not.toContain('optimisticPrompt');
-    const seeding = between(chat, 'const stash = readStartStash(sessionId);', '}, [sessionId, projectId, projectSessionId]);');
+    const seeding = between(
+      chat,
+      'const stash = readStartStash(sessionId);',
+      '}, [sessionId, projectId, projectSessionId]);',
+    );
     expect(seeding).toContain('clearStartStash(sessionId)');
     expect(seeding).toContain('startSessionWithPrompt(projectId, projectSessionId');
   });
@@ -86,7 +104,11 @@ describe('the composer reads ONE working answer', () => {
     // through the inbox — so for a full minute after every `/compact` the
     // control plane's own "no turns" answer was discarded. The old machine this
     // replaced released at 30s; unaccepted, this was twice that.
-    const command = between(chat, 'const handleCommand = useCallback(', 'setTimeout(() => scrollToBottom()');
+    const command = between(
+      chat,
+      'const handleCommand = useCallback(',
+      'setTimeout(() => scrollToBottom()',
+    );
     expect(command).toContain('noteSendReceipt(label)');
     expect(command).toContain('acceptSendReceipt(label)');
     expect(command).toContain('clearSendReceipt(label)');
@@ -96,7 +118,11 @@ describe('the composer reads ONE working answer', () => {
     // `clearSendReceipt` is keyed by session, so an unguarded clear from an
     // older send's failure deleted a NEWER send's receipt while its POST was
     // still on the wire.
-    const send = between(chat, 'const clientMessageId = overrides?.clientMessageId', 'return messageID;');
+    const send = between(
+      chat,
+      'const clientMessageId = overrides?.clientMessageId',
+      'return messageID;',
+    );
     expect(send).toContain('clearSendReceipt(clientMessageId)');
   });
 
@@ -160,10 +186,10 @@ describe('the turn card reads the same working answer', () => {
     // Not "the last turn": a prompt queued mid-turn is the last user message
     // while the agent still streams the turn before it — `resolveWorkingTurn`
     // picks the turn, the projection says whether it works.
-    const turn = between(chat, 'function SessionTurnImpl(', 'const activeAssistantMessage');
-    expect(turn).toContain('isWorkingTurn && sessionWorking');
+    expect(timelineList).toContain('isWorkingTurn && sessionWorking');
     // The raw slot no longer decides any turn's shimmer inside the card.
-    expect(turn).not.toContain('getWorkingState(');
+    expect(timelineList).not.toContain('getWorkingState(');
+    expect(projectRows).not.toContain('getWorkingState(');
   });
 
   test('the parent computes lastTurnWorking ONCE, with the child-session split', () => {
@@ -177,9 +203,8 @@ describe('the turn card reads the same working answer', () => {
   });
 
   test('retry copy keeps the raw frame — the projection does not carry the reason', () => {
-    const turn = between(chat, 'function SessionTurnImpl(', '// Cost info');
-    expect(turn).toContain('getRetryInfo(sessionStatus)');
-    expect(turn).toContain('getRetryMessage(sessionStatus)');
+    expect(timelineList).toContain('getRetryInfo(sessionStatus)');
+    expect(timelineList).toContain('getRetryMessage(sessionStatus)');
   });
 
   test('"Send now" decides from the projection, not the raw slot', () => {
@@ -196,11 +221,68 @@ describe('the turn card reads the same working answer', () => {
     // A deduped re-POST of a clientMessageId whose row already dead-lettered
     // answers 200 with state 'failed'. Discarding the result accepted the
     // receipt, cleared the draft, and told the user nothing.
-    const send = between(chat, 'const created = await promptInbox.enqueue({', 'return { ok: true }');
+    const send = between(
+      chat,
+      'const created = await promptInbox.enqueue({',
+      'return { ok: true }',
+    );
     expect(send).toContain("created.state === 'failed'");
     // No after-the-fact bubble for a prompt sent while a turn is live: the
     // server HOLDS it (one prompt = one turn), so it belongs in the strip
     // until its own turn starts.
     expect(chat).not.toContain('correctedWillWait');
+  });
+});
+
+/**
+ * Stage 2 of the timeline work: the turn list is `SessionTimelineList` over
+ * the SDK's row model. `SessionChat` keeps the data path and hands the list
+ * rows built by `buildChatRows`, with the WORKING turn as the active one.
+ */
+describe('the transcript renders through SessionTimelineList', () => {
+  test('the legacy turn card and its map are gone from session-chat.tsx', () => {
+    expect(chat).not.toContain('turns.map(');
+    expect(chat).not.toContain('SessionTurnImpl');
+    expect(chat).not.toContain('function NotificationTurn');
+  });
+
+  test('rows are built with the WORKING turn as active and the raw status type', () => {
+    const rows = between(chat, 'buildChatRows({', '});');
+    expect(rows).toContain('activeUserMessageID: workingTurn.workingTurnId');
+    expect(rows).toContain('status: sessionStatus?.type');
+    expect(rows).toContain('prev: rowsRef.current');
+    // Reuse is never bypassed: the previous rows ride in a ref written in an
+    // effect, the same pattern as `stableTurnsRef`.
+    expect(chat).toContain('rowsRef.current = rows;');
+  });
+
+  test('the same spliced messages feed grouping and the rows', () => {
+    expect(chat).toContain('groupMessagesIntoTurns(splicedMessages)');
+    expect(chat).toContain('messages: splicedMessages');
+  });
+
+  test('the list receives the host facts it renders from', () => {
+    const list = between(chat, '<SessionTimelineList', '/>');
+    for (const prop of [
+      'rows={rows}',
+      'turnsById={turnsById}',
+      'turnRenderKeys={turnRenderKeys}',
+      'pendingTurnIds={pendingTurnIds}',
+      'interruptedTurnIds={interruptedTurnIds}',
+      'sessionWorking={lastTurnWorking}',
+      'inboxRowsByMessageId={inboxRowsByMessageId}',
+      'workingTurnId={workingTurn.workingTurnId}',
+    ]) {
+      expect(list).toContain(prop);
+    }
+  });
+
+  test('ToolActivateContext.Provider still wraps the list', () => {
+    const provider = between(
+      chat,
+      '<ToolActivateContext.Provider value={toolActivate}>',
+      '</ToolActivateContext.Provider>',
+    );
+    expect(provider).toContain('<SessionTimelineList');
   });
 });

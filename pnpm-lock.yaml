@@ -1324,6 +1324,9 @@ importers:
       eslint-config-next:
         specifier: 16.3.0
         version: 16.3.0(@typescript-eslint/parser@8.66.0)(eslint@9.39.4)(typescript@5.9.3)
+      happy-dom:
+        specifier: ^20.11.6
+        version: 20.11.6
       prettier:
         specifier: ^3.5.3
         version: 3.9.4
