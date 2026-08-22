@@ -19,7 +19,14 @@ import {
   saveLink,
 } from '../project-link.ts';
 import { selectFromList } from '../tui-select.ts';
-import { emitJson, locateProjectAnywhere, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import {
+  emitJson,
+  locateProjectAnywhere,
+  resolveProjectContext,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+} from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
 import { openInBrowser } from '../browser.ts';
@@ -53,6 +60,12 @@ Subcommands:
   rm [<id>]            Archive a project (defaults to the linked one).
                        --purge also deletes its managed git repo (irreversible).
                        -y / --yes skips the confirmation.
+  features [ls]        List every feature flag with its effective state for the
+                       project (Settings → Feature flags). (--json)
+  features enable <flag>   Turn a flag on for the project.
+  features disable <flag>  Turn a flag off for the project.
+  features reset <flag>    Clear the project's override (follow the default).
+                       features takes --project <id>; defaults to linked/default.
 
 An explicit <id> on info/open/rm resolves on its own: tries the active host
 first, then — unless you pass --host — scans every other logged-in host for
@@ -76,7 +89,8 @@ export async function runProjects(argv: string[]): Promise<number> {
   // look up a project literally named "--help", and `projects rm --help`
   // would silently fall back to archiving the DEFAULT project instead of
   // showing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
+  // `features` owns its own help text and parses -h/--help itself.
+  if ((rest.includes('-h') || rest.includes('--help')) && sub !== 'features' && sub !== 'flags') {
     process.stdout.write(HELP);
     return 0;
   }
@@ -135,10 +149,147 @@ export async function runProjects(argv: string[]): Promise<number> {
     case 'rm':
     case 'remove':
       return projectsRm(rest);
+    case 'features':
+    case 'flags':
+      return projectsFeatures(rest);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
   }
+}
+
+// ── Feature flags (Settings → Feature flags) ───────────────────────────────
+
+const FEATURES_HELP = help`Usage: kortix projects features [ls | enable | disable | reset] [<flag>]
+
+Per-project feature flags — the same switches as Settings → Feature flags.
+A flag is a stable key (e.g. apps, voice, llm_gateway). State is stored on
+the project row, never in kortix.yaml.
+
+Subcommands:
+  ls                    List every flag: key, state, origin, stability. (--json)
+  enable <flag>         Set the project override to ON.
+  disable <flag>        Set the project override to OFF.
+  reset <flag>          Remove the override; the flag follows the platform default.
+
+Options:
+  --project <id>        Act on this project (default: linked/default project).
+  --host <name>         Use this logged-in host.
+  --json                Machine-readable output.
+
+Requires project.customize.write. A flag the platform marks unavailable stays
+off regardless of the project override.
+`;
+
+interface FeatureFlagRow {
+  key: string;
+  name: string;
+  description: string;
+  stability: string;
+  available: boolean;
+  enabled: boolean;
+  overridden: boolean;
+}
+
+function featureRows(project: Record<string, unknown>): FeatureFlagRow[] {
+  const raw = project.experimental_features;
+  return Array.isArray(raw) ? (raw as FeatureFlagRow[]) : [];
+}
+
+function printFeatureTable(rows: FeatureFlagRow[]): void {
+  if (rows.length === 0) {
+    process.stdout.write(`${status.info('No feature flags reported by this host.')}\n`);
+    return;
+  }
+  const keyW = Math.max(4, ...rows.map((r) => r.key.length));
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.dim}${pad('FLAG', keyW)}  ${pad('STATE', 5)}  ${pad('ORIGIN', 10)}  ${pad('STABILITY', 13)}NAME${C.reset}\n`,
+  );
+  for (const r of rows) {
+    const state = !r.available
+      ? `${C.faded}n/a  ${C.reset}`
+      : r.enabled
+        ? `${C.green}on   ${C.reset}`
+        : `${C.dim}off  ${C.reset}`;
+    const origin = !r.available ? 'unavailable' : r.overridden ? 'override' : 'default';
+    process.stdout.write(
+      `  ${pad(r.key, keyW)}  ${state}  ${pad(origin, 10)}  ${pad(r.stability, 13)}${r.name}\n`,
+    );
+  }
+  process.stdout.write('\n');
+}
+
+async function projectsFeatures(argv: string[]): Promise<number> {
+  const rest = [...argv];
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(FEATURES_HELP);
+    return 0;
+  }
+  const json = takeFlagBool(rest, ['--json']);
+  let projectArg: string | undefined;
+  let hostArg: string | undefined;
+  try {
+    projectArg = takeFlagValue(rest, ['--project', '-p']);
+    hostArg = takeFlagValue(rest, ['--host']);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  const sub = rest[0] ?? 'ls';
+  const flag = rest[1];
+
+  const ctx = await resolveProjectContext({ projectArg, hostArg });
+  if (!ctx) return 1;
+  const { client, projectId } = ctx;
+
+  if (sub === 'ls' || sub === 'list') {
+    try {
+      const project = await client.get<Record<string, unknown>>(`/projects/${projectId}`);
+      const rows = featureRows(project);
+      if (json) {
+        emitJson(rows);
+        return 0;
+      }
+      printFeatureTable(rows);
+      return 0;
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+  }
+
+  if (sub === 'enable' || sub === 'on' || sub === 'disable' || sub === 'off' || sub === 'reset' || sub === 'clear') {
+    if (!flag) {
+      process.stderr.write(`${status.err(`features ${sub} requires a <flag>.`)}\n\n${FEATURES_HELP}`);
+      return 2;
+    }
+    const enabled = sub === 'enable' || sub === 'on' ? true : sub === 'disable' || sub === 'off' ? false : null;
+    try {
+      const project = await client.patch<Record<string, unknown>>(`/projects/${projectId}/features`, {
+        feature: flag,
+        enabled,
+      });
+      const row = featureRows(project).find((r) => r.key === flag);
+      if (json) {
+        emitJson(row ?? { key: flag, enabled });
+        return 0;
+      }
+      const verb = enabled === null ? 'reset to default' : enabled ? 'enabled' : 'disabled';
+      const effective = row ? (row.available ? (row.enabled ? 'on' : 'off') : 'unavailable on this host') : '?';
+      process.stdout.write(`${status.ok(`${flag} ${verb} — effective: ${effective}`)}\n`);
+      if (row && !row.available) {
+        process.stdout.write(
+          `${status.warn(`${flag} is not available on this host; the override is stored but has no effect.`)}\n`,
+        );
+      }
+      return 0;
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+  }
+
+  process.stderr.write(`${status.err(`unknown features subcommand "${sub}"`)}\n\n${FEATURES_HELP}`);
+  return 2;
 }
 
 export interface ProjectCloneTarget {
