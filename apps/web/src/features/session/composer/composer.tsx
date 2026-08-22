@@ -67,6 +67,7 @@ import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, SLASH_ACTIONS, type SlashAction } from './menus/slash-actions';
+import type { SlashFile } from './menus/slash-files';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
 
@@ -136,6 +137,21 @@ export interface SessionChatInputProps {
    */
   noAccessibleAgents?: boolean;
   commands?: Command[];
+  /**
+   * The session's own files, as `/` palette rows — the Outputs card's
+   * deliverables and the Context card's reads, built by
+   * `menus/slash-files.ts`'s `sessionSlashFiles`.
+   *
+   * A prop, not a `useOptionalSessionPanel()` call inside this component,
+   * even though the panel provider does sit above every session composer.
+   * Importing that provider here would pull the entire detail-panel tree
+   * (files explorer, audit panel, previews) into this module's graph — and
+   * this composer also renders on project home and in the marketing demo,
+   * neither of which has any use for it. The host that already lives beside
+   * the panel (`session-chat.tsx`) reads the context and hands the derived
+   * list down; every other host omits it.
+   */
+  slashFiles?: SlashFile[];
   /**
    * `split` is where the chip sat in `args` — display only. Without it every
    * consumer rebuilds the sent message as `/name` + args, so a command typed
@@ -310,6 +326,7 @@ const EMPTY_AGENTS: Agent[] = [];
 const EMPTY_COMMANDS: Command[] = [];
 const EMPTY_MODELS: FlatModel[] = [];
 const EMPTY_VARIANTS: string[] = [];
+const EMPTY_SLASH_FILES: SlashFile[] = [];
 
 /** Stable identities for the command-chip subscription below. */
 const NO_SUBSCRIPTION = () => {};
@@ -354,6 +371,7 @@ function ComposerImpl({
   agentSelectorLocked = false,
   noAccessibleAgents = false,
   commands = EMPTY_COMMANDS,
+  slashFiles = EMPTY_SLASH_FILES,
   onCommand,
   models = EMPTY_MODELS,
   selectedModel = null,
@@ -1428,6 +1446,7 @@ function ComposerImpl({
                   currentSessionId={sessionId}
                   commands={commands}
                   actions={slashActions}
+                  files={slashFiles}
                   onSelectAction={handleSelectAction}
                   slashDockSelector={`#${dockId}`}
                   onMenuOpenChange={setMenuOpen}

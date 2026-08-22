@@ -7,6 +7,7 @@ import { baseExtensions } from '../editor/extensions';
 import { MentionNode } from '../editor/mention-node';
 import { createSlashSuggestion } from './slash-controller';
 import { SLASH_ACTIONS, type SlashAction } from './slash-actions';
+import type { SlashFile } from './slash-files';
 import type { SlashRow } from './slash-items';
 
 /**
@@ -364,5 +365,115 @@ describe('createSlashSuggestion — the inline "/Type to search" hint', () => {
 
     expect(options.decorationClass).toBe('kortix-slash-trigger');
     expect(options.decorationContent).toBe('Type to search');
+  });
+});
+
+/**
+ * The session's own files, reachable from `/`.
+ *
+ * The point of the feature, stated as behavior: a file the Outputs card shows
+ * can be picked from the `/` palette and lands in the document as the SAME
+ * mention the `@` menu inserts — so the send path (`editor/serialize.ts` ->
+ * `lib/project-preamble.ts`'s `<file_ref>` block) needs nothing new, and the
+ * user keeps typing with the file attached.
+ */
+const reportFile: SlashFile = {
+  path: 'docs/report.md',
+  name: 'Q3 revenue report',
+  folder: 'docs',
+  origin: 'output',
+};
+
+describe("createSlashSuggestion — a picked file becomes a file mention", () => {
+  test('selecting a file row replaces the typed /query with a file mention', () => {
+    const editor = editorWithSlashQuery('/report');
+    const options = createSlashSuggestion({ getCommands: () => [], getFiles: () => [reportFile] });
+
+    options.command!({
+      editor,
+      range: { from: 1, to: 8 }, // the "/report" the user typed
+      props: {
+        index: 0,
+        type: 'file',
+        name: reportFile.name,
+        description: reportFile.path,
+        file: reportFile,
+      },
+    } as never);
+
+    expect(chipsIn(editor)).toEqual([{ kind: 'file', label: 'docs/report.md' }]);
+    expect(editor.state.doc.textBetween(0, editor.state.doc.content.size)).not.toContain('/report');
+  });
+
+  test('the mention label is the PATH, never the row\'s display name', () => {
+    // `serialize.ts`'s `collectMentions` addresses files by LABEL — `value` is
+    // dropped for every kind but `session`. A display name here would hand the
+    // agent a `<file_ref>` for "Q3 revenue report", which resolves to nothing.
+    const editor = editorWithSlashQuery('/q3');
+    const options = createSlashSuggestion({ getCommands: () => [], getFiles: () => [reportFile] });
+
+    options.command!({
+      editor,
+      range: { from: 1, to: 4 },
+      props: { index: 0, type: 'file', name: reportFile.name, description: '', file: reportFile },
+    } as never);
+
+    expect(chipsIn(editor)[0].label).toBe(reportFile.path);
+  });
+
+  test('a file row with no file attached inserts nothing rather than an empty mention', () => {
+    const editor = editorWithSlashQuery('/x');
+    const options = createSlashSuggestion({ getCommands: () => [] });
+
+    options.command!({
+      editor,
+      range: { from: 1, to: 3 },
+      props: { index: 0, type: 'file', name: 'ghost', description: '' },
+    } as never);
+
+    expect(chipsIn(editor)).toEqual([]);
+  });
+
+  test('getFiles is read LIVE, so a file produced mid-session is offered by the next /', () => {
+    // The reason `composer-editor.tsx` holds this in a ref: extensions are
+    // frozen at construction, so a list captured there would offer the
+    // session's files as they were when the tab opened, forever.
+    let files: SlashFile[] = [];
+    const selected: SlashRow[] = [];
+    const { onStart, onKeyDown } = createSlashSuggestion({
+      getCommands: () => [],
+      getActions: () => [],
+      getFiles: () => files,
+    }).render!();
+
+    withStubDocument(() => {
+      onStart!(fakeStartProps('', (row) => selected.push(row)));
+    });
+    expect(onKeyDown!(fakeKeyDown('Enter'))).toBe(false); // no rows at all yet
+
+    files = [reportFile];
+    withStubDocument(() => {
+      onStart!(fakeStartProps('', (row) => selected.push(row)));
+    });
+    onKeyDown!(fakeKeyDown('Enter'));
+
+    expect(selected).toHaveLength(1);
+    expect(selected[0].type).toBe('file');
+    expect(selected[0].file).toBe(reportFile);
+  });
+
+  test('omitting getFiles leaves the palette exactly as it was — no file sections', () => {
+    const selected: SlashRow[] = [];
+    const { onStart, onKeyDown } = createSlashSuggestion({
+      getCommands: () => [],
+      getActions: () => [],
+    }).render!();
+
+    withStubDocument(() => {
+      onStart!(fakeStartProps('', (row) => selected.push(row)));
+    });
+
+    expect(onKeyDown!(fakeKeyDown('Enter'))).toBe(false);
+    expect(selected).toEqual([]);
   });
 });

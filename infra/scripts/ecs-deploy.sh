@@ -94,6 +94,16 @@ merge_environment_overrides() {
   '
 }
 
+gateway_target_for_env() {
+  case "$1" in
+    dev) printf '%s' 'https://gateway-dev-ecs-fargate.kortix.com' ;;
+    staging) printf '%s' 'https://gateway-staging-ecs-fargate.kortix.com' ;;
+    prod) printf '%s' 'https://gateway-ecs-fargate.kortix.com' ;;
+    prod-use2-shadow) printf '%s' 'https://gateway-use2-shadow.kortix.com' ;;
+    *) echo "unknown gateway environment: $1" >&2; return 2 ;;
+  esac
+}
+
 fast_cold_boot_requires_atomic_admission() {
   local overrides_json="${1:-}" secret_json="${2:-}"
   local enabled providers
@@ -257,6 +267,11 @@ CURRENT_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
 
 ENVIRONMENT_OVERRIDES_JSON="${KORTIX_ECS_ENV_OVERRIDES:-}"
 [ -n "$ENVIRONMENT_OVERRIDES_JSON" ] || ENVIRONMENT_OVERRIDES_JSON='{}'
+if [ "$SVC_KIND" = "api" ]; then
+  GATEWAY_TARGET="$(gateway_target_for_env "$ENV")"
+  ENVIRONMENT_OVERRIDES_JSON="$(printf '%s' "$ENVIRONMENT_OVERRIDES_JSON" | jq -c \
+    --arg target "$GATEWAY_TARGET" '. + {LLM_GATEWAY_PROXY_TARGET: $target}')"
+fi
 CURRENT_ENVIRONMENT_JSON="$(printf '%s' "$CURRENT_TD_JSON" | jq -c --arg c "$CONTAINER" \
   '[.containerDefinitions[] | select(.name == $c) | (.environment // [])][0] // []')"
 MERGED_ENVIRONMENT_JSON="$(merge_environment_overrides "$CURRENT_ENVIRONMENT_JSON" "$ENVIRONMENT_OVERRIDES_JSON")"

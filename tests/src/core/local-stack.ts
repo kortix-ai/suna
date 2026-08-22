@@ -509,7 +509,6 @@ export async function ensureLocalStack(
           GATEWAY_API_TOKEN: gatewayToken,
           LANGFUSE_PUBLIC_KEY: "",
           LANGFUSE_SECRET_KEY: "",
-          GATEWAY_CAPTURE_BODIES: "false",
         },
         stdin: "ignore",
         stdout: "inherit",

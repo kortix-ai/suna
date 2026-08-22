@@ -2,8 +2,8 @@
 
 /**
  * `EasyPanel` — the non-technical home for a session: the promise cards
- * (Outputs / Context / Preview) over the same tool-call data the Advanced
- * stepper renders one-at-a-time.
+ * (Outputs / Context / Preview / Plan) over the same tool-call data the
+ * Advanced stepper renders one-at-a-time.
  *
  * It is the FLOATING panel's whole content. It renders over the chat, anchored
  * top right, and it is nothing but the cards — no header, no tab strip, no
@@ -27,15 +27,24 @@
  * went with it.
  */
 
+import { usePlanInChat } from '@/features/session/plan-surface';
 import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import { useOptionalSessionPanel } from '../session-panel-provider';
 import { AppsCard } from './apps-card';
 import { ContextCard } from './context-card';
 import { pathOutput } from './easy-panel-logic';
 import { OutputsCard } from './outputs-card';
+import { PlanPanelCard } from './plan-card';
 
 export function EasyPanel() {
   const panel = useOptionalSessionPanel();
+  // Exactly one plan surface is mounted, ever. This card stands down only on
+  // mobile, where this same component is the detail drawer's home view and the
+  // drawer is shut by default, so the transcript keeps the plan. On desktop it
+  // always draws — a collapsed or covered column is a hidden plan on purpose
+  // (see `planBelongsToChat`). `usePlanInChat` is that one decision, shared
+  // with `session-chat.tsx` so the two cannot disagree.
+  const planInChat = usePlanInChat();
   // Null outside a `SessionPanelProvider` — `SessionChat` also renders
   // read-only inside `sub-session-modal.tsx`, which has no panel at all.
   if (!panel) return null;
@@ -82,6 +91,9 @@ export function EasyPanel() {
         onAddContext={() => useSessionComposerPrefillStore.getState().requestAttach(sessionId)}
       />
       {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
+      {/* Last, under Preview, and conditional like it — the card draws itself
+          away when the session has no plan (see `plan-card.tsx`). */}
+      {!planInChat && <PlanPanelCard sessionId={sessionId} />}
     </div>
   );
 }

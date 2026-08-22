@@ -11,6 +11,7 @@ import { textToParagraphs } from '../composer-logic';
 import { createMentionSuggestion } from '../menus/mention-controller';
 import type { SlashAction } from '../menus/slash-actions';
 import { SLASH_ACTIONS } from '../menus/slash-actions';
+import type { SlashFile } from '../menus/slash-files';
 import { createSlashSuggestion } from '../menus/slash-controller';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
@@ -162,6 +163,14 @@ export interface ComposerEditorProps {
    * Pass `[]` to suppress the menu completely in that state.
    */
   actions?: SlashAction[];
+  /**
+   * The session's own files — what the Outputs and Context cards hold, as
+   * `menus/slash-files.ts`'s `sessionSlashFiles` derives them. They render as
+   * the `/` palette's Outputs and Context sections, and picking one inserts
+   * the same file mention the `@` menu inserts. Omitted (or empty) outside a
+   * session, where both sections simply do not appear.
+   */
+  files?: SlashFile[];
 
   /**
    * Fires on the false<->true boundary of "is EITHER the `@` or the `/`
@@ -289,6 +298,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       onSelectCommand,
       onSelectAction,
       actions,
+      files,
       slashDockSelector,
       onMenuOpenChange,
     },
@@ -354,6 +364,16 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     useEffect(() => {
       actionsRef.current = actions ?? SLASH_ACTIONS;
     }, [actions]);
+
+    // Same live-getter reasoning again, and it matters MORE here than for any
+    // ref above: this list grows while the user watches. The agent finishes a
+    // file mid-turn, the panel re-derives, and the very next `/` must already
+    // offer it — a value closed over at editor construction would offer the
+    // session's files as they were when the tab was opened, forever.
+    const filesRef = useRef(files ?? []);
+    useEffect(() => {
+      filesRef.current = files ?? [];
+    }, [files]);
 
     const onSelectCommandRef = useRef(onSelectCommand);
     useEffect(() => {
@@ -480,6 +500,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           createSlashSuggestion({
             getCommands: () => commandsRef.current,
             getActions: () => actionsRef.current,
+            getFiles: () => filesRef.current,
             // NOT read through a ref, unlike every getter around it. This is
             // frozen at construction on purpose: it is a per-instance
             // selector string that identifies this composer's dock element

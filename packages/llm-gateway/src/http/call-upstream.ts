@@ -1,13 +1,11 @@
 import type { UpstreamDescriptor } from '../domain';
 import { ClientAbortError, UpstreamMisconfiguredError } from '../errors';
-import { type BreakerBinding, type RetryOptions, withResilience } from '../resilience';
-import { type AiSdkFetch, callUpstreamViaAiSdk } from '../transports/ai-sdk';
+import type { AiSdkFetch } from '../transports/ai-sdk';
+import { resolveTransportKind } from '../transports/route-kind';
 
 export type FetchImpl = (input: string, init: RequestInit) => Promise<Response>;
 
 export interface CallUpstreamOptions {
-  retry?: RetryOptions;
-  binding?: BreakerBinding;
   fetchImpl?: FetchImpl;
   /** Inbound client's abort signal — combined with the per-attempt timeout
    *  signal so a caller disconnect aborts the in-flight upstream fetch too,
@@ -63,6 +61,35 @@ function toAiSdkFetch(fetchImpl: FetchImpl): AiSdkFetch {
   return (input, init) => fetchImpl(String(input), init ?? {});
 }
 
+function trimTrailingSlash(value: string): string {
+  return value.endsWith('/') ? value.replace(/\/+$/, '') : value;
+}
+
+function directOpenAiRequest(
+  body: Record<string, unknown>,
+  descriptor: UpstreamDescriptor,
+  opts: CallUpstreamOptions,
+): Promise<Response> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (!descriptor.omitAuthorization) headers.authorization = `Bearer ${descriptor.apiKey}`;
+  if (descriptor.appName) headers['x-title'] = descriptor.appName;
+  if (descriptor.appReferer) headers['http-referer'] = descriptor.appReferer;
+  if (descriptor.headers) Object.assign(headers, descriptor.headers);
+  if (opts.requestId) headers['x-request-id'] = opts.requestId;
+
+  let payload = body;
+  if (descriptor.bodyExtras) payload = { ...payload, ...descriptor.bodyExtras };
+  if (descriptor.resolvedModel) payload = { ...payload, model: descriptor.resolvedModel };
+
+  const fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
+  return fetchImpl(`${trimTrailingSlash(descriptor.baseUrl)}/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+    signal: opts.signal,
+  });
+}
+
 export async function callUpstream(
   body: Record<string, unknown>,
   descriptor: UpstreamDescriptor,
@@ -75,37 +102,24 @@ export async function callUpstream(
   // fetch/retry/breaker-trip on a response no one will receive.
   if (clientSignal?.aborted) throw new ClientAbortError();
 
+  const transportKind = resolveTransportKind(body, descriptor);
+  if (transportKind === 'openai-compat' || transportKind === 'custom') {
+    return directOpenAiRequest(body, descriptor, opts);
+  }
+
   const fetchImpl: AiSdkFetch | undefined = opts.fetchImpl
     ? toAiSdkFetch(opts.fetchImpl)
     : undefined;
 
-  // The SDK provider package owns the request build, HTTP, and response
-  // decoding; the adapter (transports/ai-sdk) maps its output back to the
-  // same OpenAI-compatible shape callers already expect (so the pipeline,
-  // billing, and opencode see no difference). Still wrapped in withResilience
-  // so the circuit breaker + gateway retry apply. Non-streaming awaits inside
-  // (a 4xx/5xx throws → retry/failover); streaming returns immediately
-  // (errors surface as an in-stream frame the pipeline probe handles).
-  return withResilience(
-    async (attemptSignal) => {
-      const signal = clientSignal ? AbortSignal.any([attemptSignal, clientSignal]) : attemptSignal;
-      try {
-        return await callUpstreamViaAiSdk(body, descriptor, {
-          signal,
-          fetch: fetchImpl,
-          requestId: opts.requestId,
-        });
-      } catch (err) {
-        // Disambiguate WHY the call failed: a client disconnect mid-flight
-        // must never be retried/failed-over (there's no one left to serve)
-        // or trip the shared provider circuit breaker, unlike a genuine
-        // upstream timeout or network failure — regardless of how the AI SDK
-        // itself classified the abort.
-        if (clientSignal?.aborted) throw new ClientAbortError();
-        throw err;
-      }
-    },
-    opts.retry ?? {},
-    opts.binding,
-  );
+  try {
+    const { callUpstreamViaAiSdk } = await import('../transports/ai-sdk');
+    return await callUpstreamViaAiSdk(body, descriptor, {
+      signal: clientSignal,
+      fetch: fetchImpl,
+      requestId: opts.requestId,
+    });
+  } catch (err) {
+    if (clientSignal?.aborted) throw new ClientAbortError();
+    throw err;
+  }
 }

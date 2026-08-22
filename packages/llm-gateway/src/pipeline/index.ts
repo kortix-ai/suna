@@ -1,5 +1,5 @@
-export { handleChatCompletions } from './handler';
-export type { ChatCompletionRequest, GatewayDeps, HandlerRuntime } from './handler';
+export { handleChatCompletions } from './simple-handler';
+export type { ChatCompletionRequest, GatewayDeps, HandlerRuntime } from './simple-handler';
 
-export { probeStream, relayStream, resolveStreamProbeTimeoutMs } from './streaming';
-export type { StreamProbeResult, StreamRelayOptions } from './streaming';
+export { relayStream } from './streaming';
+export type { StreamRelayOptions } from './streaming';

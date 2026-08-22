@@ -176,3 +176,57 @@ export function previewCorsHeaders(origin: string): Record<string, string> {
     Vary: 'Origin',
   };
 }
+
+/**
+ * Whether this deployment serves browsers on a public origin — the only case
+ * where a missing preview domain is a misconfiguration rather than the correct
+ * setup.
+ *
+ * A laptop and a worktree are excluded deliberately. Their clients build
+ * `p{port}-{sandbox}.localhost:{apiPort}` themselves (see previewUrlTemplate's
+ * null contract), and a quick cloudflared tunnel has no wildcard DNS and no
+ * certificate a preview origin could ever use — warning there would train
+ * operators to ignore the warning that matters.
+ */
+function servesPublicBrowsers(): boolean {
+  const raw = (config.KORTIX_URL || '').trim();
+  if (!raw) return false;
+  let host: string;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:') return false;
+    host = url.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === 'localhost' || host.endsWith('.localhost')) return false;
+  if (host === '127.0.0.1' || host === '::1') return false;
+  // Ephemeral quick tunnels: public, but nothing durable to anchor an origin to.
+  if (host.endsWith('.trycloudflare.com')) return false;
+  return true;
+}
+
+/**
+ * Say — once, at boot, at WARN — that this deployment hands browsers path
+ * previews. Nothing fails when KORTIX_PREVIEW_BASE_DOMAIN is unset: the path
+ * proxy answers 200 and the app inside it quietly loses every root-absolute
+ * link. That silence is the whole problem, and it is why this is a startup log
+ * rather than a health check: an operator reading boot logs after a deploy is
+ * the earliest moment anyone can notice.
+ *
+ * Deliberately never throws and never blocks startup. Refusing to boot would
+ * turn a degraded preview into an outage for every instance that has not set
+ * the variable yet — trading a broken stylesheet for a dead API.
+ */
+export function warnIfPreviewOriginsMissing(
+  log: { warn: (message: string, meta?: Record<string, unknown>) => void },
+): void {
+  if (previewBaseDomain() || !servesPublicBrowsers()) return;
+  log.warn(
+    '[preview] no KORTIX_PREVIEW_BASE_DOMAIN — browsers get /v1/p/ path previews, which break root-absolute links',
+    {
+      kortix_url: config.KORTIX_URL,
+      fix: 'point *.p.<your domain> at this deployment, then set KORTIX_PREVIEW_BASE_DOMAIN (self-host: `kortix self-host doctor`)',
+    },
+  );
+}

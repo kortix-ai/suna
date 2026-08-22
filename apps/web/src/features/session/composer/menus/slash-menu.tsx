@@ -1,6 +1,7 @@
 'use client';
 
 import { Kbd } from '@/components/ui/kbd';
+import { getFileIcon } from '@/features/project-files';
 import { cn } from '@/lib/utils';
 import {
   ArrowsClockwiseIcon,
@@ -43,6 +44,13 @@ function SlashRowIcon({
   heading: string;
   className?: string;
 }) {
+  // Per-extension, not one generic file glyph: the palette's file rows are the
+  // same files the Outputs and Context cards draw, and those cards use this
+  // exact helper (`outputs-card.tsx`, `mention-menu.tsx`). A `.pdf` that looks
+  // like a `.pdf` in one surface and a blank page in another reads as two
+  // different files. `getFileIcon` returns an ELEMENT, which is also what
+  // keeps this switch free of the `static-components` problem below.
+  if (row.type === 'file' && row.file) return getFileIcon(row.file.path, { className });
   if (row.type === 'action' && row.action) {
     switch (row.action.id) {
       case 'switch-model':
@@ -120,7 +128,7 @@ export function SlashMenu({
     return (
       <MenuCard className={cn('mb-2.5 w-full rounded-lg')}>
         <p role="status" className="text-muted-foreground px-3 py-2.5 text-sm">
-          No matching command or action
+          No matching command, file, or action
         </p>
       </MenuCard>
     );

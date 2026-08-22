@@ -39,7 +39,7 @@ import { projectQueueRows } from './queue-projection';
 import { createQueueUndoAction } from './queued-message-restore';
 import { ActivityBurst } from './turn/activity-burst';
 import { ExpandableOutput } from './turn/expandable-output';
-import { isPlanWriteTool, planAnchorMessageId } from './turn/plan-anchor';
+import { chatPlanAnchorId, isPlanWriteTool } from './turn/plan-anchor';
 import {
   QUEUED_BUBBLE_OPACITY_CLASS,
   QueuedPromptActions,
@@ -56,6 +56,8 @@ import { resolveWorkingTurn } from './turn/working-turn';
 
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
+import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
+import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import {
@@ -100,6 +102,7 @@ import {
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
+import { usePlanInChat } from '@/features/session/plan-surface';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
@@ -1540,9 +1543,10 @@ function SessionTurnImpl({
 			  features/session/turn/segment-turn.ts.
 			  Two part kinds are filtered out before segmentation:
 			    - the plan write (`todowrite` / `todo_write`, matched by
-			      `isPlanWriteTool`) — `PlanCard` beneath the user message is
-			      the single canonical todo surface; showing the same checklist
-			      again inside a burst would just duplicate it.
+			      `isPlanWriteTool`) — the Easy panel's Plan card (mobile: the
+			      plan card beneath the user message) is the single canonical
+			      todo surface; showing the same checklist again inside a burst
+			      would just duplicate it.
 			    - `question`: only answered questions are kept — they fold into
 			      their burst as a "Questions · N answered" chain row
 			      (turn/answered-question-step.tsx). Pending and dismissed
@@ -1740,9 +1744,15 @@ function SessionTurnImpl({
           Gated on `!working` only. A turn that ends in tool calls has no closing
           prose, but its finished-at / duration / cost are still turn facts —
           `SessionTurnMeta` self-hides when it has no rows. Only the copy button
-          needs a response to copy. */}
+          needs a response to copy.
+
+          `max-md:opacity-100` — same rule as the user turn's meta row
+          (`turn/user-message.tsx`): hover-to-reveal is a desktop affordance.
+          On touch there is no hover, so Copy and the turn's finished-at /
+          duration / cost would be permanently invisible, and tap-emulated
+          `:hover` would leave exactly one arbitrary turn's bar lit. */}
       {!working && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100">
           {response ? (
             <Button
               variant="ghost"
@@ -3033,13 +3043,24 @@ export function SessionChat({
   }, [projectSessionId, firstPromptPreview, transcriptShowsFirstPrompt, clearFirstPromptPreview]);
 
   /**
-   * One scan of the transcript, not one per turn.
+   * Which turn, if any, draws the plan.
    *
-   * `planAnchorMessageId` inspects every part of every message. It used to run
-   * inside each turn, which made it O(turns x total-parts) — on the order of
-   * 100k part inspections per frame for a long session.
+   * Null on desktop, always: the Easy panel owns the plan at every width above
+   * 768px — collapsed column and detail panel included — so no turn claims it
+   * and the transcript scan below never runs. Mobile has no panel column at
+   * all, so the chat keeps it there. `usePlanInChat` is the single decision
+   * both surfaces read; see `plan-surface.ts` and `planBelongsToChat`.
+   *
+   * One scan of the transcript, not one per turn. `planAnchorMessageId`
+   * inspects every part of every message. It used to run inside each turn,
+   * which made it O(turns x total-parts) — on the order of 100k part
+   * inspections per frame for a long session.
    */
-  const planAnchorId = useMemo(() => (messages ? planAnchorMessageId(messages) : null), [messages]);
+  const planInChat = usePlanInChat();
+  const planAnchorId = useMemo(
+    () => chatPlanAnchorId(messages, planInChat),
+    [messages, planInChat],
+  );
   const lastUserMessageId = useMemo(() => {
     if (!messages) return null;
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -4203,6 +4224,42 @@ export function SessionChat({
   }, []);
 
   const chatCommands = useMemo(() => commands || [], [commands]);
+
+  // Null in the sub-session modal, which renders this chat read-only and
+  // OUTSIDE `SessionPanelProvider` — the same self-gating every other panel
+  // consumer does (see `easy-panel.tsx`).
+  const panel = useOptionalSessionPanel();
+
+  /**
+   * The session's files, handed to the composer so the `/` palette can offer
+   * them — the Outputs card's deliverables and the Context card's reads, as
+   * `sessionSlashFiles` flattens them.
+   *
+   * Read here rather than inside the composer because this component already
+   * sits beside the panel, and the composer is also mounted on project home
+   * and in the marketing demo, where importing the panel provider would drag
+   * the whole detail-panel tree into their bundles. See `Composer`'s
+   * `slashFiles` prop.
+   *
+   * `panel.files` arrives already ranked — this run's deliverables first, then
+   * everything older, each group in `sortOutputs` order — so the palette and
+   * the Outputs card cannot disagree about which file matters most.
+   *
+   * Both inputs are re-derived from `messages`, so their identity changes on
+   * every streaming update and this memo re-runs with them. That is a walk of
+   * a few dozen items; it is not worth a deeper equality check, and this
+   * component is already re-rendered by the same `messages` change.
+   */
+  const panelOutputs = panel?.files;
+  const panelContextFiles = panel?.context.files;
+  const chatSlashFiles = useMemo(
+    () =>
+      sessionSlashFiles({
+        outputs: panelOutputs ?? [],
+        contextFiles: panelContextFiles ?? [],
+      }),
+    [panelOutputs, panelContextFiles],
+  );
   const sessionScopeAgentName = composerAgentName ?? undefined;
 
   const chatToolbarSlot = useMemo(
@@ -4839,6 +4896,7 @@ export function SessionChat({
               onAgentChange={handleAgentChange}
               noAccessibleAgents={noAccessibleAgents}
               commands={chatCommands}
+              slashFiles={chatSlashFiles}
               onCommand={handleCommand}
               models={local.model.list}
               selectedModel={local.model.currentKey ?? null}
