@@ -12,10 +12,9 @@ const ORIGINAL_STDOUT_WRITE = process.stdout.write;
 const ORIGINAL_STDERR_WRITE = process.stderr.write;
 const ORIGINAL_SANDBOX_ENV = {
   KORTIX_API_URL: process.env.KORTIX_API_URL,
-  KORTIX_CLI_TOKEN: process.env.KORTIX_CLI_TOKEN,
+  KORTIX_TOKEN: process.env.KORTIX_TOKEN,
   KORTIX_FRONTEND_URL: process.env.KORTIX_FRONTEND_URL,
   KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
-  KORTIX_TOKEN: process.env.KORTIX_TOKEN,
   BASH_ENV: process.env.BASH_ENV,
   KORTIX_DISABLE_SANDBOX_ENV_FILE: process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE,
 };
@@ -62,7 +61,7 @@ function captureOutput() {
 
 function clearSandboxEnvOverrides() {
   delete process.env.KORTIX_API_URL;
-  delete process.env.KORTIX_CLI_TOKEN;
+  delete process.env.KORTIX_TOKEN;
   delete process.env.KORTIX_FRONTEND_URL;
   delete process.env.KORTIX_PROJECT_ID;
   delete process.env.KORTIX_TOKEN;

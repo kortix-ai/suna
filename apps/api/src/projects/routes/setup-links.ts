@@ -1,7 +1,7 @@
 /**
  * Agent-minted SETUP LINKS — the authenticated half.
  *
- * The in-sandbox agent (its `KORTIX_CLI_TOKEN` is a
+ * The in-sandbox agent (its `KORTIX_TOKEN` is a
  * session-scoped PAT, accepted by supabaseAuth) calls these to mint a
  * short-lived link it can hand to a human to (a) enter a project secret value,
  * or (b) 1-click connect a Pipedream app.
@@ -92,7 +92,14 @@ projectsApp.openapi(
       });
     }
 
-    const scope = normalizeString(body.scope) === 'connector' ? 'connector' : 'runtime';
+    const requestedScope = normalizeString(body.scope);
+    if (requestedScope && requestedScope !== 'runtime' && requestedScope !== 'connector') {
+      return c.json({ error: 'scope must be "runtime" or "connector"' }, 400);
+    }
+    // Setup links are commonly minted by connector tooling. Omission must not
+    // turn a server-side credential into plaintext sandbox environment state.
+    // Runtime delivery remains available only through an explicit opt-in.
+    const scope = requestedScope === 'runtime' ? 'runtime' : 'connector';
     const { token, expiresAt } = mintSetupLink(
       projectId,
       { kind: 'secret', fields, scope, uid: loaded.userId, sid: (c.get('sessionId') as string | undefined) ?? null },

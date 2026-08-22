@@ -181,24 +181,11 @@ describe('daemon proxy auth gate', () => {
     rmSync(TEST_AGENT_ENV_FILE, { force: true })
   })
 
-  it('uses KORTIX_SANDBOX_TOKEN as the canonical sandbox auth token', () => {
-    const cfg = loadConfig({
-      KORTIX_SANDBOX_TOKEN: TEST_TOKEN,
-      KORTIX_TOKEN: 'legacy-alias-that-must-not-win',
-      KORTIX_CLI_TOKEN: 'legacy-project-pat-that-must-not-shadow',
-    } as NodeJS.ProcessEnv)
+  it('uses KORTIX_TOKEN as the session auth token', () => {
+    const cfg = loadConfig({ KORTIX_TOKEN: TEST_TOKEN } as NodeJS.ProcessEnv)
 
     expect(cfg.sandboxToken).toBe(TEST_TOKEN)
     expect('apiToken' in cfg).toBe(false)
-  })
-
-  it('falls back to the legacy KORTIX_TOKEN sandbox auth alias', () => {
-    const cfg = loadConfig({
-      KORTIX_TOKEN: TEST_TOKEN,
-      KORTIX_CLI_TOKEN: 'project-pat-that-must-not-shadow',
-    } as NodeJS.ProcessEnv)
-
-    expect(cfg.sandboxToken).toBe(TEST_TOKEN)
   })
 
   it('parses the one-time replacement branch restore signal', () => {
@@ -1526,9 +1513,9 @@ describe('daemon proxy auth gate', () => {
 
   it('restarts opencode for model-affecting env sync and applies gateway runtime env', async () => {
     let restartCalls = 0
-    const previousLlmKey = process.env.KORTIX_LLM_API_KEY
+    const previousLlmKey = process.env.KORTIX_TOKEN
     const previousLlmBase = process.env.KORTIX_LLM_BASE_URL
-    delete process.env.KORTIX_LLM_API_KEY
+    delete process.env.KORTIX_TOKEN
     delete process.env.KORTIX_LLM_BASE_URL
 
     const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
@@ -1555,10 +1542,7 @@ describe('daemon proxy auth gate', () => {
           env: {},
           names: [],
           refreshModels: true,
-          opencodeEnv: {
-            KORTIX_LLM_API_KEY: 'kortix_pat_refresh',
-            KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
-          },
+          opencodeEnv: { KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm' },
         }),
       })
 
@@ -1566,9 +1550,8 @@ describe('daemon proxy auth gate', () => {
       expect(await enable.json()).toMatchObject({
         ok: true,
         opencode_env_changed: true,
-        opencode_env_names: ['KORTIX_LLM_API_KEY', 'KORTIX_LLM_BASE_URL'],
+        opencode_env_names: ['KORTIX_LLM_BASE_URL'],
       })
-      expect(process.env.KORTIX_LLM_API_KEY as string | undefined).toBe('kortix_pat_refresh')
       expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
       expect(restartCalls).toBe(1)
 
@@ -1583,10 +1566,7 @@ describe('daemon proxy auth gate', () => {
           env: {},
           names: [],
           refreshModels: true,
-          opencodeEnv: {
-            KORTIX_LLM_API_KEY: null,
-            KORTIX_LLM_BASE_URL: null,
-          },
+          opencodeEnv: { KORTIX_LLM_BASE_URL: null },
         }),
       })
 
@@ -1594,14 +1574,13 @@ describe('daemon proxy auth gate', () => {
       expect(await disable.json()).toMatchObject({
         ok: true,
         opencode_env_changed: true,
-        opencode_env_names: ['KORTIX_LLM_API_KEY', 'KORTIX_LLM_BASE_URL'],
+        opencode_env_names: ['KORTIX_LLM_BASE_URL'],
       })
-      expect(process.env.KORTIX_LLM_API_KEY).toBeUndefined()
       expect(process.env.KORTIX_LLM_BASE_URL).toBeUndefined()
       expect(restartCalls).toBe(2)
     } finally {
-      if (previousLlmKey === undefined) delete process.env.KORTIX_LLM_API_KEY
-      else process.env.KORTIX_LLM_API_KEY = previousLlmKey
+      if (previousLlmKey === undefined) delete process.env.KORTIX_TOKEN
+      else process.env.KORTIX_TOKEN = previousLlmKey
       if (previousLlmBase === undefined) delete process.env.KORTIX_LLM_BASE_URL
       else process.env.KORTIX_LLM_BASE_URL = previousLlmBase
     }
@@ -1664,17 +1643,13 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
-  it('sets the gateway key + provider-key deny-list, and refuses to leave gateway mode on llmGatewayEnabled=false', async () => {
+  it('sets the gateway base URL against the session token, and refuses to leave gateway mode on llmGatewayEnabled=false', async () => {
     const saved = {
-      key: process.env.KORTIX_LLM_API_KEY,
       base: process.env.KORTIX_LLM_BASE_URL,
-      deny: process.env.KORTIX_OPENCODE_DENY_ENV,
-      exec: process.env.KORTIX_CLI_TOKEN,
+      token: process.env.KORTIX_TOKEN,
     }
-    delete process.env.KORTIX_LLM_API_KEY
     delete process.env.KORTIX_LLM_BASE_URL
-    delete process.env.KORTIX_OPENCODE_DENY_ENV
-    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_exec'
+    process.env.KORTIX_TOKEN = 'kortix_pat_exec'
 
     const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
     const app = buildOpencodeApp(
@@ -1689,7 +1664,8 @@ describe('daemon proxy auth gate', () => {
     )
 
     try {
-      // GATEWAY on: keys withheld from opencode via the injected deny-list.
+      // GATEWAY on: the base URL is stamped; the session token (KORTIX_TOKEN) is
+      // the gateway credential, so no separate LLM key exists.
       const on = await app.request('/kortix/env', {
         method: 'POST',
         headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
@@ -1700,17 +1676,16 @@ describe('daemon proxy auth gate', () => {
           refreshModels: true,
           llmGatewayEnabled: true,
           llmGatewayBaseUrl: 'https://api.kortix.test/v1/llm',
-          llmGatewayDenyEnv: 'ANTHROPIC_API_KEY,OPENAI_API_KEY',
         }),
       })
       expect(on.status).toBe(200)
-      expect(process.env.KORTIX_LLM_API_KEY as string | undefined).toBe('kortix_pat_exec')
-      expect(process.env.KORTIX_OPENCODE_DENY_ENV as string | undefined).toBe('ANTHROPIC_API_KEY,OPENAI_API_KEY')
+      expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
+      expect(process.env.KORTIX_LLM_API_KEY).toBeUndefined()
 
       // Gateway mode is the ONLY mode. `llmGatewayEnabled: false` is what an
       // OLDER API could still send for a moment during a mixed-version rollout;
       // the daemon answers 200 (no 4xx storm) but REFUSES to leave gateway mode:
-      // the gateway key and the native-key deny list stay exactly as they were.
+      // the base URL stays exactly as it was.
       const off = await app.request('/kortix/env', {
         method: 'POST',
         headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
@@ -1720,18 +1695,14 @@ describe('daemon proxy auth gate', () => {
           names: [],
           refreshModels: true,
           llmGatewayEnabled: false,
-          llmGatewayDenyEnv: '',
         }),
       })
       expect(off.status).toBe(200)
-      expect(process.env.KORTIX_LLM_API_KEY as string | undefined).toBe('kortix_pat_exec')
-      expect(process.env.KORTIX_OPENCODE_DENY_ENV as string | undefined).toBe('ANTHROPIC_API_KEY,OPENAI_API_KEY')
+      expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
     } finally {
       for (const [k, v] of Object.entries({
-        KORTIX_LLM_API_KEY: saved.key,
         KORTIX_LLM_BASE_URL: saved.base,
-        KORTIX_OPENCODE_DENY_ENV: saved.deny,
-        KORTIX_CLI_TOKEN: saved.exec,
+        KORTIX_TOKEN: saved.token,
       })) {
         if (v === undefined) delete process.env[k]
         else process.env[k] = v

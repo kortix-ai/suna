@@ -518,7 +518,12 @@ flow(
           { names: ["SEC7_TEST_KEY"] },
           { params: { projectId: p.id } },
         );
-      r.status(200).body().has("$.kind", "secret").has("$.names[0]", "SEC7_TEST_KEY").exists("$.url");
+      r.status(200)
+        .body()
+        .has("$.kind", "secret")
+        .has("$.names[0]", "SEC7_TEST_KEY")
+        .has("$.scope", "connector")
+        .exists("$.url");
       const url = r.json<{ url: string }>().url;
       token = url.split("/").pop() ?? "";
       if (!token) throw new Error(`could not extract token from mint url: ${url}`);
@@ -539,6 +544,28 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/secret-requests", {}, { params: { projectId: p.id } });
+      r.status(400);
+    });
+
+    await ctx.step("runtime delivery requires an explicit scope → 200 runtime", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secret-requests",
+          { names: ["SEC7_RUNTIME_KEY"], scope: "runtime" },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.scope", "runtime");
+    });
+
+    await ctx.step("unknown delivery scope → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secret-requests",
+          { names: ["SEC7_TEST_KEY"], scope: "surprise" },
+          { params: { projectId: p.id } },
+        );
       r.status(400);
     });
 

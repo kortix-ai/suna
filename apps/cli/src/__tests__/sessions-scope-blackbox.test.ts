@@ -55,7 +55,7 @@ async function runCli(args: string[]) {
   };
   for (const key of [
     "KORTIX_API_URL",
-    "KORTIX_CLI_TOKEN",
+    "KORTIX_TOKEN",
     "KORTIX_PROJECT_ID",
     "KORTIX_TOKEN",
     "BASH_ENV",

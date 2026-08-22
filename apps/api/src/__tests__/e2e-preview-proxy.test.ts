@@ -20,7 +20,6 @@ import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import * as realProviders from '../platform/providers';
 import * as realPreviewOwnership from '../shared/preview-ownership';
 import { __resetPromptModelSignatureCacheForTests } from '../projects/lib/sandbox-env-sync';
-import { nativeProviderEnvNames } from '../llm-gateway/sandbox-credentials';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -908,10 +907,9 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
-      // Gateway mode is the only mode: every push carries mode ON, the base
-      // URL, and the full native-provider deny list.
+      // Gateway mode is the only mode: every push carries mode ON and the base
+      // URL. No deny list: native provider keys are withheld server-side.
       llmGatewayBaseUrl: 'http://localhost:8008/v1/llm',
-      llmGatewayDenyEnv: nativeProviderEnvNames().join(','),
       llmGatewayEnabled: true,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
       opencodeEnv: {},

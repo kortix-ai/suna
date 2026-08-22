@@ -59,7 +59,7 @@ async function runMcp(argv: string[], stdin: string) {
       ...process.env,
       // `initialize` and `tools/list` are answered locally, but the server
       // builds its gateway client before the read loop, so it needs a token.
-      KORTIX_CLI_TOKEN: 'test-token-not-used-offline',
+      KORTIX_TOKEN: 'test-token-not-used-offline',
       KORTIX_API_URL: 'https://api.kortix.invalid/v1',
       KORTIX_NO_UPDATE_CHECK: '1',
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',

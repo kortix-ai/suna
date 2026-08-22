@@ -16,7 +16,7 @@ import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path
  *
  * Thin client: it never holds a third-party credential. Every call goes to the
  * Kortix Connector Gateway, which checks sharing, resolves the secret SERVER-SIDE,
- * runs the call, and audits it. The sandbox only carries KORTIX_CLI_TOKEN +
+ * runs the call, and audits it. The sandbox only carries KORTIX_TOKEN +
  * KORTIX_API_URL (injected at sandbox spawn).
  *
  * STDOUT IS THE JSON-RPC CHANNEL — nothing else may be written there. index.ts

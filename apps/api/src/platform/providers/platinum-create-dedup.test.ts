@@ -95,7 +95,7 @@ const baseOpts = {
   // The truncated display name session-sandbox.ts actually sends as `name` —
   // the dedup identity must NEVER be derived from this.
   name: 'session-11111111',
-  envVars: { KORTIX_SANDBOX_TOKEN: 'tok_test' },
+  envVars: { KORTIX_TOKEN: 'tok_test' },
   sandboxId: SANDBOX_ID,
 };
 

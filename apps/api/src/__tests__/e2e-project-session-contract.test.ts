@@ -1630,7 +1630,7 @@ describe('project session API contract', () => {
     const env = lastProvisionInput!.extraEnvVars ?? {};
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
     expect(env.KORTIX_GITHUB_TOKEN).toBeUndefined();
-    expect(env.KORTIX_CLI_TOKEN).toBeUndefined();
+    expect(env.KORTIX_TOKEN).toBeUndefined();
     expect(env.KORTIX_TOKEN).toBeUndefined();
 
     sessionSandboxRows = [
@@ -3890,7 +3890,7 @@ describe('project session API contract', () => {
     expect(env.KORTIX_LLM_TOKEN).toBeUndefined();
     expect(env.KORTIX_LLM_BASE_URL).toBeUndefined();
     expect(env.TAVILY_API_URL).toBeUndefined();
-    expect(env.KORTIX_CLI_TOKEN).toBeUndefined();
+    expect(env.KORTIX_TOKEN).toBeUndefined();
     expect(env.KORTIX_TOKEN).toBeUndefined();
     expect(env.KORTIX_API_URL).toBeTruthy();
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
@@ -3941,7 +3941,7 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BASE_REF).toBe('dev');
-    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
   });
 
   test('persists runtime_context separately and injects one server-owned JSON envelope', async () => {

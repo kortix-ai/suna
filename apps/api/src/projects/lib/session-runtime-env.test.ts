@@ -10,27 +10,15 @@ const BASE_INPUT = {
   apiUrl: 'https://api.kortix.test/v1',
 };
 
-describe('buildSessionRuntimeEnv — daemon-delivered initial turn', () => {
-  test('injects the control-plane token and message identity only with an initial prompt', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      initialPrompt: 'Work for longer than the idle timeout.',
-      initialTurn: { token: 'turn-token', messageId: 'msg_initial' },
-    });
+describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
+  test('never injects the prompt or turn-ledger identity', () => {
+    const env = buildSessionRuntimeEnv(BASE_INPUT);
 
-    expect(env.KORTIX_INITIAL_TURN_TOKEN).toBe('turn-token');
-    expect(env.KORTIX_INITIAL_TURN_MESSAGE_ID).toBe('msg_initial');
-  });
-
-  test('does not inject orphan lifecycle authority without an initial prompt', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      initialTurn: { token: 'turn-token', messageId: 'msg_initial' },
-    });
-
+    expect(env).not.toHaveProperty('KORTIX_INITIAL_PROMPT');
     expect(env).not.toHaveProperty('KORTIX_INITIAL_TURN_TOKEN');
     expect(env).not.toHaveProperty('KORTIX_INITIAL_TURN_MESSAGE_ID');
   });
+
 });
 
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {

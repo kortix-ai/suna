@@ -241,7 +241,7 @@ USER root
 COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent /usr/local/bin/kortix-agent
 # The admin CLI every in-sandbox agent reaches for: `kortix cr open`,
 # `kortix secrets`, `kortix sessions`, … Pre-authenticated at runtime via the
-# project-scoped token the platform injects (KORTIX_CLI_TOKEN).
+# project-scoped token the platform injects (KORTIX_TOKEN).
 COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
 # Always-latest managed Kortix skills (kortix-cli + the kortix-* family). The
 # agent server overlays these into every session's OpenCode skills dir at boot

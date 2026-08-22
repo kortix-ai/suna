@@ -80,6 +80,7 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
+import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
@@ -2349,10 +2350,8 @@ projectsApp.openapi(
     // Two valid callers: a project/session-scoped PAT (dashboard, operator, or
     // in-sandbox agent CLI) and the session sandbox's own service credential.
     // Each is scoped back to this projectId before a turn event is accepted.
-    const authType = (c as any).get('authType') as string | undefined;
-    const apiKeyType = (c as any).get('apiKeyType') as string | undefined;
     let authenticatedSandboxId: string | null = null;
-    if (authType === 'apiKey' && apiKeyType === 'sandbox') {
+    if (isSessionSandboxCredential(c)) {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
@@ -2408,9 +2407,13 @@ projectsApp.openapi(
       }
     }
 
+    let authenticatedSandboxMetadata: unknown = null;
     if (authenticatedSandboxId) {
       const [ownedSession] = await db
-        .select({ sessionId: sessionSandboxes.sessionId })
+        .select({
+          sessionId: sessionSandboxes.sessionId,
+          metadata: sessionSandboxes.metadata,
+        })
         .from(sessionSandboxes)
         .where(
           and(
@@ -2422,6 +2425,7 @@ projectsApp.openapi(
         .limit(1);
       if (!ownedSession)
         return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+      authenticatedSandboxMetadata = ownedSession.metadata;
     }
 
     // session_id is caller-supplied — scope it back to :projectId so a caller
@@ -2446,6 +2450,43 @@ projectsApp.openapi(
     // Coordinator-spawned worker: its idle tail is minutes, not the default
     // grace — the box wakes on demand when the coordinator returns to it.
     const childSession = typeof turnStreamMetadata.spawned_by_session === 'string';
+
+    // The daemon claims its first prompt through the session-bound credential.
+    // No prompt or turn-ledger identifier belongs in the VM environment.
+    if (body.kind === 'initial_turn_claim') {
+      if (!authenticatedSandboxId) {
+        return c.json({ error: 'initial_turn_claim requires a sandbox token' }, 403);
+      }
+      const sandboxMetadata = (authenticatedSandboxMetadata ?? {}) as Record<string, unknown>;
+      const activeTurns =
+        sandboxMetadata.activeTurns &&
+        typeof sandboxMetadata.activeTurns === 'object' &&
+        !Array.isArray(sandboxMetadata.activeTurns)
+          ? (sandboxMetadata.activeTurns as Record<string, unknown>)
+          : {};
+      const delivering = Object.entries(activeTurns).find(([, value]) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        return (value as Record<string, unknown>).state === 'delivering';
+      });
+      const prompt =
+        typeof turnStreamMetadata.initial_prompt === 'string'
+          ? turnStreamMetadata.initial_prompt.trim()
+          : '';
+      if (!prompt || !delivering) return c.json({ ok: true, initial_turn: null });
+      const [turnToken, rawTurn] = delivering;
+      const messageId = (rawTurn as Record<string, unknown>).messageId;
+      if (typeof messageId !== 'string' || !messageId.trim()) {
+        return c.json({ ok: true, initial_turn: null });
+      }
+      return c.json({
+        ok: true,
+        initial_turn: {
+          prompt,
+          turn_token: turnToken,
+          message_id: messageId,
+        },
+      });
+    }
 
     // A daemon restart can discover that the pre-created initial message was
     // never delivered because it reused a root with older messages. Remove only
@@ -2587,7 +2628,7 @@ projectsApp.openapi(
       }
       // Second-chance auto-title: create-time generation is a single in-memory
       // best-effort call, and a session whose only prompt was baked in-guest
-      // (`KORTIX_INITIAL_PROMPT`) never crosses a titling hook again. Turn end
+      // (the server-claimed initial prompt) never crosses a titling hook again. Turn end
       // is the natural retry point — the generator is idempotent (needsTitle +
       // CAS) so an already-titled session is a cheap no-op. The stored
       // `title_source` outranks the supplied text inside the generator.
@@ -2773,8 +2814,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     // Same dual auth as turn-stream: the in-sandbox agent's sandbox token (scoped
     // back to this project) or a project/session-scoped user PAT.
-    const authType = (c as any).get('authType') as string | undefined;
-    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    if (isSessionSandboxCredential(c)) {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
@@ -2919,12 +2959,10 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const authType = c.get('authType') as string | undefined;
-    const apiKeyType = c.get('apiKeyType') as string | undefined;
     const accountId = c.get('accountId') as string | undefined;
     const sandboxId = c.get('sandboxId') as string | undefined;
     let ownerAccountId: string | undefined;
-    if (authType === 'apiKey' && apiKeyType === 'sandbox' && accountId && sandboxId) {
+    if (isSessionSandboxCredential(c) && accountId && sandboxId) {
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId })
         .from(sessionSandboxes)
@@ -3388,8 +3426,7 @@ projectsApp.openapi(
     // Null for a human caller.
     let callerSandboxSessionId: string | null = null;
 
-    const authType = (c as any).get('authType') as string | undefined;
-    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    if (isSessionSandboxCredential(c)) {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {

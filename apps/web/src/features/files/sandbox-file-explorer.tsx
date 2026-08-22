@@ -4,12 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { DriveExplorer, FileExplorerSourceProvider } from '@/features/project-files';
+import { useBoundedRuntimeWait } from '@/features/session/use-bounded-runtime-wait';
 import { useRuntimeStore } from '@kortix/sdk/react';
 import {
   ArrowClockwiseIcon as RefreshCw,
   CloudSlashIcon as ServerOff,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 import { useServerHealth } from './hooks';
 import { sandboxExplorerSource } from './sandbox-explorer-source';
 
@@ -40,11 +42,18 @@ function SandboxServerGate({ children }: { children: React.ReactNode }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   const { data: health, isLoading: isHealthLoading, refetch } = useServerHealth();
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const healthWaitExpired = useBoundedRuntimeWait(isHealthLoading, retryAttempt);
+
+  const retry = () => {
+    setRetryAttempt((attempt) => attempt + 1);
+    void refetch();
+  };
 
   // Hold the gate closed while the first probe is in flight. Rendering the
   // explorer during the probe made it mount, fail its own listing, and paint a
   // second failure UI a moment before this one replaced it.
-  if (isHealthLoading) {
+  if (isHealthLoading && !healthWaitExpired) {
     return (
       <div className="bg-background flex h-full flex-col gap-2 p-4">
         <Skeleton className="h-8 w-full py-0" />
@@ -55,7 +64,7 @@ function SandboxServerGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!health?.healthy) {
+  if (!health?.healthy || healthWaitExpired) {
     return (
       <ErrorState
         icon={ServerOff}
@@ -72,7 +81,7 @@ function SandboxServerGate({ children }: { children: React.ReactNode }) {
           </>
         }
         action={
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => refetch()}>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={retry}>
             <RefreshCw className="size-3.5 shrink-0" />
             Retry
           </Button>

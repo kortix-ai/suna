@@ -13,7 +13,7 @@
  *
  * Env:
  *   KORTIX_API_URL       — the API base URL (default: https://api.kortix.com/v1)
- *   KORTIX_CLI_TOKEN     — project-scoped auth token
+ *   KORTIX_TOKEN         — project-scoped auth token
  *   KORTIX_PROJECT_ID    — project to start sessions in
  *   BENCH_ROUNDS         — number of boot measurements (default: 10)
  *   BENCH_CONCURRENCY    — parallel sessions (default: 1; >1 stresses the pool)
@@ -27,7 +27,7 @@
 import { performance } from 'node:perf_hooks';
 
 const API_URL = process.env.KORTIX_API_URL ?? 'https://api.kortix.com/v1';
-const TOKEN = process.env.KORTIX_CLI_TOKEN ?? '';
+const TOKEN = process.env.KORTIX_TOKEN ?? '';
 const PROJECT_ID = process.env.KORTIX_PROJECT_ID ?? '';
 const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 10);
 const CONCURRENCY = Number(process.env.BENCH_CONCURRENCY ?? 1);
@@ -35,7 +35,7 @@ const TIMEOUT_S = Number(process.env.BENCH_TIMEOUT_S ?? 120);
 const SKIP_COLD = process.env.BENCH_WARM === '1';
 
 if (!TOKEN || !PROJECT_ID) {
-  console.error('Missing KORTIX_CLI_TOKEN or KORTIX_PROJECT_ID.');
+  console.error('Missing KORTIX_TOKEN or KORTIX_PROJECT_ID.');
   process.exit(1);
 }
 

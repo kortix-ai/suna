@@ -107,7 +107,7 @@ flow(
     // The mirror is populated by the PRE-PROMPT hooks on the preview proxy —
     // `generateSessionTitleFromFirstPrompt` + `scheduleOpencodeSnapshotSync`
     // (apps/api/src/sandbox-proxy/routes/preview.ts REAL_PRE_PROMPT_DEPS). A
-    // session whose ONLY prompt was baked into the guest as KORTIX_INITIAL_PROMPT
+    // session whose only prompt was claimed by the daemon during boot
     // never crosses that proxy, so it "never crosses a titling hook again" —
     // apps/api/src/projects/routes/r4.ts says exactly that in its own comment.
     // Waiting for the mirror straight after an initial_prompt boot is therefore

@@ -28,6 +28,7 @@ import {
   canMountSessionChat,
   findInitialSessionPin,
   gatedRuntimeError,
+  runtimeErrorPresentation,
   sessionErrorSurfaceReady,
 } from '@/features/session/session-load-state';
 import {
@@ -915,12 +916,16 @@ function InlineSessionError({
       <ErrorState
         title={title}
         description={message}
-        action={action}
-        secondaryAction={
-          detail ? (
-            <code className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-md border px-2 py-1 font-mono text-xs leading-relaxed break-all">
-              {detail}
-            </code>
+        action={
+          detail || action ? (
+            <div className="flex max-w-sm flex-col items-center gap-3">
+              {detail ? (
+                <code className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-md border px-2 py-1 font-mono text-xs leading-relaxed break-all">
+                  {detail}
+                </code>
+              ) : null}
+              {action}
+            </div>
           ) : undefined
         }
       />
@@ -1000,6 +1005,11 @@ function ActiveSessionChat({
     if (next !== pinnedRootSessionId) setPinnedRootSessionId(next);
   }, [pinnedRootSessionId, rootSessionId]);
   const chatSessionId = selectedSession?.id ?? pinnedRootSessionId ?? rootSessionId ?? null;
+  const runtimePresentation = runtimeErrorPresentation({
+    chatSessionId,
+    runtimeError,
+    runtimeBootError,
+  });
 
   // Migrate the home-composer prompt onto the canonical SDK start-stash. Every
   // producer (project-home composer, `useConfigureThread`, the instant shell)
@@ -1051,7 +1061,9 @@ function ActiveSessionChat({
   // with a spinner, then swapped again a moment later. So the chat's own
   // `onContentReady` drives the fade for the ordinary path, and this covers the
   // two terminal ones.
-  const errorSurfaceReady = sessionErrorSurfaceReady({ runtimeError, runtimeBootError });
+  const errorSurfaceReady = runtimePresentation.replaceSession
+    ? sessionErrorSurfaceReady({ runtimeError, runtimeBootError })
+    : false;
   useEffect(() => {
     if (errorSurfaceReady) onChatReady?.();
   }, [errorSurfaceReady, onChatReady]);
@@ -1079,7 +1091,7 @@ function ActiveSessionChat({
     sessionId,
   ]);
 
-  if (!runtimeReady && runtimeBootError) {
+  if (!runtimeReady && runtimeBootError && runtimePresentation.replaceSession) {
     return (
       <InlineSessionError
         title={tHardcodedUi.raw(
@@ -1094,7 +1106,7 @@ function ActiveSessionChat({
     );
   }
 
-  if (runtimeError) {
+  if (runtimeError && runtimePresentation.replaceSession) {
     const formatted = formatRuntimeError(runtimeError);
     return (
       <InlineSessionError

@@ -9,12 +9,7 @@ import { requiresRespawn, type Opencode } from '../opencode'
 import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
-  'KORTIX_LLM_API_KEY',
   'KORTIX_LLM_BASE_URL',
-  // Gateway-only: the provider-key names opencode must never see. Flipped with the
-  // mode so a live toggle to DIRECT clears it (native BYOK keys reach opencode) and
-  // a toggle to GATEWAY restores the strip on the next opencode restart.
-  'KORTIX_OPENCODE_DENY_ENV',
   // The session's model. opencode reads this when it builds its config at spawn
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
@@ -90,31 +85,28 @@ function setOpencodeRuntimeEnv(next: Record<string, string | null>): { changed: 
   return { changed: changedNames.length > 0, names: changedNames.sort() }
 }
 
-function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknown): { changed: boolean; names: string[] } {
+function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boolean; names: string[] } {
   if (enabled === undefined) return { changed: false, names: [] }
   if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
   if (!enabled) {
     // Gateway mode is the ONLY mode: OpenCode is a proxy to the one `kortix`
-    // provider and never sees native provider keys. No current API sends
-    // `false`; an OLDER API still can for a moment during a mixed-version
-    // rollout. Answer 200 (no 4xx storm on every prompt's env sync) but refuse
-    // to leave gateway mode — the gateway key and the deny list stay as they
-    // are. Clearing them here used to be the one runtime path back to native.
+    // provider, authenticated with KORTIX_TOKEN. No current API sends `false`;
+    // an OLDER API still can for a moment during a mixed-version rollout.
+    // Answer 200 (no 4xx storm on every prompt's env sync) but refuse to leave
+    // gateway mode — KORTIX_LLM_BASE_URL stays as it is. Clearing it here used
+    // to be the one runtime path back to native providers.
     console.warn('[env] llmGatewayEnabled=false ignored — gateway mode is the only mode')
     return { changed: false, names: [] }
   }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
     throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')
   }
-  const token = process.env.KORTIX_CLI_TOKEN
+  const token = process.env.KORTIX_TOKEN
   if (!token) {
-    throw new Error('KORTIX_CLI_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
+    throw new Error('KORTIX_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
   }
   return setOpencodeRuntimeEnv({
-    KORTIX_LLM_API_KEY: token,
     KORTIX_LLM_BASE_URL: baseUrl,
-    // GATEWAY: restore the strip (names supplied by the API) on the next restart.
-    KORTIX_OPENCODE_DENY_ENV: typeof denyEnv === 'string' ? denyEnv : '',
   })
 }
 
@@ -176,7 +168,7 @@ export function createEnvRouter(
         // revoked boot secret before it sources agent-env.sh.
         reconcileProjectEnv(process.env, projectEnv)
         const opencodeEnv = applyOpencodeRuntimeEnv(body.opencodeEnv)
-        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl, body.llmGatewayDenyEnv)
+        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl)
         // null when no reload was needed at all; otherwise how it was applied.
         let reloadOutcome: 'disposed' | 'restarted' | 'kept-old' | null = null
         // Whether applying the config interrupted work someone was waiting on.

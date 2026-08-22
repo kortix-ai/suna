@@ -77,7 +77,7 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   const linkedHost = !hostArg ? directoryLink?.host : undefined;
   // Host resolution mirrors resolveProjectContext: --host wins, then the
   // platform-injected sandbox token, then the cwd link. Reading the LINK host
-  // while a KORTIX_CLI_TOKEN is present resolves a named host that carries no
+  // while a KORTIX_TOKEN is present resolves a named host that carries no
   // stored credentials inside a sandbox — which reported a fully-authenticated
   // agent CLI as "not logged in" on every command (the exact trap called out in
   // api/config.ts). The link still supplies the account/project below; only the

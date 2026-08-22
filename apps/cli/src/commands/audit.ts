@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kortix/sdk';
-import { loadAuth } from '../api/auth.ts';
+import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { activeAccount } from '../api/config.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool } from '../command-helpers.ts';
@@ -72,6 +72,7 @@ Options:
   --url <u>            webhooks add: the http(s) endpoint to POST events to.
   --action-prefix <p>  webhooks add: only deliver actions with this prefix.
   --account <id>       Operate on this account (default: active account).
+  --host <name>        Operate against a non-default Kortix host.
   --json               Machine-readable output.
   -h, --help           Show this help.
 
@@ -170,13 +171,19 @@ interface AuditContext {
   auth: NonNullable<ReturnType<typeof loadAuth>>;
 }
 
-function resolveAccountContext(accountArg?: string): AuditContext | null {
-  const auth = loadAuth();
+function resolveAccountContext(accountArg?: string, hostArg?: string): AuditContext | null {
+  // --host names a logged-in host other than the active one; its own stored
+  // account is the default scope there (never the global active account).
+  const auth = hostArg ? loadAuthForHost(hostArg) : loadAuth();
   if (!auth?.token) {
-    process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);
+    process.stderr.write(
+      hostArg
+        ? `${status.err(`Host "${hostArg}" is not logged in.`)} Run \`kortix login --host ${hostArg}\`.\n`
+        : `${status.err('Not logged in. Run `kortix login`.')}\n`,
+    );
     return null;
   }
-  const accountId = accountArg || activeAccount()?.id || auth.account_id || '';
+  const accountId = accountArg || (hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
   if (!accountId) {
     process.stderr.write(
       `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
@@ -325,6 +332,7 @@ export async function runAudit(argv: string[]): Promise<number> {
   let all = false;
   try {
     f.account = takeFlagValue(rest, ['--account']);
+    f.host = takeFlagValue(rest, ['--host']);
     f.action = takeFlagValue(rest, ['--action']);
     f.actor = takeFlagValue(rest, ['--actor']);
     f.actorType = takeFlagValue(rest, ['--actor-type']);
@@ -354,7 +362,7 @@ export async function runAudit(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext(f.account);
+  const ctx = resolveAccountContext(f.account, f.host);
   if (!ctx) return 1;
   const base = `/accounts/${ctx.accountId}/audit`;
 

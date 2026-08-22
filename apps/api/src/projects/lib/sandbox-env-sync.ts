@@ -5,7 +5,6 @@ import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
-import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import type { ProviderName } from '../../platform/providers';
 import {
   intersectSecretGrants,
@@ -147,10 +146,7 @@ export function __resetPromptModelSignatureCacheForTests(): void {
  *     would silently stop propagating an unrelated secret rotation.
  *   - `snapshot.capabilitiesJson` — pushed as `KORTIX_SECRET_CAPABILITIES`,
  *     which is on the daemon's `RESPAWN_REQUIRED_ENV_NAMES` list.
- *   - the LLM-gateway triple (`enabled`, `baseUrl`, `denyEnv`) — the daemon
- *     maps these onto `KORTIX_LLM_API_KEY` / `KORTIX_LLM_BASE_URL` /
- *     `KORTIX_OPENCODE_DENY_ENV`, the model/token/key values the task calls
- *     out by name.
+ *   - the LLM-gateway mode and base URL.
  *   - `args.opencodeEnv` — an explicit runtime-env push a caller asked this
  *     same call to carry (e.g. a channel follow-up's `KORTIX_CONNECTORS_MCP_ENABLED`,
  *     see `continueSession`/engine.ts). Omitting it would silently drop that
@@ -165,7 +161,6 @@ function promptModelSignature(input: {
   /** Still per-provider (origin) and per-catalog-revision, hence in the digest.
    *  Gateway mode itself is constant (always on) and is not an input. */
   llmGatewayBaseUrl?: string;
-  llmGatewayDenyEnv?: string;
   opencodeEnv?: Record<string, string | null>;
 }): string {
   const opencodeEnvEntries = Object.entries(input.opencodeEnv ?? {}).sort(([a], [b]) =>
@@ -175,7 +170,6 @@ function promptModelSignature(input: {
     input.revision,
     input.capabilitiesJson,
     input.llmGatewayBaseUrl ?? '',
-    input.llmGatewayDenyEnv ?? '',
     opencodeEnvEntries,
   ]);
 }
@@ -492,7 +486,6 @@ async function postEnvToDaemon(args: {
   opencodeEnv?: Record<string, string | null>;
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
-  llmGatewayDenyEnv?: string;
   requireAgentEnvProof?: boolean;
 }): Promise<{
   opencodeState: string | null;
@@ -539,7 +532,6 @@ async function postEnvToDaemon(args: {
         ? {
             llmGatewayEnabled: args.llmGatewayEnabled,
             ...(args.llmGatewayBaseUrl ? { llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
-            llmGatewayDenyEnv: args.llmGatewayDenyEnv ?? '',
           }
         : {}),
     }),
@@ -707,13 +699,14 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   lap('arm');
-  // Gateway mode is the only mode: every push re-stamps mode ON, the base URL
-  // for THIS provider's origin, and the full native-provider deny list. The
-  // daemon honours `llmGatewayEnabled:true` on every build, so a box that
-  // booted before this rule converges on its next prompt.
+  // Gateway mode is the only mode: every push re-stamps mode ON and the base
+  // URL for THIS provider's origin. The daemon honours `llmGatewayEnabled:true`
+  // on every build, so a box that booted before this rule converges on its
+  // next prompt. Native provider keys never reach the sandbox env at all
+  // (`materializeSecretDelivery` withholds gateway-managed credentials
+  // server-side), so no per-push deny list travels with the mode.
   const llmGatewayEnabled = true;
   const llmGatewayBaseUrl = llmGatewayBaseUrlForProvider(args.providerName);
-  const llmGatewayDenyEnv = nativeProviderEnvNames().join(',');
   // Only ask the daemon to reload when something that could move ITS
   // `result.changed || opencodeEnvChanged` gate has actually changed since the
   // last time THIS process pushed to THIS sandbox. The daemon already no-ops a
@@ -727,7 +720,6 @@ export async function syncSandboxEnvForPrompt(args: {
     revision: snapshot.revision,
     capabilitiesJson: snapshot.capabilitiesJson,
     llmGatewayBaseUrl,
-    llmGatewayDenyEnv,
     opencodeEnv: args.opencodeEnv,
   });
   const refreshModels = lastPromptModelSignature.get(args.externalId) !== signature;
@@ -751,7 +743,6 @@ export async function syncSandboxEnvForPrompt(args: {
     opencodeEnv: args.opencodeEnv,
     llmGatewayEnabled,
     llmGatewayBaseUrl,
-    llmGatewayDenyEnv,
   });
   // Remember only AFTER a successful push. A throw below (network/HTTP
   // failure) must leave the memo alone so the next prompt retries with
@@ -1185,10 +1176,8 @@ export async function pushSessionModelToSandbox(input: {
  * Pushing here — the same pattern the `/model` PUT already uses — fixes both
  * halves: the snapshot is re-derived from the freshly-committed allowlist and
  * POSTed to the daemon, and `refreshModels: true` restarts opencode so
- * `spawnChild` re-runs `mergeProjectEnv` + `withoutDeniedProviderEnv`. The
- * LLM-gateway provider strip is re-stamped alongside (it lives in the same
- * `opencodeEnv`/`llmGatewayDenyEnv` channel), so the 42/47-vs-47/47 split
- * between the opencode process and tool shells is preserved, and revocation
+ * `spawnChild` re-runs `mergeProjectEnv`. The LLM-gateway mode + base URL are
+ * re-stamped alongside (same channel), and revocation
  * keeps working (`knownNames` is still tracked in the daemon store, so a
  * dropped secret is actively cleared on the respawn).
  *
@@ -1244,10 +1233,9 @@ export async function pushSessionScopeToSandbox(input: {
       // the load-bearing part — see the daemon-side gate in routes/env.ts.
       refreshModels: true,
       // Gateway mode is the only mode: re-stamp it with the snapshot so the
-      // respin cannot drop the strip (see the per-prompt path).
+      // respin cannot drop the gateway routing (see the per-prompt path).
       llmGatewayEnabled: true,
       llmGatewayBaseUrl: llmGatewayBaseUrlForProvider(row.provider as ProviderName),
-      llmGatewayDenyEnv: nativeProviderEnvNames().join(','),
     });
     return { applied: true };
   } catch (err) {

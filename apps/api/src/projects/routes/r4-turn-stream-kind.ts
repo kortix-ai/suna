@@ -27,6 +27,7 @@ export const TURN_STREAM_LIFECYCLE_KINDS: ReadonlySet<string> = new Set([
   'turn_begin',
   'turn_accepted',
   'turn_abandoned',
+  'initial_turn_claim',
   'opencode_session',
 ])
 

@@ -43,7 +43,7 @@ Subcommands:
   request-changes <cr> --message "<t>"   Ask the agent that opened it to revise.
   close <cr>                             Close an open CR without merging.
   reopen <cr>                            Reopen a closed CR.
-  version-diff --from <ver> --into <ver> Summarize one version against another
+  version-diff --from <head> --into <base> Summarize what merging <head> into <base>
                 [--json]                 before opening a CR.
 
 <cr> can be a CR number (e.g. 3) or a CR uuid.
@@ -57,7 +57,7 @@ Global options:
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
-Inside an agent sandbox the CLI reads KORTIX_CLI_TOKEN and KORTIX_PROJECT_ID
+Inside an agent sandbox the CLI reads KORTIX_TOKEN and KORTIX_PROJECT_ID
 from the environment automatically — you don't need to log in or link.
 (KORTIX_TOKEN is the sandbox service key, not a CLI token.)
 `;

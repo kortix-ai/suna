@@ -70,7 +70,7 @@ async function callTool(args: Record<string, unknown>) {
     cwd: CLI_ROOT,
     env: {
       ...process.env,
-      KORTIX_CLI_TOKEN: 'session-agent-token',
+      KORTIX_TOKEN: 'session-agent-token',
       KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
       KORTIX_PROJECT_ID: PROJECT_ID,
       KORTIX_NO_UPDATE_CHECK: '1',

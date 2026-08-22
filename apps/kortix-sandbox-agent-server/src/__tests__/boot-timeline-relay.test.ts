@@ -5,7 +5,7 @@ import { __resetBootTimelineRelayForTests, relayBootTimelineToApi } from '../boo
 const BASE_ENV = {
   KORTIX_PROJECT_ID: 'proj-1',
   KORTIX_SESSION_ID: 'sess-1',
-  KORTIX_SANDBOX_TOKEN: 'sandbox-token-abc',
+  KORTIX_TOKEN: 'sandbox-token-abc',
   KORTIX_API_URL: 'https://api.kortix.test/v1',
 }
 
@@ -93,7 +93,7 @@ describe('relayBootTimelineToApi', () => {
   })
 
   test('is a silent no-op when no credential is configured', async () => {
-    setEnv({ ...BASE_ENV, KORTIX_SANDBOX_TOKEN: undefined, KORTIX_CLI_TOKEN: undefined, KORTIX_TOKEN: undefined })
+    setEnv({ ...BASE_ENV, KORTIX_TOKEN: undefined })
     const calls: string[] = []
     globalThis.fetch = (async (url: string) => {
       calls.push(String(url))

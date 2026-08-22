@@ -109,7 +109,7 @@ async function runSlack(args: string[], opts: { ok?: boolean } = {}): Promise<Cl
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       KORTIX_API_URL: apiUrl,
-      KORTIX_CLI_TOKEN: TOKEN,
+      KORTIX_TOKEN: TOKEN,
       KORTIX_PROJECT_ID: PROJECT,
       KORTIX_SESSION_ID: SESSION,
       KORTIX_CLI_BIN: CONNECTOR_CLI_ENTRY,

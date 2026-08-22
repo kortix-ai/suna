@@ -26,7 +26,6 @@ import {
 import { db } from '../shared/db';
 import { resolveSandboxEnvSnapshot } from '../projects/lib/sandbox-env-sync';
 import { buildSessionSandboxEnvVars } from '../projects/lib/sessions';
-import { nativeProviderEnvNames } from '../llm-gateway/sandbox-credentials';
 import {
   AmbiguousSecretGrantError,
   encryptProjectSecret,
@@ -339,9 +338,9 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       agentName: 'default',
     });
     expect(env[OVERRIDE_KEY]).toBe('owner-val');
-    // Gateway mode is the only mode: the opencode deny list always carries
-    // every native provider key, so a BYOK key never reaches the opencode process.
-    expect(env.KORTIX_OPENCODE_DENY_ENV).toBe(nativeProviderEnvNames().join(','));
+    // Gateway mode is the only mode and native provider keys are withheld
+    // server-side (materializeSecretDelivery), so no opencode deny list travels.
+    expect(env).not.toHaveProperty('KORTIX_OPENCODE_DENY_ENV');
   });
 
   test('sandbox boot snapshots the latest committed Veyris capability secrets without caching', async () => {
@@ -387,7 +386,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       baseRef: 'main',
       agentName: 'veyris',
     });
-    expect(env.KORTIX_OPENCODE_DENY_ENV).toBe(nativeProviderEnvNames().join(','));
+    expect(env).not.toHaveProperty('KORTIX_OPENCODE_DENY_ENV');
     expect(env.VEYRIS_API_URL).toBe('https://fresh.veyris.example.test');
     expect(env.VEYRIS_AGENT_TOKEN).toBe('fresh-capability');
     expect(env.KORTIX_PROJECT_SECRET_NAMES?.split(',').sort()).toEqual([

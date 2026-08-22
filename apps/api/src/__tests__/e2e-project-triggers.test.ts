@@ -1256,7 +1256,7 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toMatch(/Run at \d{4}-\d{2}-\d{2}T/);
+    expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBeUndefined();
     expect(sessionRows.at(-1)?.visibility).toBe('private');
     expect(sessionRows.at(-1)?.createdBy).toBe(SERVICE_ACCOUNT_ID);
     // Runtime row was upserted with last_fired_at.
@@ -1363,7 +1363,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('Sweep run');
+    expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBeUndefined();
   });
 
   test('cron sweep under backpressure queues and records accepted fire', async () => {
@@ -1485,7 +1485,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
+    expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBeUndefined();
 
     const duplicate = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
       method: 'POST',
@@ -1537,7 +1537,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(drained).toEqual({ claimed: 1, succeeded: 1, failed: 0, queued: 0 });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
+    expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBeUndefined();
     expect(lifecycleCommandRows[0]!.status).toBe('succeeded');
     expect(lifecycleCommandRows[0]!.sessionId).toBeTruthy();
   });

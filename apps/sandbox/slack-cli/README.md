@@ -80,7 +80,7 @@ Rules:
   results — never write progress to stdout.
 - **No vendor tokens in the sandbox.** Vendor calls (e.g. Slack) run through the
   Kortix Connector, which resolves the credential server-side; the CLI auths to
-  apps/api with the per-session `KORTIX_CLI_TOKEN` (+ `KORTIX_API_URL`). Binary /
+  apps/api with the per-session `KORTIX_TOKEN` (+ `KORTIX_API_URL`). Binary /
   multipart vendor ops the JSON gateway can't carry (Slack file download/upload)
   go through dedicated apps/api proxy routes — still token-free in the box.
 - **Every CLI exposes a `help` subcommand** printing its full surface so the
@@ -104,5 +104,5 @@ For state that lives cloud-side, use the api module:
 import { kortixGet, kortixPost } from "../lib"
 ```
 
-`kortixGet` / `kortixPost` use `KORTIX_API_URL` + `KORTIX_CLI_TOKEN` from env,
+`kortixGet` / `kortixPost` use `KORTIX_API_URL` + `KORTIX_TOKEN` from env,
 both minted per session by apps/api at sandbox spawn.

@@ -7,6 +7,22 @@ export function gatedRuntimeError(input: {
   return input.phase === 'error' ? input.runtimeError : null;
 }
 
+/**
+ * Runtime transport loss is local to the live layer when the conversation has
+ * a resolved OpenCode identity. The cached transcript remains useful and must
+ * not be replaced by a full-page error.
+ */
+export function runtimeErrorPresentation(input: {
+  chatSessionId: string | null;
+  runtimeError: unknown;
+  runtimeBootError: unknown;
+}): { replaceSession: boolean; inlineRecovery: boolean } {
+  const hasRuntimeError = Boolean(input.runtimeError || input.runtimeBootError);
+  if (!hasRuntimeError) return { replaceSession: false, inlineRecovery: false };
+  if (input.chatSessionId) return { replaceSession: false, inlineRecovery: true };
+  return { replaceSession: true, inlineRecovery: false };
+}
+
 export function canMountSessionChat(input: {
   switched: boolean;
   opencodeSessionId: string | null;

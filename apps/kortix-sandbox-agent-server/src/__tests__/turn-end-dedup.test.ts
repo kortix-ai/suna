@@ -73,7 +73,7 @@ beforeEach(() => {
     SLACK_THREAD_TS: process.env.SLACK_THREAD_TS,
     KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
     KORTIX_SESSION_ID: process.env.KORTIX_SESSION_ID,
-    KORTIX_SANDBOX_TOKEN: process.env.KORTIX_SANDBOX_TOKEN,
+    KORTIX_TOKEN: process.env.KORTIX_TOKEN,
     KORTIX_API_URL: process.env.KORTIX_API_URL,
   }
 })
@@ -87,7 +87,7 @@ afterEach(() => {
 function sessionEnv(apiUrl: string) {
   process.env.KORTIX_PROJECT_ID = 'proj_1'
   process.env.KORTIX_SESSION_ID = 'sess_1'
-  process.env.KORTIX_SANDBOX_TOKEN = 'tok'
+  process.env.KORTIX_TOKEN = 'tok'
   process.env.KORTIX_API_URL = apiUrl
 }
 
@@ -128,7 +128,7 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
     delete process.env.SLACK_THREAD_TS
     process.env.KORTIX_PROJECT_ID = 'proj_1'
     process.env.KORTIX_SESSION_ID = 'sess_1'
-    process.env.KORTIX_SANDBOX_TOKEN = 'tok'
+    process.env.KORTIX_TOKEN = 'tok'
     process.env.KORTIX_API_URL = m.baseUrl
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config

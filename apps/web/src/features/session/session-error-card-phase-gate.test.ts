@@ -24,7 +24,11 @@
  */
 import { describe, expect, test } from 'bun:test';
 
-import { gatedRuntimeError, sessionErrorSurfaceReady } from './session-load-state';
+import {
+  gatedRuntimeError,
+  runtimeErrorPresentation,
+  sessionErrorSurfaceReady,
+} from './session-load-state';
 import {
   canRenderCachedTranscriptWhileSandboxDown,
   type StoppedSandboxCacheState,
@@ -46,9 +50,11 @@ function wouldShowErrorCard(input: {
   runtimeBootError: unknown;
 }): boolean {
   const runtimeError = gatedRuntimeError({ phase: input.phase, runtimeError: input.runtimeError });
-  // page.tsx renders the card the moment the gated value is truthy — before
-  // even checking `chatShowable`/`chatSessionId`.
-  return Boolean(runtimeError);
+  return runtimeErrorPresentation({
+    chatSessionId: input.chatSessionId,
+    runtimeError,
+    runtimeBootError: input.runtimeBootError,
+  }).replaceSession;
 }
 
 describe('the page-level phase gate: a benign wake-race 503 never shows the error card', () => {
@@ -74,6 +80,17 @@ describe('the page-level phase gate: a benign wake-race 503 never shows the erro
         runtimeBootError: null,
       }),
     ).toBe(true);
+  });
+
+  test('a settled runtime error does not replace a resolved conversation', () => {
+    expect(
+      wouldShowErrorCard({
+        phase: 'error',
+        runtimeError: WAKE_RACE_503,
+        chatSessionId: 'ses_cached',
+        runtimeBootError: null,
+      }),
+    ).toBe(false);
   });
 
   test('reverting the gate — reading the raw runtimeError directly, ignoring phase — WOULD show the card', () => {
@@ -121,6 +138,12 @@ describe('the crossfade trigger agrees with the same gated value the error card 
   test('once phase settles to error, the fade starts and the SAME value renders the card', () => {
     const runtimeError = gatedRuntimeError({ phase: 'error', runtimeError: WAKE_RACE_503 });
     expect(runtimeError).toBe(WAKE_RACE_503);
+    const presentation = runtimeErrorPresentation({
+      chatSessionId: null,
+      runtimeError,
+      runtimeBootError: null,
+    });
+    expect(presentation.replaceSession).toBe(true);
     expect(sessionErrorSurfaceReady({ runtimeError, runtimeBootError: null })).toBe(true);
   });
 

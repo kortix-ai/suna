@@ -71,7 +71,7 @@ const BOOT_ONLY_KORTIX_ENV_NAMES = new Set([
   // Connector MCP identity, materialized once at provision. A rotated
   // connector token is a new session, not a live push.
   'KORTIX_API_URL',
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   // Warm-fork proxy-mode flags. Daemon-injected at boot so a warm seed's
   // provider config is session-independent; never posted by the API — see
   // buildOpencodeConfigContent's comment on `llmProxyUrl`/`connectorProxyUrl`.
@@ -134,19 +134,17 @@ describe('OPENCODE_RUNTIME_ENV_NAMES — allowlist completeness', () => {
     consumed.add('KORTIX_SECRET_CAPABILITIES')
     expect([...consumed].sort()).toEqual([
       'KORTIX_API_URL',
-      'KORTIX_CLI_TOKEN',
       'KORTIX_COMPILED_AGENT_CONFIG',
       'KORTIX_CONNECTORS_MCP_ENABLED',
       'KORTIX_CONNECTORS_PROXY_URL',
-      'KORTIX_LLM_API_KEY',
       'KORTIX_LLM_BASE_URL',
       'KORTIX_LLM_CATALOG_FILE',
       'KORTIX_LLM_PROXY_URL',
       'KORTIX_OPENCODE_DEBUG',
-      'KORTIX_OPENCODE_DENY_ENV',
       'KORTIX_OPENCODE_MODEL',
       'KORTIX_PROJECT_ID',
       'KORTIX_SECRET_CAPABILITIES',
+      'KORTIX_TOKEN',
     ])
   })
 })

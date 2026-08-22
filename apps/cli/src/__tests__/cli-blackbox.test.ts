@@ -16,7 +16,7 @@ const CLI_ENTRY = join(CLI_ROOT, 'src', 'index.ts');
 const ORIGINAL_ENV = { ...process.env };
 const SANDBOX_ENV_OVERRIDES = [
   'KORTIX_API_URL',
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_FRONTEND_URL',
   'KORTIX_PROJECT_ID',
   'KORTIX_TOKEN',

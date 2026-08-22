@@ -46,7 +46,7 @@ export const META_AGENT_GUIDE = [
   '- Do not clone the project repository into this sandbox.',
   '- Treat this sandbox as disposable.',
   '',
-  '`KORTIX_CLI_TOKEN` authenticates the CLI without login or local configuration.',
+  '`KORTIX_TOKEN` authenticates the CLI without login or local configuration.',
   'It grants every project action allowed to the user who started this session.',
   'It cannot access another project, account administration, project secrets, or connectors.',
 ].join('\n');

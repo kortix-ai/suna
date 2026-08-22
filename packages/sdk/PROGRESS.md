@@ -4776,7 +4776,8 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B48 | **Canonical feature-flag naming + one gating primitive.** The platform renamed the system to "Feature flags" (`FeatureFlag*` in `@kortix/api-contract`, `FeatureFlagStabilitySchema` = experimental\|beta\|stable, gated routes returning `403 {code:'feature_disabled', feature}`, canonical `PATCH /projects/:id/features`). The SDK still exposed only `Experimental*` names, had no runtime key list for cross-package drift tests, no typed narrowing for the 403, and no shared React gate hook — so every host hand-rolled `project?.experimental?.<key> === true`. | Additive only: `FeatureFlagKey`, `FeatureFlagView` (stability widened to `'experimental'\|'beta'\|'stable'`), `FEATURE_FLAG_KEYS`, `updateFeatureFlag` (canonical `/features` route), `isFeatureDisabledError`, `FeatureDisabledError`, `useFeatureFlag`, and `project(id).updateFeatureFlag` on the facade. Every `Experimental*` name kept as a `@deprecated` alias; `updateExperimentalFeature` keeps its `/experimental` wire path for older deployed APIs. | **DONE 2026-08-08** — session `feature-flags-web`; TDD RED first on all four (`Export named 'FEATURE_FLAG_KEYS' not found`, `Export named 'isFeatureDisabledError' not found`, `Cannot find module './use-feature-flag'`); GREEN at `1777 pass, 0 fail, 6965 expect()` across `139` files; `typecheck` exit 0 (package + examples); `smoke:install` packed + installed + imported OK. Both surface snapshots re-recorded and reviewed: **11 + 20 insertions, 0 removals — purely additive** |
 | B49 | **`applyOptimisticAbort` marks a turn errored but never ends it.** It sets `error: AbortError` and flips the session idle, but leaves `time.completed` unset — and an aborted turn may never receive a `message.updated` that sets it. Any host predicate written as `!lastAssistant.time?.completed` therefore stays true for the life of the tab after every stop. It wedged `apps/web`'s message-queue drain gate permanently: every message typed after an interrupt queued behind one that could never be released. | `src/react/use-session-send.ts:271-296` — sets `error`, no `time.completed`. Worked around host-side in `apps/web/src/features/session/assistant-turn-open.ts` (errored ⇒ ended), which is a patch on the symptom; the SDK should end the turn it aborts. | OPEN |
 | B50 | **`applyPostCreateActions`'s `deliver_prompt` action shares `postPrompt`/`continueSession` with `executeQueuedContinue` but has no equivalent no-blind-repost protection at the call-site level for its OWN retry path.** A `create_session` command whose post-create actions fail (`postCreate.ok === false`) is re-queued `retryable: true` (`engine.ts` `drainSessionLifecycleQueue`, the `create_session` branch); the NEXT drain sees `row.sessionId` already set, returns the existing session immediately, then re-runs `applyPostCreateActions` — including `deliver_prompt` — from scratch. The re-post is protected by the SAME prompt-dedupe TTL fix landed in T13 (identical `sessionId`+`text` on retry → identical content-hash key → collides), so it is NOT currently broken, but nothing documents or pins that shared guarantee at this second call site the way `executeQueuedContinue`'s doc comment now does. | `engine.ts` `drainSessionLifecycleQueue` create-session branch (~lines 513-535 pre-edit) → `applyPostCreateActions` → `continueSession` with `action.source`/`action.text`, same `postPrompt` as the continue_session path. Out of scope for T13 (task named `engine.ts`'s "delivery-retry region" as `executeQueuedContinue`/`postPrompt`, not the create-session post-actions branch). | OPEN — same fix already covers it in practice; needs its own doc comment + pinning test if this path is ever revisited. |
-| B51 | **No row model for the transcript.** Every host re-derives "what does this turn render as" from `groupMessagesIntoTurns` output on every frame, and re-allocates the whole render list even when nothing changed. There is no shared, pure, virtualizer-ready row union and no identity-preserving reuse pass. | `packages/sdk/src/core/turns/` has grouping (`grouping.ts`), part helpers (`parts.ts`) and turn state (`state.ts`), but nothing that flattens a turn into ordered rows. `apps/web/src/features/session/turn/stable-turns.ts` proves the reuse pattern host-side only. | **DONE 2026-08-22 (`f4d872cfe3`)** — session `sdk-timeline-rows`; Stage 1 = `core/turns/timeline.ts` (`constructTimelineRows`, `reuseTimelineRows`, `Timeline*` types) + `timeline.test.ts` (61 tests), additive only, no host consumer yet. |
+| B51 | **Recoverable runtime loss must preserve the conversation and lifecycle operations must serialize per session.** Restart currently runs detached, unfenced provider `stop -> start` operations. A runtime error can replace cached chat with a full-screen card. | Dev incident `ebdcac7f-58bd-4a9f-ad82-b5f536f12c9c` on 2026-08-22: three restart requests in 27 seconds; status oscillated `running -> provisioning -> stopped -> running -> stopped`; Terminal, Files, and OpenCode failed together while cached transcript existed. Spec and plan: `2026-08-22-session-runtime-recovery-*`. | **COMPLETE 2026-08-22** — PR `#6748`, merge `623db9e1adad11f0107276b738a9846938d79467`, and Deploy Dev run `32596581140`. Local gates passed: 53 focused tests, API and web typechecks, 383 REST/CLI flows, SDK 2424 pass/2 skip, and browser replay. Live dev replay issued three simultaneous restarts against a new Platinum session: one returned `restart_started`, two returned `restart_in_progress`, and all returned operation `87f216f7-a432-4448-8d92-262b73c49805`. The session returned to `running`; `/global/health` and `/kortix/health` returned `200`. **Shippable: YES.** |
+| B52 | **No row model for the transcript.** Every host re-derives "what does this turn render as" from `groupMessagesIntoTurns` output on every frame, and re-allocates the whole render list even when nothing changed. There is no shared, pure, virtualizer-ready row union and no identity-preserving reuse pass. | `packages/sdk/src/core/turns/` has grouping (`grouping.ts`), part helpers (`parts.ts`) and turn state (`state.ts`), but nothing that flattens a turn into ordered rows. `apps/web/src/features/session/turn/stable-turns.ts` proves the reuse pattern host-side only. | **DONE 2026-08-22 (`f4d872cfe3`)** — session `sdk-timeline-rows`; Stage 1 = `core/turns/timeline.ts` (`constructTimelineRows`, `reuseTimelineRows`, `Timeline*` types) + `timeline.test.ts` (61 tests), additive only, no host consumer yet. |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -4840,7 +4841,7 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 
 ## Session log
 
-### 2026-08-22 — session `sdk-timeline-rows` — B51 follow-up 2: round-2 adversarial-review findings A–F — DONE
+### 2026-08-22 — session `sdk-timeline-rows` — B52 follow-up 2: round-2 adversarial-review findings A–F — DONE
 
 **Files:** `core/turns/grouping.ts` · `core/turns/timeline.ts` ·
 `core/turns/turns.test.ts` (+3) · `core/turns/timeline.test.ts` (72 → 90) ·
@@ -4902,13 +4903,13 @@ examples/timeline-rows.ts` → unchanged output, array identity preserved.
 
 ---
 
-### 2026-08-22 — session `sdk-timeline-rows` — B51 follow-up: six adversarial-review defects in `timeline.ts` — DONE
+### 2026-08-22 — session `sdk-timeline-rows` — B52 follow-up: six adversarial-review defects in `timeline.ts` — DONE
 
 **Files:** `core/turns/timeline.ts` · `core/turns/timeline.test.ts` (61 → 72
 tests) · `README.md` (timeline-rows section). No public surface change — no
 export added, renamed or removed.
 
-Six findings from an adversarial review of the B51 row model. Every fix landed
+Six findings from an adversarial review of the B52 row model. Every fix landed
 RED first (test written, run, watched fail for the stated reason), then GREEN.
 
 1. **A FIFTH abort classifier (HIGH).** `timeline.ts` defined a local
@@ -4976,7 +4977,7 @@ exists to kill). Appended to *Discovered this session*.
 
 ---
 
-### 2026-08-22 — session `sdk-timeline-rows` — B51: the transcript has a row model — DONE
+### 2026-08-22 — session `sdk-timeline-rows` — B52: the transcript has a row model — DONE
 
 **Files:** `core/turns/timeline.ts` (NEW) + `core/turns/timeline.test.ts` (NEW,
 61 tests) · `core/turns/index.ts` (+`export * from './timeline'`) ·

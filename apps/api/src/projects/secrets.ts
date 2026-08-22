@@ -1,7 +1,8 @@
 import { createHash, createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { SESSION_SECRETS_ALLOWLIST_MAX_KEYS } from '@kortix/api-contract';
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
-import { projectSecrets, projectSessionSecretHandles, projectSessions, projects } from '@kortix/db';
+import { connectors, projectSecrets, projectSessionSecretHandles, projectSessions, projects } from '@kortix/db';
+import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
 import { config } from '../config';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
@@ -121,6 +122,7 @@ export async function writeSharedProjectSecret(input: {
 }): Promise<void> {
   const now = new Date();
   const identifier = input.identifier ?? input.name;
+  const serverSide = input.scope === 'connector';
   await db
     .insert(projectSecrets)
     .values({
@@ -128,7 +130,10 @@ export async function writeSharedProjectSecret(input: {
       identifier,
       name: input.name,
       valueEnc: encryptProjectSecret(input.projectId, input.value),
-      scope: input.scope ?? 'runtime',
+      scope: serverSide ? 'connector' : 'runtime',
+      strategy: serverSide ? 'broker' : 'runtime',
+      consumer: serverSide ? 'connector' : 'sandbox',
+      strategyLocked: serverSide,
       createdBy: input.createdBy ?? null,
       updatedAt: now,
     })
@@ -138,6 +143,14 @@ export async function writeSharedProjectSecret(input: {
       set: {
         name: input.name,
         valueEnc: encryptProjectSecret(input.projectId, input.value),
+        ...(serverSide
+          ? {
+              scope: 'connector' as const,
+              strategy: 'broker' as const,
+              consumer: 'connector' as const,
+              strategyLocked: true,
+            }
+          : {}),
         updatedAt: now,
       },
     });
@@ -569,6 +582,13 @@ export async function materializeSecretDelivery(
 ): Promise<void> {
   for (const row of rows) {
     if (!(row.key in env)) continue;
+    // Model credentials are service credentials. A legacy `runtime` row must
+    // not override that platform boundary. The LLM gateway resolves the value
+    // server-side after authenticating the session token.
+    if (isGatewayManagedEnv(row.key)) {
+      delete env[row.key];
+      continue;
+    }
     const delivery = resolveSecretDelivery({
       identifier: row.identifier,
       strategy: row.strategy,
@@ -751,7 +771,18 @@ export async function listProjectSecretsSnapshotForUser(
   capabilitiesJson: string;
 }> {
   const rows = await listResolvedProjectSecrets(projectId, userId);
-  const { env, selected } = resolveGrantedSecretSelection(rows, grantEnv);
+  const boundConnectorIdentifiers = new Set(
+    (
+      await db
+        .select({ identifier: connectors.authSecret })
+        .from(connectors)
+        .where(eq(connectors.projectId, projectId))
+    )
+      .map((row) => row.identifier)
+      .filter((identifier): identifier is string => Boolean(identifier)),
+  );
+  const sandboxRows = rows.filter((row) => !boundConnectorIdentifiers.has(row.identifier));
+  const { env, selected } = resolveGrantedSecretSelection(sandboxRows, grantEnv);
   await materializeSecretDelivery(selected, env, {
     sessionId: sessionId ?? null,
     grantEnv,

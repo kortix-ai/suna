@@ -14,7 +14,7 @@ const TOKEN = 'kortix_pat_cli_sdk';
 
 const ENV_KEYS = [
   'KORTIX_CONFIG_FILE',
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',

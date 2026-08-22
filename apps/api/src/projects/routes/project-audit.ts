@@ -32,6 +32,7 @@ import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-gu
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
+import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 
 // GET /v1/projects/:projectId/audit
 // Canonical project slice. It returns the same event contract and cursor as
@@ -158,7 +159,7 @@ projectsApp.openapi(
   async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (c.get('authType') !== 'apiKey' || c.get('apiKeyType') !== 'sandbox') {
+    if (!isSessionSandboxCredential(c)) {
       return c.json({ error: 'audit ingestion requires a sandbox token' }, 403);
     }
     const accountId = c.get('accountId');

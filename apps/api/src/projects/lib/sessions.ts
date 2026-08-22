@@ -29,7 +29,6 @@ import {
   type ModelSource,
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
-import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { auth, json } from '../../openapi';
 import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
@@ -94,10 +93,7 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
-import {
-  type PreparedInitialSandboxTurn,
-  prepareInitialSandboxTurn,
-} from '../sandbox-turn-lifecycle';
+import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditAttribution } from './session-audit';
 import {
@@ -418,8 +414,6 @@ export async function buildSessionSandboxEnvVars(input: {
   repoUrl: string;
   baseRef: string;
   agentName: string;
-  initialPrompt?: string | null;
-  initialTurn?: PreparedInitialSandboxTurn | null;
   opencodeModel?: string | null;
   /** New session (brand-new branch == base, no remote commits). Lets the
    *  daemon create the session branch LOCALLY instead of a redundant network
@@ -619,10 +613,6 @@ export async function buildSessionSandboxEnvVars(input: {
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,
-    // Runtime-delivered provider keys may reach the sandbox for user code.
-    // OpenCode must not receive them because it would bypass the gateway.
-    // Gateway mode is the only mode, so the deny list is always the full set.
-    KORTIX_OPENCODE_DENY_ENV: nativeProviderEnvNames().join(','),
     // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
     // on-demand fetches, which stall through the Kortix git proxy when its
     // partial-clone capability isn't advertised consistently — the clone then
@@ -650,8 +640,6 @@ export async function buildSessionSandboxEnvVars(input: {
       agentName: input.agentName,
       apiUrl: deriveKortixApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
-      initialPrompt: input.initialPrompt,
-      initialTurn: input.initialTurn,
       // Concrete session model after explicit → agent → project → account →
       // platform resolution. The sandbox uses it for the first OpenCode turn
       // and as the session's OpenCode config default.
@@ -1595,9 +1583,8 @@ export async function createProjectSession(input: {
 
   setContextField('sessionId', sessionId);
 
-  // A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT and runs
-  // inside the box — it never crosses the API again, so this is the only moment
-  // it can be titled. No modelHint: the row already carries `opencode_model`.
+  // A prompt supplied at create is claimed by the session daemon. This is the
+  // earliest title source. No modelHint: the row already carries `opencode_model`.
   const titleSource = titleSourceForCreate(body);
   if (titleSource) {
     void generateSessionTitleFromFirstPrompt({
@@ -1656,8 +1643,6 @@ export async function createProjectSession(input: {
             repoUrl: project.repoUrl,
             baseRef,
             agentName,
-            initialPrompt,
-            initialTurn,
             opencodeModel,
             platformMetaAgent,
             freshSession: true,

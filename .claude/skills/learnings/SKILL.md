@@ -21,6 +21,37 @@ linked, not inlined.
 
 ## Register
 
+### A sandbox environment carries one credential, not a boot protocol (2026-08-22)
+
+**When:** provisioning a session or adding daemon boot data. Inject only the
+session-bound `KORTIX_TOKEN`. The daemon must claim prompts and lifecycle
+identifiers from the API with that token. Connector, provider, prompt, and
+turn-ledger values must not enter the VM environment. *Incident:* an Essentia
+`env` dump exposed connector credentials and four Kortix aliases; a real
+Platinum probe then found the initial-turn nonce still inherited by OpenCode.
+*Enforcer:* runtime-env tests reject all boot payload keys, daemon wire tests
+assert the authenticated claim, and the live guest probe must print only
+`KORTIX_TOKEN` for credential-like names.
+
+### Prove the gated query ran after enabling its feature (2026-08-22)
+
+**When:** enabling a feature on one page, then navigating to its data page in a
+browser test. A route render does not prove the gated query ran. Wait for the
+exact API response around an explicit reload before asserting its empty state.
+*Near-miss:* release PR #6746 browser shard 2 failed twice with a permanent Apps
+skeleton after a `200` feature PATCH and zero `GET /apps` requests. *Enforcer:*
+`18-apps-ui.spec.ts` requires the Apps list response before the empty state.
+
+### Fence every detached lifecycle mutation with a durable operation id (2026-08-22)
+
+**When:** an HTTP handler returns before a sandbox stop, start, or recovery
+finishes. Acquire one database claim per `session_id`. Predicate every provider
+step and completion write on that claim. A client mutation flag cannot serialize
+tabs, refreshes, or repeated requests. *Incident:* session
+`ebdcac7f-58bd-4a9f-ad82-b5f536f12c9c` accepted three restarts in 27 seconds and
+oscillated through `running -> provisioning -> stopped -> running -> stopped`.
+*Enforcer:* `runtime-restart-fence.test.ts` and the restart compare-and-set query.
+
 ### Assert an asynchronous timestamp write on its own row (2026-08-22)
 
 **When:** proving that one request advances a row timestamp while asynchronous
@@ -1722,3 +1753,33 @@ API origin and requires the standalone gateway health response.
 *Incident:* dev API returned `gateway_unavailable` after gateway PR #6737.
 The public edge surfaced it as blocking maintenance. Direct origin inspection
 identified the missing target before user traffic resumed.
+
+## Two dev stacks on one shared DB share one work queue
+
+2026-08-22. A `timeline-parity` worktree session's first prompt died inside
+OpenCode with `Cannot connect to API …
+subdivision-marine-acne-shorter.trycloudflare.com/v1/llm-gateway/v1/chat/completions`.
+That host belonged to a different worktree (`mw-perf`) whose quick tunnel had
+rotted. Both worktrees reuse the primary local Supabase, so prompt-inbox
+delivery, session-lifecycle commands, and sandbox env sync form ONE queue.
+`mw-perf`'s API grabbed the job, pushed its `KORTIX_URL`-derived gateway URL
+into the other worktree's sandbox, and forwarded the prompt. The owning
+worktree's log showed no env sync and no prompt POST, so nothing local
+explained the failure.
+
+**The rule.** A sandbox's gateway URL and credentials must come from the
+instance that owns the sandbox, never from whichever instance dequeues work.
+In local development, run one stack against the shared DB, or create the
+worktree with `--db`. When an OpenCode error names a host, grep EVERY stack
+log on the machine for that host before suspecting the branch.
+
+**The enforcement.** `pnpm worktree start` (`scripts/worktree/cli.ts`,
+`warnOnSharedDbCrosstalk`) now warns at start when another stack — a worktree
+in `shared` DB mode or the primary `pnpm dev` on `:8008` — is live on the
+same database, names it, and states the remedy. The product fix (persist the
+provisioning API origin on `session_sandboxes` and make env sync / delivery
+use it, or scope workers by instance) is an open follow-up.
+
+*Incident:* session `b090016e…` on worktree `timeline-parity`, first prompt
+`APIError` to a dead tunnel; prompts 2–3 succeeded after the owning instance's
+env sync rewrote the URL.

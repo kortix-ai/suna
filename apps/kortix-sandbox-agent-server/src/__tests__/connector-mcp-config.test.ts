@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { buildOpencodeConfigContent } from '../opencode'
 
-const ENV = { KORTIX_CLI_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
+const ENV = { KORTIX_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
 
 const GATEWAY_CATALOG = {
   'anthropic/claude-opus-4.8': { name: 'Claude Opus 4.8', provider: 'anthropic', reasoning: true, tool_call: true, attachment: true, temperature: true },
@@ -84,7 +84,7 @@ describe('buildOpencodeConfigContent — optional connector MCP server', () => {
       type: 'local',
       enabled: true,
       environment: {
-        KORTIX_CLI_TOKEN: 'tok-123',
+        KORTIX_TOKEN: 'tok-123',
         KORTIX_API_URL: 'https://api.kortix.test/v1',
         PATH: '/usr/local/bin:/usr/bin:/bin',
       },
@@ -94,7 +94,7 @@ describe('buildOpencodeConfigContent — optional connector MCP server', () => {
 
   test('returns undefined when no contributor applies', async () => {
     expect(await buildOpencodeConfigContent({})).toBeUndefined()
-    expect(await buildOpencodeConfigContent({ KORTIX_CLI_TOKEN: 'tok-123' })).toBeUndefined()
+    expect(await buildOpencodeConfigContent({ KORTIX_TOKEN: 'tok-123' })).toBeUndefined()
     expect(await buildOpencodeConfigContent({ KORTIX_API_URL: 'https://api.kortix.test/v1' })).toBeUndefined()
     expect(await buildOpencodeConfigContent({ ...ENV, KORTIX_CONNECTORS_MCP_ENABLED: '0' })).toBeUndefined()
   })
@@ -127,7 +127,7 @@ describe('buildOpencodeConfigContent — optional connector MCP server', () => {
 describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
   const GATEWAY_ENV = {
     KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
-    KORTIX_LLM_API_KEY: 'kyolo_abc123',
+    KORTIX_TOKEN: 'kyolo_abc123',
     KORTIX_LLM_CATALOG_FILE: CATALOG_FILE,
   }
 
@@ -244,7 +244,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
 describe('buildOpencodeConfigContent — gateway provider allowlist', () => {
   const GATEWAY_ENV = {
     KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
-    KORTIX_LLM_API_KEY: 'kyolo_abc123',
+    KORTIX_TOKEN: 'kyolo_abc123',
     KORTIX_LLM_CATALOG_FILE: CATALOG_FILE,
   }
 
@@ -313,7 +313,7 @@ describe('buildOpencodeConfigContent — Slack sessions deny the question tool',
 describe('buildOpencodeConfigContent — server-compiled v2 agent config (KORTIX_COMPILED_AGENT_CONFIG)', () => {
   const GATEWAY_ENV = {
     KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
-    KORTIX_LLM_API_KEY: 'kyolo_abc123',
+    KORTIX_TOKEN: 'kyolo_abc123',
     KORTIX_LLM_CATALOG_FILE: CATALOG_FILE,
   }
   const COMPILED = JSON.stringify({

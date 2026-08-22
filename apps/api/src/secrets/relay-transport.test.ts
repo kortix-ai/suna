@@ -358,11 +358,11 @@ describe('timeouts bound the HEADERS, never the stream', () => {
       setTimeout(() => {
         res.write('data: 2\n\n');
         res.end();
-      }, 300);
+      }, 1_000);
     };
     const upstream = await openUpstream(head('/long', 'GET'), null, {
       seam: seam(),
-      headersTimeoutMs: 150,
+      headersTimeoutMs: 500,
     });
     expect((await drain(upstream.body)).toString()).toBe('data: 1\n\ndata: 2\n\n');
   });

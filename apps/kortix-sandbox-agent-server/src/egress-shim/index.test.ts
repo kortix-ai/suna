@@ -35,7 +35,7 @@ function sessionEnv(rules: TestRule[]): NodeJS.ProcessEnv {
     KORTIX_EGRESS_SHIM_PORT: String(PORT),
     KORTIX_API_URL: 'https://api.kortix.test/v1',
     KORTIX_PROJECT_ID: 'proj-sync',
-    KORTIX_CLI_TOKEN: 'kortix_pat_sync',
+    KORTIX_TOKEN: 'kortix_pat_sync',
     KORTIX_SECRET_CAPABILITIES: JSON.stringify({
       version: 1,
       capabilities: rules.map((rule) => ({ ...rule, delivery: 'network' })),
@@ -162,7 +162,7 @@ describe('syncEgressShim', () => {
     // secret, so a listener would accept the connection and then have nothing
     // to relay with.
     const env = sessionEnv([{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }])
-    delete env.KORTIX_CLI_TOKEN
+    delete env.KORTIX_TOKEN
 
     const result = await syncEgressShim(env)
 

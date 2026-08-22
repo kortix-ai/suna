@@ -262,32 +262,6 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(calls[0]!.mustRespawn).toBe(false)
   })
 
-  it('a gateway deny-list change forces a respawn even with no project-secret delta', async () => {
-    // KORTIX_OPENCODE_DENY_ENV is a RESPAWN_REQUIRED name: a dispose cannot
-    // re-run withoutDeniedProviderEnv, so the strip would be stale. This
-    // predates and is independent of the project-secret fix; it must still
-    // hold now that project secrets are OR'd into the same gate.
-    const { opencode, calls } = fakeOpencode()
-    const store = createProjectEnvStore({
-      KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
-      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
-      API_KEY: 'v1',
-    } as NodeJS.ProcessEnv)
-    const app = buildTestApp(opencode, store)
-
-    const { status } = await postEnv(app, {
-      revision: 'rev-1',
-      env: { API_KEY: 'v1' },
-      names: ['API_KEY'],
-      refreshModels: true,
-      opencodeEnv: { KORTIX_OPENCODE_DENY_ENV: 'ANTHROPIC_API_KEY,OPENAI_API_KEY' },
-    })
-
-    expect(status).toBe(200)
-    expect(calls).toHaveLength(1)
-    expect(calls[0]!.mustRespawn).toBe(true)
-  })
-
   it('enabling the connectors MCP face mid-session takes the dispose path', async () => {
     // Pins CURRENT behaviour, which is not obviously the intended one.
     // `KORTIX_CONNECTORS_MCP_ENABLED` shapes `out.mcp` inside the config file,

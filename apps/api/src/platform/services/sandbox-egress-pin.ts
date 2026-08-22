@@ -3,7 +3,7 @@
  *
  * ## The exposure this closes
  *
- * `KORTIX_CLI_TOKEN` is in the agent's own shell environment (the CLI, git push
+ * `KORTIX_TOKEN` is in the agent's own shell environment (the CLI, git push
  * and CR-merge all need it — see agent-env-file.ts SHELL_SESSION_CREDS). It is
  * also the token the in-guest egress shim authenticates to the broker with. An
  * agent can therefore copy it out of its own env and send it anywhere, and the

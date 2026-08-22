@@ -5,7 +5,7 @@
  * Gateway mode is the only session mode: OpenCode sees exactly one provider,
  * `kortix`, authenticated with this token. A box without it has no model
  * access, and every later env push is rejected by the daemon
- * (`KORTIX_CLI_TOKEN is unavailable`), so the session would LOOK provisioned
+ * (`KORTIX_TOKEN is unavailable`), so the session would LOOK provisioned
  * and be dead. Provisioning therefore fails closed — the row is marked
  * `error` with a user-visible reason and this error is thrown to the caller,
  * which marks the project session `failed` with the same message.

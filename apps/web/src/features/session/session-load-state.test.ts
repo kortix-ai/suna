@@ -5,8 +5,39 @@ import {
   findInitialSessionPin,
   gatedRuntimeError,
   resolveSessionContentState,
+  runtimeErrorPresentation,
   sessionErrorSurfaceReady,
 } from './session-load-state';
+
+describe('runtimeErrorPresentation', () => {
+  const runtimeError = { status: 503, message: 'sandbox not ready' };
+
+  test('keeps a resolved conversation mounted and presents recovery inline', () => {
+    expect(
+      runtimeErrorPresentation({
+        chatSessionId: 'ses_root',
+        runtimeError,
+        runtimeBootError: 'daemon unavailable',
+      }),
+    ).toEqual({ replaceSession: false, inlineRecovery: true });
+  });
+
+  test('uses the full error surface when no conversation can render', () => {
+    expect(
+      runtimeErrorPresentation({ chatSessionId: null, runtimeError, runtimeBootError: null }),
+    ).toEqual({ replaceSession: true, inlineRecovery: false });
+  });
+
+  test('renders no recovery state when runtime errors are absent', () => {
+    expect(
+      runtimeErrorPresentation({
+        chatSessionId: 'ses_root',
+        runtimeError: null,
+        runtimeBootError: null,
+      }),
+    ).toEqual({ replaceSession: false, inlineRecovery: false });
+  });
+});
 
 describe('session load state', () => {
   test('uses the authorized project-session list as an initial transcript pin', () => {

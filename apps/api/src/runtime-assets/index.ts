@@ -19,7 +19,7 @@
  * AUTH — `combinedAuth`, mounted in index.ts, exactly like /v1/skills and for
  * exactly the same reason: the callers that matter are a CLI holding a
  * `kortix_pat_` and an in-sandbox daemon holding the platform-injected
- * `KORTIX_CLI_TOKEN` session PAT. Content is identical for every caller — this
+ * `KORTIX_TOKEN` session PAT. Content is identical for every caller — this
  * is authentication, not authorization. The CLI binary is not a secret (it is
  * published on every release), but it is not an anonymous 100 MB download
  * either.

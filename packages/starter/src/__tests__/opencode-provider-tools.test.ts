@@ -7,12 +7,12 @@ import webSearch from '../../templates/base/.kortix/opencode/tools/web_search';
 const originalFetch = globalThis.fetch;
 const originalEnv = {
   KORTIX_API_URL: process.env.KORTIX_API_URL,
-  KORTIX_SANDBOX_TOKEN: process.env.KORTIX_SANDBOX_TOKEN,
+  KORTIX_TOKEN: process.env.KORTIX_TOKEN,
 };
 
 function configureRouterEnv() {
   process.env.KORTIX_API_URL = 'https://api.kortix.test/v1';
-  process.env.KORTIX_SANDBOX_TOKEN = 'kortix_sb_test';
+  process.env.KORTIX_TOKEN = 'kortix_sb_test';
 }
 
 afterEach(() => {

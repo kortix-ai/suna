@@ -204,8 +204,6 @@ async function buildMonitorBoxEnv(input: {
   const secrets = await resolveMonitorBoxSecrets(input.project, input.gitProject, input.userId);
   const envVars = {
     ...secrets.env,
-    KORTIX_SANDBOX_TOKEN: input.sandboxToken,
-    // Back-compat alias, same as a session gets.
     KORTIX_TOKEN: input.sandboxToken,
     KORTIX_WORKLOAD: 'monitor',
     KORTIX_MONITORS: buildMonitorEnvPayload(input.monitors),

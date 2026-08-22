@@ -129,7 +129,7 @@ export function assertWorkloadCredential(
   // A monitor box runs the SAME daemon a session runs, so it carries the SAME
   // sandbox credential — the ingest route is a sandbox-token route. Only the
   // App runtime speaks the appd control protocol and needs the appd token.
-  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_SANDBOX_TOKEN';
+  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_TOKEN';
   if (!envVars[required]) {
     throw new Error(
       `[${provider}] create() called without ${required} for ${workloadType} workload`,

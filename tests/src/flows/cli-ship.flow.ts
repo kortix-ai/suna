@@ -697,9 +697,9 @@ flow(
     const sb = new CliSandbox('cr9');
     ctx.track('cli-sandbox', sb.cwd);
     // The CLI resolves project + auth from the env inside a sandbox:
-    //   KORTIX_CLI_TOKEN (project-scoped PAT) + KORTIX_PROJECT_ID.
+    //   KORTIX_TOKEN (project-scoped PAT) + KORTIX_PROJECT_ID.
     const crEnv = {
-      KORTIX_CLI_TOKEN: pat,
+      KORTIX_TOKEN: pat,
       KORTIX_PROJECT_ID: project.id,
       KORTIX_API_URL: ctx.env.apiUrl,
     };

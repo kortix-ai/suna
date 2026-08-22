@@ -15,7 +15,7 @@
 #   1. The CLI compiles into the image and runs (`kortix --version`).
 #   2. The sandbox service key (KORTIX_TOKEN, kortix_sb_…) is REJECTED on the
 #      project-scoped routes — i.e. it is the wrong token, exactly as in prod.
-#   3. The injected project PAT (KORTIX_CLI_TOKEN, kortix_pat_…) lets
+#   3. The injected project PAT (KORTIX_TOKEN, kortix_pat_…) lets
 #      `kortix cr open` / `kortix cr ls` succeed, hitting the correct
 #      `/v1/projects/…` path (no double `/v1`).
 #   4. The daemon's git credential helper hands `git` a fresh push-capable
@@ -31,7 +31,7 @@ cd "$REPO_ROOT"
 IMAGE="kortix-cli-e2e:test"
 PORT="${KORTIX_E2E_PORT:-17790}"
 PROJECT="proj-e2e-123"
-PAT="kortix_pat_e2e_connector"          # project-scoped PAT (KORTIX_CLI_TOKEN)
+PAT="kortix_pat_e2e_connector"          # project-scoped PAT (KORTIX_TOKEN)
 SBKEY="kortix_sb_e2e_service_key"       # sandbox service key (KORTIX_TOKEN)
 PUSH_TOKEN="FRESH-PUSH-TOKEN-e2e"
 
@@ -96,7 +96,7 @@ fi
 
 echo
 echo "2. The sandbox service key (KORTIX_TOKEN) is rejected on project routes"
-OUT="$(drun -e KORTIX_CLI_TOKEN="$SBKEY" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" "$IMAGE" /cli/kortix cr ls 2>&1 || true)"
+OUT="$(drun -e KORTIX_TOKEN="$SBKEY" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" "$IMAGE" /cli/kortix cr ls 2>&1 || true)"
 if echo "$OUT" | grep -qi "Token rejected"; then
   pass "service key correctly rejected (the original misdiagnosis)"
 else
@@ -104,8 +104,8 @@ else
 fi
 
 echo
-echo "3. The injected project PAT (KORTIX_CLI_TOKEN) opens + lists a CR"
-OUT="$(drun -e KORTIX_CLI_TOKEN="$PAT" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" \
+echo "3. The injected project PAT (KORTIX_TOKEN) opens + lists a CR"
+OUT="$(drun -e KORTIX_TOKEN="$PAT" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" \
   -e KORTIX_BRANCH_NAME="session-e2e" -e KORTIX_SESSION_ID="session-e2e" \
   "$IMAGE" /cli/kortix cr open --title "Add portfolio site" --description "e2e" 2>&1 || true)"
 if echo "$OUT" | grep -q "Opened CR #1"; then
@@ -113,7 +113,7 @@ if echo "$OUT" | grep -q "Opened CR #1"; then
 else
   fail "cr open failed: $(echo "$OUT" | tail -2)"
 fi
-OUT="$(drun -e KORTIX_CLI_TOKEN="$PAT" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" "$IMAGE" /cli/kortix cr ls 2>&1 || true)"
+OUT="$(drun -e KORTIX_TOKEN="$PAT" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" "$IMAGE" /cli/kortix cr ls 2>&1 || true)"
 if echo "$OUT" | grep -q "Add portfolio site"; then
   pass "kortix cr ls shows the open CR"
 else

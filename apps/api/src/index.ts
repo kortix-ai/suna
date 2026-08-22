@@ -881,7 +881,7 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 // what lets an agent in ANY harness, holding only the `kortix` binary and a token,
 // read the platform's own instructions with no repo checkout and no sandbox.
 // combinedAuth (not supabaseAuth) so a CLI `kortix_pat_` and the in-sandbox
-// KORTIX_CLI_TOKEN works; see ./skills/index.ts for the full auth rationale.
+// KORTIX_TOKEN works; see ./skills/index.ts for the full auth rationale.
 app.use('/v1/skills', combinedAuth);
 app.use('/v1/skills/*', combinedAuth);
 app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1], /v1/skills/:name/file?path=
@@ -892,7 +892,7 @@ app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1]
 // every session start/restart/resume, which is what stops an old box from
 // running a daemon or CLI that predates the routes it calls. combinedAuth for
 // the same reason as /v1/skills above: the callers are a `kortix_pat_` CLI and
-// the in-sandbox KORTIX_CLI_TOKEN. The `/*` wildcard is what puts every payload
+// the in-sandbox KORTIX_TOKEN. The `/*` wildcard is what puts every payload
 // route behind auth — a new one must be added to runtimeAssetsApp, never mounted
 // beside it.
 app.use('/v1/runtime-assets/*', combinedAuth);
@@ -906,7 +906,7 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /agen
 }
 
 // Connector — unified connector layer. Gateway routes (/catalog, /call) use
-// KORTIX_CLI_TOKEN (validated inside the router); admin routes
+// KORTIX_TOKEN (validated inside the router); admin routes
 // (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
 {
   app.use('/v1/connectors/projects/*', combinedAuth);

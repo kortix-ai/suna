@@ -7,12 +7,9 @@ import { z } from 'zod'
  * passes KORTIX_PROJECT_AUTO_CLONE / KORTIX_REPO_URL / KORTIX_BRANCH_NAME /
  * KORTIX_DEFAULT_BRANCH / KORTIX_PROJECT_ID / KORTIX_API_URL /
  * KORTIX_SERVICE_PORT to Daytona at sandbox creation time. The provider layer
- * injects the sandbox credential as KORTIX_SANDBOX_TOKEN (with KORTIX_TOKEN kept
- * as a back-compat alias for daemons baked before the rename). It is the daemon's
- * own identity: the HMAC key for X-Kortix-User-Context validation AND the bearer
- * for the sandbox-identity routes (clone-credential / turn-stream / turn-question).
- * It is distinct from the SESSION token (KORTIX_CLI_TOKEN), which acts as the
- * launching user. Git provider credentials are fetched just-in-time from apps/api.
+ * injects one session-scoped KORTIX_TOKEN. It authenticates daemon, CLI,
+ * connector, Git-proxy and LLM-gateway requests. Each API route applies its own
+ * narrower authorization. Upstream credentials remain server-side.
  */
 
 const BoolFlag = z.preprocess((v) => {
@@ -60,9 +57,6 @@ const Schema = z.object({
   KORTIX_GIT_DELTA_BUNDLE_BASE64: z.string().optional(),
   KORTIX_GIT_DELTA_PARENT_SHA: z.string().optional(),
   KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: z.string().optional(),
-  // The sandbox credential. KORTIX_SANDBOX_TOKEN is canonical; KORTIX_TOKEN is
-  // the legacy alias (resolved with a fallback below).
-  KORTIX_SANDBOX_TOKEN: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
@@ -166,7 +160,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_GIT_DELTA_BUNDLE_BASE64: env.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     KORTIX_GIT_DELTA_PARENT_SHA: env.KORTIX_GIT_DELTA_PARENT_SHA,
     KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
-    KORTIX_SANDBOX_TOKEN: env.KORTIX_SANDBOX_TOKEN,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
@@ -199,9 +192,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     gitDeltaBundleBase64: parsed.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     gitDeltaParentSha: parsed.KORTIX_GIT_DELTA_PARENT_SHA,
     gitDeltaParentCommitBase64: parsed.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
-    // Canonical name wins; fall back to the legacy alias so daemons running in
-    // older-API sandboxes (which only inject KORTIX_TOKEN) still resolve it.
-    sandboxToken: parsed.KORTIX_SANDBOX_TOKEN ?? parsed.KORTIX_TOKEN,
+    sandboxToken: parsed.KORTIX_TOKEN,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
     cloneFilter: parsed.KORTIX_CLONE_FILTER,

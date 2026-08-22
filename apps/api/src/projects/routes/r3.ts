@@ -221,7 +221,7 @@ projectsApp.openapi(
 // middleware enforces that the URL's `:projectId` matches the token's
 // project_id, so the token is useless outside this one project. They're
 // auto-minted at session-create time and injected into the sandbox as
-// `KORTIX_CLI_TOKEN` so the in-container CLI works with zero config.
+// `KORTIX_TOKEN` so the in-container CLI works with zero config.
 
 
 projectsApp.openapi(

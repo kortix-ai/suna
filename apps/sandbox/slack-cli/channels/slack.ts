@@ -331,11 +331,11 @@ async function download(opts: { url: string; out: string }) {
   // Fetch via the server-side proxy — the bot token stays on the server. Binary,
   // so a raw fetch (not the JSON kortix client), authed with the session token.
   const apiUrl = getEnv('KORTIX_API_URL');
-  const tok = getEnv('KORTIX_CLI_TOKEN');
+  const tok = getEnv('KORTIX_TOKEN');
   const projectId = kortixProjectId();
   if (!apiUrl || !tok || !projectId) {
     throw new CliError(
-      'KORTIX_API_URL / KORTIX_CLI_TOKEN / KORTIX_PROJECT_ID not set — cannot download.',
+      'KORTIX_API_URL / KORTIX_TOKEN / KORTIX_PROJECT_ID not set — cannot download.',
     );
   }
   const proxyUrl = new URL(

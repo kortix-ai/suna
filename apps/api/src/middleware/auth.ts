@@ -236,7 +236,13 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     c.set('authType', 'pat');
     if (result.accountId) c.set('accountId', result.accountId);
     if (result.projectId) c.set('tokenProjectId', result.projectId);
-    if (result.sessionId) c.set('sessionId', result.sessionId);
+    if (result.sessionId) {
+      c.set('sessionId', result.sessionId);
+      // A session-scoped token is also the identity of its sandbox. Keep the
+      // route context explicit so daemon-only endpoints can accept the unified
+      // credential without treating an ordinary project PAT as a sandbox.
+      c.set('sandboxId', result.sessionId);
+    }
     if (result.tokenId) c.set('iamTokenId', result.tokenId);
     // Per-agent authorization grant (non-null only for agent-session tokens).
     // Read by requireScope() to gate Kortix CLI/API actions on top of the
@@ -767,7 +773,7 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   if (path === '/v1/accounts/me') return;
 
   // `/v1/skills` — the kortix-managed system skills (how Kortix itself works).
-  // This function is default-deny, and the in-sandbox `KORTIX_CLI_TOKEN` is
+  // This function is default-deny, and the in-sandbox `KORTIX_TOKEN` is
   // exactly a project+session-scoped PAT, so without this branch the ONE caller
   // these routes exist for gets a 403: every baked sandbox seeds a kortix-system
   // skill telling the agent to run `kortix skills get <name>`.
@@ -785,7 +791,7 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // daemon converging its CLI. Same reasoning as `/v1/skills`
   // above, and for the same single caller: the in-sandbox daemon reconciles
   // against these on every session start/restart/resume holding exactly a
-  // project+session-scoped `KORTIX_CLI_TOKEN`. A 403 here means a sandbox can
+  // project+session-scoped `KORTIX_TOKEN`. A 403 here means a sandbox can
   // never repair a stale CLI, which is the whole bug these routes exist to fix.
   // Safe to allow — the payloads are the deploy's own build artifacts, identical
   // for every caller, with no account or project data in them. Authentication,

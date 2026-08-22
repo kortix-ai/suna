@@ -216,7 +216,7 @@ export interface KortixArtifactLayerOpts {
    * binary. This is the admin CLI every in-sandbox agent reaches for
    * (`kortix cr open`, `secrets`, `sessions`, …); it lands on PATH as
    * `/usr/local/bin/kortix`, pre-authenticated via the injected
-   * KORTIX_CLI_TOKEN. Always provided by the production builder.
+   * KORTIX_TOKEN. Always provided by the production builder.
    */
   cliBinaryPath: string;
   /** Path the snapshot builder will reference for the entrypoint script. */

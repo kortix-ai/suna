@@ -1549,7 +1549,7 @@ const kortixVsPoetic: BlogPostEntry = {
 
 const kortix = createKortix({
   backendUrl: process.env.KORTIX_API_URL!,
-  getToken: async () => process.env.KORTIX_CLI_TOKEN ?? null,
+  getToken: async () => process.env.KORTIX_TOKEN ?? null,
 });
 const connectors = process.env.KORTIX_PROJECT_ID
   ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors

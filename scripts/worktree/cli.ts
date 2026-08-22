@@ -100,6 +100,32 @@ function warnOnStackPressure(current: string, reg: Registry): void {
   sub(`each holds ~19 processes and a few GB — free them with ${pc.cyan('pnpm worktree stop --all')}`);
 }
 
+/**
+ * Two stacks on the SHARED primary Supabase share one work queue — prompt-inbox
+ * delivery, session-lifecycle commands, sandbox env sync. Whichever API instance
+ * grabs a job pushes ITS `KORTIX_URL`-derived gateway URL into the box. If that
+ * other stack's tunnel has rotted (quick tunnels do, every few hours), the next
+ * prompt it picks up dies inside OpenCode with
+ * `Cannot connect to API … <other-stack>.trycloudflare.com/v1/llm-gateway`, and
+ * nothing in THIS stack's log explains it. 2026-08-22: `mw-perf`'s dead tunnel
+ * was pushed into a `timeline-parity` box this way. Say it at start, where the
+ * decision (one stack, or `--db`) is still cheap.
+ */
+const PRIMARY_API_PORT = 8008;
+function warnOnSharedDbCrosstalk(current: string, reg: Registry): void {
+  const me = reg.slots[current];
+  if (!me || dbModeOf(me) !== 'shared') return;
+  const others = Object.entries(reg.slots)
+    .filter(([n, e]) => n !== current && dbModeOf(e) === 'shared' && portInUse(e.ports.api).inUse)
+    .map(([n, e]) => `${n} (api :${e.ports.api})`);
+  if (portInUse(PRIMARY_API_PORT).inUse) others.unshift(`primary pnpm dev (api :${PRIMARY_API_PORT})`);
+  if (others.length === 0) return;
+  warn(`${plural(others.length, 'other stack is', 'other stacks are')} live on the SAME shared DB: ${others.join(', ')}`);
+  sub('they share one work queue (prompt delivery, session lifecycle, env sync) — whichever API grabs a job pushes ITS KORTIX_URL into the sandbox;');
+  sub(`a rotted tunnel over there surfaces HERE as OpenCode "Cannot connect to API …trycloudflare.com/v1/llm-gateway" on the first prompt.`);
+  sub(`run one stack at a time (${pc.cyan('pnpm worktree stop <name>')}), or recreate this worktree with ${pc.cyan('--db')} for an isolated database.`);
+}
+
 async function stopStack(e: SlotEntry, opts: { quiet?: boolean } = {}): Promise<KillResult> {
   const roots = stackRoots(e.path, e.ports);
   const res = await killTree(roots);
@@ -502,6 +528,7 @@ async function cmdStart(a: Args) {
       die('the shared primary Supabase DB does not have the kortix schema. Run the primary stack once to initialize it, or recreate this worktree with `--db` for an isolated database.');
     }
     sub(`${creds.supabaseUrl} · ${creds.dbUrl}`);
+    warnOnSharedDbCrosstalk(name, reg);
   }
   step('Building runtime artifacts');
   if (await ensureRuntimeArtifacts(e.path) !== 0) die('runtime artifact build failed');

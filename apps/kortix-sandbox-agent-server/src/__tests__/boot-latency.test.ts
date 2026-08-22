@@ -158,7 +158,7 @@ describe('building the opencode boot config never touches the network', () => {
 
   const GATEWAY_ENV = {
     KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1',
-    KORTIX_LLM_API_KEY: 'k-test',
+    KORTIX_TOKEN: 'k-test',
     KORTIX_API_URL: 'https://api.kortix.test/v1',
   }
 
@@ -247,7 +247,7 @@ describe('catalog written to disk is rebuilt to a known shape, never passed thro
     globalThis.fetch = realFetch
   })
 
-  const GATEWAY = { KORTIX_LLM_BASE_URL: 'https://gw.kortix.test/v1', KORTIX_LLM_API_KEY: 'k' }
+  const GATEWAY = { KORTIX_LLM_BASE_URL: 'https://gw.kortix.test/v1', KORTIX_TOKEN: 'k' }
 
   async function warmThenRead(catalog: unknown): Promise<Record<string, any> | null> {
     const dir = await mkdtemp(join(tmpdir(), 'kortix-warm-'))
@@ -259,7 +259,7 @@ describe('catalog written to disk is rebuilt to a known shape, never passed thro
         headers: { 'content-type': 'application/json' },
       })) as unknown as typeof fetch
 
-    scheduleCatalogWarmToPathForTests(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY, target)
+    scheduleCatalogWarmToPathForTests(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN, target)
     const deadline = Date.now() + 8_000
     while (Date.now() < deadline) {
       try {

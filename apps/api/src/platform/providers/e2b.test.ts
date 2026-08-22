@@ -48,7 +48,7 @@ function fakeSandbox(sandboxId: string, trafficAccessToken = `traffic-${sandboxI
   // other copy of their own environment — so it stays the default fixture and
   // every resume case below doubles as the back-compat case.
   const files = new Map<string, string>([
-    ['/etc/kortix/runtime-env.json', JSON.stringify({ KORTIX_SANDBOX_TOKEN: 'persisted-token' })],
+    ['/etc/kortix/runtime-env.json', JSON.stringify({ KORTIX_TOKEN: 'persisted-token' })],
   ]);
   const sandbox = {
     sandboxId,
@@ -239,7 +239,7 @@ describe('E2B provider lifecycle', () => {
       userId: 'usr-1',
       name: 'session-1',
       snapshot: 'kortix-template-1',
-      envVars: { KORTIX_SANDBOX_TOKEN: 'sandbox-token' },
+      envVars: { KORTIX_TOKEN: 'sandbox-token' },
     });
 
     expect(createdTemplate).toBe('kortix-template-1');
@@ -275,7 +275,7 @@ describe('E2B provider lifecycle', () => {
       opts: {
         background: true,
         timeoutMs: 0,
-        envs: expect.objectContaining({ KORTIX_SANDBOX_TOKEN: 'sandbox-token' }),
+        envs: expect.objectContaining({ KORTIX_TOKEN: 'sandbox-token' }),
       },
     });
     expect(sandbox.runs[2].command).toContain('http://127.0.0.1:8000/kortix/health');
@@ -296,8 +296,7 @@ describe('E2B provider lifecycle', () => {
       name: 'session-1',
       snapshot: 'tpl',
       envVars: {
-        KORTIX_SANDBOX_TOKEN: 'sandbox-token',
-        KORTIX_CLI_TOKEN: 'kortix_pat_session',
+        KORTIX_TOKEN: 'kortix_pat_session',
         STRIPE_API_KEY: 'sk_live_project_secret',
       },
     });
@@ -318,8 +317,7 @@ describe('E2B provider lifecycle', () => {
       command: expect.stringContaining('/usr/local/bin/kortix-entrypoint'),
       opts: {
         envs: expect.objectContaining({
-          KORTIX_SANDBOX_TOKEN: 'sandbox-token',
-          KORTIX_CLI_TOKEN: 'kortix_pat_session',
+          KORTIX_TOKEN: 'kortix_pat_session',
           STRIPE_API_KEY: 'sk_live_project_secret',
         }),
       },
@@ -335,7 +333,7 @@ describe('E2B provider lifecycle', () => {
       userId: 'usr-1',
       name: 'session-1',
       snapshot: 'tpl',
-      envVars: { KORTIX_SANDBOX_TOKEN: 'sandbox-token', KORTIX_CLI_TOKEN: 'kortix_pat_session' },
+      envVars: { KORTIX_TOKEN: 'kortix_pat_session' },
     });
 
     const stolen = fakeSandbox('sb-seal-thief');
@@ -361,7 +359,7 @@ describe('E2B provider lifecycle', () => {
         userId: 'usr-1',
         name: 'session-1',
         snapshot: 'tpl',
-        envVars: { KORTIX_SANDBOX_TOKEN: 'sandbox-token' },
+        envVars: { KORTIX_TOKEN: 'sandbox-token' },
       }),
     ).rejects.toThrow('private traffic access token');
 
@@ -469,7 +467,7 @@ describe('E2B provider lifecycle', () => {
         name: 'app-1',
         snapshot: 'app-template-1',
         workloadType: 'app',
-        envVars: { KORTIX_SANDBOX_TOKEN: 'session-token-is-not-valid-for-apps' },
+        envVars: { KORTIX_TOKEN: 'session-token-is-not-valid-for-apps' },
       }),
     ).rejects.toThrow(/KORTIX_APPD_TOKEN/);
   });
@@ -483,7 +481,7 @@ describe('E2B provider lifecycle', () => {
       userId: 'usr-1',
       name: 'session-1',
       snapshot: 'tpl',
-      envVars: { KORTIX_SANDBOX_TOKEN: 'sandbox-token' },
+      envVars: { KORTIX_TOKEN: 'sandbox-token' },
     });
 
     await provider.stop('sb-lifecycle');
@@ -512,7 +510,7 @@ describe('E2B provider lifecycle', () => {
         opts: expect.objectContaining({
           background: true,
           timeoutMs: 0,
-          envs: expect.objectContaining({ KORTIX_SANDBOX_TOKEN: 'persisted-token' }),
+          envs: expect.objectContaining({ KORTIX_TOKEN: 'persisted-token' }),
         }),
       }),
       expect.objectContaining({
@@ -548,11 +546,11 @@ describe('E2B provider lifecycle', () => {
   test.each([
     ['missing', undefined, 'missing file'],
     ['malformed', '{not-json', 'JSON'],
-    ['non-string', JSON.stringify({ KORTIX_SANDBOX_TOKEN: 42 }), 'non-string'],
+    ['non-string', JSON.stringify({ KORTIX_TOKEN: 42 }), 'non-string'],
     [
       'tokenless',
       JSON.stringify({ KORTIX_API_URL: 'https://api.example.com/v1' }),
-      'no KORTIX_SANDBOX_TOKEN',
+      'no KORTIX_TOKEN',
     ],
   ] as const)(
     'cold resume fails closed for a %s persisted runtime environment',

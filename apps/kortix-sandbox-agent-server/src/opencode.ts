@@ -95,13 +95,10 @@ const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
  * bad — a user connects a ChatGPT/Codex account, the UI confirms it, and the
  * next turn still runs on the account they replaced.
  *
- * `KORTIX_OPENCODE_DENY_ENV` belongs to the same family (`withoutDeniedProviderEnv`
- * strips native provider keys at spawn) and is included for the same reason.
  */
 export const RESPAWN_REQUIRED_ENV_NAMES = [
   CODEX_AUTH_JSON_SECRET,
   OPENCODE_AUTH_JSON_SECRET,
-  'KORTIX_OPENCODE_DENY_ENV',
   SECRET_CAPABILITIES_ENV_NAME,
 ] as const
 
@@ -138,7 +135,7 @@ export function requiresRespawn(changedNames: readonly string[]): boolean {
 export function hasKortixLlmGateway(env: NodeJS.ProcessEnv): boolean {
   return Boolean(
     env.KORTIX_LLM_PROXY_URL ||
-    (env.KORTIX_LLM_BASE_URL && env.KORTIX_LLM_API_KEY),
+    (env.KORTIX_LLM_BASE_URL && env.KORTIX_TOKEN),
   )
 }
 
@@ -188,10 +185,10 @@ export async function buildOpencodeConfigContent(
     secretCapabilitiesInstructionPath?: string | null
   } = {},
 ): Promise<string | undefined> {
-  const connectorToken = env.KORTIX_CLI_TOKEN
+  const connectorToken = env.KORTIX_TOKEN
   const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
-  const llmApiKey = env.KORTIX_LLM_API_KEY
+  const llmApiKey = env.KORTIX_TOKEN
 
   // Warm-fork no-restart path (stateful only). When the daemon runs the localhost
   // LLM proxy it exports KORTIX_LLM_PROXY_URL; the provider then points baseURL at
@@ -320,7 +317,7 @@ export async function buildOpencodeConfigContent(
           // placeholder token; the proxy injects the real per-session token
           // upstream (so the baked config is session-independent → no restart on
           // restore). Direct mode (cold/Daytona): the real token + api url, as before.
-          KORTIX_CLI_TOKEN: connectorProxyMode ? CONNECTOR_PROXY_PLACEHOLDER_KEY : connectorToken!,
+          KORTIX_TOKEN: connectorProxyMode ? CONNECTOR_PROXY_PLACEHOLDER_KEY : connectorToken!,
           KORTIX_API_URL: connectorProxyMode ? connectorProxyUrl! : apiUrl!,
           PATH: '/usr/local/bin:/usr/bin:/bin',
           // Lets the CLI target the project-explicit gateway route. Optional —
@@ -683,35 +680,6 @@ export async function writeKortixOpencodeConfig(
   writeFileSync(configPath, content, { mode: 0o600 })
   logger.info(`[opencode] wrote config (${content.length} bytes) to ${configPath}`)
   return configPath
-}
-
-/**
- * Withhold provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) from an
- * OpenCode child. With any such key in its env, OpenCode auto-connects a NATIVE
- * provider and calls it directly — bypassing the gateway (no logs / spend /
- * budgets) and leaving stale models that survive a BYOK disconnect. The gateway
- * must be the only LLM path, so the API hands us the exact names to strip
- * (Codex/OpenCode subscription auth is excluded — materializeOpencodeAuth has
- * already consumed it into auth.json). This only shapes the child's env; the
- * container itself keeps what it holds.
- */
-export function withoutDeniedProviderEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const denied = (env.KORTIX_OPENCODE_DENY_ENV || '')
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean)
-  const next: NodeJS.ProcessEnv = { ...env }
-  let withheld = 0
-  for (const name of denied) {
-    if (name in next) {
-      delete next[name]
-      withheld++
-    }
-  }
-  if (withheld > 0) {
-    logger.info(`[opencode] withheld ${withheld} provider credential(s) from opencode (gateway-only routing)`)
-  }
-  return next
 }
 
 const GATEWAY_MODELS_RETRY_DELAYS_MS = [400, 800]
@@ -1723,10 +1691,7 @@ export function createOpencodeSupervisor(
       PORT: undefined,
       APP_PORT: undefined,
     })
-
     materializeOpencodeAuth(env)
-
-    env = withoutDeniedProviderEnv(env)
 
     // Boot profiling: when KORTIX_OPENCODE_DEBUG=1, ask opencode to emit its own
     // verbose startup logs (interleaved into the daemon log via inherited
@@ -2301,12 +2266,6 @@ export function createOpencodeSupervisor(
      * rather than silently not applying the config.
      */
     async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
-      // Some settings are not IN the config file — they shape the child's
-      // PROCESS env at spawn, and a dispose cannot re-run that. The provider-key
-      // deny-list is the live case: `withoutDeniedProviderEnv` strips native
-      // keys when the child is spawned, so disposing after a gateway-mode
-      // toggle would leave those keys exactly as they were — routing around the
-      // gateway's budgets and logging, or failing to restore BYOK.
       // A dispose re-reads the config in place — same process, no turn lost.
       if (!opts.mustRespawn && (await tryDisposeReload())) {
         return { how: 'disposed', turnEnded: false }

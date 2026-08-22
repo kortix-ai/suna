@@ -117,7 +117,6 @@ const ORIGINAL_FETCH = globalThis.fetch;
 const { syncSandboxEnvForPrompt, __resetPromptModelSignatureCacheForTests } = await import(
   './sandbox-env-sync'
 );
-const { nativeProviderEnvNames } = await import('../../llm-gateway/sandbox-credentials');
 const { config } = await import('../../config');
 
 function prompt(externalId = 'ext-1') {
@@ -200,7 +199,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
 
-  test('every push carries gateway mode ON with the base URL and the full deny list, regardless of project metadata', async () => {
+  test('every push carries gateway mode ON with the base URL, regardless of project metadata', async () => {
     // Gateway mode is the only mode. A stale `experimental.llm_gateway:false`
     // override on the project row must not flip the daemon to native.
     PROJECT_ROW.metadata = { experimental: { llm_gateway: false } };
@@ -210,7 +209,8 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     expect(posted[0]!.llmGatewayEnabled).toBe(true);
     // In-API gateway at the API's own origin (llm-gateway/sandbox-base-url.ts).
     expect(posted[0]!.llmGatewayBaseUrl).toBe(`${config.KORTIX_URL}/v1/llm`);
-    expect(posted[0]!.llmGatewayDenyEnv).toBe(nativeProviderEnvNames().join(','));
+    // No deny list: native provider keys are withheld server-side.
+    expect(posted[0]!.llmGatewayDenyEnv).toBeUndefined();
   });
 
   test('the per-prompt hot path writes no session_sandboxes row (no per-sandbox gateway-mode bit)', async () => {

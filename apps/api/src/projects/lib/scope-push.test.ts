@@ -123,7 +123,6 @@ const ORIGINAL_FETCH = globalThis.fetch;
 (globalThis as { fetch: unknown }).fetch = recordingFetch();
 
 const { pushSessionScopeToSandbox } = await import('./sandbox-env-sync');
-const { nativeProviderEnvNames } = await import('../../llm-gateway/sandbox-credentials');
 const { config } = await import('../../config');
 
 const INPUT = {
@@ -207,12 +206,11 @@ describe('pushSessionScopeToSandbox', () => {
     expect(posted).toEqual([]);
   });
 
-  test('always stamps gateway mode ON, the base URL, and the full deny list alongside the snapshot', async () => {
-    // The 42/47-vs-47/47 split between opencode and shells comes from
-    // KORTIX_OPENCODE_DENY_ENV. The scope push must re-stamp it so a respin
-    // does not silently drop the gateway routing back to native provider keys.
-    // Gateway mode is the only mode: no project metadata read, no per-sandbox
-    // mode bit written.
+  test('always stamps gateway mode ON and the base URL alongside the snapshot, without a provider-key deny list', async () => {
+    // The scope push must re-stamp gateway mode so a respin does not silently
+    // drop the gateway routing. Gateway mode is the only mode: no project
+    // metadata read, no per-sandbox mode bit written. Native provider keys are
+    // withheld server-side (materializeSecretDelivery), so no deny list travels.
     const result = await pushSessionScopeToSandbox(INPUT);
 
     expect(result).toEqual({ applied: true });
@@ -220,7 +218,7 @@ describe('pushSessionScopeToSandbox', () => {
     expect(posted[0].llmGatewayEnabled).toBe(true);
     // In-API gateway at the API's own origin (llm-gateway/sandbox-base-url.ts).
     expect(posted[0].llmGatewayBaseUrl).toBe(`${config.KORTIX_URL}/v1/llm`);
-    expect(posted[0].llmGatewayDenyEnv).toBe(nativeProviderEnvNames().join(','));
+    expect(posted[0].llmGatewayDenyEnv).toBeUndefined();
     expect(dbUpdateCalls).toBe(0);
   });
 
