@@ -48,12 +48,11 @@ Each flag has two gates. They answer different questions.
 AND-gated by `available`. `enabled` therefore always implies `available`.
 
 `available` is an operator decision, made by the environment the API runs in.
-Three flags read it from configuration; every other flag is always available:
+Two flags read it from configuration; every other flag is always available:
 
 | Flag | Available when |
 |---|---|
 | `agent_tunnel` | `TUNNEL_ENABLED` is on |
-| `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
 | `monitors` | `PLATINUM_API_KEY` is set |
 
 ## Stability badges
@@ -106,15 +105,11 @@ Registry order — the same order **Settings → Experimental** shows.
 | `agentmail_email` | AgentMail Email | Experimental | Off | `routes` |
 | `teams` | Microsoft Teams | Experimental | Off | `routes` |
 | `voice` | Voice | Experimental | Off | `behavioral` |
-| `llm_gateway` | LLM Gateway | Experimental | Operator-set | `behavioral` |
 | `review_center` | Review Center | Experimental | Off | `routes` |
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
-
-`llm_gateway` reads its per-project default from
-`LLM_GATEWAY_DEFAULT_ENABLED`. An explicit project choice still wins.
 
 ### What each flag gates
 
@@ -131,8 +126,6 @@ Registry order — the same order **Settings → Experimental** shows.
   continue sessions. See [Slack & channels](/docs/connect/slack).
 - **`voice`** — give the agent a live voice call it can start and hold. See
   [Slack & channels](/docs/connect/slack).
-- **`llm_gateway`** — route the project through the managed Kortix LLM
-  gateway. See [Models](/docs/project/models).
 - **`review_center`** — one inbox for change requests, approvals, and agent
   output.
 - **`meta_agent`** — add a platform-owned coordinator agent that spawns and
@@ -152,7 +145,6 @@ Some flags converge platform state after the write commits.
 |---|---|
 | `voice`, `teams`, `agentmail_email` | Kortix re-runs channel-connector materialization, so the connector appears or disappears with the flag. |
 | `agent_tunnel` | Kortix re-syncs the account's computer connectors. |
-| `llm_gateway` | Kortix propagates the new provider mode to active sandboxes. |
 
 Effects are convergence work, not part of the toggle's success. The API
 response does not wait for them. Each effect is retried once, and the
