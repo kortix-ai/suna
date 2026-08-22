@@ -34,7 +34,6 @@
     "SessionNotReadyError",
     "SessionStartError",
     "TURN_END_LEDGER_LAG_MS",
-    "__getConfigResolver",
     "__setConfigResolver",
     "abortErrorReason",
     "acceptAccountInvite",
@@ -1397,7 +1396,6 @@
     "upsertCredential"
   ],
   "./config": [
-    "__getConfigResolver",
     "__setConfigResolver",
     "configureKortix",
     "isConfigured",

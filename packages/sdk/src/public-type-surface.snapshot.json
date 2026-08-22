@@ -2250,7 +2250,6 @@
     "WorktreeResetResponse",
     "WorktreeResetResponses",
     "WriteFileResult",
-    "__getConfigResolver",
     "__setConfigResolver",
     "abortErrorReason",
     "acceptAccountInvite",
@@ -5405,7 +5404,6 @@
   "./config": [
     "KortixFeatureFlagOverrides",
     "KortixPlatformConfig",
-    "__getConfigResolver",
     "__setConfigResolver",
     "configureKortix",
     "isConfigured",

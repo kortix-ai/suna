@@ -72,15 +72,6 @@ export function __setConfigResolver(fn: (() => KortixPlatformConfig | undefined)
   configResolver = fn;
 }
 
-/** @internal Test-only introspection, so a test file that flips the resolver
- *  (e.g. to exercise the no-resolver fallback path) can snapshot + restore
- *  whatever was registered before it, instead of clobbering a resolver another
- *  test file registered in the same process (bun runs all `src/**\/*.test.ts`
- *  files in one process, sharing this module's state). */
-export function __getConfigResolver(): (() => KortixPlatformConfig | undefined) | null {
-  return configResolver;
-}
-
 /**
  * Wire the platform seam. `current` is a process-wide singleton — safe for a
  * host with exactly one config for its whole lifetime (a browser tab, a CLI,
