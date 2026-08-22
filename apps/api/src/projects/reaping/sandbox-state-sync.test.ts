@@ -488,6 +488,49 @@ describe('decideStoppedObservation — one stopped read is not proof mid-turn', 
     },
   };
 
+  // Incident 2026-08-21T23:58Z, Platinum sbx_01M0JE5DDBE9JCZ, session 541ea985:
+  // parked mid-turn with `provider_reconcile`, and the SAME box reported running
+  // ten seconds later. The guest never rebooted and OpenCode never restarted —
+  // nothing had gone away. Five turns died this way in one day.
+  describe('REGRESSION: a box that proved it was running is never parked', () => {
+    const observedAt = Date.parse('2026-08-21T23:58:22.000Z');
+    const withStop = (extraMeta: Record<string, unknown> = {}) => ({
+      ...turn,
+      pendingStopObservedAtMs: observedAt,
+      ...extraMeta,
+    });
+
+    test('a running confirmation AFTER the stop observation defeats the park', () => {
+      const meta = withStop({ providerRunningConfirmedAt: '2026-08-21T23:58:47.693Z' });
+      // Even well past the confirmation window: the box was WATCHED running
+      // after the reading that suspected it, so the suspicion is stale.
+      const wayLater = new Date(observedAt + 10 * 60_000);
+      expect(decideStoppedObservation(meta, wayLater)).toBe('await_confirmation');
+    });
+
+    test('a running confirmation from BEFORE the observation does not defeat it', () => {
+      // Otherwise any box that ever ran could never be parked.
+      const meta = withStop({ providerRunningConfirmedAt: '2026-08-21T23:00:00.000Z' });
+      const past = new Date(observedAt + MIDTURN_STOP_CONFIRMATION_MS);
+      expect(decideStoppedObservation(meta, past)).toBe('park');
+    });
+
+    test('an unparseable confirmation is ignored rather than trusted', () => {
+      const meta = withStop({ providerRunningConfirmedAt: 'not-a-date' });
+      const past = new Date(observedAt + MIDTURN_STOP_CONFIRMATION_MS);
+      expect(decideStoppedObservation(meta, past)).toBe('park');
+    });
+
+    test('the window outlasts the measured Platinum transition', () => {
+      // The incident resumed 10s after the park. 15s could not cover it; the
+      // window must exceed a real provider transition by a clear margin.
+      expect(MIDTURN_STOP_CONFIRMATION_MS).toBeGreaterThanOrEqual(60_000);
+      const meta = withStop();
+      const during = new Date(observedAt + 30_000);
+      expect(decideStoppedObservation(meta, during)).toBe('await_confirmation');
+    });
+  });
+
   test('REGRESSION: a box with NO turn authority parks on the first read', () => {
     // An idle box must not gain a pass of latency, or every ordinary park is
     // one reaper cadence later and its meter runs that much longer.
@@ -534,10 +577,20 @@ describe('decideStoppedObservation — one stopped read is not proof mid-turn', 
     ).toBe('await_confirmation');
   });
 
-  test('the confirmation window is shorter than one active-turn renewal pass', () => {
-    // The lane runs every 20s (projects/active-turn-renewal.ts). A window at or
-    // above that cadence costs a second pass for every genuine park.
-    expect(MIDTURN_STOP_CONFIRMATION_MS).toBeLessThan(20_000);
+  test('the confirmation window outlasts a real provider transition', () => {
+    // This DELIBERATELY replaces "shorter than one active-turn renewal pass
+    // (20s), so a genuine park costs one extra pass". That was a COST argument,
+    // never a correctness one, and it was the wrong trade: on 2026-08-21 a
+    // Platinum transition outlasted the 15s window, so both reads landed inside
+    // one transition and the guard parked a box that reported running ten
+    // seconds later — destroying a live turn. Five turns died that way in a day.
+    //
+    // The cost of the longer window is one-sided and bounded: a GENUINELY
+    // stopped box mid-turn parks up to a minute later, and its meter runs that
+    // much longer. The cost of the shorter one was the user's work.
+    expect(MIDTURN_STOP_CONFIRMATION_MS).toBeGreaterThanOrEqual(60_000);
+    // Still bounded — this must not become "never park".
+    expect(MIDTURN_STOP_CONFIRMATION_MS).toBeLessThanOrEqual(120_000);
   });
 });
 

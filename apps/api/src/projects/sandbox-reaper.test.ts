@@ -2391,9 +2391,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     ).toBe(true);
   });
 
-  test('a second stopped read one pass later parks the box exactly as before', async () => {
+  test('a stopped read after the confirmation window parks the box', async () => {
+    // Was "one pass later" (20s), which parked under the old 15s window. The
+    // window is now 60s — sized to outlast a real provider transition after one
+    // parked a healthy box mid-turn on 2026-08-21 — so a genuine park takes a
+    // few passes instead of one. Same behaviour, later: the marker must be
+    // older than MIDTURN_STOP_CONFIRMATION_MS, not merely older than a pass.
     candidates = [
-      midTurnCandidate({}, { pendingStopObservedAtMs: NOW.getTime() - 20_000 }),
+      midTurnCandidate({}, { pendingStopObservedAtMs: NOW.getTime() - 90_000 }),
     ];
     statusByExternal['ext-1'] = 'stopped';
 
@@ -2404,6 +2409,38 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(pausedCompute).toEqual(['sb-1']);
     // The park still settles the turns it erases authority for.
     expect(ledgerSettleStatements.some((s) => s.includes('runtime_gone'))).toBe(true);
+  });
+
+  test('a stopped read INSIDE the window does not park — the turn survives', async () => {
+    // The 2026-08-21 shape exactly: a second stopped read 20s after the first,
+    // while the provider was still transitioning. Under the old window this
+    // parked the box and settled a live turn `runtime_gone`; the box reported
+    // running ten seconds later.
+    // Future deadline on purpose: with an expired one the box parks under the
+    // deadline rule and this would assert nothing about the stop guard.
+    candidates = [
+      midTurnCandidate(
+        { deadlineAt: new Date(NOW.getTime() + HOUR) },
+        { pendingStopObservedAtMs: NOW.getTime() - 20_000 },
+      ),
+    ];
+    statusByExternal['ext-1'] = 'stopped';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    // Not reconciled and not paused IS "the turn survives": the park is the only
+    // thing in this path that erases turn authority and settles `runtime_gone`.
+    // Asserting on the ledger statements directly would be wrong here — other
+    // lanes in the same pass settle unrelated boxes, so that log says nothing
+    // about THIS candidate.
+    expect(r.reconciled).toBe(0);
+    expect(pausedCompute).toEqual([]);
+    // The suspicion is kept, not discarded: a genuine stop still parks later.
+    expect(
+      rowUpdates().some((c) =>
+        describeSql(c.updates.metadata).includes('pendingStopObservedAtMs'),
+      ),
+    ).toBe(true);
   });
 
   test('a running read between the two clears the pending marker', async () => {
