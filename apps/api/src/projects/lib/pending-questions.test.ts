@@ -64,7 +64,7 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-const { recordPendingQuestion, clearOpenQuestions } = await import('./pending-questions');
+const { recordPendingQuestion } = await import('./pending-questions');
 
 const base = {
   accountId: 'acct-1',
@@ -117,19 +117,5 @@ describe('recordPendingQuestion', () => {
     ]) {
       expect(code).not.toContain(forbidden);
     }
-  });
-});
-
-describe('clearOpenQuestions', () => {
-  test('supersedes an open question when the turn ends another way', async () => {
-    // A stale prompt rendered on resume is worse than none: it invites an answer
-    // that nothing is waiting for.
-    returnRows = [{ id: 'q1' }, { id: 'q2' }];
-    expect(await clearOpenQuestions('sess-1')).toBe(2);
-  });
-
-  test('a session with nothing open clears nothing', async () => {
-    returnRows = [];
-    expect(await clearOpenQuestions('sess-1')).toBe(0);
   });
 });

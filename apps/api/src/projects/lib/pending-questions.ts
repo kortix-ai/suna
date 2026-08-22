@@ -24,14 +24,20 @@
  *
  * The restore half — `GET`/`POST /v1/projects/:projectId/sessions/:sessionId/question`
  * (read the open row; answer it as a follow-up turn) — was removed from
- * routes/r4.ts together with `getOpenQuestion`, `resolvePendingQuestion`, and
- * `renderAnswerPrompt`. Nothing reads an open row back today. The row is still
- * written (the ask is not lost with the box) and `clearOpenQuestions` closes it
- * when the turn ends another way.
+ * routes/r4.ts together with `getOpenQuestion`, `resolvePendingQuestion`,
+ * `renderAnswerPrompt` and `clearOpenQuestions`.
+ *
+ * WHAT IS TRUE NOW, stated plainly so nobody reads a dead path as live: the row
+ * is WRITTEN by POST /turn-question (the ask survives the box), and NOTHING in
+ * the API sets `answered_at` — no route answers it and no turn-end hook closes
+ * it. The one consumer is the ops classifier
+ * (apps/api/scripts/classify-stop-paths.sql), which reads "does this session
+ * hold an open question" via the partial index on `answered_at IS NULL` to
+ * explain why a box parked. That is a diagnostic read, not a product path. If a
+ * restore path is rebuilt, it owns closing the row; until then rows stay open.
  */
 
 import { sessionPendingQuestions } from '@kortix/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 export interface PendingQuestion {
@@ -92,25 +98,4 @@ export async function recordPendingQuestion(input: {
     questions: row.questions,
     asked_at: row.askedAt,
   };
-}
-
-/**
- * Drop a session's open questions.
- *
- * Called when a turn ends for any other reason — the agent gave up, errored, or
- * the user sent a new prompt that supersedes the ask. A stale prompt rendered
- * on resume is worse than none: it invites an answer nothing is waiting for.
- */
-export async function clearOpenQuestions(sessionId: string): Promise<number> {
-  const rows = await db
-    .update(sessionPendingQuestions)
-    .set({ answeredAt: sql`NOW()`, updatedAt: new Date().toISOString() })
-    .where(
-      and(
-        eq(sessionPendingQuestions.sessionId, sessionId),
-        isNull(sessionPendingQuestions.answeredAt),
-      ),
-    )
-    .returning({ id: sessionPendingQuestions.id });
-  return rows.length;
 }
