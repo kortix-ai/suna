@@ -1,7 +1,6 @@
 import type {
   AuthedPrincipal,
   AuthorizeResult,
-  GatewayHooks,
   GatewayTrace,
   UsageEvent,
 } from '@kortix/llm-gateway';
@@ -25,21 +24,14 @@ import { recordUsageEvent } from '../shared/usage-events';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
 import { checkBudget } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
-import { gatewayModelCatalog } from './models/catalog-models';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveGatewayRoute } from './routing';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
 //
-// The single in-process implementation of every gateway hook. It is consumed
-// in two ways over the SAME functions:
-//   1. In-API mount — createGateway(createInProcessGatewayHooks()) runs the full
-//      pipeline inside the API process (self-host / dev / fallback).
-//   2. Standalone service — internal-routes.ts exposes these as /internal/gateway
-//      RPC so the out-of-process gateway pod can reach them over HTTP.
-// Neither path re-implements auth resolution, usage recording, or trace
-// persistence — they live here once.
+// The API owns gateway control-plane operations. internal-routes.ts exposes
+// these functions to the standalone gateway over authenticated HTTP.
 
 /**
  * Resolve a caller token to a principal. Precedence:
@@ -420,25 +412,4 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
   });
   // Non-blocking: never let telemetry delay the caller or affect the trace write.
   emitGatewayGenAiSpan(trace);
-}
-
-/** The full set of hooks the pipeline needs, bound to the in-process control plane. */
-export function createInProcessGatewayHooks(): GatewayHooks {
-  return {
-    authenticate: authenticatePrincipal,
-    resolveRoute: resolveGatewayRoute,
-    resolveUpstream: resolveCandidates,
-    assertBillingActive: assertLlmBillingActive,
-    assertBudget: assertGatewayBudget,
-    recordUsage: recordGatewayUsage,
-    recordTrace: persistGatewayTrace,
-    // `managedOnly` drops the projectId, which is exactly what selects
-    // MANAGED_ONLY in gatewayModelCatalog — BYOK/codex models are gated on a
-    // project. The free-tier rule is untouched: a free account still sees an
-    // empty managed set.
-    listModels: async (principal, opts) =>
-      gatewayModelCatalog(opts?.managedOnly ? undefined : principal.projectId, {
-        freeManagedOnly: !!principal.freeModelsOnly,
-      }),
-  };
 }

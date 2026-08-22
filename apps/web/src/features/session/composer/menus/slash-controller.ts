@@ -3,12 +3,13 @@ import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import type { SuggestionOptions } from '@tiptap/suggestion';
 
-import { insertCommandChip } from '../editor/mention-node';
+import { insertCommandChip, insertMention } from '../editor/mention-node';
 import { baseSuggestion } from '../editor/suggestion';
 import type { MenuController } from '../editor/suggestion';
 import { mountDockedMenu, mountSuggestionMenu } from './mount';
 import { SlashMenu } from './slash-menu';
 import type { SlashAction } from './slash-actions';
+import type { SlashFile } from './slash-files';
 import { buildSlashSections } from './slash-items';
 import type { SlashRow, SlashSection } from './slash-items';
 import { MenuNavState } from './menu-nav-state';
@@ -25,6 +26,13 @@ export interface CreateSlashSuggestionOptions {
    * row can't discard the args being typed.
    */
   getActions?: () => SlashAction[];
+  /**
+   * Live source for the `/` menu's Outputs and Context sections — the files
+   * this session produced and read, as `sessionSlashFiles` derives them from
+   * the panel (`slash-files.ts`). Omitted where there is no session panel
+   * (the marketing composer, project home), which simply drops both sections.
+   */
+  getFiles?: () => SlashFile[];
   /**
    * CSS selector for the element the menu docks into. Omitted → the menu
    * floats at the caret, `document.body`-portalled, same as `@`. See
@@ -118,6 +126,7 @@ export function createSlashSuggestion(
     const sections = buildSlashSections({
       commands: opts.getCommands(),
       actions: opts.getActions?.(),
+      files: opts.getFiles?.(),
       query,
     });
     nav.setRows(sections.flatMap((s) => s.rows));
@@ -209,6 +218,15 @@ export function createSlashSuggestion(
      * An action row inserts nothing: actions operate the composer (switch
      * model, attach a file) rather than being part of the message, so the
      * trigger text is deleted and the host is handed the action.
+     *
+     * A file row inserts the SAME mention the `@` menu inserts — same node,
+     * same attrs, same `kind: 'file'` — so one file has exactly one
+     * representation in the document no matter which palette picked it, and
+     * it reaches the agent through the existing `<file_ref>` path
+     * (`editor/serialize.ts` -> `lib/project-preamble.ts`) with nothing new
+     * on the send side. `label` is the PATH, not the row's display name:
+     * `collectMentions` addresses files by label, so a basename here would
+     * hand the agent a reference it cannot resolve.
      */
     command: ({ editor, range, props: row }) => {
       editor.chain().focus().deleteRange(range).run();
@@ -220,6 +238,8 @@ export function createSlashSuggestion(
         opts.onSelectCommand?.(row.command);
       } else if (row.type === 'action' && row.action) {
         opts.onSelectAction?.(row.action);
+      } else if (row.type === 'file' && row.file) {
+        insertMention(editor, { kind: 'file', label: row.file.path, value: row.file.path });
       }
     },
   };

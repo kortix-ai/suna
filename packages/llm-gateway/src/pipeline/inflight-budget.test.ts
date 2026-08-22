@@ -61,6 +61,32 @@ describe('InflightBudget', () => {
     expect(b.admit(100).ok).toBe(true);
   });
 
+  test('a lease can grow with a chunked body without exceeding the process budget', () => {
+    const b = new InflightBudget({ maxBytes: 100, perRequestMaxBytes: 100, amplification: 1 });
+    const first = b.admit(10);
+    const second = b.admit(60);
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+
+    expect(first.resize(40)).toEqual({ ok: true });
+    expect(b.inflightBytes).toBe(100);
+    expect(first.resize(41)).toEqual({ ok: false, reason: 'overloaded' });
+    expect(b.inflightBytes).toBe(100);
+  });
+
+  test('a failed resize keeps the original reservation and release remains exact', () => {
+    const b = new InflightBudget({ maxBytes: 100, perRequestMaxBytes: 50, amplification: 1 });
+    const lease = b.admit(20);
+    expect(lease.ok).toBe(true);
+    if (!lease.ok) return;
+
+    expect(lease.resize(51)).toEqual({ ok: false, reason: 'too_large' });
+    expect(b.inflightBytes).toBe(20);
+    lease.release();
+    expect(b.inflightBytes).toBe(0);
+  });
+
   test('accounts for the amplification factor, not just the wire bytes', () => {
     // A body costs more than its wire size once it is a UTF-16 string plus a
     // parsed object graph. A budget that ignored that would admit ~3x what the

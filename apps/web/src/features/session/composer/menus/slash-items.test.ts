@@ -234,3 +234,144 @@ describe('buildSlashSections — an action carries its current value', () => {
     expect(sections).toEqual([]);
   });
 });
+
+describe('buildSlashSections — the session\'s own files', () => {
+  const file = (
+    path: string,
+    origin: 'output' | 'context' = 'output',
+    name = path.split('/').pop() ?? path,
+  ) => ({ path, name, folder: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '', origin }) as const;
+
+  test('outputs and context render as their own sections, between Actions and the commands', () => {
+    // The order the palette must have: the fixed rows, then THIS session's
+    // files, then whatever the project and the connected servers happen to
+    // offer. The file the agent just wrote is what a user reaches for to say
+    // "now do X with it"; it must not sit below a scrolling list of skills.
+    const sections = buildSlashSections({
+      commands: [cmd('build'), cmd('deploy', 'skill'), cmd('fetch-issue', 'mcp')],
+      files: [file('docs/report.md'), file('src/util.ts', 'context')],
+      query: '',
+    });
+
+    expect(sections.map((s) => s.heading)).toEqual([
+      'Actions',
+      'Outputs',
+      'Context',
+      'Skills',
+      'Commands',
+      'MCP',
+    ]);
+  });
+
+  test('the flat index stays contiguous with file sections in the middle', () => {
+    // `MenuNavState`'s ↑/↓ wrapping and `aria-activedescendant` both read
+    // `index` as "position in the rendered list" — a gap or a repeat there
+    // desyncs the highlight from the keyboard.
+    const sections = buildSlashSections({
+      commands: [cmd('build'), cmd('deploy', 'skill')],
+      files: [file('a.md'), file('b.md'), file('c.txt', 'context')],
+      query: '',
+    });
+    const indices = sections.flatMap((s) => s.rows.map((r) => r.index));
+
+    expect(indices).toEqual(Array.from({ length: indices.length }, (_, i) => i));
+  });
+
+  test('a file row carries the file, its path as description and its folder as value', () => {
+    const f = file('docs/report.md');
+    const sections = buildSlashSections({ commands: [], files: [f], query: 'report' });
+    const row = sections.flatMap((s) => s.rows).find((r) => r.type === 'file');
+
+    expect(row?.file).toBe(f);
+    expect(row?.name).toBe('report.md');
+    expect(row?.description).toBe('docs/report.md');
+    expect(row?.value).toBe('docs');
+  });
+
+  test('a file at the workspace root leaves value undefined rather than empty-string', () => {
+    // `slash-menu.tsx` renders the trailing text on truthiness; `undefined`
+    // is what "this file has no folder to show" actually means.
+    const sections = buildSlashSections({ commands: [], files: [file('README.md')], query: '' });
+    const row = sections.flatMap((s) => s.rows).find((r) => r.type === 'file');
+
+    expect(row?.value).toBeUndefined();
+  });
+
+  test('no files leaves the sections out entirely — no empty Outputs heading', () => {
+    const sections = buildSlashSections({ commands: [cmd('build')], files: [], query: '' });
+
+    expect(sections.map((s) => s.heading)).toEqual(['Actions', 'Commands']);
+  });
+
+  test('omitting `files` behaves exactly like passing an empty list', () => {
+    const withNone = buildSlashSections({ commands: [cmd('build')], query: '' });
+    const withEmpty = buildSlashSections({ commands: [cmd('build')], files: [], query: '' });
+
+    expect(withNone).toEqual(withEmpty);
+  });
+
+  test('a query filters files by path alongside commands and actions', () => {
+    const sections = buildSlashSections({
+      commands: [cmd('build')],
+      files: [file('docs/report.md'), file('src/app.ts')],
+      query: 'docs',
+    });
+    const rows = sections.flatMap((s) => s.rows);
+
+    expect(rows.map((r) => r.name)).toEqual(['report.md']);
+  });
+
+  test('a bare / shows at most 6 files per section, so commands stay reachable', () => {
+    // The cap exists to keep the palette landing in a predictable place: a
+    // long session produces dozens of files, and listing all of them above
+    // Skills/Commands would bury every command behind a scroll.
+    const files = Array.from({ length: 25 }, (_, i) => file(`out/file-${i}.md`));
+    const sections = buildSlashSections({ commands: [], files, query: '' });
+    const outputs = sections.find((s) => s.heading === 'Outputs');
+
+    expect(outputs?.rows).toHaveLength(6);
+    expect(outputs?.rows[0].name).toBe('file-0.md');
+  });
+
+  test('one typed character lifts the cap to 20 — "them all" is reachable', () => {
+    const files = Array.from({ length: 25 }, (_, i) => file(`out/file-${i}.md`));
+    const sections = buildSlashSections({ commands: [], files, query: 'file' });
+    const outputs = sections.find((s) => s.heading === 'Outputs');
+
+    expect(outputs?.rows).toHaveLength(20);
+  });
+
+  test('the two file sections are capped independently', () => {
+    const files = [
+      ...Array.from({ length: 10 }, (_, i) => file(`out/o-${i}.md`)),
+      ...Array.from({ length: 10 }, (_, i) => file(`ctx/c-${i}.md`, 'context')),
+    ];
+    const sections = buildSlashSections({ commands: [], files, query: '' });
+
+    expect(sections.find((s) => s.heading === 'Outputs')?.rows).toHaveLength(6);
+    expect(sections.find((s) => s.heading === 'Context')?.rows).toHaveLength(6);
+  });
+
+  test('file sections keep their headings — they are what tells made from read', () => {
+    const sections = buildSlashSections({
+      commands: [],
+      files: [file('a.md'), file('b.md', 'context')],
+      query: '',
+    });
+    const byHeading = Object.fromEntries(sections.map((s) => [s.heading, s.hideHeading]));
+
+    expect(byHeading.Outputs).toBeUndefined();
+    expect(byHeading.Context).toBeUndefined();
+  });
+
+  test('a query that matches only a file drops every other section', () => {
+    const sections = buildSlashSections({
+      commands: [cmd('build')],
+      files: [file('docs/quarterly-revenue.md')],
+      query: 'quarterly',
+    });
+
+    expect(sections.map((s) => s.heading)).toEqual(['Outputs']);
+    expect(sections[0].rows[0].index).toBe(0);
+  });
+});

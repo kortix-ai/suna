@@ -214,11 +214,7 @@ test.describe('18 — Kortix Apps UI', () => {
       // Same assertions as before — they just live where the controls do.
       const seededCard = page.getByRole('button', { name: 'Open Seed App' });
       await expect(seededCard).toBeVisible();
-      // Since e56c580271 (Apps gallery rework) the caption shows the host only
-      // (`appHost(url)` strips the scheme); the full URL lives in the detail
-      // modal's "Open in a new tab" control.
-      const seededHost = seeded.url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-      await expect(seededCard.getByText(seededHost, { exact: true })).toBeVisible();
+      await expect(seededCard.getByText(seededUrl.host, { exact: true })).toBeVisible();
       await expect(seededCard.getByText('Deploy to see a live preview.')).toBeVisible();
       // Never deployed, so it must not claim to be running.
       await expect(seededCard.getByText('Not deployed', { exact: true })).toBeVisible();
@@ -228,14 +224,11 @@ test.describe('18 — Kortix Apps UI', () => {
       const appModal = page.getByRole('dialog', { name: 'Seed App App' });
       await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
-      // e56c580271: the lifecycle control is one icon button whose name flips
-      // with `desired_state`. A fresh App row defaults to `running` (intent,
-      // not fact — see appStatus), so the control reads "sleep"; with no
-      // deployment it stays disabled either way.
-      await expect(appModal.getByRole('button', { name: 'Put this App to sleep' })).toBeDisabled();
+      await expect(
+        appModal.getByRole('button', { name: 'Put this App to sleep' }),
+      ).toBeDisabled();
       await expect(appModal.getByRole('link', { name: 'Open in a new tab' })).toBeVisible();
 
-      // e56c580271: versions moved under the "More actions" menu.
       await appModal.getByRole('button', { name: 'More actions' }).click();
       await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
       await expect(appModal.getByText('No deployments yet.')).toBeVisible();

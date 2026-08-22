@@ -1,17 +1,24 @@
 import type { Command } from '@kortix/sdk/react';
 
 import { filterSlashActions, SLASH_ACTIONS, type SlashAction } from './slash-actions';
+import { filterSlashFiles, type SlashFile } from './slash-files';
 
 export interface SlashRow {
   index: number;
-  type: 'command' | 'action';
+  type: 'command' | 'action' | 'file';
   name: string;
   description: string;
   hint?: string;
-  /** The control's current setting — see `SlashAction.value`. */
+  /**
+   * Trailing muted text, right-aligned before `hint`. An action row puts its
+   * current setting here (see `SlashAction.value`); a file row puts its
+   * folder, which is what tells two `index.ts` rows apart.
+   */
   value?: string;
   command?: Command;
   action?: SlashAction;
+  /** Set only on a `file` row — the file the row inserts a mention for. */
+  file?: SlashFile;
 }
 
 export interface SlashSection {
@@ -102,30 +109,67 @@ function commandMatchesQuery(command: Command, q: string): boolean {
   );
 }
 
+/** Heading for the files the agent MADE — the Outputs card's own word. */
+const OUTPUTS_HEADING = 'Outputs';
+
+/** Heading for the files the agent READ — the Context card's own word. */
+const CONTEXT_HEADING = 'Context';
+
+/**
+ * File rows per section once a query narrows the list.
+ *
+ * Matches the `@` menu's own `FILE_LIMIT` (`menu-items.ts`) so the two
+ * palettes cannot disagree about how many files a search is worth.
+ */
+const FILE_LIMIT = 20;
+
+/**
+ * File rows per section on a bare `/`, before anything is typed.
+ *
+ * Lower than `FILE_LIMIT` on purpose. A long session produces dozens of
+ * files, and listing all of them above Skills/Commands would bury every
+ * command behind a scroll — the palette's fixed rows are what make it land in
+ * a predictable place. Six is enough to show that the session's files ARE
+ * here; typing one character lifts the cap to `FILE_LIMIT` and reaches the
+ * rest.
+ */
+const FILE_PREVIEW_LIMIT = 6;
+
 export interface BuildSlashSectionsInput {
   commands: Command[];
   /** Defaults to `SLASH_ACTIONS`; overridable for tests. */
   actions?: SlashAction[];
+  /**
+   * The session's own files — what the Outputs and Context cards show, via
+   * `sessionSlashFiles` (`slash-files.ts`). Omitted outside a session (the
+   * marketing composer, the project-home composer), where there is no panel
+   * and therefore no files.
+   */
+  files?: SlashFile[];
   query: string;
 }
 
 /**
  * Combines OpenCode commands (grouped by source, see `groupCommandsBySource`
- * above) with composer actions (`slash-actions.ts`) into one flat,
- * contiguously-indexed row list — mirrors `buildMentionSections`'s contract
- * for the `@` menu (`menu-items.ts`): one `index` counter threaded across
- * every section in render order, ready for `moveSelection`/`clampSelection`.
+ * above) with composer actions (`slash-actions.ts`) and the session's own
+ * files (`slash-files.ts`) into one flat, contiguously-indexed row list —
+ * mirrors `buildMentionSections`'s contract for the `@` menu
+ * (`menu-items.ts`): one `index` counter threaded across every section in
+ * render order, ready for `moveSelection`/`clampSelection`.
  */
 export function buildSlashSections({
   commands,
   actions = SLASH_ACTIONS,
+  files = [],
   query,
 }: BuildSlashSectionsInput): SlashSection[] {
   const q = query.toLowerCase().trim();
   const filteredCommands = q ? commands.filter((c) => commandMatchesQuery(c, q)) : commands;
   const filteredActions = filterSlashActions(actions, query);
+  const filteredFiles = filterSlashFiles(files, query);
+  const fileCap = q ? FILE_LIMIT : FILE_PREVIEW_LIMIT;
 
-  // Render order: Actions, Skills, Commands, MCP.
+  // Render order: Actions, Outputs, Context, Skills, Commands, MCP.
   //
   // Actions moved from last to first. They are the fixed, always-present rows
   // (switch model, attach a file, …) — the same six every time, in the same
@@ -154,6 +198,31 @@ export function buildSlashSections({
         hint: action.hint,
         value: action.value,
         action,
+      })),
+    });
+  }
+
+  // Outputs, then Context, then the command buckets.
+  //
+  // Above the commands because this is the one part of the palette that is
+  // about THIS session: the file the agent just wrote is the thing a user
+  // reaches for to say "now do X with it", and it must not sit below a
+  // scrolling list of skills. Below Actions because Actions are the fixed
+  // rows the palette's muscle memory is built on.
+  for (const origin of ['output', 'context'] as const) {
+    const rows = filteredFiles.filter((f) => f.origin === origin).slice(0, fileCap);
+    if (!rows.length) continue;
+    sections.push({
+      heading: origin === 'output' ? OUTPUTS_HEADING : CONTEXT_HEADING,
+      rows: rows.map((file) => ({
+        index: index++,
+        type: 'file' as const,
+        name: file.name,
+        // The full path, so the detail pane answers "which file is this?"
+        // for a row whose name is a title or a repeated basename.
+        description: file.path,
+        value: file.folder || undefined,
+        file,
       })),
     });
   }

@@ -887,7 +887,25 @@ export function UserMessageActions({
           'flex items-center gap-2 transition-opacity duration-150',
           alwaysVisible
             ? 'opacity-100'
-            : 'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100',
+            : // `max-md:opacity-100` — the reveal is a DESKTOP affordance only.
+              //
+              // A touch screen has no hover, so under 768px this row would sit
+              // at zero opacity for the whole session: the timestamp, Copy and
+              // Edit-from-here all present, all invisible, all unreachable.
+              // Worse than absent, because the row still holds its height.
+              //
+              // Touch browsers also emulate `:hover` on tap and leave it stuck
+              // on the last-tapped element until you tap elsewhere — so the
+              // pre-fix behavior was not "never shows", it was "one arbitrary
+              // turn's actions stay lit while every other turn's stay hidden".
+              //
+              // Appended rather than folded into the desktop classes on
+              // purpose: the only utility it truly conflicts with is the bare
+              // `opacity-0`, and a variant always sorts after its bare
+              // counterpart. The two `opacity-100` variants it sits beside
+              // agree with it, so no ordering assumption is being made and the
+              // desktop string is unchanged.
+              'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 max-md:opacity-100',
         )}
       >
       {leading}
@@ -1034,7 +1052,9 @@ export function UserMessage({
    *
    * `ownsPlan` alone is not the answer: `planAnchorMessageId` falls back to the
    * last turn when no turn ever wrote todos, so a session with zero todos still
-   * nominates an owner. `useHasPlan` is the second half — it asks the runtime
+   * nominates an owner. (It is also already false on every turn while the Easy
+   * panel is drawing the plan — see `chatPlanAnchorId`.) `useHasPlan` is the
+   * second half — it asks the runtime
    * whether a plan exists at all, on the same query key the `todo.updated` SSE
    * event writes, so the card appears the moment the agent writes its first
    * todo and never appears for a session that has none.
@@ -1463,9 +1483,12 @@ export function UserMessage({
       {actions}
 
       {/* The plan, last — closest to the assistant work it governs.
-          `session-chat` drops every `todowrite` part before segmentation, so
-          this card is the ONLY surface session todos have. Without it the
-          agent's plan renders nowhere and reads as "no plan was made".
+          MOBILE ONLY: `session-chat` nulls the anchor on every desktop width
+          (`usePlanInChat` -> `chatPlanAnchorId`), where the Easy panel's Plan
+          card draws it instead. Under 768px there is no panel column, so this
+          is the only surface session todos have — `session-chat` drops every
+          `todowrite` part before segmentation, so without it the plan renders
+          nowhere and reads as "no plan was made".
           `w-full` because the column is `items-end`: a checklist is a panel
           across the column, not something trailing off a sentence. */}
       {showPlan && (

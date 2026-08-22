@@ -21,6 +21,90 @@ linked, not inlined.
 
 ## Register
 
+### Assert an asynchronous timestamp write on its own row (2026-08-22)
+
+**When:** proving that one request advances a row timestamp while asynchronous
+lifecycle work can update sibling rows. Compare the target row before and after,
+or compare two fields written by the same statement. Do not infer the write from
+relative list order. *Near-miss:* release gate run 32588846407 failed `SESS-18`
+twice after a later sandbox transition advanced the older session's `updated_at`.
+*Enforcer:* `SESS-18` requires adoption `updated_at == last_activity_at` and
+`updated_at > created_at` on the adopted row.
+
+### Bind public Vercel runtime metadata to the deployment, not the project environment (2026-08-22)
+
+**When:** passing public release metadata to a Vercel Production deployment.
+Use `vercel deploy --env KORTIX_PUBLIC_<NAME>=<value>`. Do not add a
+`NEXT_PUBLIC_*` Production project variable. Vercel CLI 59.4.0 infers secret
+visibility and rejects public framework prefixes. *Incident:* v0.13.3 left
+`kortix.com` on v0.13.2 after `env add NEXT_PUBLIC_KORTIX_VERSION` failed.
+*Enforcer:* `web-ecs-workflow.test.ts` pins the deployment-scoped runtime value.
+
+### A self-host has TWO version axes — the images and the CLI binary. Updating one never updates the other (2026-08-22)
+
+**When:** diagnosing a self-host that is "on latest", or shipping any feature
+whose config the CLI renders (Caddyfile, `.env` keys, compose services).
+
+Essentia ran API/gateway/frontend images from `main` while `/usr/local/bin/kortix`
+was **1565 commits stale**. The CLI renders the Caddyfile and owns the `.env`
+schema, so the box silently lacked every CLI-side feature that had shipped since:
+preview origins could not be configured (no such flag existed), and the Caddy
+half of the "Bad Gateway" retry fix (PR #6702) had never landed even though its
+API half was live in the image. **Check `kortix --version` before believing any
+self-host diagnosis.** Upgrade with `curl -fsSL https://kortix.com/install | bash`
+(needs `HOME` set under SSM, or it dies on `HOME: unbound variable`).
+
+**Three update-semantics traps found in the same box:**
+1. `resolveTag()` reads `KORTIX_CHANNEL`, **never** `KORTIX_VERSION`. A bare
+   `kortix self-host update` on a box pinned to `dev-latest` with
+   `KORTIX_CHANNEL=stable` rolled it **back 758 commits** to a 3-week-old
+   release. Always pass `--version <ref>` explicitly on a pinned box.
+2. `KORTIX_IMAGE_PULL=never` (set by a past `--local-images`) makes every update
+   a silent no-op against the local Docker cache — `status` still reports
+   "no drift", because drift compares config to running images, not to the registry.
+3. `status`/`version` say "up to date" while tracking a floating tag. Compare the
+   **registry manifest digest** to the local `RepoDigests`, or the `/health`
+   `commit` to `origin/main`. A version string is not evidence.
+
+*Incident:* no outage from the staleness itself; it hid a shipped fix for ~1 day
+and blocked a customer feature.
+
+### Validate a config offline before applying it, and never trust a probe whose SNI you did not choose (2026-08-22)
+
+**When:** enabling a wildcard site block, or writing any "did it come back up?"
+check against a server doing on-demand TLS.
+
+Enabling preview origins on Essentia crash-looped Caddy for ~4 minutes:
+`subject does not qualify for certificate: '*.'`. A wildcard site address and the
+env var it interpolates are **two separate writes** — the Caddyfile gained
+`*.{$KORTIX_PREVIEW_BASE_DOMAIN}` while the running container's baked env still
+had that var empty, and Caddy refuses to adapt a config containing a bare `*.`.
+
+**Rules.**
+1. Render the target config and run `caddy validate --config … --adapter caddyfile`
+   in a throwaway container with the exact env **before** touching the live stack.
+   The failing and passing cases both reproduce in seconds, with no blast radius.
+2. After a config write, `--force-recreate` the container so its env is rebuilt
+   from `.env`. A plain restart reuses the env baked at creation time.
+3. **A probe to `https://localhost` is not a health check** against on-demand TLS:
+   it presents SNI `localhost`, the issuance `ask` gate correctly rejects it, and
+   TLS fails — so the probe returns `000` whether the service is healthy or not.
+   It fired a needless rollback here. Use `--resolve <real-host>:443:127.0.0.1`.
+   Prove any guard by running it against the *known-good* state first.
+4. **Never infer "no DNS" from a bare-label lookup when the record is a wildcard.**
+   `dig apps.essentia.kortix.cloud` returns nothing while `*.apps.essentia…`
+   exists and serves live traffic. That inference led to clearing a live
+   `KORTIX_APPS_BASE_DOMAIN` and taking deployed Apps down for ~25 min. Confirm
+   with the *authoritative* NS and a synthesized name, and prefer an empirical
+   before/after test to any reasoning about config intent.
+5. Querying a name before its record exists poisons public resolvers for the
+   SOA negative TTL (1800s here). Create the record first, then resolve.
+
+*Incident:* Essentia self-host, 2026-08-22. Two self-inflicted outages (~4 min
+API, ~25 min Apps), both caused by the operator's own verification, not by the
+change. Enforcer: `kortix self-host doctor` now fails on a domain-mode instance
+with no preview base domain (PR #6732).
+
 ### A selective capacity release must include the pool isolation it budgets (2026-08-22)
 
 **When:** selecting database-capacity commits for a release. Do not ship pool
@@ -1589,3 +1673,52 @@ must update and pass this invariant before deployment.
 Verification that settles it: deploy the bounded pools, confirm the exact
 production SHA, exercise webhook and session traffic, then query Better Stack
 for zero new SQLSTATE `53300` occurrences after the rollout completed.
+
+## Admission after allocation is accounting, not admission
+
+2026-08-22. A 28.37 MB multimodal request repeatedly OOM-killed a 512 MiB
+standalone gateway. The existing in-flight budget did not protect the process.
+Both gateway hosts called `readBoundedBody()` before `InflightBudget.admit()`.
+Concurrent requests therefore allocated complete JavaScript strings before the
+budget could reject them. The hosts also released the lease when the handler
+returned a streaming `Response`. Parsed request data could remain reachable
+until the response stream ended.
+
+**The rule.** Reserve declared bytes before the first body read. Grow a chunked
+request's reservation before retaining each chunk. Hold the lease until response
+EOF, error, or cancellation. A test that asserts only `503` counts does not prove
+a memory bound. It must assert allocation order and lease lifetime.
+
+**Remove amplification sources before raising memory.** The same request existed
+as HTTP chunks, a JavaScript string, a parsed object, an AI SDK request graph, a
+serialized provider payload, and trace capture. The gateway now clears the raw
+string after parsing, uses direct `fetch` for OpenAI-compatible providers, loads
+protocol translators lazily, retains no response body, and stores metadata-only
+traces. A container memory increase can raise throughput. It cannot repair an
+unbounded allocation path.
+
+*Incident:* Essentia standalone gateway, repeated cgroup OOM kills and Caddy
+`502 Bad Gateway`. Enforcement: `readAdmittedBody` allocation-order tests,
+response-lifetime lease tests, one-dispatch tests, and a mounted 28 MiB request
+test that asserts one provider call and an intact response.
+
+## A standalone service needs explicit caller wiring in every environment
+
+2026-08-22. The API stopped hosting an in-process gateway and became a reverse
+proxy. Self-host Compose configured `LLM_GATEWAY_PROXY_TARGET`. Dev ECS did not.
+The gateway deployed healthy at the correct SHA, but the API returned
+`gateway_unavailable` for every LLM route. The edge converted that origin `503`
+into `MAINTENANCE_MODE`, which hid the missing environment variable.
+
+**The rule.** A service extraction is incomplete until every caller in every
+deployment topology has an explicit target. Configure local, self-host, dev,
+staging, production, and shadow environments in the same change. Verify through
+the caller route. A healthy callee does not prove that its caller can reach it.
+
+**The enforcement.** Terraform now injects `LLM_GATEWAY_PROXY_TARGET` into each
+cloud API task. The end-to-end verification calls `/v1/llm/health` through the
+API origin and requires the standalone gateway health response.
+
+*Incident:* dev API returned `gateway_unavailable` after gateway PR #6737.
+The public edge surfaced it as blocking maintenance. Direct origin inspection
+identified the missing target before user traffic resumed.

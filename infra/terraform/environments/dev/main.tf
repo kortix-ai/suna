@@ -109,10 +109,12 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image                   = var.api_image
-  container_port          = var.container_port
-  certificate_arn         = one(module.acm[*].certificate_arn)
-  environment             = var.api_environment
+  image           = var.api_image
+  container_port  = var.container_port
+  certificate_arn = one(module.acm[*].certificate_arn)
+  environment = merge(var.api_environment, {
+    LLM_GATEWAY_PROXY_TARGET = "https://gateway-dev-ecs-fargate.kortix.com"
+  })
   secrets                 = var.api_secrets
   secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
   ses_send_region         = "us-east-2"
@@ -175,13 +177,14 @@ module "gateway" {
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
   # gateway is light (LLM proxy) — smaller than the API
-  task_cpu         = 256
-  task_memory      = 512
-  desired_count    = 1
-  min_capacity     = 1
-  max_capacity     = 3
-  use_fargate_spot = true
-  tags             = local.tags
+  task_cpu                   = 256
+  task_memory                = 512
+  desired_count              = 1
+  min_capacity               = 1
+  max_capacity               = 6
+  use_fargate_spot           = true
+  requests_per_target_target = 120
+  tags                       = local.tags
 }
 
 # ── DNS: dev-api-ecs-fargate.kortix.com → the ALB (Cloudflare-proxied) ─────────

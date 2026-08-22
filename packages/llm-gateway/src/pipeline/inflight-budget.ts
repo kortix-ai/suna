@@ -10,9 +10,9 @@
  * So the process tracks how many bytes are in flight and REFUSES work it cannot
  * hold. Three properties follow, and they are the whole point:
  *
- *   1. IT NEVER CRASHES. Work beyond capacity is declined, not accepted into an
- *      OOM. A declined request costs one request; an OOM costs every request in
- *      flight, the trace, and the container.
+ *   1. Work beyond the configured memory envelope is declined before its body
+ *      is retained. A declined request costs one request. An OOM costs every
+ *      request in flight and restarts the container.
  *
  *   2. IT FAILS LOUDLY AND SPECIFICALLY. `too_large` (413) means the body could
  *      never fit and retrying is pointless. `overloaded` (503 + Retry-After)
@@ -40,8 +40,16 @@ export interface InflightBudgetOptions {
 }
 
 export type InflightLease =
-  | { ok: true; release: () => void }
+  | {
+      ok: true;
+      release: () => void;
+      resize: (wireBytes: number) => InflightResizeResult;
+    }
   | { ok: false; reason: 'too_large' | 'overloaded'; retryAfterSeconds?: number };
+
+export type InflightResizeResult =
+  | { ok: true }
+  | { ok: false; reason: 'too_large' | 'overloaded' };
 
 /**
  * Measured against the shapes this pipeline actually builds: the raw body as a
@@ -69,6 +77,10 @@ export class InflightBudget {
     return this.current;
   }
 
+  get capacityBytes(): number {
+    return this.maxBytes;
+  }
+
   /** 0..1 — for logging, and for a metric worth alarming on. */
   get utilisation(): number {
     return this.maxBytes > 0 ? this.current / this.maxBytes : 0;
@@ -82,9 +94,11 @@ export class InflightBudget {
    * (413) instead of being invited to retry forever against a 503.
    */
   admit(wireBytes: number): InflightLease {
-    if (this.maxBytes <= 0) return { ok: true, release: () => {} };
+    if (this.maxBytes <= 0) {
+      return { ok: true, release: () => {}, resize: () => ({ ok: true }) };
+    }
 
-    const cost = Math.max(0, Math.trunc(wireBytes)) * this.amplification;
+    let cost = Math.max(0, Math.trunc(wireBytes)) * this.amplification;
 
     // Never-fits: terminal, and honest about it.
     if (this.perRequestMaxBytes > 0 && wireBytes > this.perRequestMaxBytes) {
@@ -103,6 +117,23 @@ export class InflightBudget {
     let released = false;
     return {
       ok: true,
+      resize: (nextWireBytes: number): InflightResizeResult => {
+        if (released) return { ok: false, reason: 'overloaded' };
+        const normalized = Math.max(0, Math.trunc(nextWireBytes));
+        const nextCost = normalized * this.amplification;
+        if (
+          (this.perRequestMaxBytes > 0 && normalized > this.perRequestMaxBytes) ||
+          nextCost > this.maxBytes
+        ) {
+          return { ok: false, reason: 'too_large' };
+        }
+        if (this.current - cost + nextCost > this.maxBytes) {
+          return { ok: false, reason: 'overloaded' };
+        }
+        this.current = Math.max(0, this.current - cost + nextCost);
+        cost = nextCost;
+        return { ok: true };
+      },
       // Idempotent: a handler with both an explicit release and a `finally`
       // must not be able to hand back the same bytes twice and inflate the
       // budget past what the process actually has.
@@ -114,19 +145,3 @@ export class InflightBudget {
     };
   }
 }
-
-/**
- * Default in-flight budget, in AMPLIFIED bytes — the same unit `maxBytes` is
- * compared against, i.e. an estimate of real process memory, NOT wire bytes.
- *
- * Stated explicitly because getting it wrong is a silent 3x error in either
- * direction: at the default amplification this 512 MiB admits roughly 170 MiB
- * of concurrent WIRE bytes, and an operator who reads it as "512 MiB of request
- * body" will size a host for three times the traffic it can really take.
- *
- * Sized for the smallest container that runs this code (self-host kortix-api at
- * 2048m). A host with more memory should raise it; a host with less must lower
- * it. The relationship is the point: this is a fraction of process memory,
- * never a number picked in isolation.
- */
-export const DEFAULT_INFLIGHT_BUDGET_BYTES = 512 * 1024 * 1024;

@@ -70,4 +70,60 @@ describe('standalone gateway inference routes', () => {
       );
     });
   }
+
+  test('a measured 28 MiB multimodal request reaches one provider and returns intact', async () => {
+    const originalFetch = globalThis.fetch;
+    let providerCalls = 0;
+    let providerBytes = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/internal/gateway/authorize')) {
+        return Response.json({ ok: true, principal: { userId: 'u', accountId: 'a' } });
+      }
+      if (url.endsWith('/internal/gateway/resolve-route')) {
+        return Response.json({ route: { policyId: 'direct', primaryModel: 'large-model' } });
+      }
+      if (url.endsWith('/internal/gateway/resolve-upstream')) {
+        return Response.json({ candidates: [{
+          provider: 'mock', kind: 'openai-compat', baseUrl: 'https://provider.test/v1',
+          apiKey: 'key', billingMode: 'none', markup: 0,
+        }] });
+      }
+      if (url.endsWith('/internal/gateway/usage') || url.endsWith('/internal/gateway/trace')) {
+        return Response.json({ ok: true });
+      }
+      if (url === 'https://provider.test/v1/chat/completions') {
+        providerCalls += 1;
+        providerBytes = typeof init?.body === 'string' ? Buffer.byteLength(init.body) : 0;
+        return Response.json({
+          choices: [{ message: { role: 'assistant', content: 'ok' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    }) as typeof fetch;
+
+    try {
+      const image = 'a'.repeat(28 * 1024 * 1024);
+      const requestBody = JSON.stringify({
+        model: 'large-model',
+        messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${image}` } }] }],
+      });
+      const response = await app.request('/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer token',
+          'content-type': 'application/json',
+          'content-length': String(Buffer.byteLength(requestBody)),
+        },
+        body: requestBody,
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toHaveProperty('choices.0.message.content', 'ok');
+      expect(providerCalls).toBe(1);
+      expect(providerBytes).toBe(Buffer.byteLength(requestBody));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }, 30_000);
 });

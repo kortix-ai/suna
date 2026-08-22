@@ -71,6 +71,14 @@ export function ActionPanel() {
   // (advanced/advanced-panel.tsx, the panelMode preference, the discard
   // effects above) so uncommenting this branch restores it wholesale.
   //
+  // RE-ENABLING THIS LOSES THE PLAN unless Advanced grows a Plan card too.
+  // On desktop the Easy panel is the plan's ONLY surface — the transcript no
+  // longer takes it back when the panel is not drawing it (`planBelongsToChat`
+  // in turn/plan-anchor.ts, which explains why). `AdvancedPanel` is a
+  // tool-call stepper with no cards, so an advanced-mode user would see no
+  // plan anywhere. Give Advanced its own `PlanPanelCard`, or make this a
+  // condition in `planBelongsToChat` as a deliberate product call.
+  //
   // return mode === 'advanced' ? <AdvancedPanel … /> : (
   return <EasyPanel />;
 }

@@ -53,7 +53,7 @@ export function buildPlaceholderVariants(base: string, mac: boolean): string[] {
   const mod = mac ? '⌘' : 'Ctrl+';
   return [
     base,
-    'Type / for commands and skills',
+    'Type / for skills, commands, and files',
     'Type @ to mention files and agents',
     'Ask about any file in your workspace',
     `Press ${mod}K to open the command palette`,

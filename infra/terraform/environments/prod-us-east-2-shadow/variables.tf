@@ -67,3 +67,9 @@ variable "api_shadow_hostname" {
   type        = string
   default     = "api-use2-shadow.kortix.com"
 }
+
+variable "gateway_shadow_hostname" {
+  description = "SNI hostname used for direct shadow gateway access. Terraform does not create DNS."
+  type        = string
+  default     = "gateway-use2-shadow.kortix.com"
+}

@@ -137,23 +137,23 @@ describe('verifyProviderConnection', () => {
     expect(result.status).toBe('verified');
   });
 
-  test('upstream call sends a single-attempt, low-token request (cheap ping)', async () => {
+  test('upstream call sends one bounded, low-token request', async () => {
     let seenBody: Record<string, unknown> | null = null;
-    let seenRetry: unknown = null;
+    let seenSignal: AbortSignal | undefined;
     await verifyProviderConnection(
       principal(),
       'openai',
       makeDeps({
         callUpstream: async (body, _descriptor, opts) => {
           seenBody = body;
-          seenRetry = opts?.retry;
+          seenSignal = opts?.signal;
           return new Response('{}', { status: 200 });
         },
       }),
     );
     expect(seenBody).toBeTruthy();
     expect((seenBody as any).stream).toBe(false);
-    expect((seenRetry as any)?.maxAttempts).toBe(1);
+    expect(seenSignal).toBeInstanceOf(AbortSignal);
   });
 
   test('upstream throws UpstreamHttpError 401 -> invalid, surfaces the provider error body as a hint', async () => {

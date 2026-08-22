@@ -120,7 +120,7 @@ describe('gateway.listModels — scope plumbing', () => {
         return opts?.managedOnly ? { 'grok-4.6': { name: 'Grok 4.6' } } : { 'a/b': { name: 'B' } };
       },
     };
-    return { call: () => ({ seen }), gateway: createGateway(hooks, {}) };
+    return { call: () => ({ seen }), gateway: createGateway(hooks) };
   }
 
   test('passes managedOnly straight to the catalog hook', async () => {
