@@ -21,7 +21,7 @@ import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
   lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, worktreeAddArgs,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
-  writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
+  writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, tunnelAnswers, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
   ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS,
   killTree, stackRoots, stackPids, listenersOn, psTable, cwdTable,
@@ -538,11 +538,58 @@ async function cmdStart(a: Args) {
   }
   console.log(pc.dim('   (Ctrl+C stops the dev servers cleanly)\n'));
 
-  const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl: tunnel?.url, stripeWebhookSecret: stripe?.secret, billing }) }, stdout: 'inherit', stderr: 'inherit' });
+  // The API's KORTIX_URL is baked at spawn, so a tunnel rotation has to
+  // respawn it — keep the spawn in a function and the handle mutable.
+  const spawnApi = (kortixUrl: string | undefined) =>
+    Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl, stripeWebhookSecret: stripe?.secret, billing }) }, stdout: 'inherit', stderr: 'inherit' });
+  let api = spawnApi(tunnel?.url);
+  let apiRestarting = false;
   const gateway = Bun.spawn(['pnpm', '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });
   const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing }) }, stdout: 'inherit', stderr: 'inherit' });
   void waitForGateway(e.ports.gateway, gateway);
   let stopping = false;
+  // Quick tunnels die silently — cloudflared exits, or the URL starts answering
+  // 530 while the process lives. 2026-08-22: three deaths in one evening; each
+  // one surfaced as OpenCode "Retrying in 81s · <none>" (Cloudflare's HTML 530
+  // has no message) or "Cannot connect to API …trycloudflare.com" on the first
+  // prompt, and nothing local said why. Mirror scripts/dev-local.sh's watchdog:
+  // every 60s, if the LOCAL API is healthy but the tunnel is dead (process gone,
+  // or two consecutive probe failures), mint a new quick tunnel and respawn the
+  // API with the new KORTIX_URL. Existing boxes pick the new gateway URL up on
+  // their next prompt (env sync); their daemon callbacks stay on the old host.
+  const startTunnelWatchdog = () => {
+    if (!tunnel) return;
+    const localHealthy = () => tunnelAnswers(`http://localhost:${e.ports.api}`, '/v1/health', 2000);
+    void (async () => {
+      while (!stopping) {
+        await Bun.sleep(60_000);
+        if (stopping || !tunnel) return;
+        if (!(await localHealthy())) continue; // not the tunnel's fault
+        const procDead = tunnel.proc.exitCode !== null;
+        let dead = procDead || !(await tunnelAnswers(tunnel.url));
+        if (dead && !procDead) { await Bun.sleep(5000); dead = !(await tunnelAnswers(tunnel.url)); } // confirm, avoid a blip
+        if (!dead) continue;
+        warn(`tunnel ${tunnel.url} is DEAD (${procDead ? 'cloudflared exited' : 'URL answers no health'}) — rotating + restarting the API…`);
+        try { tunnel.proc.kill(); } catch {}
+        const next = await startTunnel(e.ports.api);
+        if (!next) { warn('tunnel rotation FAILED (cloudflared gave no URL) — will retry next minute'); continue; }
+        tunnel = next;
+        apiRestarting = true;
+        try { api.kill(); } catch {}
+        await Promise.race([api.exited, Bun.sleep(4000)]);
+        api = spawnApi(tunnel.url);
+        void watchApi();
+        apiRestarting = false;
+        ok(`tunnel rotated: KORTIX_URL → ${tunnel.url} (API restarted)`);
+      }
+    })();
+  };
+  // An API exit that WE did not cause (rotation) still tears the stack down.
+  const watchApi = async () => {
+    const mine = api;
+    await mine.exited;
+    if (!stopping && !apiRestarting && api === mine) await shutdown();
+  };
   const shutdown = async () => {
     if (stopping) return; stopping = true;
     console.log(`\n${pc.yellow('▸')} stopping…`);
@@ -568,7 +615,9 @@ async function cmdStart(a: Args) {
   };
   process.on('SIGINT', () => { void shutdown(); });
   process.on('SIGTERM', () => { void shutdown(); });
-  await Promise.race([api.exited, gateway.exited, web.exited]);
+  startTunnelWatchdog();
+  void watchApi();
+  await Promise.race([gateway.exited, web.exited]);
   await shutdown();
 }
 
