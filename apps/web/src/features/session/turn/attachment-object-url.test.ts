@@ -83,8 +83,11 @@ describe('attachmentDisplaySrc — a data URL is decoded ONCE into an object URL
   });
 });
 
+/** The last release revokes on the NEXT microtask (see the module header). */
+const microtask = () => new Promise<void>((resolve) => queueMicrotask(resolve));
+
 describe('session retain / release — URLs live while a chat holds the session', () => {
-  test('release revokes every URL of that session once the last holder lets go', () => {
+  test('release revokes every URL of that session once the last holder lets go', async () => {
     const revoked: string[] = [];
     __testing.spyRevoke((url) => revoked.push(url));
     retainAttachmentObjectUrls('ses_a');
@@ -93,8 +96,14 @@ describe('session retain / release — URLs live while a chat holds the session'
     const b = attachmentDisplaySrc(filePart('prt_2', DATA_URL, 'ses_a'));
     const other = attachmentDisplaySrc(filePart('prt_3', DATA_URL, 'ses_b'));
     releaseAttachmentObjectUrls('ses_a');
+    await microtask();
     expect(revoked).toEqual([]);
     releaseAttachmentObjectUrls('ses_a');
+    // Deferred: nothing is revoked inside the releasing task …
+    expect(revoked).toEqual([]);
+    expect(__testing.size()).toBe(3);
+    await microtask();
+    // … and everything of that session is, one microtask later.
     expect(revoked.sort()).toEqual([a, b].sort());
     // The other session's entry is untouched, and a later read of a released
     // part simply decodes again.
@@ -104,11 +113,46 @@ describe('session retain / release — URLs live while a chat holds the session'
     );
   });
 
-  test('release of a session nobody retained is a no-op', () => {
+  test('release of a session nobody retained is a no-op', async () => {
     const revoked: string[] = [];
     __testing.spyRevoke((url) => revoked.push(url));
     attachmentDisplaySrc(filePart('prt_1', DATA_URL, 'ses_a'));
     releaseAttachmentObjectUrls('ses_a');
+    await microtask();
     expect(revoked).toEqual([]);
+    expect(__testing.size()).toBe(1);
+  });
+
+  test('retain → release → retain in one task (React StrictMode) keeps the URLs and the cache', async () => {
+    const revoked: string[] = [];
+    __testing.spyRevoke((url) => revoked.push(url));
+    const a = attachmentDisplaySrc(filePart('prt_1', DATA_URL, 'ses_a'));
+    retainAttachmentObjectUrls('ses_a');
+    releaseAttachmentObjectUrls('ses_a');
+    retainAttachmentObjectUrls('ses_a');
+    await microtask();
+    await microtask();
+    expect(revoked).toEqual([]);
+    expect(__testing.size()).toBe(1);
+    // The same part reads the SAME object URL back — nothing was re-decoded.
+    expect(attachmentDisplaySrc(filePart('prt_1', DATA_URL, 'ses_a'))).toBe(a);
+    // The holder that survived still owns one reference: its release revokes.
+    releaseAttachmentObjectUrls('ses_a');
+    await microtask();
+    expect(revoked).toEqual([a]);
+    expect(__testing.size()).toBe(0);
+  });
+
+  test('two pending last-releases of one session collapse into one revoke pass', async () => {
+    const revoked: string[] = [];
+    __testing.spyRevoke((url) => revoked.push(url));
+    const a = attachmentDisplaySrc(filePart('prt_1', DATA_URL, 'ses_a'));
+    retainAttachmentObjectUrls('ses_a');
+    releaseAttachmentObjectUrls('ses_a');
+    retainAttachmentObjectUrls('ses_a');
+    releaseAttachmentObjectUrls('ses_a');
+    await microtask();
+    expect(revoked).toEqual([a]);
+    expect(__testing.size()).toBe(0);
   });
 });

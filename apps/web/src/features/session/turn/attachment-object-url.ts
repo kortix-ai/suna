@@ -21,8 +21,16 @@
  * Lifetime: a `SessionChat` retains its session on mount and releases it on
  * unmount (refcounted, so a second view of the same session — a sub-session
  * modal, a hidden tab — keeps the URLs alive). The last release revokes the
- * session's URLs. A part whose data URL changed (re-sent, re-minted) gets a
- * fresh object URL and the old one is revoked on the spot.
+ * session's URLs — DEFERRED to a microtask, and cancelled by a retain of the
+ * same session that lands first. React StrictMode (Next's dev default) runs
+ * every effect mount → simulated unmount → mount again inside ONE commit:
+ * retain → release → retain. A synchronous revoke there pulled every `blob:`
+ * URL from under the `<img src>` elements committed in that same pass and
+ * dropped their cache entries, so the tiles rendered broken until their rows
+ * happened to remount. The deferral bridges the cycle; a real unmount (no
+ * retain following it) still revokes one microtask later.
+ * A part whose data URL changed (re-sent, re-minted) gets a fresh object URL
+ * and the old one is revoked on the spot.
  *
  * Pure-ish and DOM-free: `URL.createObjectURL` / `Blob` / `atob` exist in Bun
  * as well as every browser, so the cache is unit-tested without a DOM.
@@ -43,6 +51,9 @@ interface CacheEntry {
 
 const entries = new Map<string, CacheEntry>();
 const retained = new Map<string, number>();
+/** Sessions whose last release is waiting for its microtask; the value
+ *  cancels it (a retain that lands first keeps the URLs). */
+const pendingRevokes = new Map<string, () => void>();
 
 let createObjectUrl: (blob: Blob) => string = (blob) => URL.createObjectURL(blob);
 let revokeObjectUrl: (url: string) => void = (url) => URL.revokeObjectURL(url);
@@ -85,12 +96,23 @@ export function attachmentDisplaySrc(part: AttachmentPartLike): string {
   return objectUrl;
 }
 
-/** A chat holds its session's object URLs for as long as it is mounted. */
+/** A chat holds its session's object URLs for as long as it is mounted. A
+ *  retain that lands before a pending last-release fires cancels it. */
 export function retainAttachmentObjectUrls(sessionID: string): void {
+  const cancel = pendingRevokes.get(sessionID);
+  if (cancel) {
+    cancel();
+    pendingRevokes.delete(sessionID);
+  }
   retained.set(sessionID, (retained.get(sessionID) ?? 0) + 1);
 }
 
-/** The last holder's release revokes every object URL of that session. */
+/**
+ * The last holder's release revokes every object URL of that session — on the
+ * next microtask, unless the session is retained again before then (the
+ * StrictMode cycle, see the module header). Not idempotent per holder: each
+ * retain pairs with one release.
+ */
 export function releaseAttachmentObjectUrls(sessionID: string): void {
   const count = retained.get(sessionID);
   if (count === undefined) return;
@@ -99,6 +121,20 @@ export function releaseAttachmentObjectUrls(sessionID: string): void {
     return;
   }
   retained.delete(sessionID);
+  if (pendingRevokes.has(sessionID)) return;
+  let cancelled = false;
+  pendingRevokes.set(sessionID, () => {
+    cancelled = true;
+  });
+  queueMicrotask(() => {
+    pendingRevokes.delete(sessionID);
+    if (cancelled) return;
+    revokeSession(sessionID);
+  });
+}
+
+/** Revoke and forget every object URL of `sessionID`, now. */
+function revokeSession(sessionID: string): void {
   for (const [id, entry] of entries) {
     if (entry.sessionID !== sessionID) continue;
     revokeObjectUrl(entry.objectUrl);
@@ -108,6 +144,8 @@ export function releaseAttachmentObjectUrls(sessionID: string): void {
 
 export const __testing = {
   reset(): void {
+    for (const cancel of pendingRevokes.values()) cancel();
+    pendingRevokes.clear();
     for (const entry of entries.values()) revokeObjectUrl(entry.objectUrl);
     entries.clear();
     retained.clear();
