@@ -202,7 +202,3 @@ export async function triggerSandboxUpdate(
 export async function resetSandboxUpdateStatus(sandbox?: SandboxInfo): Promise<void> {
   return;
 }
-
-export async function cancelSandboxUpdate(sandbox?: SandboxInfo): Promise<void> {
-  return;
-}

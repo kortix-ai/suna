@@ -181,8 +181,6 @@ const envSchema = z.object({
   // alternative (a capability header on every request) costs a round trip per
   // relayed request and still cannot un-consume a body already streamed.
   KORTIX_SECRET_RELAY_STREAM_ENABLED: optBoolTrue,
-  /** Websocket relay, gated separately so it can roll out behind the HTTP leg. */
-  KORTIX_RELAY_WS_ENABLED: optBoolTrue,
   // Byte budgets. These are a RESOURCE guard, not a product limit: 1 GiB is
   // 1024x the legacy request cap and 205x the response cap — effectively
   // uncapped for any real API call — but it stops one runaway sandbox.
@@ -612,7 +610,6 @@ const envSchema = z.object({
   //                explicitly deletes the session — auto-stop + cold archive
   //                make an idle box nearly free, so we never destroy disk.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: optInt(15),
-  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: optInt(5),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(720), // 12 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES: optInt(-1), // never auto-delete
   // The PROVIDER-NATIVE idle timer (Daytona autoStopInterval / Platinum
@@ -747,10 +744,10 @@ const envSchema = z.object({
   BETTERSTACK_API_SENTRY_DSN: optStr, // Sentry DSN for error tracking (Better Stack compatible)
 
   // ── Stray env vars used directly in other files (centralized here) ───────
+  // Exactly two survive: CORS_ALLOWED_ORIGINS (read in src/index.ts) and
+  // KORTIX_MASTER_URL (read in src/setup/index.ts). Add a key only with a reader.
   CORS_ALLOWED_ORIGINS: optStr,
   KORTIX_MASTER_URL: optStr,
-  OPENCODE_URL: optStr,
-  KORTIX_DATA_DIR: optStr,
 });
 
 // ─── Validation + Conditional Checks ────────────────────────────────────────
@@ -1025,7 +1022,6 @@ export const config = {
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
-  KORTIX_RELAY_WS_ENABLED: env.KORTIX_RELAY_WS_ENABLED,
   KORTIX_RELAY_MAX_REQUEST_BYTES: env.KORTIX_RELAY_MAX_REQUEST_BYTES,
   GATEWAY_INFLIGHT_BUDGET_BYTES: env.GATEWAY_INFLIGHT_BUDGET_BYTES,
   KORTIX_RELAY_MAX_RESPONSE_BYTES: env.KORTIX_RELAY_MAX_RESPONSE_BYTES,
@@ -1166,7 +1162,6 @@ export const config = {
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
-  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
@@ -1297,11 +1292,9 @@ export const config = {
   MAILTRAP_SIGNUPS_LIST_ID: env.MAILTRAP_SIGNUPS_LIST_ID,
   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: env.MAILTRAP_BUSINESS_SIGNUPS_LIST_ID,
 
-  // ─── Stray env vars (centralized from other files) ────────────────────────
+  // ─── Stray env vars (centralized from other files; see schema comment) ────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,
   KORTIX_MASTER_URL: env.KORTIX_MASTER_URL,
-  OPENCODE_URL: env.OPENCODE_URL,
-  KORTIX_DATA_DIR: env.KORTIX_DATA_DIR,
 
   // ─── Helper Methods ────────────────────────────────────────────────────────
 

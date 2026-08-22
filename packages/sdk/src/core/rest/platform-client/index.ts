@@ -14,8 +14,6 @@ export * from './types';
 export * from './urls';
 export * from './lifecycle';
 export * from './members';
-export * from './invites';
-export * from './backups';
 export * from './ssh';
 export * from './updates';
 export * from './instance-admin';

@@ -44,6 +44,28 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The retired local sandbox value was removed from `AppHostingProvider`. This
   is an intentional breaking type-contract change and requires a breaking SDK
   release. The API no longer accepts or emits that value.
+- **BREAKING — 31 dead exports dropped from the root entry and the deprecated
+  `./projects-client`, `./platform-client` and `./api-client` subpaths.** Every
+  one targeted an HTTP route that no longer exists, or threw / returned
+  unconditionally, so an external caller was already broken at runtime; this
+  makes it a compile-time error instead. Ships with the next major. None were
+  `@deprecated`-aliased first — the alias-then-remove rule exists to keep a
+  *working* name working, and these never worked.
+  - templates: `getTemplate`, `installTemplate`, `TemplateInput`,
+    `TemplateRequirement`, `TemplateDetail`, `TemplateInstallResult`
+    (`/v1/templates/*` is gone; use `/v1/marketplace/items/:id` +
+    `/v1/projects/:projectId/marketplace/install-session`).
+  - projects: `updateTemplateWarmPool` (no handler).
+  - instance admin: `deleteInstance`, `markInstanceError`, `claimComputer`,
+    `getSandboxProvisionStatus`, `getSandboxProvisionStreamUrl`,
+    `SandboxProvisionStageInfo`, `SandboxProvisionStatus` (`/v1/platform/sandbox/*` is gone).
+  - stubs that could never succeed: `listBackups`, `createBackup`,
+    `restoreBackup`, `deleteBackup`, `BackupInfo`, `BackupListResponse`,
+    `renameSandbox`, `cancelSandbox`, `reactivateSandbox`, `cancelSandboxUpdate`.
+  - invites: `getInvite`, `acceptInvite`, `declineInvite`, `InviteDetails`,
+    `InviteDetailsVisible`, `InviteDetailsRedacted` (`/platform/invites/*` is gone).
+  - `supabaseClient` (the `./api-client` alias) and the `@internal`
+    `__getConfigResolver` (zero readers; its sibling `__setConfigResolver` stays).
 
 ### Internal
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
