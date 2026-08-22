@@ -171,14 +171,15 @@ module "gateway" {
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
   # prod gateway: on-demand (no Spot — LLM path), HA floor of 2, insights on
-  task_cpu           = 512
-  task_memory        = 1024
-  desired_count      = 2
-  min_capacity       = 2
-  max_capacity       = 6
-  use_fargate_spot   = false
-  container_insights = true
-  tags               = local.tags
+  task_cpu                   = 512
+  task_memory                = 1024
+  desired_count              = 2
+  min_capacity               = 2
+  max_capacity               = 20
+  use_fargate_spot           = false
+  container_insights         = true
+  requests_per_target_target = 120
+  tags                       = local.tags
 }
 
 # DNS for the public API hostname. Gated by manage_dns so the stack (VPC/ALB/

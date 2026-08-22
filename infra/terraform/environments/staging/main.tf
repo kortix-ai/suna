@@ -158,10 +158,10 @@ module "gateway" {
   task_memory                = 1024
   desired_count              = 2
   min_capacity               = 2
-  max_capacity               = 3
+  max_capacity               = 6
   use_fargate_spot           = true
   fargate_base_on_demand     = 1
-  requests_per_target_target = 600
+  requests_per_target_target = 120
   tags                       = local.tags
 }
 

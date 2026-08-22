@@ -73,7 +73,7 @@ const DEFAULT_DEPS: ProviderVerifyDeps = {
 // normal 3x retry budget against a key that's about to fail the same way
 // every time. Short timeout so a hung/rate-limited provider fails the check
 // fast instead of leaving the UI's "Verifying…" state spinning.
-const VERIFY_RETRY = { maxAttempts: 1, timeoutMs: 8_000, deadlineMs: 9_000 } as const;
+const VERIFY_TIMEOUT_MS = 8_000;
 
 function upstreamErrorHint(body: string | undefined): string | undefined {
   if (!body) return undefined;
@@ -140,7 +140,7 @@ export async function verifyProviderConnection(
   }
 
   try {
-    await deps.callUpstream(
+    const response = await deps.callUpstream(
       {
         model: modelId,
         messages: [{ role: 'user', content: 'ping' }],
@@ -148,8 +148,30 @@ export async function verifyProviderConnection(
         max_tokens: 16,
       },
       descriptor,
-      { retry: VERIFY_RETRY },
+      { signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS) },
     );
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      if (response.status === 401 || response.status === 403) {
+        return {
+          status: 'invalid',
+          message:
+            upstreamErrorHint(body) ?? `The provider rejected the key (HTTP ${response.status}).`,
+        };
+      }
+      if (response.status === 429) {
+        return {
+          status: 'unknown',
+          message: "Rate limited while verifying — couldn't confirm the key.",
+        };
+      }
+      return {
+        status: 'unknown',
+        message:
+          upstreamErrorHint(body) ??
+          `The provider returned HTTP ${response.status} — couldn't confirm.`,
+      };
+    }
     return { status: 'verified', message: 'The provider accepted the key.' };
   } catch (err) {
     const status = (err as { status?: number } | undefined)?.status;

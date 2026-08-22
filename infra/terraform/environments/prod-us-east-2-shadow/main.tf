@@ -123,15 +123,16 @@ module "gateway" {
 
   alb_ingress_cidrs = var.alb_ingress_cidrs
 
-  task_cpu           = 512
-  task_memory        = 1024
-  desired_count      = 2
-  min_capacity       = 2
-  max_capacity       = 6
-  use_fargate_spot   = false
-  container_insights = true
-  cpu_target         = 55
-  memory_target      = 65
+  task_cpu                   = 512
+  task_memory                = 1024
+  desired_count              = 2
+  min_capacity               = 2
+  max_capacity               = 20
+  use_fargate_spot           = false
+  container_insights         = true
+  cpu_target                 = 55
+  memory_target              = 65
+  requests_per_target_target = 120
 
   tags = merge(local.tags, {
     Service = "kortix-gateway"

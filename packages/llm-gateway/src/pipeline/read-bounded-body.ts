@@ -19,51 +19,143 @@
  * with the host, which owns the OpenAI- vs Anthropic-shaped error envelope.
  */
 import { gatewayErrorResponse } from './error-response';
+import type { InflightBudget } from './inflight-budget';
 
-export type BoundedBodyResult =
-  | { ok: true; body: string }
-  | { ok: false; bytes: number; limit: number };
+export type AdmittedBodyResult =
+  | { ok: true; body: string; bytes: number; release: () => void }
+  | {
+      ok: false;
+      reason: 'too_large' | 'overloaded';
+      bytes: number;
+      limit: number;
+      retryAfterSeconds?: number;
+    };
 
-export async function readBoundedBody(
+function declaredContentLength(request: Request): number | null {
+  const raw = request.headers.get('content-length');
+  if (raw === null || !/^\d+$/.test(raw)) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+/**
+ * Read a body while its memory is reserved, not before.
+ *
+ * A declared body reserves its full size before the first read. A chunked body
+ * starts at zero and grows its lease before each chunk is retained. This closes
+ * the gap where many concurrent requests could all allocate their bodies and
+ * only then compete for the in-flight budget.
+ */
+export async function readAdmittedBody(
   request: Request,
   maxBytes: number,
-): Promise<BoundedBodyResult> {
-  // A limit of 0 (or unset) disables the check — the documented escape hatch
-  // for hosts that front the gateway with their own body limit.
-  if (!maxBytes || maxBytes <= 0) return { ok: true, body: await request.text() };
-
-  const declared = Number(request.headers.get('content-length') ?? Number.NaN);
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    return { ok: false, bytes: declared, limit: maxBytes };
+  budget: InflightBudget,
+): Promise<AdmittedBodyResult> {
+  const declared = declaredContentLength(request);
+  if (declared !== null && maxBytes > 0 && declared > maxBytes) {
+    return { ok: false, reason: 'too_large', bytes: declared, limit: maxBytes };
   }
 
-  const body = request.body;
-  if (!body) return { ok: true, body: await request.text() };
+  const lease = budget.admit(declared ?? 0);
+  if (!lease.ok) {
+    return {
+      ok: false,
+      reason: lease.reason,
+      bytes: declared ?? 0,
+      limit: maxBytes,
+      ...(lease.retryAfterSeconds !== undefined
+        ? { retryAfterSeconds: lease.retryAfterSeconds }
+        : {}),
+    };
+  }
 
-  const reader = body.getReader();
+  const reader = request.body?.getReader();
+  if (!reader) {
+    return { ok: true, body: '', bytes: 0, release: lease.release };
+  }
+
   const decoder = new TextDecoder();
   const parts: string[] = [];
   let bytes = 0;
-
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      bytes += value.byteLength;
-      if (bytes > maxBytes) {
-        // Stop pulling and drop what we have. `cancel` releases the upstream
-        // so the sender is not left writing into a socket nobody drains.
+      const nextBytes = bytes + value.byteLength;
+      if (maxBytes > 0 && nextBytes > maxBytes) {
         await reader.cancel().catch(() => {});
-        return { ok: false, bytes, limit: maxBytes };
+        lease.release();
+        return { ok: false, reason: 'too_large', bytes: nextBytes, limit: maxBytes };
       }
+      const resized = lease.resize(nextBytes);
+      if (!resized.ok) {
+        await reader.cancel().catch(() => {});
+        lease.release();
+        return {
+          ok: false,
+          reason: resized.reason,
+          bytes: nextBytes,
+          limit: maxBytes,
+          ...(resized.reason === 'overloaded' ? { retryAfterSeconds: 1 } : {}),
+        };
+      }
+      bytes = nextBytes;
       parts.push(decoder.decode(value, { stream: true }));
     }
     parts.push(decoder.decode());
+    return { ok: true, body: parts.join(''), bytes, release: lease.release };
+  } catch (error) {
+    lease.release();
+    throw error;
   } finally {
     reader.releaseLock?.();
   }
+}
 
-  return { ok: true, body: parts.join('') };
+/** Keep an admission lease until the response body finishes or is cancelled. */
+export function releaseWhenResponseEnds(response: Response, release: () => void): Response {
+  if (!response.body) {
+    release();
+    return response;
+  }
+
+  const reader = response.body.getReader();
+  let finished = false;
+  const finish = (): void => {
+    if (finished) return;
+    finished = true;
+    release();
+  };
+
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const next = await reader.read();
+        if (next.done) {
+          finish();
+          controller.close();
+          return;
+        }
+        controller.enqueue(next.value);
+      } catch (error) {
+        finish();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        finish();
+      }
+    },
+  });
+
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 /**

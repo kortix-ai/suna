@@ -175,13 +175,14 @@ module "gateway" {
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
   # gateway is light (LLM proxy) — smaller than the API
-  task_cpu         = 256
-  task_memory      = 512
-  desired_count    = 1
-  min_capacity     = 1
-  max_capacity     = 3
-  use_fargate_spot = true
-  tags             = local.tags
+  task_cpu                   = 256
+  task_memory                = 512
+  desired_count              = 1
+  min_capacity               = 1
+  max_capacity               = 6
+  use_fargate_spot           = true
+  requests_per_target_target = 120
+  tags                       = local.tags
 }
 
 # ── DNS: dev-api-ecs-fargate.kortix.com → the ALB (Cloudflare-proxied) ─────────

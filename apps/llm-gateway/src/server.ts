@@ -1,19 +1,19 @@
 import {
-  DEFAULT_INFLIGHT_BUDGET_BYTES,
   DEFAULT_MAX_REQUEST_BYTES,
   InflightBudget,
   createGateway,
   gatewayErrorResponse,
   gatewayOverloadedResponse,
-  readBoundedBody,
+  readAdmittedBody,
+  releaseWhenResponseEnds,
   requestTooLargeResponse,
 } from '@kortix/llm-gateway';
+import { automaticInflightBudgetBytes } from './memory-budget';
 
-// Same contract as the in-process host: work beyond capacity is refused loudly,
-// never accepted into an OOM. One budget per process — it rations process
-// memory, so anything narrower rations nothing.
-const inflight = new InflightBudget({
-  maxBytes: Number(process.env.GATEWAY_INFLIGHT_BUDGET_BYTES) || DEFAULT_INFLIGHT_BUDGET_BYTES,
+// One admission budget protects one standalone process. Work beyond capacity
+// receives a typed response before its body is retained.
+const defaultInflight = new InflightBudget({
+  maxBytes: Number(process.env.GATEWAY_INFLIGHT_BUDGET_BYTES) || automaticInflightBudgetBytes(),
   perRequestMaxBytes: DEFAULT_MAX_REQUEST_BYTES,
 });
 import { Hono } from 'hono';
@@ -36,7 +36,8 @@ export interface GatewayServer {
   traces: TraceSink | null;
 }
 
-export function buildServer(): GatewayServer {
+export function buildServer(options: { inflight?: InflightBudget } = {}): GatewayServer {
+  const inflight = options.inflight ?? defaultInflight;
   const api = createApiClient({ baseUrl: config.apiUrl, token: config.apiToken });
 
   const logger = createGatewayLogger();
@@ -73,14 +74,6 @@ export function buildServer(): GatewayServer {
         if (traces) sinks.push(traces.record(trace));
         await Promise.allSettled(sinks);
       },
-    },
-    {
-      retry: config.retry,
-      breaker: config.breaker,
-      captureBodies: config.captureBodies,
-      maxRequestBytes: config.maxRequestBytes > 0 ? config.maxRequestBytes : undefined,
-      streamProbeTimeoutMs:
-        config.streamProbeTimeoutMs > 0 ? config.streamProbeTimeoutMs : undefined,
     },
     { logger },
   );
@@ -131,17 +124,18 @@ export function buildServer(): GatewayServer {
   // `incidents`/`checks` for the what.
   app.get('/health', async (c) => {
     const apiCheck = await api.ping();
-    const breakers = gateway.breakerHealth();
-    const openBreakers = breakers.filter((b) => b.state === 'open');
     const traffic = trafficSnapshot();
+    const admission = {
+      used_bytes: inflight.inflightBytes,
+      capacity_bytes: inflight.capacityBytes,
+      utilization: Number(inflight.utilisation.toFixed(4)),
+    };
     const errorSpike =
       traffic.requests >= ERROR_RATE_MIN_VOLUME && traffic.error_rate >= ERROR_RATE_ALERT;
 
     const incidents: string[] = [];
     if (!apiCheck.ok)
       incidents.push(`kortix api unreachable (${apiCheck.error ?? `http ${apiCheck.status}`})`);
-    if (openBreakers.length)
-      incidents.push(`upstream circuit open: ${openBreakers.map((b) => b.provider).join(', ')}`);
     if (errorSpike)
       incidents.push(
         `error rate ${(traffic.error_rate * 100).toFixed(0)}% over ${traffic.window_s}s`,
@@ -165,13 +159,8 @@ export function buildServer(): GatewayServer {
             ...(apiCheck.status ? { http_status: apiCheck.status } : {}),
             ...(apiCheck.error ? { error: apiCheck.error } : {}),
           },
-          upstreams: {
-            status: openBreakers.length ? 'degraded' : 'ok',
-            tracked: breakers.length,
-            open: openBreakers.map((b) => b.provider),
-            breakers,
-          },
           traces: { langfuse: traces ? 'enabled' : 'disabled' },
+          admission,
         },
         traffic,
       },
@@ -183,41 +172,46 @@ export function buildServer(): GatewayServer {
     req: {
       header: (k: string) => string | undefined;
       text: () => Promise<string>;
-      // The standard Request, needed to size-limit the body BEFORE reading it
-      // (readBoundedBody). `signal` is read off the same object for the
+      // The standard Request is needed to reserve capacity before reading it.
+      // `signal` is read off the same object for the
       // client-disconnect abort below.
       raw: Request;
     };
   }) => {
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     try {
-      // Size-limited BEFORE the body is materialized — see readBoundedBody.
-      const body = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
+      // Reserve capacity before the body is materialized.
+      const body = await readAdmittedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES, inflight);
       if (!body.ok) {
-        recordOutcome(413);
-        return requestTooLargeResponse(requestId);
-      }
-      const lease = inflight.admit(body.body.length);
-      if (!lease.ok) {
-        const status = lease.reason === 'too_large' ? 413 : 503;
+        const status = body.reason === 'too_large' ? 413 : 503;
+        if (body.reason === 'overloaded') {
+          console.warn('[gateway] admission overloaded', {
+            usedBytes: inflight.inflightBytes,
+            capacityBytes: inflight.capacityBytes,
+            utilization: inflight.utilisation,
+          });
+        }
         recordOutcome(status);
         return status === 413
           ? requestTooLargeResponse(requestId)
-          : gatewayOverloadedResponse(lease.retryAfterSeconds, requestId);
+          : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1, requestId);
       }
       try {
-        const res = await gateway.chatCompletions({
+        const request = {
           authorization: c.req.header('authorization'),
           rawBody: body.body,
           // `c.req.raw` is Hono's underlying standard Request — its `.signal`
           // fires on client disconnect, so a caller that goes away mid-request
           // stops the upstream fetch/stream instead of running to completion.
           signal: c.req.raw?.signal,
-        });
+        };
+        body.body = '';
+        const res = await gateway.chatCompletions(request);
         recordOutcome(res.status);
-        return res;
-      } finally {
-        lease.release();
+        return releaseWhenResponseEnds(res, body.release);
+      } catch (error) {
+        body.release();
+        throw error;
       }
     } catch (err) {
       console.error('[gateway] request failed', err);
@@ -244,7 +238,7 @@ export function buildServer(): GatewayServer {
 
   // Anthropic-Messages-compatible ingress — a client speaking the Anthropic
   // Messages API shape (`{model, system, messages, tools, max_tokens,
-  // stream}`) hits the SAME auth/billing/routing/failover/trace pipeline as
+  // stream}`) hits the same auth/routing/dispatch/settlement pipeline as
   // `/v1/chat/completions`; `gateway.messages` translates request/response/SSE
   // at the edges only. Mirrors the chat-completions alias namespaces above.
   const messages = async (c: {
@@ -255,30 +249,27 @@ export function buildServer(): GatewayServer {
     };
   }) => {
     try {
-      const body = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
+      const body = await readAdmittedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES, inflight);
       if (!body.ok) {
-        recordOutcome(413);
-        return requestTooLargeResponse();
-      }
-      const lease = inflight.admit(body.body.length);
-      if (!lease.ok) {
-        const status = lease.reason === 'too_large' ? 413 : 503;
+        const status = body.reason === 'too_large' ? 413 : 503;
         recordOutcome(status);
         return status === 413
           ? requestTooLargeResponse()
-          : gatewayOverloadedResponse(lease.retryAfterSeconds);
+          : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1);
       }
-      let res: Response;
       try {
-        res = await gateway.messages({
+        const request = {
           authorization: c.req.header('authorization'),
           rawBody: body.body,
-        });
-      } finally {
-        lease.release();
+        };
+        body.body = '';
+        const res = await gateway.messages(request);
+        recordOutcome(res.status);
+        return releaseWhenResponseEnds(res, body.release);
+      } catch (error) {
+        body.release();
+        throw error;
       }
-      recordOutcome(res.status);
-      return res;
     } catch (err) {
       console.error('[gateway] messages request failed', err);
       recordOutcome(503);
