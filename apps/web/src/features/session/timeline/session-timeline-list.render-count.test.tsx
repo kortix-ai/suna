@@ -1,5 +1,6 @@
 import { freezeClock, restoreClock } from './__fixtures__/clock';
 import { installDom, uninstallDom } from './__fixtures__/dom';
+import { flush } from './__fixtures__/flush';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { createRoot, type Root } from 'react-dom/client';
@@ -73,11 +74,6 @@ const readTool = tool('a2', 'a2read', 'read', {
 
 const noop = () => {};
 const noopReply = async () => {};
-
-/** Let React commit: its scheduler runs on macrotasks under happy-dom. Two
- *  ticks of 20ms cover the render, the passive effects and any re-render
- *  those effects queue — and stay well under the 1s tickers. */
-const flush = () => new Promise<void>((resolve) => setTimeout(() => setTimeout(resolve, 20), 20));
 
 /** Host facts `SessionChat` keeps identity-stable across frames (`useMemo`,
  *  `useCallback`): the harness does too, or every memo below fails for a

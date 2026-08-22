@@ -1,5 +1,6 @@
 import { freezeClock, restoreClock } from '../timeline/__fixtures__/clock';
 import { installDom, uninstallDom } from '../timeline/__fixtures__/dom';
+import { flush } from '../timeline/__fixtures__/flush';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { StrictMode, useEffect } from 'react';
@@ -81,10 +82,6 @@ const noopReply = async () => {};
 const client = new QueryClient();
 const INTL_MESSAGES = {};
 const onIntlError = () => {};
-
-/** Let React commit and its passive effects (and the strict-mode re-invoke)
- *  run, then every queued microtask and zero-delay timer. */
-const flush = () => new Promise<void>((resolve) => setTimeout(() => setTimeout(resolve, 20), 20));
 
 function listProps(): SessionTimelineListProps {
   const turns: Turn[] = stabilizeTurns(groupMessagesIntoTurns(messages), []);

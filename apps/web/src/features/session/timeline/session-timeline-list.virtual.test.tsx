@@ -1,5 +1,6 @@
 import './__fixtures__/clock';
 import { installDom, uninstallDom } from './__fixtures__/dom';
+import { flush } from './__fixtures__/flush';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { createRoot, type Root } from 'react-dom/client';
@@ -81,7 +82,6 @@ const SIZE = TURN_FALLBACK_SIZE;
 
 const noop = () => {};
 const noopReply = async () => {};
-const flush = () => new Promise<void>((resolve) => setTimeout(() => setTimeout(resolve, 20), 20));
 const client = new QueryClient();
 const INTL_MESSAGES = {};
 const onIntlError = () => {};

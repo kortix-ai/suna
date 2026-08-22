@@ -25,7 +25,12 @@
  * working turn; React's async `act` keeps draining its queue while those
  * intervals enqueue work, so `await act(...)` over a working turn never
  * resolves. The render-counter test renders through a plain root and waits
- * a few macrotasks instead.
+ * for React to go quiet instead (`./flush`).
+ *
+ * FRAMES. `requestAnimationFrame` is replaced by a paced (16 ms), tracked
+ * one — happy-dom's is `setImmediate`, which turns a 60 fps animation loop
+ * into a tight loop — so `./flush` can tell a pending one-shot frame from an
+ * animation (`pendingAnimationFrames`).
  */
 import { Window } from 'happy-dom';
 
@@ -36,6 +41,16 @@ const g = globalThis as unknown as Record<string, unknown>;
 const installed: { key: string; previous: unknown; had: boolean }[] = [];
 let active = false;
 let holders = 0;
+/** One animation frame, like a browser's ~60 Hz. */
+export const FRAME_MS = 16;
+/** Frames requested and not yet run (or cancelled): id → generation + timer. */
+const pendingFrames = new Map<
+  number,
+  { generation: number; timer: ReturnType<typeof setTimeout> }
+>();
+let frameSeq = 0;
+/** Generation of the frame callback currently running; -1 outside one. */
+let currentFrameGeneration = -1;
 
 function install(key: string, value: unknown): void {
   installed.push({ key, previous: g[key], had: key in g });
@@ -58,6 +73,39 @@ function installGlobals(): void {
   install('window', window);
   install('document', window.document);
   install('navigator', window.navigator);
+
+  // Frames are PACED like a browser's (one per FRAME_MS) and tracked so
+  // `./flush` can wait for the one-shot ones. happy-dom's own
+  // `requestAnimationFrame` is `setImmediate`: a 60 fps animation loop
+  // (the working turn's dot-matrix indicator, `useCyclePhase`) becomes a
+  // tight loop that starves React's scheduler, so nothing below it ever
+  // goes idle. A frame requested from INSIDE a frame callback is the next
+  // link of such a loop and carries generation parent+1; one-shot layout
+  // flips (`outer = rAF(() => inner = rAF(...))`) stay at generation 0–1.
+  const trackedRaf = (cb: (t: number) => void): number => {
+    const id = ++frameSeq;
+    const generation = currentFrameGeneration + 1;
+    const timer = setTimeout(() => {
+      pendingFrames.delete(id);
+      const previous = currentFrameGeneration;
+      currentFrameGeneration = generation;
+      try {
+        cb(performance.now());
+      } finally {
+        currentFrameGeneration = previous;
+      }
+    }, FRAME_MS);
+    pendingFrames.set(id, { generation, timer });
+    return id;
+  };
+  const trackedCancel = (id: number): void => {
+    const frame = pendingFrames.get(id);
+    if (!frame) return;
+    clearTimeout(frame.timer);
+    pendingFrames.delete(id);
+  };
+  w.requestAnimationFrame = trackedRaf;
+  w.cancelAnimationFrame = trackedCancel;
 
   for (const key of [
     'customElements',
@@ -119,6 +167,17 @@ function installGlobals(): void {
   active = true;
 }
 
+/**
+ * Frames requested and not yet run whose generation is at most `maxGeneration`
+ * — the one-shot ones. An animation loop re-requests from its own callback
+ * and passes generation 2 on its third frame; `flush()` waits for 0 here.
+ */
+export function pendingAnimationFrames(maxGeneration = 1): number {
+  let n = 0;
+  for (const frame of pendingFrames.values()) if (frame.generation <= maxGeneration) n++;
+  return n;
+}
+
 /** Hold the DOM for this test file (`beforeAll`). Installs a fresh window
  *  when none is active. */
 export function installDom(): void {
@@ -137,6 +196,11 @@ export function uninstallDom(): void {
     else delete g[key];
   }
   installed.length = 0;
+  // A frame firing after the window is gone would set state into a dead
+  // tree; drop them with the DOM.
+  for (const frame of pendingFrames.values()) clearTimeout(frame.timer);
+  pendingFrames.clear();
+  currentFrameGeneration = -1;
   active = false;
 }
 
