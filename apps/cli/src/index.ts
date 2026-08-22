@@ -4,6 +4,7 @@ import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
 import { runApps } from './commands/apps.ts';
+import { runBilling } from './commands/billing.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
@@ -12,14 +13,18 @@ import { runFiles } from './commands/files.ts';
 import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
 import { runGrants } from './commands/grants.ts';
+import { runGroups } from './commands/groups.ts';
 import { runHosts } from './commands/hosts.ts';
 import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
+import { runMembers } from './commands/members.ts';
+import { runModels } from './commands/models.ts';
 import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
+import { runReview } from './commands/review.ts';
 import { runAudit } from './commands/audit.ts';
 import { runPermissions } from './commands/permissions.ts';
 import { runRoles } from './commands/roles.ts';
@@ -32,6 +37,7 @@ import { runSessionsConnect } from './commands/sessions-connect.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
+import { runTokens } from './commands/tokens.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -128,6 +134,26 @@ const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: 'Switch the active account (use / ls / current)',
           },
+          {
+            name: 'members',
+            args: '<subcommand>',
+            blurb: 'Invite, remove and re-role the people in the account',
+          },
+          {
+            name: 'groups',
+            args: '<subcommand>',
+            blurb: 'Group people so a role follows a team, not a person',
+          },
+          {
+            name: 'tokens',
+            args: '<subcommand>',
+            blurb: 'Mint and revoke API keys + service accounts for this account',
+          },
+          {
+            name: 'billing',
+            args: '<subcommand>',
+            blurb: 'Read plan, credits, transactions and per-project/session costs',
+          },
         ],
       },
       {
@@ -141,7 +167,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'projects',
             args: '<subcommand>',
-            blurb: 'List, link, set-default (use), open Kortix cloud projects',
+            blurb: 'List, link, use, open, rename and configure projects (features, cli-tokens, upgrade)',
           },
         ],
       },
@@ -151,7 +177,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'sessions',
             args: '<subcommand>',
-            blurb: 'List, create, restart project sessions',
+            blurb: 'Run, share, queue, inspect, stop and delete project sessions',
           },
           {
             name: 'connect',
@@ -190,7 +216,16 @@ const TIERS: readonly CommandTier[] = [
       {
         title: 'Agents & connectors',
         commands: [
-          { name: 'agents', args: '<subcommand>', blurb: 'Set which model each agent runs on' },
+          {
+            name: 'agents',
+            args: '<subcommand>',
+            blurb: 'Default agent, per-agent model pin, scope and full configuration',
+          },
+          {
+            name: 'models',
+            args: '<subcommand>',
+            blurb: 'Choose which models this project offers, and its default model',
+          },
           {
             name: 'gateway',
             args: '<subcommand>',
@@ -219,12 +254,12 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'channels',
             args: '<subcommand>',
-            blurb: 'Connect Slack to this project — `connect` prints a one-click install link',
+            blurb: 'Slack, Teams and Email channels, per-channel bindings, voice bot name',
           },
           {
             name: 'sandboxes',
             args: '<subcommand>',
-            blurb: 'Manage sandbox images: templates, builds, health',
+            blurb: 'Manage sandbox images: templates, builds, health, provider pin',
           },
           {
             name: 'apps',
@@ -244,9 +279,14 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'files',
             args: '<subcommand>',
-            blurb: 'Browse repo files, commits, branches, diffs',
+            blurb: 'Browse repo files, commits, branches, diffs; download a zip',
           },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
+          {
+            name: 'review',
+            args: '<subcommand>',
+            blurb: "The project's review inbox: approve, reject, request changes",
+          },
           { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
         ],
       },
@@ -489,6 +529,19 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'accounts') {
     return runAccounts(argv.slice(1));
   }
+  if (argv[0] === 'members') {
+    return runMembers(argv.slice(1));
+  }
+  if (argv[0] === 'groups') {
+    return runGroups(argv.slice(1));
+  }
+  // Exact match only — the singular `token` (whoami --token-only) stays.
+  if (argv[0] === 'tokens') {
+    return runTokens(argv.slice(1));
+  }
+  if (argv[0] === 'billing') {
+    return runBilling(argv.slice(1));
+  }
   if (argv[0] === 'secrets') {
     return runSecrets(argv.slice(1));
   }
@@ -497,6 +550,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'agents') {
     return runAgents(argv.slice(1));
+  }
+  if (argv[0] === 'models') {
+    return runModels(argv.slice(1));
   }
   if (argv[0] === 'gateway') {
     return runGateway(argv.slice(1));
@@ -557,6 +613,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'cr') {
     return runCr(argv.slice(1));
   }
+  if (argv[0] === 'review') {
+    return runReview(argv.slice(1));
+  }
   if (argv[0] === 'access') {
     return runAccess(argv.slice(1));
   }
@@ -606,6 +665,10 @@ const KNOWN_COMMANDS = [
   'token',
   'hosts',
   'accounts',
+  'members',
+  'groups',
+  'tokens',
+  'billing',
   'projects',
   'sessions',
   'session',
@@ -614,6 +677,7 @@ const KNOWN_COMMANDS = [
   'attach',
   'files',
   'cr',
+  'review',
   'triggers',
   'connectors',
   'secrets',
@@ -628,6 +692,7 @@ const KNOWN_COMMANDS = [
   'skills',
   'registry',
   'agents',
+  'models',
   'access',
   'roles',
   'permissions',

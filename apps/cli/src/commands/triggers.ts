@@ -12,6 +12,7 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  takeFlagValues,
 } from '../command-helpers.ts';
 import {
   appendArrayBlock,
@@ -37,10 +38,15 @@ switch (cloud state, not the manifest).
 Subcommands:
   ls [--json]              List triggers + runtime state.
   add <slug> [options]     Append a [[triggers]] block (cron, webhook, monitor).
-  rm <slug>                Remove a trigger from kortix.yaml.
+             [--apply]     Create it on the cloud project now instead (commit
+                           to kortix.yaml on main + reconcile).
+  set <slug> [options]     Change a LIVE trigger. Only the flags you pass are
+                           written. Always applies now — there is no local form.
+  rm <slug> [--apply]      Remove a trigger from kortix.yaml (or from the cloud
+                           project now).
   fire <slug>              Manually fire a trigger now.
-  enable <slug>            Set enabled = true on a trigger.
-  disable <slug>           Set enabled = false on a trigger.
+  enable <slug> [--apply]  Set enabled = true on a trigger.
+  disable <slug> [--apply] Set enabled = false on a trigger.
   pause                    Deactivate ALL of this project's triggers server-side
                            (crons + webhooks stop auto-running). Use it on one
                            of two deployments of the same repo to stop double-
@@ -54,10 +60,30 @@ Add options:
   --prompt <text>          Initial prompt for the spawned session (required).
   --agent <name>           Logical agent to run (default: project default_agent).
   --cron <expr>            6-field cron (cron type). e.g. "0 0 9 * * 1-5".
-  --timezone <tz>          Timezone for cron (default UTC).
+  --run-at <iso>           Run ONCE at this instant instead of on a cron.
+  --timezone <tz>          Timezone for cron/run-at (default UTC).
   --secret-env <NAME>      HMAC secret env var (webhook type).
   --name <label>           Display name (default: slug).
   --disabled               Create it disabled (default enabled).
+
+Live-only options (--apply on \`add\`, and every \`set\`):
+  --model <provider/model> Model for the spawned session. Omit for the default.
+  --session-mode <m>       fresh | keyed | pinned | reuse.
+  --session-key <tmpl>     Bucket one session per key, e.g.
+                           "{{ body.data.chat_jid }}". Implies keyed.
+  --session-id <id>        The session a \`pinned\` trigger loops. Must be this
+                           project's session.
+  --session-access <mode>  Who may open the spawned session: private (default),
+                           project, or members.
+  --member <uuid>          Grant one member access. Repeat. Implies members.
+  --group <uuid>           Grant one group access. Repeat. Implies members.
+  --filter <path=value>    Only fire when the payload matches. Repeat for more;
+                           every one must match. e.g. --filter body.type=push
+
+Set options: every live-only option above, plus --name, --prompt, --cron,
+--run-at, --timezone, --secret-env, --agent, and --enabled true|false.
+\`--cron\` and \`--run-at\` are exclusive — setting one clears the other. Monitor
+fields (--run/--mode/--interval/--expect-event-within) are add-only.
 
 Monitor options (--type monitor). A monitor is a repo command the platform
 runs 24/7; each stdout line fires the trigger. EXPERIMENTAL — the platform
@@ -83,15 +109,38 @@ export async function runTriggers(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
+  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
+  // subcommands below own dedicated help text, so without this a bare
+  // `--help` falls through as an ordinary positional arg and the command
+  // runs (or fails on auth) instead of printing usage.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   const tf: Record<string, string | undefined> = {};
   let disabled = false;
   let json = false;
+  let applyRemote = false;
+  let members: string[] = [];
+  let groups: string[] = [];
+  let filters: string[] = [];
   try {
     json = takeFlagBool(rest, ['--json']);
+    applyRemote = takeFlagBool(rest, ['--apply']);
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
+    tf.runAt = takeFlagValue(rest, ['--run-at']);
+    tf.model = takeFlagValue(rest, ['--model']);
+    tf.sessionMode = takeFlagValue(rest, ['--session-mode']);
+    tf.sessionKey = takeFlagValue(rest, ['--session-key']);
+    tf.sessionId = takeFlagValue(rest, ['--session-id']);
+    tf.sessionAccess = takeFlagValue(rest, ['--session-access']);
+    tf.enabled = takeFlagValue(rest, ['--enabled']);
+    members = takeFlagValues(rest, ['--member']);
+    groups = takeFlagValues(rest, ['--group']);
+    filters = takeFlagValues(rest, ['--filter']);
     tf.type = takeFlagValue(rest, ['--type']);
     tf.prompt = takeFlagValue(rest, ['--prompt']);
     tf.agent = takeFlagValue(rest, ['--agent']);
@@ -115,29 +164,44 @@ export async function runTriggers(argv: string[]): Promise<number> {
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
   const positional = rest.filter((a) => !a.startsWith('-'));
 
+  const live: LiveOpts = { members, groups, filters };
+
   switch (sub) {
     case 'ls':
       return triggersLs(ctxOpts, json);
     case 'add':
     case 'create':
-      return triggersAddLocal(positional[0], tf, disabled);
+      return applyRemote
+        ? triggersAddLive(positional[0], tf, disabled, live, ctxOpts, json)
+        : triggersAddLocal(positional[0], tf, disabled);
+    case 'set':
+    case 'update':
+      // No local form: a partial edit of a [[triggers]] block would have to
+      // re-derive the whole entry, which is exactly what the API already does.
+      return triggersSetLive(positional[0], tf, live, ctxOpts, json);
     case 'rm':
     case 'remove':
     case 'delete':
-      return triggersRmLocal(positional[0]);
+      return applyRemote
+        ? triggersRmLive(positional[0], ctxOpts, json)
+        : triggersRmLocal(positional[0]);
     case 'fire':
-      return triggersFire(rest[0], ctxOpts);
+      return triggersFire(positional[0], ctxOpts);
     case 'enable':
-      return triggersToggle(rest[0], true);
+      return applyRemote
+        ? triggersToggleLive(positional[0], true, ctxOpts, json)
+        : triggersToggle(positional[0], true);
     case 'disable':
-      return triggersToggle(rest[0], false);
+      return applyRemote
+        ? triggersToggleLive(positional[0], false, ctxOpts, json)
+        : triggersToggle(positional[0], false);
     case 'pause':
       return triggersActivation(ctxOpts, true);
     case 'resume':
       return triggersActivation(ctxOpts, false);
     case 'info':
     case 'show':
-      return triggersInfo(rest[0], ctxOpts, json);
+      return triggersInfo(positional[0], ctxOpts, json);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -373,6 +437,306 @@ function triggersToggle(slug: string | undefined, enabled: boolean): number {
     `${status.ok(`${enabled ? 'Enabled' : 'Disabled'} ${C.bold}${slug}${C.reset}`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
   );
   return 0;
+}
+
+// ── The LIVE path (--apply, and every `set`) ───────────────────────────────
+//
+// `add`/`rm`/`enable`/`disable` still edit the local kortix.yaml by default —
+// the manifest is the source of truth and `kortix ship` applies it. `--apply`
+// takes the other door the dashboard uses: the API commits kortix.yaml on main
+// itself and reconciles the runtime in the same request. Same destination, no
+// ship, no change request.
+
+/** Repeatable live-only flags, already collected. */
+interface LiveOpts {
+  members: string[];
+  groups: string[];
+  filters: string[];
+}
+
+/** `path=value` pairs → the payload filter the API stores. */
+function parseFilters(raw: readonly string[]): Record<string, string> | { error: string } {
+  const filter: Record<string, string> = {};
+  for (const entry of raw) {
+    const index = entry.indexOf('=');
+    if (index <= 0) {
+      return { error: `--filter must look like path=value (got "${entry}")` };
+    }
+    const path = entry.slice(0, index).trim();
+    const value = entry.slice(index + 1);
+    if (!path) return { error: `--filter needs a payload path (got "${entry}")` };
+    filter[path] = value;
+  }
+  return filter;
+}
+
+/**
+ * Build `session_access` from --session-access / --member / --group.
+ *
+ * Naming a principal IS the opt-in to `members`, so `--member <id>` alone is a
+ * complete instruction. Returns undefined when the caller said nothing, so a
+ * PATCH does not rewrite an access policy it was not asked about.
+ */
+function buildSessionAccess(
+  mode: string | undefined,
+  live: LiveOpts,
+): { mode: string; memberIds: string[]; groupIds: string[] } | undefined | { error: string } {
+  const named = live.members.length + live.groups.length > 0;
+  if (!mode && !named) return undefined;
+  const resolved = mode ?? 'members';
+  if (resolved !== 'private' && resolved !== 'project' && resolved !== 'members') {
+    return { error: '--session-access must be private, project, or members.' };
+  }
+  if (resolved !== 'members' && named) {
+    return {
+      error: `--member/--group name who may open the session, which only applies to --session-access members (got ${resolved}).`,
+    };
+  }
+  return { mode: resolved, memberIds: live.members, groupIds: live.groups };
+}
+
+/** Shared session wiring for both create and update bodies. */
+function sessionFields(tf: Record<string, string | undefined>): Record<string, unknown> {
+  return {
+    ...(tf.sessionMode ? { session_mode: tf.sessionMode } : {}),
+    ...(tf.sessionKey ? { session_key: tf.sessionKey } : {}),
+    ...(tf.sessionId ? { session_id: tf.sessionId } : {}),
+  };
+}
+
+async function triggersAddLive(
+  slug: string | undefined,
+  tf: Record<string, string | undefined>,
+  disabled: boolean,
+  live: LiveOpts,
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
+  if (!slug) return missingSlug();
+  const type = (tf.type ?? 'cron').toLowerCase();
+  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor') {
+    return fail('--type must be cron, webhook, or monitor.');
+  }
+  if (!tf.prompt) return fail('--prompt is required.');
+  if (tf.cron && tf.runAt) return fail('--cron and --run-at are exclusive — pass one.');
+  if (type === 'cron' && !tf.cron && !tf.runAt) {
+    return fail('cron triggers need --cron "<6-field expr>" or --run-at <iso>.');
+  }
+  if (type === 'webhook' && !tf.secretEnv) {
+    return fail('webhook triggers need --secret-env <NAME>.');
+  }
+
+  const filter = parseFilters(live.filters);
+  if ('error' in filter) return fail(filter.error as string);
+  const access = buildSessionAccess(tf.sessionAccess, live);
+  if (access && 'error' in access) return fail(access.error);
+
+  const body: Record<string, unknown> = {
+    slug,
+    name: tf.name ?? slug,
+    type,
+    prompt_template: tf.prompt,
+    enabled: !disabled,
+    ...(tf.agent ? { agent: tf.agent } : {}),
+    ...(tf.model ? { model: tf.model } : {}),
+    ...sessionFields(tf),
+    ...(access ? { session_access: access } : {}),
+    ...(Object.keys(filter).length > 0 ? { filter } : {}),
+  };
+  if (type === 'cron') {
+    if (tf.runAt) body.run_at = tf.runAt;
+    else body.cron = tf.cron;
+    body.timezone = tf.timezone ?? 'UTC';
+  } else if (type === 'webhook') {
+    body.secret_env = tf.secretEnv;
+  } else {
+    // A monitor rejects cron/webhook wiring outright, so send only its own
+    // fields — the same validation `kortix triggers add` runs locally.
+    const monitor = parseMonitorFlags(tf);
+    if ('error' in monitor) return fail(monitor.error);
+    body.run = monitor.run;
+    body.mode = monitor.mode;
+    if (monitor.intervalSeconds !== null) {
+      body.interval = formatDurationSeconds(monitor.intervalSeconds);
+    }
+    if (monitor.expectEventWithinSeconds !== null) {
+      body.expect_event_within = formatDurationSeconds(monitor.expectEventWithinSeconds);
+    }
+  }
+
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  let resp: ProjectTriggersResponse;
+  try {
+    resp = await ctx.client.post<ProjectTriggersResponse>(
+      `/projects/${ctx.projectId}/triggers`,
+      body,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`${C.bold}${slug}${C.reset} (${type}) live on the project`)} ${C.dim}(committed to kortix.yaml on main + reconciled)${C.reset}\n`,
+  );
+  reportWebhookUrl(resp, slug);
+  return 0;
+}
+
+/**
+ * PATCH only the fields the caller named.
+ *
+ * The API merges the patch onto the trigger's current spec, so an untouched
+ * field keeps its value — which is exactly why `--cron` must null `run_at` and
+ * vice versa. The merge base carries BOTH, and a one-off `run_at` outranks a
+ * `cron` when both survive, so a patch that only set `cron` would silently
+ * leave the trigger a one-off. The dashboard nulls the other field for the same
+ * reason.
+ */
+async function triggersSetLive(
+  slug: string | undefined,
+  tf: Record<string, string | undefined>,
+  live: LiveOpts,
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
+  if (!slug) return missingSlug();
+  if (tf.cron && tf.runAt) return fail('--cron and --run-at are exclusive — pass one.');
+
+  const filter = parseFilters(live.filters);
+  if ('error' in filter) return fail(filter.error as string);
+  const access = buildSessionAccess(tf.sessionAccess, live);
+  if (access && 'error' in access) return fail(access.error);
+
+  let enabled: boolean | undefined;
+  if (tf.enabled !== undefined) {
+    if (tf.enabled !== 'true' && tf.enabled !== 'false') {
+      return fail('--enabled must be true or false.');
+    }
+    enabled = tf.enabled === 'true';
+  }
+
+  const body: Record<string, unknown> = {
+    ...(tf.name ? { name: tf.name } : {}),
+    ...(tf.prompt ? { prompt_template: tf.prompt } : {}),
+    ...(tf.agent ? { agent: tf.agent } : {}),
+    ...(tf.model ? { model: tf.model } : {}),
+    ...(tf.secretEnv ? { secret_env: tf.secretEnv } : {}),
+    ...(enabled === undefined ? {} : { enabled }),
+    ...sessionFields(tf),
+    ...(access ? { session_access: access } : {}),
+    ...(live.filters.length > 0 ? { filter } : {}),
+  };
+  if (tf.cron) {
+    body.cron = tf.cron;
+    body.run_at = null;
+    body.timezone = tf.timezone ?? 'UTC';
+  } else if (tf.runAt) {
+    body.run_at = tf.runAt;
+    body.cron = null;
+    body.timezone = tf.timezone ?? 'UTC';
+  } else if (tf.timezone) {
+    body.timezone = tf.timezone;
+  }
+  if (Object.keys(body).length === 0) {
+    return fail('Pass at least one field to change (see `kortix triggers --help`).');
+  }
+
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  let resp: ProjectTriggersResponse;
+  try {
+    resp = await ctx.client.patch<ProjectTriggersResponse>(
+      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
+      body,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  const changed = Object.keys(body).sort().join(', ');
+  process.stdout.write(
+    `${status.ok(`Updated ${C.bold}${slug}${C.reset}`)} ${C.dim}(${changed})${C.reset}\n`,
+  );
+  return 0;
+}
+
+async function triggersRmLive(
+  slug: string | undefined,
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
+  if (!slug) return missingSlug();
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  let resp: ProjectTriggersResponse;
+  try {
+    resp = await ctx.client.delete<ProjectTriggersResponse>(
+      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`Removed ${C.bold}${slug}${C.reset}`)} ${C.dim}(kortix.yaml on main + runtime state)${C.reset}\n`,
+  );
+  return 0;
+}
+
+async function triggersToggleLive(
+  slug: string | undefined,
+  enabled: boolean,
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
+  if (!slug) return missingSlug();
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  let resp: ProjectTriggersResponse;
+  try {
+    resp = await ctx.client.patch<ProjectTriggersResponse>(
+      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
+      { enabled },
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`${enabled ? 'Enabled' : 'Disabled'} ${C.bold}${slug}${C.reset}`)} ${C.dim}(kortix.yaml on main)${C.reset}\n`,
+  );
+  return 0;
+}
+
+/** A webhook trigger is useless until its caller has the URL — print it. */
+function reportWebhookUrl(resp: ProjectTriggersResponse, slug: string): void {
+  const created = resp.triggers?.find((t) => t.slug === slug);
+  if (created?.webhook_url) {
+    process.stdout.write(`  ${C.dim}webhook ${C.reset}${created.webhook_url}\n`);
+  }
+}
+
+function missingSlug(): number {
+  process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
+  return 2;
+}
+
+function fail(message: string): number {
+  process.stderr.write(`${status.err(message)}\n`);
+  return 2;
 }
 
 async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = false): Promise<number> {
