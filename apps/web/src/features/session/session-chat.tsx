@@ -25,6 +25,10 @@ import {
 import { projectQueueRows } from './queue-projection';
 import { createQueueUndoAction } from './queued-message-restore';
 
+import {
+  releaseAttachmentObjectUrls,
+  retainAttachmentObjectUrls,
+} from './turn/attachment-object-url';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { QueuedPromptBubbles } from './turn/queued-prompt-bubbles';
 
@@ -1273,6 +1277,16 @@ export function SessionChat({
   useEffect(() => {
     prevMsgLenRef.current = messages?.length || 0;
   }, [messages?.length]);
+
+  // Composer attachments ride the transcript as `data:` file parts; the render
+  // reads a `blob:` object URL decoded once per part (attachment-object-url.ts).
+  // This chat holds those URLs for as long as it shows the session; the last
+  // holder's unmount revokes them.
+  useEffect(() => {
+    if (!sessionId) return;
+    retainAttachmentObjectUrls(sessionId);
+    return () => releaseAttachmentObjectUrls(sessionId);
+  }, [sessionId]);
 
   // ---- Auto-scroll: see use-auto-scroll.ts (room + end + follow) ----
   const messageCount = messages?.length ?? 0;

@@ -48,6 +48,7 @@ import {
   TILE_INTERACTIVE,
   TILE_SURFACE,
 } from '../attachment-tile';
+import { attachmentDisplaySrc } from './attachment-object-url';
 import { MentionChip } from '../mention-chip';
 import { buildMentionSegments, type MentionSourceRef } from '../mention-segments';
 import {
@@ -452,6 +453,11 @@ export interface NormalizedAttachment {
  * A ref with no path is still in flight, so it renders `pending` — a spinner
  * over its own name — instead of asking the sandbox for a file that does not
  * exist yet.
+ *
+ * A message file-part's `src` is what the tile RENDERS: its `url`, unless the
+ * url is a `data:` payload (a composer attachment, up to 9 MiB of base64) —
+ * then the `blob:` object URL `attachmentDisplaySrc` decoded once for that
+ * part id. The part keeps its data url; only the render reads the object URL.
  */
 export function normalizeAttachments(
   parts: FilePart[],
@@ -462,7 +468,9 @@ export function normalizeAttachments(
       key: file.id,
       filename: file.filename || 'File',
       mime: file.mime,
-      src: file.url,
+      // A `data:` url is decoded ONCE into an object URL; everything else is
+      // the url itself. See attachment-object-url.ts.
+      src: attachmentDisplaySrc(file),
     })),
     ...uploads.map((file, index) => ({
       key: `upload:${index}:${file.pending ?? file.path}`,
