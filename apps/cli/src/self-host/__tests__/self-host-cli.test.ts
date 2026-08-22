@@ -543,6 +543,51 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(staleCheck?.detail).toContain('stale');
   });
 
+  // Sandbox preview origins are a MUST on a public domain, and their absence is
+  // invisible at runtime: the /v1/p/ path proxy answers 200 and the app inside
+  // it quietly loses every root-absolute link. `doctor` is the gate that turns
+  // that silence into a non-zero exit. It stays silent on a laptop instance,
+  // where the path form (and the client-built *.localhost origin) is correct.
+  test('doctor FAILS when a domain instance has no preview base domain, and passes once it is set', async () => {
+    await run(['init', '--yes', '--domain', 'kortix.example.com']);
+
+    const missing = await run(['doctor', '--json']);
+    const missingCheck = (JSON.parse(missing.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>)
+      .find((c) => c.name === 'preview-origins');
+    expect(missingCheck?.ok).toBe(false);
+    expect(missingCheck?.detail).toContain('KORTIX_PREVIEW_BASE_DOMAIN');
+    // The whole point: a degraded preview setup must make `doctor` exit non-zero.
+    expect(JSON.parse(missing.stdout).ok).toBe(false);
+    expect(missing.code).not.toBe(0);
+    // And it must hand the operator the exact command, not just a complaint.
+    expect(missingCheck?.detail).toContain('kortix self-host env set KORTIX_PREVIEW_BASE_DOMAIN=p.kortix.example.com');
+
+    await run(['env', 'set', 'KORTIX_PREVIEW_BASE_DOMAIN=p.kortix.example.com']);
+    const set = await run(['doctor', '--json']);
+    const setCheck = (JSON.parse(set.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>)
+      .find((c) => c.name === 'preview-origins');
+    expect(setCheck?.ok).toBe(true);
+    expect(setCheck?.detail).toBe('p.kortix.example.com');
+  });
+
+  test('doctor does NOT raise preview-origins on a domain-less (laptop) instance — the path form is correct there', async () => {
+    await run(['init', '--yes']);
+    const { stdout } = await run(['doctor', '--json']);
+    const checks = JSON.parse(stdout).checks as Array<{ name: string }>;
+    expect(checks.find((c) => c.name === 'preview-origins')).toBeUndefined();
+  });
+
+  test('status shows preview origins as NOT configured on a domain instance, and names the domain once set', async () => {
+    await run(['init', '--yes', '--domain', 'kortix.example.com']);
+    const missing = await run(['status']);
+    expect(missing.stdout).toContain('preview origins NOT configured');
+
+    await run(['env', 'set', 'KORTIX_PREVIEW_BASE_DOMAIN=p.kortix.example.com']);
+    const set = await run(['status']);
+    expect(set.stdout).toContain('*.p.kortix.example.com');
+    expect(set.stdout).not.toContain('NOT configured');
+  });
+
   // `connect-github` is deprecated: managed git is now configured in the web
   // dashboard (Settings → Git), not by this CLI — the App-manifest flow it
   // used to run never worked reliably from a laptop (GitHub rejects

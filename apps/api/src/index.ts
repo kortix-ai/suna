@@ -55,7 +55,7 @@ import {
 } from './shared/daytona-transient';
 import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
-import { previewBaseDomain } from './sandbox-proxy/preview-hosts';
+import { previewBaseDomain, warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -1400,6 +1400,7 @@ async function startReplicaServices() {
     '[snapshots] project image rollout',
     projectImageRolloutDiagnostic(),
   );
+  warnIfPreviewOriginsMissing(appLogger);
   startAccessControlCache();
   startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
