@@ -1,0 +1,883 @@
+{
+  "bench": "transcript-render",
+  "version": 1,
+  "timestamp": "2026-08-22T19:23:06.189Z",
+  "env": {
+    "gitSha": "6bd44745b6f8b6120343660959b7e386c47140b6",
+    "bun": "1.3.14",
+    "react": "19.2.8",
+    "reactBuild": "production",
+    "reactDom": "react-dom/client",
+    "dom": "happy-dom (GlobalRegistrator)",
+    "cpu": "Apple M4 Max",
+    "platform": "darwin 25.2.0"
+  },
+  "config": {
+    "profile": "full",
+    "reps": 5,
+    "steps": 50,
+    "warmup": 5,
+    "imageBytes": 524288,
+    "mountQuiesceMs": 3500,
+    "cells": [
+      "20:0",
+      "20:8",
+      "20:32",
+      "200:0",
+      "200:8",
+      "200:32",
+      "200:8@one"
+    ]
+  },
+  "cells": [
+    {
+      "cell": "N=20 M=0",
+      "messages": 20,
+      "turns": 10,
+      "images": 0,
+      "imagesOnOneTurn": false,
+      "imageBytes": 524288,
+      "imageBase64MiB": 0,
+      "domNodes": 961,
+      "imgNodes": 0,
+      "ssrFirstRenderMs": 16.856,
+      "firstRenderMs": 37.54,
+      "firstRenderMsReps": [
+        117.358,
+        36.907,
+        37.54,
+        34.267,
+        76.762
+      ],
+      "mountSettleMs": 7.749,
+      "mountRenders": {
+        "TurnViewport": 10,
+        "SessionTurn": 20,
+        "UserMessage": 20,
+        "ActivityBurst": 10,
+        "ThrottledMarkdown": 10,
+        "ToolPartRenderer": 0
+      },
+      "mountCascadeRenders": {
+        "TurnViewport": 0,
+        "SessionTurn": 20,
+        "UserMessage": 20,
+        "ActivityBurst": 0,
+        "ThrottledMarkdown": 0,
+        "ToolPartRenderer": 0
+      },
+      "mountQuiesceMs": 3500,
+      "busyFlipMs": 8.727,
+      "busyFlipRenders": {
+        "TurnViewport": 10,
+        "SessionTurn": 11,
+        "UserMessage": 11,
+        "ActivityBurst": 2,
+        "ThrottledMarkdown": 1,
+        "ToolPartRenderer": 1
+      },
+      "pipelineOnlyMs": {
+        "p50": 0.002,
+        "p95": 0.005
+      },
+      "b1_appendPart": {
+        "frameMs": {
+          "p50": 0.737,
+          "p95": 1.073,
+          "max": 10.753
+        },
+        "settleMs": {
+          "p50": 1.173
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 10,
+          "SessionTurn": 2,
+          "UserMessage": 2,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      },
+      "b2_delta": {
+        "frameMs": {
+          "p50": 1.618,
+          "p95": 2.391,
+          "max": 11.956
+        },
+        "settleMs": {
+          "p50": 1.151
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 10,
+          "SessionTurn": 2,
+          "UserMessage": 1,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      }
+    },
+    {
+      "cell": "N=20 M=8",
+      "messages": 20,
+      "turns": 10,
+      "images": 8,
+      "imagesOnOneTurn": false,
+      "imageBytes": 524288,
+      "imageBase64MiB": 5.333,
+      "domNodes": 993,
+      "imgNodes": 8,
+      "ssrFirstRenderMs": 24.174,
+      "firstRenderMs": 183.963,
+      "firstRenderMsReps": [
+        159.888,
+        155.111,
+        183.963,
+        212.295,
+        184.003
+      ],
+      "mountSettleMs": 8.185,
+      "mountRenders": {
+        "TurnViewport": 10,
+        "SessionTurn": 20,
+        "UserMessage": 20,
+        "ActivityBurst": 10,
+        "ThrottledMarkdown": 10,
+        "ToolPartRenderer": 0
+      },
+      "mountCascadeRenders": {
+        "TurnViewport": 0,
+        "SessionTurn": 20,
+        "UserMessage": 20,
+        "ActivityBurst": 0,
+        "ThrottledMarkdown": 0,
+        "ToolPartRenderer": 0
+      },
+      "mountQuiesceMs": 3500,
+      "busyFlipMs": 12.482,
+      "busyFlipRenders": {
+        "TurnViewport": 10,
+        "SessionTurn": 11,
+        "UserMessage": 11,
+        "ActivityBurst": 2,
+        "ThrottledMarkdown": 1,
+        "ToolPartRenderer": 1
+      },
+      "pipelineOnlyMs": {
+        "p50": 0.002,
+        "p95": 0.008
+      },
+      "b1_appendPart": {
+        "frameMs": {
+          "p50": 0.825,
+          "p95": 1.38,
+          "max": 16.341
+        },
+        "settleMs": {
+          "p50": 1.182
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 10,
+          "SessionTurn": 2,
+          "UserMessage": 2,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      },
+      "b2_delta": {
+        "frameMs": {
+          "p50": 1.84,
+          "p95": 3.395,
+          "max": 26.703
+        },
+        "settleMs": {
+          "p50": 1.184
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 10,
+          "SessionTurn": 2,
+          "UserMessage": 1,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      }
+    },
+    {
+      "cell": "N=20 M=32",
+      "messages": 20,
+      "turns": 10,
+      "images": 32,
+      "imagesOnOneTurn": false,
+      "imageBytes": 524288,
+      "imageBase64MiB": 21.333,
+      "domNodes": 1021,
+      "imgNodes": 16,
+      "ssrFirstRenderMs": 15.295,
+      "firstRenderMs": 269.249,
+      "firstRenderMsReps": [
+        278.178,
+        268.571,
+        264.949,
+        269.249,
+        272.331
+      ],
+      "mountSettleMs": 8.3,
+      "mountRenders": {
+        "TurnViewport": 10,
+        "SessionTurn": 20,
+        "UserMessage": 20,
+        "ActivityBurst": 10,
+        "ThrottledMarkdown": 10,
+        "ToolPartRenderer": 0
+      },
+      "mountCascadeRenders": {
+        "TurnViewport": 0,
+        "SessionTurn": 20,
+        "UserMessage": 20,
+        "ActivityBurst": 0,
+        "ThrottledMarkdown": 0,
+        "ToolPartRenderer": 0
+      },
+      "mountQuiesceMs": 3500,
+      "busyFlipMs": 11.951,
+      "busyFlipRenders": {
+        "TurnViewport": 10,
+        "SessionTurn": 11,
+        "UserMessage": 11,
+        "ActivityBurst": 2,
+        "ThrottledMarkdown": 1,
+        "ToolPartRenderer": 1
+      },
+      "pipelineOnlyMs": {
+        "p50": 0.002,
+        "p95": 0.005
+      },
+      "b1_appendPart": {
+        "frameMs": {
+          "p50": 0.811,
+          "p95": 1.285,
+          "max": 18.791
+        },
+        "settleMs": {
+          "p50": 1.176
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 10,
+          "SessionTurn": 2,
+          "UserMessage": 1,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      },
+      "b2_delta": {
+        "frameMs": {
+          "p50": 1.656,
+          "p95": 2.371,
+          "max": 14.974
+        },
+        "settleMs": {
+          "p50": 1.155
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 10,
+          "SessionTurn": 2,
+          "UserMessage": 1,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      }
+    },
+    {
+      "cell": "N=200 M=0",
+      "messages": 200,
+      "turns": 100,
+      "images": 0,
+      "imagesOnOneTurn": false,
+      "imageBytes": 524288,
+      "imageBase64MiB": 0,
+      "domNodes": 9601,
+      "imgNodes": 0,
+      "ssrFirstRenderMs": 123.727,
+      "firstRenderMs": 360.74,
+      "firstRenderMsReps": [
+        360.74,
+        358.955,
+        316.447,
+        505.545,
+        380.389
+      ],
+      "mountSettleMs": 5.716,
+      "mountRenders": {
+        "TurnViewport": 100,
+        "SessionTurn": 200,
+        "UserMessage": 200,
+        "ActivityBurst": 100,
+        "ThrottledMarkdown": 100,
+        "ToolPartRenderer": 0
+      },
+      "mountCascadeRenders": {
+        "TurnViewport": 0,
+        "SessionTurn": 200,
+        "UserMessage": 200,
+        "ActivityBurst": 0,
+        "ThrottledMarkdown": 0,
+        "ToolPartRenderer": 0
+      },
+      "mountQuiesceMs": 3500,
+      "busyFlipMs": 30.586,
+      "busyFlipRenders": {
+        "TurnViewport": 100,
+        "SessionTurn": 101,
+        "UserMessage": 101,
+        "ActivityBurst": 2,
+        "ThrottledMarkdown": 1,
+        "ToolPartRenderer": 1
+      },
+      "pipelineOnlyMs": {
+        "p50": 0.022,
+        "p95": 0.056
+      },
+      "b1_appendPart": {
+        "frameMs": {
+          "p50": 1.115,
+          "p95": 2.301,
+          "max": 3.992
+        },
+        "settleMs": {
+          "p50": 1.628
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 100,
+          "SessionTurn": 2,
+          "UserMessage": 2,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      },
+      "b2_delta": {
+        "frameMs": {
+          "p50": 2.025,
+          "p95": 4.217,
+          "max": 15.415
+        },
+        "settleMs": {
+          "p50": 1.227
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 100,
+          "SessionTurn": 2,
+          "UserMessage": 2,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      }
+    },
+    {
+      "cell": "N=200 M=8",
+      "messages": 200,
+      "turns": 100,
+      "images": 8,
+      "imagesOnOneTurn": false,
+      "imageBytes": 524288,
+      "imageBase64MiB": 5.333,
+      "domNodes": 9633,
+      "imgNodes": 8,
+      "ssrFirstRenderMs": 103.931,
+      "firstRenderMs": 385.624,
+      "firstRenderMsReps": [
+        518.195,
+        373.954,
+        379.176,
+        385.624,
+        414.474
+      ],
+      "mountSettleMs": 5.363,
+      "mountRenders": {
+        "TurnViewport": 100,
+        "SessionTurn": 200,
+        "UserMessage": 200,
+        "ActivityBurst": 100,
+        "ThrottledMarkdown": 100,
+        "ToolPartRenderer": 0
+      },
+      "mountCascadeRenders": {
+        "TurnViewport": 0,
+        "SessionTurn": 200,
+        "UserMessage": 200,
+        "ActivityBurst": 0,
+        "ThrottledMarkdown": 0,
+        "ToolPartRenderer": 0
+      },
+      "mountQuiesceMs": 3500,
+      "busyFlipMs": 19.604,
+      "busyFlipRenders": {
+        "TurnViewport": 100,
+        "SessionTurn": 101,
+        "UserMessage": 101,
+        "ActivityBurst": 2,
+        "ThrottledMarkdown": 1,
+        "ToolPartRenderer": 1
+      },
+      "pipelineOnlyMs": {
+        "p50": 0.02,
+        "p95": 0.053
+      },
+      "b1_appendPart": {
+        "frameMs": {
+          "p50": 0.928,
+          "p95": 1.318,
+          "max": 3.614
+        },
+        "settleMs": {
+          "p50": 1.209
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 100,
+          "SessionTurn": 2,
+          "UserMessage": 2,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      },
+      "b2_delta": {
+        "frameMs": {
+          "p50": 1.68,
+          "p95": 4.158,
+          "max": 27.259
+        },
+        "settleMs": {
+          "p50": 1.199
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 100,
+          "SessionTurn": 3,
+          "UserMessage": 3,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 3
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 3
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      }
+    },
+    {
+      "cell": "N=200 M=32",
+      "messages": 200,
+      "turns": 100,
+      "images": 32,
+      "imagesOnOneTurn": false,
+      "imageBytes": 524288,
+      "imageBase64MiB": 21.333,
+      "domNodes": 9729,
+      "imgNodes": 32,
+      "ssrFirstRenderMs": 101.285,
+      "firstRenderMs": 770.475,
+      "firstRenderMsReps": [
+        761.58,
+        729.85,
+        770.475,
+        803.663,
+        826.009
+      ],
+      "mountSettleMs": 5.124,
+      "mountRenders": {
+        "TurnViewport": 100,
+        "SessionTurn": 200,
+        "UserMessage": 200,
+        "ActivityBurst": 100,
+        "ThrottledMarkdown": 100,
+        "ToolPartRenderer": 0
+      },
+      "mountCascadeRenders": {
+        "TurnViewport": 0,
+        "SessionTurn": 200,
+        "UserMessage": 200,
+        "ActivityBurst": 0,
+        "ThrottledMarkdown": 0,
+        "ToolPartRenderer": 0
+      },
+      "mountQuiesceMs": 3500,
+      "busyFlipMs": 23.514,
+      "busyFlipRenders": {
+        "TurnViewport": 100,
+        "SessionTurn": 101,
+        "UserMessage": 101,
+        "ActivityBurst": 2,
+        "ThrottledMarkdown": 1,
+        "ToolPartRenderer": 1
+      },
+      "pipelineOnlyMs": {
+        "p50": 0.019,
+        "p95": 0.023
+      },
+      "b1_appendPart": {
+        "frameMs": {
+          "p50": 0.937,
+          "p95": 1.33,
+          "max": 7.536
+        },
+        "settleMs": {
+          "p50": 1.209
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 100,
+          "SessionTurn": 2,
+          "UserMessage": 2,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      },
+      "b2_delta": {
+        "frameMs": {
+          "p50": 1.893,
+          "p95": 3.876,
+          "max": 6.85
+        },
+        "settleMs": {
+          "p50": 1.195
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 100,
+          "SessionTurn": 2,
+          "UserMessage": 2,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      }
+    },
+    {
+      "cell": "N=200 M=8@one",
+      "messages": 200,
+      "turns": 100,
+      "images": 8,
+      "imagesOnOneTurn": true,
+      "imageBytes": 524288,
+      "imageBase64MiB": 5.333,
+      "domNodes": 9626,
+      "imgNodes": 8,
+      "ssrFirstRenderMs": 96.057,
+      "firstRenderMs": 368.27,
+      "firstRenderMsReps": [
+        431.416,
+        527.392,
+        368.27,
+        362.258,
+        352.342
+      ],
+      "mountSettleMs": 5.464,
+      "mountRenders": {
+        "TurnViewport": 100,
+        "SessionTurn": 200,
+        "UserMessage": 200,
+        "ActivityBurst": 100,
+        "ThrottledMarkdown": 100,
+        "ToolPartRenderer": 0
+      },
+      "mountCascadeRenders": {
+        "TurnViewport": 0,
+        "SessionTurn": 200,
+        "UserMessage": 200,
+        "ActivityBurst": 0,
+        "ThrottledMarkdown": 0,
+        "ToolPartRenderer": 0
+      },
+      "mountQuiesceMs": 3500,
+      "busyFlipMs": 20.704,
+      "busyFlipRenders": {
+        "TurnViewport": 100,
+        "SessionTurn": 101,
+        "UserMessage": 101,
+        "ActivityBurst": 2,
+        "ThrottledMarkdown": 1,
+        "ToolPartRenderer": 1
+      },
+      "pipelineOnlyMs": {
+        "p50": 0.018,
+        "p95": 0.023
+      },
+      "b1_appendPart": {
+        "frameMs": {
+          "p50": 0.953,
+          "p95": 1.278,
+          "max": 1.468
+        },
+        "settleMs": {
+          "p50": 1.198
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 100,
+          "SessionTurn": 2,
+          "UserMessage": 2,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      },
+      "b2_delta": {
+        "frameMs": {
+          "p50": 1.749,
+          "p95": 3.483,
+          "max": 4.881
+        },
+        "settleMs": {
+          "p50": 1.184
+        },
+        "rendersPerStepMax": {
+          "TurnViewport": 100,
+          "SessionTurn": 2,
+          "UserMessage": 2,
+          "ActivityBurst": 0,
+          "ThrottledMarkdown": 1,
+          "ToolPartRenderer": 0
+        },
+        "sessionTurnRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "workingTurnBodyRendersPerStep": {
+          "min": 1,
+          "max": 2
+        },
+        "settledTurnBodyRendersPerStep": {
+          "min": 0,
+          "max": 0
+        },
+        "newTurnObjectsPerStep": {
+          "min": 1,
+          "max": 1
+        },
+        "imgIdentityViolations": 0
+      }
+    }
+  ],
+  "violations": [],
+  "ok": true
+}
