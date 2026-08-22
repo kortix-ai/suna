@@ -31,8 +31,21 @@
  * one — happy-dom's is `setImmediate`, which turns a 60 fps animation loop
  * into a tight loop — so `./flush` can tell a pending one-shot frame from an
  * animation (`pendingAnimationFrames`).
+ *
+ * NO NETWORK. A mounted transcript prefetches models.dev pricing
+ * (`useModelPricingLookup`) — a real `fetch` that resolves after the test
+ * file is gone. While the DOM is installed, `fetch` records the URL and
+ * rejects (`networkAttempts()` is what a test asserts empty), and the pricing
+ * module cache is SEEDED so the prefetch never starts; `uninstallDom()`
+ * resets it. `motion-dom`'s reduced-motion state is initialised while the
+ * window exists (see `installGlobals`).
  */
 import { Window } from 'happy-dom';
+import { useReducedMotion } from 'motion/react';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+import { __testing as modelPricing } from '@/lib/model-pricing';
 
 const g = globalThis as unknown as Record<string, unknown>;
 
@@ -41,6 +54,8 @@ const g = globalThis as unknown as Record<string, unknown>;
 const installed: { key: string; previous: unknown; had: boolean }[] = [];
 let active = false;
 let holders = 0;
+/** Every URL something tried to `fetch` while the DOM was installed. */
+const attempts: string[] = [];
 /** One animation frame, like a browser's ~60 Hz. */
 export const FRAME_MS = 16;
 /** Frames requested and not yet run (or cancelled): id → generation + timer. */
@@ -164,7 +179,41 @@ function installGlobals(): void {
     if (g.matchMedia === undefined) install('matchMedia', matchMedia);
   }
   if (typeof g.scrollTo !== 'function') install('scrollTo', () => {});
+
+  // No request leaves the process. Record and fail like a dead network — a
+  // caller's `catch` sees a TypeError, as it would offline.
+  install('fetch', (input: unknown) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : ((input as { url?: string })?.url ?? String(input));
+    attempts.push(url);
+    return Promise.reject(new TypeError(`fetch blocked under happy-dom tests: ${url}`));
+  });
+  modelPricing.seed();
+
+  // `motion-dom` decides `isBrowser` ONCE, at module load — true in this
+  // process, because the DOM is up while the importing file's modules
+  // evaluate. Its reduced-motion state is then initialised lazily, on the
+  // first `useReducedMotion()` render, by reading `window.matchMedia` — which
+  // throws if that first render happens to be a `renderToStaticMarkup` after
+  // `uninstallDom()` (the golden's working scenario, when the only earlier
+  // DOM file mounted an idle session). Initialise it now, while `window`
+  // exists, so the rest of the process sees one settled state.
+  renderToStaticMarkup(createElement(WarmReducedMotion));
   active = true;
+}
+
+function WarmReducedMotion(): null {
+  useReducedMotion();
+  return null;
+}
+
+/** URLs `fetch` was asked for while the DOM was installed. Assert `[]`. */
+export function networkAttempts(): readonly string[] {
+  return attempts;
 }
 
 /**
@@ -196,11 +245,13 @@ export function uninstallDom(): void {
     else delete g[key];
   }
   installed.length = 0;
+  attempts.length = 0;
   // A frame firing after the window is gone would set state into a dead
   // tree; drop them with the DOM.
   for (const frame of pendingFrames.values()) clearTimeout(frame.timer);
   pendingFrames.clear();
   currentFrameGeneration = -1;
+  modelPricing.reset();
   active = false;
 }
 

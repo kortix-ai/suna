@@ -650,6 +650,10 @@ export async function main(): Promise<number> {
   }
   const assertProbesRan = installSourceProbes(tree);
   await registerDom();
+  // The mounted list prefetches models.dev pricing (`useModelPricingLookup`)
+  // — a real fetch whose `.then` would re-render every turn mid-run. Seed
+  // the module cache: no network, no late pricing flip.
+  (await import('@/lib/model-pricing')).__testing.seed();
 
   const React = await import('react');
   const ReactDOMClient = config.profiler

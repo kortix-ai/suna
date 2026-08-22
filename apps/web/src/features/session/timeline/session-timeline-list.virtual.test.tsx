@@ -1,5 +1,5 @@
 import './__fixtures__/clock';
-import { installDom, uninstallDom } from './__fixtures__/dom';
+import { installDom, networkAttempts, uninstallDom } from './__fixtures__/dom';
 import { flush } from './__fixtures__/flush';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
@@ -251,6 +251,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await harness.unmount();
+  expect(networkAttempts()).toEqual([]);
 });
 beforeAll(() => installDom());
 afterAll(() => uninstallDom());

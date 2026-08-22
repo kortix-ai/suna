@@ -1,5 +1,5 @@
 import { freezeClock, restoreClock } from '../timeline/__fixtures__/clock';
-import { installDom, uninstallDom } from '../timeline/__fixtures__/dom';
+import { installDom, networkAttempts, uninstallDom } from '../timeline/__fixtures__/dom';
 import { flush } from '../timeline/__fixtures__/flush';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
@@ -189,6 +189,10 @@ afterEach(async () => {
   await flush();
   container.remove();
   __testing.reset();
+  // The mounted list prefetches model pricing; the DOM fixture seeds it, so
+  // nothing left the process (the unseeded fetch used to resolve after this
+  // file's teardown and set state into a root with no `window`).
+  expect(networkAttempts()).toEqual([]);
 });
 
 const committedImgSrc = (): string => {
