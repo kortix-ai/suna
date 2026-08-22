@@ -4,72 +4,11 @@ import { CreditCardIcon, KeyIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
 /** Stable empty list so the hook's `models = []` default isn't re-allocated per render. */
 const EMPTY_MODELS: FlatModel[] = [];
-
-/**
- * The single "no model connected" teaching moment — an icon, a plain-English
- * explanation, and the two ways out: upgrade to a Kortix plan, or bring an API
- * key from any provider. Shared by the chat input's full-block gate and the
- * project onboarding wizard so the copy and actions never drift apart.
- */
-export function ModelConnectionGate({
-  size = 'default',
-  className,
-}: {
-  size?: 'sm' | 'default';
-  className?: string;
-}) {
-  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
-    useModelConnectionGate(EMPTY_MODELS);
-
-  return (
-    <>
-      {modal}
-      <EmptyState
-        className={className}
-        icon={KeyIcon}
-        size={size}
-        title="Connect a model to start chatting"
-        description={
-          showUpgradeOption
-            ? "This session needs an LLM connected before it can respond. Upgrade for instant access to Kortix's managed models, or bring your own API key from any provider."
-            : 'This session needs an LLM connected before it can respond. Bring your own API key from any provider.'
-        }
-        action={
-          showUpgradeOption ? (
-            <Button type="button" size="sm" onClick={openUpgrade}>
-              <CreditCardIcon className="size-3.5" />
-              Upgrade
-            </Button>
-          ) : (
-            <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
-              <KeyIcon className="size-3.5" />
-              Bring your own key
-            </Button>
-          )
-        }
-        secondaryAction={
-          showUpgradeOption ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => openConnectProvider('providers')}
-            >
-              <KeyIcon className="size-3.5" />
-              Bring your own key
-            </Button>
-          ) : undefined
-        }
-      />
-    </>
-  );
-}
 
 // Enter waits a beat (delay) so the composer paints first, then the bar slides
 // out from under it — height opens the space while the strip translates down,
