@@ -19,7 +19,7 @@ describe('LLM_PROVIDER_CREDENTIALS — Kortix auth requirements, not raw catalog
   });
 });
 
-describe('connectedGatewayProviderIdsFromSecretNames (SDK native-mode path)', () => {
+describe('connectedGatewayProviderIdsFromSecretNames (BYOK → connected gateway providers)', () => {
   test('amazon-bedrock connects via bearer token + region alone — the essentia case', () => {
     const ids = connectedGatewayProviderIdsFromSecretNames(
       new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']),
@@ -45,7 +45,7 @@ describe('connectedGatewayProviderIdsFromSecretNames (SDK native-mode path)', ()
   });
 });
 
-describe('mergeProjectSecretConnectedProviders (SDK native-mode provider merge)', () => {
+describe('mergeProjectSecretConnectedProviders (deprecated; kept until the next major)', () => {
   function bareProviders(ids: string[]): ProviderListResponse {
     return {
       default: {},

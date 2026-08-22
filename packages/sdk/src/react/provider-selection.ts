@@ -28,8 +28,8 @@ export const LLM_PROVIDER_CREDENTIALS: Array<{
   authRequirement: providerAuthRequirement(provider),
 }));
 
-// In gateway mode OpenCode must see Kortix as the single LLM provider. Native
-// providers, including OpenCode Zen, belong only to native mode.
+// Gateway mode is the only mode: OpenCode sees Kortix as its single LLM
+// provider, and every project provider list is filtered to this set.
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
 const NATIVE_EXCLUDED_PROVIDER_IDS = new Set(['kortix']);
 
@@ -125,6 +125,11 @@ export function mergeProviderLists(
   };
 }
 
+/**
+ * @deprecated Gateway mode is the only mode; there is no native-provider
+ * branch left to filter for. `useRuntimeProviders` no longer calls this. Kept
+ * exported so host code compiles; removed in the next major.
+ */
 export function filterToNativeProviders(providers: ProviderListResponse): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
   const all = Array.isArray(normalized.all) ? normalized.all : [];
@@ -136,6 +141,13 @@ export function filterToNativeProviders(providers: ProviderListResponse): Provid
   };
 }
 
+/**
+ * @deprecated Gateway mode is the only mode; connection state comes from the
+ * gateway's `/model-picker`, not from stamping the runtime's native provider
+ * list with project secrets. `useRuntimeProviders` no longer calls this. Kept
+ * exported so host code compiles; removed in the next major. For the
+ * gateway-side equivalent see `connectedGatewayProviderIdsFromSecretNames`.
+ */
 export function mergeProjectSecretConnectedProviders(
   providers: ProviderListResponse,
   secretNames: Set<string>,

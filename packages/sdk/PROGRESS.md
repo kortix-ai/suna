@@ -12,6 +12,28 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-22 — session `gateway-mode-only` — `useRuntimeProviders` is gateway-only (hook half) — DONE
+
+**Files:** `react/use-opencode-sessions/providers.ts` (one query per source:
+gateway model-picker inside a project route, runtime `provider.list` outside;
+no project-detail read, no `llm_gateway` fork) · `provider-load-plan.ts`
+(`shouldLoadProjectModelPicker` → `providerQueryPlan`, internal) + test (4 cases)
+· `provider-selection.ts` (`filterToNativeProviders`,
+`mergeProjectSecretConnectedProviders` marked `@deprecated`; exports kept, both
+surface snapshots unchanged) · `use-opencode-sessions/shared.ts` (comment on the
+legacy `:native` cache scope) · `CHANGELOG.md` (`### Breaking` behaviour note +
+`### Deprecated`).
+
+**What.** With the API no longer emitting `experimental.llm_gateway`, the old
+hook read `undefined === true` → false for every project → the native branch →
+`provider.list` with `kortix` filtered out → zero models → retry forever. Dead
+picker on every project. Now a project route always renders the gateway
+catalog. `ModelProviderMode` (`'native' | 'gateway'`, `use-opencode-local.ts`)
+is untouched: it is a localStorage selection-key prefix derived from the list,
+and narrowing it would orphan every stored pick.
+
+---
+
 ### 2026-08-22 — session `gateway-mode-only` — `llm_gateway` is not a feature flag (key list half) — DONE
 
 **Files:** `core/rest/projects-client/projects.ts` (`FeatureFlagKey` union and
