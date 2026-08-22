@@ -12,7 +12,11 @@
  *     pipeline (`stabilizeTurns` → `buildChatRows` with the previous rows →
  *     `turnsById` / `turnRenderKeys`) outside React and mounts the REAL
  *     `<SessionTimelineList>` with every host prop pinned, exactly like
- *     `timeline/__fixtures__/render-list.tsx`.
+ *     `timeline/__fixtures__/render-list.tsx`. Two list modes (`BENCH_LIST`):
+ *     `flat` (default — no scroll element, the static path, every turn in the
+ *     DOM) and `virtual` (Stage 3 — a scroll container + `virtualizerTestSeam`:
+ *     800×900 viewport, 160 px per turn, clamping `scrollToFn`; the list mounts
+ *     once the scroll element exists, as `SessionChat` does).
  *
  * Both under a happy-dom document with `react-dom/client` (or
  * `react-dom/profiling`), fed the same deterministic synthetic session
@@ -45,8 +49,8 @@
  *   - rows tree: exactly 1 new row object per b1 step (the appended part) and 0 per
  *     b2 step (a delta grows the part a row already references; `reuseTimelineRows`)
  *   - 0 probed bodies render under any SETTLED turn (every probe except the
- *     by-design unmemoized wrappers TurnViewport and TurnFrame) — the memo
- *     boundary holds
+ *     by-design unmemoized wrapper TurnViewport — and TurnFrame on a Stage 2
+ *     tree, where it was not yet memo'd) — the memo boundary holds
  *   - the working turn renders: row bodies >= 1, ThrottledMarkdown >= 1; legacy also
  *     UserMessage >= 1 (the legacy card re-renders its bubble with the turn).
  *     (Legacy SessionTurn body runs 1-2×: the second pass is the `setLiveDuration`
@@ -71,6 +75,7 @@
  *   N = messages (2 per turn), M = image file parts (512 KiB each, seeded).
  *
  * KNOBS (env):
+ *   BENCH_LIST=flat|virtual    rows tree only: static flat list (default) or the virtual list under the seam
  *   BENCH_PROFILE=quick|full   BENCH_CELLS="20:0,200:8,200:8@one" (overrides the profile)
  *   BENCH_COMPARE=<json>       print BEFORE (that json) / AFTER (this run) tables + a delta row per cell
  *   BENCH_REPS=5               repetitions per cell; Bun.gc(true) between reps

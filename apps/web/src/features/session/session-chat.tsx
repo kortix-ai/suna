@@ -25,6 +25,10 @@ import {
 import { projectQueueRows } from './queue-projection';
 import { createQueueUndoAction } from './queued-message-restore';
 
+import {
+  releaseAttachmentObjectUrls,
+  retainAttachmentObjectUrls,
+} from './turn/attachment-object-url';
 import { chatPlanAnchorId } from './turn/plan-anchor';
 import { QueuedPromptBubbles } from './turn/queued-prompt-bubbles';
 
@@ -33,6 +37,7 @@ import { stabilizeTurns } from './turn/stable-turns';
 import { buildChatRows } from './timeline/build-chat-rows';
 import { deriveAnsweredQuestionIds, optimisticAnswersCache } from './timeline/project-rows';
 import { SessionTimelineList } from './timeline/session-timeline-list';
+import type { TimelineVirtualApi } from './timeline/timeline-virtual';
 import { CompactionDivider } from './timeline/turn-cards';
 import { resolveWorkingTurn } from './turn/working-turn';
 
@@ -1278,6 +1283,16 @@ export function SessionChat({
     prevMsgLenRef.current = messages?.length || 0;
   }, [messages?.length]);
 
+  // Composer attachments ride the transcript as `data:` file parts; the render
+  // reads a `blob:` object URL decoded once per part (attachment-object-url.ts).
+  // This chat holds those URLs for as long as it shows the session; the last
+  // holder's unmount revokes them.
+  useEffect(() => {
+    if (!sessionId) return;
+    retainAttachmentObjectUrls(sessionId);
+    return () => releaseAttachmentObjectUrls(sessionId);
+  }, [sessionId]);
+
   // ---- Auto-scroll: see use-auto-scroll.ts (room + end + follow) ----
   const messageCount = messages?.length ?? 0;
   const {
@@ -1301,9 +1316,15 @@ export function SessionChat({
   useEffect(() => {
     setOlderPullFailed(false);
   }, [sessionId]);
+  // The VIRTUAL list anchors a prepend itself, inside the commit that adds the
+  // turns (`anchorTo: 'end'` in session-timeline-list.tsx: the item at the
+  // viewport top keeps its offset, before paint). The element-based capture /
+  // restore below is the FLAT list's path only (`timelineApiRef` null).
+  const timelineApiRef = useRef<TimelineVirtualApi | null>(null);
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
-    const anchor = node ? captureTurnScrollAnchor(node) : null;
+    const virtual = timelineApiRef.current !== null;
+    const anchor = node && !virtual ? captureTurnScrollAnchor(node) : null;
     try {
       await loadOlder();
       setOlderPullFailed(false);
@@ -1311,7 +1332,7 @@ export function SessionChat({
       // Surface a retry instead of letting the sentinel re-arm into a loop.
       setOlderPullFailed(true);
     }
-    if (!node) return;
+    if (!node || virtual) return;
     requestAnimationFrame(() => {
       restoreTurnScrollAnchor(node, anchor);
     });
@@ -1348,10 +1369,15 @@ export function SessionChat({
   // (no near-bottom-then-smooth choreography, which fought the follow). The
   // one exception is a sub-session viewed from its start.
   const initialScrollDoneRef = useRef<string | null>(null);
+  // The scroll container as STATE: the timeline list virtualizes against it,
+  // and mounts only once it exists (see the `scrollElement &&` below), so the
+  // first paint of a session is already the virtual window at the end.
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
   const scrollContainerCallbackRef = useCallback(
     (node: HTMLDivElement | null) => {
       // Always keep scrollRef updated
       (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      setScrollElement(node);
       if (!node) return;
       if (initialScrollDoneRef.current === sessionId) return;
       initialScrollDoneRef.current = sessionId;
@@ -1842,7 +1868,18 @@ export function SessionChat({
     const scrollEl = scrollRef.current;
     if (!contentEl || !scrollEl) return;
 
-    const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${targetMessageId}"]`);
+    // Virtual list: the turn need not be in the DOM — the virtualizer scrolls
+    // to its index (TURN_TOP_OFFSET under the viewport top, the `− 24` below)
+    // and re-targets as the turns above it get measured.
+    const api = timelineApiRef.current;
+    if (api?.scrollToTurn(targetMessageId, { align: 'start', behavior: 'smooth' })) {
+      clearJumpTarget();
+      return;
+    }
+
+    const target = contentEl.querySelector<HTMLElement>(
+      `[data-turn-id="${CSS.escape(targetMessageId)}"]`,
+    );
     if (!target) {
       clearJumpTarget();
       return;
@@ -3213,43 +3250,53 @@ export function SessionChat({
                           busy={turns.length === 0}
                         />
                       )}
-                    <SessionTimelineList
-                      rows={rows}
-                      turnsById={turnsById}
-                      turnRenderKeys={turnRenderKeys}
-                      pendingTurnIds={pendingTurnIds}
-                      interruptedTurnIds={interruptedTurnIds}
-                      sessionWorking={lastTurnWorking}
-                      workingTurnId={workingTurn.workingTurnId}
-                      planAnchorId={planAnchorId}
-                      inboxRowsByMessageId={inboxRowsByMessageId}
-                      queueHeld={queueRows.held}
-                      onQueueRemove={handleRemoveQueuedMessage}
-                      onQueueSendNow={handleQueueSendNow}
-                      onQueueRetry={handleRetryQueuedMessage}
-                      sessionId={sessionId}
-                      sessionStatus={sessionStatus}
-                      permissions={pendingPermissions}
-                      questions={pendingQuestions}
-                      agentNames={agentNames}
-                      providers={providers}
-                      commandMessages={commandMessagesRef.current}
-                      commands={commands}
-                      disableToolNavigation={disableToolNavigation}
-                      onPermissionReply={handlePermissionReply}
-                      onRewind={handleRewind}
-                      rewindDisabled={
-                        !!readOnly ||
-                        !sessionState ||
-                        isBusy ||
-                        sessionState.rewindPending ||
-                        // The runtime is not idle while queued prompts
-                        // are still on their way to it — a rewind mid-
-                        // delivery fails downstream with "Session is
-                        // busy" (measured); refuse it up front instead.
-                        promptInbox.prompts.length > 0
-                      }
-                    />
+                    {/* Mounted once the scroll container exists (a ref-callback
+                        state write, flushed before paint): the list virtualizes
+                        against it, and a first render without it would paint
+                        every turn flat only to unmount most of them one
+                        commit later. */}
+                    {scrollElement && (
+                      <SessionTimelineList
+                        rows={rows}
+                        turnsById={turnsById}
+                        turnRenderKeys={turnRenderKeys}
+                        pendingTurnIds={pendingTurnIds}
+                        interruptedTurnIds={interruptedTurnIds}
+                        sessionWorking={lastTurnWorking}
+                        workingTurnId={workingTurn.workingTurnId}
+                        planAnchorId={planAnchorId}
+                        inboxRowsByMessageId={inboxRowsByMessageId}
+                        queueHeld={queueRows.held}
+                        onQueueRemove={handleRemoveQueuedMessage}
+                        onQueueSendNow={handleQueueSendNow}
+                        onQueueRetry={handleRetryQueuedMessage}
+                        sessionId={sessionId}
+                        sessionStatus={sessionStatus}
+                        permissions={pendingPermissions}
+                        questions={pendingQuestions}
+                        agentNames={agentNames}
+                        providers={providers}
+                        commandMessages={commandMessagesRef.current}
+                        commands={commands}
+                        disableToolNavigation={disableToolNavigation}
+                        onPermissionReply={handlePermissionReply}
+                        onRewind={handleRewind}
+                        rewindDisabled={
+                          !!readOnly ||
+                          !sessionState ||
+                          isBusy ||
+                          sessionState.rewindPending ||
+                          // The runtime is not idle while queued prompts
+                          // are still on their way to it — a rewind mid-
+                          // delivery fails downstream with "Session is
+                          // busy" (measured); refuse it up front instead.
+                          promptInbox.prompts.length > 0
+                        }
+                        scrollElement={scrollElement}
+                        initialAtEnd={!initialScrollTop}
+                        apiRef={timelineApiRef}
+                      />
+                    )}
                   </ToolActivateContext.Provider>
 
                   {/* Busy indicator when no turns yet but session is busy */}
@@ -3368,6 +3415,7 @@ export function SessionChat({
               turns={turns}
               scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
               contentRef={contentRef as React.RefObject<HTMLDivElement>}
+              virtualApiRef={timelineApiRef}
             />
 
             <div

@@ -38,6 +38,20 @@
  * wraps every `SessionTurn` in a `BenchTurnContext.Provider`; on the rows tree
  * the list owns the per-turn element, so the `TurnFrame` probe provides the
  * same context from `props.group.userMessageID`. The leaf probes read it.
+ *
+ * TWO LIST MODES on the rows tree (`BENCH_LIST`, Stage 3):
+ * - `flat` (default): `<SessionTimelineList>` with NO scroll element — the
+ *   static render path, every turn in the DOM. What a BEFORE (legacy) json
+ *   compares against cell for cell.
+ * - `virtual`: the list sits in a scroll container and gets `scrollElement` +
+ *   `virtualizerTestSeam` — an injected 800×900 viewport rect, a 160 px
+ *   per-turn measure (happy-dom lays nothing out, so every turn IS its
+ *   estimate) and a `scrollToFn` that clamps like a browser and reports the
+ *   offset through a scroll event on the next macrotask. The list mounts once
+ *   the scroll element exists (the ref-callback state write is flushed inside
+ *   the same `flushSync`), exactly as `SessionChat` does, so the first paint is
+ *   the virtual window at the end — never every turn flat first. The `mounted`
+ *   column is `[data-turn-id]` elements in the DOM after mount / total turns.
  */
 import type { ComponentType, ReactNode } from 'react';
 
@@ -97,8 +111,15 @@ function parseCells(raw: string): CellSpec[] {
   });
 }
 
+export type ListMode = 'flat' | 'virtual';
+
 function resolveConfig() {
   const full = process.env.KORTIX_BENCH === '1' || process.env.BENCH_PROFILE === 'full';
+  const listRaw = process.env.BENCH_LIST ?? 'flat';
+  if (listRaw !== 'flat' && listRaw !== 'virtual') {
+    throw new Error(`BENCH_LIST must be "flat" or "virtual", got ${listRaw}`);
+  }
+  const list: ListMode = listRaw;
   const cells = process.env.BENCH_CELLS
     ? parseCells(process.env.BENCH_CELLS)
     : full
@@ -109,6 +130,8 @@ function resolveConfig() {
   if (warmup >= steps) throw new Error(`BENCH_WARMUP (${warmup}) must be < BENCH_STEPS (${steps})`);
   return {
     profile: full ? 'full' : 'quick',
+    /** Rows tree only: `flat` (no scroll element, static path) or `virtual` (seam). */
+    list,
     cells,
     reps: Math.max(1, envInt('BENCH_REPS', 5)),
     steps,
@@ -159,10 +182,16 @@ const ROWS_ONLY_PROBES: ReadonlySet<ProbeName> = new Set<ProbeName>([
 /**
  * Not memoized by design — they re-render with the list every frame and are
  * reported (`rows/step`, `TF`) but never asserted 0 under a settled turn.
- * `TurnViewport` is the `[data-turn-id]` wrapper on both trees; `TurnFrame`
- * owns the per-turn hooks on the rows tree and re-derives the (cached) view.
+ * `TurnViewport` is the `[data-turn-id]` wrapper on both trees. `TurnFrame`
+ * (rows tree) was unmemoized through Stage 2 — it owns the per-turn hooks and
+ * re-derived the (cached) view every frame; since Stage 3 it is `memo`'d over
+ * a stable `group` (`groupRowsByTurn` reuses the previous group object when
+ * its rows did not change), so on that tree its settled-turn bodies ARE
+ * asserted 0. `installSourceProbes` detects which declaration the checkout has
+ * (`turnFrameMemoized`).
  */
-const UNMEMOIZED_PROBES: ReadonlySet<ProbeName> = new Set<ProbeName>(['TurnViewport', 'TurnFrame']);
+const UNMEMOIZED_PROBES: Set<ProbeName> = new Set<ProbeName>(['TurnViewport', 'TurnFrame']);
+let turnFrameMemoized = false;
 
 type ProbeCounts = Record<ProbeName, number>;
 
@@ -334,7 +363,19 @@ const LEGACY_REWRITES: Record<string, Rewrite> = {
 
 const ROWS_REWRITES: Record<string, Rewrite> = {
   'session-timeline-list.tsx': (src, file) => {
-    let s = replaceOnce(src, file, 'function TurnFrame({', 'function TurnFrameBenchImpl({');
+    // Stage 3: `function TurnFrameImpl({` + `const TurnFrame = memo(TurnFrameImpl, sameTurnFrameProps)`.
+    // Stage 2: `function TurnFrame({` alone (unmemoized; `TurnFrame` bound at the end, below).
+    const memoized = src.includes('const TurnFrame = memo(TurnFrameImpl, sameTurnFrameProps);');
+    turnFrameMemoized = memoized;
+    if (memoized) UNMEMOIZED_PROBES.delete('TurnFrame');
+    let s = memoized
+      ? replaceOnce(
+          replaceOnce(src, file, 'function TurnFrameImpl({', 'function TurnFrameBenchImpl({'),
+          file,
+          'const TurnFrame = memo(TurnFrameImpl, sameTurnFrameProps);',
+          "const TurnFrame = memo(globalThis.__kortixBenchProbe('TurnFrame', TurnFrameBenchImpl, (p) => p.group.userMessageID), sameTurnFrameProps);",
+        )
+      : replaceOnce(src, file, 'function TurnFrame({', 'function TurnFrameBenchImpl({');
     s = replaceOnce(
       s,
       file,
@@ -353,9 +394,10 @@ const ROWS_REWRITES: Record<string, Rewrite> = {
       'export const TurnTailRow = memo(TurnTailRowImpl);',
       "export const TurnTailRow = memo(globalThis.__kortixBenchProbe('TurnTailRow', TurnTailRowImpl));",
     );
-    // `SessionTimelineList` references `TurnFrame` at render time only, so the
-    // probed binding can sit at the end of the module. The probe provides
-    // `BenchTurnContext` from the frame's own `group.userMessageID`.
+    if (memoized) return s;
+    // Stage 2: `SessionTimelineList` references `TurnFrame` at render time
+    // only, so the probed binding can sit at the end of the module. The probe
+    // provides `BenchTurnContext` from the frame's own `group.userMessageID`.
     return (
       s +
       "\nconst TurnFrame = globalThis.__kortixBenchProbe('TurnFrame', TurnFrameBenchImpl, (p) => p.group.userMessageID);\n"
@@ -582,6 +624,9 @@ interface RepResult {
   domNodes: number;
   imgNodes: number;
   rowCount: number;
+  /** `[data-turn-id]` elements in the DOM after the mount settled — every
+   *  turn for a flat list, the window + overscan + pinned tail for a virtual one. */
+  mountedTurns: number;
 }
 
 interface Violation {
@@ -600,6 +645,9 @@ interface Violation {
 export async function main(): Promise<number> {
   const config = resolveConfig();
   const tree = await detectTree();
+  if (tree === 'legacy' && config.list === 'virtual') {
+    throw new Error('BENCH_LIST=virtual needs the rows tree (timeline/session-timeline-list.tsx)');
+  }
   const assertProbesRan = installSourceProbes(tree);
   await registerDom();
 
@@ -728,8 +776,16 @@ export async function main(): Promise<number> {
   interface TranscriptProps {
     frame: HostFrame;
     working: boolean;
+    /** The static (SSR) measurement: the list with no scroll element, in either mode. */
+    forceFlat?: boolean;
     onProfilerRender?: (id: string, phase: string, actualDuration: number) => void;
   }
+
+  /** Virtual mode: the injected scroll rect (happy-dom lays nothing out). */
+  const VIEWPORT_HEIGHT = 900;
+  const VIEWPORT_WIDTH = 800;
+  /** Virtual mode: every turn measures this tall (no layout → estimate path). */
+  const TURN_ESTIMATE_PX = 160;
 
   /**
    * LEGACY: the `turns.map(...)` block of `SessionChat` (session-chat.tsx)
@@ -811,37 +867,84 @@ export async function main(): Promise<number> {
    * The per-turn Profiler (`BENCH_PROFILER=1`) rides inside the TurnFrame
    * probe (`profilerSink`).
    */
-  function RowsTranscript({ frame, working }: TranscriptProps) {
+  function RowsTranscript({ frame, working, forceFlat }: TranscriptProps) {
     const List = SessionTimelineList!;
+    const virtual = config.list === 'virtual' && !forceFlat;
+    // The scroll container, as STATE (the list virtualizes against it) —
+    // `SessionChat.scrollContainerCallbackRef` → `setScrollElement`.
+    const [scrollEl, setScrollEl] = React.useState<HTMLDivElement | null>(null);
+    const seam = React.useMemo(
+      () =>
+        scrollEl
+          ? {
+              initialRect: { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
+              observeElementRect: (
+                _instance: unknown,
+                cb: (rect: { width: number; height: number }) => void,
+              ) => {
+                cb({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT });
+              },
+              measureElement: () => TURN_ESTIMATE_PX,
+              // A browser clamps scrollTop to the scrollable range and reports
+              // it through a scroll event on the next frame; happy-dom does
+              // neither.
+              scrollToFn: (offset: number, _opts: unknown, instance: any) => {
+                const max = Math.max(0, instance.getTotalSize() - VIEWPORT_HEIGHT);
+                scrollEl.scrollTop = Math.max(0, Math.min(offset, max));
+                setTimeout(() => {
+                  const view = scrollEl.ownerDocument.defaultView as unknown as {
+                    Event: typeof Event;
+                  };
+                  scrollEl.dispatchEvent(new view.Event('scroll'));
+                }, 0);
+              },
+            }
+          : undefined,
+      [scrollEl],
+    );
+    const list = (
+      <List
+        rows={frame.rows!}
+        turnsById={frame.turnsById!}
+        turnRenderKeys={frame.turnRenderKeys!}
+        pendingTurnIds={EMPTY_ID_SET}
+        interruptedTurnIds={EMPTY_ID_SET}
+        sessionWorking={working}
+        workingTurnId={frame.workingTurnId}
+        planAnchorId={frame.planAnchorId}
+        inboxRowsByMessageId={EMPTY_INBOX}
+        queueHeld={false}
+        onQueueRemove={noop}
+        onQueueSendNow={noop}
+        onQueueRetry={noop}
+        sessionId={fixture.SESSION_ID}
+        sessionStatus={working ? STATUS_BUSY : STATUS_IDLE}
+        permissions={EMPTY_PERMISSIONS}
+        questions={EMPTY_QUESTIONS}
+        agentNames={undefined}
+        providers={undefined}
+        commandMessages={COMMAND_MESSAGES}
+        commands={EMPTY_COMMANDS}
+        disableToolNavigation={false}
+        onPermissionReply={noopAsync}
+        onRewind={noop}
+        rewindDisabled={working}
+        {...(virtual
+          ? { scrollElement: scrollEl, initialAtEnd: true, virtualizerTestSeam: seam }
+          : {})}
+      />
+    );
+    if (!virtual) return <div className="flex flex-col">{list}</div>;
+    // As `SessionChat` does: the list mounts once the scroll container exists
+    // (the ref-callback state write is flushed inside the same `flushSync`),
+    // so the virtualizing list never paints every turn flat first.
     return (
-      <div className="flex flex-col">
-        <List
-          rows={frame.rows!}
-          turnsById={frame.turnsById!}
-          turnRenderKeys={frame.turnRenderKeys!}
-          pendingTurnIds={EMPTY_ID_SET}
-          interruptedTurnIds={EMPTY_ID_SET}
-          sessionWorking={working}
-          workingTurnId={frame.workingTurnId}
-          planAnchorId={frame.planAnchorId}
-          inboxRowsByMessageId={EMPTY_INBOX}
-          queueHeld={false}
-          onQueueRemove={noop}
-          onQueueSendNow={noop}
-          onQueueRetry={noop}
-          sessionId={fixture.SESSION_ID}
-          sessionStatus={working ? STATUS_BUSY : STATUS_IDLE}
-          permissions={EMPTY_PERMISSIONS}
-          questions={EMPTY_QUESTIONS}
-          agentNames={undefined}
-          providers={undefined}
-          commandMessages={COMMAND_MESSAGES}
-          commands={EMPTY_COMMANDS}
-          disableToolNavigation={false}
-          onPermissionReply={noopAsync}
-          onRewind={noop}
-          rewindDisabled={working}
-        />
+      <div
+        ref={setScrollEl}
+        data-bench-scroll
+        style={{ height: VIEWPORT_HEIGHT, overflowY: 'auto' }}
+      >
+        <div className="flex flex-col">{scrollEl ? list : null}</div>
       </div>
     );
   }
@@ -976,6 +1079,8 @@ export async function main(): Promise<number> {
       imageBase64MiB: round(session0.imageChars / 1024 / 1024),
       domNodes: reps[0].domNodes,
       imgNodes: reps[0].imgNodes,
+      /** `[data-turn-id]` elements after mount (flat: every turn; virtual: the window). */
+      mountedTurns: reps[0].mountedTurns,
       /** Row components mounted (rows tree: AssistantPartRow+UserMessageRow+TurnTailRow; legacy: SessionTurn). */
       rowComponents: reps[0].rowCount,
       ssrFirstRenderMs: median(pick((r) => r.ssrFirstRenderMs)),
@@ -1012,7 +1117,7 @@ export async function main(): Promise<number> {
       const html = renderToStaticMarkup(
         <App
           queryClient={queryClient}
-          initial={{ frame, working: false }}
+          initial={{ frame, working: false, forceFlat: true }}
           handle={{ set: noop }}
         />,
       );
@@ -1106,14 +1211,27 @@ export async function main(): Promise<number> {
 
       const domNodes = container.querySelectorAll('*').length;
       const imgNodes = container.querySelectorAll('img').length;
+      const mountedTurns = container.querySelectorAll('[data-turn-id]').length;
       if (repIndex === 0) {
-        const turnNodes = container.querySelectorAll('[data-turn-id]').length;
-        if (turnNodes !== frame.turns.length) {
+        // A flat list mounts every turn; a virtual one the window at the end
+        // (+ overscan + the pinned tail). Either way the LAST turn is in the
+        // DOM — it is the working turn every step measures.
+        const virtual = tree === 'rows' && config.list === 'virtual';
+        if (!virtual && mountedTurns !== frame.turns.length) {
           throw new Error(
-            `bench: expected ${frame.turns.length} [data-turn-id] nodes, found ${turnNodes}`,
+            `bench: expected ${frame.turns.length} [data-turn-id] nodes, found ${mountedTurns}`,
           );
         }
-        if (cell.m > 0 && imgNodes === 0) {
+        if (virtual && (mountedTurns < 1 || mountedTurns > frame.turns.length)) {
+          throw new Error(
+            `bench: expected 1..${frame.turns.length} [data-turn-id] nodes, found ${mountedTurns}`,
+          );
+        }
+        const lastId = frame.turns[frame.turns.length - 1].userMessage.info.id;
+        if (!container.querySelector(`[data-turn-id="${lastId}"]`)) {
+          throw new Error(`bench: the last turn ${lastId} is not mounted after the mount settle`);
+        }
+        if (cell.m > 0 && imgNodes === 0 && mountedTurns === frame.turns.length) {
           throw new Error('bench: image file parts produced no <img> — attachment path changed');
         }
       }
@@ -1334,6 +1452,7 @@ export async function main(): Promise<number> {
         domNodes,
         imgNodes,
         rowCount,
+        mountedTurns,
       };
     }
   }
@@ -1356,6 +1475,8 @@ export async function main(): Promise<number> {
     bench: 'transcript-render',
     version: 2,
     tree,
+    /** Rows tree: `flat` or `virtual` (see `BENCH_LIST`); legacy is always flat. */
+    list: tree === 'rows' ? config.list : 'flat',
     timestamp,
     env: {
       gitSha,
@@ -1369,6 +1490,7 @@ export async function main(): Promise<number> {
     },
     config: {
       profile: config.profile,
+      list: config.list,
       reps: config.reps,
       steps: config.steps,
       warmup: config.warmup,
@@ -1415,6 +1537,13 @@ function treeOf(result: any): TranscriptTree {
 
 const COLUMNS: Col[] = [
   { head: 'cell', width: 16, get: (c) => c.cell },
+  {
+    head: 'mounted',
+    width: 8,
+    // A json from before the column (flat by construction) mounted every turn.
+    get: (c) => `${c.mountedTurns ?? c.turns}/${c.turns}`,
+    num: (c) => c.mountedTurns ?? c.turns,
+  },
   { head: 'dom', width: 6, get: (c) => String(c.domNodes), num: (c) => c.domNodes },
   { head: 'img', width: 4, get: (c) => String(c.imgNodes), num: (c) => c.imgNodes },
   { head: 'ssr ms', width: 8, get: (c) => fmt(c.ssrFirstRenderMs), num: (c) => c.ssrFirstRenderMs },
@@ -1538,20 +1667,27 @@ function tableLines(result: any): string[] {
   return lines;
 }
 
+function listOf(result: any): ListMode {
+  return result.list === 'virtual' ? 'virtual' : 'flat';
+}
+
 function printTable(result: any, outPath: string) {
   const e = result.env;
   const tree = treeOf(result);
   const lines: string[] = [];
   lines.push('');
   lines.push(
-    `transcript-render bench  tree=${tree}  sha=${String(e.gitSha).slice(0, 10)}  bun=${e.bun}  react=${e.react} (${e.reactBuild}, ${e.reactDom})  reps=${result.config.reps} steps=${result.config.steps} warmup=${result.config.warmup}`,
+    `transcript-render bench  tree=${tree}  list=${listOf(result)}  sha=${String(e.gitSha).slice(0, 10)}  bun=${e.bun}  react=${e.react} (${e.reactBuild}, ${e.reactDom})  reps=${result.config.reps} steps=${result.config.steps} warmup=${result.config.warmup}`,
   );
   lines.push(`cpu=${e.cpu}`);
   lines.push('');
   lines.push(...tableLines(result));
   lines.push('');
   lines.push(
-    'cols: dom=DOM nodes after mount; ssr=renderToStaticMarkup first render; first=createRoot first commit (idle session); busy=all-turns sessionWorking flip;',
+    'cols: mounted=[data-turn-id] elements in the DOM after mount / total turns (flat: every turn; virtual: the window at the end + overscan + pinned tail);',
+  );
+  lines.push(
+    '      dom=DOM nodes after mount; ssr=renderToStaticMarkup first render (always the flat list); first=createRoot first commit (idle session); busy=all-turns sessionWorking flip;',
   );
   lines.push(
     `      casc=turn bodies (legacy SessionTurn / rows TurnFrame) that render with NO input in the ${result.config.mountQuiesceMs} ms after mount (the 2.5 s status-throttle cascade);`,
@@ -1595,7 +1731,7 @@ function printTable(result: any, outPath: string) {
     lines.push(
       tree === 'legacy'
         ? 'invariants: OK (1 new turn object per step; 0 bodies rendered under settled turns; working-turn burst memo holds; settled <img> identity kept)'
-        : 'invariants: OK (1 new turn object per step, 1 new row object per appended part; 0 bodies rendered under settled turns; working-turn burst memo holds; settled <img> identity kept)',
+        : `invariants: OK (1 new turn object per step, 1 new row object per appended part; 0 bodies rendered under settled turns${turnFrameMemoized ? ', TurnFrame included' : ''}; working-turn burst memo holds; settled <img> identity kept)`,
     );
   }
   lines.push('');
@@ -1609,11 +1745,13 @@ function printCompare(before: any, after: any, beforePath: string) {
   const lines: string[] = [];
   lines.push('');
   lines.push(
-    `BEFORE  tree=${treeOf(before)}  sha=${String(before.env?.gitSha).slice(0, 10)}  (${beforePath})`,
+    `BEFORE  tree=${treeOf(before)}  list=${listOf(before)}  sha=${String(before.env?.gitSha).slice(0, 10)}  (${beforePath})`,
   );
   lines.push(...tableLines(before));
   lines.push('');
-  lines.push(`AFTER   tree=${treeOf(after)}  sha=${String(after.env?.gitSha).slice(0, 10)}`);
+  lines.push(
+    `AFTER   tree=${treeOf(after)}  list=${listOf(after)}  sha=${String(after.env?.gitSha).slice(0, 10)}`,
+  );
   lines.push(...tableLines(after));
   lines.push('');
   lines.push('DELTA (after - before; ms columns also as %)');

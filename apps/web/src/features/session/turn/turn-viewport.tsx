@@ -62,10 +62,11 @@ export function turnContainmentClass(laidOutOnce: boolean): string {
  * exists to prevent, and it would fail silently, since a 600px guess looks like
  * a working page right up until the reader scrolls into it.
  */
-export function useLaidOutOnce(): boolean {
+export function useLaidOutOnce(enabled = true): boolean {
   const [laidOutOnce, setLaidOutOnce] = useState(false);
 
   useEffect(() => {
+    if (!enabled) return;
     let inner = 0;
     const outer = requestAnimationFrame(() => {
       inner = requestAnimationFrame(() => setLaidOutOnce(true));
@@ -74,7 +75,7 @@ export function useLaidOutOnce(): boolean {
       cancelAnimationFrame(outer);
       cancelAnimationFrame(inner);
     };
-  }, []);
+  }, [enabled]);
 
   return laidOutOnce;
 }
@@ -82,20 +83,32 @@ export function useLaidOutOnce(): boolean {
 /**
  * One turn's wrapper: the scroll anchor (`data-turn-id`) plus the containment
  * that `useAutoScroll` and the history-restore path both measure through.
+ *
+ * `contain` is off in the VIRTUAL list (`session-timeline-list.tsx`): a turn
+ * there is rendered only while it is in or near the viewport and is measured
+ * by a ResizeObserver; an overscan turn positioned off screen under
+ * `content-visibility: auto` would be layout-skipped and report the 600px
+ * stand-in, which would become its virtual size. The virtualizer IS the
+ * containment in that mode. The flat list keeps the rule above.
  */
 export function TurnViewport({
   turnId,
   className,
+  contain = true,
   children,
 }: {
   turnId: string;
   className?: string;
+  contain?: boolean;
   children?: React.ReactNode;
 }) {
-  const laidOutOnce = useLaidOutOnce();
+  const laidOutOnce = useLaidOutOnce(contain);
 
   return (
-    <div data-turn-id={turnId} className={cn(turnContainmentClass(laidOutOnce), className)}>
+    <div
+      data-turn-id={turnId}
+      className={cn(contain && turnContainmentClass(laidOutOnce), className)}
+    >
       {children}
     </div>
   );

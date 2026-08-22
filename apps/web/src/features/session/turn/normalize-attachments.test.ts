@@ -110,6 +110,22 @@ describe('normalizeAttachments', () => {
     expect(file.filename).toBe('report.pdf');
   });
 
+  test('a data: URL file-part renders through an object URL, decoded once per part', () => {
+    // A composer screenshot rides the message as a `data:image/...;base64,`
+    // file part (uploaded-file-refs.ts). The transcript must never hand that
+    // multi-MB string to `<img src>`: the render reads a `blob:` object URL
+    // created ONCE per part id (attachment-object-url.ts). The part itself
+    // keeps the data URL — it is the persisted form.
+    const dataUrl =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    const p1 = part('prt_img', 'shot.png', 'image/png', dataUrl);
+    const [first] = normalizeAttachments([p1], []);
+    const [second] = normalizeAttachments([p1], []);
+    expect(first.src?.startsWith('blob:')).toBe(true);
+    expect(second.src).toBe(first.src);
+    expect(p1.url).toBe(dataUrl);
+  });
+
   test('no attachments produces an empty list, not undefined', () => {
     expect(normalizeAttachments([], [])).toEqual([]);
   });

@@ -1,5 +1,5 @@
 import { freezeClock, restoreClock } from './__fixtures__/clock';
-import { uninstallDom } from './__fixtures__/dom';
+import { installDom, uninstallDom } from './__fixtures__/dom';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { createRoot, type Root } from 'react-dom/client';
@@ -195,7 +195,10 @@ afterEach(async () => {
   await harness.unmount();
 });
 // Every later test file in this process gets the globals it expects.
-beforeAll(freezeClock);
+beforeAll(() => {
+  installDom();
+  freezeClock();
+});
 afterAll(() => {
   restoreClock();
   uninstallDom();
