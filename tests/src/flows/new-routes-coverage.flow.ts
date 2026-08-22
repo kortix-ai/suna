@@ -524,34 +524,6 @@ flow(
   },
 );
 
-flow(
-  'SESS-22',
-  {
-    domain: 'sessions',
-    routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/question',
-      'POST /v1/projects/:projectId/sessions/:sessionId/question',
-    ],
-  },
-  async (ctx) => {
-    const owner = ctx.client.as(ctx.P.OWNER);
-    const params = { projectId: ZERO_UUID, sessionId: ZERO_UUID };
-    await ctx.step('An unknown project hides durable session questions', async () => {
-      const read = await owner.get(
-        '/v1/projects/:projectId/sessions/:sessionId/question',
-        { params },
-      );
-      read.status(404);
-      const answer = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/question',
-        { answers: ['yes'] },
-        { params },
-      );
-      answer.status(404);
-    });
-  },
-);
-
 // `GW-11` covers `GET /v1/usage` for `group_by=model`, an invalid `group_by`,
 // and `start` > `end`. It leaves the rest of the contract unclaimed: the other
 // two valid enum values, the fact that each value produces a DIFFERENT

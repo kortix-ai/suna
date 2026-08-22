@@ -21,10 +21,17 @@
  * The relay is best-effort and retries, so recording is an upsert keyed on
  * (session_id, request_id): the same question arriving twice must not become
  * two prompts in the UI.
+ *
+ * The restore half — `GET`/`POST /v1/projects/:projectId/sessions/:sessionId/question`
+ * (read the open row; answer it as a follow-up turn) — was removed from
+ * routes/r4.ts together with `getOpenQuestion`, `resolvePendingQuestion`, and
+ * `renderAnswerPrompt`. Nothing reads an open row back today. The row is still
+ * written (the ask is not lost with the box) and `clearOpenQuestions` closes it
+ * when the turn ends another way.
  */
 
 import { sessionPendingQuestions } from '@kortix/db';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 export interface PendingQuestion {
@@ -88,72 +95,6 @@ export async function recordPendingQuestion(input: {
 }
 
 /**
- * The question this session is currently blocked on, if any.
- *
- * Newest first: a session should only ever have one open question, but if a
- * relay raced a restart the most recent ask is the live one.
- */
-export async function getOpenQuestion(sessionId: string): Promise<PendingQuestion | null> {
-  const [row] = await db
-    .select({
-      id: sessionPendingQuestions.id,
-      sessionId: sessionPendingQuestions.sessionId,
-      requestId: sessionPendingQuestions.requestId,
-      opencodeSessionId: sessionPendingQuestions.opencodeSessionId,
-      questions: sessionPendingQuestions.questions,
-      askedAt: sessionPendingQuestions.askedAt,
-    })
-    .from(sessionPendingQuestions)
-    .where(
-      and(
-        eq(sessionPendingQuestions.sessionId, sessionId),
-        isNull(sessionPendingQuestions.answeredAt),
-      ),
-    )
-    .orderBy(desc(sessionPendingQuestions.askedAt))
-    .limit(1);
-  if (!row) return null;
-  return {
-    id: row.id,
-    session_id: row.sessionId,
-    request_id: row.requestId,
-    opencode_session_id: row.opencodeSessionId,
-    questions: row.questions,
-    asked_at: row.askedAt,
-  };
-}
-
-/**
- * Mark a question answered.
- *
- * Conditional on it still being open, so a late duplicate answer cannot
- * overwrite the first one's payload — same compare-and-set discipline the
- * compute settle uses. Returns false when somebody already answered it.
- */
-export async function resolvePendingQuestion(input: {
-  sessionId: string;
-  requestId: string;
-  answers: unknown;
-}): Promise<boolean> {
-  const rows = await db
-    .update(sessionPendingQuestions)
-    .set({
-      answeredAt: sql`NOW()`,
-      answers: input.answers as never,
-      updatedAt: new Date().toISOString(),
-    })
-    .where(
-      and(
-        eq(sessionPendingQuestions.sessionId, input.sessionId),
-        eq(sessionPendingQuestions.requestId, input.requestId),
-        isNull(sessionPendingQuestions.answeredAt),
-      ),
-    )
-    .returning({ id: sessionPendingQuestions.id });
-  return rows.length > 0;
-}
-
-/**
  * Drop a session's open questions.
  *
  * Called when a turn ends for any other reason — the agent gave up, errored, or
@@ -172,47 +113,4 @@ export async function clearOpenQuestions(sessionId: string): Promise<number> {
     )
     .returning({ id: sessionPendingQuestions.id });
   return rows.length;
-}
-
-/**
- * Render a stored question and its answer as the text of a follow-up turn.
- *
- * The answer CANNOT be delivered inline to the call that blocked. That call
- * lived in an opencode process which has since been parked and restarted cold —
- * its request id no longer exists, and nothing is waiting on it. This is also
- * how the channel path has always worked: "the user's in-thread reply arrives
- * as a follow-up turn" (routes/r4.ts).
- *
- * So the answer arrives as a new turn, and it has to carry its own context: the
- * fresh opencode has no memory of asking. Quoting the question is what makes
- * the reply legible instead of a bare "yes" with nothing to attach it to.
- */
-export function renderAnswerPrompt(questions: unknown, answers: unknown): string {
-  const asked = Array.isArray(questions)
-    ? questions
-        .map((q) => {
-          const text =
-            q && typeof q === 'object'
-              ? ((q as { text?: unknown; question?: unknown }).text ??
-                (q as { question?: unknown }).question)
-              : q;
-          return typeof text === 'string' ? text.trim() : null;
-        })
-        .filter((t): t is string => !!t)
-    : [];
-
-  const given = Array.isArray(answers)
-    ? answers
-        .map((a) => (Array.isArray(a) ? a.join(', ') : typeof a === 'string' ? a : null))
-        .filter((t): t is string => !!t && t.trim().length > 0)
-    : [];
-
-  const lines: string[] = [];
-  if (asked.length > 0) {
-    lines.push('You asked:');
-    for (const q of asked) lines.push(`> ${q}`);
-    lines.push('');
-  }
-  lines.push(given.length > 0 ? given.join('\n') : '(no answer given)');
-  return lines.join('\n');
 }
