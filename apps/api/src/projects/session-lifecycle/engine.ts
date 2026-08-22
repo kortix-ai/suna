@@ -508,7 +508,16 @@ export async function continueSession(
     await sleep(POLL_INTERVAL_MS);
   }
 
-  if (command.opencodeEnv) {
+  // Converge the box BEFORE the prompt goes on the wire — every time, not only
+  // when this prompt carries an `opencodeEnv` override. The proxied
+  // `prompt_async` route has always done this (sandbox-proxy/pre-prompt-env-sync);
+  // this wake path did it only behind `if (command.opencodeEnv)`, so an ordinary
+  // `session.send()` prompt onto a box that had to be WOKEN reached OpenCode
+  // with whatever the box had at boot: a stale gateway base URL after a
+  // KORTIX_URL rotation, stale secrets, a stale model catalog. The sync is
+  // cheap and self-deduping (revision + model signature); an unchanged box
+  // costs one skipped push.
+  {
     const sandbox = opened.sandbox as {
       external_id?: string | null;
       provider?: string | null;
