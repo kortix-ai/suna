@@ -35,6 +35,9 @@ async function waitForOutputMatch(
     try {
       for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
         buf += dec.decode(chunk, { stream: true });
+        // The pumps outlive the match so the child's pipes stay drained for
+        // its whole life (a full pipe stalls cloudflared). Keep the tail only.
+        if (buf.length > 65_536) buf = buf.slice(-32_768);
       }
     } catch { /* stream closed when the process is killed */ }
   };
@@ -50,6 +53,16 @@ async function waitForOutputMatch(
 }
 
 export interface Tunnel { url: string; proc: ReturnType<typeof Bun.spawn>; }
+
+/** True when the quick tunnel's public URL answers the API health route. */
+export async function tunnelAnswers(url: string, apiPath = '/v1/health', timeoutMs = 8000): Promise<boolean> {
+  try {
+    const r = await fetch(`${url}${apiPath}`, { signal: AbortSignal.timeout(timeoutMs) });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
 
 export async function startTunnel(apiPort: number): Promise<Tunnel | null> {
   if (!which('cloudflared')) return null;
