@@ -229,9 +229,10 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
       // e56c580271: the lifecycle control is one icon button whose name flips
-      // with state; a never-deployed App is not running, so it offers "Wake"
-      // and stays disabled until a deployment exists.
-      await expect(appModal.getByRole('button', { name: 'Wake this App up' })).toBeDisabled();
+      // with `desired_state`. A fresh App row defaults to `running` (intent,
+      // not fact — see appStatus), so the control reads "sleep"; with no
+      // deployment it stays disabled either way.
+      await expect(appModal.getByRole('button', { name: 'Put this App to sleep' })).toBeDisabled();
       await expect(appModal.getByRole('link', { name: 'Open in a new tab' })).toBeVisible();
 
       // e56c580271: versions moved under the "More actions" menu.
