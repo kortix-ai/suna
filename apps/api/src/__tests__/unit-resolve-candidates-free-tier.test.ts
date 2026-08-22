@@ -23,7 +23,6 @@ mock.module('../config', () => ({
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return billingEnabled;
         if (key === 'KORTIX_MANAGED_PROVIDER_ENABLED') return managedProviderEnabled;
         if (key === 'LLM_GATEWAY_ENABLED') return true;
-        if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'glm-5.2';
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'codex/gpt-5.6-sol';

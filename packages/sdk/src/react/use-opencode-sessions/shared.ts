@@ -120,6 +120,9 @@ export function canQueryOpenCodeSession(sessionId: string | null | undefined): s
 }
 
 export function clearProjectProviderCache(projectId: string): void {
+  // `:native` is the scope the retired native-provider branch wrote. Nothing
+  // writes it any more; keep removing it so browsers that cached it under the
+  // old build do not hoard a stale list forever.
   providersCache.remove(`proj:${projectId}:native`);
   providersCache.remove(`proj:${projectId}:gateway`);
 }

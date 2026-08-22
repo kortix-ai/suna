@@ -58,7 +58,6 @@ import { ProviderConnect } from '@/features/providers/provider-connect';
 import { ModelSelector } from '@/features/session/model-selector';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { GatewayAccessTab } from '@/features/workspace/customize/sections/gateway-access-tab';
-import { CustomProviderPanel } from '@/features/workspace/customize/sections/llm-provider/custom-provider-panel';
 import { ModelsTab } from '@/features/workspace/customize/sections/llm-provider/models-tab';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
@@ -72,7 +71,7 @@ import { useIsMutating } from '@tanstack/react-query';
 export const MODELS_PAGE_TITLE = 'Models';
 export const MODELS_PAGE_DESCRIPTION = 'Which providers and models this project can use.';
 
-type LlmTab = 'providers' | 'models' | 'custom' | 'gateway' | 'routing' | 'overview' | 'logs';
+type LlmTab = 'providers' | 'models' | 'gateway' | 'routing' | 'overview' | 'logs';
 
 export const LLM_TABS: { id: LlmTab; label: string }[] = [
   // The keys you bring IN. Only the provider list — it was called "API keys"
@@ -80,10 +79,6 @@ export const LLM_TABS: { id: LlmTab; label: string }[] = [
   // way; see `gateway-access-tab.tsx`.
   { id: 'providers', label: 'Providers' },
   { id: 'models', label: 'Models' },
-  // The custom-provider form used to be section 4 of the Providers tab. It
-  // moved to its own tab so the screen everyone uses to paste a key stops
-  // ending in a form almost nobody fills — see `custom-provider-panel.tsx`.
-  { id: 'custom', label: 'Custom' },
   // The key you hand OUT, and the endpoints it opens. Two tabs once, four
   // apart, one of them sharing the other's label.
   { id: 'gateway', label: 'Gateway' },
@@ -244,7 +239,6 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           provider modal's own "Models" tab. Flattened to a sibling here so it
           keeps a home now that `ProviderConnect` has no tabs of its own. */}
       {tab === 'models' && <ModelsTab projectId={projectId} />}
-      {tab === 'custom' && <CustomProviderPanel projectId={projectId} canWrite={canWrite} />}
       {tab === 'gateway' && (
         <GatewayAccessTab
           projectId={projectId}

@@ -136,16 +136,14 @@ flow(
 
 // GW-5 — project-scoped LLM catalog surfaces read by the connect modal.
 //   GET /:projectId/llm-catalog           — model-level entries (Record<
-//                                          "provider/model", GatewayModel>),
-//                                          gated by the project's llm_gateway
-//                                          flag.
+//                                          "provider/model", GatewayModel>).
 //   GET /:projectId/llm-catalog/providers  — provider-level rows (id, name,
-//                                          env, docs, models), NOT gated by
-//                                          llm_gateway (BYOK connect modal
-//                                          applies to native projects too).
-// Both read the same 24h-refreshed runtimeModelCatalog; both enforce
-// project-read authz. Cover both in one flow so the gate can't drift between
-// the two shapes.
+//                                          env, docs, models).
+// Gateway mode is the only mode: neither route is gated by a per-project flag
+// (the retired `llm_gateway` flag used to 404 /llm-catalog with
+// `llm_gateway_disabled`). Both read the same 24h-refreshed
+// runtimeModelCatalog; both enforce project-read authz. Cover both in one flow
+// so the gate can't drift between the two shapes.
 flow(
   'GW-5',
   {
@@ -185,11 +183,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/llm-catalog', { params });
-      // /llm-catalog is gated by the project's llm_gateway flag. On a fresh
-      // fixture project the flag may be off → 404 (catalog disabled), or on
-      // → 200 with a `{models:...}` body. Either is a valid boundary; a 500
-      // is the only real failure.
-      r.status([200, 404]);
+      // Gateway mode is the only mode: a fresh fixture project always gets
+      // the model-level catalog (the old `llm_gateway_disabled` 404 is gone).
+      r.status(200).body().exists('$.models');
     });
 
     await ctx.step('OWNER → 200 with a provider catalog on /providers', async () => {
@@ -301,6 +297,7 @@ flow(
       'DELETE /v1/projects/:projectId/gateway/routing-policy',
       'POST /v1/projects/:projectId/gateway/routing-policy/preview',
       'GET /v1/projects/:projectId/model-picker',
+      'PATCH /v1/projects/:projectId/features',
     ],
   },
   async (ctx) => {
@@ -340,14 +337,17 @@ flow(
     await ctx.step(
       'compact project model picker is available without the full runtime catalog',
       async () => {
-        const enabled = await ctx.client
+        // Gateway mode is the only mode: `llm_gateway` is not a feature flag
+        // any more, so the PATCH that used to turn the picker on is an unknown
+        // key (400) and the picker is available without it.
+        const retired = await ctx.client
           .as(ctx.P.OWNER)
           .patch(
-            '/v1/projects/:projectId/experimental',
+            '/v1/projects/:projectId/features',
             { feature: 'llm_gateway', enabled: true },
             { params },
           );
-        enabled.status(200);
+        retired.status(400);
 
         const picker = await ctx.client
           .as(ctx.P.OWNER)

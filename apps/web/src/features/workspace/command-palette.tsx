@@ -114,7 +114,6 @@ import {
   contract,
   invalidateProject,
   qk,
-  refreshProjectProviderState,
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
@@ -576,7 +575,7 @@ function ChangeRequestsPage({
  * **Why toggling here rather than linking there.** Every other flag surface
  * costs three navigations to answer "is Voice on for this workspace?". The
  * flags are also the one settings list whose ROWS are what people search for
- * ("warm sessions", "llm_gateway" out of a changelog) — a single row pointing
+ * ("warm sessions", "review_center" out of a changelog) — a single row pointing
  * at a page they then have to search again is the defect this whole change
  * exists to remove. Selecting a row when the permission probe denies (or is
  * still in flight) navigates to the section instead of failing silently.
@@ -623,9 +622,6 @@ function FeatureFlagsPage({
       );
       void invalidateProject(queryClient, projectId);
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-      if (variables.key === 'llm_gateway') {
-        refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
-      }
       successToast(`${variables.key} ${variables.next ? 'enabled' : 'disabled'}`);
     },
     onError: (error: Error, variables) => {
@@ -643,7 +639,7 @@ function FeatureFlagsPage({
     if (!q) return withPending;
     // Matches `key` as well as `name`/`description`, for the same reason
     // `filterFeatures` in experimental-tab.tsx does: flags get turned on from
-    // docs and changelogs that name the raw key (`llm_gateway`).
+    // docs and changelogs that name the raw key (`warm_sessions`).
     return withPending.filter(
       (f) =>
         f.name.toLowerCase().includes(q) ||
@@ -833,9 +829,9 @@ export function CommandPalette() {
   // never survive a flag its rail item does not. Fail-closed: unresolved detail
   // ⇒ every flag reads false.
   //
-  // `llm_gateway` used to resolve to AVAILABILITY here while the Customize
-  // panel rendered nothing unless it was ENABLED — a palette entry that opened
-  // a blank pane. It now follows enablement like every other flag.
+  // A flag used to resolve to AVAILABILITY here while its Customize panel
+  // rendered nothing unless it was ENABLED — a palette entry that opened a
+  // blank pane. Every flag now follows enablement.
   // `projectFlags`, not `featureFlags` — the module-scope `featureFlags` import
   // above is the DEPLOYMENT flag set (`@kortix/sdk/feature-flags`, build-time
   // capabilities like `enableProjects`), a different concept from the

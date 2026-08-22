@@ -29,7 +29,6 @@ export type FeatureFlagKey =
   | 'agentmail_email'
   | 'teams'
   | 'voice'
-  | 'llm_gateway'
   | 'review_center'
   | 'meta_agent'
   | 'apps'
@@ -49,7 +48,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'agentmail_email',
   'teams',
   'voice',
-  'llm_gateway',
   'review_center',
   'meta_agent',
   'apps',

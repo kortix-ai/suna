@@ -419,8 +419,10 @@ const envSchema = z.object({
   // channel was the only consumer before this flag, so turning this off
   // restores the previous behaviour rather than regressing email sessions.
   CONNECTORS_MCP_ENABLED: optBoolTrue,
-  // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
-  // sandbox model call here. Off by default.
+  // Operator kill switch for /v1/llm (wire.ts returns 503 when off). It does
+  // NOT change how sessions are configured: every sandbox always receives
+  // KORTIX_LLM_* (gateway mode is the only mode); with the switch off those
+  // calls fail visibly with 503. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
   // CLOUD-ONLY. Whether KORTIX's own managed model lineup exists on this
   // deployment. The lineup routes through Kortix's shared Bedrock, AsterLab,
@@ -436,14 +438,6 @@ const envSchema = z.object({
   // (descriptors.ts) — both are gated on this and read no managed credentials
   // when off.
   KORTIX_MANAGED_PROVIDER_ENABLED: optBoolUnset,
-  // Fleet default for projects with no explicit per-project override. Defaults
-  // ON: wherever the gateway is available (master switch above), the managed
-  // gateway is the default routing mechanism and every project inherits it
-  // unless it explicitly opts out. The master switch still wins —
-  // LLM_GATEWAY_ENABLED=false forces native OpenCode for everyone regardless of
-  // this value — and an operator can set LLM_GATEWAY_DEFAULT_ENABLED=false to
-  // opt a whole environment back to native-by-default.
-  LLM_GATEWAY_DEFAULT_ENABLED: optBoolTrue,
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL: optStr,
@@ -1118,7 +1112,6 @@ export const config = {
   // blob misses the var; self-host stays off). Explicit value always wins.
   KORTIX_MANAGED_PROVIDER_ENABLED:
     env.KORTIX_MANAGED_PROVIDER_ENABLED ?? env.KORTIX_BILLING_INTERNAL_ENABLED,
-  LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
   LLM_GATEWAY_VISION_MODEL: env.LLM_GATEWAY_VISION_MODEL,

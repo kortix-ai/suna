@@ -13,11 +13,9 @@ import {
 } from '@/components/ui/command';
 import Loading from '@/components/ui/loading';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, type ProviderListResponse } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
@@ -384,18 +382,9 @@ export function ModelSelector({
     showUpgradeOption,
   } = useModelConnectionGate(models);
 
-  const params = useParams<{ id?: string }>();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: !!projectId,
-    ...contract('config'),
-  });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
-  const baseModels = useMemo(() => {
-    return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
-  }, [models, llmGatewayEnabled]);
+  // Gateway mode is the only mode: every model the runtime lists belongs to
+  // the `kortix` provider, so there is nothing to filter here.
+  const baseModels = models;
 
   const availableSelectedModel = entitlementsPending
     ? selectedModel
@@ -446,7 +435,7 @@ export function ModelSelector({
       { providerName: string; providerID: string; models: FlatModel[] }
     >();
     for (const m of visibleModels) {
-      const groupID = llmGatewayEnabled ? pickerGroupId(m) : m.providerID;
+      const groupID = pickerGroupId(m);
       const existing = groups.get(groupID);
       if (existing) {
         existing.models.push(m);
@@ -457,7 +446,7 @@ export function ModelSelector({
           // "Kortix" (opencode's raw provider name), which is exactly the
           // "every provider shows as Kortix" bug. Label by the resolved real
           // provider id instead. See pickerGroupLabel's doc comment.
-          providerName: llmGatewayEnabled ? pickerGroupLabel(groupID, m) : m.providerName,
+          providerName: pickerGroupLabel(groupID, m),
           models: [m],
         });
       }
@@ -472,7 +461,7 @@ export function ModelSelector({
       return a.providerName.localeCompare(b.providerName);
     });
     return entries;
-  }, [visibleModels, llmGatewayEnabled]);
+  }, [visibleModels]);
 
   /**
    * The account default, lifted to the top of the list in its own section.
@@ -495,13 +484,13 @@ export function ModelSelector({
       (m) => m.providerID === ref.providerID && m.modelID === ref.modelID,
     );
     if (!model) return null;
-    const groupID = llmGatewayEnabled ? pickerGroupId(model) : model.providerID;
+    const groupID = pickerGroupId(model);
     return {
       model,
       providerID: groupID,
-      providerName: llmGatewayEnabled ? pickerGroupLabel(groupID, model) : model.providerName,
+      providerName: pickerGroupLabel(groupID, model),
     };
-  }, [defaultControls?.accountDefault, llmGatewayEnabled, visibleModels]);
+  }, [defaultControls?.accountDefault, visibleModels]);
 
   const handleSelect = useCallback(
     (model: FlatModel) => {

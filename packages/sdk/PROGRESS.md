@@ -12,6 +12,46 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-22 — session `gateway-mode-only` — `useRuntimeProviders` is gateway-only (hook half) — DONE
+
+**Files:** `react/use-opencode-sessions/providers.ts` (one query per source:
+gateway model-picker inside a project route, runtime `provider.list` outside;
+no project-detail read, no `llm_gateway` fork) · `provider-load-plan.ts`
+(`shouldLoadProjectModelPicker` → `providerQueryPlan`, internal) + test (4 cases)
+· `provider-selection.ts` (`filterToNativeProviders`,
+`mergeProjectSecretConnectedProviders` marked `@deprecated`; exports kept, both
+surface snapshots unchanged) · `use-opencode-sessions/shared.ts` (comment on the
+legacy `:native` cache scope) · `CHANGELOG.md` (`### Breaking` behaviour note +
+`### Deprecated`).
+
+**What.** With the API no longer emitting `experimental.llm_gateway`, the old
+hook read `undefined === true` → false for every project → the native branch →
+`provider.list` with `kortix` filtered out → zero models → retry forever. Dead
+picker on every project. Now a project route always renders the gateway
+catalog. `ModelProviderMode` (`'native' | 'gateway'`, `use-opencode-local.ts`)
+is untouched: it is a localStorage selection-key prefix derived from the list,
+and narrowing it would orphan every stored pick.
+
+---
+
+### 2026-08-22 — session `gateway-mode-only` — `llm_gateway` is not a feature flag (key list half) — DONE
+
+**Files:** `core/rest/projects-client/projects.ts` (`FeatureFlagKey` union and
+`FEATURE_FLAG_KEYS` drop `'llm_gateway'`) + `projects.test.ts` (key list) ·
+`CHANGELOG.md` (`### Breaking`). Type-surface snapshot unchanged (it records
+names; `FeatureFlagKey` keeps its name). Lands in the same commit as the API
+registry + contract removal so `apps/api/src/__tests__/unit-feature-flag-drift.test.ts`
+(contract ↔ SDK ↔ registry) stays green at every commit.
+
+**What.** Gateway mode is the only session mode. A flag that selected a
+provider/runtime MODE (`llm_gateway` off → native OpenCode providers the web
+has no UI for → empty picker, dead session) is a broken branch, not a flag.
+The rest of the SDK half (`useRuntimeProviders` gateway-only, native helpers
+deprecated, `ModelProviderMode` narrowed) is the follow-up session entry above
+this one.
+
+---
+
 ### 2026-08-21 — session `session-busy-flicker` — display order was not an order — DONE
 
 **Files:** `core/turns/grouping.ts` (`compareMessagesForDisplay` rewritten as two

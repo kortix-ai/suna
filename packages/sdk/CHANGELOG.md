@@ -42,6 +42,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `KortixProject` **as exported from `@kortix/sdk/opencode-client`** — renamed to
   `KortixMasterProject`. The platform's `KortixProject` (from the root) is
   unchanged and keeps its name.
+- `filterToNativeProviders` and `mergeProjectSecretConnectedProviders`
+  (`@kortix/sdk/react`). Gateway mode is the only mode, so
+  `useRuntimeProviders` no longer has a native-provider branch that calls
+  them. Still exported; removed in the next major.
 
 ### Fixed
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
@@ -78,6 +82,19 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `InviteDetailsVisible`, `InviteDetailsRedacted` (`/platform/invites/*` is gone).
   - `supabaseClient` (the `./api-client` alias) and the `@internal`
     `__getConfigResolver` (zero readers; its sibling `__setConfigResolver` stays).
+
+### Breaking
+
+- `llm_gateway` is no longer a feature flag; gateway mode is the only mode.
+  `FeatureFlagKey` loses the `'llm_gateway'` member and `FEATURE_FLAG_KEYS` no
+  longer lists it. `useFeatureFlag(id, 'llm_gateway')` stops compiling on
+  purpose: the API registry retired the key (`PATCH /features` returns 400 for
+  it) and every session is configured for the Kortix gateway.
+- `useRuntimeProviders` (alias `useOpenCodeProviders`) is gateway-only inside a
+  project route: it always reads `project(id).modelPicker()` and never the
+  runtime's own `provider.list`. It no longer reads project detail, no longer
+  waits for the runtime to be ready, and the `kortix` provider is never
+  filtered out. Outside a project route it still reads the runtime list.
 
 ### Internal
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.

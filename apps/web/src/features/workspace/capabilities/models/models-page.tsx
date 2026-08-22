@@ -1,13 +1,8 @@
 'use client';
 
-import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
-import { useQuery } from '@tanstack/react-query';
-
 import { useStandaloneCapabilityNav } from '@/features/workspace/capabilities/shared/standalone-settings-nav';
 import { ModelsTab } from '@/features/workspace/settings/tabs/models-tab';
 import { SettingsNavProvider } from '@/features/workspace/shared/settings-nav-context';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 
 /**
  * The page body for /projects/[id]/models — Models graduated out of the
@@ -35,22 +30,11 @@ import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
  * not the overlay or `/config`.
  */
 export function ModelsPage({ projectId }: { projectId: string }) {
-  const detail = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    enabled: !!projectId,
-    ...contract('config'),
-  });
-
-  // Gates the pane's CONTENT, not the tab's visibility — a project without
-  // the managed gateway still opens Models, it just sees a narrower set of
-  // providers. Getting this backwards hides the tab from most projects.
-  const llmGatewayEnabled = isLlmGatewayEnabled(detail.data?.project);
   const settingsNav = useStandaloneCapabilityNav(projectId, 'models');
 
   return (
     <SettingsNavProvider value={settingsNav}>
-      <ModelsTab projectId={projectId} llmGatewayEnabled={llmGatewayEnabled} />
+      <ModelsTab projectId={projectId} />
     </SettingsNavProvider>
   );
 }

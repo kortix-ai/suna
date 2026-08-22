@@ -212,6 +212,6 @@ describe('project-home makes no request it knows will 403', () => {
 
   test('the model connection gate requires project.secret.read before listing secrets', () => {
     expect(gateSrc).toContain('PROJECT_ACTIONS.PROJECT_SECRET_READ');
-    expect(gateSrc).toContain('llmGatewayEnabled && canReadSecrets');
+    expect(gateSrc).toContain('!!projectId && canReadSecrets');
   });
 });

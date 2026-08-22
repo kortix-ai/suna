@@ -78,7 +78,7 @@ import {
   type FeatureFlagView,
   type ProjectDetail,
 } from '@kortix/sdk';
-import { contract, invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 import { FlagIcon, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SettingsTabHeader } from '../settings-tab-header';
@@ -124,9 +124,9 @@ function originLabel(feature: FeatureFlagView): string {
  *
  * Matches `key` as well as `name` and `description`, and the key is the one
  * that earns its place: flags get turned on from docs, changelogs and support
- * threads that name the raw key (`llm_gateway`), not the display name ("LLM
- * gateway"). A search reading only `name` would miss the exact term the reader
- * was handed.
+ * threads that name the raw key (`warm_sessions`), not the display name ("Warm
+ * sessions"). A search reading only `name` would miss the exact term the
+ * reader was handed.
  *
  * A blank or whitespace-only query returns the input unchanged — same array,
  * so React Query's result keeps its identity and the list does not re-render
@@ -399,9 +399,6 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
       // qk.projects.scope() is the shared prefix every list form (every
       // account's, plus the accountless slot) lives under.
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-      if (variables.key === 'llm_gateway') {
-        refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
-      }
     },
     onError: (error: Error, variables) => {
       errorToast(error.message || `Failed to update ${variables.key}`);

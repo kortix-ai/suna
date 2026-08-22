@@ -1,10 +1,9 @@
 'use client';
 
 import { isManagedProviderEnabled } from '@/lib/config';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { getManagedModel, isProviderAuthSatisfied } from '@kortix/llm-catalog';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
+import { listProjectSecrets } from '@kortix/sdk';
 import { contract, qk, useRuntimeProviders } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
@@ -23,14 +22,6 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   // bindings are reassigned, not mutated — a plain memo dependency array
   // won't otherwise notice). See use-live-catalog.ts.
   const catalogRevision = useLlmProviderCatalogRevision();
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-    enabled,
-  });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
-
   const secretsQuery = useQuery({
     queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
@@ -44,10 +35,9 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     return new Set(items.map((item) => item.name));
   }, [secretsQuery.data]);
 
-  // The managed Kortix gateway exists only for projects that explicitly opt
-  // into the LLM Gateway. Native OpenCode projects should show only providers
-  // backed by project secrets, even if an old running sandbox still exposes a
-  // stale `kortix` provider.
+  // Gateway mode is the only mode: every project's runtime provider list is
+  // the gateway's `/model-picker` answer, where the managed Kortix row lives
+  // when the deployment offers managed models.
   const runtimeProvidersQuery = useRuntimeProviders();
   const { data: ocProviders } = runtimeProvidersQuery;
 
@@ -57,7 +47,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     // entry with `models: []` — check the public flag directly so the
     // "Managed · Included with your plan" row simply doesn't render instead of
     // showing a managed provider with zero models.
-    if (!llmGatewayEnabled || !isManagedProviderEnabled()) return null;
+    if (!isManagedProviderEnabled()) return null;
     const connectedIds = new Set(ocProviders?.connected ?? []);
     const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
     if (!kortix || !connectedIds.has('kortix')) return null;
@@ -102,7 +92,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
       featured: true,
       managed: true,
     };
-  }, [llmGatewayEnabled, ocProviders]);
+  }, [ocProviders]);
 
   const connectedProviders = useMemo(() => {
     const hasCodexSubscription =
@@ -118,9 +108,8 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   }, [secretNames, kortixProvider, ocProviders, catalogRevision]);
 
   const providerStateLoading = isProviderStateLoading({
-    projectDetailLoading: projectDetailQuery.isLoading,
     secretsLoading: secretsQuery.isLoading,
   });
 
-  return { secretsQuery, connectedProviders, llmGatewayEnabled, providerStateLoading };
+  return { secretsQuery, connectedProviders, providerStateLoading };
 }

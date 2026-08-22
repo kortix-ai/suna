@@ -22,7 +22,6 @@ import {
   sandboxCallbackDeadTunnelReason,
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../routes/shared';
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import {
@@ -244,7 +243,6 @@ export async function restartSession(input: {
           opencodeModel,
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
-          llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
           // A restarted meta coordinator must keep its meta runtime: without
           // this the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and the
           // meta agent config, so the daemon clones the project over the meta

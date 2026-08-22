@@ -136,10 +136,12 @@ describe('Models page chrome', () => {
   });
 });
 
-describe('Models tab — the gate', () => {
-  test('renders nothing while the gateway is disabled, matching the panel it replaced', () => {
-    // The gate is the flag the host threads in, NOT a second derivation.
-    expect(tabSource).toContain('if (!llmGatewayEnabled) return null;');
+describe('Models tab — no gate', () => {
+  test('Models is always on: gateway mode is the only mode, so the tab has no flag to read', () => {
+    // The retired `llm_gateway` flag used to hide the whole pane. There is no
+    // second mode any more, so there is nothing to gate on — not the flag, not
+    // an availability bit, not a re-derivation.
+    expect(tabSource).not.toContain('llmGatewayEnabled');
     expect(tabSource).not.toContain('isLlmGatewayEnabled(');
     expect(tabSource).not.toContain('llmGatewayAvailable');
     expect(tabSource).toContain('<LlmManagementView projectId={projectId} />');
@@ -153,7 +155,6 @@ describe('Models page — the seven tabs', () => {
     for (const pair of [
       "{ id: 'providers', label: 'Providers' }",
       "{ id: 'models', label: 'Models' }",
-      "{ id: 'custom', label: 'Custom' }",
       "{ id: 'gateway', label: 'Gateway' }",
       "{ id: 'routing', label: 'Routing' }",
       "{ id: 'overview', label: 'Costs' }",
@@ -164,7 +165,6 @@ describe('Models page — the seven tabs', () => {
     expect(LLM_TABS.map((t) => t.id)).toEqual([
       'providers',
       'models',
-      'custom',
       'gateway',
       'routing',
       'overview',
@@ -201,12 +201,17 @@ describe('Models page — the seven tabs', () => {
   test('the merged-away and deleted tabs never come back as tabs', () => {
     // Playground deleted outright; `keys` + `api` are the Gateway tab now;
     // `budgets` is a section of Costs. None may return as a tab id.
+    // `custom` generated an OpenCode `provider:{...}` block for
+    // `.opencode/opencode.jsonc` — an OpenCode-native provider, which no
+    // session can use: OpenCode sees exactly one provider, `kortix`.
     for (const dead of [
       "id: 'playground'",
       "id: 'budgets'",
       "id: 'keys'",
       "id: 'api'",
+      "id: 'custom'",
       'GatewayPlayground',
+      'CustomProviderPanel',
     ]) {
       expect(gatewaySource).not.toContain(dead);
     }
