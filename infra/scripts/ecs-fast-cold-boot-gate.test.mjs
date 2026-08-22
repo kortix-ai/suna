@@ -21,6 +21,21 @@ function runFunction(name, ...args) {
 }
 
 describe('fast cold boot deployment gate', () => {
+  test('maps every permanent API environment to its standalone gateway origin', () => {
+    const targets = {
+      dev: 'https://gateway-dev-ecs-fargate.kortix.com',
+      staging: 'https://gateway-staging-ecs-fargate.kortix.com',
+      prod: 'https://gateway-ecs-fargate.kortix.com',
+      'prod-use2-shadow': 'https://gateway-use2-shadow.kortix.com',
+    };
+    for (const [environment, target] of Object.entries(targets)) {
+      const result = runFunction('gateway_target_for_env', environment);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe(target);
+    }
+    expect(runFunction('gateway_target_for_env', 'unknown').status).toBe(2);
+  });
+
   test('requires the capability only for a flag-on deployment that can use Platinum', () => {
     expect(runFunction(
       'fast_cold_boot_requires_atomic_admission',
