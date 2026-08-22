@@ -31,6 +31,7 @@ import {
 } from './helpers';
 import { useEventStreamRefs } from './use-event-stream-refs';
 import { openEventStream } from '../../core/stream/event-stream';
+import { handleEventStreamParked } from './parked';
 
 /**
  * Connects to OpenCode's SSE event stream via the SDK and
@@ -271,6 +272,10 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
         handleEvent(event);
       },
       onGapRehydrate: () => hydrateCore({ rehydrateMessages: true }),
+      // A parked stream is terminal. Hand over to the health probe loop so the
+      // first healthy probe re-runs this effect and opens a fresh one — see
+      // `handleEventStreamParked` for why the probe alone cannot notice.
+      onParked: handleEventStreamParked,
     });
 
     return () => {

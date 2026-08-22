@@ -12,6 +12,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reconnect. Closes the "turn ended inside a short disconnect, transcript
   short until hard refresh" hole the `> 5s`/busy-only gap path and the
   turn-end path both miss.
+- A parked event stream (gave up after 8 consecutive hard failures on
+  `/event`) now marks the runtime unhealthy (`handleEventStreamParked`) so the
+  health-probe loop re-arms it: the first healthy probe re-runs the stream
+  effect and opens a fresh stream. Before, OpenCode could restart behind a
+  daemon that kept passing every probe and the stream stayed dead until a
+  hard refresh.
 - Typed unified session-cost reads through
   `billing.sessionCosts.{list,get}` and `session(pid,sid).cost()`. The response
   combines finalized LLM and compute costs, model usage, and ledger entries.

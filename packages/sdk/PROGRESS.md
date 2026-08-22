@@ -12140,3 +12140,23 @@ commit body.
 **Shippable to production: YES** (SDK-only, additive, behind an event the
 runtime already emits on every connection).
 
+### 2026-08-22 (same session, follow-up) — parked stream hands over to the probe loop
+`onParked` was never subscribed. The stream is opened from an effect keyed on
+`runtimeHealthy`; the probe behind that flag addresses the DAEMON port, so an
+OpenCode crash/restart (the "opencode is borderline crashing" session) parks
+the stream while every probe passes — dead until hard refresh.
+
+Change: `react/use-opencode-events/parked.ts` `handleEventStreamParked(info)`
+→ `setOpenCodeHealth(false, undefined, 'event stream parked after N …')`;
+wired as `onParked` in `index.ts`. Cadence if `/event` stays dead behind a
+healthy daemon: 8 failed connects with 1s→30s backoff (~2 min) → unhealthy →
+probe at 150ms → healthy → fresh stream; i.e. 8 attempts per ~2 min, UI
+truthfully "reconnecting" meanwhile.
+
+TDD: `parked.test.ts` written first, RED (`Cannot find module './parked'`),
+then GREEN 3/3. **Evidence** — typecheck clean; `bun test --isolate src` →
+2513 tests, 0 fail, 163 files; smoke:install passed on the previous commit of
+this branch (no export/entry change since).
+
+**Shippable to production: YES.**
+
