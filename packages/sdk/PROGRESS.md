@@ -4736,7 +4736,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B48 | **Canonical feature-flag naming + one gating primitive.** The platform renamed the system to "Feature flags" (`FeatureFlag*` in `@kortix/api-contract`, `FeatureFlagStabilitySchema` = experimental\|beta\|stable, gated routes returning `403 {code:'feature_disabled', feature}`, canonical `PATCH /projects/:id/features`). The SDK still exposed only `Experimental*` names, had no runtime key list for cross-package drift tests, no typed narrowing for the 403, and no shared React gate hook — so every host hand-rolled `project?.experimental?.<key> === true`. | Additive only: `FeatureFlagKey`, `FeatureFlagView` (stability widened to `'experimental'\|'beta'\|'stable'`), `FEATURE_FLAG_KEYS`, `updateFeatureFlag` (canonical `/features` route), `isFeatureDisabledError`, `FeatureDisabledError`, `useFeatureFlag`, and `project(id).updateFeatureFlag` on the facade. Every `Experimental*` name kept as a `@deprecated` alias; `updateExperimentalFeature` keeps its `/experimental` wire path for older deployed APIs. | **DONE 2026-08-08** — session `feature-flags-web`; TDD RED first on all four (`Export named 'FEATURE_FLAG_KEYS' not found`, `Export named 'isFeatureDisabledError' not found`, `Cannot find module './use-feature-flag'`); GREEN at `1777 pass, 0 fail, 6965 expect()` across `139` files; `typecheck` exit 0 (package + examples); `smoke:install` packed + installed + imported OK. Both surface snapshots re-recorded and reviewed: **11 + 20 insertions, 0 removals — purely additive** |
 | B49 | **`applyOptimisticAbort` marks a turn errored but never ends it.** It sets `error: AbortError` and flips the session idle, but leaves `time.completed` unset — and an aborted turn may never receive a `message.updated` that sets it. Any host predicate written as `!lastAssistant.time?.completed` therefore stays true for the life of the tab after every stop. It wedged `apps/web`'s message-queue drain gate permanently: every message typed after an interrupt queued behind one that could never be released. | `src/react/use-session-send.ts:271-296` — sets `error`, no `time.completed`. Worked around host-side in `apps/web/src/features/session/assistant-turn-open.ts` (errored ⇒ ended), which is a patch on the symptom; the SDK should end the turn it aborts. | OPEN |
 | B50 | **`applyPostCreateActions`'s `deliver_prompt` action shares `postPrompt`/`continueSession` with `executeQueuedContinue` but has no equivalent no-blind-repost protection at the call-site level for its OWN retry path.** A `create_session` command whose post-create actions fail (`postCreate.ok === false`) is re-queued `retryable: true` (`engine.ts` `drainSessionLifecycleQueue`, the `create_session` branch); the NEXT drain sees `row.sessionId` already set, returns the existing session immediately, then re-runs `applyPostCreateActions` — including `deliver_prompt` — from scratch. The re-post is protected by the SAME prompt-dedupe TTL fix landed in T13 (identical `sessionId`+`text` on retry → identical content-hash key → collides), so it is NOT currently broken, but nothing documents or pins that shared guarantee at this second call site the way `executeQueuedContinue`'s doc comment now does. | `engine.ts` `drainSessionLifecycleQueue` create-session branch (~lines 513-535 pre-edit) → `applyPostCreateActions` → `continueSession` with `action.source`/`action.text`, same `postPrompt` as the continue_session path. Out of scope for T13 (task named `engine.ts`'s "delivery-retry region" as `executeQueuedContinue`/`postPrompt`, not the create-session post-actions branch). | OPEN — same fix already covers it in practice; needs its own doc comment + pinning test if this path is ever revisited. |
-| B51 | **No row model for the transcript.** Every host re-derives "what does this turn render as" from `groupMessagesIntoTurns` output on every frame, and re-allocates the whole render list even when nothing changed. There is no shared, pure, virtualizer-ready row union and no identity-preserving reuse pass. | `packages/sdk/src/core/turns/` has grouping (`grouping.ts`), part helpers (`parts.ts`) and turn state (`state.ts`), but nothing that flattens a turn into ordered rows. `apps/web/src/features/session/turn/stable-turns.ts` proves the reuse pattern host-side only. | **IN PROGRESS 2026-08-22** — session `sdk-timeline-rows`; Stage 1 = `core/turns/timeline.ts` (`constructTimelineRows`, `reuseTimelineRows`, `Timeline*` types) + `timeline.test.ts`, additive only, no host consumer yet. |
+| B51 | **No row model for the transcript.** Every host re-derives "what does this turn render as" from `groupMessagesIntoTurns` output on every frame, and re-allocates the whole render list even when nothing changed. There is no shared, pure, virtualizer-ready row union and no identity-preserving reuse pass. | `packages/sdk/src/core/turns/` has grouping (`grouping.ts`), part helpers (`parts.ts`) and turn state (`state.ts`), but nothing that flattens a turn into ordered rows. `apps/web/src/features/session/turn/stable-turns.ts` proves the reuse pattern host-side only. | **DONE 2026-08-22 (`f4d872cfe3`)** — session `sdk-timeline-rows`; Stage 1 = `core/turns/timeline.ts` (`constructTimelineRows`, `reuseTimelineRows`, `Timeline*` types) + `timeline.test.ts` (61 tests), additive only, no host consumer yet. |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -4798,6 +4798,134 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 ---
 
 ## Session log
+
+### 2026-08-22 — session `sdk-timeline-rows` — B51: the transcript has a row model — DONE
+
+**Files:** `core/turns/timeline.ts` (NEW) + `core/turns/timeline.test.ts` (NEW,
+61 tests) · `core/turns/index.ts` (+`export * from './timeline'`) ·
+`examples/timeline-rows.ts` (NEW) · `README.md` (new "Timeline rows" section) ·
+both surface snapshots. **Additive only** — `groupMessagesIntoTurns`,
+`compareMessagesForDisplay`, `TurnLike`, `MessageWithPartsLike`, `PartLike` and
+`PartWithMessage` are untouched.
+
+**What.** Every host re-derived "what does this turn render as" from
+`groupMessagesIntoTurns` output on every frame, and re-allocated the whole
+render list even when nothing changed. There was no shared, pure,
+virtualizer-ready row union and no identity-preserving reuse pass.
+`apps/web/src/features/session/turn/stable-turns.ts` proved the reuse pattern
+host-side only.
+
+**Now.** `constructTimelineRows(messages, options?)` flattens a transcript into
+one ordered, uniquely keyed `TimelineRow[]`. Eight kinds discriminated on
+`kind` (never `type` — that is the part discriminant): `turn-gap`,
+`user-message`, `turn-divider` (`compaction` | `interrupted`),
+`assistant-part`, `thinking`, `retry`, `diff-summary`, `error`. Emitted per
+turn in that exact order, with the interrupted divider INSIDE the assistant run
+at the aborted message's position. `reuseTimelineRows(prev, next)` returns the
+PREVIOUS object for every unchanged row and the PREVIOUS ARRAY when no row
+changed at all.
+
+**The three properties that make it work.**
+
+1. **Rows hold ids and refs, never part content.** The only value-bearing
+   fields in the union are `error.text` and `diff-summary.diffs` — and `diffs`
+   is a projection (`file`/`additions`/`deletions`/`status`) that drops the
+   wire's `before`/`after` (v1 `FileDiff`) and `patch` (v2 `SnapshotFileDiff`).
+   A streaming text part keeps its `(messageID, partID)`, so its row is
+   correctly reused while the body grows. Pinned by a test.
+2. **Keys are precomputed and stable.** A function of `kind` + `userMessageID`
+   (+ the divider's `label`, + the part group's key). No index, no timestamp,
+   no content hash — appending a turn leaves every earlier key byte-identical.
+   `kind` is encoded in the key, so a row's kind cannot change under a stable
+   key. A `Set` suffixes a duplicate rather than throwing: this is a render
+   path, and a duplicate `part.id` inside one message would otherwise crash a
+   list renderer. Covered by a test, so nobody assumes it is unreachable.
+3. **Grouping and renderability are injected.** `options.groupPart` /
+   `options.isRenderablePart`. The SDK ships NO hardcoded
+   `CONTEXT_GROUP_TOOLS = {read, glob, grep, list}` table, because `apps/web`
+   already owns a richer model (`segment-turn.ts`, `merge-steps.ts`,
+   `group-steps.ts`) and two grouping implementations that must agree forever
+   is exactly the trap `merge-steps.ts` documents. When `apps/web` adopts this,
+   it must feed its EXISTING grouping through the hook, not re-derive it.
+
+**`reuseTimelineRows`, five phases.** Cold path → `byKey` index → context-key
+stabilization → per-row identity swap → array collapse. The stabilizer is the
+subtle part: a context group's key is pinned to its FIRST member, so a run that
+loses its head silently RENAMES itself and destroys the row key, dropping
+measured height, expand state and the mounted component. Ported from OpenCode's
+`stabilizeContextKey`, keyed by `userMessageID` (never `messageID`) so one
+turn's context identity can never be adopted by another turn's row. The array
+collapse compares against the POST-SWAP `out`, not `next` — comparing `next`
+still typechecks, still returns correct data, still passes every content test,
+and delivers none of the benefit. The `toBe` assertion on "returns the PREVIOUS
+ARRAY itself" is the only thing that catches it.
+
+Equality is an exhaustive `switch (a.kind)` with a `never` guard: a ninth row
+kind without a comparison arm is a COMPILE error. It cannot force a comparison
+for a new FIELD on an existing kind — which is the other half of why rows must
+stay content-free.
+
+**Two spec expectations corrected while deriving the fixtures.** (a) A turn that
+is active AND `status === 'retry'` cannot emit `diff-summary`, whose condition
+is `status === 'idle' || !isActive` — so the ordering test's retry variant
+asserts five kinds, not six, and `diff-summary` coverage moves to the idle
+variant. (b) The eight canonical kinds cannot co-occur in one call at all
+(`thinking` needs `busy`, `retry` needs `retry`, `thinking` needs no error), so
+the ordering test asserts three variants that together cover all eight and each
+is a strict SUBSEQUENCE of the canonical order.
+
+**RED → GREEN.** Stub module first: `60 fail / 1 pass` (the 12 rows that passed
+vacuously against an empty result were strengthened with length and kind
+assertions until only the genuinely-correct `constructTimelineRows([]) === []`
+remained). Implementation: `61 pass / 0 fail`.
+
+**Gates (real output).**
+
+- `npx tsc --noEmit` → exit `0`; `npx tsc --noEmit -p examples/tsconfig.json` →
+  exit `0`.
+- `bun test --isolate src` → **2485 pass / 2 skip / 0 fail**, 2487 tests across
+  163 files. Session baseline on `origin/main` (`fff09446e2`) was 2424 pass / 2
+  skip / 0 fail across 162 files, so `+61` tests and `+1` file, no regression.
+- `bun test src` (non-isolated) → 2005 pass / 480 fail, identical 480-fail
+  baseline to `origin/main`. The cross-file failures are pre-existing global
+  pollution; `--isolate` is the real gate.
+- `bun test src/core/turns/` → 210 pass / 0 fail across 8 files (149 baseline
+  + 61 new).
+- `bun test src/index.isomorphic.test.ts` → 70 pass / 0 fail; the 48
+  `isomorphic-core` "no forbidden framework imports" arms are green.
+- `bun test src/public-surface.test.ts src/public-type-surface.test.ts` →
+  2 pass / 0 fail. Snapshot diff is **purely additive**: 44 insertions, 0
+  removals, landing under BOTH `'.'` and `'./turns'`.
+- `node scripts/smoke-install.mjs` → `✔ install smoke test passed`.
+- Untouched suites green with zero edits: `core/turns/turns.test.ts`,
+  `core/turns/display-order.test.ts`, `browser/stores/sync-store.test.ts`
+  (225 pass / 0 fail together) and `apps/web`'s
+  `features/session/turn/stable-turns.test.ts` (8 pass / 0 fail).
+- `examples/timeline-rows.ts` runs: reuses 2 of 2 prior rows across a streaming
+  frame, allocates 1 new row, and preserves array identity on an unchanged
+  frame.
+
+**Open / not done.**
+
+- **No host consumes this yet.** `apps/web` still renders through
+  `stabilizeTurns` + `segmentTurn` + `mergeBurstSteps`. The performance claim is
+  structural, not measured — do not claim a measured win.
+- **The context-key stabilizer is DEAD under the default options** (`groupPart`
+  returns `undefined`, so no context group is ever built). The six
+  stabilization tests build groups through a test-local `groupPart` so the path
+  is exercised anyway.
+- **The positional part-id fallback is unstable under prepend.**
+  `${message.info.id}:#${index}` renames every following row when a part is
+  inserted ahead of it. Mitigated by `options.getPartId` and pinned by a test;
+  promote `id` into `PartLike` if hosts hit it in practice.
+- **`apps/web/content/docs/sdk/*` was NOT updated** — this session was scoped to
+  `packages/sdk` and instructed not to touch `apps/web`. `packages/sdk/README.md`
+  carries the row model.
+- Not pushed, no PR opened, per the session's instructions.
+
+**Shippable to production: YES** (as an additive, unconsumed public surface).
+
+---
 
 Append only. Newest at the bottom. One entry per session, even a short one.
 
