@@ -12200,3 +12200,18 @@ this branch (no export/entry change since).
 
 **Shippable to production: YES.**
 
+### 2026-08-22 (same session, follow-up 2) — gateway-only residue (branch `chore/gateway-only-residue`)
+Adversarial lens on #6744 flagged inert-but-real remnants of native mode.
+Removed: `hasUsableModel` non-kortix → `true` branch (now `false`),
+`modelKeyToWire` `'opencode'` special case; web `pickerGroupId` non-kortix early
+return (redundant); daemon `applyLlmGatewayMode(false)` no longer clears
+`KORTIX_LLM_*`/deny list (200 + warn, refuses to leave gateway mode — mixed-
+version tolerant). Tests rewritten where they encoded the old mode (stated in
+the commit), new gateway-only tests RED → GREEN.
+
+**Evidence** — SDK `use-model-store.test.ts` 9/0, full suite + typecheck in the
+commit body; daemon `proxy-auth.test.ts` 49/0 + tsc clean; web
+`model-grouping.test.ts` 25/0 + eslint clean.
+
+**Shippable to production: YES.**
+

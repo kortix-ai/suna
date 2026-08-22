@@ -36,6 +36,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `KortixMasterProject` — the kortix-master daemon's board project.
 - `@kortix/sdk/internal/*` for the zustand stores. Not covered by semver.
 
+### Changed
+- Gateway mode is the only mode, and two helpers now say so: `hasUsableModel`
+  returns `false` for a model under any provider other than `kortix` (the
+  old "native/direct provider → usable" branch described a mode that no
+  longer exists), and `modelKeyToWire` has no `opencode` special case — only
+  `kortix` is bare, everything else is `provider/model`. Both branches were
+  unreachable from live data (inputs are source-filtered to `kortix`).
+
 ### Deprecated
 - The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
   `/event-stream`, the stores, …). They still work. Import from the root.

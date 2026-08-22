@@ -94,12 +94,14 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknow
   if (enabled === undefined) return { changed: false, names: [] }
   if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
   if (!enabled) {
-    return setOpencodeRuntimeEnv({
-      KORTIX_LLM_API_KEY: null,
-      KORTIX_LLM_BASE_URL: null,
-      // DIRECT/BYOK: stop withholding native provider keys from opencode.
-      KORTIX_OPENCODE_DENY_ENV: null,
-    })
+    // Gateway mode is the ONLY mode: OpenCode is a proxy to the one `kortix`
+    // provider and never sees native provider keys. No current API sends
+    // `false`; an OLDER API still can for a moment during a mixed-version
+    // rollout. Answer 200 (no 4xx storm on every prompt's env sync) but refuse
+    // to leave gateway mode — the gateway key and the deny list stay as they
+    // are. Clearing them here used to be the one runtime path back to native.
+    console.warn('[env] llmGatewayEnabled=false ignored — gateway mode is the only mode')
+    return { changed: false, names: [] }
   }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
     throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')

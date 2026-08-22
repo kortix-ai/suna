@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { FlatModel } from './model-flatten';
-import { hasUsableModel, useModelStore, type ModelKey } from './use-model-store';
+import { hasUsableModel, modelKeyToWire, useModelStore, type ModelKey } from './use-model-store';
 
 // Regression coverage for connection-gating (`hasUsableModel`/`isVisible`)
 // preferring the explicit `provider` field the gateway now serves per model
@@ -182,3 +182,29 @@ describe('useModelStore — `isVisible` is independent of the calling surface (c
     }
   });
 });
+
+// Gateway mode is the only mode: every model OpenCode can use is registered
+// under the one `kortix` provider. A FlatModel under any other providerID is a
+// stale/foreign catalog entry, not a usable route — the old "native/direct
+// provider → usable" branch described a mode that no longer exists.
+describe('gateway-only: non-kortix providers are not usable routes', () => {
+  test('hasUsableModel is false for a model under a non-kortix providerID', () => {
+    const models = [
+      {
+        providerID: 'anthropic',
+        providerName: 'Anthropic',
+        modelID: 'claude-opus-4-8',
+        modelName: 'Claude Opus 4.8',
+      },
+    ] as never;
+    expect(hasUsableModel(models, { connectedProviderIds: new Set(['anthropic']) })).toBe(false);
+  });
+
+  test('modelKeyToWire has no `opencode` special case — only `kortix` is bare', () => {
+    expect(modelKeyToWire({ providerID: 'kortix', modelID: 'glm-5.2' })).toBe('glm-5.2');
+    expect(modelKeyToWire({ providerID: 'opencode', modelID: 'big-pickle' })).toBe(
+      'opencode/big-pickle',
+    );
+  });
+});
+
