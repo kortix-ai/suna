@@ -2746,8 +2746,11 @@ describe('project session API contract', () => {
             },
           },
           // An earlier poll recorded the first observation, longer ago than
-          // MIDTURN_STOP_CONFIRMATION_MS.
-          pendingStopObservedAtMs: Date.now() - 20_000,
+          // MIDTURN_STOP_CONFIRMATION_MS. That window is 60s (raised from 15s
+          // after a Platinum transition outlasted it and parked a healthy box
+          // mid-turn on 2026-08-21), so the marker has to be older than that —
+          // 20s no longer confirms anything.
+          pendingStopObservedAtMs: Date.now() - 90_000,
         },
         lastUsedAt: null,
         createdAt: new Date('2026-01-02T00:00:00Z'),
