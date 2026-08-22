@@ -157,6 +157,20 @@ mock.module('../../opencode-mapping', () => ({
   },
 }));
 
+// The wake path now converges the box before every delivery (engine.ts
+// `continueSession`): it reads the service key and ingress and calls
+// `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
+// the wire, not about the sync (see continue-session-env-sync.test.ts).
+mock.module('../../../platform/service-key', () => ({
+  serviceKeyForExternalId: async () => 'svc-key-1',
+}));
+mock.module('../../../sandbox-proxy/backend', () => ({
+  resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
+}));
+mock.module('../../lib/sandbox-env-sync', () => ({
+  syncSandboxEnvForPrompt: async () => {},
+}));
+
 const { executeQueuedContinue } = await import('../engine');
 
 const originalFetch = globalThis.fetch;
