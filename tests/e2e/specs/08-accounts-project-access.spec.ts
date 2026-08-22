@@ -859,15 +859,32 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
     // (see IAM_PROPAGATION_MS). A task that has not seen it answers
     // `GET /accounts/:id` with 403, and the hub then sits on its loading
     // skeleton forever rather than erroring — so reload until it renders.
+    const invitedMembersHeading = page.getByRole("heading", {
+      name: "Members",
+      exact: true,
+    });
     await expect
       .poll(
         async () => {
+          const accountResponse = page
+            .waitForResponse(
+              (response) => {
+                const url = new URL(response.url());
+                return (
+                  response.request().method() === "GET" &&
+                  url.pathname === `/v1/accounts/${account.account_id}`
+                );
+              },
+              { timeout: 5_000 },
+            )
+            .catch(() => null);
           await page.goto(`/accounts/${account.account_id}`, {
             waitUntil: "domcontentloaded",
           });
-          return page
-            .getByRole("heading", { name: "Members", exact: true })
-            .isVisible()
+          if ((await accountResponse)?.status() !== 200) return false;
+          return invitedMembersHeading
+            .waitFor({ state: "visible", timeout: 5_000 })
+            .then(() => true)
             .catch(() => false);
         },
         { timeout: IAM_PROPAGATION_MS },
