@@ -305,11 +305,18 @@ These mirror the automated integration tests
   *different* person because the IdP reused an existing browser SSO session
   (IdP session reuse) — not a Kortix bug, but genuinely confusing from the
   Kortix side with no explanation shown.
-  `TODO(sso-identity-mismatch-notice)`: after an SSO return, if the
-  authenticated identity differs from the email the user originally typed on
-  `/auth`, surface a "You signed in as `{actual_email}`" notice instead of
-  silently proceeding as that account. Land this in the `/auth/callback`
-  route (`apps/web/src/app/(auth)/auth/callback/route.ts`) — it already has
-  `data.user` post-exchange; it would need the originally-typed email carried
-  through the redirect (query param or short-lived cookie set before the
-  IdP hop) to compare against.
+  **This now surfaces a notice.** `/auth` records the address it is asking the
+  IdP for in a short-lived `kortix_sso_expected_email` cookie immediately
+  before the hop; `/auth/callback` compares it to `data.user.email` after the
+  exchange and, when they differ, marks the redirect with
+  `?sso_identity=mismatch`. The landing page then shows a non-expiring "You are
+  signed in as `{actual_email}`" warning naming the account. The address is
+  read from the session rather than carried in the URL, so it does not persist
+  in browser history or leak through the `Referer` of anything the landing page
+  requests, and the cookie is cleared on every callback so a stale expectation
+  cannot mislabel a later sign-in.
+
+  The comparison is advisory: it is a notice, not a gate. Nothing about the
+  session depends on the cookie, so a missing or tampered value changes only
+  whether the notice is drawn — it can never change who is signed in. See
+  `apps/web/src/lib/auth/sso-identity.ts`.

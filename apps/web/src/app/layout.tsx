@@ -64,6 +64,11 @@ const AuthEventTracker = lazy(() =>
     default: mod.AuthEventTracker,
   })),
 );
+const SsoIdentityNotice = lazy(() =>
+  import('@/features/auth/sso-identity-notice').then((mod) => ({
+    default: mod.SsoIdentityNotice,
+  })),
+);
 const LocalhostLinkInterceptor = lazy(() =>
   import('@/components/localhost-link-interceptor').then((mod) => ({
     default: mod.LocalhostLinkInterceptor,
@@ -414,6 +419,9 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                     </Suspense>
                     <Suspense fallback={null}>
                       <AuthEventTracker />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <SsoIdentityNotice />
                     </Suspense>
                     <Suspense fallback={null}>
                       <LocalhostLinkInterceptor />
