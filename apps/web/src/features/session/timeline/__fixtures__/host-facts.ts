@@ -5,8 +5,8 @@
  *
  * Each derivation mirrors the `useMemo` of the same name in `session-chat.tsx`.
  */
-import { isAbortError } from '@kortix/sdk';
 import { groupMessagesIntoTurns, type Turn } from '@/ui';
+import { isAbortError } from '@kortix/sdk';
 
 import { planAnchorMessageId } from '../../turn/plan-anchor';
 import { resolveWorkingTurn } from '../../turn/working-turn';

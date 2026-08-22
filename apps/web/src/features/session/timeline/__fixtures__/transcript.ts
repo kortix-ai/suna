@@ -20,8 +20,8 @@
  *              queued prompts painted as dimmed, stacked bubbles — one without
  *              an inbox row (ordinal id), one with (remove / send-now actions).
  */
-import type { SessionPrompt } from '@kortix/sdk';
 import type { MessageWithParts, Part, SessionStatus } from '@/ui';
+import type { SessionPrompt } from '@kortix/sdk';
 
 export const FIXTURE_SESSION_ID = 'ses_fixture';
 
@@ -38,13 +38,7 @@ const text = (messageID: string, id: string, body: string, extra: AnyPart = {}) 
   part(messageID, id, { type: 'text', text: body, ...extra });
 const reasoning = (messageID: string, id: string, body: string) =>
   part(messageID, id, { type: 'reasoning', text: body });
-const tool = (
-  messageID: string,
-  id: string,
-  name: string,
-  state: AnyPart,
-  extra: AnyPart = {},
-) =>
+const tool = (messageID: string, id: string, name: string, state: AnyPart, extra: AnyPart = {}) =>
   part(messageID, id, {
     type: 'tool',
     tool: name,
@@ -52,8 +46,7 @@ const tool = (
     state,
     ...extra,
   });
-const bookkeeping = (messageID: string, id: string, type: string) =>
-  part(messageID, id, { type });
+const bookkeeping = (messageID: string, id: string, type: string) => part(messageID, id, { type });
 
 const done = (start: number) => ({ status: 'completed', time: { start, end: start + 40 } });
 
@@ -90,9 +83,7 @@ const answeredQuestion = (messageID: string, id: string) =>
   tool(messageID, id, 'question', {
     ...done(10),
     input: {
-      questions: [
-        { question: 'Which colour?', options: [{ label: 'Blue' }, { label: 'Red' }] },
-      ],
+      questions: [{ question: 'Which colour?', options: [{ label: 'Blue' }, { label: 'Red' }] }],
     },
     metadata: { answers: [['Blue']] },
     output: 'User has answered your questions: "Which colour?"="Blue". You can now continue.',
@@ -183,10 +174,7 @@ export const idleMessages: MessageWithParts[] = [
 
   // T5 — answered question + prose: inline content mode.
   user('u5', (m) => [text(m, 'u5t', 'Ask me something')]),
-  assistant('a5', 'u5', (m) => [
-    answeredQuestion(m, 'a5q'),
-    text(m, 'a5t', 'Blue it is.'),
-  ]),
+  assistant('a5', 'u5', (m) => [answeredQuestion(m, 'a5q'), text(m, 'a5t', 'Blue it is.')]),
 
   // T6 — answered question with no prose: the fallback card list.
   user('u6', (m) => [text(m, 'u6t', 'Ask only')]),
@@ -200,12 +188,9 @@ export const idleMessages: MessageWithParts[] = [
 
   // T8 — a failed reply (`info.error`, not an abort).
   user('u8', (m) => [text(m, 'u8t', 'Fail please')]),
-  assistant(
-    'a8',
-    'u8',
-    (m) => [text(m, 'a8t', 'Starting, but')],
-    { error: { name: 'APIError', data: { message: 'Provider exploded' } } },
-  ),
+  assistant('a8', 'u8', (m) => [text(m, 'a8t', 'Starting, but')], {
+    error: { name: 'APIError', data: { message: 'Provider exploded' } },
+  }),
 
   // T9 — a compaction turn: `info.summary === true` + a `compaction` part.
   user('u9', (m) => [text(m, 'u9t', 'continue')]),
@@ -221,12 +206,9 @@ export const idleMessages: MessageWithParts[] = [
 
   // T10 — aborted by the user: the muted "Interrupted" note.
   user('u10', (m) => [text(m, 'u10t', 'Stop me')]),
-  assistant(
-    'a10',
-    'u10',
-    (m) => [text(m, 'a10t', 'I was about to say')],
-    { error: { name: 'MessageAbortedError', data: { message: 'aborted' } } },
-  ),
+  assistant('a10', 'u10', (m) => [text(m, 'a10t', 'I was about to say')], {
+    error: { name: 'MessageAbortedError', data: { message: 'aborted' } },
+  }),
 
   // T11 / T12 — stranded behind the abort: nothing under them, session idle.
   user('u11', (m) => [text(m, 'u11t', 'After the stop, one')]),

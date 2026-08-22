@@ -1,7 +1,5 @@
 'use client';
 
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { detectCommandFromText } from '@/features/session/detect-command';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
@@ -10,58 +8,39 @@ import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-
 import { type SessionPrompt, hasRetryingAssistantTurn } from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
 import {
-  WarningIcon as AlertTriangle,
   ArrowBendUpLeftIcon,
   CaretDownIcon,
-  CheckCircleIcon as CheckCircle,
-  CheckIcon,
-  CaretDownIcon as ChevronDown,
-  ArrowSquareOutIcon as ExternalLink,
-  StackIcon as Layers,
   ArrowCounterClockwiseIcon as RotateCcw,
 } from '@phosphor-icons/react';
-import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   COMPOSER_EDITOR_SELECTOR,
   SUGGESTION_MENU_SELECTOR,
   shouldCountEscape,
 } from './esc-to-stop';
-import {
-  SystemNotificationCard,
-  parseSystemNotifications,
-  stripSystemPtyText,
-} from './message-parsing';
+
 import { projectQueueRows } from './queue-projection';
 import { createQueueUndoAction } from './queued-message-restore';
-import { ActivityBurst } from './turn/activity-burst';
-import { ExpandableOutput } from './turn/expandable-output';
-import { isPlanWriteTool, planAnchorMessageId } from './turn/plan-anchor';
-import {
-  QUEUED_BUBBLE_OPACITY_CLASS,
-  QueuedPromptActions,
-  QueuedPromptBubbles,
-  type QueuedPromptState,
-  QueuedPromptStatus,
-} from './turn/queued-prompt-bubbles';
-import { segmentTurn } from './turn/segment-turn';
+
+import { planAnchorMessageId } from './turn/plan-anchor';
+import { QueuedPromptBubbles } from './turn/queued-prompt-bubbles';
+
 import { stabilizeTurns } from './turn/stable-turns';
-import { ThrottledMarkdown } from './turn/throttled-markdown';
-import { TurnViewport } from './turn/turn-viewport';
-import { UserMessage } from './turn/user-message';
+
+import { buildChatRows } from './timeline/build-chat-rows';
+import { deriveAnsweredQuestionIds, optimisticAnswersCache } from './timeline/project-rows';
+import { SessionTimelineList } from './timeline/session-timeline-list';
+import { CompactionDivider } from './timeline/turn-cards';
 import { resolveWorkingTurn } from './turn/working-turn';
 
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
-import {
-  ConnectProviderDialog,
-  type ModelDefaultControls,
-} from '@/features/session/model-selector';
+import { type ModelDefaultControls } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import {
@@ -72,35 +51,29 @@ import {
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
-import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
+import { TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
+
 import { SessionBusyIndicator } from './session-busy-indicator';
-import { SessionTurnMeta } from './session-turn-meta';
-import {
-  sessionTurnDurationMs,
-  sessionTurnEndedAt,
-  sessionTurnSpan,
-} from './session-turn-meta-rows';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+
 import Loading from '@/components/ui/loading';
 import { dismissToast, errorToast, infoToast } from '@/components/ui/toast';
 import { uploadFile } from '@/features/files/api/runtime-files';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
-import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
+
+import { ToolActivateContext } from '@/features/session/tool/tool-renderers';
 import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
-import { useModelPricingLookup } from '@/lib/model-pricing';
+
 import {
   type AgentRefLike,
   type FileRefLike,
@@ -110,13 +83,7 @@ import {
 import { playSound } from '@/lib/sounds';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
-import {
-  type KortixSystemMessage,
-  type SessionReport,
-  extractKortixSystemMessages,
-  extractSessionReport,
-  stripKortixSystemTags,
-} from '@/lib/utils/kortix-system-tags';
+
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
@@ -130,38 +97,18 @@ import {
 } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
-import { Copy } from '@/features/icon/icons/copy';
+
 import {
   type Command,
-  type MessageWithParts,
-  type Part,
-  type PermissionRequest,
   type QuestionRequest,
-  type TextPart,
   type ToolPart,
   type Turn,
-  collectTurnParts,
-  findLastTextPart,
-  formatDuration,
-  getPermissionForTool,
-  getRetryInfo,
-  getRetryMessage,
-  getShellModePart,
-  getTurnCost,
-  getTurnError,
-  getTurnErrorDetails,
-  getTurnStatus,
   getWorkingState,
   groupMessagesIntoTurns,
-  isAgentPart,
-  isAttachment,
-  isReasoningPart,
   isTextPart,
-  isToolPart,
-  shouldShowToolPart,
 } from '@/ui';
-import { abortErrorReason, isAbortError } from '@kortix/sdk';
-import type { ProviderListResponse } from '@kortix/sdk/react';
+import { type TimelineRow, isAbortError } from '@kortix/sdk';
+
 import {
   type AbortSettlement,
   type KortixSendError,
@@ -210,7 +157,7 @@ import {
   useSessionWorking,
   useSessionWorkingStore,
 } from '@kortix/sdk/react';
-import { CodeBlockEndpoints, SandboxUrlDetector } from './sandbox-url-detector';
+
 import {
   resolveLastTurnWorking,
   serverHoldsOpenTurn,
@@ -234,64 +181,6 @@ export interface ReplyToContext {
 // ============================================================================
 
 // SubSessionBar removed — subsessions now use SessionSiteHeader + chat input indicator
-
-// ============================================================================
-// Optimistic answers cache
-// ============================================================================
-// When a user answers a question, we save the answers here immediately.
-// This survives SSE `message.part.updated` events that may overwrite the
-// tool part's state before the server has merged the answers.  The cache
-// is keyed by the question tool part's `id` (stable across updates).
-// Entries are cleaned up once the server's authoritative part arrives with
-// real `metadata.answers`.
-
-const optimisticAnswersCache = new Map<
-  string,
-  { answers: string[][]; input: Record<string, unknown> }
->();
-
-// ============================================================================
-// Parse answers from the question tool's output string
-// ============================================================================
-// When metadata.answers is missing (e.g. after page reload, or the server
-// never finalized the tool part), we can try to extract answers from the
-// output string. The server formats it as:
-//   "User has answered your questions: \"Q1\"=\"A1\". You can now continue..."
-// This is a best-effort parser; if it can't match, returns null.
-
-function parseAnswersFromOutput(
-  output: string,
-  input?: { questions?: Array<{ question: string }> },
-): string[][] | null {
-  if (!output) return null;
-
-  const questions = input?.questions;
-  if (!questions || questions.length === 0) return null;
-
-  // Try to extract "question"="answer" pairs from the output
-  const pairRegex = /"([^"]*)"="([^"]*)"/g;
-  const pairs: { question: string; answer: string }[] = [];
-  let match;
-  while ((match = pairRegex.exec(output)) !== null) {
-    pairs.push({ question: match[1], answer: match[2] });
-  }
-
-  if (pairs.length > 0) {
-    // Match pairs to input questions by order (they correspond 1:1)
-    return questions.map((_, i) => {
-      const pair = pairs[i];
-      return pair ? [pair.answer] : [];
-    });
-  }
-
-  // Fallback: if we can't parse pairs but the output mentions "answered",
-  // return a placeholder to indicate the question was answered
-  if (output.toLowerCase().includes('answered')) {
-    return questions.map(() => ['Answered']);
-  }
-
-  return null;
-}
 
 function formatCommandError(errorLike: unknown): string {
   const err = errorLike as any;
@@ -349,89 +238,6 @@ function classifySessionError(err: unknown): KortixSendError {
 }
 
 // ============================================================================
-// System message indicator — subtle inline pill for kortix_system messages
-// ============================================================================
-
-function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] }) {
-  if (messages.length === 0) return null;
-
-  // Combine all messages into a single line: "Goal · iteration 3/50"
-  const parts = messages.map((msg) => (msg.detail ? `${msg.label} · ${msg.detail}` : msg.label));
-  const text = parts.join('  ·  ');
-
-  return (
-    <div className="-my-1 flex items-center gap-2">
-      <div className="bg-border/30 h-px flex-1" />
-      <span className="text-muted-foreground/30 text-xs whitespace-nowrap select-none">{text}</span>
-      <div className="bg-border/30 h-px flex-1" />
-    </div>
-  );
-}
-
-// ============================================================================
-// Answered question card — collapsible summary of completed Q&A
-// ============================================================================
-
-function AnsweredQuestionCard({ part }: { part: ToolPart }) {
-  const [expanded, setExpanded] = useState(false);
-  const input = (part.state as any)?.input ?? {};
-  const metadata = (part.state as any)?.metadata ?? {};
-  const questions: Array<{ question: string; options?: { label: string }[] }> = Array.isArray(
-    input.questions,
-  )
-    ? input.questions
-    : [];
-  const answers: string[][] = Array.isArray(metadata.answers) ? metadata.answers : [];
-  if (questions.length === 0 || answers.length === 0) return null;
-
-  const answeredCount = answers.filter((a) => a.length > 0).length;
-
-  return (
-    <Disclosure
-      variant="outline"
-      className="bg-card overflow-hidden"
-      open={expanded}
-      onOpenChange={setExpanded}
-    >
-      <DisclosureTrigger variant="outline">
-        <Button
-          type="button"
-          variant="popover"
-          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2 text-left"
-        >
-          <span className="text-foreground text-xs font-medium">Questions</span>
-          <span className="text-muted-foreground text-xs tabular-nums">
-            {answeredCount} answered
-          </span>
-          <ChevronDown
-            className={cn(
-              'text-muted-foreground ml-auto shrink-0 transition-transform',
-              expanded && 'rotate-180',
-            )}
-          />
-        </Button>
-      </DisclosureTrigger>
-      <DisclosureContent variant="outline" contentClassName="border-border border-t">
-        <div className="space-y-2 px-3.5 py-2">
-          {questions.map((q, i) => {
-            const answer = answers[i] || [];
-            const answerText = answer.join(', ') || 'No answer';
-            return (
-              <div key={q.question} className="space-y-0.5">
-                <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
-                  <UnifiedMarkdown content={q.question} />
-                </div>
-                <p className="text-foreground text-sm font-medium text-pretty">{answerText}</p>
-              </div>
-            );
-          })}
-        </div>
-      </DisclosureContent>
-    </Disclosure>
-  );
-}
-
-// ============================================================================
 // Message parsing exported to message-parsing.tsx
 // ============================================================================
 
@@ -441,9 +247,6 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
  *  pressed the button for, and a stalled request must never hold it hostage
  *  with the agent still running. One round-trip's worth, no more. */
 const STOP_HOLD_DEADLINE_MS = 1500;
-
-/** After this long on one status the working label shows elapsed time. */
-const STATUS_STALL_AFTER_MS = 20_000;
 
 /** Dependencies `stopThenSendNow` needs, injected so the ordering logic is
  *  directly testable without React or a DOM. */
@@ -523,1292 +326,9 @@ export async function stopThenSendNow(deps: StopThenSendNowDeps): Promise<void> 
   await deps.dispatch();
 }
 
-// ============================================================================
-// Notification-only turn detection
-// ============================================================================
-
-/** True when a turn's user message contains only system notification XML
- *  with no real user-authored text. */
-function isNotificationOnlyMessage(parts: Part[]): boolean {
-  if (parts.length === 0) return false;
-  const textParts = parts.filter(
-    (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-  ) as TextPart[];
-  if (textParts.length === 0) return false;
-  const raw = textParts.map((p) => p.text || '').join('\n');
-  const { cleanText, notifications } = parseSystemNotifications(stripKortixSystemTags(raw));
-  return notifications.length > 0 && !cleanText.trim();
-}
-
-// ============================================================================
-// NotificationTurn — lightweight turn for system notification messages
-// ============================================================================
-
-/** Renders notification-only turns (PTY exits, agent completions, etc.)
- *  inline with the conversation flow, styled like tool-call cards. */
-function NotificationTurn({ turn }: { turn: Turn }) {
-  const rawText = useMemo(() => {
-    const texts: string[] = [];
-    for (const p of turn.userMessage.parts) {
-      if (isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored) {
-        texts.push((p as TextPart).text || '');
-      }
-    }
-    return texts.join('\n');
-  }, [turn.userMessage.parts]);
-
-  const { notifications } = useMemo(
-    () => parseSystemNotifications(stripKortixSystemTags(rawText)),
-    [rawText],
-  );
-
-  if (notifications.length === 0) return null;
-
-  return (
-    <div className="flex w-full flex-col gap-1.5">
-      {notifications.map((n) => (
-        <SystemNotificationCard key={`${n.tag}-${n.body}`} notification={n} />
-      ))}
-    </div>
-  );
-}
-
-// ============================================================================
-// Session Turn — core turn component
-// ============================================================================
-
-/**
- * Pure derivation of "was this turn's error an abort, and why" from a turn's
- * assistant messages — the exact logic `turnErrorIsAbort`/`turnErrorAbortReason`
- * below run per render. Extracted (T17) so it can be exercised by real
- * behavior tests (`interrupted-label.test.ts`) instead of a source-text
- * pattern match. No behavior change: both `useMemo`s below now call this one
- * function instead of duplicating its two loops.
- *
- * Scans for the FIRST assistant message carrying an object error (matching
- * `getTurnError`'s own "first wins" rule) and classifies THAT message once —
- * see the two `useMemo`s below for why identity/reason must come from the
- * SDK's single `isAbortError`/`abortErrorReason` classifier.
- */
-export function deriveTurnErrorAbortState(turn: {
-  assistantMessages: ReadonlyArray<{ info: unknown }>;
-}): { isAbort: boolean; abortReason: string | undefined } {
-  for (const msg of turn.assistantMessages) {
-    const err = (msg.info as { error?: unknown }).error;
-    if (!err || typeof err !== 'object') continue;
-    const isAbort = isAbortError(err);
-    return { isAbort, abortReason: isAbort ? abortErrorReason(err) : undefined };
-  }
-  return { isAbort: false, abortReason: undefined };
-}
-
-interface SessionTurnProps {
-  turn: Turn;
-  /**
-   * Both were derived HERE from `allMessages`, once per turn, on every render.
-   *
-   * `ownsPlan` was the worst thing in the chat: `planAnchorMessageId` walks
-   * every message and calls `parts.some(...)` on each, so a fifty-turn session
-   * ran an O(total-parts) scan fifty times per frame. Hoisting it to the parent
-   * makes it one scan for the whole transcript. `isLast` is cheap by comparison,
-   * but it took `allMessages` — a new array every frame — which alone would have
-   * defeated `React.memo` on this component.
-   */
-  isLast: boolean;
-  ownsPlan: boolean;
-  sessionId: string;
-  sessionStatus: import('@/ui').SessionStatus | undefined;
-  permissions: PermissionRequest[];
-  questions: QuestionRequest[];
-  agentNames?: string[];
-  /** Whether this is the first turn in the session */
-  isFirstTurn: boolean;
-  /**
-   * The session's working state, resolved ONCE by the parent
-   * (`resolveLastTurnWorking`): the projection for a Kortix session, the raw
-   * SSE slot only for a child session that has no `/turn` row. Only the
-   * WORKING turn renders it (`isWorkingTurn`).
-   */
-  sessionWorking: boolean;
-  /**
-   * This turn is the one the agent is on — see `resolveWorkingTurn`. It used
-   * to be `isLast` by definition; a prompt queued mid-turn broke that: OpenCode
-   * persists it as the last user message while the agent is still streaming
-   * the turn before, so the shimmer sat under a bubble nobody had started and
-   * the live turn looked settled.
-   */
-  isWorkingTurn: boolean;
-  /**
-   * A user message the agent has not reached yet — after the working turn,
-   * with no assistant content. Drawn dimmed, like a queued prompt (it IS one:
-   * the server forwarded it and OpenCode holds it until the next step), and
-   * it fades up to full opacity the moment the agent takes it.
-   */
-  pending: boolean;
-  /**
-   * The inbox row behind this turn's user message, while the row is still
-   * live (queued, held, delivering, failed). Puts remove / send-now / retry
-   * in the bubble's own meta row — the bubble IS the queue entry.
-   */
-  queueRow?: SessionPrompt | null;
-  queueHeld?: boolean;
-  onQueueRemove?: (promptId: string) => void;
-  onQueueSendNow?: (promptId: string) => void;
-  onQueueRetry?: (promptId: string) => void;
-  /**
-   * A Stop ended the turn before a step opened under this user message: the
-   * runtime holds it and runs it with the next send. Drawn dimmed like any
-   * queued prompt, with the meta row saying so.
-   */
-  interruptedBeforeRun?: boolean;
-  /** Whether this turn contains a compaction */
-  isCompaction?: boolean;
-  /** Providers data for the Connect Provider dialog */
-  providers?: ProviderListResponse;
-  /** Map of user message IDs to command info for rendering command pills */
-  commandMessages?: Map<string, { name: string; args?: string }>;
-  /** Available commands for template prefix matching (page refresh detection) */
-  commands?: Command[];
-  /** Disable redirect-style tool navigation (used during onboarding) */
-  disableToolNavigation?: boolean;
-  /** Permission reply handler */
-  onPermissionReply: (requestId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
-  /** Stage an in-place session rewind and restore this prompt in the composer. */
-  onRewind: (messageId: string, text: string) => void;
-  /** Disable history changes while the session is busy or read-only. */
-  rewindDisabled: boolean;
-}
-
-/**
- * The worker-run result row shown above a turn — an entity row in the design
- * system's sense, not a tinted banner: the surface stays neutral and the status
- * lives in one tinted icon tile, so a run of these reads as a list rather than
- * a stack of coloured alerts.
- *
- * Extracted from the turn body so the row can be rendered (and looked at) on
- * its own, and so the turn's render reads as a list of sections rather than
- * forty lines of card markup inlined among them.
- */
-export function SessionReportCard({
-  report,
-  onOpen,
-}: {
-  report: SessionReport;
-  onOpen: () => void;
-}) {
-  const complete = report.status === 'COMPLETE';
-  return (
-    // A real <button>: Enter, Space and the focus ring come free, where the
-    // previous role="button" div hand-rolled Enter only.
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group/report bg-popover hover:bg-accent/40 flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors active:scale-[0.99]"
-    >
-      <span
-        className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-sm',
-          complete ? 'bg-kortix-green/15' : 'bg-kortix-red/15',
-        )}
-      >
-        {complete ? (
-          <CheckCircle className="text-kortix-green size-4" />
-        ) : (
-          <AlertTriangle className="text-kortix-red size-4" />
-        )}
-      </span>
-
-      <span className="min-w-0 flex-1">
-        <span className="text-foreground block truncate text-sm font-medium">
-          Worker {complete ? 'complete' : 'failed'}
-        </span>
-        {/* One meta line, truncated by CSS against the real available width —
-            the old 60-character slice cut mid-word at every viewport and still
-            overflowed narrow ones. */}
-        {(report.project || report.prompt) && (
-          <span className="text-muted-foreground block truncate text-xs">
-            {report.project}
-            {report.project && report.prompt && (
-              <span className="text-muted-foreground/40"> &bull; </span>
-            )}
-            {report.prompt}
-          </span>
-        )}
-      </span>
-
-      <ExternalLink className="text-muted-foreground/40 group-hover/report:text-muted-foreground size-3.5 shrink-0 transition-colors" />
-    </button>
-  );
-}
-
-function SessionTurnImpl({
-  turn,
-  isLast,
-  ownsPlan,
-  sessionId,
-  sessionStatus,
-  permissions,
-  questions,
-  agentNames,
-  isFirstTurn,
-  sessionWorking,
-  isWorkingTurn,
-  pending,
-  queueRow,
-  queueHeld,
-  onQueueRemove,
-  onQueueSendNow,
-  onQueueRetry,
-  interruptedBeforeRun,
-  isCompaction,
-  providers,
-  commandMessages,
-  commands,
-  disableToolNavigation,
-  onPermissionReply,
-  onRewind,
-  rewindDisabled,
-}: SessionTurnProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [copied, setCopied] = useState(false);
-  const [connectProviderOpen, setConnectProviderOpen] = useState(false);
-  const pricingLookup = useModelPricingLookup(providers);
-  // `?? 'normal'` — legacy persisted preferences predate this key (same rule
-  // as every `panelMode` read site).
-  const conversationDensity = useUserPreferencesStore(
-    (s) => s.preferences.conversationDensity ?? 'normal',
-  );
-
-  // Derived state from shared helpers
-  const allParts = useMemo(() => collectTurnParts(turn), [turn]);
-  // Check if there are visible steps that actually render inside the
-  // collapsible steps section. Tool parts that are rendered elsewhere
-  // (todowrite, task, question) don't count as "steps".
-  const hasSteps = useMemo(() => {
-    return allParts.some(({ part }) => {
-      if (part.type === 'compaction' || part.type === 'snapshot' || part.type === 'patch')
-        return true;
-      if (isToolPart(part)) {
-        // `isPlanWriteTool` — NOT a bare `=== 'todowrite'`. The runtime emits
-        // both spellings, and the plan card owns both (see plan-anchor.ts).
-        if (isPlanWriteTool(part.tool) || part.tool === 'task' || part.tool === 'question')
-          return false;
-        return shouldShowToolPart(part);
-      }
-      return false;
-    });
-  }, [allParts]);
-  const hasReasoning = useMemo(
-    () => allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim()),
-    [allParts],
-  );
-  // The WORKING turn's working state is the session's, and the parent resolved
-  // that answer once (`resolveLastTurnWorking`): the projection
-  // (`useSessionWorking` → `GET .../turn`) for a Kortix session, the raw SSE
-  // slot only for a child session with no `/turn` row. Any other turn is
-  // NEVER working — that is a fact about the transcript, not an observation,
-  // and it is what removes the "last turn shimmers for ever" symptom the raw
-  // slot's dropped end-of-turn frames caused here.
-  const working = isWorkingTurn && sessionWorking;
-  // The bubble is the queue entry: while its inbox row is live, the row's
-  // state decides the controls in the bubble's meta row.
-  const rowState: QueuedPromptState | null = !queueRow
-    ? null
-    : queueRow.state === 'failed'
-      ? 'failed'
-      : queueRow.state === 'delivering'
-        ? 'in-flight'
-        : queueRow.reason === 'held' || queueHeld
-          ? 'held'
-          : 'queued';
-  // Only while the bubble is still WAITING (dimmed) — or has something to
-  // say regardless (held, failed). A row that reads `delivering` for the rest
-  // of the turn in front of it must not label a bubble the agent has reached.
-  const queueState: QueuedPromptState | null =
-    rowState && (pending || rowState === 'held' || rowState === 'failed')
-      ? rowState
-      : interruptedBeforeRun
-        ? 'interrupted'
-        : null;
-  // The word under the bubble. A PENDING bubble says "Queued" even when its
-  // inbox row is already closed (the runtime holds the message, the agent has
-  // not reached it): the dim alone reads as "something is wrong".
-  const statusState: QueuedPromptState | null = queueState ?? (pending ? 'queued' : null);
-  // What the X removes: the row while it is listed, the message's own wire id
-  // after the row left the list (the DELETE route resolves `msg_…` handles) —
-  // for any bubble the agent has not reached.
-  const queueRemovalId =
-    onQueueRemove && statusState && statusState !== 'interrupted' && statusState !== 'failed'
-      ? (queueRow?.prompt_id ?? turn.userMessage.info.id)
-      : null;
-  // Send-now / retry / remove all live in `UserMessageActions` (`leading`).
-  // A pending bubble can outlive its inbox row; the X still has to work, so
-  // the action id falls back to the user message's own wire id.
-  const queueActionId = queueRemovalId ?? queueRow?.prompt_id ?? null;
-  const showQueueActions =
-    Boolean(queueActionId) &&
-    (Boolean(queueRemovalId) ||
-      Boolean(queueRow && queueState && queueState !== 'interrupted'));
-
-  const activeAssistantMessage = useMemo(() => {
-    if (turn.assistantMessages.length === 0) return undefined;
-    for (let i = turn.assistantMessages.length - 1; i >= 0; i--) {
-      const msg = turn.assistantMessages[i];
-      if (!(msg.info as any)?.time?.completed) return msg;
-    }
-    return turn.assistantMessages[turn.assistantMessages.length - 1];
-  }, [turn.assistantMessages]);
-  const streamingResponseRaw = useMemo(() => {
-    if (!activeAssistantMessage) return '';
-    let text = '';
-    for (const p of activeAssistantMessage.parts) {
-      if (isTextPart(p)) text += p.text ?? '';
-    }
-    return text;
-  }, [activeAssistantMessage]);
-  const lastTextPart = useMemo(() => findLastTextPart(allParts), [allParts]);
-  const responseRaw = lastTextPart?.text ?? '';
-  // Fallback: when aborted, collect ALL non-empty text parts if the
-  // primary response is empty.  The last text part may have been lost
-  // (timing between text-start and first text-delta) but earlier parts
-  // might still have content.
-  const abortedTextFallback = useMemo(() => {
-    if (responseRaw) return ''; // primary response exists — no fallback needed
-    // Only activate for aborted/errored turns
-    const hasError = turn.assistantMessages.some((m) => (m.info as any).error);
-    if (!hasError) return '';
-    const texts: string[] = [];
-    for (const { part } of allParts) {
-      if (isTextPart(part) && part.text?.trim()) {
-        texts.push(part.text);
-      }
-    }
-    return texts.join('\n\n').trim();
-  }, [responseRaw, allParts, turn.assistantMessages]);
-  const completedTextParts = useMemo(
-    () =>
-      allParts
-        .map(({ part }) => (isTextPart(part) ? part.text?.trim() : ''))
-        .filter((text): text is string => Boolean(text)),
-    [allParts],
-  );
-  const response = working
-    ? streamingResponseRaw || responseRaw
-    : !hasSteps && completedTextParts.length > 0
-      ? completedTextParts.join('\n\n')
-      : responseRaw.trim() || abortedTextFallback;
-  // Retry info (only on last turn). These KEEP reading the raw `sessionStatus`
-  // frame on purpose: they render the retry *reason* carried on the frame
-  // (attempt count, provider message, next-retry time), which the working
-  // projection does not carry. Do not "finish the job" by moving them to the
-  // projection — the shimmer decision above is the only thing that moved.
-  const retryInfo = useMemo(
-    () => (isWorkingTurn ? getRetryInfo(sessionStatus) : undefined),
-    [sessionStatus, isWorkingTurn],
-  );
-  const retryMessage = useMemo(
-    () => (isWorkingTurn ? getRetryMessage(sessionStatus) : undefined),
-    [sessionStatus, isWorkingTurn],
-  );
-
-  // Cost info (only when not working)
-  const costInfo = useMemo(
-    () => (!working ? getTurnCost(allParts, pricingLookup) : undefined),
-    [allParts, working, pricingLookup],
-  );
-
-  // Turn error — derived directly from message data (same approach as SolidJS reference).
-  // Falls back to checking for dismissed question tool errors when no message-level error exists.
-  const turnError = useMemo(() => {
-    const msgError = getTurnError(turn);
-    if (msgError) return msgError;
-    // Check for dismissed question tool errors
-    for (const msg of turn.assistantMessages) {
-      for (const part of msg.parts) {
-        if (part.type !== 'tool') continue;
-        const tool = part as ToolPart;
-        if (tool.tool === 'question' && tool.state.status === 'error' && 'error' in tool.state) {
-          return (tool.state as { error: string }).error.replace(/^Error:\s*/, '');
-        }
-      }
-    }
-    return undefined;
-  }, [turn]);
-
-  /**
-   * Was the turn ACTUALLY aborted, as opposed to failing with a message that
-   * happens to contain the word?
-   *
-   * `getTurnError` flattens the structured error to a display string and drops
-   * its `name`, so the banner was left substring-matching "abort" over arbitrary
-   * prose — which renders a genuine failure as a muted "Interrupted" and hides
-   * what really went wrong. The identity is right here on the message; read it
-   * through the SDK's single `isAbortError` classifier, which recognizes both
-   * real producers: the opencode wire's `MessageAbortedError` and the client's
-   * synthesized `AbortError` patch applied when the user hits Stop.
-   */
-  const turnErrorIsAbort = useMemo(() => deriveTurnErrorAbortState(turn).isAbort, [turn]);
-
-  /**
-   * The machine-readable WHY behind `turnErrorIsAbort`, when the abort was
-   * client-synthesized and tagged one (`data.reason` — see
-   * `core/http/abort-error.ts`'s `AbortReason` union).
-   *
-   * `undefined` covers two different cases the banner treats identically to
-   * `'user'`: no abort at all, and a genuine wire `MessageAbortedError`
-   * (opencode's own abort — never tagged, see the classifier's doc comment).
-   * Only a reason present AND not `'user'` (currently just
-   * `'runtime-disposed'`, from `markSessionAbortedLocally`) means "pure
-   * infrastructure, render nothing" — see `TurnErrorDisplay`.
-   */
-  const turnErrorAbortReason = useMemo(() => deriveTurnErrorAbortState(turn).abortReason, [turn]);
-
-  // The gateway's structured fields (provider/suggestion/request_id) for
-  // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
-  // provider failed and WHAT to do about it instead of only the raw message.
-  const turnErrorDetails = useMemo(() => getTurnErrorDetails(turn), [turn]);
-
-  // Shell mode detection
-  const shellModePart = useMemo(() => getShellModePart(turn), [turn]);
-
-  // Permission matching for this session (used for tool-level permission overlays)
-  const nextPermission = useMemo(
-    () => permissions.filter((p) => p.sessionID === sessionId)[0],
-    [permissions, sessionId],
-  );
-
-  // Answered question parts — shown inline alongside streamed text.
-  // Uses the optimisticAnswersCache as a fallback: when the user answers a
-  // question we cache {answers, input} immediately. SSE message.part.updated
-  // events can overwrite the tool part's state (wiping metadata.answers)
-  // before the server has merged them. By checking the cache we guarantee
-  // the answered card stays visible regardless of SSE timing.
-  // Only skip tool parts whose callID matches a currently-pending question.
-  const answeredQuestionParts = useMemo(() => {
-    const pendingCallIds = new Set(
-      questions.flatMap((q) =>
-        q.sessionID === sessionId && q.tool?.callID ? [q.tool.callID] : [],
-      ),
-    );
-
-    // Collect ALL question tool parts first so we can determine which ones
-    // were implicitly answered (i.e. the assistant continued past them).
-    const questionInfos: {
-      tool: ToolPart;
-      msgId: string;
-      msgIndex: number;
-      partIndex: number;
-    }[] = [];
-    for (let mi = 0; mi < turn.assistantMessages.length; mi++) {
-      const msg = turn.assistantMessages[mi];
-      for (let pi = 0; pi < msg.parts.length; pi++) {
-        const part = msg.parts[pi];
-        if (part.type !== 'tool') continue;
-        const tool = part as ToolPart;
-        if (tool.tool !== 'question') continue;
-        questionInfos.push({
-          tool,
-          msgId: msg.info.id,
-          msgIndex: mi,
-          partIndex: pi,
-        });
-      }
-    }
-
-    const result: { part: ToolPart; messageId: string }[] = [];
-    for (const qInfo of questionInfos) {
-      const { tool, msgId, msgIndex, partIndex } = qInfo;
-
-      // Check if there are subsequent parts/messages AFTER this question
-      // in the turn. If the assistant continued, this question was answered.
-      const hasSubsequentContent = (() => {
-        // Check for later parts in the same message
-        const msg = turn.assistantMessages[msgIndex];
-        for (let pi = partIndex + 1; pi < msg.parts.length; pi++) {
-          const p = msg.parts[pi];
-          if (p.type === 'step-finish' || p.type === 'step-start') continue;
-          return true;
-        }
-        // Check for later messages in the turn
-        return msgIndex < turn.assistantMessages.length - 1;
-      })();
-
-      const isPending = pendingCallIds.has(tool.callID);
-
-      // Skip only if it IS the currently-pending question AND there's no
-      // evidence it was already answered (no subsequent content).
-      if (isPending && !hasSubsequentContent) continue;
-
-      const serverAnswers = (tool.state as any)?.metadata?.answers;
-      const cached = optimisticAnswersCache.get(tool.id);
-      const toolOutput = (tool.state as any)?.output as string | undefined;
-
-      if (serverAnswers && serverAnswers.length > 0) {
-        // Server has real answers — clean up cache if present
-        if (cached) optimisticAnswersCache.delete(tool.id);
-        result.push({ part: tool, messageId: msgId });
-      } else if (cached) {
-        // Server hasn't confirmed yet — use cached answers.
-        // Build a synthetic tool part with the cached data so
-        // AnsweredQuestionCard can render.
-        const syntheticPart = {
-          ...tool,
-          state: {
-            ...(tool.state as any),
-            status: 'completed',
-            input: cached.input,
-            metadata: {
-              ...((tool.state as any)?.metadata ?? {}),
-              answers: cached.answers,
-            },
-          },
-        } as unknown as ToolPart;
-        result.push({ part: syntheticPart, messageId: msgId });
-      } else if (toolOutput && hasSubsequentContent) {
-        // Question was answered (output exists and assistant continued)
-        // but metadata.answers was never set (e.g. after page reload).
-        // Parse answers from the output string as a fallback.
-        const parsed = parseAnswersFromOutput(toolOutput, (tool.state as any)?.input);
-        if (parsed) {
-          const syntheticPart = {
-            ...tool,
-            state: {
-              ...(tool.state as any),
-              status: 'completed',
-              metadata: {
-                ...((tool.state as any)?.metadata ?? {}),
-                answers: parsed,
-              },
-            },
-          } as unknown as ToolPart;
-          result.push({ part: syntheticPart, messageId: msgId });
-        }
-      } else if (!toolOutput && hasSubsequentContent) {
-        // Question was implicitly answered (assistant continued past it)
-        // but neither metadata.answers nor output is available.
-        // Show a minimal answered card using the input questions
-        // with placeholder answers extracted from context.
-        const input = (tool.state as any)?.input;
-        const questionsList: { question: string }[] = Array.isArray(input?.questions)
-          ? input.questions
-          : [];
-        if (questionsList.length > 0) {
-          const placeholderAnswers = questionsList.map(() => ['Answered']);
-          const syntheticPart = {
-            ...tool,
-            state: {
-              ...(tool.state as any),
-              status: 'completed',
-              metadata: {
-                ...((tool.state as any)?.metadata ?? {}),
-                answers: placeholderAnswers,
-              },
-            },
-          } as unknown as ToolPart;
-          result.push({ part: syntheticPart, messageId: msgId });
-        }
-      }
-    }
-    return result;
-  }, [questions, sessionId, turn.assistantMessages]);
-  const answeredQuestionIds = useMemo(
-    () => new Set(answeredQuestionParts.map(({ part }) => part.id)),
-    [answeredQuestionParts],
-  );
-
-  // Inline content parts — interleaves text and answered question parts in natural order.
-  // When a turn contains answered questions, we need to render text and questions
-  // in their original order rather than extracting the last text as a separate "response".
-  // This works both during streaming and after completion so that answered questions
-  // stay in the correct position while the AI continues responding.
-  // Important: for question parts we use the (possibly synthetic) part from
-  // answeredQuestionParts — NOT the raw store part — so that optimistic
-  // answers from the cache are included even if the server hasn't confirmed yet.
-  const answeredQuestionPartsById = useMemo(
-    () => new Map(answeredQuestionParts.map(({ part }) => [part.id, part])),
-    [answeredQuestionParts],
-  );
-  const inlineContentParts = useMemo(() => {
-    if (answeredQuestionParts.length === 0) return null;
-    const items: Array<
-      | { type: 'text'; part: TextPart; id: string }
-      | { type: 'question'; part: ToolPart; id: string }
-    > = [];
-    for (const { part } of allParts) {
-      if (isTextPart(part) && part.text?.trim()) {
-        items.push({ type: 'text', part, id: part.id });
-      } else if (
-        isToolPart(part) &&
-        part.tool === 'question' &&
-        answeredQuestionPartsById.has(part.id)
-      ) {
-        // Use the answered part (may be synthetic with cached answers)
-        items.push({
-          type: 'question',
-          part: answeredQuestionPartsById.get(part.id)!,
-          id: part.id,
-        });
-      }
-    }
-    // Only use inline rendering if there are both text and question items
-    const hasText = items.some((i) => i.type === 'text');
-    const hasQuestion = items.some((i) => i.type === 'question');
-    if (!hasText || !hasQuestion) return null;
-    return items;
-  }, [allParts, answeredQuestionPartsById, answeredQuestionParts.length]);
-  const shouldUseInlineContent = !hasSteps && !!inlineContentParts;
-
-  // Whether the user message has any visible content (non-synthetic, non-ignored
-  // text, or attachments). Background task notifications inject synthetic-only
-  // user messages that should not render a user bubble.
-  // Extract session report from user message (if present)
-  const sessionReport = useMemo<SessionReport | null>(() => {
-    for (const p of turn.userMessage.parts) {
-      if (isTextPart(p)) {
-        const report = extractSessionReport((p as TextPart).text || '');
-        if (report) return report;
-      }
-    }
-    return null;
-  }, [turn.userMessage.parts]);
-  const [sessionReportModalOpen, setSessionReportModalOpen] = useState(false);
-
-  // Extract kortix_system messages for inline rendering (goal continuations, etc.)
-  const systemMessages = useMemo<KortixSystemMessage[]>(() => {
-    const msgs: KortixSystemMessage[] = [];
-    for (const p of turn.userMessage.parts) {
-      if (isTextPart(p) && (p as TextPart).text) {
-        msgs.push(...extractKortixSystemMessages((p as TextPart).text!));
-      }
-    }
-    return msgs;
-  }, [turn.userMessage.parts]);
-
-  const hasVisibleUserContent = useMemo(() => {
-    // Session reports render as their own card — don't show as user bubble
-    if (sessionReport) return false;
-    const parts = turn.userMessage.parts;
-    // Parts not loaded yet (bridging / transient state) — assume visible
-    // to prevent a flash where the bubble disappears momentarily.
-    if (parts.length === 0) return true;
-    // Has any non-synthetic, non-ignored text (including notification XML)?
-    const hasVisibleText = parts.some(
-      (p) =>
-        isTextPart(p) &&
-        !(p as TextPart).synthetic &&
-        !(p as any).ignored &&
-        !!stripKortixSystemTags((p as TextPart).text || '').trim(),
-    );
-    if (hasVisibleText) return true;
-    // Has any attachment (image/PDF)?
-    if (parts.some(isAttachment)) return true;
-    // Has any agent part?
-    if (parts.some(isAgentPart)) return true;
-    return false;
-  }, [turn.userMessage.parts, sessionReport]);
-
-  // User message text — for copy action
-  const userMessageText = useMemo(() => {
-    const texts: string[] = [];
-    for (const p of turn.userMessage.parts) {
-      if (!isTextPart(p) || (p as TextPart).synthetic || (p as any).ignored) continue;
-      const text = stripSystemPtyText((p as TextPart).text);
-      if (text.trim()) texts.push(text);
-    }
-    return texts.join('\n').trim();
-  }, [turn.userMessage.parts]);
-
-  const commandForTurn = useMemo(() => {
-    const mapped = commandMessages?.get(turn.userMessage.info.id);
-    if (mapped) return mapped;
-    if (!userMessageText) return undefined;
-    return detectCommandFromText(userMessageText, commands);
-  }, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
-
-  // ---- Status throttling (2.5s) ----
-  const [statusThrottleStart] = useState(() => Date.now());
-  const lastStatusChangeRef = useRef(statusThrottleStart);
-  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const childMessages = undefined as MessageWithParts[] | undefined; // placeholder for child session delegation
-  const rawStatus = useMemo(
-    () => getTurnStatus(allParts, childMessages),
-    [allParts, childMessages],
-  );
-  const [throttledStatus, setThrottledStatus] = useState('');
-  // How long the status has read the same thing. Past STATUS_STALL_AFTER_MS
-  // the label carries the elapsed time, so a slow model step or a long tool
-  // call reads as "still working, this long" instead of a frozen screen.
-  const [statusSinceMs, setStatusSinceMs] = useState(() => Date.now());
-  const [statusElapsedMs, setStatusElapsedMs] = useState(0);
-  useEffect(() => {
-    setStatusSinceMs(Date.now());
-    setStatusElapsedMs(0);
-  }, [throttledStatus]);
-  useEffect(() => {
-    if (!working) return;
-    const timer = setInterval(() => setStatusElapsedMs(Date.now() - statusSinceMs), 1000);
-    return () => clearInterval(timer);
-  }, [working, statusSinceMs]);
-  /** The phrase alone — never the elapsed time. Folding the ticking duration in
-   *  here changed the busy indicator's animation key once a second, which
-   *  replayed its roll-swap forever during any long tool call. */
-  const statusPhrase =
-    throttledStatus && working && statusElapsedMs >= STATUS_STALL_AFTER_MS
-      ? throttledStatus.replace(/(\.\.\.|…)$/, '')
-      : throttledStatus;
-  const statusElapsedLabel =
-    throttledStatus && working && statusElapsedMs >= STATUS_STALL_AFTER_MS
-      ? formatDuration(statusElapsedMs)
-      : undefined;
-
-  useEffect(() => {
-    const newStatus = rawStatus;
-    if (newStatus === throttledStatus || !newStatus) return;
-    const elapsed = Date.now() - lastStatusChangeRef.current;
-    if (elapsed >= 2500) {
-      setThrottledStatus(newStatus);
-      lastStatusChangeRef.current = Date.now();
-    } else {
-      clearTimeout(statusTimeoutRef.current);
-      statusTimeoutRef.current = setTimeout(() => {
-        setThrottledStatus(getTurnStatus(allParts, childMessages));
-        lastStatusChangeRef.current = Date.now();
-      }, 2500 - elapsed);
-    }
-    return () => clearTimeout(statusTimeoutRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allParts, rawStatus, throttledStatus]);
-
-  // ---- Retry countdown ----
-  const [retrySecondsLeft, setRetrySecondsLeft] = useState(0);
-  useEffect(() => {
-    if (!retryInfo) {
-      setRetrySecondsLeft(0);
-      return;
-    }
-    const update = () =>
-      setRetrySecondsLeft(Math.max(0, Math.round((retryInfo.next - Date.now()) / 1000)));
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [retryInfo]);
-
-  // ---- Duration ticking ----
-  // Only a LIVE turn needs a clock. The old effect also ran for settled turns,
-  // where it called setDuration on mount and forced every completed turn in the
-  // transcript through a second render for a number that never changes. The
-  // early return below is what removes that pass. A settled turn's duration is
-  // now SessionTurnMeta's job, from turnDurationMs.
-  const turnEndedAt = useMemo(() => sessionTurnEndedAt(turn), [turn]);
-  const turnDurationMs = useMemo(() => sessionTurnDurationMs(turn), [turn]);
-  const [liveDuration, setLiveDuration] = useState('');
-  useEffect(() => {
-    if (!working) return;
-    const { startedAt } = sessionTurnSpan(turn);
-    if (startedAt == null) return;
-    const update = () => setLiveDuration(formatDuration(Date.now() - startedAt));
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [working, turn]);
-
-  // ---- Copy response ----
-  const handleCopy = async () => {
-    // When inline content is active, copy all text parts (not just the last one)
-    const textToCopy = inlineContentParts
-      ? inlineContentParts
-          .flatMap((item) => {
-            if (item.type !== 'text') return [];
-            const text = (item.part as TextPart).text?.trim();
-            return text ? [text] : [];
-          })
-          .join('\n\n')
-      : response;
-    if (!textToCopy) return;
-    await navigator.clipboard.writeText(textToCopy);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  // Parts with a pending permission need a visible, actionable surface — they
-  // must never fold into a collapsed burst. Answered questions are NOT
-  // standalone: they are a step of the turn (the agent asked, the user
-  // answered, the work continued), so they render inside the activity burst as
-  // their own chain row (`AnsweredQuestionStep` in turn/answered-question-step)
-  // instead of a card that force-splits the burst around it. Pending/dismissed
-  // questions are not standalone either: the real, actionable prompt for
-  // a pending question lives in the composer (SessionChatInput's questionSlot),
-  // which has the answer-reply plumbing this component doesn't; surfacing an
-  // inert, answer-less card here would only be a confusing duplicate. Those
-  // are filtered out of the turn body entirely below, matching the old
-  // behaviour of rendering nothing for them in the steps list.
-  // Computed before the early-return branches below so this hook always
-  // runs in the same order, regardless of which branch this render takes.
-  const standaloneCallIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const permission of permissions) {
-      if (permission.sessionID === sessionId && permission.tool?.callID) {
-        ids.add(permission.tool.callID);
-      }
-    }
-    return ids;
-  }, [permissions, sessionId]);
-
-  /**
-   * The turn's parts, cut into bursts / standalone tools / text.
-   *
-   * This ran INLINE in the JSX below, which meant a `map`, a `filter` and the
-   * whole of `segmentTurn` on every render of this turn — and, worse, a brand
-   * new `segment.parts` array for every burst every time. `ActivityBurst` keys
-   * its `useMemo`s on `parts`, so a fresh array identity per render made every
-   * one of them a guaranteed miss: `mergeBurstSteps`, `burstSummary` and
-   * `stepLabel` recomputed for every burst in the turn on every frame, and no
-   * `React.memo` below could ever hold. A turn re-renders for reasons that have
-   * nothing to do with its parts — a hover, a permission arriving, the parent's
-   * state — and each of those paid the full price.
-   *
-   * Memoised, the arrays keep their identity until the parts actually change,
-   * which is what makes the memo boundaries downstream able to bite.
-   */
-  const segments = useMemo(() => {
-    const parts: (typeof allParts)[number]['part'][] = [];
-    for (const { part } of allParts) {
-      if (isToolPart(part) && isPlanWriteTool(part.tool)) continue;
-      if (isToolPart(part) && part.tool === 'question') {
-        // Keep only answered questions, and only if not rendering inline.
-        if (!answeredQuestionPartsById.has(part.id) || shouldUseInlineContent) continue;
-        // A kept question rides into its burst as the ANSWERED part — the
-        // one from answeredQuestionParts, possibly synthetic with
-        // optimistically-cached or output-parsed answers the raw store part
-        // does not carry yet. Without this substitution the burst row would
-        // show "0 answered" until the server confirms.
-        parts.push(answeredQuestionPartsById.get(part.id) ?? part);
-        continue;
-      }
-      parts.push(part);
-    }
-    return segmentTurn(parts, { standaloneCallIds });
-  }, [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds]);
-
-  // ============================================================================
-  // Shell mode — short-circuit rendering
-  // ============================================================================
-
-  if (shellModePart) {
-    return (
-      <div className="space-y-1">
-        <ToolPartRenderer
-          part={shellModePart}
-          sessionId={sessionId}
-          disableNavigation={disableToolNavigation}
-          permission={nextPermission?.tool ? nextPermission : undefined}
-          onPermissionReply={onPermissionReply}
-          defaultOpen
-        />
-        {turnError && (
-          <TurnErrorDisplay
-            errorText={turnError}
-            errorDetails={turnErrorDetails}
-            isAbort={turnErrorIsAbort}
-            abortReason={turnErrorAbortReason}
-            className="mt-2"
-          />
-        )}
-        <ConnectProviderDialog
-          open={connectProviderOpen}
-          onOpenChange={setConnectProviderOpen}
-          providers={providers}
-        />
-      </div>
-    );
-  }
-
-  // ============================================================================
-  // Compaction mode — render as a distinct card, no user bubble / logo / steps
-  // ============================================================================
-
-  if (isCompaction && !working && response) {
-    return (
-      <div className="group/turn">
-        <div className="border-border/60 bg-card/50 overflow-hidden rounded-md border">
-          <div className="border-border/40 bg-muted/40 flex items-center gap-2 border-b px-4 py-2.5">
-            <Layers className="text-muted-foreground/70 size-3.5" />
-            <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
-              Compaction
-            </span>
-          </div>
-          <div className="text-muted-foreground/90 [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_strong]:text-foreground/90 px-4 py-3 text-sm">
-            <SandboxUrlDetector content={response} isStreaming={false} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ============================================================================
-  // Normal mode rendering — 1:1 port of SolidJS session-turn.tsx
-  //
-  // Structure:
-  //   1. User message + actions
-  //   2. Kortix logo
-  //   3. Steps trigger (spinner/chevron + status + duration) — if working || hasSteps
-  //   4. Collapsible steps (if expanded): all parts EXCEPT response part
-  //   5. Answered question parts (if collapsed + has answered questions)
-  //   6. Response section (ONLY when NOT working) — the extracted last text part
-  //   7. Error (when steps collapsed)
-  //   8. Question prompt
-  //   9. Action bar (copy)
-  //
-  // The response (last text part) is NEVER rendered twice:
-  //   - While working: it renders INSIDE steps as a regular text part (hideResponsePart=false)
-  //   - When done: it's HIDDEN from steps (hideResponsePart=true) and shown below as Response
-  // ============================================================================
-
-  return (
-    <div className="group/turn text-factor-[2] space-y-2.5">
-      {/* ── Session report card — clickable, opens worker session modal ── */}
-      {sessionReport && (
-        <>
-          <SessionReportCard
-            report={sessionReport}
-            onOpen={() => setSessionReportModalOpen(true)}
-          />
-          <SubSessionModal
-            open={sessionReportModalOpen}
-            onOpenChange={setSessionReportModalOpen}
-            sessionId={sessionReport.sessionId}
-            title={`Worker${sessionReport.project ? ` · ${sessionReport.project}` : ''}`}
-          />
-        </>
-      )}
-
-      {/* ── System message indicator — shown for kortix_system-only messages ── */}
-      {!hasVisibleUserContent && !sessionReport && systemMessages.length > 0 && (
-        <SystemMessageIndicator messages={systemMessages} />
-      )}
-
-      {/* ── User message ── */}
-      {/* Hide the user bubble when the user message has no visible content
-			    (e.g. background task notification with only synthetic parts). */}
-      {hasVisibleUserContent && (
-        <div
-          data-turn-pending={pending || interruptedBeforeRun || undefined}
-          data-turn-queue-state={queueState ?? undefined}
-          className={cn(
-            'transition-opacity duration-500',
-            (pending || interruptedBeforeRun) && QUEUED_BUBBLE_OPACITY_CLASS,
-          )}
-        >
-          <UserMessage
-            message={turn.userMessage}
-            agentNames={agentNames}
-            commandInfo={commandMessages?.get(turn.userMessage.info.id)}
-            commands={commands}
-            sessionId={sessionId}
-            ownsPlan={ownsPlan}
-            onRewind={onRewind}
-            rewindDisabled={rewindDisabled}
-            leadingStatus={
-              statusState ? (
-                <QueuedPromptStatus
-                  state={statusState}
-                  lastError={queueRow?.last_error ?? undefined}
-                />
-              ) : undefined
-            }
-            leadingActions={
-              showQueueActions && queueActionId ? (
-                <QueuedPromptActions
-                  id={queueActionId}
-                  state={queueState ?? statusState ?? 'queued'}
-                  onRemove={queueRemovalId && onQueueRemove ? onQueueRemove : undefined}
-                  onSendNow={onQueueSendNow}
-                  onRetry={onQueueRetry}
-                />
-              ) : undefined
-            }
-            actionsAlwaysVisible={queueState === 'failed'}
-          />
-        </div>
-      )}
-
-      {/* ── Assistant parts content ──
-			  Segments the turn into bursts (collapsed activity), standalone
-			  parts (deliverables, sub-agents, and any part with a pending
-			  permission or an active question), and text (prose between
-			  bursts). Replaces the old same-tool / reasoning grouping — see
-			  features/session/turn/segment-turn.ts.
-			  Two part kinds are filtered out before segmentation:
-			    - the plan write (`todowrite` / `todo_write`, matched by
-			      `isPlanWriteTool`) — `PlanCard` beneath the user message is
-			      the single canonical todo surface; showing the same checklist
-			      again inside a burst would just duplicate it.
-			    - `question`: only answered questions are kept — they fold into
-			      their burst as a "Questions · N answered" chain row
-			      (turn/answered-question-step.tsx). Pending and dismissed
-			      questions are dropped entirely. Additionally, answered
-			      questions are dropped when rendering inline content (below),
-			      since that mode shows them already, in natural order. */}
-      {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
-        <div className="space-y-3">
-          {segments.map((segment, index) => {
-            if (segment.kind === 'burst') {
-              return (
-                <ActivityBurst
-                  key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
-                  parts={segment.parts}
-                  sessionId={sessionId}
-                  working={working}
-                  isTrailing={index === segments.length - 1}
-                  disableNavigation={disableToolNavigation}
-                  density={conversationDensity}
-                />
-              );
-            }
-
-            if (segment.kind === 'standalone') {
-              if (!shouldShowToolPart(segment.part)) return null;
-              return (
-                <ToolPartRenderer
-                  key={segment.part.id}
-                  part={segment.part}
-                  sessionId={sessionId}
-                  disableNavigation={disableToolNavigation}
-                  permission={getPermissionForTool(permissions, segment.part.callID)}
-                  onPermissionReply={onPermissionReply}
-                />
-              );
-            }
-
-            // Text segments render as prose between bursts. Text rendering
-            // for no-step turns is handled below in the dedicated response
-            // section, to avoid duplicate output.
-            if (!hasSteps) return null;
-            const text = segment.part.text?.trim();
-            if (!text) return null;
-            return (
-              <div key={segment.part.id} className="min-w-0 text-sm">
-                <ThrottledMarkdown content={text} isStreaming={working} />
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Screen reader ──
-          Announce COMPLETION only. Mirroring the full response here duplicated
-          every turn in the DOM, so select-all across the transcript copied each
-          answer twice. The visible markdown is already in the a11y tree. */}
-      <div className="sr-only" aria-live="polite">
-        {!working && response ? 'Response complete' : ''}
-      </div>
-
-      {/* Inline content: text and answered questions rendered in natural order.
-			    Works both during streaming and after completion. */}
-      {working && !hasSteps && !shouldUseInlineContent && response && (
-        <div className="min-w-0 text-sm">
-          <ThrottledMarkdown content={response} isStreaming />
-        </div>
-      )}
-      {shouldUseInlineContent ? (
-        <div className="space-y-3">
-          {(() => {
-            // Find the last text item index — it might still be streaming
-            let lastTextIdx = -1;
-            if (working) {
-              for (let i = inlineContentParts!.length - 1; i >= 0; i--) {
-                if (inlineContentParts![i].type === 'text') {
-                  lastTextIdx = i;
-                  break;
-                }
-              }
-            }
-            return inlineContentParts!.map((item, idx) => {
-              if (item.type === 'text') {
-                const isStreaming = idx === lastTextIdx;
-                const text = isStreaming ? item.part.text! : item.part.text!.trim();
-                return (
-                  <div key={item.id} className="min-w-0 text-sm">
-                    {isStreaming ? (
-                      <ThrottledMarkdown content={text} isStreaming />
-                    ) : (
-                      <SandboxUrlDetector content={text} isStreaming={false} />
-                    )}
-                  </div>
-                );
-              }
-              return <AnsweredQuestionCard key={item.id} part={item.part} />;
-            });
-          })()}
-        </div>
-      ) : (
-        <>
-          {/* Response section for text-only turns (no tools/steps content) */}
-          {!working &&
-            !hasSteps &&
-            response &&
-            (commandForTurn ? (
-              <div className="space-y-2">
-                <div className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg">
-                  <div className="text-foreground flex min-w-0 items-center justify-between gap-2 p-3 pb-0 text-xs [&>svg]:size-4">
-                    <span
-                      className="bg-popover text-foreground/95 dark:bg-card min-w-0 truncate rounded-[calc(var(--radius-sm)-0.5px)] border px-1.5 py-[0.08rem] align-baseline font-mono text-[0.95em] font-medium wrap-anywhere whitespace-nowrap"
-                      title={`/${commandForTurn.name}`}
-                    >
-                      {commandForTurn.name}
-                    </span>
-                  </div>
-                  {/* Command output clamps to a readable height and opens from a
-                      centred toggle on the fade. `from-secondary` matches the
-                      panel this sits on — the gradient has to dissolve into the
-                      surface, not paint a band over it. */}
-                  <ExpandableOutput
-                    className="min-h-0"
-                    fadeClassName="from-secondary"
-                    contentClassName="px-4 py-3 text-sm"
-                  >
-                    <SandboxUrlDetector content={response} isStreaming={false} />
-                  </ExpandableOutput>
-                </div>
-                <CodeBlockEndpoints content={response} />
-              </div>
-            ) : (
-              <div className="text-sm">
-                <SandboxUrlDetector content={response} isStreaming={false} />
-              </div>
-            ))}
-
-          {/* Answered question parts — shown after the response text only when
-				    NONE of the upstream renderers fire. The steps section above is
-				    gated by `working || hasSteps || hasReasoning`; if any of those
-				    is true, the question parts have already been rendered inline
-				    there as AnsweredQuestionCards. Mirroring that guard's inverse
-				    here is the only way to avoid the double-render that showed up
-				    on interrupted sessions that contained reasoning but no tool
-				    steps (e.g. "Planning a process for questions" → user answers
-				    → interrupt; hasSteps=false, working=false, hasReasoning=true,
-				    and without the !hasReasoning check the card rendered twice). */}
-          {!hasSteps && !working && !hasReasoning && answeredQuestionParts.length > 0 && (
-            <div className="mt-3 space-y-2">
-              {answeredQuestionParts.map(({ part }) => (
-                <AnsweredQuestionCard key={part.id} part={part as ToolPart} />
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ── Working status indicator (always at the end while working) ── */}
-      {showTurnBusyIndicator({ working, hasError: !!turnError, isRetrying: !!retryInfo }) && (
-        <div className="space-y-2">
-          {retryInfo && retryMessage && (
-            <SessionRetryDisplay
-              message={retryMessage}
-              attempt={retryInfo.attempt}
-              secondsLeft={retrySecondsLeft}
-              details={retryInfo.details}
-            />
-          )}
-          <SessionBusyIndicator
-            sessionId={sessionId}
-            statusText={statusPhrase || undefined}
-            elapsedLabel={statusElapsedLabel}
-            retryLabel={
-              retryInfo
-                ? String(
-                    tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry'),
-                  )
-                : undefined
-            }
-          />
-        </div>
-      )}
-
-      {/* ── Error (abort / failure banner) ── */}
-      {turnError && (
-        <TurnErrorDisplay
-          errorText={turnError}
-          errorDetails={turnErrorDetails}
-          isAbort={turnErrorIsAbort}
-          abortReason={turnErrorAbortReason}
-        />
-      )}
-
-      {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
-
-      {/* ── Action bar (copy + turn meta) ──
-          Gated on `!working` only. A turn that ends in tool calls has no closing
-          prose, but its finished-at / duration / cost are still turn facts —
-          `SessionTurnMeta` self-hides when it has no rows. Only the copy button
-          needs a response to copy. */}
-      {!working && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
-          {response ? (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={handleCopy}
-              aria-label={copied ? 'Copied' : 'Copy response'}
-              className="hit-area-3"
-            >
-              <span className="relative inline-flex shrink-0 items-center justify-center">
-                <AnimatePresence initial={false} mode="popLayout">
-                  <m.span
-                    key={copied ? 'check' : 'copy'}
-                    initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                    animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                    exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                    transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                    className="absolute inset-0 inline-flex items-center justify-center"
-                  >
-                    {copied ? (
-                      <CheckIcon className="text-foreground/70 size-[1.05rem]" />
-                    ) : (
-                      <Copy className="text-foreground/70 size-[1.05rem]" />
-                    )}
-                  </m.span>
-                </AnimatePresence>
-              </span>
-            </Button>
-          ) : null}
-          <SessionTurnMeta
-            endedAt={turnEndedAt}
-            durationMs={turnDurationMs}
-            cost={costInfo}
-            className="flex items-center justify-center"
-          />
-        </div>
-      )}
-
-      <ConnectProviderDialog
-        open={connectProviderOpen}
-        onOpenChange={setConnectProviderOpen}
-        providers={providers}
-      />
-    </div>
-  );
-}
-
-/**
- * The boundary that stops the transcript re-rendering with the stream.
- *
- * `messages` is rebuilt on every SSE frame, so this component used to re-render
- * for every turn in the session ~60 times a second — and each of those renders
- * re-ran ~28 `useMemo`s (all keyed on `turn`), a `planAnchorMessageId` scan of
- * the whole transcript, `segmentTurn`, and every tool renderer beneath it.
- * `content-visibility: auto` on the wrapper hid the layout cost of that, not the
- * JavaScript.
- *
- * The default shallow compare is correct here ONLY because three things were
- * fixed first, and each is load-bearing: `turn` keeps its identity when its
- * messages have not changed (`stabilizeTurns`), the `allMessages` array prop is
- * gone (replaced by the `isLast` / `ownsPlan` booleans derived once above), and
- * `onRewind` is a `useCallback` rather than an inline arrow. Any one of the
- * three reverting silently turns this memo back into a no-op — it would still
- * compile, still pass tests, and simply never bail out.
- */
-export const SessionTurn = memo(SessionTurnImpl);
-SessionTurn.displayName = 'SessionTurn';
+// The turn card's abort classification moved with the card; re-exported so
+// its behavior test (`interrupted-label.test.ts`) keeps its import.
+export { deriveTurnErrorAbortState } from './timeline/project-rows';
 
 // ============================================================================
 // Main SessionChat Component
@@ -1860,26 +380,6 @@ interface SessionChatProps {
    * `chatReady` focuses the composer exactly once, as the overlay dissolves.
    */
   deferComposerFocus?: boolean;
-}
-
-/**
- * The "Compaction" rule that marks where history was summarised. Rendered in two
- * places (the optimistic pass and the first turn after a landed compaction);
- * they were byte-identical copies, so they live here to stay that way.
- */
-export function CompactionDivider(): React.ReactElement {
-  return (
-    <div className="my-3 flex items-center gap-3 py-4">
-      <div className="bg-border h-px flex-1" />
-      <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-full border px-3 py-1.5">
-        <Layers className="text-muted-foreground size-3.5" />
-        <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-          Compaction
-        </span>
-      </div>
-      <div className="bg-border h-px flex-1" />
-    </div>
-  );
 }
 
 export function SessionChat({
@@ -2686,8 +1186,7 @@ export function SessionChat({
         // dead-end string is why this looked like the button simply never
         // worked.
         const status = (error as { status?: number } | null)?.status;
-        const detail =
-          error instanceof Error && error.message.trim() ? error.message.trim() : null;
+        const detail = error instanceof Error && error.message.trim() ? error.message.trim() : null;
         errorToast(
           status === 409
             ? (detail ?? 'The agent is already answering that prompt')
@@ -2981,12 +1480,20 @@ export function SessionChat({
     }
     return out;
   }, [promptInbox.prompts, transcriptUserMessageIds, sessionId]);
+  // ONE spliced array feeds BOTH `groupMessagesIntoTurns` (the turns) and
+  // `buildChatRows` (the rows), so the two agree on every id — including the
+  // queued synthetic bubbles, whose ids (`prompt.message_id ||
+  // 'queued-<prompt_id>'`, part `'syn-<prompt_id>'`) are non-empty strings,
+  // so the SDK's positional `getPartId` fallback is never hit and every row
+  // is reusable.
+  const splicedMessages = useMemo(
+    () => [...(messages ?? []), ...queuedSyntheticMessages],
+    [messages, queuedSyntheticMessages],
+  );
   const rawTurns = useMemo(
     () =>
-      messages || queuedSyntheticMessages.length > 0
-        ? groupMessagesIntoTurns([...(messages ?? []), ...queuedSyntheticMessages])
-        : [],
-    [messages, queuedSyntheticMessages],
+      messages || queuedSyntheticMessages.length > 0 ? groupMessagesIntoTurns(splicedMessages) : [],
+    [messages, queuedSyntheticMessages, splicedMessages],
   );
   /**
    * `groupMessagesIntoTurns` allocates a fresh object per turn on every call, and
@@ -3098,6 +1605,64 @@ export function SessionChat({
     if (!last || !isAbortError((last.info as { error?: unknown }).error)) return new Set<string>();
     return new Set(turns.slice(newestWithContent + 1).map((t) => t.userMessage.info.id));
   }, [turns, lastTurnWorking]);
+  // Parts with a pending permission need a visible, actionable surface — they
+  // must never fold into a collapsed burst. Resolved here, at the list level,
+  // because the rows' grouping (`makeWebGroupPart`) needs it BEFORE grouping.
+  const standaloneCallIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const permission of pendingPermissions) {
+      if (permission.sessionID === sessionId && permission.tool?.callID) {
+        ids.add(permission.tool.callID);
+      }
+    }
+    return ids;
+  }, [pendingPermissions, sessionId]);
+  // Which question parts render as answered (server answers, the optimistic
+  // cache, or output-parsed). The rows' part filter drops every other
+  // question, so it is session-level: a just-answered question must be a row
+  // on the very frame its answer is cached.
+  const answeredQuestionIds = useMemo(
+    () => deriveAnsweredQuestionIds(turns, pendingQuestions, sessionId),
+    [turns, pendingQuestions, sessionId],
+  );
+  /**
+   * The transcript as rows — `constructTimelineRows` + `reuseTimelineRows`
+   * from the SDK, over the SAME spliced messages the turns come from. The
+   * previous frame's rows ride in a ref written after commit (the
+   * `stableTurnsRef` pattern): an unchanged frame gets the SAME array back,
+   * and a changed one keeps every unchanged row object. `reuseTimelineRows`
+   * is idempotent, so StrictMode's double render lands on the same objects.
+   *
+   * `activeUserMessageID` MUST be the working turn: the SDK's default (the
+   * last turn) would mark a queued pending bubble as the active one.
+   */
+  const rowsRef = useRef<TimelineRow[]>([]);
+  const rows = useMemo(
+    () =>
+      buildChatRows({
+        messages: splicedMessages,
+        activeUserMessageID: workingTurn.workingTurnId,
+        status: sessionStatus?.type,
+        standaloneCallIds,
+        answeredQuestionIds,
+        prev: rowsRef.current,
+      }),
+    [
+      splicedMessages,
+      workingTurn.workingTurnId,
+      sessionStatus?.type,
+      standaloneCallIds,
+      answeredQuestionIds,
+    ],
+  );
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+  const turnsById = useMemo(() => {
+    const byId = new Map<string, Turn>();
+    for (const turn of turns) byId.set(turn.userMessage.info.id, turn);
+    return byId;
+  }, [turns]);
   /** Hoisted out of the JSX: an inline arrow prop defeats `React.memo` by itself. */
   const handleRewind = useCallback(
     (messageId: string, text: string) => setRewindTarget({ messageId, text }),
@@ -4578,87 +3143,43 @@ export function SessionChat({
                           busy={turns.length === 0}
                         />
                       )}
-                    {turns.map((turn, turnIndex) => {
-                      // Check if this turn is a compaction summary
-                      const hasCompaction =
-                        turn.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
-                        turn.assistantMessages.some((msg) =>
-                          msg.parts.some((p) => p.type === 'compaction'),
-                        );
-
-                      // Notification-only early-return removed: it rendered the
-                      // user's pty_* card but skipped turn.assistantMessages,
-                      // hiding every subsequent assistant response in that turn.
-                      // Fall through to the normal turn renderer instead.
-
-                      return (
-                        <TurnViewport
-                          // ONE element per prompt: keyed by the id the
-                          // bubble was FIRST painted under, so the swap to a
-                          // re-minted echo id re-renders this node instead
-                          // of mounting a new one (opacity keeps animating,
-                          // hover state survives, nothing jumps).
-                          key={turnRenderKeys.get(turn.userMessage.info.id)}
-                          turnId={turn.userMessage.info.id}
-                          // Queued bubbles STACK: a pending turn right after
-                          // another pending turn sits close to it, like a
-                          // list of what is waiting — not a turn's width
-                          // apart as if each had been answered in between.
-                          className={
-                            turnIndex === 0
-                              ? ''
-                              : lastTurnWorking &&
-                                  pendingTurnIds.has(turn.userMessage.info.id) &&
-                                  pendingTurnIds.has(turns[turnIndex - 1].userMessage.info.id)
-                                ? 'mt-3'
-                                : 'mt-12'
-                          }
-                        >
-                          {/* Compaction divider — shown before the first turn after compaction */}
-                          {hasCompaction && <CompactionDivider />}
-                          <SessionTurn
-                            turn={turn}
-                            isLast={turn.userMessage.info.id === lastUserMessageId}
-                            ownsPlan={turn.userMessage.info.id === planAnchorId}
-                            sessionId={sessionId}
-                            sessionStatus={sessionStatus}
-                            permissions={pendingPermissions}
-                            questions={pendingQuestions}
-                            agentNames={agentNames}
-                            isFirstTurn={turnIndex === 0}
-                            sessionWorking={lastTurnWorking}
-                            isWorkingTurn={turn.userMessage.info.id === workingTurn.workingTurnId}
-                            pending={
-                              lastTurnWorking && pendingTurnIds.has(turn.userMessage.info.id)
-                            }
-                            queueRow={inboxRowsByMessageId.get(turn.userMessage.info.id) ?? null}
-                            queueHeld={queueRows.held}
-                            onQueueRemove={handleRemoveQueuedMessage}
-                            onQueueSendNow={handleQueueSendNow}
-                            onQueueRetry={handleRetryQueuedMessage}
-                            interruptedBeforeRun={interruptedTurnIds.has(turn.userMessage.info.id)}
-                            isCompaction={hasCompaction}
-                            providers={providers}
-                            commandMessages={commandMessagesRef.current}
-                            commands={commands}
-                            disableToolNavigation={disableToolNavigation}
-                            onPermissionReply={handlePermissionReply}
-                            onRewind={handleRewind}
-                            rewindDisabled={
-                              !!readOnly ||
-                              !sessionState ||
-                              isBusy ||
-                              sessionState.rewindPending ||
-                              // The runtime is not idle while queued prompts
-                              // are still on their way to it — a rewind mid-
-                              // delivery fails downstream with "Session is
-                              // busy" (measured); refuse it up front instead.
-                              promptInbox.prompts.length > 0
-                            }
-                          />
-                        </TurnViewport>
-                      );
-                    })}
+                    <SessionTimelineList
+                      rows={rows}
+                      turnsById={turnsById}
+                      turnRenderKeys={turnRenderKeys}
+                      pendingTurnIds={pendingTurnIds}
+                      interruptedTurnIds={interruptedTurnIds}
+                      sessionWorking={lastTurnWorking}
+                      workingTurnId={workingTurn.workingTurnId}
+                      planAnchorId={planAnchorId}
+                      inboxRowsByMessageId={inboxRowsByMessageId}
+                      queueHeld={queueRows.held}
+                      onQueueRemove={handleRemoveQueuedMessage}
+                      onQueueSendNow={handleQueueSendNow}
+                      onQueueRetry={handleRetryQueuedMessage}
+                      sessionId={sessionId}
+                      sessionStatus={sessionStatus}
+                      permissions={pendingPermissions}
+                      questions={pendingQuestions}
+                      agentNames={agentNames}
+                      providers={providers}
+                      commandMessages={commandMessagesRef.current}
+                      commands={commands}
+                      disableToolNavigation={disableToolNavigation}
+                      onPermissionReply={handlePermissionReply}
+                      onRewind={handleRewind}
+                      rewindDisabled={
+                        !!readOnly ||
+                        !sessionState ||
+                        isBusy ||
+                        sessionState.rewindPending ||
+                        // The runtime is not idle while queued prompts
+                        // are still on their way to it — a rewind mid-
+                        // delivery fails downstream with "Session is
+                        // busy" (measured); refuse it up front instead.
+                        promptInbox.prompts.length > 0
+                      }
+                    />
                   </ToolActivateContext.Provider>
 
                   {/* Busy indicator when no turns yet but session is busy */}
