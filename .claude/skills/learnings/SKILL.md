@@ -1096,3 +1096,12 @@ strictly (dynamic registration, stateful sessions) as the one you test against.
 *Incident:* found and fixed while building one-click OAuth 2.1 for MCP
 connectors, PR #6579. No production outage — the surface had never been used
 against a real provider, which is precisely why all three shipped unnoticed.
+### Size database pools for the rolling fleet, not the steady fleet
+
+**When:** sizing database pools or changing ECS deployment capacity. Bound the
+sum of every long-lived pool against the maximum rolling fleet. Include startup
+probes and reserve explicit non-API capacity.
+*Incident:* production SQLSTATE `53300` from 01:15:10Z through 01:16:37Z on
+2026-08-22. Twenty overlapping API tasks could request 380 connections against
+237 usable slots. *Enforcer:* `database-capacity.test.ts` pins the full rollout
+ceiling and reserve.
