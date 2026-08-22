@@ -775,6 +775,7 @@ async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = fals
   ];
   if (t.type === 'cron') {
     rows.push(['cron', t.cron ?? '—'], ['timezone', t.timezone]);
+    if (t.run_at) rows.push(['run_at', String(t.run_at)]);
   } else if (t.type === 'monitor') {
     rows.push(['run', t.run ?? '—'], ['mode', t.mode ?? '—']);
     if (t.interval_seconds !== null && t.interval_seconds !== undefined) {

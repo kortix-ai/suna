@@ -159,6 +159,8 @@ export interface ProjectTrigger {
   agent: string;
   enabled: boolean;
   cron: string | null;
+  /** One-off run instant (ISO); exclusive with cron. */
+  run_at?: string | null;
   timezone: string;
   secret_env: string | null;
   /** monitor only — the repo-relative command whose stdout lines are the events. */
