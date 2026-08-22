@@ -45,7 +45,11 @@ export interface AuditQueueOptions {
 }
 
 export const AUDIT_FLUSH_MS_DEFAULT = 250;
-export const AUDIT_FLUSH_MAX_DEFAULT = 500;
+// 100, lowered from 500 (Essentia convoy fix): each row's BEFORE INSERT trigger
+// takes a per-session FOR UPDATE lock held to the batch's COMMIT, so a large
+// batch holds every touched session's lock for the whole commit and cross-blocks
+// the other replica. Smaller batches commit sooner. Tunable via KORTIX_AUDIT_FLUSH_MAX.
+export const AUDIT_FLUSH_MAX_DEFAULT = 100;
 export const AUDIT_QUEUE_MAX_DEFAULT = 5_000;
 const DROP_LOG_INTERVAL_MS = 60_000;
 

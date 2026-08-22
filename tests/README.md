@@ -151,9 +151,9 @@ Why six. On run 32240074477 four shards of 137 flows were all killed by the
 40-minute job cap while still passing what they ran (76/87 and 68/77). Measured
 from those logs, a shard completes 2.0–2.3 flows/min, so 137 flows needs 62–70
 minutes — more than a 60-minute cap allows. Six shards put 82 flows on each,
-which the same rates finish in 38–43 minutes. Each shard keeps
-`KE2E_API_WORKERS=2` and `KE2E_SANDBOX_WORKERS=1`: the throughput comes from
-fewer flows per shard, not from more workers inside one.
+which the same rates finish in 38–43 minutes. Each shard uses
+`KE2E_API_WORKERS=1` and `KE2E_SANDBOX_WORKERS=1` to stay below staging's
+proven concurrency ceiling.
 
 A final job named `full suite + quality gates` aggregates the shards. That exact
 name is the required status check on `prod` branch protection; renaming it

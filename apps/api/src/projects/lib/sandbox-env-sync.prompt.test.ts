@@ -14,6 +14,7 @@
 // re-pushed, and resolving the binding set stays FAIL-CLOSED — it re-reads the
 // agent's grant, and a grant we cannot prove must refuse the turn.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { config } from '../../config';
 
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
@@ -134,6 +135,12 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  // Sequential awaited propagates must run immediately in tests: the
+  // production coalescer only exists to merge storm bursts (see
+  // env-sync-coalescer.ts), and a cooling-down interval here would make
+  // every second call in a case queue for the full window.
+  (config as any).KORTIX_ENV_SYNC_MIN_INTERVAL_MS = 0;
+
   __resetNetworkBoundaryArmCacheForTests();
   __resetPromptModelSignatureCacheForTests();
   events = [];
