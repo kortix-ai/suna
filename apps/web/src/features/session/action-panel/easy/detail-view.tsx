@@ -49,6 +49,7 @@ import {
 } from 'react';
 import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
+import { PanelWidthButton } from './viewer-actions';
 
 /** Closes the detail. Exported so a body with its own toolbar can host it. */
 export function CloseButton({ onClose }: { onClose: () => void }) {
@@ -722,7 +723,10 @@ export function DetailLayer({
                 {persistentLayer.title}
               </span>
             </span>
-            <CloseButton onClose={persistentLayer.onClose} />
+            <span className="flex shrink-0 items-center gap-0.5">
+              <PanelWidthButton isMobile={isMobile} />
+              <CloseButton onClose={persistentLayer.onClose} />
+            </span>
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">{persistentLayer.body}</div>
         </m.div>

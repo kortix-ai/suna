@@ -1,10 +1,12 @@
 'use client';
 
-import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
+import {
+  SidebarAlertRow,
+  type SidebarAlertTone,
+} from '@/features/workspace/project-sidebar/footer/sidebar-alert';
 import { useAccountState } from '@/hooks/billing';
 import { billingDialogArgs, resolveBillingState } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
-import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { WarningIcon as AlertTriangle, CreditCardIcon as CreditCard } from '@phosphor-icons/react';
 import { useCallback } from 'react';
@@ -24,7 +26,10 @@ function useBalanceWarning(accountId?: string) {
   const canTopUp = (accountState?.tier?.can_purchase_credits ?? false) || isPerSeat;
 
   const handleClick = useCallback(
-    () => openUpgradeDialog(billingDialogArgs(resolveBillingState(accountState), accountState, accountId)),
+    () =>
+      openUpgradeDialog(
+        billingDialogArgs(resolveBillingState(accountState), accountState, accountId),
+      ),
     [openUpgradeDialog, accountId, accountState],
   );
 
@@ -38,29 +43,27 @@ function useBalanceWarning(accountId?: string) {
   return { severity, handleClick };
 }
 
+/**
+ * This row used to be the loudest thing in the footer: a tinted fill *and* a
+ * coloured border at `h-9`, next to two `h-8` alerts that were transparent. It
+ * now wears the shared footer dialect, so an empty wallet reads as urgent
+ * through its colour rather than through extra chrome — and the row lines up
+ * with every other row in the sidebar.
+ */
 export function SidebarBalanceWarning({ accountId }: { accountId?: string }) {
   const { severity, handleClick } = useBalanceWarning(accountId);
   if (!severity) return null;
 
   const isEmpty = severity === 'empty';
+  const tone: SidebarAlertTone = isEmpty ? 'critical' : 'warning';
 
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        type="button"
-        size="md"
-        onClick={handleClick}
-        className={cn(
-          'flex w-full items-center gap-2 border font-medium [&_svg]:size-3.5!',
-          isEmpty
-            ? 'text-destructive border-destructive/30 bg-destructive/[0.06] hover:bg-destructive/10 hover:text-destructive'
-            : 'text-kortix-orange border-kortix-orange/30 bg-kortix-orange/[0.06] hover:bg-kortix-orange/10 hover:text-kortix-orange',
-        )}
-      >
-        {isEmpty ? <AlertTriangle /> : <CreditCard />}
-        <span className="flex-1 text-left">{isEmpty ? 'Out of credits' : 'Low balance'}</span>
-        <span className="text-xs opacity-70">Top up</span>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
+    <SidebarAlertRow
+      tone={tone}
+      icon={isEmpty ? <AlertTriangle className="size-4" /> : <CreditCard className="size-4" />}
+      label={isEmpty ? 'Out of credits' : 'Low balance'}
+      trailing="Top up"
+      onClick={handleClick}
+    />
   );
 }
