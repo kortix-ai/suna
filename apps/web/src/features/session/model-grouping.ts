@@ -27,9 +27,8 @@ const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 // that over parsing the wire id at all. String-splitting `modelID` remains
 // ONLY as a fallback for a stale/older baked catalog that predates the field.
 export function pickerGroupId(model: FlatModel): string {
-  if (model.providerID !== 'kortix') {
-    return model.providerID;
-  }
+  // Gateway mode is the only mode, so every model here is under `kortix`; a
+  // foreign providerID (no `provider`, no `/`) falls through to itself below.
   if (MANAGED_MODEL_IDS.has(model.modelID)) return model.provider ?? model.providerID;
   if (model.provider) return model.provider;
   const slash = model.modelID.indexOf('/');

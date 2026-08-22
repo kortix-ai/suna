@@ -46,10 +46,11 @@ export type ModelKey = {
 // ── Gateway wire-model ⟷ ModelKey conversion ───────────────────────────────
 // The LLM gateway identifies a model by its "wire model" — what opencode sends
 // as `body.model`. Under the kortix gateway provider that is just the modelID
-// (a bare managed id like 'glm-5.2', or a BYOK 'provider/model'). A direct
-// provider model uses 'provider/model'.
+// (a bare managed id like 'glm-5.2', or a BYOK 'provider/model'). Gateway mode
+// is the only mode, so `kortix` is the only bare provider; anything else is
+// spelled out as 'provider/model' verbatim.
 export function modelKeyToWire(model: ModelKey): string {
-  if (model.providerID === 'kortix' || model.providerID === 'opencode') return model.modelID;
+  if (model.providerID === 'kortix') return model.modelID;
   return `${model.providerID}/${model.modelID}`;
 }
 
@@ -246,11 +247,10 @@ export function hasUsableModel(
   const connectedProviderIds = opts.connectedProviderIds;
   const freeTier = opts.freeTier ?? false;
   return allModels.some((m) => {
-    if (m.providerID !== MANAGED_GATEWAY_PROVIDER_ID) {
-      // Native/direct provider models: flattenModels only includes models
-      // from CONNECTED providers, so presence here already means usable.
-      return true;
-    }
+    // Gateway mode is the only mode: every usable model is registered under
+    // the one `kortix` provider. Anything else is a stale/foreign catalog
+    // entry, not a route OpenCode can take.
+    if (m.providerID !== MANAGED_GATEWAY_PROVIDER_ID) return false;
     if (MANAGED_MODEL_IDS.has(m.modelID)) return !freeTier;
     const sub = subProviderOf(m.modelID, m.provider);
     return sub === SUBSCRIPTION_PROVIDER_ID
