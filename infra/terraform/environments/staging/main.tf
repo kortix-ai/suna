@@ -83,10 +83,12 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image                   = var.api_image
-  container_port          = var.container_port
-  certificate_arn         = var.wildcard_certificate_arn
-  environment             = var.api_environment
+  image           = var.api_image
+  container_port  = var.container_port
+  certificate_arn = var.wildcard_certificate_arn
+  environment = merge(var.api_environment, {
+    LLM_GATEWAY_PROXY_TARGET = "https://gateway-staging-ecs-fargate.kortix.com"
+  })
   secrets                 = var.api_secrets
   secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
   ses_send_region         = "us-east-2"

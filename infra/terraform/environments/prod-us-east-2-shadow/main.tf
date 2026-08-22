@@ -74,7 +74,8 @@ module "api" {
   health_check_path = "/health/ready"
   certificate_arn   = module.certificate.certificate_arn
   environment = {
-    KORTIX_VERSION = "0.10.14"
+    KORTIX_VERSION           = "0.10.14"
+    LLM_GATEWAY_PROXY_TARGET = "https://${var.gateway_shadow_hostname}"
   }
   secrets                 = local.secrets
   secrets_blob_arn        = var.secret_arn
