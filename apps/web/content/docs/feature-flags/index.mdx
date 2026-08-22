@@ -29,6 +29,22 @@ another project, and nothing for other accounts.
 You need the project's `project.customize.write` permission. The route answers
 `403` for any other caller.
 
+### From the CLI
+
+The same switches are available to scripts and agents through `kortix projects features`:
+
+```bash
+kortix projects features            # every flag: key, state, origin, stability
+kortix projects features enable apps
+kortix projects features disable voice
+kortix projects features reset apps  # drop the override; follow the platform default
+kortix projects features --json      # the full catalog as JSON
+```
+
+Add `--project <id>` to act on a project other than the linked/default one. A
+flag the platform marks unavailable stays off whatever the project override
+says; the CLI prints that as `n/a` / `unavailable`.
+
 <Callout type="info" title="Flag state is not in your repo">
 Per-project flag state lives in the database, on the project row. It is never
 read from `kortix.yaml`. A flag you turn on does not travel with a repository

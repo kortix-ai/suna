@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { baseExtensions } from './extensions';
 import {
   createSubmitOnEnterHandler,
+  createUpdateHandler,
   getEditorDocument,
   insertTextAtCursor,
   setEditorDocument,
@@ -696,5 +697,87 @@ describe('merge-mode prefill and transcription round-trip to the old strings', (
     );
 
     expect(serializeDocument(editor.state.doc).text).toBe('transcribed');
+  });
+});
+
+describe('createUpdateHandler — per-change doc snapshots alongside the empty boundary', () => {
+  test('fires onDocChange for every keystroke while onEmptyChange fires once', () => {
+    const boundaries: boolean[] = [];
+    const docs: JSONContent[] = [];
+    const emptiness: boolean[] = [];
+    const editor = new Editor({
+      extensions: [...baseExtensions(() => 'Type a message'), MentionNode],
+      onUpdate: createUpdateHandler(
+        (isEmpty) => boundaries.push(isEmpty),
+        (doc, isEmpty) => {
+          docs.push(doc);
+          emptiness.push(isEmpty);
+        },
+      ),
+      content: { type: 'doc', content: [{ type: 'paragraph' }] },
+    });
+
+    for (const char of 'hello') {
+      editor.commands.insertContent({ type: 'text', text: char });
+    }
+
+    // The whole point of the composition: the draft saver sees every change,
+    // the toolbar still sees exactly one boundary crossing.
+    expect(docs).toHaveLength(5);
+    expect(boundaries).toEqual([false]);
+    // Emptiness rides with every snapshot, read live from the same editor.
+    expect(emptiness).toEqual([false, false, false, false, false]);
+    expect(editor.getText()).toBe('hello');
+  });
+
+  test('the snapshot handed to onDocChange is the live document, mentions included', () => {
+    const docs: JSONContent[] = [];
+    const editor = new Editor({
+      extensions: [...baseExtensions(() => 'Type a message'), MentionNode],
+      onUpdate: createUpdateHandler(
+        () => {},
+        (doc) => docs.push(doc),
+      ),
+      content: { type: 'doc', content: [{ type: 'paragraph' }] },
+    });
+
+    editor.commands.insertContent({
+      type: 'mention',
+      attrs: { kind: 'file', label: 'README.md', value: 'README.md' },
+    });
+
+    const last = docs.at(-1);
+    expect(JSON.stringify(last)).toContain('"type":"mention"');
+  });
+
+  test('deleting the last character reports the empty boundary and an empty doc', () => {
+    const boundaries: boolean[] = [];
+    const docs: JSONContent[] = [];
+    const emptiness: boolean[] = [];
+    const editor = new Editor({
+      extensions: [...baseExtensions(() => 'Type a message'), MentionNode],
+      onUpdate: createUpdateHandler(
+        (isEmpty) => boundaries.push(isEmpty),
+        (doc, isEmpty) => {
+          docs.push(doc);
+          emptiness.push(isEmpty);
+        },
+      ),
+      content: { type: 'doc', content: [{ type: 'paragraph' }] },
+    });
+
+    editor.commands.insertContent({ type: 'text', text: 'a' });
+    // A range delete, not `clearContent()`: that calls `setContent('')` with a
+    // bare string, which TipTap always routes through `window.DOMParser` and
+    // which therefore throws with no DOM. See this file's header — production
+    // `clear()` avoids it the same way, via EMPTY_DOC.
+    editor.commands.deleteRange({ from: 1, to: 2 });
+
+    expect(boundaries).toEqual([false, true]);
+    expect(editor.isEmpty).toBe(true);
+    expect(docs).toHaveLength(2);
+    // The final snapshot reports empty, which is what makes the host delete
+    // the stored draft rather than persist an empty document.
+    expect(emptiness).toEqual([false, true]);
   });
 });

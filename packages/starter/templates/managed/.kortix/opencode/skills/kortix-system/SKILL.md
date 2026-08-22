@@ -145,6 +145,17 @@ Kortix cloud state — not just files in the repo. Examples:
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
+| "turn on / off a feature flag (Apps, Voice, Review Center, …)" | `kortix projects features` · `kortix projects features enable <flag>` |
+| "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
+| "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
+| "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> …` · `kortix agents config <agent>` |
+| "stop / wake a session, share it, or publish a preview link" | `kortix sessions stop|start <id>` · `sessions share <id> --mode …` · `sessions links <id> create --port 3000` |
+| "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
+| "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
+| "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
+| "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
+| "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
+| "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
 
 **Everything is scriptable — drive Kortix like the dashboard.** Every
 read/list command takes `--json` for machine-readable output (parse that,

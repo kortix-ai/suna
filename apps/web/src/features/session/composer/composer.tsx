@@ -39,6 +39,8 @@ import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
+import type { DraftScope, StoredDraft } from './draft/composer-draft';
+import { useComposerDraft } from './draft/use-composer-draft';
 import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 
 import { Button } from '@/components/ui/button';
@@ -168,6 +170,15 @@ export interface SessionChatInputProps {
   messages?: MessageWithParts[];
   sessionId?: string;
   projectId?: string;
+  /**
+   * Persist the unsent draft under this scope and restore it on the next
+   * mount — see `composer/draft/`. Project scope for the home hero composer
+   * (no session yet), session scope for every in-thread one.
+   *
+   * Omitted → the composer persists nothing, which is what the two
+   * marketing-demo composers rely on.
+   */
+  draftScope?: DraftScope | null;
   disabled?: boolean;
   /**
    * A line shown in a bar directly ABOVE the composer card. Used for "this
@@ -383,6 +394,7 @@ function ComposerImpl({
   messages,
   sessionId,
   projectId,
+  draftScope = null,
   disabled = false,
   notice = null,
   onNoticeRetry,
@@ -443,6 +455,33 @@ function ComposerImpl({
     editorRef.current = handle;
     setEditorElement(handle?.getElement() ?? null);
   }, []);
+
+  /**
+   * Put a stored draft back into the live editor.
+   *
+   * `setDocumentWithoutStealingFocus`, not `setDocument`: this fires on mount,
+   * and `setDocument` force-focuses the document end — a session page would
+   * yank focus into the composer on every reload.
+   *
+   * Attachments are only seeded into an EMPTY tray. Anything already attached
+   * was added by the person in this mount and outranks a stored list. Local
+   * attachments were never storable, so nothing is restored for them.
+   */
+  const handleDraftRestore = useCallback((draft: StoredDraft) => {
+    setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
+    if (draft.files.length > 0) {
+      setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
+    }
+  }, []);
+
+  const { handleDocChange, clearSavedDraft } = useComposerDraft({
+    scope: draftScope,
+    editorRef,
+    editorReady: editorElement != null,
+    attachedFiles,
+    hasPrefill: !!prefill,
+    onRestore: handleDraftRestore,
+  });
 
   const { data: allSessions } = useRuntimeSessions();
 
@@ -1012,6 +1051,11 @@ function ComposerImpl({
           return;
         }
         onCommand?.(plan.command, plan.args, draft?.commandSplit);
+        // The command is on its way; the draft that produced it is spent.
+        // Deliberately NOT on either refusal path above (`guard.kind ===
+        // 'refuse'`, `blocker`) — those keep the text in the editor on
+        // purpose, so its draft has to survive with it.
+        clearSavedDraft();
         if (clearOnSend && !stash) {
           editorRef.current?.clear();
           setAttachedFiles((prev) => {
@@ -1057,6 +1101,14 @@ function ComposerImpl({
       try {
         await onSend(trimmed, filesToSend, mentionsToSend);
         for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
+        // AFTER the await, so a send that throws keeps its draft. Explicit,
+        // NOT derived from `reset.clear`: the project-home composer passes
+        // `clearOnSend={false}` because its send navigates it away
+        // (`composer-reset.ts`), so keying this off the editor clearing would
+        // strand a stale home draft forever. The catch below puts the text
+        // back in the editor, which re-saves the draft through the ordinary
+        // debounce — nothing to restore by hand.
+        clearSavedDraft();
       } catch {
         const currentDoc = editorRef.current?.getDocument() ?? null;
         const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
@@ -1107,6 +1159,7 @@ function ComposerImpl({
       lockForApproval,
       onCustomAnswer,
       onQuestionAction,
+      clearSavedDraft,
     ],
   );
 
@@ -1441,6 +1494,7 @@ function ComposerImpl({
                   disabled={editorDisabled}
                   onSubmit={handleSubmit}
                   onEmptyChange={setIsEmpty}
+                  onDocChange={handleDocChange}
                   agents={agents}
                   sessions={allSessions ?? []}
                   currentSessionId={sessionId}

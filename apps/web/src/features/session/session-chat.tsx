@@ -125,6 +125,7 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import {
   useAttachRequest,
@@ -4225,6 +4226,25 @@ export function SessionChat({
 
   const chatCommands = useMemo(() => commands || [], [commands]);
 
+  /**
+   * Where this session's unsent draft is persisted.
+   *
+   * `projectSessionId` — the KORTIX session id — not the OpenCode `sessionId`:
+   * it is the id the boot shell also keys on, so a draft typed in the instant
+   * shell is still there after the crossfade into this component, and it is
+   * the same id every other per-session handoff store uses
+   * (`session-composer-handoff-store.ts`). Null before it resolves, which just
+   * means the composer persists nothing for those few frames.
+   *
+   * Memoized like every other prop in this block: SessionChatInput is
+   * React.memo-wrapped, and a fresh object literal per render would defeat the
+   * memo on every streaming token.
+   */
+  const composerDraftScope = useMemo<DraftScope | null>(
+    () => (projectSessionId ? { kind: 'session', sessionId: projectSessionId } : null),
+    [projectSessionId],
+  );
+
   // Null in the sub-session modal, which renders this chat read-only and
   // OUTSIDE `SessionPanelProvider` — the same self-gating every other panel
   // consumer does (see `easy-panel.tsx`).
@@ -4873,6 +4893,7 @@ export function SessionChat({
                 await handleSend(text, files, mentions);
               }}
               prefill={composerPrefill}
+              draftScope={composerDraftScope}
               attachRequestId={attachRequestId}
               isBusy={isBusy}
               // The ONE projection, not the 300 ms busy fade: it is what

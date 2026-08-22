@@ -106,9 +106,21 @@ Subcommands:
     --data <value>                   Inline request body.
     --data-file <path>               Read the request body from a file.
   unset IDENTIFIER [IDENTIFIER …]   Remove one or more secrets (by identifier).
+  grant IDENTIFIER --agent <name>   Let one agent receive this secret: merge
+                                    the identifier into that agent's \`secrets\`
+                                    list in kortix.yaml, adding the agent entry
+                                    when the manifest omits it. The fix for a
+                                    row \`ls\` reports as undeliverable.
 
 Which agents may use a secret is governed by that agent's \`secrets\` grant in
-kortix.yaml (by identifier), not a per-secret setting here.
+kortix.yaml (by identifier), not a per-secret setting here. \`grant\` only ever
+WIDENS one agent's list; to narrow or replace it, rewrite the whole set with
+\`kortix agents scope\`. There is no \`secrets revoke\` — the API has no route
+that removes a single identifier from a grant.
+
+The first \`grant\` on a project with no \`agents:\` block writes that block. From
+then on an agent the manifest does not list receives NO project secrets — the
+command says so when it happens.
 
 Global options:
   --project <id>     Operate on this project id (default: linked or
@@ -124,6 +136,14 @@ export async function runSecrets(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
+  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
+  // subcommands below own dedicated help text, so without this a bare
+  // `--help` falls through as an ordinary positional arg and the command
+  // runs (or fails on auth) instead of printing usage.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   const json = takeFlagBool(rest, ['--json']);
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
@@ -156,6 +176,8 @@ export async function runSecrets(argv: string[]): Promise<number> {
     case 'rm':
     case 'remove':
       return secretsUnset(rest, ctxOpts);
+    case 'grant':
+      return secretsGrant(rest, ctxOpts, json);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -1026,6 +1048,77 @@ async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
   }
   process.stdout.write(`\n  ${C.dim}${okCount}/${names.length} removed${C.reset}\n\n`);
   return okCount === names.length ? 0 : 1;
+}
+
+/**
+ * Grant one secret to one agent.
+ *
+ * `enforced` and `none` exposures reach a session ONLY when some agent's
+ * `secrets:` list names the identifier — `secrets: all` withholds both — so a
+ * stored, valid secret can be delivered nowhere at all. That is the
+ * `undeliverable` marker `ls` prints, and this is the one command that clears
+ * it. It only widens the named agent's list; it never replaces it.
+ */
+async function secretsGrant(argv: string[], opts: CtxOpts, json = false): Promise<number> {
+  let agent: string | undefined;
+  try {
+    agent = takeFlagValue(argv, ['--agent']);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  const identifier = argv.filter((a) => !a.startsWith('-'))[0];
+  if (!identifier) {
+    process.stderr.write(`${status.err('Pass a secret identifier.')}\n`);
+    return 2;
+  }
+  if (!agent) {
+    process.stderr.write(
+      `${status.err('Pass --agent <name>.')} ${C.dim}See ${C.reset}${C.cyan}kortix agents ls${C.reset}${C.dim}.${C.reset}\n`,
+    );
+    return 2;
+  }
+  if (!IDENTIFIER_RE.test(identifier)) {
+    process.stderr.write(`${status.err(`"${identifier}" is not a valid secret identifier.`)}\n`);
+    return 2;
+  }
+
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  let resp: {
+    identifier: string;
+    agent: string;
+    already_granted: boolean;
+    adopted_governance: boolean;
+  };
+  try {
+    resp = await ctx.client.post<typeof resp>(
+      `/projects/${ctx.projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
+      { agent },
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  process.stdout.write(
+    resp.already_granted
+      ? `${status.info(`${C.bold}${resp.agent}${C.reset} already receives ${C.bold}${resp.identifier}${C.reset}`)}\n`
+      : `${status.ok(`${C.bold}${resp.agent}${C.reset} now receives ${C.bold}${resp.identifier}${C.reset}`)}\n`,
+  );
+  // This edit can flip the project from "every agent gets everything" to "only
+  // listed agents get anything". Nothing else says so, and the blast radius is
+  // every other agent on the project.
+  if (resp.adopted_governance) {
+    process.stdout.write(
+      `${status.warn('This wrote the first `agents:` block — an agent that is not listed now receives NO project secrets.')}\n`,
+    );
+  }
+  return 0;
 }
 
 /**
