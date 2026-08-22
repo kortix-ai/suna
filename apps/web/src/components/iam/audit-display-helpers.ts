@@ -100,7 +100,6 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/projects/:projectId/sessions/:sessionId/audit': 'Viewed session audit log',
   'POST /v1/projects/:projectId/sessions/:sessionId/audit/events': 'Ingested session audit events',
   'GET /v1/projects/:projectId/sessions/:sessionId/transcript': 'Viewed session transcript',
-  'GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript': 'Viewed voice transcript',
   'GET /v1/projects/:projectId/sessions/:sessionId/turn': 'Viewed session turn state',
   // The prompt inbox: a prompt is a durable server row from the moment the
   // composer accepts it, so every one of these is a real, auditable action on
