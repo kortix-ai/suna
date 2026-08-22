@@ -10,6 +10,7 @@ import type {
   AppAccessMode,
   AppSource,
   ProjectHandle,
+  UpdateAppInput,
 } from '@kortix/sdk';
 import ignore from 'ignore';
 import * as tar from 'tar';
@@ -61,6 +62,16 @@ Subcommands:
     --groups <ids>                  Comma-separated group ids for restricted access.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
+  set <id|slug>                     Change an existing App. Only the flags you
+                                    pass are sent. Needs project write access.
+                                    A machine or budget change applies to the
+                                    next deployment, not the running runtime.
+    --name <name>
+    --cpu <cores>
+    --memory-gb <gb>                Alias: --memory.
+    --disk-gb <gb>                  Alias: --disk.
+    --idle-timeout <seconds>        120-86400.
+    --budget <usd>                  Monthly compute budget.
   show <id|slug>                    Show an App and its deployments. --json.
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
   start <id|slug>                   Permit requests and start the App.
@@ -228,6 +239,9 @@ export async function runApps(argv: string[]): Promise<number> {
       case 'create':
       case 'new':
         return await createCommand(rest, common.options, common.json);
+      case 'set':
+      case 'update':
+        return await setCommand(rest, common.options, common.json);
       case 'deploy':
         return await deployCommand(rest, common.options, common.json);
       case 'show':
@@ -289,6 +303,52 @@ async function createCommand(rest: string[], options: ContextOptions, json: bool
   const app = await scoped(ctx, () => ctx.apps.create(input));
   if (json) emitJson(app);
   else process.stdout.write(`\n  ${status.ok(`created ${app.slug}`)}\n  ${app.url}\n\n`);
+  return 0;
+}
+
+/**
+ * PATCH /projects/:id/apps/:appId with `UpdateAppInput`.
+ *
+ * The route's zod body marks every field optional and the handler only writes
+ * the keys that are present, so an omitted flag must NOT be sent as
+ * `undefined` — the object is built from the flags that were actually passed.
+ */
+async function setCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  // Flags are consumed BEFORE the positional is picked, so a flag VALUE
+  // (`--cpu 2`) is never mistaken for the App id when the id is missing.
+  const input: UpdateAppInput = {};
+  const name = takeFlagValue(rest, ['--name']);
+  const cpu = positiveInteger(takeFlagValue(rest, ['--cpu']), '--cpu');
+  const memory = positiveInteger(takeFlagValue(rest, ['--memory-gb', '--memory']), '--memory-gb');
+  const disk = positiveInteger(takeFlagValue(rest, ['--disk-gb', '--disk']), '--disk-gb');
+  const idle = positiveInteger(takeFlagValue(rest, ['--idle-timeout']), '--idle-timeout');
+  const budget = positiveNumber(takeFlagValue(rest, ['--budget']), '--budget');
+  const target = rest.find((value) => !value.startsWith('-'));
+  if (!target) return fail('set needs an App id or slug');
+  if (name !== undefined) input.name = name;
+  if (cpu !== undefined) input.cpu = cpu;
+  if (memory !== undefined) input.memory_gb = memory;
+  if (disk !== undefined) input.disk_gb = disk;
+  if (idle !== undefined) input.idle_timeout_seconds = idle;
+  if (budget !== undefined) input.monthly_budget_usd = budget;
+  if (Object.keys(input).length === 0) {
+    return fail('set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --budget');
+  }
+  const ctx = await context(options);
+  if (!ctx) return 1;
+  const app = await scoped(ctx, async () => {
+    const found = await resolveApp(ctx.apps, target);
+    return ctx.apps.update(found.app_id, input);
+  });
+  if (json) emitJson(app);
+  else {
+    process.stdout.write(`\n  ${status.ok(`updated ${app.slug}`)}\n`);
+    process.stdout.write(
+      `  ${C.dim}${pad('machine', 14)}${C.reset}${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk\n`,
+    );
+    process.stdout.write(`  ${C.dim}${pad('idle timeout', 14)}${C.reset}${app.idle_timeout_seconds}s\n`);
+    process.stdout.write(`  ${C.dim}${pad('budget', 14)}${C.reset}$${app.monthly_budget_usd}/mo\n\n`);
+  }
   return 0;
 }
 

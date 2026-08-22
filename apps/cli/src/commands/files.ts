@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import {
   resolveProjectContext,
   surfaceApiError,
@@ -72,10 +75,13 @@ Subcommands:
   commits [--path <p>]              List commits on --ref.
   show <sha>                        Show one commit + its changed files.
   diff <sha> [--path <p>]           Print a commit's unified patch.
+  download -o <out.zip>             Download the repo (or --path subtree) at
+                                    --ref as a zip.
 
 Options:
   --ref <ref>        Branch / tag / commit (default: the project's default branch).
-  --path <p>         Scope to a subtree (commits) or file (diff).
+  --path <p>         Scope to a subtree (commits, download) or file (diff).
+  -o, --out <file>   download: where to write the zip. Required.
   --content          search: grep file contents instead of names.
   --limit <n>        Cap rows for history / commits.
   --json             Emit the raw API payload as JSON (machine-readable);
@@ -83,6 +89,10 @@ Options:
   --project <id>     Operate on this project id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
+
+Every subcommand needs project.file.read. download additionally refuses any
+subtree that would include an agent or skill you are scoped out of — a zip
+cannot be filtered mid-stream — so archive a narrower --path in that case.
 `;
 
 export async function runFiles(argv: string[]): Promise<number> {
@@ -98,6 +108,7 @@ export async function runFiles(argv: string[]): Promise<number> {
   let ref: string | undefined;
   let path: string | undefined;
   let limit: string | undefined;
+  let out: string | undefined;
   let content = false;
   let json = false;
   try {
@@ -106,6 +117,7 @@ export async function runFiles(argv: string[]): Promise<number> {
     ref = takeFlagValue(rest, ['--ref']);
     path = takeFlagValue(rest, ['--path']);
     limit = takeFlagValue(rest, ['--limit']);
+    out = takeFlagValue(rest, ['-o', '--out']);
     content = takeFlagBool(rest, ['--content']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
@@ -289,6 +301,31 @@ export async function runFiles(argv: string[]): Promise<number> {
           return 0;
         }
         process.stdout.write(resp.patch.endsWith('\n') ? resp.patch : `${resp.patch}\n`);
+        return 0;
+      }
+      case 'download':
+      case 'archive': {
+        if (!out) return missing('an output file with -o <out.zip>');
+        // The archive route streams `application/zip`, so it cannot go through
+        // the JSON client. `fetchProjectArchive` is the SDK's own binary read
+        // for exactly this route; scoping it to the host's auth is what binds
+        // its token + backend url.
+        const blob = await withKortixScope(ctx.auth, () =>
+          kortixFromAuth(ctx.auth).project(ctx.projectId).files.archive(ref ?? '', path),
+        );
+        // Read the body to completion FIRST, then write. Handing a streaming
+        // response straight to a file writer can hang; a Uint8Array cannot.
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const target = resolve(process.cwd(), out);
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, bytes);
+        if (json) {
+          emitJson({ path: target, bytes: bytes.byteLength, ref: ref ?? null, subtree: path ?? null });
+          return 0;
+        }
+        process.stdout.write(
+          `${status.ok(`Wrote ${target} ${C.faded}(${humanSize(bytes.byteLength)})${C.reset}`)}\n`,
+        );
         return 0;
       }
       default:

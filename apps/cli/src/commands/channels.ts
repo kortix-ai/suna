@@ -5,13 +5,16 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  takeFlagValues,
 } from '../command-helpers.ts';
 import { ApiError } from '../api/client.ts';
-import { C, help, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix channels <subcommand> [options]
 
-Connect this project to a chat platform (Slack by default; MS Teams via --platform teams).
+Connect this project to a chat platform (Slack by default; MS Teams via
+--platform teams), give it an email inbox, and decide which agent/model each
+bound channel runs.
 
 Subcommands:
   status                  Show the current connection.
@@ -24,12 +27,27 @@ Subcommands:
                           Teams: prints the Microsoft admin-consent URL (open
                           it, grant tenant-wide consent, the app is published
                           to your Teams catalog automatically).
-  disconnect              Drop the project's connection (Slack only in this release).
+  disconnect              Drop the project's connection (Slack, or Teams with
+                          --platform teams).
   manifest                Print the app manifest JSON — MANUAL/self-host
                           setup only. Slack: paste into api.slack.com/apps →
                           "From a manifest". Teams: prints the Teams app
                           manifest from the server. The one-click install
                           never needs this.
+
+Email (AgentMail — needs the \`agentmail_email\` feature flag):
+  email status [--json]           Inbox + delivery mode for one connector.
+  email connect [options]         Create (or attach) the inbox.
+  email disconnect                Drop the inbox connection.
+  email policy [options]          Replace who may email the agent.
+
+Channel bindings (which agent/model/join-policy one bound channel uses):
+  bindings [ls] [--json]          List every bound channel + what it resolves to.
+  bind <bindingId> [options]      Change one binding.
+
+Voice:
+  voice name <text>               Set the display name the bot joins calls with.
+  voice name --show               Print the current name.
 
 Global options:
   --platform <slack|teams>  Chat platform (default: slack).
@@ -49,6 +67,32 @@ Connect options:
                           SLACK_BOT_TOKEN. Or \`-\` for stdin.
   --signing-secret <…>    Signing secret (implies --manual). Or env
                           SLACK_SIGNING_SECRET. Or \`-\` for stdin.
+
+Email options:
+  --connector <slug>      Which email connector (default: kortix_email).
+  --api-key <k>           Bring your own AgentMail key instead of the managed
+                          one. Or \`-\` for stdin.
+  --display-name <n>      From-name on outgoing mail (default: project name).
+  --username <u>          Local part of a NEW managed inbox.
+  --domain <d>            Domain of a NEW managed inbox.
+  --inbox-id <id>         Attach an EXISTING AgentMail inbox. Needs --email too.
+  --email <addr>          That inbox's address. Needs --inbox-id too.
+  --allow <email|@domain> Repeatable. Only these senders reach the agent. A bare
+                          value with no \`@\` (or a leading \`@\`) is a DOMAIN.
+                          Any --allow puts the policy in \`restricted\` mode.
+  --allow-regex <re>      Also accept senders matching this regex.
+  --allow-all             policy: clear the list — accept every sender again.
+
+Bind options:
+  --agent <name>          Run this declared agent in the channel.
+  --no-agent              Fall back to the project's default agent.
+  --model <id>            Pin a gateway wire model id.
+  --no-model              Fall back to the agent/project/account default.
+  --policy <p>            Who may join a conversation: owner_approval,
+                          owner_only, or project_open.
+
+Email + bind writes need \`project.connector.write\`; \`voice name\` needs
+\`project.customize.write\`.
 `;
 
 interface SlackInstallation {
@@ -84,6 +128,87 @@ type Platform = 'slack' | 'teams';
 
 type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 
+// ── Email (AgentMail) ───────────────────────────────────────────────────────
+// apps/api/src/channels/install-store.ts AgentMailSenderPolicy /
+// AgentMailInstallSummary; routes at apps/api/src/projects/routes/r4.ts:1907-2231.
+
+interface EmailSenderPolicy {
+  mode: 'allow_all' | 'restricted';
+  allowedEmails: string[];
+  allowedDomains: string[];
+  allowedRegex: string | null;
+}
+
+interface EmailInstallation {
+  connectionSlug: string;
+  inboxId: string;
+  email: string;
+  displayName: string | null;
+  webhookId: string | null;
+  senderPolicy: EmailSenderPolicy;
+  installedAt: string;
+  /** Only on GET/POST, not on PATCH. */
+  connection_id?: string | null;
+}
+
+interface EmailMode {
+  provider: 'agentmail';
+  enabled?: boolean;
+  managed_available: boolean;
+}
+
+// ── Channel bindings ────────────────────────────────────────────────────────
+// apps/api/src/projects/routes/channel-bindings.ts.
+
+const CONVERSATION_POLICIES = ['owner_approval', 'owner_only', 'project_open'] as const;
+type ConversationPolicy = (typeof CONVERSATION_POLICIES)[number];
+
+interface ChannelBinding {
+  bindingId: string;
+  platform: string;
+  workspaceId: string;
+  channelId: string;
+  channelName: string | null;
+  channelType: string | null;
+  agentName: string | null;
+  opencodeModel: string | null;
+  conversationPolicy: ConversationPolicy;
+  installedAt: string;
+  effectiveAgent: { agent: string; source: string };
+  effectiveModel: { model: string | null; source: string };
+}
+
+interface ChannelBindingsResponse {
+  projectDefaultAgent: string | null;
+  bindings: ChannelBinding[];
+}
+
+/** The default connector slug every email route falls back to (r4.ts:1917). */
+const DEFAULT_EMAIL_CONNECTOR = 'kortix_email';
+
+/** The voice bot's fallback display name (channels/voice-identity.ts:29). */
+const DEFAULT_VOICE_BOT_NAME = 'Kortix';
+
+/** Extra flags the email/bindings/voice subcommands take. */
+interface ExtraFlags {
+  connector?: string;
+  apiKey?: string;
+  displayName?: string;
+  username?: string;
+  domain?: string;
+  inboxId?: string;
+  email?: string;
+  allow: string[];
+  allowRegex?: string;
+  allowAll: boolean;
+  agent?: string;
+  noAgent: boolean;
+  model?: string;
+  noModel: boolean;
+  policy?: string;
+  show: boolean;
+}
+
 export async function runChannels(argv: string[]): Promise<number> {
   if (argv[0] === '-h' || argv[0] === '--help') {
     process.stdout.write(HELP);
@@ -102,6 +227,7 @@ export async function runChannels(argv: string[]): Promise<number> {
   let signingSecretFlag: string | undefined;
   let timeoutFlag: string | undefined;
   let platformFlag: string | undefined;
+  let extra: ExtraFlags;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
@@ -109,6 +235,26 @@ export async function runChannels(argv: string[]): Promise<number> {
     signingSecretFlag = takeFlagValue(rest, ['--signing-secret']);
     timeoutFlag = takeFlagValue(rest, ['--timeout']);
     platformFlag = takeFlagValue(rest, ['--platform']);
+    extra = {
+      // `--allow`/`--no-agent`/… must come out BEFORE the positional filter
+      // below, or a flag value ends up read as a subcommand argument.
+      allow: takeFlagValues(rest, ['--allow']),
+      allowAll: takeFlagBool(rest, ['--allow-all']),
+      noAgent: takeFlagBool(rest, ['--no-agent', '--default-agent']),
+      noModel: takeFlagBool(rest, ['--no-model', '--default-model']),
+      show: takeFlagBool(rest, ['--show']),
+      connector: takeFlagValue(rest, ['--connector', '--connector-slug']),
+      apiKey: takeFlagValue(rest, ['--api-key']),
+      displayName: takeFlagValue(rest, ['--display-name']),
+      username: takeFlagValue(rest, ['--username']),
+      domain: takeFlagValue(rest, ['--domain']),
+      inboxId: takeFlagValue(rest, ['--inbox-id']),
+      email: takeFlagValue(rest, ['--email']),
+      allowRegex: takeFlagValue(rest, ['--allow-regex']),
+      agent: takeFlagValue(rest, ['--agent']),
+      model: takeFlagValue(rest, ['--model']),
+      policy: takeFlagValue(rest, ['--policy']),
+    };
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -137,17 +283,26 @@ export async function runChannels(argv: string[]): Promise<number> {
     case 'disconnect':
     case 'remove':
     case 'rm':
-      if (platform === 'teams') {
-        process.stderr.write(`${status.err('Teams disconnect is not yet supported in the CLI — use the dashboard or DELETE /v1/projects/:id/channels/teams/installation.')}\n`);
-        return 2;
-      }
-      return channelsDisconnect(ctxOpts);
+      return platform === 'teams' ? teamsDisconnect(ctxOpts) : channelsDisconnect(ctxOpts);
     case 'manifest':
       return platform === 'teams' ? teamsManifest(ctxOpts) : channelsManifest(ctxOpts);
+    case 'email':
+      return emailCommand(ctxOpts, rest, extra, json);
+    case 'bindings':
+      return bindingsLs(ctxOpts, rest, json);
+    case 'bind':
+      return bindingsPatch(ctxOpts, rest, extra, json);
+    case 'voice':
+      return voiceCommand(ctxOpts, rest, extra, json);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
   }
+}
+
+function badArg(msg: string): number {
+  process.stderr.write(`${status.err(msg)}\n`);
+  return 2;
 }
 
 async function channelsStatus(
@@ -550,6 +705,350 @@ async function teamsManifest(
         null,
         2,
       ) + '\n',
+    );
+    return 0;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+}
+
+// ─── Microsoft Teams: disconnect ─────────────────────────────────────────
+// DELETE /projects/:id/channels/teams/installation (r4.ts:1791). Needs the
+// 'manage' project role + `project.connector.write`; no feature-flag gate, so
+// a project whose `teams` flag was turned off can still clean up its install.
+
+async function teamsDisconnect(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+): Promise<number> {
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  try {
+    await ctx.client.delete(`/projects/${ctx.projectId}/channels/teams/installation`);
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  process.stdout.write(
+    `${status.ok('Disconnected')} ${C.dim}— the Teams install is removed from this project.${C.reset}\n`,
+  );
+  return 0;
+}
+
+// ─── Email (AgentMail) ───────────────────────────────────────────────────
+
+/**
+ * Build the wire `sender_policy` from repeated `--allow` values.
+ *
+ * The server's policy has ONE list per kind and no deny list at all
+ * (AgentMailSenderPolicy: mode + allowedEmails + allowedDomains +
+ * allowedRegex), so a value is routed by shape: `@acme.com` or a bare
+ * `acme.com` is a DOMAIN, anything containing a local part is an EMAIL. The
+ * server re-derives `mode` — any non-empty list forces `restricted`
+ * (normalizeSenderPolicy, apps/api/src/channels/install-store.ts:137) — but we
+ * send it explicitly so the intent is visible on the wire.
+ */
+function buildSenderPolicy(extra: ExtraFlags): EmailSenderPolicy {
+  const allowedEmails: string[] = [];
+  const allowedDomains: string[] = [];
+  for (const raw of extra.allow) {
+    const value = raw.trim().toLowerCase();
+    if (!value) continue;
+    if (value.startsWith('@')) allowedDomains.push(value.replace(/^@+/, ''));
+    else if (value.includes('@')) allowedEmails.push(value);
+    else allowedDomains.push(value);
+  }
+  const regex = extra.allowRegex?.trim() || null;
+  const restricted = allowedEmails.length > 0 || allowedDomains.length > 0 || Boolean(regex);
+  return {
+    mode: restricted ? 'restricted' : 'allow_all',
+    allowedEmails,
+    allowedDomains,
+    allowedRegex: regex,
+  };
+}
+
+function printEmailInstall(install: EmailInstallation): void {
+  const p = install.senderPolicy;
+  process.stdout.write(
+    `${status.ok('email')}  ${C.bold}${install.email}${C.reset}\n` +
+      `         connector  ${C.dim}${install.connectionSlug}${C.reset}\n` +
+      `         inbox      ${C.dim}${install.inboxId}${C.reset}\n` +
+      `         from-name  ${C.dim}${install.displayName ?? '—'}${C.reset}\n` +
+      `         senders    ${C.dim}${describePolicy(p)}${C.reset}\n`,
+  );
+}
+
+function describePolicy(p: EmailSenderPolicy | undefined): string {
+  if (!p || p.mode !== 'restricted') return 'anyone';
+  const parts: string[] = [];
+  if (p.allowedEmails.length > 0) parts.push(p.allowedEmails.join(', '));
+  if (p.allowedDomains.length > 0) parts.push(p.allowedDomains.map((d) => `@${d}`).join(', '));
+  if (p.allowedRegex) parts.push(`/${p.allowedRegex}/`);
+  return `restricted — ${parts.join(' · ') || 'nothing'}`;
+}
+
+async function emailCommand(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+  rest: string[],
+  extra: ExtraFlags,
+  json: boolean,
+): Promise<number> {
+  const action = rest.find((a) => !a.startsWith('-')) ?? 'status';
+  const slug = extra.connector ?? DEFAULT_EMAIL_CONNECTOR;
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  const base = `/projects/${ctx.projectId}/channels/email`;
+  const q = `?connector_slug=${encodeURIComponent(slug)}`;
+
+  try {
+    switch (action) {
+      case 'status':
+      case 'show':
+      case 'ls': {
+        const [mode, install] = await Promise.all([
+          ctx.client.get<EmailMode>(`${base}/mode`),
+          ctx.client.get<EmailInstallation | null>(`${base}/installation${q}`),
+        ]);
+        if (json) {
+          emitJson({ connected: Boolean(install), mode, installation: install ?? null });
+          return 0;
+        }
+        if (!mode.enabled) {
+          process.stdout.write(
+            `${C.dim}email${C.reset}  off — the ${C.cyan}agentmail_email${C.reset} feature flag is disabled for this project.\n` +
+              `       Turn it on: ${C.cyan}kortix projects features enable agentmail_email${C.reset}\n`,
+          );
+          return 0;
+        }
+        if (!install) {
+          process.stdout.write(
+            `${C.dim}email${C.reset}  not connected ${C.dim}(connector ${slug}${mode.managed_available ? '' : ', managed key NOT configured on this host'})${C.reset}\n` +
+              `       Run ${C.cyan}kortix channels email connect${C.reset}.\n`,
+          );
+          return 0;
+        }
+        printEmailInstall(install);
+        return 0;
+      }
+      case 'connect': {
+        if (Boolean(extra.inboxId) !== Boolean(extra.email)) {
+          return badArg('Attaching an existing inbox needs BOTH --inbox-id and --email.');
+        }
+        const apiKey = extra.apiKey === '-' ? readFileSync(0, 'utf-8').trim() : extra.apiKey;
+        const body: Record<string, unknown> = { connector_slug: slug };
+        if (apiKey) body.api_key = apiKey;
+        if (extra.displayName) body.display_name = extra.displayName;
+        if (extra.username) body.username = extra.username;
+        if (extra.domain) body.domain = extra.domain;
+        if (extra.inboxId) body.inbox_id = extra.inboxId;
+        if (extra.email) body.email = extra.email;
+        body.sender_policy = buildSenderPolicy(extra);
+        const install = await ctx.client.post<EmailInstallation>(`${base}/connect`, body);
+        if (json) {
+          emitJson(install);
+          return 0;
+        }
+        printEmailInstall(install);
+        return 0;
+      }
+      case 'disconnect':
+      case 'rm':
+      case 'remove': {
+        await ctx.client.delete(`${base}/installation${q}`);
+        if (json) {
+          emitJson({ status: 'disconnected', connector_slug: slug });
+          return 0;
+        }
+        process.stdout.write(
+          `${status.ok('Disconnected')} ${C.dim}— connector ${slug}; the AgentMail secrets are removed.${C.reset}\n`,
+        );
+        return 0;
+      }
+      case 'policy': {
+        if (!extra.allowAll && extra.allow.length === 0 && !extra.allowRegex) {
+          return badArg(
+            'Pass at least one --allow <email|@domain>, --allow-regex <re>, or --allow-all.',
+          );
+        }
+        // The PATCH REPLACES the whole policy — --allow-all is the explicit way
+        // to ask for the empty (accept-everyone) one, so it never happens by
+        // accident from a typo'd --allow.
+        const sender_policy = extra.allowAll
+          ? { mode: 'allow_all' as const, allowedEmails: [], allowedDomains: [], allowedRegex: null }
+          : buildSenderPolicy(extra);
+        const install = await ctx.client.patch<EmailInstallation>(`${base}/installation`, {
+          connector_slug: slug,
+          sender_policy,
+        });
+        if (json) {
+          emitJson(install);
+          return 0;
+        }
+        process.stdout.write(
+          `${status.ok(`Sender policy updated — ${describePolicy(install.senderPolicy)}`)}\n`,
+        );
+        return 0;
+      }
+      default:
+        return badArg(`unknown email action "${action}" — status|connect|disconnect|policy`);
+    }
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+}
+
+// ─── Channel bindings ────────────────────────────────────────────────────
+
+async function bindingsLs(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+  rest: string[],
+  json: boolean,
+): Promise<number> {
+  const action = rest.find((a) => !a.startsWith('-')) ?? 'ls';
+  if (action !== 'ls' && action !== 'list') {
+    return badArg(`unknown bindings action "${action}" — ls`);
+  }
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  let resp: ChannelBindingsResponse;
+  try {
+    resp = await ctx.client.get<ChannelBindingsResponse>(
+      `/projects/${ctx.projectId}/channels/bindings`,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  if (resp.bindings.length === 0) {
+    process.stdout.write(
+      `  ${C.dim}No bound channels. Invite the bot to a channel first.${C.reset}\n`,
+    );
+    return 0;
+  }
+  const idW = Math.max(...resp.bindings.map((b) => b.bindingId.length), 10);
+  const chW = Math.max(...resp.bindings.map((b) => (b.channelName ?? b.channelId).length), 7);
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.dim}${pad('BINDING', idW)}  ${pad('CHANNEL', chW)}  PLATFORM  AGENT             MODEL             POLICY${C.reset}\n`,
+  );
+  for (const b of resp.bindings) {
+    const agent = `${b.effectiveAgent.agent}${b.agentName ? '' : ` ${C.faded}(${b.effectiveAgent.source})${C.reset}`}`;
+    const model = `${b.effectiveModel.model ?? 'auto'}${b.opencodeModel ? '' : ` ${C.faded}(${b.effectiveModel.source})${C.reset}`}`;
+    process.stdout.write(
+      `  ${pad(b.bindingId, idW)}  ${pad(b.channelName ?? b.channelId, chW)}  ` +
+        `${pad(b.platform, 8)}  ${pad(agent, 26)}  ${pad(model, 26)}  ${C.faded}${b.conversationPolicy}${C.reset}\n`,
+    );
+  }
+  process.stdout.write(
+    `\n  ${C.dim}${resp.bindings.length} binding${resp.bindings.length === 1 ? '' : 's'} · project default agent: ${resp.projectDefaultAgent ?? '—'}${C.reset}\n` +
+      `  ${C.dim}Change one: ${C.reset}${C.cyan}kortix channels bind <bindingId> --agent <name>${C.reset}\n\n`,
+  );
+  return 0;
+}
+
+async function bindingsPatch(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+  rest: string[],
+  extra: ExtraFlags,
+  json: boolean,
+): Promise<number> {
+  const bindingId = rest.find((a) => !a.startsWith('-'));
+  if (!bindingId) return badArg('Pass a binding id — list them with `kortix channels bindings`.');
+  if (extra.agent && extra.noAgent) return badArg('Pass --agent or --no-agent, not both.');
+  if (extra.model && extra.noModel) return badArg('Pass --model or --no-model, not both.');
+  if (extra.policy && !(CONVERSATION_POLICIES as readonly string[]).includes(extra.policy)) {
+    return badArg(`--policy must be one of ${CONVERSATION_POLICIES.join(', ')}.`);
+  }
+
+  // `null` resets an override to the project default; an omitted key leaves it
+  // alone (channel-bindings.ts:161). All three omitted is a 400 `empty_patch`,
+  // so refuse it here with usage instead of a round trip.
+  const body: Record<string, unknown> = {};
+  if (extra.agent) body.agentName = extra.agent;
+  else if (extra.noAgent) body.agentName = null;
+  if (extra.model) body.opencodeModel = extra.model;
+  else if (extra.noModel) body.opencodeModel = null;
+  if (extra.policy) body.conversationPolicy = extra.policy;
+  if (Object.keys(body).length === 0) {
+    return badArg('Pass at least one of --agent/--no-agent, --model/--no-model, --policy.');
+  }
+
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+  let binding: ChannelBinding;
+  try {
+    binding = await ctx.client.patch<ChannelBinding>(
+      `/projects/${ctx.projectId}/channels/bindings/${encodeURIComponent(bindingId)}`,
+      body,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson(binding);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`${C.bold}${binding.channelName ?? binding.channelId}${C.reset} updated`)}\n` +
+      `         agent   ${C.cyan}${binding.effectiveAgent.agent}${C.reset} ${C.faded}(${binding.effectiveAgent.source})${C.reset}\n` +
+      `         model   ${C.cyan}${binding.effectiveModel.model ?? 'auto'}${C.reset} ${C.faded}(${binding.effectiveModel.source})${C.reset}\n` +
+      `         policy  ${C.dim}${binding.conversationPolicy}${C.reset}\n`,
+  );
+  return 0;
+}
+
+// ─── Voice ───────────────────────────────────────────────────────────────
+// PUT /projects/:id/channels/meet/name is write-only — there is NO GET for it
+// (voice-view.tsx renders a placeholder, never a fetched value). The stored
+// value does ride along on the project row as `metadata.meet.bot_name`, so
+// --show reads it from there rather than inventing a route.
+
+async function voiceCommand(
+  ctxOpts: { projectArg?: string; hostArg?: string },
+  rest: string[],
+  extra: ExtraFlags,
+  json: boolean,
+): Promise<number> {
+  const positional = rest.filter((a) => !a.startsWith('-'));
+  const action = positional[0] ?? 'name';
+  if (action !== 'name') return badArg(`unknown voice action "${action}" — name`);
+  // `--show` was already lifted out of argv, so read the parsed flag. A bare
+  // `voice name` with nothing to set is a read too — never a silent no-op write.
+  const show = extra.show || positional.length < 2;
+  const ctx = await resolveProjectContext(ctxOpts);
+  if (!ctx) return 1;
+
+  try {
+    if (show) {
+      const project = await ctx.client.get<{ metadata?: { meet?: { bot_name?: string } } }>(
+        `/projects/${ctx.projectId}`,
+      );
+      const name = project.metadata?.meet?.bot_name ?? DEFAULT_VOICE_BOT_NAME;
+      if (json) {
+        emitJson({ bot_name: name, is_default: !project.metadata?.meet?.bot_name });
+        return 0;
+      }
+      process.stdout.write(
+        `  ${C.dim}voice bot name${C.reset}  ${C.bold}${name}${C.reset}` +
+          `${project.metadata?.meet?.bot_name ? '' : ` ${C.faded}(default)${C.reset}`}\n`,
+      );
+      return 0;
+    }
+    // Everything after `name` is the name — a display name is usually two words.
+    const wanted = positional.slice(1).join(' ');
+    const saved = await ctx.client.put<{ ok: boolean; bot_name: string }>(
+      `/projects/${ctx.projectId}/channels/meet/name`,
+      { name: wanted },
+    );
+    if (json) {
+      emitJson(saved);
+      return 0;
+    }
+    process.stdout.write(
+      `${status.ok(`Voice bot name → ${C.bold}${saved.bot_name}${C.reset}`)}` +
+        `${saved.bot_name !== wanted ? ` ${C.dim}(trimmed to 80 chars)${C.reset}` : ''}\n`,
     );
     return 0;
   } catch (err) {

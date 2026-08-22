@@ -14,6 +14,7 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
+import { queueSessionPrompt, type CreateSessionPromptResult } from './sessions-queue.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -172,6 +173,11 @@ session (or starts one with --new).
 
   --prompt, -p "<text>"   Send one message, print the reply, exit (one-shot).
                           Without it, opens an interactive REPL.
+  --queue                 One-shot only: put the prompt in the session's
+                          DURABLE inbox instead of handing it to the runtime,
+                          and return as soon as it is stored. Survives a
+                          sleeping or mid-turn sandbox; manage what is waiting
+                          with \`kortix sessions queue\`.
   --json                  One-shot only: print the reply as JSON (for scripts /
                           synchronous subagent calls).
   --new                   Start a fresh session and chat with it.
@@ -199,6 +205,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   let agent: string | undefined;
   let wantNew = false;
   let json = false;
+  let queue = false;
   try {
     projectArg = takeFlagValue(rest, ['--project']);
     hostArg = takeFlagValue(rest, ['--host']);
@@ -206,6 +213,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
     agent = takeFlagValue(rest, ['--agent']);
     wantNew = takeFlagBool(rest, ['--new']);
     json = takeFlagBool(rest, ['--json']);
+    queue = takeFlagBool(rest, ['--queue']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -215,11 +223,24 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err('Pass at most one session id.')}\n`);
     return 2;
   }
+  if (queue && promptText === undefined) {
+    // The inbox stores a message; there is nothing to store for a REPL, and
+    // "queued" has no meaning for a turn you are sitting and watching.
+    process.stderr.write(`${status.err('--queue needs --prompt "<text>".')}\n`);
+    return 2;
+  }
   const opts: CtxOpts = { projectArg, hostArg };
 
   // ── Resolve which session to chat with ──────────────────────────────────
   const sessionId = await resolveChatSessionId(positional[0], wantNew, promptText, opts);
   if (!sessionId) return 1;
+
+  // --queue is deliberately routed BEFORE loadSessionForChat: the whole point
+  // of the durable inbox is that it accepts a prompt for a session whose
+  // sandbox is asleep or mid-turn, and loadSessionForChat would wake it.
+  if (queue) {
+    return queuePrompt(sessionId, opts, promptText!, json);
+  }
 
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions chat');
   if (!resolved) return 1;
@@ -267,6 +288,44 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
     }
   }
   process.stdout.write(`${C.dim}bye.${C.reset}\n`);
+  return 0;
+}
+
+/**
+ * `chat --prompt --queue` — hand the message to the server-side inbox and
+ * return. No runtime call, so a stopped or busy session takes it just as
+ * readily as an idle one; the control plane delivers it at the next boundary.
+ */
+async function queuePrompt(
+  sessionId: string,
+  opts: CtxOpts,
+  text: string,
+  json: boolean,
+): Promise<number> {
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions chat ${sessionId} --prompt "…" --queue --host ${host}`,
+  );
+  if (!located) return 1;
+  const { client, projectId, session } = located.located;
+  let result: CreateSessionPromptResult;
+  try {
+    result = await queueSessionPrompt(client, projectId, session, text);
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson(result);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(
+      result.deduped
+        ? `Already queued as ${C.bold}${result.prompt_id}${C.reset}`
+        : `Queued ${C.bold}${result.prompt_id}${C.reset} ${C.dim}(${result.state}) — \`kortix sessions queue ${session.session_id.split('-')[0]}\` to track it${C.reset}`,
+    )}\n`,
+  );
   return 0;
 }
 

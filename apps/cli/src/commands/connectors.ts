@@ -3,6 +3,7 @@ import {
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
+  takeFlagValues,
   takeFlagBool,
 } from '../command-helpers.ts';
 import { promptSecret } from '../prompts.ts';
@@ -57,6 +58,56 @@ interface Connection {
   metadata?: Record<string, unknown>;
 }
 
+/** One condition on a policy rule: a dot path into the call's arguments, the
+ *  value it must match (glob or /regex/), and whether the test is inverted. */
+interface PolicyCondition {
+  arg: string;
+  match: string;
+  negate?: boolean;
+}
+
+interface PolicyRule {
+  match: string;
+  action: string;
+  conditions?: PolicyCondition[];
+}
+
+/** GET /connectors/projects/:id/policies */
+interface ProjectPoliciesView {
+  policies: PolicyRule[];
+  defaultMode: 'risk' | 'allow_all';
+}
+
+/** One record in the direct-connector catalogue (integrations.sh). */
+interface DiscoverConnector {
+  id: string;
+  kind: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  url: string | null;
+  categories: string[];
+}
+
+/** One connectable surface on a catalogue record. */
+interface DiscoverVariant {
+  id: string;
+  kind: string;
+  name: string;
+  url: string | null;
+  requiresAuth: boolean;
+}
+
+/** POST .../oauth2/device — RFC 8628 device authorization start. */
+interface DeviceAuthorizationStart {
+  session_id: string;
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete?: string;
+  expires_at: string;
+  interval_seconds: number;
+}
+
 const PROVIDERS: readonly Provider[] = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
 const HELP = help`Usage: kortix connectors <subcommand> [options]
@@ -92,9 +143,25 @@ Subcommands:
                                     server-side credential. Add --clear to
                                     remove the binding.
   connect <slug> [--expires <min>]  Start a Pipedream 1-click connection.
-  apps [<query>] [--json]           Browse the Pipedream app catalog.
-  policy ls [--json]                Show project-wide execution policies.
-  policy set --default <risk|allow_all>   Set the default execution mode.
+  apps [<query>] [--category <c>]   Browse the Pipedream app catalog.
+       [--cursor <c>] [--json]
+  catalog [<query>] [--cursor <c>]  Browse the direct-connector catalogue.
+          [--json]                  Needs the \`connectors_api_discover\` flag.
+  catalog show <id> [--json]        Show one catalogue record's surfaces.
+  sensitive <slug> on|off           Gate this connector's READS too — every
+                                    call needs approval (applies now).
+  owner <slug> project|user         Who authorizes: one project connection, or
+                                    each member's own (applies now).
+  machines <slug> [--show]          Which paired computers a \`computer\`
+           [--add <id>] [--rm <id>] connector may target (applies now).
+  policy ls|show [--json]           Show project-wide execution policies.
+  policy set --default <risk|allow_all>   Set the default execution mode in
+                                    kortix.yaml. Add --apply to set it live.
+  policy add <match> <action>       Add a PROJECT-wide rule (applies now).
+             [--condition <k=v>]    Narrow it to a matching argument. Repeat
+                                    for more; \`k!=v\` negates. <k> is a dot
+                                    path into the call's arguments.
+  policy rm <match>                 Remove a project-wide rule (applies now).
   policy <slug> ls [--json]         Show one connector's tool-call rules.
   policy <slug> set <match> <act>   Allow|ask|block a tool/glob/regex (applies now).
                                     <match> = tool name, glob (send_*) or /regex/.
@@ -105,7 +172,13 @@ Subcommands:
                                     register Kortix as a client (RFC 7591) when
                                     the server supports it, and print the URL to
                                     approve. --status reports the result.
+  authorize <slug> --device         Same, on a server that supports the OAuth
+                                    2.0 device flow: prints a code + URL and
+                                    polls until it is approved.
   mcp                               Run the stdio MCP server.
+
+\`policy ls|show|set|add|rm\` are the PROJECT-wide surface, so a connector
+named after one of those verbs must be addressed as \`policy <slug> ls\` etc.
 
 Add options (provider-specific):
   --name <label>           Human label (default: slug).
@@ -122,6 +195,10 @@ Add options (provider-specific):
 
 Authorize options:
   --status                 Report the connection's OAuth status instead.
+  --device                 Use the OAuth 2.0 device flow (RFC 8628) — a code
+                           and a URL instead of a browser redirect. Requires a
+                           server that publishes a device authorization
+                           endpoint. Polls until approved, denied, or expired.
   --scope "<a b>"          Request these scopes instead of everything offered.
   --client-id <id>         Use an existing OAuth app (servers without RFC 7591).
   --client-secret <s>      Secret for that app. Omit for a public client.
@@ -201,6 +278,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
   let clearSecretBinding = false;
   let allConnections = false;
   let mine = false;
+  let deviceFlow = false;
+  let showOnly = false;
+  let conditions: string[] = [];
+  let addIds: string[] = [];
+  let rmIds: string[] = [];
   try {
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
@@ -230,8 +312,14 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.scope = takeFlagValue(rest, ['--scope']);
     f.successRedirect = takeFlagValue(rest, ['--success-redirect']);
     f.errorRedirect = takeFlagValue(rest, ['--error-redirect']);
+    f.category = takeFlagValue(rest, ['--category']);
+    conditions = takeFlagValues(rest, ['--condition', '--cond']);
+    addIds = takeFlagValues(rest, ['--add']);
+    rmIds = takeFlagValues(rest, ['--rm']);
     asStdin = takeFlagBool(rest, ['--stdin']);
     statusOnly = takeFlagBool(rest, ['--status']);
+    deviceFlow = takeFlagBool(rest, ['--device']);
+    showOnly = takeFlagBool(rest, ['--show']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -246,7 +334,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
   //    exactly like the dashboard) — handled in the switch below.
   if ((sub === 'add' || sub === 'create') && !applyRemote) return connectorAddLocal(positional[0], f);
   if ((sub === 'rm' || sub === 'remove' || sub === 'delete') && !applyRemote) return connectorRmLocal(positional[0]);
-  if ((sub === 'policy' || sub === 'policies') && positional[0] === 'set') return policySetLocal(f.default);
+  // `policy set --default` stays a LOCAL kortix.yaml edit unless --apply asks
+  // for the live write — byte-compatible with every existing script.
+  if ((sub === 'policy' || sub === 'policies') && positional[0] === 'set' && !applyRemote) {
+    return policySetLocal(f.default);
+  }
 
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
@@ -450,6 +542,25 @@ export async function runConnectors(argv: string[]): Promise<number> {
         } else {
           await ctx.client.put(`${oauth2}/application`, steps.application);
         }
+        // ── RFC 8628 device flow: a code and a URL, no redirect back. The
+        //    only path that works on a machine with no browser, which is every
+        //    sandbox — so the CLI polls to completion instead of handing the
+        //    caller a second command to run.
+        if (deviceFlow) {
+          const device = await ctx.client.post<DeviceAuthorizationStart>(`${oauth2}/device`, {
+            ...(steps.scopes.length ? { scopes: steps.scopes } : {}),
+          });
+          if (json) {
+            emitJson({ connection_id: connectionId, ...device });
+            return 0;
+          }
+          process.stdout.write(
+            `\n  ${C.bold}Authorize ${discovery.resource_name ?? slug}${C.reset}\n` +
+              `  ${C.dim}Open ${C.reset}${C.cyan}${device.verification_uri_complete ?? device.verification_uri}${C.reset}\n` +
+              `  ${C.dim}Enter code ${C.reset}${C.bold}${device.user_code}${C.reset}\n\n`,
+          );
+          return await pollDeviceAuthorization(ctx.client, oauth2, device);
+        }
         const started = await ctx.client.post<{ authorization_url: string; expires_at: string }>(
           `${oauth2}/authorize`,
           {
@@ -530,7 +641,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
       }
       case 'apps': {
         const q = positional[0];
-        const qs = [q ? `q=${encodeURIComponent(q)}` : '', f.cursor ? `cursor=${encodeURIComponent(f.cursor)}` : '']
+        const qs = [
+          q ? `q=${encodeURIComponent(q)}` : '',
+          f.category ? `category=${encodeURIComponent(f.category)}` : '',
+          f.cursor ? `cursor=${encodeURIComponent(f.cursor)}` : '',
+        ]
           .filter(Boolean)
           .join('&');
         const resp = await ctx.client.get<{
@@ -556,15 +671,187 @@ export async function runConnectors(argv: string[]): Promise<number> {
         );
         return 0;
       }
+      // ── Toggle a connector's `sensitive` flag ───────────────────────────
+      // Sensitive means its READS gate too: every call needs approval, not
+      // just the writes risk-classification would have caught.
+      case 'sensitive': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const value = parseOnOff(positional[1]);
+        if (value === null) return missing('on or off');
+        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/sensitive`, {
+          sensitive: value,
+        });
+        process.stdout.write(
+          value
+            ? `${status.ok(`${C.bold}${slug}${C.reset} is sensitive — every call needs approval`)}\n`
+            : `${status.ok(`${C.bold}${slug}${C.reset} is no longer sensitive`)} ${C.dim}— reads follow the ordinary rules again.${C.reset}\n`,
+        );
+        return 0;
+      }
+
+      // ── Who authorizes a connector ──────────────────────────────────────
+      case 'owner':
+      case 'authorization-strategy': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const strategy = positional[1];
+        if (strategy !== 'project' && strategy !== 'user') return missing('project or user');
+        // The route's field is `authorization_strategy`, not `strategy`.
+        await ctx.client.put(
+          `${ex}/connectors/${encodeURIComponent(slug)}/authorization-strategy`,
+          { authorization_strategy: strategy },
+        );
+        process.stdout.write(
+          strategy === 'project'
+            ? `${status.ok(`${C.bold}${slug}${C.reset}: one project connection everyone shares`)}\n`
+            : `${status.ok(`${C.bold}${slug}${C.reset}: each member authorizes their own connection`)}\n`,
+        );
+        return 0;
+      }
+
+      // ── Browse the direct-connector catalogue ───────────────────────────
+      // Gated on `connectors_api_discover`; the 403 names the flag and
+      // surfaceApiError prints it verbatim.
+      case 'catalog':
+      case 'discover-catalog': {
+        if (positional[0] === 'show' || positional[0] === 'info') {
+          const id = positional[1];
+          if (!id) return missing('a catalogue record id');
+          const detail = await ctx.client.get<{
+            item: DiscoverConnector;
+            variants: DiscoverVariant[];
+          }>(`${ex}/discover/connectors/detail?id=${encodeURIComponent(id)}`);
+          if (json) {
+            emitJson(detail);
+            return 0;
+          }
+          process.stdout.write(
+            `\n  ${C.bold}${detail.item.name}${C.reset} ${C.faded}(${detail.item.id})${C.reset}\n`,
+          );
+          if (detail.item.description) {
+            process.stdout.write(`  ${C.dim}${trim(detail.item.description, 78)}${C.reset}\n`);
+          }
+          process.stdout.write('\n');
+          if (detail.variants.length === 0) {
+            process.stdout.write(`  ${C.dim}No connectable surfaces.${C.reset}\n\n`);
+            return 0;
+          }
+          for (const v of detail.variants) {
+            process.stdout.write(
+              `  ${C.cyan}${v.id}${C.reset}  ${pad(v.kind, 8)}  ${trim(v.name, 30)}${v.requiresAuth ? ` ${C.faded}(auth)${C.reset}` : ''}${v.url ? `  ${C.dim}${v.url}${C.reset}` : ''}\n`,
+            );
+          }
+          process.stdout.write(`\n  ${C.dim}${detail.variants.length} surface${detail.variants.length === 1 ? '' : 's'}${C.reset}\n\n`);
+          return 0;
+        }
+        const q = positional[0];
+        const qs = [
+          q ? `q=${encodeURIComponent(q)}` : '',
+          f.cursor ? `cursor=${encodeURIComponent(f.cursor)}` : '',
+        ]
+          .filter(Boolean)
+          .join('&');
+        const page = await ctx.client.get<{
+          items: DiscoverConnector[];
+          nextCursor?: string | null;
+          hasMore?: boolean;
+        }>(`${ex}/discover/connectors${qs ? `?${qs}` : ''}`);
+        if (json) {
+          emitJson(page);
+          return 0;
+        }
+        const items = page.items ?? [];
+        if (items.length === 0) {
+          process.stdout.write(`  ${C.dim}No catalogue records${q ? ` matching "${q}"` : ''}.${C.reset}\n`);
+          return 0;
+        }
+        const idW = Math.max(...items.map((i) => i.id.length), 2);
+        process.stdout.write('\n');
+        for (const item of items) {
+          process.stdout.write(
+            `  ${C.cyan}${pad(item.id, idW)}${C.reset}  ${trim(item.name, 30)}  ${C.dim}${trim(item.description ?? '', 40)}${C.reset}\n`,
+          );
+        }
+        process.stdout.write(
+          `\n  ${C.dim}${items.length} record${items.length === 1 ? '' : 's'}${page.hasMore && page.nextCursor ? ` · more: --cursor ${page.nextCursor}` : ''}${C.reset}\n\n`,
+        );
+        return 0;
+      }
+
+      // ── Which paired computers a `computer` connector may target ────────
+      // Read the current assignment, apply --add/--rm, write the whole list
+      // back through the create route (the only writer of `tunnel_ids`).
+      case 'machines':
+      case 'computers': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const config = await ctx.client.get<{
+          slug: string;
+          name: string;
+          provider: string;
+          tunnelIds?: string[];
+        }>(`${ex}/connectors/${encodeURIComponent(slug)}/config`);
+        if (config.provider !== 'computer') {
+          process.stderr.write(
+            `${status.err(`${slug} is a ${config.provider} connector — machines apply to a \`computer\` connector.`)}\n`,
+          );
+          return 1;
+        }
+        const current = config.tunnelIds ?? [];
+        if (showOnly || (addIds.length === 0 && rmIds.length === 0)) {
+          if (json) {
+            emitJson({ slug: config.slug, machines: current });
+            return 0;
+          }
+          if (current.length === 0) {
+            process.stdout.write(`  ${C.dim}No machines assigned to ${slug}.${C.reset}\n`);
+            return 0;
+          }
+          process.stdout.write('\n');
+          for (const id of current) process.stdout.write(`  ${id}\n`);
+          process.stdout.write(
+            `\n  ${C.dim}${current.length} machine${current.length === 1 ? '' : 's'}${C.reset}\n\n`,
+          );
+          return 0;
+        }
+        const removed = new Set(rmIds);
+        const next = [...new Set([...current.filter((id) => !removed.has(id)), ...addIds])].sort();
+        // The route refuses an empty list ("select at least one computer") —
+        // say so here rather than relaying a 400 the caller has to decode.
+        if (next.length === 0) {
+          process.stderr.write(
+            `${status.err('A Computers profile needs at least one machine.')} ${C.dim}Remove the connector instead: ${C.reset}${C.cyan}kortix connectors rm ${slug} --apply${C.reset}\n`,
+          );
+          return 2;
+        }
+        const resp = await ctx.client.post<{ ok: boolean; sync?: unknown }>(`${ex}/connectors`, {
+          slug: config.slug,
+          name: config.name,
+          provider: 'computer',
+          tunnel_ids: next,
+        });
+        if (json) {
+          emitJson({ ...resp, machines: next });
+          return 0;
+        }
+        process.stdout.write(
+          `${status.ok(`${C.bold}${slug}${C.reset} → ${next.length} machine${next.length === 1 ? '' : 's'}`)}\n`,
+        );
+        for (const id of next) process.stdout.write(`  ${C.faded}${id}${C.reset}\n`);
+        return 0;
+      }
+
       case 'policy':
       case 'policies': {
         const a0 = positional[0] ?? 'ls';
-        // Project-wide: `policy ls`. (`policy set --default` is handled earlier.)
-        if (a0 === 'ls' || a0 === 'list') {
-          const resp = await ctx.client.get<{
-            policies: { match: string; action: string }[];
-            defaultMode: string;
-          }>(`${ex}/policies`);
+        const projectPolicies = `${ex}/policies`;
+        const loadProject = () =>
+          ctx.client.get<ProjectPoliciesView>(projectPolicies);
+
+        // Project-wide: `policy ls|show`.
+        if (a0 === 'ls' || a0 === 'list' || a0 === 'show') {
+          const resp = await loadProject();
           if (json) {
             emitJson(resp);
             return 0;
@@ -574,8 +861,72 @@ export async function runConnectors(argv: string[]): Promise<number> {
             process.stdout.write(`  ${C.dim}No explicit project policies.${C.reset}\n\n`);
             return 0;
           }
-          for (const p of resp.policies) process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}\n`);
+          for (const p of resp.policies) {
+            process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}${conditionsLabel(p.conditions)}\n`);
+          }
           process.stdout.write('\n');
+          return 0;
+        }
+
+        // Project-wide: `policy set --default <mode> --apply` (without --apply
+        // this never reaches here — it edits kortix.yaml, unchanged).
+        if (a0 === 'set') {
+          const mode = f.default;
+          if (mode !== 'risk' && mode !== 'allow_all') return missing('--default risk|allow_all');
+          const currentProject = await loadProject();
+          await ctx.client.put(projectPolicies, {
+            policies: currentProject.policies,
+            defaultMode: mode,
+          });
+          process.stdout.write(
+            `${status.ok(`Project default mode → ${C.bold}${mode}${C.reset}`)} ${C.dim}(kortix.yaml on main + catalog)${C.reset}\n`,
+          );
+          return 0;
+        }
+
+        // Project-wide: `policy add <match> <action> [--condition k=v]…`
+        if (a0 === 'add') {
+          const match = positional[1];
+          const action = normalizePolicyAction(positional[2]);
+          if (!match) return missing('a <match> (tool name, glob, or /regex/)');
+          if (!action) return missing('an action: allow | ask | block');
+          const parsedConditions = parsePolicyConditions(conditions);
+          if ('error' in parsedConditions) return invalid(parsedConditions.error);
+          const currentProject = await loadProject();
+          const next = [
+            ...currentProject.policies.filter((p) => p.match !== match),
+            {
+              match,
+              action,
+              ...(parsedConditions.conditions.length
+                ? { conditions: parsedConditions.conditions }
+                : {}),
+            },
+          ];
+          await ctx.client.put(projectPolicies, {
+            policies: next,
+            defaultMode: currentProject.defaultMode,
+          });
+          process.stdout.write(
+            `${status.ok(`project: ${match} → ${action}${conditionsLabel(parsedConditions.conditions)}`)}\n`,
+          );
+          return 0;
+        }
+
+        // Project-wide: `policy rm <match>`
+        if (a0 === 'rm' || a0 === 'remove') {
+          const match = positional[1];
+          if (!match) return missing('the <match> to remove');
+          const currentProject = await loadProject();
+          if (!currentProject.policies.some((p) => p.match === match)) {
+            process.stderr.write(`${status.err(`No project rule matching "${match}".`)}\n`);
+            return 1;
+          }
+          await ctx.client.put(projectPolicies, {
+            policies: currentProject.policies.filter((p) => p.match !== match),
+            defaultMode: currentProject.defaultMode,
+          });
+          process.stdout.write(`${status.ok(`project: removed ${match}`)}\n`);
           return 0;
         }
 
@@ -1029,6 +1380,102 @@ function statusCell(s: AdminConnector['status']): string {
 function reportSync(sync?: SyncResult): void {
   if (!sync) return;
   for (const e of sync.errors) process.stderr.write(`  ${status.warn(`${e.slug}: ${e.error}`)}\n`);
+}
+
+/**
+ * Poll an RFC 8628 device authorization to its end.
+ *
+ * The server owns the back-off: it holds a `next_poll_at` and answers
+ * `pending` without hitting the authorization server until that instant, so a
+ * client that polls faster only wastes its own requests. Poll on the interval
+ * the start response named, and stop at `expires_at` — a session the server
+ * never sees again stays pending forever otherwise.
+ */
+async function pollDeviceAuthorization(
+  client: import('../api/client.ts').ApiClient,
+  oauth2Base: string,
+  device: DeviceAuthorizationStart,
+): Promise<number> {
+  const deadline = Date.parse(device.expires_at);
+  const intervalMs = Math.max(1, device.interval_seconds || 5) * 1000;
+  for (;;) {
+    if (Number.isFinite(deadline) && Date.now() >= deadline) {
+      process.stderr.write(`${status.err('The device code expired before it was approved.')}\n`);
+      return 1;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    let state: { status: string; error_code?: string | null; scopes?: string[] };
+    try {
+      state = await client.post<{ status: string; error_code?: string | null; scopes?: string[] }>(
+        `${oauth2Base}/device/${encodeURIComponent(device.session_id)}`,
+        {},
+      );
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+    if (state.status === 'pending') continue;
+    if (state.status === 'active') {
+      process.stdout.write(
+        `${status.ok('Authorized')}${state.scopes?.length ? ` ${C.dim}(${state.scopes.join(' ')})${C.reset}` : ''}\n`,
+      );
+      return 0;
+    }
+    process.stderr.write(
+      `${status.err(`Authorization ${state.status}${state.error_code ? `: ${state.error_code}` : ''}`)}\n`,
+    );
+    return 1;
+  }
+}
+
+/** `on`/`off` (and the obvious synonyms) → boolean, else null. */
+export function parseOnOff(value: string | undefined): boolean | null {
+  switch ((value ?? '').toLowerCase()) {
+    case 'on':
+    case 'true':
+    case 'yes':
+      return true;
+    case 'off':
+    case 'false':
+    case 'no':
+      return false;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Parse repeated `--condition` flags into the wire shape the policies route
+ * validates: `{ arg, match, negate? }`. `k=v` asserts the argument at dot path
+ * `k` matches `v`; `k!=v` asserts it does not.
+ *
+ * The route rejects `__proto__`/`constructor`/`prototype` as a path segment and
+ * an unparseable matcher, so a bad rule fails at write time rather than
+ * compiling to a never-match that looks saved.
+ */
+export function parsePolicyConditions(
+  raw: readonly string[],
+): { conditions: PolicyCondition[] } | { error: string } {
+  const conditions: PolicyCondition[] = [];
+  for (const entry of raw) {
+    const negated = entry.includes('!=');
+    const separator = negated ? '!=' : '=';
+    const index = entry.indexOf(separator);
+    if (index <= 0) {
+      return { error: `--condition must look like arg=value or arg!=value (got "${entry}")` };
+    }
+    const arg = entry.slice(0, index).trim();
+    const match = entry.slice(index + separator.length).trim();
+    if (!arg) return { error: `--condition needs an argument path (got "${entry}")` };
+    if (!match) return { error: `--condition needs a value to match (got "${entry}")` };
+    conditions.push({ arg, match, ...(negated ? { negate: true } : {}) });
+  }
+  return { conditions };
+}
+
+/** " when to=*@corp.com, subject!=/urgent/" — or "" when unconditioned. */
+export function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
+  if (!conditions || conditions.length === 0) return '';
+  return ` when ${conditions.map((c) => `${c.arg}${c.negate ? '!=' : '='}${c.match}`).join(', ')}`;
 }
 
 /** Accept friendly verbs (allow|ask|block) or canonical actions → canonical, else null. */
