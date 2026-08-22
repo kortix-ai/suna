@@ -121,6 +121,22 @@ export interface ComposerEditorProps {
    * whole reason the toolbar stops re-rendering per keystroke.
    */
   onEmptyChange: (isEmpty: boolean) => void;
+  /**
+   * Fires on EVERY document change, unthrottled, with the live ProseMirror
+   * JSON. The host debounces and persists it — see
+   * `draft/use-composer-draft.ts`. Deliberately separate from
+   * `onEmptyChange`, which fires only on the empty<->non-empty boundary: a
+   * draft saver wired to that would persist the first character and nothing
+   * after it.
+   *
+   * `isEmpty` rides along rather than being re-derived by the host from `doc`.
+   * `editor.isEmpty` is the canonical definition of an empty composer, and it
+   * is read here from the live editor in the same tick as the snapshot. A host
+   * that instead called `handle.isEmpty()` later — on an unmount flush, say —
+   * would be reading an editor React had already destroyed, because child
+   * effects clean up before parent effects.
+   */
+  onDocChange?: (doc: JSONContent, isEmpty: boolean) => void;
 
   /** `@` mention menu data sources — see `menus/mention-controller.ts`. */
   agents?: Agent[];
@@ -200,6 +216,36 @@ export function trackEmptyBoundary(onEmptyChange: (isEmpty: boolean) => void) {
       wasEmpty = isEmptyNow;
       onEmptyChange(isEmptyNow);
     }
+  };
+}
+
+/**
+ * The editor's single `onUpdate`, composing the boundary tracker with a
+ * per-change document snapshot.
+ *
+ * These two have deliberately different cadences and must not be merged.
+ * `onEmptyChange` fires only on the empty<->non-empty boundary — that is what
+ * stops the toolbar re-rendering per keystroke, and it is asserted directly in
+ * this file's tests. `onDocChange` has to see EVERY change, because a draft
+ * saver that only heard about boundaries would persist the first character and
+ * nothing after it.
+ *
+ * The cost of that per-keystroke callback is one `editor.getJSON()` plus one
+ * `setTimeout` reset in the host's debounce (`draft/use-composer-draft.ts`).
+ * The host sets no React state, so nothing here re-renders.
+ *
+ * Exported, like its two neighbours, so the exact production wiring can be
+ * driven against a real headless `@tiptap/core` Editor in
+ * composer-editor.test.ts rather than a stand-in.
+ */
+export function createUpdateHandler(
+  onEmptyChange: (isEmpty: boolean) => void,
+  onDocChange: (doc: JSONContent, isEmpty: boolean) => void,
+) {
+  const trackEmpty = trackEmptyBoundary(onEmptyChange);
+  return ({ editor }: { editor: Pick<Editor, 'isEmpty' | 'getJSON'> }) => {
+    trackEmpty({ editor });
+    onDocChange(editor.getJSON() as JSONContent, editor.isEmpty);
   };
 }
 
@@ -291,6 +337,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       autoFocus,
       onSubmit,
       onEmptyChange,
+      onDocChange,
       agents,
       sessions,
       currentSessionId,
@@ -311,9 +358,13 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     // stale. Applied to every value a stable, memoized-once closure below
     // needs to read fresh: onEmptyChange, onSubmit, disabled, placeholder.
     const onEmptyChangeRef = useRef(onEmptyChange);
+    const onDocChangeRef = useRef(onDocChange);
     useEffect(() => {
       onEmptyChangeRef.current = onEmptyChange;
     }, [onEmptyChange]);
+    useEffect(() => {
+      onDocChangeRef.current = onDocChange;
+    }, [onDocChange]);
 
     const onSubmitRef = useRef(onSubmit);
     useEffect(() => {
@@ -453,7 +504,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     );
 
     const handleUpdate = useMemo(
-      () => trackEmptyBoundary((isEmpty) => onEmptyChangeRef.current(isEmpty)),
+      () =>
+        createUpdateHandler(
+          (isEmpty) => onEmptyChangeRef.current(isEmpty),
+          (doc, isEmpty) => onDocChangeRef.current?.(doc, isEmpty),
+        ),
       [],
     );
 
