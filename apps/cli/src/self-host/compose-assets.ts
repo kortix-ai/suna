@@ -153,53 +153,6 @@ const APPS_SITE_BLOCK = `# *.<apps base domain>: every deployed Kortix App, serv
 	}
 }`;
 
-/**
- * The wildcard preview-serving site block. Every sandbox port a browser can
- * open publishes on <env>-p<port>-<sandbox-label>.{$KORTIX_PREVIEW_BASE_DOMAIN},
- * so the app is alone on its own origin and root-absolute links, XHR to `/api`,
- * `history.pushState`, service workers and WebSockets all resolve to the origin
- * the browser is already on — none of which survive a path prefix.
- *
- * The API matches the real Host header (KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true —
- * this reverse proxy is the trust boundary, there is no Cloudflare Worker to
- * sign the claim). Caddy preserves the inbound Host and sets X-Forwarded-Proto
- * by default, so resolvePreviewHost(Host) names the right sandbox and port with
- * no header_up override.
- *
- * TLS is issued PER HOSTNAME on first request; a 2nd-level wildcard certificate
- * is as impractical here as it is for Apps.
- *
- * Caddy's reverse_proxy passes WebSocket upgrades through unchanged, which the
- * API needs — a dev server's hot reload opens one, and it is the only
- * credential-carrying request an app's own code can make.
- */
-const PREVIEW_SITE_BLOCK = `# *.<preview base domain>: one origin per sandbox port, served over
-# per-hostname on-demand TLS. Only present when KORTIX_PREVIEW_BASE_DOMAIN is
-# configured — see renderCaddyfile() in compose-assets.ts. The global
-# on_demand_tls \`ask\` above bounds certificate issuance to real preview hosts.
-*.{$KORTIX_PREVIEW_BASE_DOMAIN} {
-	header Strict-Transport-Security "max-age=2592000"
-
-	tls {
-		on_demand
-	}
-
-	reverse_proxy {
-		dynamic a {
-			name kortix-api
-			port 8008
-			refresh 2s
-		}
-		lb_policy round_robin
-		lb_try_duration 5s
-		lb_try_interval 250ms
-		fail_duration 30s
-		health_uri /v1/health
-		health_interval 3s
-		health_timeout 2s
-	}
-}`;
-
 export interface RenderCaddyfileOptions {
   /**
    * Whether Apps hosting is configured (KORTIX_APPS_BASE_DOMAIN is set). When
