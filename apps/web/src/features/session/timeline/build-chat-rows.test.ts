@@ -272,6 +272,11 @@ describe('buildChatRows reproduces segmentTurn for every turn', () => {
  */
 const INTENDED_DIVERGENCES: { fixture: string; rationale: string }[] = [
   {
+    fixture: 'assistant-only-head-question',
+    rationale:
+      'An assistant-only head holding an answered question renders the answered card then its prose as ASSISTANT content; legacy put the head in the user bubble, which renders nothing for a tool part, so the answered question vanished.',
+  },
+  {
     fixture: 'assistant-only-text',
     rationale:
       'An assistant-only turn (orphan assistant message, no prompt at all) renders its head message as ASSISTANT content — the response block; legacy painted it as a USER bubble.',

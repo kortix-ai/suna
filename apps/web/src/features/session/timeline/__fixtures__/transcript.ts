@@ -659,6 +659,16 @@ export const edgeScenarios: TimelineScenario[] = [
     orphanAssistant('oe16', (m) => [readTool(m, 'oe16r')]),
     orphanAssistant('oe16b', (m) => [readTool(m, 'oe16br')], { error: USER_ABORT }),
   ]),
+  // N15 (round-3 verifier): an assistant-only head holding an ANSWERED QUESTION
+  // then prose. Legacy painted the head as a user bubble, which renders nothing
+  // for a tool part, so the answered question vanished and only the prose
+  // showed; now the head is assistant content — the answered card, then prose.
+  // Same root as the three assistant-only entries above. Appended LAST: the
+  // fixture clock ticks per message, so an earlier insertion re-stamps every
+  // golden captured after it.
+  idle('assistant-only-head-question', [
+    orphanAssistant('oe17', (m) => [answeredQuestion(m, 'oe17q'), text(m, 'oe17t', 'then prose')]),
+  ]),
 ];
 
 // ---------------------------------------------------------------------------
