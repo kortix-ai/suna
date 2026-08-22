@@ -32,6 +32,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { rememberSsoExpectedEmail } from '@/lib/auth/sso-identity';
 import { markPostAuthIntent } from '@/lib/onboarding/post-auth-intent';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
@@ -329,6 +330,11 @@ function AuthCardForm({
         if (resolved === 'sso') {
           // Full navigation to the IdP; the callback route exchanges the
           // code on return (same PKCE path as Google OAuth).
+          //
+          // Remember who we are ASKING for. The IdP may answer with a session
+          // it already holds for somebody else, and the callback can only tell
+          // if it has this to compare against. See lib/auth/sso-identity.
+          rememberSsoExpectedEmail(address);
           window.location.href = data.url;
           return 'handled';
         }
@@ -598,6 +604,7 @@ function AuthCardForm({
             className="w-full"
             disabled={pending}
             onClick={() => {
+              rememberSsoExpectedEmail(email);
               window.location.href = ssoUrl;
             }}
           >
