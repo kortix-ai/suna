@@ -13,6 +13,7 @@ import { NextIntlClientProvider } from 'next-intl';
 
 import type { TimelineRow } from '@kortix/sdk';
 import { stabilizeTurns } from '../turn/stable-turns';
+import { ATTACHMENT_TILE_CAP } from '../turn/user-message';
 import { buildChatRows } from './build-chat-rows';
 import { deriveAnsweredQuestionIds } from './project-rows';
 import { SessionTimelineList, type SessionTimelineListProps } from './session-timeline-list';
@@ -280,5 +281,70 @@ describe('one part delta re-renders one row', () => {
     expect(byPrefix(rendered, 'user:')).toEqual([]);
     expect(rendered).toContain('tail:u2');
     expect(rendered.some((k) => k.startsWith('part:') && k.includes('a1'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// the working turn's attachment tiles
+// ---------------------------------------------------------------------------
+
+describe('the working turn bubble with image attachments', () => {
+  // A 1×1 PNG — the composer's data-URL shape, decoded once to a `blob:`
+  // object URL per part (`attachment-object-url.ts`).
+  const DATA_URL =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const IMAGES = 8;
+  const u2Info = settled[2].info;
+  const u2Parts: Part[] = [
+    text('u2', 'u2t', 'second prompt'),
+    ...Array.from({ length: IMAGES }, (_, i) =>
+      part('u2', `u2img${i}`, {
+        type: 'file',
+        mime: 'image/png',
+        filename: `shot-${i}.png`,
+        url: DATA_URL,
+      }),
+    ),
+  ];
+  /** `buildSessionMessages` rebuilds `{ info, parts }` for EVERY message on
+   *  every frame (same `info`, same `parts`, new wrapper) — so the working
+   *  turn's bubble row re-renders per step (its `message` prop is new). */
+  const rewrappedU2 = (): MessageWithParts =>
+    ({ info: u2Info, parts: u2Parts }) as unknown as MessageWithParts;
+  const frame = (assistantParts: Part[]) => [
+    settled[0],
+    settled[1],
+    rewrappedU2(),
+    streaming(assistantParts),
+  ];
+  const tiles = () =>
+    Array.from(harness.container.querySelectorAll<HTMLImageElement>('img[alt^="shot-"]'));
+
+  test('append one part → the bubble row re-renders (rewrapped message) but its attachment tiles do not', async () => {
+    const done = text('a2', 'a2t', 'Done.');
+    const first = await harness.render(frame([readTool, done]), true);
+    expect(byPrefix(first, 'attachments:')).toEqual(['attachments:u2']);
+    const before = tiles();
+    expect(before).toHaveLength(Math.min(IMAGES, ATTACHMENT_TILE_CAP));
+    for (const img of before) expect(img.getAttribute('src')?.startsWith('blob:')).toBe(true);
+
+    const bash = tool('a2', 'a2bash', 'bash', {
+      status: 'running',
+      time: { start: 3 },
+      input: { command: 'ls' },
+    });
+    const rendered = await harness.render(frame([readTool, done, bash]), true);
+    // The rewrap reaches the bubble row — known, UMR=1 in the bench…
+    expect(byPrefix(rendered, 'user:')).toEqual(['user:u2']);
+    // …and stops there: `attachments` is derived from `parts`, whose identity
+    // held, so the memo'd strip (and its eight tiles) do not run.
+    expect(byPrefix(rendered, 'attachments:')).toEqual([]);
+    // The committed <img> elements are the same nodes, same src.
+    const after = tiles();
+    expect(after).toHaveLength(before.length);
+    after.forEach((img, i) => {
+      expect(img).toBe(before[i]);
+      expect(img.getAttribute('src')).toBe(before[i].getAttribute('src'));
+    });
   });
 });

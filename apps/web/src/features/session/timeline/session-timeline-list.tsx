@@ -1238,6 +1238,7 @@ function UserMessageRowImpl({
               ) : undefined
             }
             actionsAlwaysVisible={queueState === 'failed'}
+            onRowRender={onRowRender}
           />
         </div>
       )}

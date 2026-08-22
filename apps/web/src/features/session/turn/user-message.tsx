@@ -5,7 +5,7 @@
  *  docs/superpowers/sdd/2026-07-31-assistant-turn-ux/task-6-report.md. */
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   CaretDownIcon as ChevronDown,
@@ -48,7 +48,6 @@ import {
   TILE_INTERACTIVE,
   TILE_SURFACE,
 } from '../attachment-tile';
-import { attachmentDisplaySrc } from './attachment-object-url';
 import { MentionChip } from '../mention-chip';
 import { buildMentionSegments, type MentionSourceRef } from '../mention-segments';
 import {
@@ -62,6 +61,7 @@ import {
   stripSystemPtyText,
   SystemNotificationCard,
 } from '../message-parsing';
+import { attachmentDisplaySrc } from './attachment-object-url';
 
 import { messageCreatedAt } from './message-time';
 import { MessageTimeLabel } from './message-time-label';
@@ -592,15 +592,29 @@ function AttachmentImage({
 /**
  * Shared attachment strip — used by the real user turn and the optimistic turn
  * so the shell → chat crossfade never swaps card chrome for tile chrome.
+ *
+ * MEMOIZED on its props. The working turn's bubble row re-renders on every
+ * streaming step (`buildSessionMessages` rewraps `turn.userMessage` each
+ * frame), but `attachments` is derived from `message.parts`, whose identity
+ * holds, so the strip's props are identical step to step. Without the memo
+ * each step re-ran every tile — `useSandboxImageSrc`, the preview dialog,
+ * the `<img>` — eight times over for an eight-image prompt, for nothing.
  */
-export function MessageAttachments({
+export const MessageAttachments = memo(function MessageAttachments({
   attachments,
   pending,
+  messageId,
+  onRowRender,
 }: {
   attachments: NormalizedAttachment[];
   /** The whole message is still being sent, so every tile is still uploading. */
   pending?: boolean;
+  /** The message the strip belongs to — only names the `onRowRender` key. */
+  messageId?: string;
+  /** Render-count seam (`SessionTimelineList`'s): `attachments:<messageId>`. */
+  onRowRender?: (key: string) => void;
 }) {
+  onRowRender?.(`attachments:${messageId ?? ''}`);
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const [expanded, setExpanded] = useState(false);
 
@@ -678,7 +692,7 @@ export function MessageAttachments({
       })}
     </ul>
   );
-}
+});
 
 // ============================================================================
 // The bubble
@@ -916,39 +930,39 @@ export function UserMessageActions({
               'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 max-md:opacity-100',
         )}
       >
-      {leading}
-      {/* `InlineMeta` owns the `·` separator and drops absent children, so a
+        {leading}
+        {/* `InlineMeta` owns the `·` separator and drops absent children, so a
           message with no stamp never renders a leading bullet. Skipped
           entirely when there is no meta at all — the optimistic turn would
           otherwise carry an empty node the real turn does not. */}
-      {hasMeta && (
-        <InlineMeta>
-          {timestamp !== null && <MessageTimeLabel timestamp={timestamp} />}
-          {edited && 'edited'}
-        </InlineMeta>
-      )}
-      {copyText && (
-        <div className="flex shrink-0 items-center gap-0.5">
-          {canRewind && (
-            <Hint label="Edit from here" side="top" align="center">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                // 24px visible, 40px target — grown with a pseudo-element so the
-                // dense action row keeps its rhythm.
-                className="hit-area-2"
-                aria-label="Edit message and rewind session"
-                onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
-              >
-                <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
-              </Button>
-            </Hint>
-          )}
+        {hasMeta && (
+          <InlineMeta>
+            {timestamp !== null && <MessageTimeLabel timestamp={timestamp} />}
+            {edited && 'edited'}
+          </InlineMeta>
+        )}
+        {copyText && (
+          <div className="flex shrink-0 items-center gap-0.5">
+            {canRewind && (
+              <Hint label="Edit from here" side="top" align="center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  // 24px visible, 40px target — grown with a pseudo-element so the
+                  // dense action row keeps its rhythm.
+                  className="hit-area-2"
+                  aria-label="Edit message and rewind session"
+                  onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
+                >
+                  <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
+                </Button>
+              </Hint>
+            )}
 
-          <CopyButton code={copyText} size="sm" hintSide="top" />
-        </div>
-      )}
+            <CopyButton code={copyText} size="sm" hintSide="top" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -970,6 +984,7 @@ export function UserMessage({
   leadingActions,
   leadingStatus,
   actionsAlwaysVisible = false,
+  onRowRender,
 }: {
   message: MessageWithParts;
   agentNames?: string[];
@@ -994,6 +1009,8 @@ export function UserMessage({
   leadingStatus?: React.ReactNode;
   /** See `UserMessageActions.alwaysVisible`. */
   actionsAlwaysVisible?: boolean;
+  /** Render-count seam, passed through to the attachment strip. */
+  onRowRender?: (key: string) => void;
 }) {
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const { attachments, stickyParts } = useMemo(
@@ -1411,7 +1428,13 @@ export function UserMessage({
         showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
-      {allAttachments.length > 0 && <MessageAttachments attachments={allAttachments} />}
+      {allAttachments.length > 0 && (
+        <MessageAttachments
+          attachments={allAttachments}
+          messageId={message.info.id}
+          onRowRender={onRowRender}
+        />
+      )}
 
       {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
       {dcpNotifications.length > 0 && (
