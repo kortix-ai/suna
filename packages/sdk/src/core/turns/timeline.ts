@@ -920,8 +920,10 @@ function stabilizeContextKeys(prev: readonly TimelineRow[], next: TimelineRow[])
  * skipped) and the ARRAY identity (so the caller's `useMemo` on `rows` does not
  * fire at all).
  *
- * Allocates at most ONE array — the output — and only when a row is actually
- * swapped or a context key actually rewritten. A frame that changes nothing
+ * Allocates at most TWO arrays, and only when something actually changed: one
+ * when a context key is rewritten (phase 2) and one when a row identity is
+ * swapped (phase 3) — a frame that does both allocates both; a frame that does
+ * neither allocates neither. A frame that changes nothing
  * allocates exactly the `prev` key index (`byKey`, one `Map`) — plus, only
  * when `prev` holds a context group, the two indexes and one set
  * `stabilizeContextKeys` documents. `timeline.test.ts` counts the `Map`
