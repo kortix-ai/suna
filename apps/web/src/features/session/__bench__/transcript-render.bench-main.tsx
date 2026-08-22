@@ -491,6 +491,8 @@ export async function main(): Promise<number> {
     messages: MessageWithParts[];
     planAnchorId: string | null;
     working: boolean;
+    /** The static (SSR) measurement: render the list with no scroll element. */
+    forceFlat?: boolean;
     onProfilerRender?: (id: string, phase: string, actualDuration: number) => void;
   }
 
@@ -509,7 +511,7 @@ export async function main(): Promise<number> {
    * container; the virtual props (Stage 3) are passed through an untyped
    * spread so this one file also runs on a tree whose list ignores them.
    */
-  function Transcript({ turns, messages, planAnchorId, working, onProfilerRender }: TranscriptProps) {
+  function Transcript({ turns, messages, planAnchorId, working, forceFlat, onProfilerRender }: TranscriptProps) {
     const lastId = turns.length ? turns[turns.length - 1].userMessage.info.id : null;
     const workingTurnId = working ? lastId : null;
     const rowsRef = React.useRef<any[]>([]);
@@ -604,9 +606,13 @@ export async function main(): Promise<number> {
         </React.Profiler>
       );
     }
+    // As `SessionChat` does: the list mounts once the scroll container exists
+    // (the ref-callback state write is flushed inside the same `flushSync`),
+    // so a virtualizing list never paints every turn flat first. A flat list
+    // (Stage 2) mounts the same way — one render later, all turns.
     return (
       <div ref={setScrollEl} data-bench-scroll style={{ height: VIEWPORT_HEIGHT, overflowY: 'auto' }}>
-        <div className="flex flex-col">{list}</div>
+        <div className="flex flex-col">{scrollEl || forceFlat ? list : null}</div>
       </div>
     );
   }
@@ -749,6 +755,7 @@ export async function main(): Promise<number> {
             messages: session.messages,
             planAnchorId: frame.planAnchorId,
             working: false,
+            forceFlat: true,
           }}
           handle={{ set: noop }}
         />,
