@@ -266,10 +266,18 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
   const card = view.slice(view.indexOf('function AppCard('), view.indexOf('function AppDetailModal('));
 
-  // Four tall tiles across at full width, stepping down to one on a phone —
-  // and the skeleton uses the SAME grid so nothing reflows when data lands.
-  const GRID = 'grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
-  expect(view.match(new RegExp(GRID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))).toHaveLength(2);
+  // The grid's column count is the reader's choice now, so the gap belongs to
+  // the page and the columns come from `APP_GRID_DENSITY`. The skeleton takes
+  // the SAME class string so nothing reflows when data lands.
+  const GRID = "cn('grid gap-x-6 gap-y-8', columns)";
+  expect(view.split(GRID)).toHaveLength(3);
+  expect(view).not.toContain('xl:grid-cols-4"');
+
+  // The gallery column is sized for the default density: two 16:9 tiles inside
+  // a 1280px cap are ~600px wide, which is where a scaled-down desktop layout
+  // is still readable. `max-w-5xl` is what produced 230px tiles.
+  expect(view).toContain('max-w-7xl flex-col px-4 py-6 pb-20');
+  expect(view).not.toContain('max-w-5xl flex-col');
 
   // The thumbnail is the only bordered surface; the caption is page text under
   // it, not the inside of a panel. The old card was one `bg-popover` panel with

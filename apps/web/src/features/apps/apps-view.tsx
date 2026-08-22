@@ -59,16 +59,20 @@ import {
   ClockCounterClockwiseIcon,
   DotsThreeIcon,
   GlobeIcon,
+  GridNineIcon,
+  type Icon as PhosphorIcon,
   LockKeyIcon,
   SidebarSimpleIcon as PanelLeft,
   PauseIcon,
   PlayIcon,
+  SquareIcon,
+  SquaresFourIcon,
   TrashIcon,
   XIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 
 type DeploymentTone = 'success' | 'destructive' | 'warning' | 'muted';
 
@@ -281,10 +285,11 @@ export function AppPreviewOverlay({
  * the tile it lands in. These three constants are ONE decision — see the ratio
  * note below — so they live together.
  *
- * A card tile is 230-300px wide, and an iframe that wide is a 230-300px
- * viewport — so the App answers with its mobile layout. Every thumbnail on the
- * page was a hamburger over a single stacked column: the one view of the App
- * nobody deploys an App for, and nothing like what opening it actually shows.
+ * A card tile is narrower than a laptop, and an iframe that wide is a viewport
+ * that wide — so a small tile makes the App answer with its mobile layout.
+ * Every thumbnail on the page was a hamburger over a single stacked column: the
+ * one view of the App nobody deploys an App for, and nothing like what opening
+ * it actually shows.
  *
  * Render at a desktop width instead and scale the result down. The App lays
  * out at 1280px, the tile shows that layout in miniature, and the thumbnail
@@ -293,26 +298,158 @@ export function AppPreviewOverlay({
  * **The ratio is load-bearing.** The frame is scaled to the tile's WIDTH, so
  * any mismatch between the viewport's aspect and the tile's shows up as dead
  * space at the bottom of every tile (viewport shorter) or a crop (taller).
- * 1280x1600 is 4:5 exactly, which is `PREVIEW_TILE_ASPECT`, so the scaled frame
+ * 1280x720 is 16:9 exactly, which is `PREVIEW_TILE_ASPECT`, so the scaled frame
  * fills the tile edge to edge. Change one, change the other — the parity is
  * asserted in `app-preview.test.tsx`.
  *
- * The tile went from 16:9 landscape to 4:5 portrait with the gallery grid, and
- * the viewport followed it from 720 to 1600. That is a better capture as well
- * as a matching one: 1600 logical pixels of a desktop layout is a page's whole
- * first screen and then some, where 720 was the hero and nothing else.
+ * 16:9 and not 4:5. A 4:5 tile at four columns is a 230px-wide portrait strip
+ * of a 1600px-tall desktop page: the App's whole layout at 18% scale, where
+ * nothing in it is legible and every card reads as the same grey rectangle. An
+ * App is a web page, a web page is landscape, and 16:9 is the shape every other
+ * thumbnail in this product already uses — `presentations/engine/deck.tsx` and
+ * `FullScreenPresentationViewer` both render into one. Paired with a default of
+ * two columns (`APP_GRID_DENSITY`), the tile is ~600px wide and the miniature
+ * is readable as the App it is.
  *
- * This is the house pattern, not a new one: `presentations/engine/deck.tsx`
- * renders its slide thumbnails into a fixed box scaled from `origin-top-left`,
- * and `FullScreenPresentationViewer` does it at 1920x1080. Note what does NOT
- * solve this — `showAspectRatioToCSS` in `show-content-renderer.tsx` reshapes
- * the BOX and leaves the guest laying out at the host's width, which is the
- * thing that produced the mobile layout here.
+ * Note what does NOT solve the mobile-layout problem — `showAspectRatioToCSS`
+ * in `show-content-renderer.tsx` reshapes the BOX and leaves the guest laying
+ * out at the host's width, which is the thing that produced it here.
  */
 export const PREVIEW_VIEWPORT_WIDTH = 1280;
-export const PREVIEW_VIEWPORT_HEIGHT = 1600;
+export const PREVIEW_VIEWPORT_HEIGHT = 720;
 /** The tile's shape, written once so the class and the viewport cannot drift. */
-export const PREVIEW_TILE_ASPECT = 'aspect-[4/5]';
+export const PREVIEW_TILE_ASPECT = 'aspect-[16/9]';
+
+/**
+ * How many tiles the gallery puts in a row, and therefore how big each App is.
+ *
+ * There is a default and there is a choice, in that order. The default is two
+ * across: a tile wide enough that the scaled-down desktop layout inside it is
+ * readable as a page rather than a swatch, which is the whole reason the card
+ * renders the App at all. Someone with twenty Apps wants to see twenty Apps,
+ * so the control in the header trades size for count — but nobody has to touch
+ * it to get a sane page.
+ *
+ * The column classes are written out in full, one literal per density. Tailwind
+ * scans source text, so a class assembled at runtime (`grid-cols-${n}`) is not
+ * in the compiled stylesheet and silently does nothing.
+ *
+ * Every density starts at one column on a phone and steps up: a 300px tile is
+ * the mobile-layout problem again, and the point of the whole mechanism is to
+ * never show one.
+ */
+export type AppGridDensity = 'large' | 'medium' | 'small';
+
+export const APP_GRID_DEFAULT_DENSITY: AppGridDensity = 'large';
+
+export const APP_GRID_DENSITY: Record<
+  AppGridDensity,
+  { columns: number; label: string; grid: string; icon: PhosphorIcon }
+> = {
+  large: {
+    columns: 2,
+    label: 'Large — 2 per row',
+    grid: 'grid-cols-1 sm:grid-cols-2',
+    icon: SquareIcon,
+  },
+  medium: {
+    columns: 3,
+    label: 'Medium — 3 per row',
+    grid: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+    icon: SquaresFourIcon,
+  },
+  small: {
+    columns: 4,
+    label: 'Small — 4 per row',
+    grid: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
+    icon: GridNineIcon,
+  },
+};
+
+/** Left to right in the control: biggest tile first, densest last. */
+export const APP_GRID_DENSITY_ORDER = ['large', 'medium', 'small'] as const;
+
+export const APP_GRID_DENSITY_STORAGE_KEY = 'kortix.apps.grid-density';
+
+/**
+ * The stored preference, or `null` for anything that is not one of ours.
+ *
+ * `localStorage` is a string bucket shared with every other tab and every past
+ * version of this page, so the value read back is untrusted input: a density
+ * this build removed, a key someone else wrote, `undefined` stringified by a
+ * bug. Any of those would land in `APP_GRID_DENSITY[density]` as `undefined`
+ * and render a grid with no column class at all.
+ */
+export function parseAppGridDensity(value: string | null): AppGridDensity | null {
+  if (!value) return null;
+  return Object.hasOwn(APP_GRID_DENSITY, value) ? (value as AppGridDensity) : null;
+}
+
+/**
+ * Where the choice lives when `localStorage` will not take it.
+ *
+ * A browser set to block site data throws on `setItem`, and the reader who
+ * clicked a size button is owed the size they clicked whether or not it can
+ * outlive the tab. Module scope, so it survives a remount the way the real
+ * store would.
+ */
+let blockedStorageDensity: AppGridDensity | null = null;
+
+/** Same-tab subscribers. The `storage` event covers every OTHER tab, not this one. */
+const densityListeners = new Set<() => void>();
+
+function subscribeToDensity(onStoreChange: () => void) {
+  densityListeners.add(onStoreChange);
+  window.addEventListener('storage', onStoreChange);
+  return () => {
+    densityListeners.delete(onStoreChange);
+    window.removeEventListener('storage', onStoreChange);
+  };
+}
+
+function readDensity(): AppGridDensity {
+  try {
+    const stored = parseAppGridDensity(window.localStorage.getItem(APP_GRID_DENSITY_STORAGE_KEY));
+    if (stored) return stored;
+  } catch {
+    /* site data blocked — this page's own choice is all there is */
+  }
+  return blockedStorageDensity ?? APP_GRID_DEFAULT_DENSITY;
+}
+
+/** No `localStorage` on the server, so the server renders the default. */
+function serverDensity(): AppGridDensity {
+  return APP_GRID_DEFAULT_DENSITY;
+}
+
+/**
+ * The density the page renders at, remembered across visits.
+ *
+ * `localStorage` is an external store, so it is read with the hook React
+ * provides for external stores rather than copied into component state by an
+ * effect. That buys three things at once: the server gets its own snapshot, so
+ * a stored `small` cannot hydrate against a prerendered `large`; there is no
+ * setState-in-an-effect cascade; and the `storage` event makes a change in one
+ * tab land in every other one, which an effect that reads once never would.
+ *
+ * The snapshot is a string literal from a closed set, so React compares it by
+ * value and an unchanged store cannot loop.
+ */
+function useAppGridDensity() {
+  const density = useSyncExternalStore(subscribeToDensity, readDensity, serverDensity);
+
+  const choose = (next: AppGridDensity) => {
+    try {
+      window.localStorage.setItem(APP_GRID_DENSITY_STORAGE_KEY, next);
+      blockedStorageDensity = null;
+    } catch {
+      blockedStorageDensity = next;
+    }
+    for (const listener of densityListeners) listener();
+  };
+
+  return [density, choose] as const;
+}
 
 /**
  * How far to shrink the desktop frame so it fits the tile. `null` for a width
@@ -525,7 +662,61 @@ function AppsSidebarToggle() {
   );
 }
 
-function AppsHeader() {
+/**
+ * Tile size, as three states of one control rather than a menu.
+ *
+ * A segmented `ButtonGroup` of icon buttons is the pattern this product already
+ * uses for a small closed set of view choices — `drive-header.tsx` picks list
+ * vs grid the same way. Three options is few enough that every one of them is
+ * visible without opening anything, and the glyphs read as the thing they do:
+ * one square, four, then nine, each denser than the last.
+ */
+function AppGridDensityControl({
+  value,
+  onChange,
+}: {
+  value: AppGridDensity;
+  onChange: (next: AppGridDensity) => void;
+}) {
+  return (
+    <ButtonGroup aria-label="Tile size">
+      {APP_GRID_DENSITY_ORDER.map((key) => {
+        const option = APP_GRID_DENSITY[key];
+        const Glyph = option.icon;
+        const active = value === key;
+        return (
+          <Hint key={key} label={option.label}>
+            <Button
+              type="button"
+              variant={active ? 'secondary' : 'outline'}
+              size="icon-sm"
+              aria-pressed={active}
+              aria-label={option.label}
+              onClick={() => onChange(key)}
+            >
+              <Glyph className="size-4" />
+            </Button>
+          </Hint>
+        );
+      })}
+    </ButtonGroup>
+  );
+}
+
+function AppsHeader({
+  density,
+  onDensityChange,
+  showDensity,
+}: {
+  density: AppGridDensity;
+  onDensityChange: (next: AppGridDensity) => void;
+  /**
+   * The control only exists to resize a grid, so it is absent whenever there is
+   * no grid — the feature gate, the error state, and the empty state each fill
+   * the page on their own and a size picker over any of them is a dead switch.
+   */
+  showDensity: boolean;
+}) {
   const sidebar = useOptionalSidebar();
 
   return (
@@ -537,6 +728,11 @@ function AppsHeader() {
       <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3">
         <h1 className="text-foreground shrink-0 text-sm font-medium">Apps</h1>
       </div>
+      {showDensity ? (
+        <div className="flex flex-none items-center pr-1">
+          <AppGridDensityControl value={density} onChange={onDensityChange} />
+        </div>
+      ) : null}
       <Link
         href="/docs/feature-flags/apps"
         target="_blank"
@@ -570,6 +766,8 @@ export function AppsView({ projectId }: { projectId: string }) {
   // fresh row instead of a stale copy captured at click time.
   const [openAppId, setOpenAppId] = useState<string | null>(null);
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
+  const [density, setDensity] = useAppGridDensity();
+  const columns = APP_GRID_DENSITY[density].grid;
 
   useEffect(() => {
     const target = searchParams.get('open_app');
@@ -592,14 +790,20 @@ export function AppsView({ projectId }: { projectId: string }) {
     // assumes mobile browser chrome is visible, so the bar can never be pushed
     // under a toolbar that reappears.
     <div className="flex h-svh flex-col overflow-hidden">
-      <AppsHeader />
+      <AppsHeader
+        density={density}
+        onDensityChange={setDensity}
+        showDensity={appsGate.enabled === true && Boolean(apps.data?.length)}
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* `max-w-7xl px-4` — the gallery's column. It was `max-w-5xl` while
-            the grid was 2-up; at four columns that 1024px cap gives 230px
-            tiles, small enough that a scaled-down desktop layout stops being
-            readable as one. `px-4` matches `CapabilityPageShell`'s gutter so
-            the grid never presses flush against the browser edge.
+        {/* `max-w-7xl px-4` — the gallery's column, sized for the DEFAULT
+            density. Two 16:9 tiles inside a 1280px cap are ~600px wide each,
+            which is where a 1280px desktop layout scaled into them is still
+            readable as a page. The cap held at `max-w-5xl` (1024px) while the
+            grid was four across, and 230px tiles are what that produced.
+            `px-4` matches `CapabilityPageShell`'s gutter so the grid never
+            presses flush against the browser edge.
 
             `flex min-h-full flex-col` so the one child that asks for height
             gets it: `EmptyState`/`ErrorState` are built on `Empty`, which is
@@ -607,16 +811,16 @@ export function AppsView({ projectId }: { projectId: string }) {
             collapsed to their own content and clung to the top of a tall,
             otherwise blank page. The grid, the skeleton and the feature gate
             take their natural height and stay at the top, unaffected. */}
-        <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-4 py-6 pb-20">
+        <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-6 pb-20">
           {appsGate.isLoading ? (
-            <AppGridSkeleton />
+            <AppGridSkeleton columns={columns} />
           ) : !appsGate.enabled ? (
             <FeatureGateScreen
               featureName="Apps"
               description="Apps deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Each App wakes on its next request and suspends after its idle timeout."
             />
           ) : apps.isLoading ? (
-            <AppGridSkeleton />
+            <AppGridSkeleton columns={columns} />
           ) : apps.isError ? (
             <ErrorState
               size="sm"
@@ -629,12 +833,13 @@ export function AppsView({ projectId }: { projectId: string }) {
               }
             />
           ) : apps.data?.length ? (
-            /* A gallery grid: four tall tiles across at full width, stepping
-               down to one on a phone. `gap-y` is larger than `gap-x` because
-               each tile's caption hangs BELOW it with no border to close it
-               off — an equal gap would let the next row's thumbnail crowd the
-               previous row's text. */
-            <ul className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            /* A gallery grid: two wide tiles across at full width by default,
+               stepping down to one on a phone and up to four if the reader
+               asks for it in the header. `gap-y` is larger than `gap-x`
+               because each tile's caption hangs BELOW it with no border to
+               close it off — an equal gap would let the next row's thumbnail
+               crowd the previous row's text. */
+            <ul className={cn('grid gap-x-6 gap-y-8', columns)}>
               {apps.data.map((app) => (
                 <AppCard
                   key={app.app_id}
@@ -668,13 +873,13 @@ export function AppsView({ projectId }: { projectId: string }) {
 }
 
 /**
- * Shape-matched placeholder: same grid, same 4:5 tile, same two-line caption
- * hanging below it as `AppCard`. Four tiles, because four is the widest row —
- * fewer would reflow the grid the moment real data lands.
+ * Shape-matched placeholder: same grid, same 16:9 tile, same two-line caption
+ * hanging below it as `AppCard`. Four tiles, because four is the widest row any
+ * density reaches — fewer would reflow the grid the moment real data lands.
  */
-function AppGridSkeleton() {
+function AppGridSkeleton({ columns }: { columns: string }) {
   return (
-    <ul className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <ul className={cn('grid gap-x-6 gap-y-8', columns)}>
       {Array.from({ length: 4 }).map((_, index) => (
         <li key={index}>
           <Skeleton className={cn(PREVIEW_TILE_ASPECT, 'w-full rounded-lg')} />
