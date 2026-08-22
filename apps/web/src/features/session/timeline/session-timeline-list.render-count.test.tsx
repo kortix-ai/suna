@@ -1,7 +1,7 @@
 import './__fixtures__/clock';
-import { uninstallDom } from './__fixtures__/dom';
+import { installDom, uninstallDom } from './__fixtures__/dom';
 
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { createRoot, type Root } from 'react-dom/client';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -195,6 +195,7 @@ afterEach(async () => {
   await harness.unmount();
 });
 // Every later test file in this process gets the globals it expects.
+beforeAll(() => installDom());
 afterAll(() => uninstallDom());
 
 const byPrefix = (keys: string[], prefix: string) => keys.filter((k) => k.startsWith(prefix));

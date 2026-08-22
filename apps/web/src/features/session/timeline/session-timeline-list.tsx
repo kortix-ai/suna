@@ -7,8 +7,19 @@
  * host facts it still derives (`turnsById`, `turnRenderKeys`, `pendingTurnIds`,
  * …). This file renders them: `groupRowsByTurn` cuts the flat rows per turn,
  * and every turn is a `TurnFrame` — the SAME `TurnViewport` wrapper as before
- * (`[data-turn-id]` root, `mt-3` / `mt-12` gap as its class) around memo'd
- * row components.
+ * (`[data-turn-id]` root) around memo'd row components.
+ *
+ * TWO RENDER PATHS, ONE TURN MARKUP.
+ * - FLAT (no `scrollElement`: a static render, SSR, a host without one, or
+ *   `virtualize={false}`): every turn, in a fragment, `mt-3` / `mt-12` gap as
+ *   the turn's class — byte-for-byte the Stage 2 output the goldens pin.
+ * - VIRTUAL (`scrollElement` set): `VirtualTurnList` — `useVirtualizer` with
+ *   ONE ITEM PER TURN; only the turns in and near the viewport (plus the pinned
+ *   tail) are in the DOM, absolutely positioned inside one box sized to the
+ *   measured total. The turn's own markup is identical; the gap moves from the
+ *   turn's top margin to the previous item's bottom padding so an item's
+ *   `start` is its turn element's top. Rules and the host API live in
+ *   `timeline-virtual.ts`.
  *
  * THE ONE RULE THAT KEEPS THE SCROLL PHYSICS: `[data-turn-pending]` and
  * `[data-turn-queue-state]` are emitted on the bubble wrapper INSIDE the
@@ -59,6 +70,13 @@ import {
 import type { SessionPrompt, TimelineRow, TimelineUserMessageRow } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { CheckIcon, StackIcon as Layers } from '@phosphor-icons/react';
+import {
+  type VirtualItem,
+  type Virtualizer,
+  elementScroll,
+  measureElement as measureElementDefault,
+  useVirtualizer,
+} from '@tanstack/react-virtual';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import {
@@ -67,10 +85,13 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
+
+import { TURN_TOP_OFFSET } from '@/hooks/use-auto-scroll';
 
 import { CodeBlockEndpoints, SandboxUrlDetector } from '../sandbox-url-detector';
 import { SessionBusyIndicator } from '../session-busy-indicator';
@@ -98,11 +119,27 @@ import {
 } from './project-rows';
 import { timelineRowSlot } from './timeline-row-switch';
 import {
+  RENDER_OVERSCAN_COLD,
+  RENDER_OVERSCAN_WARM,
+  TURN_FALLBACK_SIZE,
+  type TimelineVirtualApi,
+  type TimelineVirtualSeam,
+  VIRTUAL_OVERSCAN,
+  isFollowing,
+  pinnedTurnIndexes,
+  recallTimelineMeasurements,
+  rememberTimelineMeasurements,
+  shouldAdjustForResize,
+  timelineRangeIndexes,
+  turnGapBelowClass,
+} from './timeline-virtual';
+import {
   AnsweredQuestionCard,
   CompactionDivider,
   SessionReportCard,
   SystemMessageIndicator,
 } from './turn-cards';
+import { turnGapClass } from './turn-gap';
 
 /** After this long on one status the working label shows elapsed time. */
 const STATUS_STALL_AFTER_MS = 20_000;
@@ -147,40 +184,45 @@ export interface SessionTimelineListProps {
   rewindDisabled: boolean;
   /** Test seam: called with a row key on every render of a row component. */
   onRowRender?: (key: string) => void;
+  /**
+   * The transcript's scroll container, as STATE (the virtualizer subscribes to
+   * it). `null` / absent renders the FLAT list: a static render, SSR, a host
+   * with no scroll container. `SessionChat` mounts the list only once it has
+   * the element, so the first paint is already the virtual window.
+   */
+  scrollElement?: HTMLDivElement | null;
+  /** `false` forces the flat list even with a scroll element (kill switch, tests). */
+  virtualize?: boolean;
+  /** Open at the end (default) or at the top (a sub-session viewed from its start). */
+  initialAtEnd?: boolean;
+  /** Written with the virtual list's API while it is mounted, `null` otherwise. */
+  apiRef?: React.RefObject<TimelineVirtualApi | null>;
+  /** Tests and the bench only — see `TimelineVirtualSeam`. */
+  virtualizerTestSeam?: TimelineVirtualSeam;
 }
 
 // ============================================================================
 // Gap
 // ============================================================================
 
-/**
- * The vertical space before a turn — the wrapper's class, never an element.
- * Queued bubbles STACK: a pending turn right after another pending turn sits
- * close to it, like a list of what is waiting — not a turn's width apart as
- * if each had been answered in between.
- */
-export function turnGapClass(input: {
-  index: number;
-  userMessageID: string;
-  previousUserMessageID: string | undefined;
-  lastTurnWorking: boolean;
-  pendingTurnIds: ReadonlySet<string>;
-}): string {
-  if (input.index === 0) return '';
-  return input.lastTurnWorking &&
-    input.pendingTurnIds.has(input.userMessageID) &&
-    input.previousUserMessageID !== undefined &&
-    input.pendingTurnIds.has(input.previousUserMessageID)
-    ? 'mt-3'
-    : 'mt-12';
-}
+// The vertical space before a turn lives in `./turn-gap` (pure); re-exported
+// here because it is the list's rule and its tests import it from this module.
+export { turnGapClass } from './turn-gap';
 
 // ============================================================================
 // SessionTimelineList
 // ============================================================================
 
 export function SessionTimelineList(props: SessionTimelineListProps) {
-  const { rows, turnsById, turnRenderKeys, pendingTurnIds, sessionWorking } = props;
+  const {
+    rows,
+    turnsById,
+    turnRenderKeys,
+    pendingTurnIds,
+    sessionWorking,
+    scrollElement = null,
+    virtualize = true,
+  } = props;
   const groups = groupRowsByTurn(rows);
   const pricingLookup = useModelPricingLookup(props.providers);
   // `?? 'normal'` — legacy persisted preferences predate this key (same rule
@@ -188,6 +230,21 @@ export function SessionTimelineList(props: SessionTimelineListProps) {
   const conversationDensity = useUserPreferencesStore(
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
+
+  // The virtual path needs a scroll container and a DOM (`getVirtualItems()`
+  // is empty under `renderToStaticMarkup`: no rect, no range). Without either,
+  // the flat list — exactly Stage 2's output.
+  if (virtualize && scrollElement && typeof window !== 'undefined') {
+    return (
+      <VirtualTurnList
+        list={props}
+        groups={groups}
+        scrollElement={scrollElement}
+        pricingLookup={pricingLookup}
+        density={conversationDensity}
+      />
+    );
+  }
 
   return (
     <>
@@ -221,6 +278,362 @@ export function SessionTimelineList(props: SessionTimelineListProps) {
 }
 
 // ============================================================================
+// VirtualTurnList — the transcript as a virtual window of turns
+// ============================================================================
+
+type TurnVirtualizer = Virtualizer<HTMLDivElement, HTMLDivElement>;
+
+function VirtualTurnList({
+  list,
+  groups,
+  scrollElement,
+  pricingLookup,
+  density,
+}: {
+  list: SessionTimelineListProps;
+  groups: TurnRowGroup[];
+  scrollElement: HTMLDivElement;
+  pricingLookup: ReturnType<typeof useModelPricingLookup>;
+  density: ConversationDensity;
+}) {
+  const {
+    turnsById,
+    turnRenderKeys,
+    pendingTurnIds,
+    interruptedTurnIds,
+    sessionWorking,
+    workingTurnId,
+    sessionId,
+    initialAtEnd = true,
+    apiRef,
+    virtualizerTestSeam,
+  } = list;
+
+  const boxRef = useRef<HTMLDivElement>(null);
+  // Where the box sits in the scroll container's content space: the padding,
+  // the older-history sentinel and the optimistic turn all sit above it and
+  // come and go. Measured after every commit; a change re-renders once.
+  const [scrollMargin, setScrollMargin] = useState(0);
+  const [renderOverscan, setRenderOverscan] = useState(RENDER_OVERSCAN_COLD);
+
+  const indexById = useMemo(
+    () => new Map(groups.map((group, index) => [group.userMessageID, index] as const)),
+    [groups],
+  );
+  // The item key is the turn's React key (`turnRenderKeys`: the optimistic
+  // origin a bubble was first painted under), so measured sizes survive the
+  // swap to a re-minted echo id. `removed:` guards a ResizeObserver entry for
+  // a node whose turn already left the list (upstream L430-437).
+  const getItemKey = useCallback(
+    (index: number) => {
+      const group = groups[index];
+      if (!group) return `removed:${index}`;
+      return turnRenderKeys.get(group.userMessageID) ?? group.userMessageID;
+    },
+    [groups, turnRenderKeys],
+  );
+  const pinned = useMemo(
+    () =>
+      pinnedTurnIndexes({
+        count: groups.length,
+        indexById,
+        workingTurnId,
+        pendingTurnIds,
+        interruptedTurnIds,
+      }),
+    [groups.length, indexById, workingTurnId, pendingTurnIds, interruptedTurnIds],
+  );
+  // Indexes visible at the moment one turn grew by more than a viewport, kept
+  // mounted for two frames so the correction lands on a rendered list
+  // (upstream L468-490).
+  const resizePinnedRef = useRef<number[]>([]);
+  const resizePinFrameRef = useRef<number | undefined>(undefined);
+  const scrollElementRef = useRef(scrollElement);
+  scrollElementRef.current = scrollElement;
+  const [initialMeasurements] = useState(() => recallTimelineMeasurements(sessionId));
+
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: groups.length,
+    getScrollElement: () => scrollElement,
+    estimateSize: () => TURN_FALLBACK_SIZE,
+    getItemKey,
+    overscan: VIRTUAL_OVERSCAN,
+    scrollMargin,
+    // `scrollToIndex(align: 'start')` lands the turn TURN_TOP_OFFSET under the
+    // viewport top — the legacy `offset − 24` of the jump and the minimap.
+    scrollPaddingStart: TURN_TOP_OFFSET,
+    initialOffset: () => (initialAtEnd ? Number.MAX_SAFE_INTEGER : 0),
+    initialMeasurementsCache: initialMeasurements,
+    // Prepend / remove anchoring ONLY — see timeline-virtual.ts, "WHO OWNS THE
+    // END": `scrollEndThreshold: -1` makes virtual-core's "at end" checks
+    // false, so it never follows; `use-auto-scroll` does.
+    anchorTo: 'end',
+    followOnAppend: false,
+    scrollEndThreshold: -1,
+    rangeExtractor: (range) =>
+      timelineRangeIndexes(range, renderOverscan, [...pinned, ...resizePinnedRef.current]),
+    // Size the box to the new total BEFORE the scroll is written, or the
+    // browser clamps an anchor correction to the old height (upstream L425-428).
+    scrollToFn: (offset, options, instance) => {
+      const box = boxRef.current;
+      if (box) box.style.height = `${instance.getTotalSize()}px`;
+      elementScroll(offset, options, instance);
+    },
+    measureElement: (element, entry, instance) => {
+      const size = measureElementDefault(element, entry, instance);
+      pinVisibleOnBigResize(
+        instance,
+        element,
+        size,
+        scrollElementRef,
+        resizePinnedRef,
+        resizePinFrameRef,
+      );
+      return size;
+    },
+    ...virtualizerTestSeam,
+  });
+  // Read by virtual-core inside `resizeItem`, which the item refs call during
+  // commit — before this component's own effects — so it is set in render.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item) =>
+    shouldAdjustForResize({
+      following: isFollowing(scrollElementRef.current),
+      itemIndex: item.index,
+      rangeStartIndex: virtualizer.range?.startIndex,
+    });
+
+  // Box offset → scrollMargin (content space, scroll-invariant). Runs after
+  // EVERY commit on purpose — what sits above the box changes without any
+  // prop of this list changing — and writes state only on a change, so it
+  // cannot loop.
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const margin = contentOffsetTop(box, scrollElement);
+    if (margin !== scrollMargin) setScrollMargin(margin);
+  });
+
+  // Cold → warm overscan, two frames after the first paint (upstream L510-519).
+  useEffect(() => {
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setRenderOverscan(RENDER_OVERSCAN_WARM));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+      if (resizePinFrameRef.current !== undefined) {
+        cancelAnimationFrame(resizePinFrameRef.current);
+      }
+    };
+  }, []);
+
+  // A session switch under one mounted list: drop the previous session's sizes;
+  // on the way out, remember this session's for its next mount.
+  const measuredSessionRef = useRef(sessionId);
+  useEffect(() => {
+    if (measuredSessionRef.current === sessionId) return;
+    measuredSessionRef.current = sessionId;
+    virtualizer.measure();
+  }, [sessionId, virtualizer]);
+  useEffect(() => {
+    return () => rememberTimelineMeasurements(sessionId, virtualizer.takeSnapshot());
+  }, [sessionId, virtualizer]);
+
+  // The host API. Closures read the latest list through refs.
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
+  const indexByIdRef = useRef(indexById);
+  indexByIdRef.current = indexById;
+  const keyOfRef = useRef(getItemKey);
+  keyOfRef.current = getItemKey;
+  useLayoutEffect(() => {
+    if (!apiRef) return;
+    const turnIndex = (turnId: string) => indexByIdRef.current.get(turnId);
+    apiRef.current = {
+      turnIndex,
+      turnStart: (turnId) => {
+        const index = turnIndex(turnId);
+        if (index === undefined) return undefined;
+        // `getTotalSize()` refreshes `measurementsCache` (the typed API keeps
+        // `getMeasurements` private).
+        virtualizer.getTotalSize();
+        return virtualizer.measurementsCache[index]?.start;
+      },
+      turnAtOffset: (offset) => {
+        const item = virtualizer.getVirtualItemForOffset(offset);
+        if (!item) return undefined;
+        return groupsRef.current[item.index]?.userMessageID;
+      },
+      isMounted: (turnId) => {
+        const index = turnIndex(turnId);
+        if (index === undefined) return false;
+        const node = virtualizer.elementsCache.get(keyOfRef.current(index));
+        return !!node && node.isConnected;
+      },
+      scrollToTurn: (turnId, options) => {
+        const index = turnIndex(turnId);
+        if (index === undefined) return false;
+        virtualizer.scrollToIndex(index, {
+          align: options?.align ?? 'start',
+          behavior: options?.behavior ?? 'auto',
+        });
+        return true;
+      },
+      measure: () => virtualizer.measure(),
+    };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef, virtualizer]);
+
+  const items = virtualizer.getVirtualItems();
+
+  return (
+    <div
+      ref={boxRef}
+      data-timeline-virtual
+      style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}
+    >
+      {items.map((item) => {
+        const group = groups[item.index];
+        if (!group) return null;
+        const turn = turnsById.get(group.userMessageID);
+        if (!turn) return null;
+        return (
+          <VirtualTurnItem
+            key={item.key}
+            item={item}
+            scrollMargin={scrollMargin}
+            measureElement={virtualizer.measureElement}
+            gapBelowClass={turnGapBelowClass({
+              index: item.index,
+              count: groups.length,
+              userMessageID: group.userMessageID,
+              nextUserMessageID: groups[item.index + 1]?.userMessageID,
+              lastTurnWorking: sessionWorking,
+              pendingTurnIds,
+            })}
+          >
+            <TurnFrame
+              group={group}
+              turn={turn}
+              className=""
+              contain={false}
+              pricingLookup={pricingLookup}
+              density={density}
+              list={list}
+            />
+          </VirtualTurnItem>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * `node`'s top in `scrollElement`'s content space: the rect difference plus
+ * `scrollTop` (scroll-invariant). A node with no layout box (happy-dom, a
+ * hidden tab) reports 0 — there is nothing measurable above it, and the value
+ * only matters once the box has a height.
+ */
+function contentOffsetTop(node: HTMLElement, scrollElement: HTMLElement): number {
+  const rect = node.getBoundingClientRect();
+  if (rect.height === 0 && rect.width === 0) return 0;
+  return Math.round(rect.top - scrollElement.getBoundingClientRect().top + scrollElement.scrollTop);
+}
+
+/**
+ * One turn grew (or shrank) by more than a viewport: keep the indexes visible
+ * right now mounted for two frames, so the scroll correction lands on a list
+ * that still renders them instead of on a freshly computed window.
+ */
+function pinVisibleOnBigResize(
+  instance: TurnVirtualizer,
+  element: HTMLDivElement,
+  size: number,
+  scrollElementRef: React.RefObject<HTMLDivElement>,
+  resizePinnedRef: React.RefObject<number[]>,
+  resizePinFrameRef: React.RefObject<number | undefined>,
+): void {
+  const root = scrollElementRef.current;
+  if (!root) return;
+  const index = instance.indexFromElement(element);
+  if (index < 0) return;
+  const previous = instance.itemSizeCache.get(instance.options.getItemKey(index));
+  if (previous === undefined || Math.abs(size - previous) <= root.clientHeight) return;
+  const view = root.getBoundingClientRect();
+  resizePinnedRef.current = Array.from(root.querySelectorAll<HTMLElement>('[data-index]'))
+    .filter((node) => {
+      const rect = node.getBoundingClientRect();
+      return rect.bottom > view.top && rect.top < view.bottom;
+    })
+    .map((node) => Number(node.dataset.index));
+  if (resizePinFrameRef.current !== undefined) cancelAnimationFrame(resizePinFrameRef.current);
+  resizePinFrameRef.current = requestAnimationFrame(() => {
+    resizePinFrameRef.current = requestAnimationFrame(() => {
+      resizePinFrameRef.current = undefined;
+      resizePinnedRef.current = [];
+    });
+  });
+}
+
+/**
+ * One virtual item: an absolutely positioned, height-clipped slot at the
+ * item's `start`, around the measured box (`data-index`) that holds the turn
+ * and the gap below it. `overflow-y: clip` hides the one frame between a turn
+ * growing and the virtualizer re-rendering its slot; `overflow-x` stays
+ * visible so hover chrome that extends past the column is not cut.
+ */
+function VirtualTurnItem({
+  item,
+  scrollMargin,
+  measureElement,
+  gapBelowClass,
+  children,
+}: {
+  item: VirtualItem;
+  scrollMargin: number;
+  measureElement: TurnVirtualizer['measureElement'];
+  gapBelowClass: string;
+  children: React.ReactNode;
+}) {
+  const measuredRef = useRef<HTMLDivElement | null>(null);
+  const attach = useCallback(
+    (node: HTMLDivElement | null) => {
+      measuredRef.current = node;
+      measureElement(node);
+    },
+    [measureElement],
+  );
+  // A turn that moved to another index (a prepend above it) is re-measured
+  // under its new `data-index` (upstream L1250-1258).
+  useLayoutEffect(() => {
+    if (measuredRef.current) measureElement(measuredRef.current);
+  }, [item.index, measureElement]);
+
+  return (
+    <div
+      data-timeline-key={String(item.key)}
+      style={{
+        position: 'absolute',
+        top: item.start - scrollMargin,
+        left: 0,
+        width: '100%',
+        height: item.size,
+        overflowX: 'visible',
+        overflowY: 'clip',
+        overflowClipMargin: '0.5px',
+      }}
+    >
+      <div ref={attach} data-index={item.index} className={gapBelowClass || undefined}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // TurnFrameContext — the per-turn hooks, read by the tail row only
 // ============================================================================
 
@@ -244,6 +657,7 @@ function TurnFrame({
   group,
   turn,
   className,
+  contain = true,
   pricingLookup,
   density,
   list,
@@ -251,6 +665,8 @@ function TurnFrame({
   group: TurnRowGroup;
   turn: Turn;
   className: string;
+  /** `false` inside the virtual list — see `TurnViewport`. */
+  contain?: boolean;
   pricingLookup: ReturnType<typeof useModelPricingLookup>;
   density: ConversationDensity;
   list: SessionTimelineListProps;
@@ -453,7 +869,7 @@ function TurnFrame({
 
   return (
     <TurnFrameContext.Provider value={frameContext}>
-      <TurnViewport turnId={userMessageID} className={className}>
+      <TurnViewport turnId={userMessageID} className={className} contain={contain}>
         {/* Compaction divider — shown before the first turn after compaction */}
         {view.hasCompaction && <CompactionDivider />}
 

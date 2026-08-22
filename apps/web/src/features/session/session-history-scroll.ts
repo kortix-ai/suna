@@ -1,5 +1,13 @@
 /**
- * History-prepend scroll restoration.
+ * History-prepend scroll restoration — the FLAT list's path.
+ *
+ * The VIRTUAL list (`timeline/session-timeline-list.tsx`, the default in
+ * `SessionChat`) does not use this: its virtualizer anchors a prepend inside
+ * the commit that adds the turns (`anchorTo: 'end'` — the item at the viewport
+ * top keeps its offset, resolved before paint), and a turn above the viewport
+ * that is measured later moves the viewport by its own delta
+ * (`shouldAdjustForResize`). `SessionChat.handleLoadOlder` calls the two
+ * functions below only while `timelineApiRef` is null.
  *
  * A prior version stored the anchor's VIEWPORT-relative top
  * (`getBoundingClientRect().top`) and restored it by forcing the viewport
