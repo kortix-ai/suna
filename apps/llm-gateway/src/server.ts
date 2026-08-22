@@ -1,4 +1,21 @@
-import { createGateway, gatewayErrorResponse } from '@kortix/llm-gateway';
+import {
+  DEFAULT_INFLIGHT_BUDGET_BYTES,
+  DEFAULT_MAX_REQUEST_BYTES,
+  InflightBudget,
+  createGateway,
+  gatewayErrorResponse,
+  gatewayOverloadedResponse,
+  readBoundedBody,
+  requestTooLargeResponse,
+} from '@kortix/llm-gateway';
+
+// Same contract as the in-process host: work beyond capacity is refused loudly,
+// never accepted into an OOM. One budget per process — it rations process
+// memory, so anything narrower rations nothing.
+const inflight = new InflightBudget({
+  maxBytes: Number(process.env.GATEWAY_INFLIGHT_BUDGET_BYTES) || DEFAULT_INFLIGHT_BUDGET_BYTES,
+  perRequestMaxBytes: DEFAULT_MAX_REQUEST_BYTES,
+});
 import { Hono } from 'hono';
 import { createApiClient } from './clients/api-client';
 import { config } from './config';
@@ -61,8 +78,9 @@ export function buildServer(): GatewayServer {
       retry: config.retry,
       breaker: config.breaker,
       captureBodies: config.captureBodies,
-      maxCapturedBodyBytes: config.maxCapturedBodyBytes,
-      maxRequestBytes: config.maxRequestBytes || undefined,
+      maxRequestBytes: config.maxRequestBytes > 0 ? config.maxRequestBytes : undefined,
+      streamProbeTimeoutMs:
+        config.streamProbeTimeoutMs > 0 ? config.streamProbeTimeoutMs : undefined,
     },
     { logger },
   );
@@ -162,34 +180,133 @@ export function buildServer(): GatewayServer {
   });
 
   const chatCompletions = async (c: {
-    req: { header: (k: string) => string | undefined; text: () => Promise<string> };
+    req: {
+      header: (k: string) => string | undefined;
+      text: () => Promise<string>;
+      // The standard Request, needed to size-limit the body BEFORE reading it
+      // (readBoundedBody). `signal` is read off the same object for the
+      // client-disconnect abort below.
+      raw: Request;
+    };
   }) => {
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     try {
-      const res = await gateway.chatCompletions({
-        authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
-      });
-      recordOutcome(res.status);
-      return res;
+      // Size-limited BEFORE the body is materialized — see readBoundedBody.
+      const body = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
+      if (!body.ok) {
+        recordOutcome(413);
+        return requestTooLargeResponse(requestId);
+      }
+      const lease = inflight.admit(body.body.length);
+      if (!lease.ok) {
+        const status = lease.reason === 'too_large' ? 413 : 503;
+        recordOutcome(status);
+        return status === 413
+          ? requestTooLargeResponse(requestId)
+          : gatewayOverloadedResponse(lease.retryAfterSeconds, requestId);
+      }
+      try {
+        const res = await gateway.chatCompletions({
+          authorization: c.req.header('authorization'),
+          rawBody: body.body,
+          // `c.req.raw` is Hono's underlying standard Request — its `.signal`
+          // fires on client disconnect, so a caller that goes away mid-request
+          // stops the upstream fetch/stream instead of running to completion.
+          signal: c.req.raw?.signal,
+        });
+        recordOutcome(res.status);
+        return res;
+      } finally {
+        lease.release();
+      }
     } catch (err) {
       console.error('[gateway] request failed', err);
       recordOutcome(503);
       return gatewayErrorResponse(503, {
-        message: 'Gateway unavailable', code: 'gateway_error', provider: '',
-        requestedModel: '', resolvedModel: '', requestId,
+        message: 'Gateway unavailable',
+        code: 'gateway_error',
+        provider: '',
+        requestedModel: '',
+        resolvedModel: '',
+        requestId,
         suggestion: 'Retry the request. If the error continues, switch to another model.',
       });
     }
   };
 
+  // The API reverse proxy exposes `/v1/llm-gateway` as the OpenAI base URL.
+  // It strips that prefix before forwarding the request, so OpenAI-compatible
+  // clients reach this service at `/chat/completions`.
+  app.post('/chat/completions', chatCompletions);
   app.post('/v1/chat/completions', chatCompletions);
   app.post('/v1/llm/chat/completions', chatCompletions);
   app.post('/v1/openai/chat/completions', chatCompletions);
 
-  const models = (c: { req: { header: (k: string) => string | undefined } }) =>
-    gateway.listModels(c.req.header('authorization'));
+  // Anthropic-Messages-compatible ingress — a client speaking the Anthropic
+  // Messages API shape (`{model, system, messages, tools, max_tokens,
+  // stream}`) hits the SAME auth/billing/routing/failover/trace pipeline as
+  // `/v1/chat/completions`; `gateway.messages` translates request/response/SSE
+  // at the edges only. Mirrors the chat-completions alias namespaces above.
+  const messages = async (c: {
+    req: {
+      header: (k: string) => string | undefined;
+      text: () => Promise<string>;
+      raw: Request;
+    };
+  }) => {
+    try {
+      const body = await readBoundedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES);
+      if (!body.ok) {
+        recordOutcome(413);
+        return requestTooLargeResponse();
+      }
+      const lease = inflight.admit(body.body.length);
+      if (!lease.ok) {
+        const status = lease.reason === 'too_large' ? 413 : 503;
+        recordOutcome(status);
+        return status === 413
+          ? requestTooLargeResponse()
+          : gatewayOverloadedResponse(lease.retryAfterSeconds);
+      }
+      let res: Response;
+      try {
+        res = await gateway.messages({
+          authorization: c.req.header('authorization'),
+          rawBody: body.body,
+        });
+      } finally {
+        lease.release();
+      }
+      recordOutcome(res.status);
+      return res;
+    } catch (err) {
+      console.error('[gateway] messages request failed', err);
+      recordOutcome(503);
+      return new Response(
+        JSON.stringify({
+          type: 'error',
+          error: { type: 'api_error', message: 'Gateway unavailable' },
+        }),
+        { status: 503, headers: { 'content-type': 'application/json' } },
+      );
+    }
+  };
 
+  app.post('/messages', messages);
+  app.post('/v1/messages', messages);
+  app.post('/v1/llm/messages', messages);
+  app.post('/v1/openai/messages', messages);
+
+  // `?scope=managed` → managed lineup only (~3KB). Sandboxes call it on every
+  // boot to learn the live managed set; see wire.ts for the full rationale.
+  const models = (c: {
+    req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined };
+  }) =>
+    gateway.listModels(c.req.header('authorization'), {
+      managedOnly: c.req.query('scope') === 'managed',
+    });
+
+  app.get('/models', models);
   app.get('/v1/models', models);
   app.get('/v1/llm/models', models);
   app.get('/v1/openai/models', models);

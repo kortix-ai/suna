@@ -4,7 +4,7 @@
 # "the same thing with bigger numbers and min_capacity >= 2".
 #
 # Inputs: a VPC + subnets (from modules/network), a container image, env/secrets,
-# and an optional ACM cert. Outputs the ALB DNS name so the environment can point
+# and an ACM cert. Outputs the ALB DNS name so the environment can point
 # Cloudflare DNS at it.
 
 terraform {
@@ -21,15 +21,98 @@ locals {
   name = var.name
   # PORT is always injected so the app binds the port the target group checks.
   environment = merge(var.environment, { PORT = tostring(var.container_port) })
-  # Gate the HTTPS listener on a STATIC flag (count can't depend on the ACM
-  # cert ARN, which is unknown until apply).
-  https = var.enable_https
+
+  # Capacity-provider strategy for the service.
+  #
+  #   use_fargate_spot = false          -> one FARGATE block (weight 1, base 1).
+  #   use_fargate_spot = true, base = 0 -> one FARGATE_SPOT block (weight 1,
+  #                                        base 0). Identical to the pre-2026-08-19
+  #                                        single-block form, so dev/prod do not
+  #                                        move.
+  #   use_fargate_spot = true, base > 0 -> `base` tasks pinned to on-demand
+  #                                        FARGATE, every task above that on
+  #                                        FARGATE_SPOT.
+  #
+  # ECS satisfies `base` first, then splits the remainder by `weight`. The
+  # on-demand block therefore carries weight 0: it must hold exactly the base,
+  # never absorb scale-out. A Spot-only service with base 0 has no floor — one
+  # Spot reclaim empties it, and with deployment_minimum_healthy_percent = 100
+  # ECS cannot place a replacement until Spot capacity returns.
+  capacity_provider_strategy = var.use_fargate_spot ? concat(
+    var.fargate_base_on_demand > 0 ? [{
+      capacity_provider = "FARGATE"
+      weight            = 0
+      base              = var.fargate_base_on_demand
+    }] : [],
+    [{
+      capacity_provider = "FARGATE_SPOT"
+      weight            = 1
+      base              = 0
+    }]
+    ) : [{
+      capacity_provider = "FARGATE"
+      weight            = 1
+      base              = 1
+  }]
 }
 
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
+
 # ── Logs ──────────────────────────────────────────────────────────────────────
+data "aws_iam_policy_document" "logs_kms" {
+  #checkov:skip=CKV_AWS_109:The account-root administration statement is the standard KMS key-policy control plane; CloudWatch Logs receives only encrypt/decrypt data-plane actions with an encryption-context condition.
+  #checkov:skip=CKV_AWS_111:The account-root administration statement must manage this KMS key; the service statement has no IAM or resource-policy write actions.
+  #checkov:skip=CKV_AWS_356:KMS key policies use Resource "*" because the key ARN does not exist until after policy evaluation; principals and the CloudWatch encryption context constrain access.
+  statement {
+    sid       = "EnableAccountAdministration"
+    actions   = ["kms:*"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid = "AllowCloudWatchLogs"
+    actions = [
+      "kms:Decrypt",
+      "kms:DescribeKey",
+      "kms:Encrypt",
+      "kms:GenerateDataKey*",
+      "kms:ReEncrypt*",
+    ]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${var.aws_region}.amazonaws.com"]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${local.name}"]
+    }
+  }
+}
+
+resource "aws_kms_key" "logs" {
+  description             = "CloudWatch Logs encryption for ${local.name}"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.logs_kms.json
+  tags                    = var.tags
+}
+
+resource "aws_kms_alias" "logs" {
+  name          = "alias/${local.name}-logs"
+  target_key_id = aws_kms_key.logs.key_id
+}
+
 resource "aws_cloudwatch_log_group" "this" {
   name              = "/ecs/${local.name}"
   retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.logs.arn
   tags              = var.tags
 }
 
@@ -62,8 +145,17 @@ resource "aws_iam_role_policy_attachment" "execution" {
 }
 
 # Let the execution role pull the values behind any injected secrets.
+#
+# Prefer secrets_blob_arn. ECS injects the complete secret JSON through one
+# stable task-definition selector. The application expands it into process.env
+# at startup. Adding or removing an optional JSON key does not invalidate an
+# existing task definition. Granting on the blob ARN covers every key without a
+# second hand-maintained selector list.
+#
+# var.secrets remains only as the fallback for callers that have not been
+# given a blob yet; it resolves to the same base ARNs.
 resource "aws_iam_role_policy" "secrets" {
-  count = length(var.secrets) > 0 ? 1 : 0
+  count = var.secrets_blob_arn != "" || length(var.secrets) > 0 ? 1 : 0
   name  = "${local.name}-secrets-read"
   role  = aws_iam_role.execution.id
   policy = jsonencode({
@@ -71,8 +163,10 @@ resource "aws_iam_role_policy" "secrets" {
     Statement = [{
       Effect = "Allow"
       Action = ["secretsmanager:GetSecretValue", "ssm:GetParameters"]
-      # Grant on the base secret/parameter ARN (strip any :json-key::version suffix from valueFrom).
-      Resource = distinct([for v in values(var.secrets) : join(":", slice(split(":", v), 0, 7))])
+      # Strip any :json-key::version suffix to reach the base secret ARN.
+      Resource = var.secrets_blob_arn != "" ? [var.secrets_blob_arn] : distinct([
+        for v in values(var.secrets) : join(":", slice(split(":", v), 0, 7))
+      ])
     }]
   })
 }
@@ -89,19 +183,41 @@ resource "aws_iam_role" "task" {
   }
 }
 
+resource "aws_iam_role_policy" "ses_send" {
+  count = length(var.ses_send_identity_names) > 0 ? 1 : 0
+  name  = "${local.name}-ses-send"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "SendEmail"
+      Effect = "Allow"
+      Action = ["ses:SendEmail"]
+      # SESv2 SendEmail authorizes against BOTH the sending identity AND the
+      # configuration set named in the request — omitting the config-set ARN
+      # 403s the whole send (found live on dev 2026-08-10: assumed-role send
+      # denied on configuration-set/kortix-transactional while the identity
+      # resources were correctly granted).
+      Resource = concat(
+        [
+          for identity in var.ses_send_identity_names :
+          "arn:${data.aws_partition.current.partition}:ses:${var.ses_send_region}:${data.aws_caller_identity.current.account_id}:identity/${identity}"
+        ],
+        [
+          for cs in var.ses_send_configuration_set_names :
+          "arn:${data.aws_partition.current.partition}:ses:${var.ses_send_region}:${data.aws_caller_identity.current.account_id}:configuration-set/${cs}"
+        ],
+      )
+    }]
+  })
+}
+
 # ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
   description = "Ingress to the ${local.name} ALB"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = var.alb_ingress_cidrs
-  }
   ingress {
     description = "HTTPS"
     from_port   = 443
@@ -118,6 +234,7 @@ resource "aws_security_group" "alb" {
   }
 }
 
+#trivy:ignore:AVD-AWS-0104 ECS tasks call external HTTPS APIs and external PostgreSQL endpoints through NAT; these destinations do not have a stable CIDR allowlist.
 resource "aws_security_group" "service" {
   name        = "${local.name}-svc"
   description = "Ingress to the ${local.name} tasks (from the ALB only)"
@@ -131,10 +248,21 @@ resource "aws_security_group" "service" {
     security_groups = [aws_security_group.alb.id]
   }
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTPS APIs and WSS providers"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+  dynamic "egress" {
+    for_each = var.enable_postgres_egress ? [1] : []
+    content {
+      description = "PostgreSQL data plane"
+      from_port   = 5432
+      to_port     = 5432
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
   }
   tags = {
     ManagedBy   = "terraform"
@@ -158,7 +286,103 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_service" {
 }
 
 # ── Load balancer ─────────────────────────────────────────────────────────────
+#trivy:ignore:AVD-AWS-0089 This is the terminal ALB access-log bucket. Enabling server access logging on the terminal bucket creates recursive log delivery.
+resource "aws_s3_bucket" "alb_logs" {
+  #checkov:skip=CKV_AWS_18:This bucket is the terminal ALB access-log destination; logging it to another bucket creates a recursive log chain.
+  #checkov:skip=CKV_AWS_144:ALB access logs are regional operational data with lifecycle retention; cross-region replication is not required.
+  #checkov:skip=CKV_AWS_145:Elastic Load Balancing access logs support SSE-S3 and do not support customer-managed KMS keys.
+  #checkov:skip=CKV2_AWS_62:ALB access logs are retained for audit and do not require an event-notification consumer.
+  bucket_prefix = "${local.name}-alb-logs-"
+  force_destroy = false
+  tags          = var.tags
+}
+
+resource "aws_s3_bucket_versioning" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  bucket                  = aws_s3_bucket.alb_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+#trivy:ignore:AVD-AWS-0132 Elastic Load Balancing access-log delivery supports SSE-S3. It does not support customer-managed KMS keys.
+resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    id     = "retention"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 365
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+data "aws_iam_policy_document" "alb_logs" {
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.alb_logs.arn, "${aws_s3_bucket.alb_logs.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+
+  statement {
+    sid       = "AllowELBLogDelivery"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.alb_logs.arn}/${local.name}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+    principals {
+      type        = "Service"
+      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  policy = data.aws_iam_policy_document.alb_logs.json
+}
+
+#trivy:ignore:AVD-AWS-0053 This public API origin must accept Cloudflare traffic; the ALB security group restricts ingress to var.alb_ingress_cidrs.
 resource "aws_lb" "this" {
+  #checkov:skip=CKV2_AWS_28:Environment roots associate this output ALB with a regional WAF; legacy API roots use the compliance-monitoring association.
   name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
@@ -166,7 +390,16 @@ resource "aws_lb" "this" {
     var.public_subnet_ids[0],
     var.public_subnet_ids[1],
   ]
-  idle_timeout = var.alb_idle_timeout
+  idle_timeout               = var.alb_idle_timeout
+  drop_invalid_header_fields = true
+  enable_deletion_protection = true
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.id
+    prefix  = local.name
+    enabled = true
+  }
+
   tags = {
     ManagedBy   = "terraform"
     Name        = "${local.name}-alb"
@@ -174,6 +407,8 @@ resource "aws_lb" "this" {
     Project     = lookup(var.tags, "Project", "kortix")
     Service     = lookup(var.tags, "Service", local.name)
   }
+
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 }
 
 resource "aws_lb_target_group" "this" {
@@ -196,35 +431,7 @@ resource "aws_lb_target_group" "this" {
   tags                 = var.tags
 }
 
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.this.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  # With a cert, force HTTPS; without one, serve HTTP directly (e.g. behind a
-  # TLS-terminating proxy like Cloudflare in dev).
-  dynamic "default_action" {
-    for_each = local.https ? [1] : []
-    content {
-      type = "redirect"
-      redirect {
-        port        = "443"
-        protocol    = "HTTPS"
-        status_code = "HTTP_301"
-      }
-    }
-  }
-  dynamic "default_action" {
-    for_each = local.https ? [] : [1]
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.this.arn
-    }
-  }
-}
-
 resource "aws_lb_listener" "https" {
-  count             = local.https ? 1 : 0
   load_balancer_arn = aws_lb.this.arn
   port              = 443
   protocol          = "HTTPS"
@@ -282,7 +489,9 @@ resource "aws_ecs_task_definition" "this" {
       protocol      = "tcp"
     }]
     environment = [for k, v in local.environment : { name = k, value = v }]
-    secrets     = [for k, v in var.secrets : { name = k, valueFrom = v }]
+    secrets = var.secrets_blob_arn != "" ? [
+      { name = "KORTIX_ENV_JSON", valueFrom = var.secrets_blob_arn }
+    ] : [for k, v in var.secrets : { name = k, valueFrom = v }]
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -295,6 +504,18 @@ resource "aws_ecs_task_definition" "this" {
     # ALB target group health check (HTTP GET health_check_path) is the
     # authoritative gate for routing + the deployment circuit breaker.
   }])
+
+  # This resource only bootstraps the FIRST revision. Every later one is
+  # registered by ecs-deploy.sh, which rebuilds the container definition from
+  # the live service plus the secrets blob — so image, environment and secrets
+  # here go stale the moment anything deploys. The service already ignores
+  # task_definition, so re-registering from stale inputs on every apply
+  # produced an orphan revision nothing ran and a permanent "must be replaced"
+  # in the plan. Ceding the container definition removes the phantom diff and
+  # makes the deploy script the single owner of revisions.
+  lifecycle {
+    ignore_changes = [container_definitions]
+  }
 
   tags = {
     ManagedBy   = "terraform"
@@ -312,10 +533,13 @@ resource "aws_ecs_service" "this" {
   desired_count   = var.desired_count
   launch_type     = null # capacity-provider strategy drives placement
 
-  capacity_provider_strategy {
-    capacity_provider = var.use_fargate_spot ? "FARGATE_SPOT" : "FARGATE"
-    weight            = 1
-    base              = var.use_fargate_spot ? 0 : 1
+  dynamic "capacity_provider_strategy" {
+    for_each = local.capacity_provider_strategy
+    content {
+      capacity_provider = capacity_provider_strategy.value.capacity_provider
+      weight            = capacity_provider_strategy.value.weight
+      base              = capacity_provider_strategy.value.base
+    }
   }
 
   network_configuration {
@@ -333,6 +557,15 @@ resource "aws_ecs_service" "this" {
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
 
+  # The AWS provider refuses to update `capacity_provider_strategy` unless
+  # `force_new_deployment` is set ("force_new_deployment should be true when
+  # capacity_provider_strategy is being updated"). Only services that carry an
+  # on-demand base (staging) ever change that strategy, so gate it on that: dev
+  # and prod keep today's plan byte-for-byte. `task_definition` stays under
+  # ignore_changes, so a forced deployment re-rolls the service's CURRENT task
+  # definition — the one ecs-deploy.sh registered — never a stale TF revision.
+  force_new_deployment = var.fargate_base_on_demand > 0
+
   # Rolling deploy with circuit breaker → auto-rollback on a bad release.
   deployment_circuit_breaker {
     enable   = true
@@ -344,12 +577,9 @@ resource "aws_ecs_service" "this" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  # Both listeners must exist before the service: the HTTPS listener (when
-  # enabled) is what associates the target group with the load balancer, and ECS
-  # rejects CreateService against a target group that has no associated LB.
-  # Without this, the service can race ahead of the HTTPS listener on a fresh
-  # apply ("target group ... does not have an associated load balancer").
-  depends_on = [aws_lb_listener.http, aws_lb_listener.https]
+  # The selected listener must exist before the service so the target group is
+  # associated with the load balancer before ECS validates CreateService.
+  depends_on = [aws_lb_listener.https]
   tags = {
     ManagedBy   = "terraform"
     Name        = local.name
@@ -366,6 +596,13 @@ resource "aws_appautoscaling_target" "this" {
   resource_id        = "service/${aws_ecs_cluster.this.name}/${aws_ecs_service.this.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
+
+  lifecycle {
+    precondition {
+      condition     = var.fargate_base_on_demand <= var.min_capacity
+      error_message = "fargate_base_on_demand (${var.fargate_base_on_demand}) exceeds min_capacity (${var.min_capacity}); the autoscaling floor cannot be smaller than the on-demand base."
+    }
+  }
 }
 
 resource "aws_appautoscaling_policy" "cpu" {

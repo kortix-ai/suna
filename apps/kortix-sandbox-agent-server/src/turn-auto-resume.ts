@@ -11,10 +11,34 @@ import type { OpencodeTurnError } from './opencode-events';
 //
 // WHY here and not lower in the stack: the gateway cannot replay a stream whose
 // bytes were already relayed (a fresh sample would splice two different
-// generations), and opencode (pinned npm) does not retry an error that arrives
-// mid-stream. The agent server is the platform-owned layer that already watches
-// `session.error` and owns the session lifecycle — the only place a turn can be
-// resumed with full context.
+// generations). The agent server is the platform-owned layer that already
+// watches `session.error` and owns the session lifecycle — the only place a
+// turn can be resumed with full context.
+//
+// THIS RUNS ON TOP OF UPSTREAM RETRIES — verified against the real binaries
+// 2026-08-20 (`SessionRetry` module, symbols read out of both bundles):
+//   1.17.11 — `retryable()` returns a retry only for an `APIError` with
+//     `isRetryable === true` or `statusCode >= 500`. No attempt cap constant.
+//     The comment this replaces ("opencode does not retry an error that arrives
+//     mid-stream") was written against THIS build and was true for it.
+//   1.18.19 — same `APIError` gate, but the retried class is much broader: the
+//     message AND `responseBody` are matched against six regexes covering
+//     `429|500|502|503|504|524`, rate limits, `overloaded|service
+//     unavailable|internal server error`, `terminated|fetch failed|network
+//     error|connection error|socket hang up|econnreset|etimedout|getaddrinfo`,
+//     request/stream timeouts, and `try your request again|resource exhausted`.
+//     `RETRY_MAX_RETRIES = 5`, `RETRY_INITIAL_DELAY = 2000ms`,
+//     `RETRY_BACKOFF_FACTOR = 2`, jitter 0.25, capped at 30s without a
+//     `retry-after` header.
+// So on 1.18.19 most of `TRANSIENT_MESSAGE` below OVERLAPS upstream's list, and
+// a turn that reaches `session.error` has usually already burned ~5 upstream
+// attempts (~60s) before this module adds up to 3 more re-prompts (5s/15s/45s).
+// That is intentional layering, not a bug — upstream retries the same model
+// call, this re-prompts the turn — but it is a real multiplier on time-to-fail,
+// so shortening MAX_ATTEMPTS_PER_WINDOW is the first lever if a turn ever looks
+// like it is retrying "forever". Errors that are NOT `APIError` instances are
+// still not retried by either opencode build; those reach here on the first
+// failure.
 //
 // LOOP SAFETY: a failed turn can end in `session.idle` as well as
 // `session.error`, so resetting a counter on idle would re-arm the budget on
@@ -22,6 +46,17 @@ import type { OpencodeTurnError } from './opencode-events';
 // at most MAX_ATTEMPTS resumes per session per WINDOW_MS, with growing backoff,
 // regardless of how the intervening turns ended. Exhausted budget → the error
 // relays/surfaces exactly as before this feature.
+//
+// T22 — STAGED REVERT: OpenCode's `session.revert` is a pointer on the session
+// row (`Session.revert?: { messageID, ... }`); nothing is deleted until the
+// NEXT prompt — from ANY producer — commits the truncation. Resuming a turn
+// while a revert is staged would deliver this resumer's own recovery prompt
+// with full pre-rewind context, silently committing the user's rewind out
+// from under them. `maybeResume` checks the session's live revert state both
+// before starting (the error may already have a revert staged) and again at
+// fire time after the backoff (a revert can be staged DURING the wait) — see
+// `readSessionRevertState`. Either hit stands auto-recovery down for that
+// error; the caller relays it exactly as before this feature.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MAX_ATTEMPTS_PER_WINDOW = 3;
@@ -145,6 +180,28 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
     }
   }
 
+  /**
+   * T22 — read whether the session has a STAGED OpenCode revert
+   * (`Session.revert?: { messageID, ... }`, `@opencode-ai/sdk` `types.gen`).
+   * Reuses the exact daemon pattern `readLastMessage` above already follows —
+   * `GET /session/{id}` on the same internal opencode URL, same `directory`
+   * query param, same bounded timeout — just the bare session shape instead
+   * of `/message`, since that's where `revert` lives. Fails OPEN (returns
+   * null) on any read failure: an unreachable/timed-out check must never
+   * itself block a legitimate resume.
+   */
+  async function readSessionRevertState(sessionId: string): Promise<{ staged: boolean } | null> {
+    try {
+      const url = `${deps.opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}?directory=${encodeURIComponent(deps.cfg.workspace)}`;
+      const res = await fetchImpl(url, { signal: AbortSignal.timeout(5_000) });
+      if (!res.ok) return null;
+      const info = (await res.json()) as { revert?: unknown } | null;
+      return { staged: Boolean(info?.revert) };
+    } catch {
+      return null;
+    }
+  }
+
   async function deliverResume(sessionId: string, error: OpencodeTurnError): Promise<boolean> {
     try {
       const url = `${deps.opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/prompt_async?directory=${encodeURIComponent(deps.cfg.workspace)}`;
@@ -165,6 +222,16 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
     if (!enabled()) return false;
     if (!error || !isTransientTurnError(error)) return false;
     if (!(await deps.isRoot(sessionId))) return false;
+
+    // T22: the error may already have a staged revert sitting on it — the
+    // user rewound history before (or right as) this turn failed. Stand down
+    // before spending resume budget; the caller relays the error exactly as
+    // before this feature.
+    const preResumeRevert = await readSessionRevertState(sessionId);
+    if (preResumeRevert?.staged) {
+      logger.info('[turn-auto-resume] session has a staged revert — standing down', { sessionId });
+      return false;
+    }
 
     const attemptIndex = takeBudget(sessionId);
     if (attemptIndex === null) {
@@ -203,6 +270,19 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
         lastRole: last.role,
       });
       return true;
+    }
+
+    // T22: re-check for a revert staged DURING the backoff wait — the
+    // pre-resume check above only ruled it out at the moment the error first
+    // arrived. Cheap: same request shape as the pre-check, one more round
+    // trip right before the prompt that would otherwise commit the rewind.
+    const fireTimeRevert = await readSessionRevertState(sessionId);
+    if (fireTimeRevert?.staged) {
+      logger.info(
+        '[turn-auto-resume] session gained a staged revert during backoff — standing down',
+        { sessionId },
+      );
+      return false;
     }
 
     const delivered = await deliverResume(sessionId, error);

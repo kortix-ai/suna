@@ -15,24 +15,35 @@ import { describe, expect, test } from 'bun:test';
 // assertions keep a future refactor from silently restoring the unguarded
 // `.filter` / `.map` (the connectors-view Slack test uses the same pattern).
 
-const agentsView = readFileSync(
-  join(import.meta.dir, '..', 'sections', 'view', 'agents-view.tsx'),
-  'utf8',
+// The agents surface moved from this overlay section to the standalone
+// `/projects/[id]/agent` page; the guard follows the code, because the config
+// fields it reads (and the ways they can come back undefined) did not change.
+const capabilities = join(
+  import.meta.dir,
+  '..',
+  '..',
+  'capabilities',
+  'agents',
 );
+const agentsPage = readFileSync(join(capabilities, 'agents-page.tsx'), 'utf8');
+const agentDetailAside = readFileSync(join(capabilities, 'agent-detail-aside.tsx'), 'utf8');
 const configEntityView = readFileSync(
   join(import.meta.dir, '..', 'sections', 'component', 'config-entity-view.tsx'),
   'utf8',
 );
 
 describe('chunk-22256 .filter/.map guard regression', () => {
-  test('agents-view no longer calls config.skills.map unguarded', () => {
-    expect(agentsView).not.toContain('config.skills.map(');
-    expect(agentsView).toContain('toArray(config.skills).map(');
+  test('the agent aside does not call config.skills.map unguarded', () => {
+    expect(agentDetailAside).not.toContain('config.skills.map(');
+    expect(agentDetailAside).toContain('toArray(config.skills).map(');
   });
 
-  test('agents-view no longer calls config.agents.filter unguarded', () => {
-    expect(agentsView).not.toContain('config.agents.filter(');
-    expect(agentsView).toContain('toArray(config.agents).filter(');
+  test('the agents page does not call config.agents.filter unguarded', () => {
+    // Both consumers: the default-agent selector's `.filter`, and the page's
+    // own `agents` memo, which `filterAgents` then calls `.filter` on.
+    expect(agentsPage).not.toContain('config.agents.filter(');
+    expect(agentsPage).toContain('toArray(config.agents).filter(');
+    expect(agentsPage).toContain('toArray(config?.agents)');
   });
 
   test('config-entity-view guards select(config) before any .filter consumer', () => {

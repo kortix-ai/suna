@@ -17,8 +17,18 @@ const flatWizardSource = wizardSource.replace(/\s+/g, ' ');
 const flatGuidesSource = guidesSource.replace(/\s+/g, ' ');
 
 describe('provider guides', () => {
-  test('cover Entra, Okta, Google, and Custom SAML', () => {
-    expect(PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual(['custom', 'entra', 'google', 'okta']);
+  test('cover Entra, Okta, Google, Cloudflare, and Custom SAML', () => {
+    expect(PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual([
+      'auth0',
+      'cloudflare',
+      'custom',
+      'entra',
+      'google',
+      'jumpcloud',
+      'okta',
+      'onelogin',
+      'pingone',
+    ]);
   });
 
   test('every guide ends with the inline import step followed by a test step', () => {
@@ -113,8 +123,15 @@ describe('sso card entry point', () => {
 });
 
 describe('directory sync (SCIM) guides', () => {
-  test('cover Entra, Okta, and Custom SCIM', () => {
-    expect(SCIM_PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual(['custom', 'entra', 'okta']);
+  test('cover Entra, Okta, OneLogin, JumpCloud, PingOne, and Custom SCIM', () => {
+    expect(SCIM_PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual([
+      'custom',
+      'entra',
+      'jumpcloud',
+      'okta',
+      'onelogin',
+      'pingone',
+    ]);
   });
 
   test('every guide mints + connects on ONE page, and ends with verify', () => {
@@ -185,8 +202,12 @@ describe('auto-provision groups default', () => {
     expect(wizardSource).toContain('setAutoProvision] = useState(true)');
   });
 
-  test('the SSO card dialog defaults ON for new providers, stored value for existing', () => {
-    expect(cardSource).toContain('useState(existing ? existing.auto_provision_groups : true)');
+  test('the SSO card dialog is edit-only and seeds from the stored provider value', () => {
+    // The card dialog no longer has a create branch (new providers register
+    // through this wizard), so it seeds from the existing provider only.
+    const flat = cardSource.replace(/\s+/g, ' ');
+    expect(flat).toContain('useState(existing.auto_provision_groups)');
+    expect(flat).not.toContain('importSsoProviderFromMetadata');
   });
 });
 
@@ -252,6 +273,131 @@ describe('WorkOS-informed guide content, adopted per provider (not copied assets
 
   test('Google Workspace has no SCIM guide — there is no first-party directory to sync', () => {
     expect(getScimGuide('google')).toBeNull();
+  });
+
+  // Providers that appear in the SAML picker but genuinely CANNOT do outbound
+  // SCIM 2.0 to a generic endpoint (fact-checked against the live consoles) get
+  // NO Directory Sync guide — shipping one would point admins at a screen that
+  // doesn't exist. Google: catalog-only. Cloudflare Access: broker (outbound
+  // SCIM is closed-beta API-only). Auth0: inbound-only (its SCIM URL points INTO
+  // Auth0). SAML JIT + group auto-provision is the path for all three.
+  test('no SCIM guide for providers without generic outbound SCIM (cloudflare, auth0)', () => {
+    expect(getScimGuide('cloudflare')).toBeNull();
+    expect(getScimGuide('auth0')).toBeNull();
+  });
+
+  test('the added SCIM guides (OneLogin, JumpCloud, PingOne) paste our base URL + token', () => {
+    for (const id of ['onelogin', 'jumpcloud', 'pingone']) {
+      const text = JSON.stringify(getScimGuide(id)!.steps);
+      // Each connects by pointing the IdP at the minted Tenant URL + secret.
+      expect(text).toContain('Tenant URL');
+      // And each pins userName to the email Kortix correlates on.
+      expect(text.toLowerCase()).toContain('email');
+    }
+  });
+});
+
+// "Last sync" indicator — we're the SCIM server, so the honest signal is when
+// the IdP last called us (token last_used_at), paired with the provider's real
+// cadence instead of a made-up "next sync at" prediction.
+describe('SCIM last-sync indicator', () => {
+  test('every SCIM guide states its sync cadence', () => {
+    for (const g of SCIM_PROVIDER_GUIDES) {
+      expect(g.config.syncCadenceHint, `${g.id} missing syncCadenceHint`).toBeTruthy();
+    }
+    // Entra is the one with a real scheduled cycle; the hint must say so.
+    expect(getScimGuide('entra')!.config.syncCadenceHint).toContain('40 minutes');
+    expect(getScimGuide('entra')!.config.syncCadenceHint).toContain('Provision on demand');
+    // Event-driven IdPs must NOT imply a cycle to wait for.
+    expect(getScimGuide('okta')!.config.syncCadenceHint).toContain('as they happen');
+  });
+
+  test('the wizard verify panel shows last sync activity from active-token usage', () => {
+    expect(wizardSource).toContain('latestScimSyncAt');
+    expect(wizardSource).toContain('Last sync activity');
+    // The per-provider cadence replaces the old Entra-hardcoded footer.
+    expect(wizardSource).toContain('cadenceHint={config.syncCadenceHint}');
+    expect(wizardSource).not.toContain("give Entra's provisioning cycle a minute");
+  });
+
+  test('the SCIM card health panel shows last sync activity and polls tokens', () => {
+    expect(scimCardSource).toContain('latestScimSyncAt(tokens)');
+    expect(scimCardSource).toContain('Last sync activity');
+    // The tokens list must poll, or last_used_at goes stale on an open card.
+    expect(scimCardSource).toMatch(
+      /queryFn: \(\) => listScimTokens\(accountId\)[\s\S]{0,200}refetchInterval/,
+    );
+  });
+});
+
+// Identity page progressive disclosure — the cards lead with STATE (chip +
+// health line + one action); setup-time reference values (SP URLs, SCIM base
+// URL, IdP table, token list) collapse behind disclosures. Pins the redesign
+// of the "messy, everything at once" Identity tab.
+describe('identity page progressive disclosure', () => {
+  const pageSource = readFileSync(join(dir, '../../app/(app)/accounts/[id]/page.tsx'), 'utf8');
+  const introSource = readFileSync(
+    join(dir, '../../components/iam/identity-intro.tsx'),
+    'utf8',
+  ).replace(/\s+/g, ' ');
+
+  test('the "Why connect both?" explainer self-hides once either surface is configured', () => {
+    expect(pageSource).toContain('<IdentityIntro');
+    expect(pageSource).not.toContain('Why connect both?');
+    expect(introSource).toContain('Why connect both?');
+    // Renders only while BOTH SSO and SCIM are unconfigured.
+    expect(introSource).toContain('(tokensQuery.data ?? []).length > 0) return null');
+  });
+
+  test('the SSO card collapses SP values behind a disclosure in both states', () => {
+    expect(cardSource).toContain('Service provider values');
+    expect(cardSource).toContain('DisclosureTrigger');
+    // Not-connected leads with a call-to-action, not a wall of URLs.
+    expect(cardSource).toContain('Not connected yet');
+    // Group mappings collapse too, with a count chip in the trigger.
+    expect(cardSource).toContain('{mappings.length}');
+  });
+
+  test('the SCIM card leads with a status chip and collapses setup values + tokens', () => {
+    expect(scimCardSource).toContain('Setup values');
+    expect(scimCardSource).toContain('DisclosureTrigger');
+    // Amber only for the one genuinely wrong state: minted but never called.
+    expect(scimCardSource).toContain('waiting for IdP');
+    expect(scimCardSource).toContain("freshness === 'never'");
+    // Setup values auto-open while a minted token awaits its first IdP call —
+    // that is exactly when the admin is pasting them — and tuck away after.
+    //
+    // `defaultOpen`, deliberately not `open`: a controlled `open` with no
+    // `onOpenChange` fights the admin's own clicks (it was one of the call sites
+    // behind the flaky-disclosure report). The `key` re-seeds that starting
+    // value when the condition flips, so the auto-open behaviour above survives
+    // while a manual collapse in between now sticks. See disclosure.tsx.
+    const flat = scimCardSource.replace(/\s+/g, ' ');
+    expect(flat).toContain("defaultOpen={tokens.length > 0 && freshness === 'never'}");
+    expect(flat).toContain("key={tokens.length > 0 && freshness === 'never'");
+  });
+});
+
+// "How do I start auto-sync?" — every SCIM guide carries the one-liner for
+// turning automatic provisioning ON, and the Identity card renders the full
+// cheat sheet with a deep link into each provider's guided setup.
+describe('SCIM start-sync guides', () => {
+  test('every SCIM guide states how to turn automatic provisioning on', () => {
+    for (const g of SCIM_PROVIDER_GUIDES) {
+      expect(g.config.startSyncHint, `${g.id} missing startSyncHint`).toBeTruthy();
+    }
+    expect(getScimGuide('entra')!.config.startSyncHint).toContain('Start provisioning');
+    // PingOne's double switch — the fact-checked blocker (connection AND rule).
+    expect(getScimGuide('pingone')!.config.startSyncHint).toContain('CONNECTION toggle');
+    expect(getScimGuide('pingone')!.config.startSyncHint).toContain('Active');
+    // OneLogin's silent pending-queue trap.
+    expect(getScimGuide('onelogin')!.config.startSyncHint).toContain('Require admin approval');
+  });
+
+  test('the SCIM card renders the cheat sheet with deep links into each guide', () => {
+    expect(scimCardSource).toContain('Start automatic sync in your IdP');
+    expect(scimCardSource).toContain('startSyncHint');
+    expect(scimCardSource).toContain('scim-setup?provider=');
   });
 });
 
@@ -333,8 +479,7 @@ describe('novice-walkthrough fixes stay fixed', () => {
     const google = getProviderGuide('google')!;
     const basic = google.steps.find((s) => s.id === 'basic-saml')!;
     const sp = (basic.content ?? []).find((b) => b.kind === 'sp-values') as
-      | { acsLabel?: string; acsFirst?: boolean }
-      | undefined;
+      { acsLabel?: string; acsFirst?: boolean } | undefined;
     expect(sp?.acsLabel).toBe('ACS URL');
     expect(sp?.acsFirst).toBe(true);
   });
@@ -408,5 +553,62 @@ describe('review fixes stay fixed', () => {
 
   test('connect instructions render on resume too (skip is informed, not blind)', () => {
     expect(wizardSource).toContain('(minted || priorTokens.length > 0) && connectContent');
+  });
+});
+
+// Google SAML novice-walkthrough pins.
+describe('Google SAML guide is novice-complete', () => {
+  test('every Google IdP step has a where badge + breadcrumb', () => {
+    const google = getProviderGuide('google')!;
+    for (const step of google.steps) {
+      if (step.kind === 'import' || step.kind === 'test') continue; // Kortix-side
+      expect(step.menuPath, `google step ${step.id} missing menuPath`).toBeTruthy();
+    }
+  });
+
+  test('the Cloudflare guide brokers via Access with a required policy + groups JSONata', () => {
+    const cf = getProviderGuide('cloudflare')!;
+    const text = JSON.stringify(cf.steps);
+    expect(cf.name).toContain('Cloudflare');
+    expect(text).toContain('groups'); // group attribute
+    expect(text).toContain('OVERRIDES'); // the JSONata-breaks-attributes caution
+    const policy = cf.steps.find((st) => st.id === 'policy')!;
+    expect(policy.warning?.toLowerCase()).toContain('denies everyone'); // no-policy gotcha
+    // Cloudflare IS the SAML IdP to Kortix — every console step is on the IdP side.
+    for (const step of cf.steps) {
+      if (step.kind === 'import' || step.kind === 'test') continue;
+      expect(step.menuPath, `cloudflare step ${step.id} missing breadcrumb`).toBeTruthy();
+    }
+  });
+
+  test('the metadata step tells the admin to click Google’s own Continue', () => {
+    const meta = getProviderGuide('google')!.steps.find((s) => s.id === 'metadata')!;
+    expect(meta.intro).toContain('Continue');
+  });
+
+  test('the xml-only metadata picker drops the dead URL card', () => {
+    expect(wizardSource).toContain("config.preferredMetadata === 'xml'");
+  });
+
+  test('the import step no longer says "from the previous step"', () => {
+    expect(guidesSource).not.toContain('metadata from the previous step');
+  });
+});
+
+// One SSO provider per account → switching mid-setup must confirm + reset
+// (Vercel parity: "your configuration with X will be reset").
+describe('change-provider guard', () => {
+  test('Change provider confirms and clears in-progress state', () => {
+    expect(wizardSource).toContain("setConfirmAction('change')");
+    expect(wizardSource).toContain('Change provider?');
+    expect(wizardSource).toContain('only one identity provider per account');
+    // the confirm actually resets the current provider's progress + stash + token
+    expect(wizardSource).toContain('clearCurrentProgress');
+    expect(flatWizardSource).toContain('window.localStorage.removeItem(metadataStashKey(');
+  });
+
+  test('Start over confirms when there is progress', () => {
+    expect(wizardSource).toContain("setConfirmAction('reset')");
+    expect(wizardSource).toContain('Start over?');
   });
 });

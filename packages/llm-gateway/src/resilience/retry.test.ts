@@ -74,6 +74,42 @@ describe('withRetry', () => {
     expect(calls).toBe(1);
   });
 
+  // Defect (2026-07-17, live-confirmed): an invalid upstream key retried 11+
+  // times over 2+ minutes and the session turn hung permanently empty — a
+  // terminal client-auth failure must make exactly one attempt, never retry.
+  test('does not retry a 401 (dead credential) — fails fast in one attempt', async () => {
+    let calls = 0;
+    await expect(
+      withRetry(async () => {
+        calls++;
+        throw new UpstreamHttpError(401, 'invalid_api_key');
+      }, fastOpts()),
+    ).rejects.toBeInstanceOf(UpstreamHttpError);
+    expect(calls).toBe(1);
+  });
+
+  test('does not retry a 403 (forbidden credential) — fails fast in one attempt', async () => {
+    let calls = 0;
+    await expect(
+      withRetry(async () => {
+        calls++;
+        throw new UpstreamHttpError(403, 'forbidden');
+      }, fastOpts()),
+    ).rejects.toBeInstanceOf(UpstreamHttpError);
+    expect(calls).toBe(1);
+  });
+
+  test('a 500/timeout-shaped failure still retries as before (contrast with the 401 case above)', async () => {
+    let calls = 0;
+    const r = await withRetry(async () => {
+      calls++;
+      if (calls < 3) throw new UpstreamHttpError(500, 'boom');
+      return 'recovered';
+    }, fastOpts({ maxAttempts: 3 }));
+    expect(r).toBe('recovered');
+    expect(calls).toBe(3);
+  });
+
   test('retries 429 rate-limit', async () => {
     let calls = 0;
     const r = await withRetry(async () => {

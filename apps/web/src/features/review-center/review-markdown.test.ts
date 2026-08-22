@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import type { ApiReviewItem } from '@kortix/sdk/projects-client';
+import type { ApiReviewItem } from '@kortix/sdk';
 
 import { mapApiReviewItem } from './map';
-import { looksLikeMarkdown } from './review-markdown';
+import { looksLikeMarkdown } from '@/lib/markdown-detect';
 import type { ChangeDetail } from './types';
 
 describe('looksLikeMarkdown', () => {

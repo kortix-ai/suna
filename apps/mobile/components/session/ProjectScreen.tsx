@@ -89,7 +89,7 @@ import { RunningServicesPage } from '@/components/pages/RunningServicesPage';
 import { BrowserPage } from '@/components/pages/BrowserPage';
 import { FilesPage } from '@/components/pages/FilesPage';
 import type { FilesPageRef } from '@/components/pages/FilesPage';
-import { IntegrationsTabPage } from '@/components/pages/IntegrationsTabPage';
+import { ConnectionsTabPage } from '@/components/pages/ConnectionsTabPage';
 import { ScheduledTasksTabPage } from '@/components/pages/ScheduledTasksPage';
 import { ApiKeysTabPage } from '@/components/pages/ApiKeysPage';
 import { ChannelsTabPage } from '@/components/pages/ChannelsPage';
@@ -991,8 +991,8 @@ export function ProjectScreen() {
               onBack={handlePageBack}
               {...pageChrome}
             />
-          ) : activePageId === 'page:integrations' && PAGE_TABS[activePageId] ? (
-            <IntegrationsTabPage
+          ) : activePageId === 'page:connections' && PAGE_TABS[activePageId] ? (
+            <ConnectionsTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
               {...pageChrome}

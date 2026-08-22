@@ -1,4 +1,4 @@
-import { Children, isValidElement, cloneElement, type ReactNode } from 'react';
+import { Children, cloneElement, isValidElement, type ReactNode } from 'react';
 
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { cn } from '@/lib/utils';
@@ -19,7 +19,7 @@ const proseReset = '[&_p]:!my-0 [&_p+p]:!mt-3 [&_ul]:!my-3 [&_ol]:!my-3 [&_li]:!
  * <Fact label="…">value</Fact>. */
 export function KeyFacts({ children }: { children: ReactNode }) {
   return (
-    <div className="bg-border border-border my-8 grid gap-px overflow-hidden rounded-sm border grid-cols-2 sm:grid-cols-4">
+    <div className="bg-border border-border my-8 grid grid-cols-2 gap-px overflow-hidden rounded-sm border sm:grid-cols-4">
       {children}
     </div>
   );
@@ -87,7 +87,7 @@ export function Step({
   number?: number;
 }) {
   return (
-    <div className="bg-card p-6 md:p-8">
+    <div className="bg-card p-6">
       <div className="flex items-baseline gap-4">
         <span className="text-foreground/25 font-mono text-lg font-medium tabular-nums">
           {String(number ?? 0).padStart(2, '0')}
@@ -98,7 +98,7 @@ export function Step({
       </div>
       <div
         className={cn(
-          'text-muted-foreground mt-4 pl-9 text-[0.95rem] leading-relaxed',
+          'text-muted-foreground mt-4 pl-10 text-[0.95rem] leading-relaxed',
           proseReset,
         )}
       >
@@ -155,7 +155,7 @@ export function Figure({
 /** Outcome tiles — divider grid. Compose with <Stat value="…" label="…" />. */
 export function StatGrid({ children }: { children: ReactNode }) {
   return (
-    <div className="bg-border border-border my-8 grid gap-px overflow-hidden rounded-sm border grid-cols-1 sm:grid-cols-3">
+    <div className="bg-border border-border my-8 grid grid-cols-1 gap-px overflow-hidden rounded-sm border sm:grid-cols-3">
       {children}
     </div>
   );
@@ -164,7 +164,7 @@ export function StatGrid({ children }: { children: ReactNode }) {
 export function Stat({ value, label }: { value: string; label: string }) {
   return (
     <div className="bg-card flex flex-col p-6 md:p-8">
-      <span className="text-foreground text-3xl leading-none font-medium tracking-tight sm:text-4xl">
+      <span className="text-foreground text-xl leading-none font-medium tracking-tight sm:text-2xl">
         {value}
       </span>
       <span className="text-muted-foreground mt-3 text-sm leading-relaxed">{label}</span>

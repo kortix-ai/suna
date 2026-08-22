@@ -25,7 +25,7 @@ Read [`../brand-guidelines/SKILL.md`](../brand-guidelines/SKILL.md) for colors, 
 
 ## Messaging source
 
-Read [`../internal-comms/SKILL.md`](../internal-comms/SKILL.md) for positioning, canonical terminology, and approved wording before writing any in-image text, caption, or headline. brand-guidelines governs how it looks; internal-comms governs what it says — if a copy request conflicts with it, say so and offer the closest on-message option.
+Read [`../comms/SKILL.md`](../comms/SKILL.md) for positioning, canonical terminology, and approved wording before writing any in-image text, caption, or headline. brand-guidelines governs how it looks; comms governs what it says — if a copy request conflicts with it, say so and offer the closest on-message option.
 
 ## Logo
 

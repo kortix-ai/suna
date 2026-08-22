@@ -44,6 +44,7 @@ import {
   AGENT_THEME_COLORS_V2,
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
+  CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
@@ -53,6 +54,9 @@ import {
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
+  DURATION_RE,
+  MONITOR_MODES,
+  MONITOR_RUN_MAX_LENGTH,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
@@ -63,6 +67,12 @@ import {
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
+import {
+  CONNECTOR_HEADER_NAME_MAX_LENGTH,
+  CONNECTOR_HEADER_NAME_RE,
+  CONNECTOR_HEADER_VALUE_MAX_LENGTH,
+  CONNECTOR_HEADERS_MAX_COUNT,
+} from './connector-headers';
 
 /** A JSON Schema fragment — plain data, no `$id`/`$schema` (those belong on
  *  the top-level documents only). Kept loose (not the full 2020-12 meta-type)
@@ -310,8 +320,9 @@ function sandboxSchema(): JsonSchemaFragment {
   };
 }
 
-/** One `[[triggers]]` entry — cron or webhook (`validateTriggers`). */
+/** One `[[triggers]]` entry — cron, webhook, or monitor (`validateTriggers`). */
 function triggerSchema(): JsonSchemaFragment {
+  const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
     type: 'object',
     required: ['slug', 'type'],
@@ -324,8 +335,11 @@ function triggerSchema(): JsonSchemaFragment {
       agent: { type: 'string', minLength: 1 },
       agent_name: { type: 'string', minLength: 1 },
       enabled: enabledValueSchema(),
-      session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned'] },
-      sessionMode: { type: 'string', enum: ['fresh', 'reuse', 'pinned'] },
+      session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
+      session_key: { type: 'string' },
+      sessionKey: { type: 'string' },
+      filter: { type: 'object', additionalProperties: { type: 'string' } },
+      sessionMode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
       session_id: { type: 'string', minLength: 1 },
       sessionId: { type: 'string', minLength: 1 },
       prompt: NON_EMPTY_STRING,
@@ -337,6 +351,15 @@ function triggerSchema(): JsonSchemaFragment {
       timezone: { type: 'string' },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
+      // `type: monitor` only — the repo command the platform supervises 24/7,
+      // its shape, and the two duration bounds. The FLOORS (interval ≥ 30s,
+      // expect_event_within ≥ 5m) are value ranges over a formatted string,
+      // which JSON Schema can't express — the imperative validator owns them
+      // (see json-schema.conformance.test.ts's documented-divergence block).
+      run: { type: 'string', minLength: 1, maxLength: MONITOR_RUN_MAX_LENGTH },
+      mode: { type: 'string', enum: [...MONITOR_MODES] },
+      interval: durationSchema,
+      expect_event_within: durationSchema,
     },
     additionalProperties: true,
     allOf: [
@@ -357,6 +380,38 @@ function triggerSchema(): JsonSchemaFragment {
       {
         if: { properties: { type: { const: 'webhook' } } },
         then: { anyOf: [{ required: ['secret_env'] }, { required: ['secretEnv'] }] },
+      },
+      {
+        // A monitor names its command and its shape, and carries none of the
+        // cron/webhook wiring (`false` = the key may not appear at all).
+        if: { properties: { type: { const: 'monitor' } } },
+        then: {
+          required: ['run', 'mode'],
+          properties: {
+            cron: false,
+            schedule: false,
+            run_at: false,
+            runAt: false,
+            timezone: false,
+            secret_env: false,
+            secretEnv: false,
+          },
+        },
+      },
+      {
+        // `interval` is the poll period: required on poll, forbidden on stream.
+        if: {
+          properties: { type: { const: 'monitor' }, mode: { const: 'poll' } },
+          required: ['mode'],
+        },
+        then: { required: ['interval'] },
+      },
+      {
+        if: {
+          properties: { type: { const: 'monitor' }, mode: { const: 'stream' } },
+          required: ['mode'],
+        },
+        then: { properties: { interval: false } },
       },
     ],
   };
@@ -397,6 +452,7 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
     required: ['slug', 'provider'],
     properties: {
       slug: SLUG_SCHEMA,
+      name: NON_EMPTY_STRING,
       // `computer` is deliberately excluded — synth-only, never hand-authored.
       provider: { type: 'string', enum: [...CONNECTOR_PROVIDERS] },
       app: { type: 'string' },
@@ -408,6 +464,11 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
       spec: { type: 'string' },
       platform: { type: 'string', enum: [...CHANNEL_PLATFORMS] },
       credential: credentialSchema,
+      authorization_strategy: {
+        type: 'string',
+        enum: [...CONNECTOR_AUTHORIZATION_STRATEGIES],
+        default: 'project',
+      },
       agent_scope: agentScopeSchema,
       auth: {
         type: 'object',
@@ -417,6 +478,25 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
           secret: false,
         },
         additionalProperties: true,
+      },
+      // Arbitrary static request headers, sent on every outbound call. Names
+      // are RFC 7230 tokens; values are plaintext (NEVER a credential — that
+      // is `auth`) and may not contain CR/LF. Mirrors the shared ruleset in
+      // `connector-headers.ts` (the transport-owned forbidden names are
+      // enforced by the imperative validator, which can compare
+      // case-insensitively).
+      headers: {
+        type: 'object',
+        maxProperties: CONNECTOR_HEADERS_MAX_COUNT,
+        propertyNames: {
+          pattern: CONNECTOR_HEADER_NAME_RE.source,
+          maxLength: CONNECTOR_HEADER_NAME_MAX_LENGTH,
+        },
+        additionalProperties: {
+          type: 'string',
+          maxLength: CONNECTOR_HEADER_VALUE_MAX_LENGTH,
+          pattern: '^[^\\r\\n]*$',
+        },
       },
       policies: {
         type: 'array',
@@ -491,13 +571,85 @@ function agentBlockV2Schema(): JsonSchemaFragment {
     type: 'object',
     properties: {
       enabled: { type: 'boolean' },
+      sandbox: SLUG_SCHEMA,
       connectors: grantSetSchema(),
+      connectors_required: {
+        type: 'array',
+        items: NON_EMPTY_STRING,
+        description: 'Connector slugs that must resolve before the session starts.',
+      },
+      connectors_personal: {
+        type: 'array',
+        items: NON_EMPTY_STRING,
+        deprecated: true,
+        description: 'Deprecated input alias for connectors_required.',
+      },
       secrets: grantSetSchema(),
       skills: grantSetSchema(),
       kortix_cli: kortixCliGrantSetSchema(2),
       workspace: { type: 'string', enum: [...WORKSPACE_MODES_V2] },
     },
     additionalProperties: false,
+  };
+}
+
+function appStringMapSchema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    propertyNames: { pattern: ENV_NAME_PATTERN },
+    additionalProperties: { type: 'string', minLength: 1 },
+  };
+}
+
+function appBlockV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    properties: {
+      path: relativePathSchema(),
+      type: { type: 'string', enum: ['static', 'bundle', 'dockerfile', 'oci_image'] },
+      image: { type: 'string', minLength: 1 },
+      dockerfile: relativePathSchema(),
+      command: { type: 'array', minItems: 1, items: NON_EMPTY_STRING },
+      port: { type: 'integer', minimum: 1, maximum: 65535, not: { enum: [7331, 8080] } },
+      root: relativePathSchema(),
+      output_dir: relativePathSchema(),
+      install_command: NON_EMPTY_STRING,
+      build_command: NON_EMPTY_STRING,
+      spa: { type: 'boolean' },
+      readiness_path: { type: 'string', pattern: '^/' },
+      idle_timeout_seconds: { type: 'integer', minimum: 120, maximum: 86400 },
+      monthly_budget_usd: { type: 'number', minimum: 0 },
+      resources: {
+        type: 'object',
+        properties: {
+          cpu: { type: 'integer', minimum: 1, maximum: 64 },
+          memory_gb: { type: 'integer', minimum: 1, maximum: 512 },
+          disk_gb: { type: 'integer', minimum: 1, maximum: 2048 },
+        },
+        additionalProperties: false,
+      },
+      env: appStringMapSchema(),
+      secrets: appStringMapSchema(),
+    },
+    additionalProperties: false,
+    allOf: [
+      {
+        if: { properties: { type: { enum: ['dockerfile', 'oci_image'] } }, required: ['type'] },
+        then: { required: ['command', 'port'] },
+      },
+      {
+        if: { properties: { type: { const: 'oci_image' } }, required: ['type'] },
+        then: { required: ['image'] },
+      },
+    ],
+  };
+}
+
+function appsV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    propertyNames: { pattern: SLUG_RE.source },
+    additionalProperties: appBlockV2Schema(),
   };
 }
 
@@ -513,7 +665,7 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandboxes: false,
     triggers: { type: 'array', items: triggerSchema() },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
-    apps: false,
+    apps: connectorVersion === 2 ? appsV2Schema() : false,
   };
 }
 

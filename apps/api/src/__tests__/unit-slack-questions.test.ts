@@ -15,7 +15,9 @@ const record = (fn: string) => (...args: unknown[]) => {
 
 let postBlocksResult: string | null = '99.99';
 let postMessageResult: string | null = '88.88';
+const actualSlackApi = await import('../channels/slack-api');
 mock.module('../channels/slack-api', () => ({
+  ...actualSlackApi,
   openDmChannel: async () => null,
   postEphemeral: async (...a: unknown[]) => record('postEphemeral')(...a),
   postBlocks: async (...a: unknown[]) => {
@@ -31,7 +33,9 @@ mock.module('../channels/slack-api', () => ({
 
 // ─── turn.ts (consumed by questions.ts) ───────────────────────────────────────
 let activeTurn: Record<string, unknown> | null = null;
+const actualTurn = await import('../channels/slack/turn');
 mock.module('../channels/slack/turn', () => ({
+  ...actualTurn,
   loadTurn: async () => activeTurn,
   finalizeTurn: async (...a: unknown[]) => record('finalizeTurn')(...a),
   deleteTurn: async (...a: unknown[]) => record('deleteTurn')(...a),
@@ -39,7 +43,9 @@ mock.module('../channels/slack/turn', () => ({
 
 // ─── dispatch.ts (consumed by interactivity.ts) ───────────────────────────────
 let spawnArgs: unknown[] | null = null;
+const actualDispatch = await import('../channels/slack/dispatch');
 mock.module('../channels/slack/dispatch', () => ({
+  ...actualDispatch,
   spawnAgentTurn: async (...a: unknown[]) => {
     spawnArgs = a;
   },

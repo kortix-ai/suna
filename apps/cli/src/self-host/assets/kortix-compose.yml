@@ -217,7 +217,7 @@ services:
       KORTIX_MIN_FREE_DISK_MB: ${KORTIX_MIN_FREE_DISK_MB:-2048}
       # Optional push notification for every run's outcome (ok/degraded/
       # failed/skipped) — one generic env var, no vendor-specific
-      # integration. Unset by default (no-op). See notify_webhook() in
+      # connection. Unset by default (no-op). See notify_webhook() in
       # updater.sh.
       KORTIX_UPDATE_WEBHOOK_URL: ${KORTIX_UPDATE_WEBHOOK_URL:-}
     volumes:
@@ -297,6 +297,16 @@ services:
       KORTIX_DOMAIN: ${KORTIX_DOMAIN}
       KORTIX_API_DOMAIN: ${KORTIX_API_DOMAIN}
       KORTIX_ACME_EMAIL: ${KORTIX_ACME_EMAIL}
+      # The wildcard base domain the *.<apps base domain> site block serves.
+      # Empty unless Apps hosting is configured; the App-serving block + its
+      # on_demand_tls `ask` are only written into the Caddyfile in that case
+      # (see renderCaddyfile() in compose-assets.ts).
+      KORTIX_APPS_BASE_DOMAIN: ${KORTIX_APPS_BASE_DOMAIN}
+      # The wildcard base domain the *.<preview base domain> site block serves —
+      # one origin per sandbox port. Empty unless preview origins are
+      # configured, in which case previews stay on the path proxy. Same
+      # renderCaddyfile() gate as the Apps block above.
+      KORTIX_PREVIEW_BASE_DOMAIN: ${KORTIX_PREVIEW_BASE_DOMAIN}
     depends_on:
       kortix-api:
         condition: service_healthy

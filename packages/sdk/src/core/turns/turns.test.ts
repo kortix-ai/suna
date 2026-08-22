@@ -64,6 +64,65 @@ function assistantMsg(
   return { info: { id, role: 'assistant', parentID }, parts };
 }
 
+describe('groupMessagesIntoTurns — display order is by time.created, id is the tiebreak', () => {
+  // The Essentia case (2026-08-18): a steering prompt into a child session went
+  // out under a wire id minted 2 minutes in the past (the client's clock-skew
+  // backdate, with no transcript to lift against). Ordered by id, that ONE
+  // message teleported to the top of the thread. OpenCode stamps
+  // `time.created` at persistence — the box's clock, not the client's — so
+  // ordering by it degrades a bad id to slightly-odd placement at worst.
+  const at = (id: string, role: 'user' | 'assistant', created: number, parentID?: string) =>
+    ({ info: { id, role, parentID, time: { created } }, parts: [] }) as MessageWithPartsLike;
+
+  test('wire ids define display order — arrival timestamps do not reorder a batch', () => {
+    // OpenCode stamps `time.created` at PERSISTENCE (arrival wall-clock), and
+    // a batch of queued prompts is posted concurrently — their arrival order
+    // is the network's, not the user's. The wire id is the message's PLACED
+    // position (the control plane lifts a stale client id before it reaches
+    // the transcript), so for two wire ids the id decides. Here the batch
+    // arrived scrambled (created 5000 before 1000): display follows the ids.
+    const turns = groupMessagesIntoTurns([
+      at('msg_000000000001first', 'user', 5_000),
+      at('msg_000000000100second', 'user', 1_000),
+      at('msg_000000000200reply', 'assistant', 2_000, 'msg_000000000001first'),
+    ]);
+    expect(turns.map((t) => t.userMessage.info.id)).toEqual([
+      'msg_000000000001first',
+      'msg_000000000100second',
+    ]);
+    expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual(['msg_000000000200reply']);
+  });
+
+  test('equal timestamps fall back to id order, so the sort is total and stable', () => {
+    const turns = groupMessagesIntoTurns([
+      at('msg_b', 'user', 1_000),
+      at('msg_a', 'user', 1_000),
+    ]);
+    expect(turns.map((t) => t.userMessage.info.id)).toEqual(['msg_a', 'msg_b']);
+  });
+
+  test('a message with no timestamp sorts as newest — an optimistic stub is the latest thing', () => {
+    const turns = groupMessagesIntoTurns([
+      { info: { id: 'msg_0stub', role: 'user' }, parts: [] },
+      at('msg_9real', 'user', 1_000),
+    ]);
+    expect(turns.map((t) => t.userMessage.info.id)).toEqual(['msg_9real', 'msg_0stub']);
+  });
+
+  test('sequential fallback linking follows the DISPLAY order, not the input order', () => {
+    // An assistant message with no parentID attaches to the user turn that
+    // precedes it in display order.
+    const turns = groupMessagesIntoTurns([
+      at('msg_2', 'assistant', 2_500),
+      at('msg_1', 'user', 1_000),
+      at('msg_3', 'user', 3_000),
+    ]);
+    expect(turns[0].userMessage.info.id).toBe('msg_1');
+    expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual(['msg_2']);
+    expect(turns[1].assistantMessages).toEqual([]);
+  });
+});
+
 describe('groupMessagesIntoTurns', () => {
   test('groups assistant messages under their parent user message', () => {
     const turns = groupMessagesIntoTurns([
@@ -234,19 +293,30 @@ describe('computeStatusFromPart', () => {
 
   test('maps agent orchestration tools to delegation status', () => {
     for (const tool of ['task', 'session_spawn', 'session-start-background', 'agent_task']) {
-      expect(computeStatusFromPart(toolPart(tool))).toBe('Delegating to agent...');
+      expect(computeStatusFromPart(toolPart(tool))).toBe('Handing off to an agent...');
     }
   });
 
   test('maps task lifecycle tools', () => {
-    expect(computeStatusFromPart(toolPart('task_update'))).toBe('Updating task...');
-    expect(computeStatusFromPart(toolPart('task_done'))).toBe('Updating task...');
-    expect(computeStatusFromPart(toolPart('task_create'))).toBe('Creating task...');
-    expect(computeStatusFromPart(toolPart('agent_message'))).toBe('Messaging agent...');
+    expect(computeStatusFromPart(toolPart('task_update'))).toBe('Updating progress...');
+    expect(computeStatusFromPart(toolPart('task_done'))).toBe('Updating progress...');
+    expect(computeStatusFromPart(toolPart('task_create'))).toBe('Starting a new task...');
+    expect(computeStatusFromPart(toolPart('agent_message'))).toBe('Checking in with an agent...');
   });
 
-  test('falls back to a generic running label', () => {
-    expect(computeStatusFromPart(toolPart('unknown_tool'))).toBe('Running unknown_tool...');
+  test('maps file and command tools to plain-language labels', () => {
+    expect(computeStatusFromPart(toolPart('read'))).toBe('Reading files...');
+    expect(computeStatusFromPart(toolPart('grep'))).toBe('Searching files...');
+    expect(computeStatusFromPart(toolPart('edit'))).toBe('Making changes...');
+    expect(computeStatusFromPart(toolPart('apply_patch'))).toBe('Making changes...');
+    expect(computeStatusFromPart(toolPart('bash'))).toBe('Working on the computer...');
+    expect(computeStatusFromPart(toolPart('prune'))).toBe('Tidying up memory...');
+    expect(computeStatusFromPart(toolPart('compress'))).toBe('Tidying up memory...');
+  });
+
+  test('falls back to a generic working label without exposing the tool name', () => {
+    expect(computeStatusFromPart(toolPart('unknown_tool'))).toBe('Working on it...');
+    expect(computeStatusFromPart(toolPart('mcp__server__weird_tool'))).toBe('Working on it...');
   });
 });
 
@@ -420,6 +490,30 @@ describe('getSessionCost', () => {
     ];
     const raw = 1 * deepseekRates.outputPer1M;
     expect(getSessionCost(messages, lookup)).toBeCloseTo(raw * COST_MARKUP, 8);
+  });
+
+  test('uses the supplied cache-write rate', () => {
+    const cacheWriteLookup: ModelPricingLookup = () => ({
+      inputPer1M: 1,
+      outputPer1M: 4,
+      cacheReadPer1M: 0.2,
+      cacheWritePer1M: 1.5,
+    });
+    const messages = [
+      {
+        ...assistantInfo({ modelID: 'glm-5.2' }),
+        parts: [
+          stepFinishPart({
+            tokens: {
+              input: 1_000_000,
+              output: 0,
+              cache: { read: 0, write: 1_000_000 },
+            },
+          }),
+        ],
+      },
+    ];
+    expect(getSessionCost(messages, cacheWriteLookup)).toBeCloseTo(1.5 * COST_MARKUP, 8);
   });
 });
 

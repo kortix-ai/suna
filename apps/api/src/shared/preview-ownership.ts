@@ -14,9 +14,16 @@
 import { db } from './db';
 import { isPlatformAdmin } from './platform-roles';
 import { resolveAccountId } from './resolve-account';
-import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject } from '../executor/share';
+import {
+  isProjectSessionVisibleTo,
+  isTriggerCreatedSessionMetadata,
+  loadSessionGrants,
+  resolveShareSubject,
+} from '../connectors/share';
+import { authorize } from '../iam';
+import { actorForUser } from '../iam/actor';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -47,13 +54,32 @@ export async function canAccessSandboxSession(input: {
   projectId: string;
   accountId: string;
   userId: string;
+  /** The caller's own session when the credential is bound to one, or null.
+   *  REQUIRED — an omitted binding would fail open. */
+  callerSessionId: string | null;
+  /** The caller's AGENT/SANDBOX token binding (`callerKortixSessionId(c)`).
+   *  Only the trigger-session manager override reads it — see share.ts. */
+  boundCredentialSessionId: string | null;
 }): Promise<boolean> {
-  const key = `${input.sessionId}|${input.userId}`;
+  // callerSessionId MUST be in the key. In Kortix-as-a-Backend every end-user
+  // shares one `userId` (the wrapper credential), so without it end-user A and
+  // end-user B collide on one entry for the same target session — and the first
+  // `true` would be served to everyone else for the whole TTL, silently
+  // defeating the isolation check below.
+  // boundCredentialSessionId is in the key for the same reason callerSessionId
+  // is: it changes the verdict (it gates the manager override), so two callers
+  // that differ only in it must not share one entry.
+  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}`;
   const cached = sessionVisibilityCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.allowed;
 
   const [row] = await db
-    .select({ visibility: projectSessions.visibility, createdBy: projectSessions.createdBy })
+    .select({
+      visibility: projectSessions.visibility,
+      createdBy: projectSessions.createdBy,
+      origin: projectSessions.origin,
+      metadata: projectSessions.metadata,
+    })
     .from(projectSessions)
     .where(
       and(
@@ -66,13 +92,30 @@ export async function canAccessSandboxSession(input: {
 
   let allowed = true;
   if (row) {
-    const subject = await resolveShareSubject(input.userId);
-    const grants = (await loadSessionGrants([input.sessionId])).get(input.sessionId) ?? [];
-    allowed = isSessionVisibleTo(
+    const [subject, grantsBySession, managerVerdict] = await Promise.all([
+      resolveShareSubject(input.userId),
+      loadSessionGrants([input.sessionId]),
+      isTriggerCreatedSessionMetadata(row.metadata)
+        ? authorize(
+            actorForUser(input.userId, input.accountId),
+            'project.members.manage',
+            { type: 'project', id: input.projectId },
+          )
+        : Promise.resolve({ allowed: false as const, reason: 'not_trigger_session' }),
+    ]);
+    const grants = grantsBySession.get(input.sessionId) ?? [];
+    allowed = isProjectSessionVisibleTo(
       row.visibility as 'private' | 'project' | 'restricted',
       row.createdBy,
       grants,
       subject,
+      {
+        origin: row.origin ?? null,
+        sessionId: input.sessionId,
+        callerSessionId: input.callerSessionId,
+        boundCredentialSessionId: input.boundCredentialSessionId,
+      },
+      { metadata: row.metadata, canManageProject: managerVerdict.allowed },
     );
   }
   sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });
@@ -95,13 +138,19 @@ function cacheKey(previewSandboxId: string, userId: string): string {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Resolve the real session sandbox uuid + owning account from a
+ * Resolve the real session sandbox uuid + owning account/project from a
  * `previewSandboxId`, which can be either a uuid (sandboxId / externalId) or
  * the Daytona-side externalId string.
  */
 async function resolveSandboxRef(
   previewSandboxId: string,
-): Promise<{ sandboxId: string; accountId: string } | null> {
+): Promise<{ sandboxId: string; accountId: string; projectId: string } | null> {
+  const columns = {
+    sandboxId: sessionSandboxes.sandboxId,
+    accountId: sessionSandboxes.accountId,
+    projectId: sessionSandboxes.projectId,
+  };
+
   const idCondition = UUID_RE.test(previewSandboxId)
     ? or(
         eq(sessionSandboxes.externalId, previewSandboxId),
@@ -109,13 +158,45 @@ async function resolveSandboxRef(
       )
     : eq(sessionSandboxes.externalId, previewSandboxId);
 
-  const [row] = await db
-    .select({ sandboxId: sessionSandboxes.sandboxId, accountId: sessionSandboxes.accountId })
+  const [row] = await db.select(columns).from(sessionSandboxes).where(idCondition).limit(1);
+  if (row) return row;
+
+  // Case-insensitive fallback — REQUIRED for subdomain previews.
+  //
+  // `external_id` is an uppercase ULID (`sbx_01KYCZ…`), but the subdomain form
+  // `p{port}-{sandboxId}.{host}` carries it in a HOSTNAME, and hostnames are
+  // case-insensitive: the browser lowercases them before the Host header is
+  // ever sent, so the proxy can only ever see `sbx_01kycz…`. An exact `eq`
+  // therefore never matched and every subdomain preview 401'd with
+  // `{"error":"Unauthorized"}`, while the path-based `/v1/p/{id}/{port}` route
+  // — whose id lives in a case-PRESERVING path segment — worked fine. That
+  // asymmetry is what made this look like a token bug rather than a lookup bug.
+  //
+  // The exact match above stays the indexed fast path; this only runs on a miss,
+  // and the result is cached by `getOrCompute`.
+  const [ciRow] = await db
+    .select(columns)
     .from(sessionSandboxes)
-    .where(idCondition)
+    .where(sql`lower(${sessionSandboxes.externalId}) = lower(${previewSandboxId})`)
     .limit(1);
 
-  return row ?? null;
+  return ciRow ?? null;
+}
+
+/**
+ * Resolve the project a sandbox belongs to, given the same `previewSandboxId`
+ * form the proxy path carries (uuid or Daytona externalId). Used by the
+ * project-scoped-PAT gate in middleware/auth.ts to decide whether a project
+ * PAT may reach `/v1/p/{sandboxId}/...` — it may, only for a sandbox whose
+ * `session_sandboxes.project_id` matches the token's own project. One indexed
+ * lookup (sandbox_id is the PK; external_id and project_id are both indexed),
+ * so this is cheap enough for the auth hot path. Returns null when the
+ * sandbox row can't be found — callers must treat that as "deny", not
+ * "unscoped ok".
+ */
+export async function resolveSandboxProjectId(previewSandboxId: string): Promise<string | null> {
+  const ref = await resolveSandboxRef(previewSandboxId);
+  return ref?.projectId ?? null;
 }
 
 async function isAccountMember(userId: string, accountId: string): Promise<boolean> {

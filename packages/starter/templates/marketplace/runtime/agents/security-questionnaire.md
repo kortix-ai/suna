@@ -8,7 +8,6 @@ description: >-
   the completed draft to {{security_channel}} — holding it for security to
   review before it goes back to the prospect.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

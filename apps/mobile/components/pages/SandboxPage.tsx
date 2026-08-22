@@ -96,7 +96,9 @@ const STATUS_STYLE: Record<ProjectSnapshotStatus, { label: string; color: string
 };
 
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
+  quota: 'Snapshot quota reached',
   dockerfile: 'Dockerfile build failed',
+  layer: 'Kortix runtime layer failed',
   git: 'Repository access failed',
   tunnel: 'Sandbox callback unreachable',
   provider: 'Sandbox provider error',
@@ -501,7 +503,7 @@ export function SandboxPage({
   const insets = useSafeAreaInsets();
 
   const projectQuery = useProject(projectId);
-  const canManage = projectQuery.data?.effective_project_role === 'editor';
+  const canManage = projectQuery.data?.effective_project_role === 'manager';
   const { data, isLoading, isError, error, refetch } = useProjectSnapshots(projectId);
 
   const buildMut = useBuildSandboxTemplate(projectId);

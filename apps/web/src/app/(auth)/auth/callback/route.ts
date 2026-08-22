@@ -1,9 +1,21 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
-import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
-import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import {
+  isInviteReturnUrl,
+  resolveAuthRedirectBaseUrl,
+  resolveNewAccountReturnUrl,
+  sanitizeAuthReturnUrl,
+} from '@/lib/auth/return-url';
+import {
+  LAST_PROJECT_COOKIE,
+  POST_AUTH_INTENT_COOKIE,
+  POST_AUTH_INTENT_MAX_AGE,
+  PROJECT_LANDING_PATH,
+  parseLastProjectForUser,
+  projectPathFromId,
+} from '@/lib/onboarding/landing-destination';
 import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
-import { fetchAccountStateWithToken } from '@kortix/sdk/projects-client';
+import { fetchAccountStateWithToken } from '@kortix/sdk';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import type { NextRequest } from 'next/server';
@@ -58,10 +70,15 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Use request origin for redirects (most reliable for local dev)
-  // This ensures localhost:3000 redirects stay on localhost, not staging
+  // Prefer the request origin for redirects (most reliable for local dev — keeps
+  // localhost:3000 on localhost, not a configured staging APP_URL). On self-host
+  // the frontend is a Next standalone server bound to HOSTNAME=0.0.0.0 behind a
+  // reverse proxy, so request.nextUrl.origin can be the internal bind address
+  // (https://0.0.0.0:3000); resolveAuthRedirectBaseUrl falls back to the public
+  // APP_URL in exactly that case so post-auth (incl. SSO) redirects land on the
+  // real host. See lib/auth/return-url.ts.
   const requestOrigin = request.nextUrl.origin;
-  const baseUrl = requestOrigin || runtimeEnv.APP_URL || 'http://localhost:3000';
+  const baseUrl = resolveAuthRedirectBaseUrl(requestOrigin, runtimeEnv.APP_URL);
   const error = searchParams.get('error');
   const errorCode = searchParams.get('error_code');
   const errorDescription = searchParams.get('error_description');
@@ -160,6 +177,12 @@ export async function GET(request: NextRequest) {
         authEvent = isNewUser ? 'signup' : 'login';
         authMethod = data.user.app_metadata?.provider || 'email';
 
+        // OAuth/SSO signups reach this handler seconds after the account is
+        // created, so this is where a provider signup gets the rule the
+        // email flows already applied when they minted their link: a return
+        // URL the new account cannot own does not survive the signup.
+        if (isNewUser) finalDestination = resolveNewAccountReturnUrl(next);
+
         const pendingReferralCode = request.cookies.get('pending-referral-code')?.value;
         if (pendingReferralCode) {
           try {
@@ -209,21 +232,42 @@ export async function GET(request: NextRequest) {
               timeoutMs: 5000,
             });
 
-            if (accountState) {
-              if (!accountHasAppAccess(accountState)) {
-                finalDestination = '/accounts';
-              } else if (isNewUser) {
-                const projectPath = await resolveFirstProjectPathForNewUser({
-                  backendUrl,
-                  accessToken,
-                  isNewUser: true,
-                });
-                if (projectPath) finalDestination = projectPath;
-              }
+            // The ONLY backend call left on this redirect's critical path, and
+            // the only reason to override the destination here. First-project
+            // provisioning deliberately does NOT happen in this handler any
+            // more: it used to await accounts (8s) + projects (8s) + a managed
+            // git repo create AND a full starter push (90s) before the browser
+            // received any redirect at all, so a fresh signup stared at a blank
+            // callback page for the whole provision. `PROJECT_LANDING_PATH`
+            // now paints instantly and does that work behind the real UI.
+            // `/settings/billing`, not `/projects/start`: this branch exists
+            // so an account with no app access is NOT given a project, and
+            // the landing door provisions one. The settings route mounts the
+            // panel directly for exactly this reason — see
+            // `features/workspace/settings/standalone-settings-route.tsx`.
+            if (accountState && !accountHasAppAccess(accountState)) {
+              finalDestination = '/settings/billing';
             }
           } catch (err) {
             console.warn('Could not check account state from backend:', err);
           }
+        }
+
+        // Returning users skip the landing door's resolve step entirely: the
+        // browser already told us which project they had open last. Reading a
+        // cookie costs nothing, so this is a strictly free hop to remove.
+        if (finalDestination === PROJECT_LANDING_PATH) {
+          // Scoped to THIS user. The cookie survives sign-out, so an unscoped
+          // read sent the next account to sign in on this browser straight into
+          // the previous account's project — i.e. onto "Request access to this
+          // project", on every login.
+          const lastProjectPath = projectPathFromId(
+            parseLastProjectForUser(
+              request.cookies.get(LAST_PROJECT_COOKIE)?.value,
+              data.user.id,
+            ),
+          );
+          if (lastProjectPath) finalDestination = lastProjectPath;
         }
       }
 
@@ -232,6 +276,17 @@ export async function GET(request: NextRequest) {
       redirectUrl.searchParams.set('auth_event', authEvent);
       redirectUrl.searchParams.set('auth_method', authMethod);
       const response = NextResponse.redirect(redirectUrl);
+
+      // Authentication just completed, and this redirect is about to land on
+      // the landing door with whatever referrer the magic link / IdP hop
+      // carried — usually a cross-origin one. The marker is what lets the door
+      // provision a first project anyway; without it a webmail signup is
+      // demoted to the projects list. See navigationMayCreateProject.
+      response.cookies.set(POST_AUTH_INTENT_COOKIE, '1', {
+        maxAge: POST_AUTH_INTENT_MAX_AGE,
+        path: '/',
+        sameSite: 'lax',
+      });
 
       // Clear stale legacy instance cookie so repo-first sessions do not inherit it after login.
       response.cookies.set(ACTIVE_INSTANCE_COOKIE, '', { maxAge: 0, path: '/' });

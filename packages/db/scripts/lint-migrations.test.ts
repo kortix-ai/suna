@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { lintMigration, lintMigrationSet } from './lint-migrations';
+import { lintMigration, lintMigrationSet, parseLockTimeoutMs } from './lint-migrations';
 
 const GOOD_NAME = '20260101000000000_add_widget.sql';
 
@@ -54,6 +54,57 @@ describe('lintMigration', () => {
   test('does not warn on DELETE that has a WHERE clause', () => {
     const { warnings } = lintMigration(GOOD_NAME, "DELETE FROM kortix.widgets WHERE id = '1';");
     expect(warnings).toEqual([]);
+  });
+});
+
+describe('backfill-DML guard (centralized_audit_v2 outage class)', () => {
+  test('rejects a top-level UPDATE without a backfill-safe sign-off', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      'ALTER TABLE kortix.widgets ADD COLUMN kind text;\nUPDATE kortix.widgets SET kind = \'x\' WHERE kind IS NULL;\n',
+    );
+    expect(errors.some((e) => e.includes('top-level DML'))).toBe(true);
+  });
+
+  test('rejects a data-modifying WITH ... UPDATE CTE', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      'WITH ranked AS (SELECT id FROM kortix.widgets)\nUPDATE kortix.widgets w SET n = 1 FROM ranked r WHERE w.id = r.id;\n',
+    );
+    expect(errors.some((e) => e.includes('top-level DML'))).toBe(true);
+  });
+
+  test('rejects DML that follows a drizzle statement-breakpoint on the same line', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      "ALTER TABLE kortix.widgets ADD COLUMN kind text;--> statement-breakpoint\nUPDATE kortix.widgets SET kind = 'x' WHERE kind IS NULL;--> statement-breakpoint\n",
+    );
+    expect(errors.some((e) => e.includes('top-level DML'))).toBe(true);
+  });
+
+  test('accepts DML with a backfill-safe sign-off', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      "-- backfill-safe: widgets has < 1000 rows in every env and no hot writers\nUPDATE kortix.widgets SET kind = 'x' WHERE kind IS NULL;\n",
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test('ignores DML inside a dollar-quoted trigger function body', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      "CREATE OR REPLACE FUNCTION kortix.widget_audit() RETURNS trigger LANGUAGE plpgsql AS $$\nBEGIN\n  INSERT INTO kortix.audit_events(action) VALUES ('widget');\n  RETURN NEW;\nEND;\n$$;\n",
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test('exempts a backfill-grandfathered migration', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      "UPDATE kortix.widgets SET kind = 'x' WHERE kind IS NULL;\n",
+      { backfillGrandfathered: true },
+    );
+    expect(errors).toEqual([]);
   });
 });
 
@@ -228,7 +279,7 @@ describe('.concurrent.ts escape hatch', () => {
       [
         'export const up = (pgm) => {',
         '  pgm.noTransaction();',
-        "  pgm.sql(`set lock_timeout = '2s'; create index concurrently idx_x on kortix.widgets (name);`);",
+        "  pgm.sql(`set lock_timeout = '180s'; create index concurrently idx_x on kortix.widgets (name);`);",
         '};',
       ].join('\n'),
     );
@@ -241,7 +292,7 @@ describe('.concurrent.ts escape hatch', () => {
       [
         'export const up = (pgm) => {',
         '  pgm.noTransaction();',
-        "  pgm.sql(`set lock_timeout = '2s'`);",
+        "  pgm.sql(`set lock_timeout = '180s'`);",
         "  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);",
         '};',
       ].join('\n'),
@@ -275,6 +326,20 @@ describe('.concurrent.ts escape hatch', () => {
     expect(errors.some((e) => e.includes('mixed-version'))).toBe(true);
   });
 
+  test('accepts a well-formed CONCURRENTLY migration at the scaffolded lock_timeout', () => {
+    const { errors } = lintMigration(
+      CONCURRENT_NAME,
+      [
+        'export const up = (pgm) => {',
+        '  pgm.noTransaction();',
+        "  pgm.sql(`set lock_timeout = '180s'`);",
+        "  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);",
+        '};',
+      ].join('\n'),
+    );
+    expect(errors).toEqual([]);
+  });
+
   test('accepts a .concurrent.ts DROP INDEX CONCURRENTLY with a // mixed-version-safe annotation', () => {
     const { errors } = lintMigration(
       CONCURRENT_NAME,
@@ -287,5 +352,161 @@ describe('.concurrent.ts escape hatch', () => {
       ].join('\n'),
     );
     expect(errors.some((e) => e.includes('mixed-version'))).toBe(false);
+  });
+});
+
+/**
+ * The CONCURRENTLY lock_timeout floor.
+ *
+ * v0.13.0 deploy-prod run 32248002434 failed its migration job twice with 55P03
+ * on `.concurrent` migrations that set `lock_timeout = '5s'` — once on a 6-row,
+ * 80 kB table, which is what proved table size was not the variable. CIC waits
+ * on every transaction that began before it, and lock_timeout governs that wait.
+ */
+describe('CONCURRENTLY lock_timeout floor', () => {
+  const CONCURRENT_NAME = '20260101000000000_add_widget_index.concurrent.ts';
+
+  function concurrentFile(lockTimeout: string | null): string {
+    return [
+      'export const up = (pgm) => {',
+      '  pgm.noTransaction();',
+      ...(lockTimeout === null ? [] : [`  pgm.sql(\`set lock_timeout = '${lockTimeout}'\`);`]),
+      '  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);',
+      '};',
+    ].join('\n');
+  }
+
+  function lockTimeoutErrors(source: string, options = {}) {
+    return lintMigration(CONCURRENT_NAME, source, options).errors.filter((e) =>
+      e.includes('lock_timeout'),
+    );
+  }
+
+  test("rejects the 5s value that failed prod", () => {
+    const errors = lockTimeoutErrors(concurrentFile('5s'));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("lock_timeout = '5s'");
+    expect(errors[0]).toContain('120s floor');
+    expect(errors[0]).toContain('55P03');
+  });
+
+  test('rejects the 2s house value the old template scaffolded', () => {
+    expect(lockTimeoutErrors(concurrentFile('2s'))).toHaveLength(1);
+  });
+
+  test('accepts the 180s value the template now scaffolds', () => {
+    expect(lockTimeoutErrors(concurrentFile('180s'))).toEqual([]);
+  });
+
+  test('accepts equivalent durations at or above the floor', () => {
+    for (const value of ['120s', '3min', '2min', '180000', '300000ms', '1h']) {
+      expect(lockTimeoutErrors(concurrentFile(value))).toEqual([]);
+    }
+  });
+
+  test('rejects sub-floor durations however they are spelled', () => {
+    for (const value of ['119s', '1min', '5000', '90000ms', '1000000us']) {
+      expect(lockTimeoutErrors(concurrentFile(value))).toHaveLength(1);
+    }
+  });
+
+  test("accepts '0', which disables the timeout and waits indefinitely", () => {
+    expect(lockTimeoutErrors(concurrentFile('0'))).toEqual([]);
+  });
+
+  test('accepts a file that sets no lock_timeout at all', () => {
+    // Postgres defaults lock_timeout to 0 (disabled), which is safe for a CIC.
+    // The rule is "if you set it, set it high enough", not "you must set it".
+    expect(lockTimeoutErrors(concurrentFile(null))).toEqual([]);
+  });
+
+  test('flags an unparseable value rather than passing it', () => {
+    const errors = lockTimeoutErrors(concurrentFile('soon'));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('unrecognized');
+  });
+
+  test('checks every lock_timeout in the file, not just the first', () => {
+    const source = [
+      'export const up = (pgm) => {',
+      '  pgm.noTransaction();',
+      "  pgm.sql(`set lock_timeout = '180s'`);",
+      '  pgm.sql(`create index concurrently if not exists idx_a on kortix.widgets (a)`);',
+      "  pgm.sql(`set lock_timeout = '5s'`);",
+      '  pgm.sql(`create index concurrently if not exists idx_b on kortix.widgets (b)`);',
+      '};',
+    ].join('\n');
+    expect(lockTimeoutErrors(source)).toHaveLength(1);
+  });
+
+  test('ignores a lock_timeout that appears only in a comment', () => {
+    const source = [
+      "// Do not copy `set lock_timeout = '2s'` from a .sql migration into this file.",
+      'export const up = (pgm) => {',
+      '  pgm.noTransaction();',
+      "  pgm.sql(`set lock_timeout = '180s'`);",
+      '  pgm.sql(`create index concurrently if not exists idx_widgets_name on kortix.widgets (name)`);',
+      '};',
+    ].join('\n');
+    expect(lockTimeoutErrors(source)).toEqual([]);
+  });
+
+  test('does NOT apply to a batched-DML pass, which needs the short value', () => {
+    // A batched data migration holds ROW locks, so a long lock_timeout there
+    // really would queue writers behind it. The floor is CONCURRENTLY-only.
+    const source = [
+      '// batched-dml: role_assignments, 1000 rows per batch, bounded by account count',
+      'export const up = (pgm) => {',
+      '  pgm.noTransaction();',
+      "  pgm.sql(`set lock_timeout = '5s'`);",
+      "  pgm.sql(`update kortix.widgets set kind = 'x' where kind is null`);",
+      '};',
+    ].join('\n');
+    expect(lockTimeoutErrors(source)).toEqual([]);
+  });
+
+  test('exempts a grandfathered pre-floor migration', () => {
+    expect(
+      lockTimeoutErrors(concurrentFile('2s'), { concurrentLockTimeoutGrandfathered: true }),
+    ).toEqual([]);
+  });
+
+  test('the floor is independent of the other grandfather baselines', () => {
+    // A file exempted from the mixed-version/backfill baselines is still held
+    // to the lock_timeout floor — the cutoffs are separate on purpose.
+    expect(
+      lockTimeoutErrors(concurrentFile('5s'), { grandfathered: true, backfillGrandfathered: true }),
+    ).toHaveLength(1);
+  });
+});
+
+describe('parseLockTimeoutMs', () => {
+  test('reads every Postgres duration unit', () => {
+    expect(parseLockTimeoutMs('180s')).toBe(180_000);
+    expect(parseLockTimeoutMs('3min')).toBe(180_000);
+    expect(parseLockTimeoutMs('2h')).toBe(7_200_000);
+    expect(parseLockTimeoutMs('1d')).toBe(86_400_000);
+    expect(parseLockTimeoutMs('500ms')).toBe(500);
+    expect(parseLockTimeoutMs('2000us')).toBe(2);
+  });
+
+  test('treats a bare number as milliseconds, like Postgres', () => {
+    expect(parseLockTimeoutMs('180000')).toBe(180_000);
+  });
+
+  test("treats '0' as no timeout at all", () => {
+    expect(parseLockTimeoutMs('0')).toBe(Number.POSITIVE_INFINITY);
+    expect(parseLockTimeoutMs('0s')).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  test('tolerates whitespace and case', () => {
+    expect(parseLockTimeoutMs('  180S  ')).toBe(180_000);
+  });
+
+  test('returns null for anything it cannot read', () => {
+    expect(parseLockTimeoutMs('soon')).toBeNull();
+    expect(parseLockTimeoutMs('')).toBeNull();
+    expect(parseLockTimeoutMs('3 weeks')).toBeNull();
+    expect(parseLockTimeoutMs('-5s')).toBeNull();
   });
 });

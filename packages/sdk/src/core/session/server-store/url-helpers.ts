@@ -9,17 +9,27 @@ function stripTrailingSlashes(s: string): string {
 }
 
 /**
- * The backend base URL. All sandbox traffic routes through the backend's
- * unified preview proxy: /v1/p/{sandboxId}/{port}/*
+ * The backend base URL.
+ *
+ * CONTROL traffic — the OpenCode/daemon REST channel on port 8000 — routes
+ * through the path proxy, `/v1/p/{sandboxId}/{port}/*`, and stays there: it is
+ * a programmatic transport with a per-request bearer token, not a browser
+ * surface, so a per-preview origin buys it nothing and would put turn delivery
+ * behind wildcard DNS, a certificate and an edge Worker.
+ *
+ * BROWSER traffic goes to the preview ORIGIN this deployment advertises via
+ * `GET /v1/p/config` — see core/session/preview-config.ts and `rewriteLocalhostUrl`.
+ * Those are the only two forms, and only those two functions choose between them.
  */
 export function getBackendUrl(): string {
   return stripTrailingSlashes(platformConfig().backendUrl || 'http://localhost:8008/v1');
 }
 
 export function getDefaultSandboxUrl(): string {
-  // Self-host override only; empty in cloud (the session runtime is the source
-  // of truth). No auto-default — an unconfigured id just yields an empty path.
-  const sandboxId = platformConfig().sandboxId || '';
+  // Self-host override only. Without an explicit id there is no valid target,
+  // so callers must wait for the active session to bind its runtime.
+  const sandboxId = platformConfig().sandboxId;
+  if (!sandboxId) return '';
   return `${getBackendUrl()}/p/${sandboxId}/8000`;
 }
 

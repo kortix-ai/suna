@@ -30,7 +30,12 @@ mock.module('../shared/db', () => ({
         }),
         innerJoin: () => ({
           where: () => ({
-            limit: async () => branchCandidates,
+            // The sweep now orders oldest-first (forward-progress guarantee) and
+            // excludes never-deletable rows in SQL; this mock ignores predicates
+            // and returns the fixtures, so orderBy is a passthrough here.
+            orderBy: () => ({
+              limit: async () => branchCandidates,
+            }),
           }),
         }),
       }),
@@ -45,7 +50,9 @@ mock.module('../shared/db', () => ({
   },
 }));
 
+const actualProviders = await import('../platform/providers');
 mock.module('../platform/providers', () => ({
+  ...actualProviders,
   WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
     constructor(message: string) {
       super(message);
@@ -80,12 +87,14 @@ mock.module('../projects/git', () => ({
   readRepoFile: async () => '',
   readManifestFromRepo: async () => null,
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   getFileAtRef: async () => null,
   resolveCommitSha: async () => 'a'.repeat(40),
+  resolveFastBootGitHint: async () => ({ baseSha: 'a'.repeat(40) }),
   resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),
@@ -99,7 +108,18 @@ mock.module('../projects/git', () => ({
   invalidateProjectMirror: () => {},
 }));
 
+mock.module('../projects/session-lifecycle/undelivered-prompts', () => ({
+  reconcileUndeliveredPrompts: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
+}));
+
+// Spread the real module rather than hand-listing its surface: a mock REPLACES
+// the module, so every export the code under test imports must exist here, and
+// hand-maintained lists rot into `SyntaxError: Export named 'x' not found` the
+// moment the module grows one. Neither of these modules connects to anything at
+// import time, so pulling the real one in stays hermetic.
+const actualReaper = await import('../projects/sandbox-reaper');
 mock.module('../projects/sandbox-reaper', () => ({
+  ...actualReaper,
   reapAndReconcileSandboxes: async () => ({
     candidates: 0,
     stopped: 0,

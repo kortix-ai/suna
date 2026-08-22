@@ -17,20 +17,34 @@ export function calculateCost(
   cachedTokens: number = 0,
   cacheWriteTokens: number = 0,
   markup: number = KORTIX_MARKUP,
+  upstreamCostHint?: number,
 ): number {
-  // When we have cache metrics and the model has cache pricing, compute differential cost
-  if ((cachedTokens > 0 || cacheWriteTokens > 0) && modelConfig.cacheReadPer1M != null) {
+  if (typeof upstreamCostHint === 'number' && upstreamCostHint >= 0) {
+    return upstreamCostHint * markup;
+  }
+  const tierCandidates = [
+    ...(modelConfig.tiers ?? []),
+    ...(modelConfig.contextOver200k ? [modelConfig.contextOver200k] : []),
+  ]
+    .filter((tier) => promptTokens > tier.contextThreshold)
+    .sort((a, b) => b.contextThreshold - a.contextThreshold);
+  const pricing = tierCandidates[0] ?? modelConfig;
+  // Cache categories are always priced independently. Missing category rates
+  // fall back to the plain input rate.
+  if (cachedTokens > 0 || cacheWriteTokens > 0) {
     const regularInputTokens = Math.max(0, promptTokens - cachedTokens - cacheWriteTokens);
-    const regularInputCost = (regularInputTokens / 1_000_000) * modelConfig.inputPer1M;
-    const cacheReadCost = (cachedTokens / 1_000_000) * modelConfig.cacheReadPer1M;
-    const cacheWriteCost = (cacheWriteTokens / 1_000_000) * (modelConfig.cacheWritePer1M ?? modelConfig.inputPer1M);
-    const outputCost = (completionTokens / 1_000_000) * modelConfig.outputPer1M;
+    const regularInputCost = (regularInputTokens / 1_000_000) * pricing.inputPer1M;
+    const cacheReadCost =
+      (cachedTokens / 1_000_000) * (pricing.cacheReadPer1M ?? pricing.inputPer1M);
+    const cacheWriteCost =
+      (cacheWriteTokens / 1_000_000) * (pricing.cacheWritePer1M ?? pricing.inputPer1M);
+    const outputCost = (completionTokens / 1_000_000) * pricing.outputPer1M;
     return (regularInputCost + cacheReadCost + cacheWriteCost + outputCost) * markup;
   }
 
   // Fallback: flat input pricing (no cache breakdown)
-  const inputCost = (promptTokens / 1_000_000) * modelConfig.inputPer1M;
-  const outputCost = (completionTokens / 1_000_000) * modelConfig.outputPer1M;
+  const inputCost = (promptTokens / 1_000_000) * pricing.inputPer1M;
+  const outputCost = (completionTokens / 1_000_000) * pricing.outputPer1M;
   return (inputCost + outputCost) * markup;
 }
 
@@ -67,7 +81,7 @@ export async function proxyToOpenRouter(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'HTTP-Referer': OPENROUTER_APP_REFERER,
       'X-Title': OPENROUTER_APP_TITLE,
       ...traceHeaders,
@@ -83,20 +97,70 @@ export interface UsageInfo {
   completionTokens: number;
   cachedTokens: number;
   cacheWriteTokens: number;
+  upstreamCost: number | undefined;
 }
 
 /**
- * Extract usage from a non-streaming OpenAI-compatible response body.
- * Includes cache metrics from prompt_tokens_details when available.
+ * Extract provider usage into one canonical token shape.
+ *
+ * Anthropic reports plain input, cache reads, and cache writes separately.
+ * `promptTokens` includes all three categories so pricing can subtract the
+ * cache categories before it prices the plain-input remainder.
  */
-export function extractUsage(responseBody: any): UsageInfo | null {
-  if (!responseBody?.usage) return null;
-  const details = responseBody.usage.prompt_tokens_details;
+export function extractUsage(
+  responseBody: any,
+  provider: 'openai' | 'anthropic' = 'openai',
+): UsageInfo | null {
+  const usage = responseBody?.usage;
+  if (!usage) return null;
+  if (provider === 'anthropic') {
+    const cachedTokens = Number(usage.cache_read_input_tokens ?? 0) || 0;
+    const cacheWriteTokens = Number(usage.cache_creation_input_tokens ?? 0) || 0;
+    const plainInputTokens = Number(usage.input_tokens ?? 0) || 0;
+    return {
+      promptTokens: plainInputTokens + cachedTokens + cacheWriteTokens,
+      completionTokens: Number(usage.output_tokens ?? 0) || 0,
+      cachedTokens,
+      cacheWriteTokens,
+      upstreamCost: typeof usage.cost === 'number' ? usage.cost : undefined,
+    };
+  }
+
+  const details = usage.prompt_tokens_details ?? usage.input_tokens_details;
   return {
-    promptTokens: responseBody.usage.prompt_tokens ?? 0,
-    completionTokens: responseBody.usage.completion_tokens ?? 0,
-    cachedTokens: details?.cached_tokens ?? 0,
-    cacheWriteTokens: details?.cache_write_tokens ?? 0,
+    promptTokens: Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0,
+    completionTokens: Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0,
+    cachedTokens: Number(usage.cached_tokens ?? details?.cached_tokens ?? 0) || 0,
+    cacheWriteTokens: Number(usage.cache_write_tokens ?? details?.cache_write_tokens ?? 0) || 0,
+    upstreamCost: typeof usage.cost === 'number' ? usage.cost : undefined,
+  };
+}
+
+export interface UsageAccumulator {
+  model?: string;
+  usage: UsageInfo;
+}
+
+export function accumulateUsageChunk(
+  current: UsageAccumulator | null,
+  chunk: any,
+  provider: 'openai' | 'anthropic' = 'openai',
+): UsageAccumulator | null {
+  const source =
+    provider === 'anthropic' && chunk?.type === 'message_start' ? chunk.message : chunk;
+  const next = extractUsage(source, provider);
+  const model = source?.model ?? chunk?.model ?? current?.model;
+  if (!next) return current ? { ...current, ...(model ? { model } : {}) } : null;
+  if (!current) return { ...(model ? { model } : {}), usage: next };
+  return {
+    ...(model ? { model } : {}),
+    usage: {
+      promptTokens: next.promptTokens || current.usage.promptTokens,
+      completionTokens: next.completionTokens || current.usage.completionTokens,
+      cachedTokens: next.cachedTokens || current.usage.cachedTokens,
+      cacheWriteTokens: next.cacheWriteTokens || current.usage.cacheWriteTokens,
+      upstreamCost: next.upstreamCost ?? current.usage.upstreamCost,
+    },
   };
 }
 

@@ -1,0 +1,391 @@
+name: Tests - release
+
+on:
+  pull_request:
+    branches: [prod]
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Dry run. `RELEASE_SOURCE_SHA` only exists on a `release/*` branch, so before
+  # this input the gate could not be exercised without opening a release PR into
+  # `prod` — a gate that has never been green could never be rehearsed either.
+  # `expected_sha` supplies the same value the file would, and nothing else
+  # changes: the same shards, the same staging URLs, the same SHA assertion.
+  #
+  #   gh workflow run tests-release.yml --ref staging -f expected_sha=<sha>
+  #
+  # `--ref` selects which branch's workflow and tests run; the target is always
+  # staging, because the staging URLs come from the env block below and not from
+  # the ref. Dispatch against the branch under test to rehearse a change to the
+  # gate itself.
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 40-character Git SHA that staging must already be serving
+        required: true
+        type: string
+
+concurrency:
+  group: tests-release-${{ github.ref }}
+  cancel-in-progress: true
+
+# Shared by every job. Top-level env is the only way to avoid repeating this
+# block per matrix job — GitHub Actions has no YAML anchors.
+env:
+  KE2E_API_URL: ${{ vars.QA_API_BASE_URL || 'https://staging-api.kortix.com/v1' }}
+  E2E_BASE_URL: ${{ vars.QA_WEB_BASE_URL || 'https://staging.kortix.com' }}
+  KE2E_GATEWAY_URL: ${{ vars.QA_GATEWAY_URL || 'https://gateway-staging.kortix.com' }}
+  KE2E_TARGET: staging
+  KE2E_LIVE_CONFIRM: ci
+  KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
+  KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
+  KE2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+  KE2E_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+  KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+  KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+  KE2E_INTERNAL_SERVICE_KEY: ${{ secrets.STAGING_INTERNAL_SERVICE_KEY }}
+  KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
+  KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
+  E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
+  KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
+  WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
+  # Staging is behind Vercel SSO deployment protection; the browser lane must
+  # send x-vercel-protection-bypass (playwright.config) or every authenticated
+  # page 302s to vercel.com/sso-api. This env was missing when tests-release
+  # replaced the old qa-release gate, so the browser lane could never reach
+  # the app.
+  VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+  # Lets the api-router edge Worker return the TRUE origin status/body to the
+  # gate instead of laundering every origin failure into MAINTENANCE_MODE
+  # (worker.mjs CI_PASSTHROUGH_SECRET binding). Diagnosability only; the
+  # Worker's public behavior is unchanged.
+  KE2E_CI_PASSTHROUGH_SECRET: ${{ secrets.CF_WORKER_CI_PASSTHROUGH_SECRET }}
+  # AUTH-2 signs a Supabase send-email hook payload. It must sign with the
+  # secret the DEPLOYED API verifies with — the runner no longer leaks the
+  # local literal into the target-* lanes (core/local-runner.ts), which is why
+  # AUTH-2 read `401 Invalid signature` as a product bug. When this secret is
+  # unset the flow's signed steps skip themselves and its unsigned
+  # `401 | 503` assertion still runs, so the gate stays green either way.
+  KE2E_AUTH_EMAIL_HOOK_SECRET: ${{ secrets.STAGING_AUTH_EMAIL_HOOK_SECRET }}
+
+jobs:
+  # Reclaim debris left by EARLIER runs before this one adds load. `--older-than
+  # 2h` cannot touch an account this run just created, so a concurrent release
+  # gate is safe. continue-on-error keeps a janitorial failure from blocking the
+  # release: the shards still run, and the next run sweeps again.
+  sweep-before:
+    name: sweep stale test accounts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.11.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install runner dependencies
+        run: pnpm install --frozen-lockfile --filter @kortix/tests...
+      # Bounded at the STEP so a slow sweep ends as a job *failure* (which
+      # continue-on-error absorbs) — never as a job *cancelled*: on run
+      # 32226539107 the 15-minute job cap fired while gc was still deleting a
+      # day's worth of debris, GitHub recorded the job as cancelled, and every
+      # dependent shard was skipped. A janitor must never be able to skip the
+      # gate. Whatever it did not reach, the next run's sweep gets.
+      - name: Reclaim test accounts older than 2h
+        timeout-minutes: 12
+        run: bun tests/bin/ke2e.ts gc --older-than 2h
+
+  # The deployed API suite, sharded by tests/src/core/shard.ts. Shard 1 owns
+  # every serial + global flow and nothing else (see that file); shards 2-6
+  # split the 409 parallel flows longest-first. The partition is computed from
+  # the live flow registry, so a newly added flow always lands in exactly one
+  # shard.
+  api:
+    name: deployed api shard
+    needs: sweep-before
+    # The pre-run sweep is best-effort. Run the shards whether it passed,
+    # failed, or was cancelled by its own cap — its result must never gate the
+    # release (see the note on sweep-before).
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    # A ceiling that turns a hang into a readable failure — never a throttle.
+    #
+    # Run 32240074477 killed all four API shards on the 40-minute cap at once
+    # (10:35:41 -> 11:20:42) while they were still passing what they ran: shard
+    # 3 had 76/87, shard 4 68/77. The cap destroyed the verdict, not the suite.
+    #
+    # Why 60 alone would not have been enough, and why 6 shards is the fix.
+    # Measured from those two logs, over a 38.4-minute window each:
+    #   shard 3: 87 of 137 flows -> 2.266 flows/min
+    #   shard 4: 77 of 137 flows -> 1.998 flows/min
+    # plus ~1.7 min of checkout/install/provision before the first flow. At 137
+    # flows that projects to 62 and 70 minutes — over a 60-minute cap. At the 82
+    # flows a 6-way split gives each shard it projects to 38 and 43 minutes,
+    # inside 60 with room for the extra load 6 shards offer staging. Both rates
+    # were measured while staging was returning laundered 503s, so treat them as
+    # a floor, not a clean baseline.
+    #
+    # Shard 1 is the exception to watch. Its 35-flow serial+global tail runs
+    # one-at-a-time and its declared timeouts sum to 121 minutes (CR-9 alone is
+    # 20). Its log blob for that run has expired, so there is no observed
+    # duration to check against. 60 minutes bounds it; it does not guarantee it.
+    # If shard 1 caps out, cut the tail's own timeouts — not this number.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    env:
+      # Pin the run id so the post-run sweep below can reclaim exactly THIS
+      # shard's principals (`principals.ts` names them `e2e-<runId>-…`).
+      #
+      # The ATTEMPT is part of the identity, or `gh run rerun --failed` collides
+      # with its own debris: `github.run_id` is identical across attempts, so
+      # every run-scoped fixture name is too, and attempt 2's world bootstrap
+      # re-derives names attempt 1 already claimed. Run 32330628092 attempt 2
+      # failed KAAB-7 in 2.2s with `409 IDEMPOTENCY_KEY_CONFLICT` on its first
+      # `POST /sessions` for exactly this reason — a green flow reported as a
+      # failure, on the release gate, during a release.
+      #
+      # Attempt 1 keeps the OLD id byte-for-byte, so nothing that greps existing
+      # logs or artifacts changes; only a re-run gets the suffix. The reclaim
+      # step below reads this same variable, so the sweep stays exact.
+      KE2E_RUN_ID: ${{ github.run_id }}-api${{ matrix.shard }}${{ github.run_attempt != 1 && format('-a{0}', github.run_attempt) || '' }}
+      # Fleet arithmetic, not per-job tuning, and UNCHANGED per shard by the
+      # move to 6 — the throughput comes from fewer flows per shard, not from
+      # more workers inside one.
+      #
+      # Run 32231251280 fanned out 4x3 API + 4x2 sandbox + 3x2 browser = 26
+      # concurrent workers against ONE staging (2 x 1 vCPU tasks, Medium DB
+      # after #6544) and ~50% of flows failed with "exceeded 120000ms": staging
+      # slowed until the 120s flow budget tripped, and with #6543 a timeout is
+      # no longer retried. Run 32240074477 halved that to these values — 15
+      # workers — and staging held: 87-88% of what ran, passed. That is the
+      # proven-safe point, and these numbers are it.
+      #
+      # 6 shards raise the peak from 15 to 19 (shard 1 contributes 1, not 3:
+      # its flows are serial by definition). 19 sits nearer the 15 that held
+      # than the 26 that collapsed. Lower these first if MAINTENANCE_MODE 503s
+      # reappear; dropping KE2E_API_WORKERS to 1 returns the fleet to 13.
+      # 2026-08-20: dropped to 1 — dry-run 32323656671 saw sustained origin
+      # 5xx on the team-create/addMember write paths at 19 concurrent workers
+      # (POST /v1/accounts costs 2-15s even idle over the cross-region DB, and
+      # under load it crosses the origin timeout). Staging API also scaled
+      # 3 -> 6 tasks. Shards finish in 25-40m at 2 workers; 1 worker stays
+      # under the 60m cap.
+      KE2E_API_WORKERS: '1'
+      KE2E_SANDBOX_WORKERS: '1'
+      KE2E_TIMEOUT_ATTEMPTS: '2'
+    steps:
+      - uses: actions/checkout@v7
+      # One SHA, two sources. A release PR carries RELEASE_SOURCE_SHA in the
+      # tree; a dry run supplies the same value as `expected_sha`. The input
+      # arrives through env, never interpolated into this script, so a dispatch
+      # cannot inject shell — and it is accepted only after the same
+      # 40-hex-character check the file gets.
+      - name: Require the deployed staging source SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${EXPECTED_SHA:-}" ]; then
+            source_sha="$(printf '%s' "$EXPECTED_SHA" | tr -d '[:space:]')"
+            origin="workflow_dispatch input expected_sha"
+          else
+            test -f RELEASE_SOURCE_SHA || {
+              echo "::error::No RELEASE_SOURCE_SHA in the tree and no expected_sha input."
+              exit 1
+            }
+            source_sha="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+            origin="RELEASE_SOURCE_SHA"
+          fi
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::$origin must give one 40-character Git SHA."
+            exit 1
+          }
+          echo "KE2E_EXPECT_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "Expected deployed staging SHA: $source_sha (from $origin)"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.11.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install deployed-target dependencies
+        run: pnpm install --frozen-lockfile --filter @kortix/tests...
+      - name: Run this shard of the deployed staging API suite
+        run: pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/6
+      # A cancelled job is SIGKILLed before the runner's `finally` teardown, so
+      # every cancel used to leak its whole world. `always()` covers cancelled,
+      # failed and passed; --run-id scopes the sweep to this shard so it cannot
+      # delete a sibling shard's live accounts.
+      - name: Reclaim this shard's test accounts
+        if: always()
+        continue-on-error: true
+        run: bun tests/bin/ke2e.ts gc --run-id "$KE2E_RUN_ID"
+      - name: Guard test artifacts against secrets
+        if: always()
+        run: |
+          set -euo pipefail
+          if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
+            echo "::error::A test artifact contains a secret-shaped value."
+            exit 1
+          fi
+          echo "No secret-shaped values found."
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tests-release-api-shard-${{ matrix.shard }}
+          path: tests/test-results/**
+          if-no-files-found: warn
+          retention-days: 90
+
+  # The deployed browser journeys, sharded with Playwright's own --shard.
+  browser:
+    name: deployed browser shard
+    needs: sweep-before
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      # 3 shards x 2 = 6 concurrent browsers, against 2 before sharding.
+      # One browser per shard (3 total) — see the fleet arithmetic on the api job.
+      E2E_BROWSER_WORKERS: '1'
+      # Specs tagged @quarantine (today: 17-oauth-provider-initiation, which
+      # asserts on accounts.google.com / github.com) run in the non-blocking
+      # nightly lane (tests-browser-nightly.yml), never in the release gate.
+      # Playwright applies this at collection, so an excluded spec is absent,
+      # not "skipped" — the strict-skip reporter stays strict. See #6584.
+      E2E_EXCLUDE_TAGS: '@quarantine'
+    steps:
+      - uses: actions/checkout@v7
+      # One SHA, two sources. A release PR carries RELEASE_SOURCE_SHA in the
+      # tree; a dry run supplies the same value as `expected_sha`. The input
+      # arrives through env, never interpolated into this script, so a dispatch
+      # cannot inject shell — and it is accepted only after the same
+      # 40-hex-character check the file gets.
+      - name: Require the deployed staging source SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${EXPECTED_SHA:-}" ]; then
+            source_sha="$(printf '%s' "$EXPECTED_SHA" | tr -d '[:space:]')"
+            origin="workflow_dispatch input expected_sha"
+          else
+            test -f RELEASE_SOURCE_SHA || {
+              echo "::error::No RELEASE_SOURCE_SHA in the tree and no expected_sha input."
+              exit 1
+            }
+            source_sha="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+            origin="RELEASE_SOURCE_SHA"
+          fi
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::$origin must give one 40-character Git SHA."
+            exit 1
+          }
+          echo "KE2E_EXPECT_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "Expected deployed staging SHA: $source_sha (from $origin)"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.11.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install deployed-target dependencies
+        run: |
+          pnpm install --frozen-lockfile --filter @kortix/tests...
+          pnpm --dir tests exec playwright install --with-deps chromium
+      - name: Run this shard of the deployed staging browser journeys
+        run: pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/3
+      # No --run-id sweep here: the Playwright specs mint their own Supabase
+      # users (@example.test / @kortix.test) with no run-scoped prefix, so there
+      # is nothing to scope to. sweep-before now covers those domains, which it
+      # did not before, so their debris is reclaimed on the next run.
+      - name: Guard test artifacts against secrets
+        if: always()
+        run: |
+          set -euo pipefail
+          if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
+            echo "::error::A test artifact contains a secret-shaped value."
+            exit 1
+          fi
+          echo "No secret-shaped values found."
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tests-release-browser-shard-${{ matrix.shard }}
+          path: tests/test-results/**
+          if-no-files-found: warn
+          retention-days: 90
+
+  # Backstop for an API shard that was killed before its own post-run sweep ran.
+  # Every shard's run id starts with `<github.run_id>-`, so this one filter
+  # reclaims all of them, and it runs only after every shard has finished.
+  sweep-after:
+    name: sweep this run's test accounts
+    needs: [api, browser]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.11.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install runner dependencies
+        run: pnpm install --frozen-lockfile --filter @kortix/tests...
+      - name: Reclaim this run's test accounts
+        run: bun tests/bin/ke2e.ts gc --run-id ${{ github.run_id }}
+
+  # The required status check on `prod` branch protection is this job's NAME.
+  # Sharding turned one job into seven, so this aggregator keeps the single
+  # context that branch protection already requires. Do not rename it without
+  # updating repos/kortix-ai/suna/branches/prod/protection in the same change.
+  release-gate:
+    name: full suite + quality gates
+    needs: [api, browser]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every deployed shard to pass
+        run: |
+          set -euo pipefail
+          api='${{ needs.api.result }}'
+          browser='${{ needs.browser.result }}'
+          echo "api shards: $api"
+          echo "browser shards: $browser"
+          failed=0
+          [ "$api" = "success" ] || failed=1
+          [ "$browser" = "success" ] || failed=1
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::A deployed staging shard did not pass (api=$api browser=$browser)."
+            exit 1
+          fi
+          echo "Every deployed staging API shard and browser shard passed."

@@ -1,44 +1,120 @@
 'use client';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
+  firstMeaningfulLine,
   partInput,
   partStatus,
-  firstMeaningfulLine,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
-import {
-  ExternalLink,
-  SquareKanban,
-} from 'lucide-react';
-import {
-  useMemo,
-  useState,
-} from 'react';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { cn } from '@/lib/utils';
 import {
   getChildSessionId,
   getChildSessionToolParts,
   getToolInfo,
   type MessageWithParts,
 } from '@/ui';
+import { useRuntimeMessages } from '@kortix/sdk/react';
+import { KanbanIcon as SquareKanban } from '@phosphor-icons/react';
+import { useCallback, useMemo, useState } from 'react';
 
+/**
+ * The way into the sub-agent's own session, pinned to the right edge of the row.
+ *
+ * It used to be a ghost `Button` at the BOTTOM of the disclosure body, and that
+ * was wrong twice over. It sat at the body's left margin — the chain's icon
+ * gutter — so it read as one more step in the sub-agent's list rather than as
+ * an action on the agent. And it was reachable only by expanding the row, which
+ * is backwards for a sub-agent that has not produced a step yet: that is the
+ * one moment the full view is the ONLY thing there is to look at.
+ *
+ * A `span role="button"`, not a `<button>`. This node renders inside the
+ * disclosure's trigger, and `DisclosureTrigger` clones that trigger into its own
+ * `role="button"` element — a button nested in a button is invalid HTML. The
+ * subtitle link in `InlineTriggerTitle` is the same shape for the same reason.
+ * Both activation paths `stopPropagation` so reaching the full view does not
+ * also toggle the row underneath it.
+ *
+ * Visible label "Full view", accessible name "Open full view". The row already
+ * carries a title plus a live subtitle that has to truncate, so the right edge
+ * gets the two words that matter; the longer name rides on `aria-label` and
+ * `title`, and it CONTAINS the visible text, so WCAG 2.5.3 (Label in Name)
+ * holds.
+ *
+ * Always visible, never hover-revealed: a hover-only affordance does not exist
+ * on touch, and this is the only route to a running sub-agent's full transcript.
+ */
+function FullViewAction({ onOpen }: { onOpen: () => void }) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label="Open full view"
+      title="Open full view"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        e.stopPropagation();
+        onOpen();
+      }}
+      className={cn(
+        'text-muted-foreground/60 hover:text-foreground',
+        'flex cursor-pointer items-center gap-1 whitespace-nowrap',
+        'underline-offset-2 transition-colors hover:underline',
+      )}
+    >
+      View
+    </span>
+  );
+}
 
-export function TaskTool({ part, forceOpen }: ToolProps) {
+/**
+ * A task call is a disclosure row: what the sub-agent is doing, in place.
+ *
+ * This row used to be a plain button that opened `SubSessionModal` on any
+ * click. That put the only view of a running sub-agent behind a modal — the
+ * reader had to leave the transcript to learn what the agent they just
+ * dispatched was up to, and had to close it again to get back — while the
+ * `SubAgentActivity` list this component already assembled was unreachable dead
+ * code on that path. The steps are the answer to the question the row raises,
+ * so they belong under the row, and the modal is now an explicit action on the
+ * row rather than the row's whole behaviour.
+ *
+ * The trigger is unchanged: while the sub-agent runs its subtitle is that
+ * agent's LAST step, so a collapsed row still reports live progress.
+ *
+ * The body is the sub-agent's steps and NOTHING else, so it is passed only when
+ * there are steps. A disclosure whose body is empty is a caret that promises a
+ * body and opens onto nothing — the same verdict `ActivityBurst` reaches for a
+ * burst that merges to zero rows. Before the full view moved to the trigger,
+ * that button was the sole occupant of the body of a just-started sub-agent,
+ * which is what kept the empty case from being empty.
+ */
+export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
 
   const subagentType = (input.subagent_type as string) || 'general';
-  const description =
-    (input.description as string) ||
-    firstMeaningfulLine(input.prompt) ||
-    firstMeaningfulLine(input.title, 80);
+  // `firstMeaningfulLine` splits its argument on every newline and trims each
+  // segment. A sub-agent prompt is the longest string this row ever sees, and
+  // this ran over it on every render of a row that is mostly collapsed.
+  const description = useMemo(
+    () =>
+      (input.description as string) ||
+      firstMeaningfulLine(input.prompt) ||
+      firstMeaningfulLine(input.title, 80),
+    [input],
+  );
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
-  const { data: childMessages } = useOpenCodeMessages(childSessionId ?? '');
+  const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
 
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
@@ -46,6 +122,7 @@ export function TaskTool({ part, forceOpen }: ToolProps) {
   }, [childMessages]);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const openModal = useCallback(() => setModalOpen(true), []);
 
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
@@ -59,21 +136,44 @@ export function TaskTool({ part, forceOpen }: ToolProps) {
 
   const subtitle = isRunning ? (lastActivity ?? description) : description || undefined;
 
+  /**
+   * Whether this row can show the sub-agent's work WITHOUT leaving the
+   * transcript.
+   *
+   * It is not the same question as "does this call have a sub-agent". A child
+   * session's transcript is only resident while the parent streamed it:
+   * `useOpenCodeMessages` reads the sync store, and `pruneDetachedSessions`
+   * evicts detached sessions past `DETACHED_SESSION_LIMIT`. A turn that
+   * dispatches three agents therefore ends up with the last one's steps in
+   * memory and the first two gone — which is exactly the "clicking the row does
+   * nothing" report: two of the three rows had no body to open.
+   */
+  const hasInlineSteps = Boolean(childSessionId) && childToolParts.length > 0;
+
   return (
     <>
       <BasicTool
-        icon={<SquareKanban className="size-3.5 flex-shrink-0" />}
+        icon={<SquareKanban className="size-3.5 shrink-0" />}
         trigger={{
           title: `Agent · ${subagentType}`,
           subtitle,
         }}
-        onClick={childSessionId ? () => setModalOpen(true) : undefined}
+        defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
+        locked={locked}
         badge={
           isCompleted && childToolParts.length > 0 ? `${childToolParts.length} steps` : undefined
         }
-        rightAccessory={childSessionId ? <ExternalLink /> : undefined}
+        triggerAction={childSessionId ? <FullViewAction onOpen={openModal} /> : undefined}
+        // A click on an agent row always leads somewhere. With steps in hand
+        // the row is a disclosure and opens them in place; with the child
+        // session evicted there is nothing to disclose, so the row becomes a
+        // plain button onto the full view — the same destination the `View`
+        // action carries, so the row and its action never disagree. Without
+        // this the reader met a row that looked openable and was not.
+        onClick={childSessionId && !hasInlineSteps ? openModal : undefined}
       >
-        {childToolParts.length > 0 ? (
+        {hasInlineSteps ? (
           <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
         ) : undefined}
       </BasicTool>
@@ -90,4 +190,3 @@ export function TaskTool({ part, forceOpen }: ToolProps) {
   );
 }
 ToolRegistry.register('task', TaskTool);
-

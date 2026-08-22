@@ -12,7 +12,7 @@
  * created; under-limit → 201.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectMembers, projects } from '@kortix/db';
@@ -67,7 +67,9 @@ const stubBackend = {
   seedFiles: async () => { backendCalls.push('seedFiles'); },
 };
 
+const actualGitBackends = await import('../projects/git-backends');
 mock.module('../projects/git-backends', () => ({
+  ...actualGitBackends,
   hasBackend: (provider: string) => provider === 'github',
   getBackend: () => stubBackend,
   getDefaultManagedBackend: () => stubBackend,
@@ -107,9 +109,16 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mockIamEngineAllowAll();
-mockIamMembershipSyncNoop();
+// The hermetic db shim models the legacy tables; the read models project
+// from those rows rather than from `role_assignments`. See mockIamReadModels.
+mockIamReadModels();
+// Every grant goes through `assignRole` now, and it IS the grant — a suite whose
+// db shim does not model `role_assignments` must bypass it.
+mockIamAssignments();
 
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
@@ -120,11 +129,13 @@ mock.module('../projects/git', () => ({
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   resolveCommitSha: async () => 'a'.repeat(40),
+  resolveFastBootGitHint: async () => ({ baseSha: 'a'.repeat(40) }),
   resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),
@@ -140,7 +151,10 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module('../snapshots/builder', () => ({
+  routedPerProjectWarmImageName: () => 'kpp2-test',
   ensureSandboxImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
+  ensureFastSandboxImage: async () => ({ snapshotName: 'kortix-fast-test', slug: 'default', contentHash: 'f'.repeat(64), built: false, isDefault: true, runtimeProfile: 'fast' }),
+  ensureMetaSandboxImage: async () => ({ snapshotName: 'kortix-meta-test', slug: 'meta', contentHash: 'b'.repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: 'kortix-default-test', slug: 'default' }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
@@ -154,6 +168,12 @@ mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   ensurePlatformDefaultImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => 'a'.repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: 'kortix-ppwarm-test',
+    tip: 'a'.repeat(40),
+    built: false,
+    provider: 'daytona',
+  }),
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 

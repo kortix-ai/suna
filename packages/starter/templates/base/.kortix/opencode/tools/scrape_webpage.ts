@@ -1,10 +1,8 @@
-import { tool } from "@opencode-ai/plugin";
-// Type-only import (erased at runtime). The actual SDK is imported lazily inside
-// execute() — a top-level value import makes opencode load this heavy SDK at
-// sandbox boot (tool modules are evaluated eagerly), adding ~seconds to cold
-// start. Deferred to first use.
-import type FirecrawlApp from "@mendable/firecrawl-js";
+import { tool } from "./lib/tool";
 import { getEnv, getKortixRouterBase } from "./lib/get-env";
+
+const FIRECRAWL_DEFAULT_URL = "https://api.firecrawl.dev";
+const SCRAPE_TIMEOUT_MS = 35_000;
 
 interface ScrapeResult {
   url: string;
@@ -18,7 +16,8 @@ interface ScrapeResult {
 }
 
 async function scrapeOne(
-  client: FirecrawlApp,
+  apiBaseURL: string,
+  apiKey: string,
   url: string,
   includeHtml: boolean,
   retries = 3,
@@ -29,10 +28,28 @@ async function scrapeOne(
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const response = (await client.scrape(url, {
-        formats,
-        timeout: 30000,
-      })) as Record<string, unknown>;
+      const request = await fetch(
+        `${apiBaseURL.replace(/\/+$/, "")}/v2/scrape`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ url, formats, timeout: 30000 }),
+          signal: AbortSignal.timeout(SCRAPE_TIMEOUT_MS),
+        },
+      );
+      const bodyText = await request.text();
+      const body = JSON.parse(bodyText) as {
+        success?: boolean;
+        data?: Record<string, unknown>;
+        error?: string;
+      };
+      if (!request.ok || !body.success) {
+        throw new Error(body.error || `${request.status} Error: ${bodyText}`);
+      }
+      const response = body.data ?? {};
 
       const metadata = (response.metadata ?? {}) as Record<string, string>;
       const markdown = (response.markdown ?? "") as string;
@@ -86,19 +103,15 @@ export default tool({
     // KORTIX_SANDBOX_TOKEN (KORTIX_TOKEN kept as a legacy fallback); the router
     // injects the real upstream key. Fall back to a raw FIRECRAWL_API_KEY only
     // when KORTIX_API_URL is unset (self-host/direct).
-    const apiBaseURL = getKortixRouterBase("firecrawl") ?? undefined;
-    const apiKey = apiBaseURL
+    const routerBaseURL = getKortixRouterBase("firecrawl");
+    const apiBaseURL = routerBaseURL ?? FIRECRAWL_DEFAULT_URL;
+    const apiKey = routerBaseURL
       ? getEnv("KORTIX_SANDBOX_TOKEN") || getEnv("KORTIX_TOKEN")
       : getEnv("FIRECRAWL_API_KEY");
-    if (!apiKey) return apiBaseURL
+    if (!apiKey) return routerBaseURL
       ? "Error: KORTIX_SANDBOX_TOKEN not set."
       : "Error: FIRECRAWL_API_KEY not set.";
 
-    const FirecrawlApp = (await import("@mendable/firecrawl-js")).default;
-    const client = new FirecrawlApp({
-      apiKey,
-      apiUrl: apiBaseURL ?? "https://api.firecrawl.dev",
-    });
     const includeHtml = args.include_html ?? false;
 
     const urlList = args.urls
@@ -108,7 +121,7 @@ export default tool({
     if (urlList.length === 0) return "Error: no valid URLs provided.";
 
     const results = await Promise.all(
-      urlList.map((u) => scrapeOne(client, u, includeHtml)),
+      urlList.map((u) => scrapeOne(apiBaseURL, apiKey, u, includeHtml)),
     );
 
     const successful = results.filter((r) => r.success).length;

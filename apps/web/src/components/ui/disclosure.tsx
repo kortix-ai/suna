@@ -1,56 +1,114 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { AnimatePresence, motion, MotionConfig, Transition, Variant, Variants } from 'motion/react';
+import { AnimatePresence, m, MotionConfig, Transition, Variant, Variants } from 'motion/react';
 import * as React from 'react';
-import { createContext, useContext, useEffect, useId, useState } from 'react';
+import { createContext, useCallback, useContext, useId, useMemo, useState } from 'react';
 
 export type DisclosureContextType = {
   open: boolean;
   toggle: () => void;
+  /**
+   * Minted once per disclosure so the trigger can point `aria-controls` at the
+   * region it expands. `DisclosureContent` stamps the same id on its element —
+   * a locally-minted id there could not be reached by the trigger, which is why
+   * the attribute was missing entirely.
+   */
+  contentId: string;
   variants?: { expanded: Variant; collapsed: Variant };
 };
 
 const DisclosureContext = createContext<DisclosureContextType | undefined>(undefined);
 
+/**
+ * What activating the trigger should do. Extracted as a pure function so the
+ * contract has something to test: `apps/web` has no browser test harness (only
+ * `renderToStaticMarkup`), so a click cannot be simulated, and this is the exact
+ * decision that was wrong before.
+ *
+ * `nextOpen` negates the value the disclosure is CURRENTLY RENDERING. The old
+ * implementation negated a private copy of it instead, which is how a click
+ * could resolve to the state the disclosure was already in and appear to do
+ * nothing at all.
+ */
+export function resolveDisclosureToggle(state: { open: boolean; isControlled: boolean }): {
+  nextOpen: boolean;
+  /** Only an uncontrolled disclosure owns state. A controlled one holds none —
+   *  keeping a copy is what produced the two-sources-of-truth bug. */
+  writesInternalState: boolean;
+} {
+  return { nextOpen: !state.open, writesInternalState: !state.isControlled };
+}
+
 export type DisclosureProviderProps = {
   children: React.ReactNode;
-  open: boolean;
+  /** Controlled. Omit entirely (not `false`) for an uncontrolled disclosure. */
+  open?: boolean;
+  /** Uncontrolled starting value. Ignored when `open` is provided. */
+  defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   variants?: { expanded: Variant; collapsed: Variant };
 };
 
+/**
+ * Controlled OR uncontrolled, with exactly one source of truth for `open` —
+ * the same contract every Radix primitive in this codebase uses.
+ *
+ * This replaces a mirrored-state design that copied `open` into internal state
+ * and reconciled the two in a `useEffect`. That shape produced the reported
+ * "click does nothing, then it opens by itself" flakiness through four separate
+ * defects, all of which are structural rather than incidental:
+ *
+ *  1. `toggle` computed `!internalCopy`, not `!open`. Any moment the copy and
+ *     the prop disagreed, a click moved the disclosure the wrong way — or
+ *     landed on the value it already had, so nothing visibly happened.
+ *  2. The prop → copy sync ran in a PASSIVE effect, i.e. after paint. A
+ *     prop-driven open animated a frame late and looked spontaneous, and in an
+ *     exclusive accordion (session-scope-control.tsx) both sections were open
+ *     together for that frame.
+ *  3. `onOpenChange` was called from inside the `setState` updater. React
+ *     requires updaters to be pure and is free to invoke them more than once;
+ *     a parent whose handler toggles (`onOpenChange={() => toggleThing()}` —
+ *     what both session lists pass) then nets to zero and never moves.
+ *  4. `open` defaulted to `false`, so "controlled and closed" and "uncontrolled"
+ *     were indistinguishable and no caller could opt out of being controlled.
+ *
+ * Here `open` is read straight from whichever source owns it, so a controlled
+ * parent's change lands in the same commit as its own render, and `toggle`
+ * always derives from the value actually on screen.
+ */
 function DisclosureProvider({
   children,
   open: openProp,
+  defaultOpen = false,
   onOpenChange,
   variants,
 }: DisclosureProviderProps) {
-  const [internalOpenValue, setInternalOpenValue] = useState<boolean>(openProp);
+  const isControlled = openProp !== undefined;
+  const contentId = useId();
+  const [uncontrolledOpen, setUncontrolledOpen] = useState<boolean>(defaultOpen);
+  const open = isControlled ? openProp : uncontrolledOpen;
 
-  useEffect(() => {
-    setInternalOpenValue(openProp);
-  }, [openProp]);
+  const toggle = useCallback(() => {
+    const { nextOpen, writesInternalState } = resolveDisclosureToggle({ open, isControlled });
+    if (writesInternalState) setUncontrolledOpen(nextOpen);
+    // In the event handler, once — never inside a state updater.
+    onOpenChange?.(nextOpen);
+  }, [open, isControlled, onOpenChange]);
 
-  const toggle = () => {
-    const newOpen = !internalOpenValue;
-    setInternalOpenValue(newOpen);
-    if (onOpenChange) {
-      onOpenChange(newOpen);
-    }
-  };
-
-  return (
-    <DisclosureContext.Provider
-      value={{
-        open: internalOpenValue,
-        toggle,
-        variants,
-      }}
-    >
-      {children}
-    </DisclosureContext.Provider>
+  /**
+   * A fresh object here re-rendered every `useDisclosure()` consumer on every
+   * render of this provider, whether or not `open` had changed — and a session
+   * transcript nests two to three disclosures per tool row (the chain step, the
+   * tool's own collapsible, sometimes a group), so the churn multiplied by every
+   * row on screen.
+   */
+  const value = useMemo(
+    () => ({ open, toggle, contentId, variants }),
+    [open, toggle, contentId, variants],
   );
+
+  return <DisclosureContext.Provider value={value}>{children}</DisclosureContext.Provider>;
 }
 
 function useDisclosure() {
@@ -62,7 +120,14 @@ function useDisclosure() {
 }
 
 export type DisclosureProps = {
+  /**
+   * Controlled value. Pass it WITH `onOpenChange`, or the disclosure is frozen
+   * — there is no internal copy to fall back on any more, by design.
+   * For "starts open, then the user decides", use `defaultOpen`.
+   */
   open?: boolean;
+  /** Uncontrolled starting value. Ignored when `open` is provided. */
+  defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   children: React.ReactNode;
   className?: string;
@@ -87,7 +152,8 @@ function DisclosureRoot({
 }
 
 export function Disclosure({
-  open: openProp = false,
+  open: openProp,
+  defaultOpen,
   onOpenChange,
   children,
   className,
@@ -97,7 +163,12 @@ export function Disclosure({
 }: DisclosureProps) {
   return (
     <MotionConfig transition={transition}>
-      <DisclosureProvider open={openProp} onOpenChange={onOpenChange} variants={variants}>
+      <DisclosureProvider
+        open={openProp}
+        defaultOpen={defaultOpen}
+        onOpenChange={onOpenChange}
+        variants={variants}
+      >
         <DisclosureRoot
           className={cn(
             variant === 'outline' && 'group border-border w-full rounded-md border shadow-none',
@@ -121,7 +192,7 @@ export function DisclosureTrigger({
   className?: string;
   variant?: 'default' | 'outline';
 }) {
-  const { toggle, open } = useDisclosure();
+  const { toggle, open, contentId } = useDisclosure();
 
   return (
     <>
@@ -133,6 +204,7 @@ export function DisclosureTrigger({
           onClick?: React.MouseEventHandler;
           role?: string;
           'aria-expanded'?: boolean;
+          'aria-controls'?: string;
           tabIndex?: number;
           onKeyDown?: React.KeyboardEventHandler;
           className?: string;
@@ -145,6 +217,9 @@ export function DisclosureTrigger({
           onClick: toggle,
           role: 'button',
           'aria-expanded': open,
+          // The region is unmounted while collapsed, so only promise an id that
+          // is actually in the document.
+          'aria-controls': open ? contentId : undefined,
           tabIndex: 0,
           onKeyDown: (e: React.KeyboardEvent) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -154,6 +229,7 @@ export function DisclosureTrigger({
           },
           className: cn(
             className,
+            'select-none',
             childClassName,
             variant === 'outline' &&
               'group-data-[state=open]:rounded-b-none group-data-[state=open]:border-b-0',
@@ -175,8 +251,7 @@ export function DisclosureContent({
   contentClassName?: string;
   variant?: 'default' | 'outline';
 }) {
-  const { open, variants } = useDisclosure();
-  const uniqueId = useId();
+  const { open, variants, contentId } = useDisclosure();
 
   const BASE_VARIANTS: Variants = {
     expanded: {
@@ -204,8 +279,8 @@ export function DisclosureContent({
     >
       <AnimatePresence initial={false}>
         {open && (
-          <motion.div
-            id={uniqueId}
+          <m.div
+            id={contentId}
             initial="collapsed"
             animate="expanded"
             exit="collapsed"
@@ -213,7 +288,7 @@ export function DisclosureContent({
             className={contentClassName}
           >
             {children}
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

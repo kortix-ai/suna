@@ -1,15 +1,11 @@
 'use client';
 
-import { Sparkles } from 'lucide-react';
+import { SparkleIcon as Sparkles } from '@phosphor-icons/react';
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-
+import { Button } from '@/components/ui/marketing/button';
 import { TemplateSessionInstallDialog } from './template-session-install-dialog';
 
-/** "Use this template" — opens a guided install *session* in the project, where an
- *  agent sets the automation up conversationally (via the marketplace
- *  install-session). The button is gated at the page level by KORTIX_TEMPLATES_ENABLED. */
 export function UseTemplateButton({
   templateId,
   title,
@@ -29,7 +25,7 @@ export function UseTemplateButton({
   return (
     <>
       <Button className={className} variant={variant} size={size} onClick={() => setOpen(true)}>
-        <Sparkles className="size-4" />
+        <Sparkles weight="duotone" className="size-4" />
         {label}
       </Button>
       <TemplateSessionInstallDialog

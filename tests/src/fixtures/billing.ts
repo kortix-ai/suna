@@ -7,11 +7,12 @@
  *
  *   create-inline-checkout → (Stripe) confirm PaymentIntent w/ pm_card_visa → confirm-inline-checkout
  */
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import type { Client } from "../core/client";
 import type { Env } from "../core/env";
 import { log } from "../core/log";
 import { sleep } from "../core/poll";
+import { retryBootstrapCreate } from "./transient";
 
 const TEST_PAYMENT_METHOD = "pm_card_visa";
 
@@ -46,12 +47,18 @@ export async function subscribe(
   accountId: string,
   tierKey = "pro",
 ): Promise<void> {
-  const created = await client.post("/v1/billing/create-inline-checkout", {
-    account_id: accountId,
-    tier_key: tierKey,
-    billing_period: "monthly",
+  // Bootstrap-time create: retried through a transient edge-laundered 5xx —
+  // an abandoned predecessor checkout is inert until its PaymentIntent is
+  // confirmed, so re-creating is safe. See fixtures/transient.ts.
+  const created = await retryBootstrapCreate("inline checkout create", async () => {
+    const res = await client.post("/v1/billing/create-inline-checkout", {
+      account_id: accountId,
+      tier_key: tierKey,
+      billing_period: "monthly",
+    });
+    res.status([200, 201]);
+    return res;
   });
-  created.status([200, 201]);
   const body = created.json<any>();
 
   if (body?.no_payment_required) {
@@ -114,9 +121,9 @@ const FUNDING_CREDITS_USD = 50;
 async function forgeCreditPurchaseWebhook(env: Env, accountId: string): Promise<void> {
   if (!env.stripeWebhookSecret) throw new Error("KE2E_STRIPE_WEBHOOK_SECRET required to sign the funding webhook");
 
-  const sessionId = `cs_ke2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const sessionId = `cs_ke2e_${Date.now()}_${randomUUID().replaceAll("-", "").slice(0, 6)}`;
   const event = {
-    id: `evt_ke2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `evt_ke2e_${Date.now()}_${randomUUID().replaceAll("-", "").slice(0, 6)}`,
     object: "event",
     api_version: "2024-06-20",
     created: Math.floor(Date.now() / 1000),

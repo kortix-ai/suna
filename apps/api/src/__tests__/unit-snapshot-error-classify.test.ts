@@ -43,6 +43,33 @@ describe('classifySnapshotError', () => {
     expect(classifySnapshotError('build timed out after 600s')).toBe('timeout');
   });
 
+  test('Kortix runtime layer failures outrank the generic dockerfile bucket', () => {
+    // The real incident: a project apt-installed gdal-bin → dpkg-owned
+    // python3-numpy, and OUR injected pip floor tried to uninstall it. The user's
+    // Dockerfile was CORRECT — classifying this as 'dockerfile' dispatched an
+    // agent to "fix" it. Note each of these ALSO matches the 'dockerfile' rule
+    // (apt-get / did not complete successfully / non-zero code), so these assert
+    // rule ORDER, not just the patterns.
+    expect(classifySnapshotError(
+      'failed to solve: process "/bin/sh -c python3 -m pip install --break-system-packages numpy>=1.26" did not complete successfully: exit code: 1\n' +
+      'ERROR: Cannot uninstall numpy 1.26.4, RECORD file not found. Hint: The package was installed by debian.',
+    )).toBe('layer');
+    expect(classifySnapshotError('error: externally-managed-environment')).toBe('layer');
+    expect(classifySnapshotError('/bin/sh: 1: apt-get: not found')).toBe('layer');
+    expect(classifySnapshotError(
+      'process "/bin/sh -c /opt/kortix/pyfloor/bin/pip install --no-cache-dir" did not complete successfully: exit code: 2',
+    )).toBe('layer');
+  });
+
+  test('a real user Dockerfile failure still classifies as dockerfile', () => {
+    // Guard the other direction: the layer rule must not swallow ordinary
+    // user-repo build failures, which stay agent-fixable.
+    expect(classifySnapshotError(
+      'failed to solve: process "/bin/sh -c apt-get install -y nosuchpkg" did not complete successfully: exit code: 100\n' +
+      'E: Unable to locate package nosuchpkg',
+    )).toBe('dockerfile');
+  });
+
   test('Daytona provider / transport errors', () => {
     expect(classifySnapshotError('Your socket connection to the server was not read from or written to within the timeout period')).toBe('timeout'); // timeout wins, both non-fixable
     expect(classifySnapshotError('daytona snapshot.create failed: bad gateway 502')).toBe('provider');
@@ -63,6 +90,10 @@ describe('describeSnapshotError fixability', () => {
     expect(describeSnapshotError('provider').fixableByAgent).toBe(false);
     expect(describeSnapshotError('timeout').fixableByAgent).toBe(false);
     expect(describeSnapshotError('runtime').fixableByAgent).toBe(false);
+    // A layer failure is OUR bug: never send an agent at the user's Dockerfile,
+    // and say so in the hint.
+    expect(describeSnapshotError('layer').fixableByAgent).toBe(false);
+    expect(describeSnapshotError('layer').hint).toContain('Kortix runtime layer');
   });
 
   test('classify + describe compose to a full descriptor', () => {

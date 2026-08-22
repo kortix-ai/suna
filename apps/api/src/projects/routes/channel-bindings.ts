@@ -10,8 +10,7 @@
 // is stored or resolved.
 import { createRoute, z } from "@hono/zod-openapi";
 import { config } from "../../config";
-import { getCachedAccountTier } from "../../billing/services/entitlements";
-import { tierGrantsAllModels } from "../../billing/services/tiers";
+import { accountMayUseManagedModels } from "../../billing/services/entitlements";
 import {
   type ChannelBindingRow,
   getChannelBindingById,
@@ -152,10 +151,8 @@ projectsApp.openapi(
       userId: loaded.userId,
       accountId,
       projectId,
-      modelDefaults: await getAccountModelDefaults(accountId),
-      freeModelsOnly: config.KORTIX_BILLING_INTERNAL_ENABLED
-        ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
-        : false,
+      modelDefaults: await getAccountModelDefaults(accountId, projectId),
+      freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
     };
     return c.json({
       projectDefaultAgent,
@@ -273,9 +270,7 @@ projectsApp.openapi(
             400,
           );
         }
-        const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-          ? !tierGrantsAllModels(await getCachedAccountTier(loaded.row.accountId as string))
-          : false;
+        const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId as string));
         const servable = await isModelServableForAccount({
           userId: loaded.userId,
           accountId: loaded.row.accountId as string,
@@ -307,10 +302,8 @@ projectsApp.openapi(
       userId: loaded.userId,
       accountId,
       projectId,
-      modelDefaults: await getAccountModelDefaults(accountId),
-      freeModelsOnly: config.KORTIX_BILLING_INTERNAL_ENABLED
-        ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
-        : false,
+      modelDefaults: await getAccountModelDefaults(accountId, projectId),
+      freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
     };
     return c.json(await serializeBinding(updated, projectDefaultAgentOf(loaded.row.metadata), modelCtx));
   },

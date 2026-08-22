@@ -12,7 +12,15 @@ const GENERIC_DATA_PATHS = [
   'projects/lib/sandbox-env-sync.ts',
   'projects/opencode-mapping.ts',
   'projects/routes/shared.ts',
-  'projects/sandbox-busy-probe.ts',
+  // Egress-enforced delivery. There is ONE mechanism for every provider
+  // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4) and no verdict to
+  // read: the guest holds a handle and the broker route substitutes the value.
+  // A name comparison anywhere in here reintroduces the split that used to make
+  // a provider silently lose a feature it already had for free.
+  'projects/secrets.ts',
+  'projects/secret-capabilities.ts',
+  'secrets/network-boundary.ts',
+  'secrets/http-broker.ts',
 ];
 
 describe('sandbox provider architecture boundary', () => {
@@ -20,7 +28,7 @@ describe('sandbox provider architecture boundary', () => {
     for (const relativePath of GENERIC_DATA_PATHS) {
       const source = readFileSync(resolve(API_SRC, relativePath), 'utf8');
       expect(source, relativePath).not.toMatch(
-        /(?:provider|providerName)\s*(?:===|!==|==|!=)\s*['"](?:daytona|platinum|e2b|local-docker)['"]/i,
+        /(?:provider|providerName)\s*(?:===|!==|==|!=)\s*['"](?:daytona|platinum|e2b)['"]/i,
       );
       expect(source, relativePath).not.toMatch(
         /x-daytona-|x-access-token|e2b-traffic-access-token/i,

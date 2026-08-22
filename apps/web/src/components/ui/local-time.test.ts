@@ -56,6 +56,7 @@ describe('formatInTimeZone — hydration-safe server rendering', () => {
     // host machine is configured. (The pre-fix code, which relied on the
     // default zone, would diverge here between server and client.)
     const baseline = formatInTimeZone(NEAR_MIDNIGHT_UTC, DATETIME_FORMAT, 'UTC');
+    const originalResolvedZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const original = process.env.TZ;
     try {
       for (const tz of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo', 'Pacific/Kiritimati']) {
@@ -65,8 +66,11 @@ describe('formatInTimeZone — hydration-safe server rendering', () => {
         );
       }
     } finally {
-      if (original === undefined) delete process.env.TZ;
-      else process.env.TZ = original;
+      // `delete process.env.TZ` does not reset Bun's cached Intl default
+      // timezone, so always reassign an explicit zone id here — otherwise
+      // this leaks 'Pacific/Kiritimati' into every test file that runs
+      // afterward in the same process.
+      process.env.TZ = original ?? originalResolvedZone;
     }
   });
 

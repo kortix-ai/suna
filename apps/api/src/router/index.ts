@@ -1,12 +1,10 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { config } from '../config';
 import { apiKeyAuth } from '../middleware/auth';
 import { makeOpenApiApp, json } from '../openapi';
 import { webSearch } from './routes/search-web';
 import { imageSearch } from './routes/search-image';
 import { llm } from './routes/llm';
 import { proxy } from './routes/proxy';
-import { anthropic } from './routes/anthropic';
 
 const router = makeOpenApiApp();
 
@@ -45,11 +43,9 @@ router.route('/image-search', imageSearch);
 
 // LLM routes (apiKeyAuth)
 router.use('/chat/*', apiKeyAuth);
-router.use('/messages', apiKeyAuth);
 router.use('/models', apiKeyAuth);
 router.use('/models/*', apiKeyAuth);
 router.route('/', llm);
-router.route('/', anthropic);
 
 // Proxy routes (auth handled internally — dual mode)
 router.route('/', proxy);

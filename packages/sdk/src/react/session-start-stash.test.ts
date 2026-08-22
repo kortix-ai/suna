@@ -25,6 +25,7 @@ afterEach(() => {
 });
 
 import {
+  START_STASH_TTL_MS,
   clearStartStash,
   migrateLegacyStash,
   migrateStash,
@@ -37,14 +38,14 @@ describe('writeStartStash / readStartStash', () => {
   test('round-trips the modern stash shape', () => {
     writeStartStash('ses_1', {
       prompt: 'hello',
-      model: { providerID: 'kortix', modelID: 'auto' },
+      model: { providerID: 'kortix', modelID: 'glm-5.2' },
       agent: 'build',
       variant: 'thinking',
     });
 
     expect(readStartStash('ses_1')).toEqual({
       prompt: 'hello',
-      model: { providerID: 'kortix', modelID: 'auto' },
+      model: { providerID: 'kortix', modelID: 'glm-5.2' },
       agent: 'build',
       variant: 'thinking',
     });
@@ -52,6 +53,25 @@ describe('writeStartStash / readStartStash', () => {
 
   test('returns null when nothing is stashed', () => {
     expect(readStartStash('ses_missing')).toBeNull();
+  });
+
+  test('drops stale Auto selections on write and read', () => {
+    writeStartStash('ses_auto_write', {
+      prompt: 'hello',
+      model: { providerID: 'kortix', modelID: 'auto' },
+      agent: null,
+    });
+    expect(readStartStash('ses_auto_write')?.model).toBeNull();
+
+    sessionStorage.setItem(
+      startStashKey('ses_auto_read'),
+      JSON.stringify({
+        prompt: 'hello',
+        model: { providerID: 'kortix', modelID: 'kortix/auto' },
+        agent: null,
+      }),
+    );
+    expect(readStartStash('ses_auto_read')?.model).toBeNull();
   });
 
   test('clearStartStash removes the modern key', () => {
@@ -84,13 +104,13 @@ describe('readStartStash legacy compatibility', () => {
       'opencode_pending_options:ses_3',
       JSON.stringify({
         agent: 'build',
-        model: { providerID: 'kortix', modelID: 'auto' },
+        model: { providerID: 'kortix', modelID: 'glm-5.2' },
         variant: 'thinking',
       }),
     );
     expect(readStartStash('ses_3')).toEqual({
       prompt: 'do the thing',
-      model: { providerID: 'kortix', modelID: 'auto' },
+      model: { providerID: 'kortix', modelID: 'glm-5.2' },
       agent: 'build',
       variant: 'thinking',
     });
@@ -132,7 +152,7 @@ describe('migrateLegacyStash', () => {
     sessionStorage.setItem('project_pending_prompt:proj-ses-1', 'build me a widget');
     sessionStorage.setItem(
       'project_pending_options:proj-ses-1',
-      JSON.stringify({ agent: 'build', model: { providerID: 'kortix', modelID: 'auto' } }),
+      JSON.stringify({ agent: 'build', model: { providerID: 'kortix', modelID: 'glm-5.2' } }),
     );
 
     migrateLegacyStash(
@@ -143,7 +163,7 @@ describe('migrateLegacyStash', () => {
 
     expect(readStartStash('oc_target')).toEqual({
       prompt: 'build me a widget',
-      model: { providerID: 'kortix', modelID: 'auto' },
+      model: { providerID: 'kortix', modelID: 'glm-5.2' },
       agent: 'build',
       variant: null,
     });
@@ -183,7 +203,7 @@ describe('migrateStash', () => {
   test('moves a canonical stash from one session id to another', () => {
     writeStartStash('route_1', {
       prompt: 'build me a widget',
-      model: { providerID: 'kortix', modelID: 'auto' },
+      model: { providerID: 'kortix', modelID: 'glm-5.2' },
       agent: 'build',
       variant: 'thinking',
     });
@@ -192,7 +212,7 @@ describe('migrateStash', () => {
 
     expect(readStartStash('oc_1')).toEqual({
       prompt: 'build me a widget',
-      model: { providerID: 'kortix', modelID: 'auto' },
+      model: { providerID: 'kortix', modelID: 'glm-5.2' },
       agent: 'build',
       variant: 'thinking',
     });
@@ -249,5 +269,75 @@ describe('migrateStash', () => {
     expect(readStartStash('oc_4')?.prompt).toBe('already here');
     // Source is still cleared even when the migration was skipped.
     expect(readStartStash('route_4')).toBeNull();
+  });
+});
+
+describe('start-stash age bound', () => {
+  // Regression guard: a stash restored by a failed replay (or never consumed
+  // because the session page never mounted) used to live for the tab's whole
+  // life — reopening that session days later auto-sent the stale prompt into
+  // its by-then-real conversation. A stash is a hand-off for THIS navigation,
+  // so one older than the delivery-starvation bound is dead, not pending.
+  test('a stash older than the TTL reads as null and is cleared', () => {
+    const stale = Date.now() - START_STASH_TTL_MS - 1;
+    sessionStorage.setItem(
+      startStashKey('ses_ttl'),
+      JSON.stringify({ prompt: 'old prompt', model: null, agent: null, at: stale }),
+    );
+
+    expect(readStartStash('ses_ttl')).toBeNull();
+    expect(sessionStorage.getItem(startStashKey('ses_ttl'))).toBeNull();
+  });
+
+  test('a stash within the TTL still reads', () => {
+    const fresh = Date.now() - 1000;
+    sessionStorage.setItem(
+      startStashKey('ses_ttl2'),
+      JSON.stringify({ prompt: 'recent prompt', model: null, agent: null, at: fresh }),
+    );
+
+    expect(readStartStash('ses_ttl2')?.prompt).toBe('recent prompt');
+  });
+
+  test('writeStartStash stamps the write time', () => {
+    const before = Date.now();
+    writeStartStash('ses_ttl3', { prompt: 'p', model: null, agent: null });
+    const raw = JSON.parse(sessionStorage.getItem(startStashKey('ses_ttl3')) ?? '{}') as {
+      at?: number;
+    };
+    expect(typeof raw.at).toBe('number');
+    expect(raw.at as number).toBeGreaterThanOrEqual(before);
+  });
+
+  test('a stash without a stamp (pre-TTL producer, legacy shape) is treated as fresh', () => {
+    sessionStorage.setItem(
+      startStashKey('ses_ttl4'),
+      JSON.stringify({ prompt: 'unstamped', model: null, agent: null }),
+    );
+    expect(readStartStash('ses_ttl4')?.prompt).toBe('unstamped');
+
+    sessionStorage.setItem('opencode_pending_prompt:ses_ttl5', 'legacy prompt');
+    expect(readStartStash('ses_ttl5')?.prompt).toBe('legacy prompt');
+  });
+});
+
+describe('picks-only stashes (empty prompt)', () => {
+  // apps/web's producers deliver the first prompt as a durable inbox row and
+  // hand off ONLY the picks through the stash. An empty prompt must therefore
+  // round-trip — a null here would drop the model/agent hand-off with it.
+  test('an empty-prompt stash round-trips its picks', () => {
+    writeStartStash('ses-picks', {
+      prompt: '',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      agent: 'default',
+      variant: 'high',
+    });
+
+    expect(readStartStash('ses-picks')).toEqual({
+      prompt: '',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      agent: 'default',
+      variant: 'high',
+    });
   });
 });

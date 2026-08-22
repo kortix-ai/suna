@@ -3,14 +3,12 @@ import { describe, expect, mock, test } from 'bun:test';
 // Self-host default: KORTIX_MANAGED_PROVIDER_ENABLED is OFF. This file boots
 // the gateway's real (unmocked) descriptors/resolve-candidates/catalog/picker
 // modules against that config so every consumer of the managed lineup is
-// exercised end to end — no managed models served, no managed candidates
-// resolved, and NEITHER AWS_BEDROCK_API_KEY NOR OPENROUTER_API_KEY read for
-// managed routing (the real-world bug: a self-host operator's OWN OpenRouter
-// BYOK key lives in that exact config var, and must never be mistaken for
-// Kortix's shared managed credential).
+// exercised end to end. No managed models are served. No managed candidates
+// resolve. No managed upstream credential is read.
 
 let bedrockKeyReads = 0;
 let openrouterKeyReads = 0;
+let asterKeyReads = 0;
 
 mock.module('../../config', () => ({
   SANDBOX_VERSION: 'test',
@@ -42,6 +40,11 @@ mock.module('../../config', () => ({
           return 'operators-own-openrouter-key';
         }
         if (key === 'OPENROUTER_API_URL') return 'https://openrouter.ai/api/v1';
+        if (key === 'ASTER_API_KEY') {
+          asterKeyReads += 1;
+          return 'fake-aster-key-must-never-be-read';
+        }
+        if (key === 'ASTER_API_URL') return 'https://api.asterlab.ai/v1';
         return target[key];
       },
     },
@@ -51,19 +54,25 @@ mock.module('../../config', () => ({
 
 mock.module('../../billing/services/entitlements', () => ({
   getAccountTier: async () => 'free',
+  // resolveCandidates now calls the shared cached tier resolver directly
+  // (getCachedAccountTier) instead of keeping its own duplicate cache — see
+  // unit-account-tier-cache-unified.test.ts for that cache's own behavior.
+  getCachedAccountTier: async () => 'free',
+  accountMayUseManagedModels: async () => false,
 }));
 
 mock.module('../../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'operators-own-anthropic-key',
-  // resolveCandidates' BYOK path now calls this (shared-vs-private fallback —
-  // see projects/secrets.ts pickResolvedSecretRow); stub it the same as
-  // getProjectSecretValue since this file isn't exercising that distinction.
-  getResolvedProjectSecretValue: async () => 'operators-own-anthropic-key',
+  getProjectSecretValueForConsumer: async () => 'operators-own-anthropic-key',
+  resolveProjectSecretsForConsumer: async (input: { name: string }) => [
+    { identifier: input.name, value: 'operators-own-anthropic-key' },
+  ],
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
+  listProjectSecretNamesForConsumer: async () => [],
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   projectSecretsRevision: () => 'empty',
 }));
@@ -79,9 +88,8 @@ mock.module('../credentials/codex', () => ({
   resolveCodexCredential: async () => null,
 }));
 
-const { RUNTIME_MANAGED_MODELS, getRuntimeManagedModel, isRuntimeManagedModelId } = await import(
-  './managed-models'
-);
+const { RUNTIME_MANAGED_MODELS, getRuntimeManagedModel, isRuntimeManagedModelId } =
+  await import('./managed-models');
 const { managedCandidates, managedDescriptor } = await import('../resolution/descriptors');
 const { resolveCandidates } = await import('../resolution/resolve-candidates');
 const { gatewayModelCatalog, managedModels } = await import('./catalog-models');
@@ -122,19 +130,26 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
   test('managedCandidates()/managedDescriptor() (defense-in-depth) refuse to build a descriptor and read NEITHER credential', () => {
     expect(managedCandidates(FAKE_MANAGED_MODEL)).toEqual([]);
     expect(managedCandidates({ ...FAKE_MANAGED_MODEL, transport: 'openrouter' })).toEqual([]);
+    expect(managedCandidates({ ...FAKE_MANAGED_MODEL, transport: 'aster' })).toEqual([]);
     expect(managedDescriptor(FAKE_MANAGED_MODEL)).toBeNull();
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);
+    expect(asterKeyReads).toBe(0);
   });
 
   test('a request explicitly naming a managed model resolves to NO candidates — never a silent fallback to Kortix credits', async () => {
-    const candidates = await resolveCandidates(
-      { userId: 'u-managed', accountId: 'a-managed', projectId: 'p-managed' },
-      'claude-sonnet-4.6',
-    );
-    expect(candidates).toEqual([]);
+    await expect(
+      resolveCandidates(
+        { userId: 'u-managed', accountId: 'a-managed', projectId: 'p-managed' },
+        'glm-5.2',
+      ),
+    ).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'model_disabled_on_deployment',
+    });
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);
+    expect(asterKeyReads).toBe(0);
   });
 
   test('a BYOK request still works on its own key, but gets NO managed fallback appended', async () => {

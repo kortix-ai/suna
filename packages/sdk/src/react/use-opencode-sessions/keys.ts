@@ -27,7 +27,23 @@ import type {
 // Re-export SDK types for consumers
 // ============================================================================
 
-export type { Session, Message, Part, Agent, Command, Project, SessionStatus, PermissionRule, Model, McpStatus, PathInfo, Worktree, WorktreeCreateInput, WorktreeRemoveInput, WorktreeResetInput };
+export type {
+  Session,
+  Message,
+  Part,
+  Agent,
+  Command,
+  Project,
+  SessionStatus,
+  PermissionRule,
+  Model,
+  McpStatus,
+  PathInfo,
+  Worktree,
+  WorktreeCreateInput,
+  WorktreeRemoveInput,
+  WorktreeResetInput,
+};
 
 /**
  * Shape returned by `client.session.messages()`:
@@ -51,8 +67,22 @@ export type ProviderListResponse = SdkProviderListResponse;
  */
 export type PromptPart =
   | { type: 'text'; text: string; id?: string }
-  | { type: 'file'; mime: string; url: string; filename?: string; source?: { text: { value: string; start: number; end: number }; type: 'file'; path: string } }
-  | { type: 'agent'; name: string; source?: { value: string; start: number; end: number } };
+  | {
+      type: 'file';
+      mime: string;
+      url: string;
+      filename?: string;
+      source?: {
+        text: { value: string; start: number; end: number };
+        type: 'file';
+        path: string;
+      };
+    }
+  | {
+      type: 'agent';
+      name: string;
+      source?: { value: string; start: number; end: number };
+    };
 
 export interface SendMessageOptions {
   model?: { providerID: string; modelID: string };
@@ -91,9 +121,14 @@ export const opencodeKeys = {
   sessions: (serverId?: string) => ['opencode', 'sessions', serverId ?? activeServerKey()] as const,
   session: (id: string) => ['opencode', 'session', id] as const,
   messages: (sessionId: string) => ['opencode', 'session', sessionId, 'messages'] as const,
+  runtimeSession: (id: string, serverId?: string) =>
+    ['opencode', 'session', id, serverId ?? activeServerKey()] as const,
+  runtimeMessages: (sessionId: string, serverId?: string) =>
+    ['opencode', 'session', sessionId, 'messages', serverId ?? activeServerKey()] as const,
   agents: () => ['opencode', 'agents', activeServerKey()] as const,
   toolIds: () => ['opencode', 'tool-ids', activeServerKey()] as const,
-  tools: (providerID: string, modelID: string) => ['opencode', 'tools', providerID, modelID, activeServerKey()] as const,
+  tools: (providerID: string, modelID: string) =>
+    ['opencode', 'tools', providerID, modelID, activeServerKey()] as const,
   skills: () => ['opencode', 'skills', activeServerKey()] as const,
   projects: () => ['opencode', 'projects', activeServerKey()] as const,
   currentProject: () => ['opencode', 'project', 'current', activeServerKey()] as const,
@@ -102,6 +137,15 @@ export const opencodeKeys = {
   pathInfo: () => ['opencode', 'path-info', activeServerKey()] as const,
   mcpStatus: () => ['opencode', 'mcp-status', activeServerKey()] as const,
   worktrees: () => ['opencode', 'worktrees', activeServerKey()] as const,
+  /**
+   * `GET /vcs/diff` — the session's file changes. ONE key per (mode, sandbox),
+   * so the tab badge, the header chip and the diff panel share one cache entry
+   * and cannot contradict each other on screen.
+   */
+  vcsDiff: (mode: 'git' | 'branch', serverId?: string) =>
+    ['opencode', 'vcs-diff', mode, serverId ?? activeServerKey()] as const,
+  /** Prefix over every mode + sandbox — what the event stream invalidates. */
+  vcsDiffAll: () => ['opencode', 'vcs-diff'] as const,
 };
 
 export function useOpenCodeRuntimeReady() {

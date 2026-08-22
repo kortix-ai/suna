@@ -1,13 +1,13 @@
 # ── prod environment — api.kortix.com on ECS Fargate (autoscaled, HA) ─────────
 #
 #   api.kortix.com → Cloudflare (proxied, Full strict) → ALB → ECS Fargate
-#   service (autoscaled on CPU/memory, min 2 tasks across 2 AZs) in private
+#   service (autoscaled on CPU/memory, min 3 tasks across 2 AZs) in private
 #   subnets, egress via per-AZ NAT.
 #
 # SAME modules as dev (../dev) — prod just runs bigger numbers, no Spot, a NAT
-# per AZ, and Container Insights on. min_capacity=2 across AZs gives the
-# availability + horizontal autoscaling expected for SOC 2. Not applied
-# automatically. See README.md.
+# per AZ, and Container Insights on. min_capacity=3 preserves one healthy
+# replica if two tasks fail together. Applied by deploy-prod.yml's
+# terraform-prod-api job on every release, before the image rolls. See README.md.
 
 terraform {
   required_version = ">= 1.5"
@@ -45,8 +45,7 @@ locals {
   dns_record_name = replace(var.api_domain, ".kortix.com", "")
   # Cloudflare's published IPv4 edge ranges. Lock the public ALB to these so the
   # origin can only be reached THROUGH Cloudflare — no direct-to-origin bypass of
-  # the WAF / rate limiting. Mirrors the EKS chart inboundCidrs and the
-  # devops/argocd ingress allowlist. Refresh from https://www.cloudflare.com/ips-v4.
+  # the WAF / rate limiting. Refresh from https://www.cloudflare.com/ips-v4.
   cloudflare_ip_ranges = [
     "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
     "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
@@ -81,6 +80,14 @@ module "acm" {
   }
 }
 
+# The env secret blob is the source of truth for the container environment.
+# ECS injects the complete JSON document through one stable selector. The
+# application expands it before any configuration module reads process.env.
+# Looked up by name so the random ARN suffix is never hard-coded.
+data "aws_secretsmanager_secret" "env" {
+  name = "kortix-prod-env"
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -93,21 +100,24 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image           = var.api_image
-  container_port  = var.container_port
-  enable_https    = true
-  certificate_arn = module.acm.certificate_arn
-  environment     = var.api_environment
-  secrets         = var.api_secrets
+  image                   = var.api_image
+  container_port          = var.container_port
+  certificate_arn         = module.acm.certificate_arn
+  health_check_path       = "/health/ready"
+  environment             = var.api_environment
+  secrets                 = var.api_secrets
+  secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
+  ses_send_region         = "us-east-2"
+  ses_send_identity_names = ["kortix.com", "kortix.ai"]
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
   # prod sizing: bigger tasks, HA floor of 2, no spot, insights on
   task_cpu           = 1024
-  task_memory        = 2048
-  desired_count      = 2
-  min_capacity       = 2
+  task_memory        = 4096
+  desired_count      = 3
+  min_capacity       = 3
   max_capacity       = 10
   use_fargate_spot   = false
   container_insights = true
@@ -153,10 +163,10 @@ module "gateway" {
   container_name    = "gateway"
   container_port    = 8090
   health_check_path = "/health/live"
-  enable_https      = true
   certificate_arn   = module.acm_gateway.certificate_arn
   environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://api.kortix.com" })
   secrets           = var.api_secrets
+  secrets_blob_arn  = data.aws_secretsmanager_secret.env.arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 

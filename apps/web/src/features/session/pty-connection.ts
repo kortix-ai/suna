@@ -1,5 +1,38 @@
 export type PtyCloseAction = 'ended' | 'reconnect' | 'replace';
 
+export type TerminalPanelState = 'connecting' | 'error' | 'empty' | 'terminal';
+
+export function deriveTerminalPanelState(input: {
+  hasServerUrl: boolean;
+  serverWaitExpired: boolean;
+  hasPty: boolean;
+  isListLoading: boolean;
+  isListError: boolean;
+  isCreatePending: boolean;
+  isCreateError: boolean;
+  isEnsuring: boolean;
+  /** The list/create failure is a sandbox readiness 503 (parked or booting
+   *  box) — a pending state the panel must keep waiting through, never render
+   *  as a terminal error. */
+  isSandboxWaking?: boolean;
+}): TerminalPanelState {
+  if (input.hasPty) return 'terminal';
+  if (!input.hasServerUrl) return input.serverWaitExpired ? 'error' : 'connecting';
+  if (input.isListError || input.isCreateError) {
+    return input.isSandboxWaking ? 'connecting' : 'error';
+  }
+  if (input.isListLoading || input.isCreatePending || input.isEnsuring) return 'connecting';
+  return 'empty';
+}
+
+export function shouldExpirePtyConnect(
+  startedAt: number,
+  now: number,
+  timeoutMs: number,
+): boolean {
+  return now - startedAt >= timeoutMs;
+}
+
 export function classifyPtyClose(input: {
   code: number;
   reason: string;

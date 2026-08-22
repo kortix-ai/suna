@@ -162,7 +162,7 @@ export default function ProjectsTab() {
   // target that opens the same Open/Archive/Cancel action sheet.
   const onRowMenu = React.useCallback(
     (p: KortixProject) => {
-      const canManage = p.effective_project_role === 'editor' || !p.effective_project_role;
+      const canManage = p.effective_project_role === 'manager' || !p.effective_project_role;
       const buttons: any[] = [{ text: 'Open', onPress: () => openProject(p) }];
       if (canManage) buttons.push({ text: 'Archive', style: 'destructive', onPress: () => confirmArchive(p) });
       buttons.push({ text: 'Cancel', style: 'cancel' });

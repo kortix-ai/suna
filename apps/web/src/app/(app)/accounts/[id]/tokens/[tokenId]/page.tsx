@@ -2,8 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 
+import { CaretLeftIcon as ChevronLeft, KeyIcon as KeyRound } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, KeyRound } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMemo } from 'react';
@@ -15,14 +15,20 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
-import { accountTokensApi } from '@/lib/api/account-tokens';
 import { usePermission } from '@/lib/use-permission';
+import { listAccountTokens } from '@kortix/sdk';
+
+const tokenDateFormat = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return tokenDateFormat.format(d);
 }
 
 export default function TokenDetailPage() {
@@ -38,7 +44,7 @@ export default function TokenDetailPage() {
   // way to know about a token's metadata anyway.
   const tokensQuery = useQuery({
     queryKey: ['account-tokens', accountId],
-    queryFn: () => accountTokensApi.list(),
+    queryFn: () => listAccountTokens(accountId),
     enabled: !!user && !!accountId,
     staleTime: 30_000,
   });
@@ -95,9 +101,7 @@ export default function TokenDetailPage() {
       </div>
 
       {!tokensQuery.isLoading && !token && tokenId ? (
-        <InfoBanner tone="neutral">
-          This token doesn&apos;t exist or has been revoked.
-        </InfoBanner>
+        <InfoBanner tone="neutral">This token doesn&apos;t exist or has been revoked.</InfoBanner>
       ) : null}
 
       {token && accountId ? (

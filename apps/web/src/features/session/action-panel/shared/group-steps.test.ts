@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'bun:test';
 import type { MessageWithParts, ToolPart } from '@/ui';
+import { describe, expect, it } from 'bun:test';
 import { collectAllToolParts } from './collect-tool-parts';
 import { groupSteps } from './group-steps';
 
@@ -34,14 +34,47 @@ describe('groupSteps', () => {
     expect(steps.map((s) => s.family)).toEqual(['explore', 'run', 'explore']);
   });
 
-  it('never folds write / show / show_user — each is its own step', () => {
+  it('never folds show / show_user — each is its own step', () => {
     const steps = groupSteps([
-      part('write', 'completed', { filePath: '/a/one.md' }),
-      part('write', 'completed', { filePath: '/a/two.md' }),
+      part('show', 'completed', { title: 'one', path: '/workspace/one.png' }),
+      part('show', 'completed', { title: 'two', path: '/workspace/two.png' }),
     ]);
     expect(steps).toHaveLength(2);
-    expect(steps[0].label).toBe('Wrote one.md');
-    expect(steps[1].label).toBe('Wrote two.md');
+  });
+
+  // A `show` carrying no path, url, content or items renders an empty card. Its
+  // step would narrate "Showed you the result" and open onto nothing, so it is
+  // dropped — and, like `prune`, it must not split the run around it.
+  it('drops a show that handed nothing over, without splitting the run', () => {
+    const steps = groupSteps([
+      part('read'),
+      part('show', 'completed', { type: 'markdown', title: 'Report' }),
+      part('read'),
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].parts).toHaveLength(2);
+  });
+
+  it('keeps a show that is still running — its input has not arrived yet', () => {
+    const steps = groupSteps([part('show', 'running', {})]);
+    expect(steps).toHaveLength(1);
+  });
+
+  it('keeps a show whose state errored — a failure is real content', () => {
+    const steps = groupSteps([part('show', 'error', {})]);
+    expect(steps).toHaveLength(1);
+  });
+
+  it('consecutive writes fold into one edit step', () => {
+    const steps = groupSteps([
+      part('write', 'completed', { filePath: 'a.json' }),
+      part('write', 'completed', { filePath: 'b.json' }),
+      part('write', 'completed', { filePath: 'c.json' }),
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].family).toBe('edit');
+    expect(steps[0].parts).toHaveLength(3);
+    expect(steps[0].label).toBe('Wrote 3 files');
   });
 
   it('drops hidden context-engine tools entirely', () => {

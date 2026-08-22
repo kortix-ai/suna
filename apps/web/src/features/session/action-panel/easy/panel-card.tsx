@@ -15,10 +15,10 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { Empty, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
+import { Empty, EmptyContent, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
-import { ChevronRight } from '@mynaui/icons-react';
-import { motion, useReducedMotion } from 'motion/react';
+import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
+import { m, useReducedMotion } from 'motion/react';
 import { type ReactNode, useEffect, useState } from 'react';
 
 export interface PanelCardProps {
@@ -30,6 +30,11 @@ export interface PanelCardProps {
   /** Soft placeholder art shown above `emptyText` — the "promise" state. */
   emptyArt?: ReactNode;
   emptyText?: string;
+  /** Extra content under `emptyText` — the empty Context card's "Add
+   *  context" / "Connect apps" row (Task 5). Full-width, not the `Empty`
+   *  primitive's own `max-w-sm` prose cap, since a connector strip needs the
+   *  card's whole width to lay out its rows. */
+  emptyActions?: ReactNode;
   isEmpty: boolean;
   defaultExpanded?: boolean;
   /** Override the body padding — a full-bleed list (Progress) wants none. */
@@ -37,11 +42,32 @@ export interface PanelCardProps {
   /** A control beside the chevron (Outputs' "download all") — click-isolated
    * from the header's own expand/collapse toggle. */
   headerAction?: ReactNode;
+  /**
+   * This card absorbs the column's leftover height instead of pushing its
+   * siblings off the bottom.
+   *
+   * Exactly ONE card in the column may set it. The card still sizes to its
+   * content — it never stretches to fill space it does not need — but it is the
+   * only one the flex algorithm is allowed to shrink, and when it shrinks its
+   * BODY scrolls while its header stays put. Everything else in the column
+   * keeps `shrink-0` and stays wholly visible.
+   *
+   * That asymmetry is the whole design. A column where every card can shrink
+   * has no anchor and clips all three; a column where none can shrink pushes
+   * the lower cards out of sight the moment one list gets long. One flexible
+   * card, the rest fixed, is what keeps Context and Preview on screen while
+   * Outputs holds two hundred files.
+   *
+   * One call-site consequence: the header divider moves to the scroll
+   * container, so a `fill` card's `contentClassName` carries padding only —
+   * pass no `border-t` or the card draws two.
+   */
+  fill?: boolean;
 }
 
 /** Full-width row trigger, clipped by the parent's `overflow-hidden` so its square corners never peek past the card's rounded-md border. */
 const HEADER_CLASS = cn(
-  'flex min-h-11 w-full items-center justify-between gap-2 rounded-none px-4 py-3 text-left',
+  'flex min-h-11 w-full items-center justify-between gap-2 rounded-none px-3.5 py-2 text-left',
   'transition-[background-color,transform] active:scale-[0.998]',
   'hover:bg-muted-foreground/[0.04]',
 );
@@ -63,7 +89,7 @@ function CardTitleRow({
         <span className="flex min-w-0 items-baseline gap-1.5">
           <span className="text-foreground truncate text-sm font-semibold">{title}</span>
           {typeof count === 'number' && count > 0 && (
-            <Badge variant="secondary" size="sm" className="tabular-nums">
+            <Badge variant="secondary" size="tabular" className="tabular-nums">
               {count}
             </Badge>
           )}
@@ -82,10 +108,12 @@ export function PanelCard({
   children,
   emptyArt,
   emptyText,
+  emptyActions,
   isEmpty,
   defaultExpanded = false,
   contentClassName = 'border-border border-t p-4',
   headerAction,
+  fill = false,
 }: PanelCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const reduce = useReducedMotion();
@@ -103,16 +131,10 @@ export function PanelCard({
       open={expanded}
       onOpenChange={setExpanded}
       variant="outline"
-      // `shrink-0`: this card sits in a flex column (`EasyPanel`'s home view)
-      // alongside the other two cards. Without it, the browser's flexbox
-      // algorithm treats this element's automatic minimum size as 0 (the
-      // `overflow-hidden` on this element and inside `DisclosureContent`
-      // makes that the spec-mandated minimum) and will happily shrink it
-      // *below* its expanded content's real height whenever the column runs
-      // out of room — clipping a row in half instead of ever scrolling. The
-      // column's own `overflow-auto` (see `easy-panel.tsx`) is what should
-      // handle overflow, not a silent shrink of this card.
-      className="bg-popover shrink-0 overflow-hidden shadow"
+      className={cn(
+        'bg-pane text-popover-foreground border-border overflow-hidden rounded-[calc(var(--radius)-3px)] border ease-out',
+        fill ? 'flex min-h-0 flex-col' : 'shrink-0',
+      )}
       transition={transition}
     >
       <DisclosureTrigger variant="outline">
@@ -135,30 +157,35 @@ export function PanelCard({
                   // on click covers the mouse/tap case, and on keydown stops the
                   // Enter/Space that activates the nested button from *also*
                   // bubbling up into the trigger's own Enter/Space handler.
-                  <span
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
+                  <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     {headerAction}
                   </span>
                 )}
-                <motion.span
+                <m.span
                   animate={{ rotate: expanded ? 90 : 0 }}
                   transition={transition}
                   className="text-muted-foreground shrink-0"
                 >
                   <ChevronRight className="size-4" />
-                </motion.span>
+                </m.span>
               </span>
             }
           />
         </div>
       </DisclosureTrigger>
-      <DisclosureContent variant="outline" contentClassName={contentClassName}>
+      <DisclosureContent
+        variant="outline"
+        className={cn(
+          fill && 'flex min-h-0 flex-col',
+          fill && expanded && 'border-border border-t',
+        )}
+        contentClassName={contentClassName}
+      >
         {isEmpty ? (
           <Empty className="flex-none gap-3 rounded-none border-none p-0 text-center">
             {emptyArt && <EmptyMedia className="mb-0">{emptyArt}</EmptyMedia>}
             {emptyText && <EmptyDescription className="text-pretty">{emptyText}</EmptyDescription>}
+            {emptyActions && <EmptyContent className="w-full max-w-none">{emptyActions}</EmptyContent>}
           </Empty>
         ) : (
           children

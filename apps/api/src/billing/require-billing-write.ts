@@ -1,11 +1,12 @@
 import { resolveScopedAccountId } from '../shared/resolve-account';
-import { assertAuthorized } from '../iam/dispatcher';
+import { assertAuthorized } from '../iam/authorize';
+import { actorOf } from '../iam/actor';
 import { ACCOUNT_ACTIONS } from '../iam/actions';
 
 /**
  * Resolve the account a billing *write* targets AND assert the caller is
  * allowed to change billing for it (`billing.write` — owners only by default,
- * see iam/role-perms.ts).
+ * see the `owner` role in kortix.role_permissions).
  *
  * Every endpoint that creates or changes a subscription, initiates a charge,
  * or opens the Stripe customer portal MUST go through here instead of bare
@@ -24,7 +25,6 @@ export async function resolveBillingWriteAccountId(
   source: 'query' | 'body' = 'body',
 ): Promise<string> {
   const accountId = await resolveScopedAccountId(c, source);
-  const userId = c.get('userId') as string;
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.BILLING_WRITE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_WRITE);
   return accountId;
 }

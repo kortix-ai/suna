@@ -1,11 +1,17 @@
 import { z } from '@hono/zod-openapi';
-import { accountInvitations, accountMembers, type accounts } from '@kortix/db';
-import { and, asc, count, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { accountInvitations, accountMembers, accountMemberships, iamRoles, roleAssignments, type accounts } from '@kortix/db';
+import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
+import {
+  isImpersonatingAccount,
+  isImpersonationBlockedAccount,
+} from '../../shared/impersonation';
+import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { resolveAccountId } from '../../shared/resolve-account';
-import { getSupabase } from '../../shared/supabase';
+import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types';
 
 // ─── Public router (leaf module — no route imports here to avoid cycles) ─────
@@ -67,6 +73,9 @@ export const AccountMemberSchema = z
     account_role: z.string(),
     is_super_admin: z.boolean(),
     explicit_project_count: z.number(),
+    /** Direct project grants only (mirrors explicit_project_count) — group-
+     *  derived and implicit (owner/admin) access aren't enumerated here. */
+    projects: z.array(z.object({ project_id: z.string(), name: z.string(), role: z.string() })),
     groups: z.array(z.object({ group_id: z.string(), name: z.string() })),
     active_pat_count: z.number(),
     has_verified_mfa: z.boolean(),
@@ -188,40 +197,32 @@ export function parseRole(value: unknown, allowed: AccountRole[]): AccountRole |
 }
 
 export async function getMembership(userId: string, accountId: string) {
-  const [row] = await db
-    .select({ accountRole: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
-    .limit(1);
-  return row ?? null;
+  // ACT-AS: an operator with a live grant on this account reads as its owner.
+  // Only ever widens the OPERATOR's own id — `impersonatedAccountFor` compares
+  // against the grant's admin_user_id, so the several call sites that pass a
+  // TARGET user's id (member role changes, invites) keep getting that user's
+  // real membership, which is exactly what those routes must decide on.
+  if (isImpersonatingAccount(userId, accountId)) {
+    return { accountRole: 'owner' as const };
+  }
+  // Confinement, same as getAccountMembership: one account for the duration.
+  if (isImpersonationBlockedAccount(userId, accountId)) return null;
+  // Membership IS the account-scope assignment. `account_members` keeps the
+  // identity columns (is_super_admin, scim_external_id, joined_at); the ROLE
+  // comes from `role_assignments`, which is what the engine reads.
+  const accountRole = await accountRoleFor(accountId, userId);
+  return accountRole ? { accountRole } : null;
 }
 
 export async function countOwners(accountId: string): Promise<number> {
-  const [row] = await db
-    .select({ n: count() })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')));
-  return Number(row?.n ?? 0);
+  return countAccountOwners(accountId);
 }
 
-export async function lookupEmailsByUserIds(
-  userIds: string[],
-): Promise<Map<string, string | null>> {
-  const result = new Map<string, string | null>();
-  if (userIds.length === 0) return result;
-  const supabase = getSupabase();
-  await Promise.all(
-    userIds.map(async (uid) => {
-      try {
-        const { data } = await supabase.auth.admin.getUserById(uid);
-        result.set(uid, data?.user?.email ?? null);
-      } catch {
-        result.set(uid, null);
-      }
-    }),
-  );
-  return result;
-}
+// Batched + cached owner-email lookup. Lives in ./owner-emails so it stays a
+// leaf module (db + sql only) and can be unit-tested without the account graph.
+// Re-exported here because it was part of this module's public surface.
+export { clearOwnerEmailCache, ownerEmailCacheSize } from './owner-emails';
+export { lookupEmailsByUserIds };
 
 // Display names for a batch of accounts, deriving the fallback for unnamed
 // (placeholder-named) accounts from the account OWNER's email — not the
@@ -241,21 +242,43 @@ export async function resolveAccountDisplayNames(
   }
   if (unnamed.length === 0) return names;
 
-  // Primary owner per unnamed account = earliest-joined 'owner' row.
+  // Primary owner per unnamed account = the earliest-joined holder of the
+  // `owner` role. The ROLE comes from `role_assignments` (the store the engine
+  // reads); `account_members.joined_at` is identity and stays where it is.
   const ownerByAccount = new Map<string, string>();
   try {
     const owners = await db
       .select({ accountId: accountMembers.accountId, userId: accountMembers.userId })
       .from(accountMembers)
+      .innerJoin(
+        roleAssignments,
+        and(
+          eq(roleAssignments.accountId, accountMembers.accountId),
+          eq(roleAssignments.principalType, 'user'),
+          eq(roleAssignments.principalId, accountMembers.userId),
+          eq(roleAssignments.scopeType, 'account'),
+        ),
+      )
+      .innerJoin(
+        iamRoles,
+        and(
+          eq(iamRoles.roleId, roleAssignments.roleId),
+          isNull(iamRoles.accountId),
+          eq(iamRoles.key, 'owner'),
+        ),
+      )
       .where(
-        and(inArray(accountMembers.accountId, unnamed), eq(accountMembers.accountRole, 'owner')),
+        and(
+          inArray(accountMembers.accountId, unnamed),
+          or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
+        ),
       )
       .orderBy(asc(accountMembers.joinedAt));
     for (const o of owners) {
       if (!ownerByAccount.has(o.accountId)) ownerByAccount.set(o.accountId, o.userId);
     }
   } catch {
-    // account_members may not exist yet — fall through to caller email below.
+    // the tables may not exist yet — fall through to caller email below.
   }
 
   const foreignOwnerIds = [...new Set(ownerByAccount.values())].filter(
@@ -320,16 +343,22 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
       // dialog. Leave grant-carrying invites pending for the recipient to act on.
       if ((invite.bootstrapGrants ?? []).length > 0) continue;
       try {
+        // IDENTITY, then the ROLE. `accountMemberships` is the table;
+        // `accountMembers` is a view over it plus role_assignments, and a
+        // TARGETED `ON CONFLICT` cannot run against a view (no index to infer).
         await db
-          .insert(accountMembers)
-          .values({
-            userId,
-            accountId: invite.accountId,
-            accountRole: invite.initialRole,
-          })
+          .insert(accountMemberships)
+          .values({ userId, accountId: invite.accountId })
           .onConflictDoNothing({
-            target: [accountMembers.userId, accountMembers.accountId],
+            target: [accountMemberships.userId, accountMemberships.accountId],
           });
+        await assignRole(SYSTEM_ACTOR, invite.accountId, {
+          principal: { type: 'user', id: userId },
+          roleKey: invite.initialRole,
+          scope: { type: 'account' },
+          source: 'invite',
+          exclusive: true,
+        });
         await db
           .update(accountInvitations)
           .set({ acceptedAt: new Date() })

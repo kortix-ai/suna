@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Snapshot of migrations/*.concurrent.ts that set lock_timeout BELOW the 120s CONCURRENTLY floor introduced on 2026-08-19, after v0.13.0 deploy-prod run 32248002434 failed its migration job twice with 55P03 (canceling statement due to lock timeout).",
+    "Same contract as grandfathered-migrations.json: these files are immutable and already applied in every environment, so the floor cannot be retrofitted onto them. Only the CONCURRENTLY lock_timeout check exempts them.",
+    "CREATE INDEX CONCURRENTLY waits for every transaction that began before it, and lock_timeout governs that wait — so a 2-5s budget fails on a live system regardless of table size. New .concurrent.ts migrations must use 180s (what `pnpm migrate:create <slug> --concurrent` scaffolds).",
+    "Do not add to this list."
+  ],
+  "generatedAt": "2026-08-19T00:00:00Z",
+  "files": [
+    "20260718115307722_account_model_preferences_scope_global_index.concurrent.ts",
+    "20260718115309065_account_model_preferences_scope_project_index.concurrent.ts",
+    "20260718115310430_drop_account_model_preferences_scope_index.concurrent.ts",
+    "20260721202705000_add_audit_events_occurred_at_index.concurrent.ts",
+    "20260726000708000_project_sessions_one_available_warm.concurrent.ts",
+    "20260727010700000_exact_trigger_scheduler_due_index.concurrent.ts",
+    "20260727092101567_multi_connections_per_connector.concurrent.ts",
+    "20260727112630384_usage_events_account_origin_time_index.concurrent.ts",
+    "20260727113441902_project_sessions_origin_active_index.concurrent.ts",
+    "20260727113441903_project_sessions_account_active_index.concurrent.ts",
+    "20260728082438985_project_sessions_project_origin_index.concurrent.ts",
+    "20260728132613912_secret_delivery_indexes.concurrent.ts",
+    "20260730000452600_sandbox_deadline_index.concurrent.ts",
+    "20260731083554880_audit_account_project_time_index.concurrent.ts",
+    "20260731083554881_audit_account_session_time_index.concurrent.ts",
+    "20260731083554882_audit_request_index.concurrent.ts",
+    "20260731083554883_audit_correlation_index.concurrent.ts",
+    "20260805205751000_projects_account_idempotency_key_index.concurrent.ts",
+    "20260806140259565_connector_binding_connection_index.concurrent.ts",
+    "20260807202731277_admin_analytics_time_indexes.concurrent.ts",
+    "20260807202731278_admin_analytics_ledger_time_index.concurrent.ts",
+    "20260807221201000_audit_account_project_sequence_index.concurrent.ts",
+    "20260807221202000_audit_account_session_sequence_index.concurrent.ts",
+    "20260807221203000_audit_source_phase_index.concurrent.ts",
+    "20260807221204000_audit_action_pattern_index.concurrent.ts",
+    "20260807221205000_audit_account_source_phase_time_index.concurrent.ts",
+    "20260807221206000_audit_account_client_source_time_index.concurrent.ts",
+    "20260813203000000_drop_one_available_warm_index.concurrent.ts",
+    "20260818120000000_project_role_editor_to_manager.concurrent.ts",
+    "20260819015724600_rbac_canonical_indexes.concurrent.ts",
+    "20260819015726000_account_tokens_session_id_index.concurrent.ts"
+  ]
+}

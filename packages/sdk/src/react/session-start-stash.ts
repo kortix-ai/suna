@@ -6,6 +6,16 @@
  * that's how the chosen model/agent/variant apply to the opening turn. Owned by
  * the SDK so the producer (new-session screen) and consumer (`useSession`)
  * share one contract.
+ *
+ * ## Two producer styles
+ *
+ * A host with an inbox client (apps/web) writes a PICKS-ONLY stash
+ * (`prompt: ''`): the prompt itself becomes a durable server row at session
+ * create (or via `startSessionWithPrompt`), and only the model/agent/variant
+ * hand-off still travels here. An empty prompt therefore round-trips — see
+ * the picks-only test — and `useSession`'s replay sends nothing for it. A
+ * host without one (apps/whitelabel-demo, the golden thin-SDK reference)
+ * writes the full stash and the replay path delivers it exactly as always.
  */
 
 export interface StartStash {
@@ -13,15 +23,44 @@ export interface StartStash {
   model: { providerID: string; modelID: string } | null;
   agent: string | null;
   variant?: string | null;
+  /** Epoch ms of the last write. Stamped by {@link writeStartStash}; a stash
+   *  older than {@link START_STASH_TTL_MS} reads as absent. Absent on entries
+   *  written before this field existed (treated as fresh once, then
+   *  re-stamped by any rewrite). */
+  at?: number;
 }
+
+/**
+ * How long a stash stays deliverable. A stash is a hand-off for the
+ * navigation that wrote it — a failed replay restores it (re-stamped), but
+ * one that then sits unconsumed is a stale prompt, and replaying it into the
+ * session's by-then-real conversation on a much later visit is exactly the
+ * mis-delivery the warm-session work exists to prevent. 10 minutes matches
+ * the API's own bound for "how stale can a delivery be and still count"
+ * (UNDELIVERED_PROMPT_STARVATION_MS).
+ */
+export const START_STASH_TTL_MS = 10 * 60_000;
 
 export function startStashKey(sessionId: string): string {
   return `kortix:start:${sessionId}`;
 }
 
+function sanitizeStartModel(model: StartStash['model']): StartStash['model'] {
+  if (!model) return null;
+  if (model.modelID === 'auto' || model.modelID === 'kortix/auto') return null;
+  return model;
+}
+
+function sanitizeStartStash(stash: StartStash): StartStash {
+  return { ...stash, model: sanitizeStartModel(stash.model) };
+}
+
 export function writeStartStash(sessionId: string, stash: StartStash): void {
   try {
-    sessionStorage.setItem(startStashKey(sessionId), JSON.stringify(stash));
+    sessionStorage.setItem(
+      startStashKey(sessionId),
+      JSON.stringify({ ...sanitizeStartStash(stash), at: Date.now() }),
+    );
   } catch {}
 }
 
@@ -49,14 +88,17 @@ function parseLegacyModel(value: unknown): StartStash['model'] {
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;
     if (typeof obj.providerID === 'string' && typeof obj.modelID === 'string') {
-      return { providerID: obj.providerID, modelID: obj.modelID };
+      return sanitizeStartModel({ providerID: obj.providerID, modelID: obj.modelID });
     }
     return null;
   }
   if (typeof value === 'string') {
     const idx = value.indexOf('/');
     if (idx > 0 && idx < value.length - 1) {
-      return { providerID: value.slice(0, idx), modelID: value.slice(idx + 1) };
+      return sanitizeStartModel({
+        providerID: value.slice(0, idx),
+        modelID: value.slice(idx + 1),
+      });
     }
   }
   return null;
@@ -92,7 +134,19 @@ function clearLegacyStash(sessionId: string): void {
 export function readStartStash(sessionId: string): StartStash | null {
   try {
     const raw = sessionStorage.getItem(startStashKey(sessionId));
-    if (raw) return JSON.parse(raw) as StartStash;
+    if (raw) {
+      const stash = JSON.parse(raw) as StartStash;
+      // Expired: dead hand-off, not a pending prompt. Clear it so nothing —
+      // including the legacy fallback below — can resurrect it.
+      if (typeof stash.at === 'number' && Date.now() - stash.at > START_STASH_TTL_MS) {
+        clearStartStash(sessionId);
+        return null;
+      }
+      // The stamp is a storage detail — consumers get the hand-off payload
+      // exactly as it was written.
+      const { at: _at, ...payload } = stash;
+      return sanitizeStartStash(payload);
+    }
   } catch {
     // fall through to the legacy shape
   }

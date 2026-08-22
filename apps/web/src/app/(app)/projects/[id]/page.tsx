@@ -1,33 +1,47 @@
 'use client';
 
+import type { AttachedFile } from '@/features/session/session-chat-input';
+import { attachedFilesToDataUrlParts } from '@/features/session/uploaded-file-refs';
+import { errorToast } from '@/components/ui/toast';
+
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
 import {
   ProjectHome,
   type ProjectHomeSendOptions,
 } from '@/features/workspace/project-layout/project-home';
-import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
-import type { AttachedFile } from '@/features/session/session-chat-input';
 import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import {
+  billingDialogArgs,
+  billingStateAllowsRun,
+  resolveBillingState,
+} from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
-import { writeStartStash } from '@kortix/sdk/react';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
+import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk, writeStartStash } from '@kortix/sdk/react';
+import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { promptFromSearchParams } from './prompt-from-search-params';
 
 const FREE_ONBOARDING_UPGRADE_MODAL_KEY = 'kortix:free-onboarding-upgrade-modal-shown';
 
 export default function ProjectIndexPage() {
   const { id: projectId } = useParams<{ id: string }>();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const { data: projectDetail } = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     enabled: !!projectId,
+    ...contract('config'),
   });
   const projectAccountId = projectDetail?.project?.account_id ?? undefined;
   const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
@@ -39,37 +53,54 @@ export default function ProjectIndexPage() {
   // only on create failure (success navigates this page away).
   const [sending, setSending] = useState(false);
 
+  // One-time "you're on Free" onboarding pitch. Keyed off the SAME resolved
+  // billing state every other surface uses — the old `tier_key === 'free'`
+  // guess pitched the Free plan to per-seat Team accounts, whose tier_key stays
+  // 'free' (the PR #5141 lesson).
   useEffect(() => {
     if (!isBillingEnabled() || !accountState || !projectAccountId) return;
-
-    const tierKey = (
-      accountState.subscription?.tier_key ||
-      accountState.tier?.name ||
-      ''
-    ).toLowerCase();
-    const hasActiveSubscription = !!accountState.subscription?.subscription_id;
-    const shouldShow = (tierKey === 'free' || tierKey === 'none') && !hasActiveSubscription;
-    if (!shouldShow) return;
+    if (resolveBillingState(accountState) !== 'no_subscription') return;
 
     const storageKey = `${FREE_ONBOARDING_UPGRADE_MODAL_KEY}:${projectAccountId}`;
     if (window.localStorage.getItem(storageKey) === '1') return;
 
     window.localStorage.setItem(storageKey, '1');
-    openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId });
+    openUpgradeDialog(billingDialogArgs('no_subscription', accountState, projectAccountId));
   }, [accountState, projectAccountId, openUpgradeDialog]);
 
+  // `/projects/start?q=<prompt>` forwards its query string onto this route
+  // unchanged (see `withCurrentQuery` in `../start/page.tsx`), landing here as
+  // `/projects/<id>?q=<prompt>`. Seed the one-shot prefill store — ProjectHome
+  // already consumes it (project-home.tsx) — then strip `q` from the URL so a
+  // refresh doesn't re-seed the same prompt. `seededRef` guards against
+  // re-seeding on every render once the strip lands.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    const prompt = promptFromSearchParams(searchParams);
+    if (!prompt || !projectId) return;
+
+    seededRef.current = true;
+    useComposerPrefillStore.getState().setPrefill(projectId, prompt);
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('q');
+    const query = nextParams.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [searchParams, pathname, projectId, router]);
+
   const handleSend = useCallback(
-    (text: string, files: AttachedFile[] | undefined, options?: ProjectHomeSendOptions) => {
+    async (text: string, files: AttachedFile[] | undefined, options?: ProjectHomeSendOptions) => {
       if (!text.trim() && !files?.length) return;
 
       if (isBillingEnabled() && billingLoading) return;
 
       // Gate accounts that cannot run before navigating so we never strand the
       // user on a shell that cannot provision. Free accounts with the monthly
-      // sandbox grant are allowed through because `can_run` is true.
-      const noPlan = isBillingEnabled() && !billingLoading && !canRun;
-      if (noPlan) {
-        openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId });
+      // sandbox grant are allowed through because their state is `active`.
+      const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
+      if (isBillingEnabled() && !billingLoading && !billingStateAllowsRun(billingState)) {
+        openUpgradeDialog(billingDialogArgs(billingState, accountState, projectAccountId));
         return;
       }
 
@@ -78,42 +109,68 @@ export default function ProjectIndexPage() {
       // then navigates into the instant shell, which auto-sends `text` once the
       // box is ready. No server-side initial_prompt — the shell shows the
       // message + inline boot status, matching the global dashboard composer.
-      // Bind the chosen agent at session birth so it matches the `agent` the
-      // composer sends on the first prompt — sessions are agent-immutable and the
-      // API proxy 409s any prompt whose agent differs from the bound one, which
-      // defaults to "default" when unset (see buildNewSessionCreateInput).
+      // Bind the chosen agent at session birth so `project_sessions.agent_name`
+      // is honest from turn one: the grant re-mint and connector authz resolve
+      // against that name, so an unbound session would mint the wrong agent's
+      // tokens for the first prompt (see buildNewSessionCreateInput). The proxy
+      // no longer refuses a prompt whose agent differs — switching is allowed.
       setSending(true);
+      // Attachments ride the create itself as data: URLs — the session's
+      // sandbox does not exist yet, so there is nowhere to upload into. The
+      // API turns this whole pending_prompt into a durable inbox row in the
+      // same transaction as the session, so the message survives a closed tab
+      // from this moment on. Over the cap, the refusal names the way out.
+      let parts: Awaited<ReturnType<typeof attachedFilesToDataUrlParts>>;
+      try {
+        parts = await attachedFilesToDataUrlParts(files);
+      } catch (error) {
+        errorToast(error instanceof Error ? error.message : 'Attachments are too large');
+        setSending(false);
+        return;
+      }
       newSession({
-        create: buildNewSessionCreateInput(options),
+        create: {
+          ...buildNewSessionCreateInput(options),
+          pending_prompt: {
+            text,
+            agent: options?.agent ?? null,
+            model: options?.model ?? null,
+            variant: options?.variant ?? null,
+            attachment_names:
+              files?.map((file) => (file.kind === 'local' ? file.file.name : file.filename)) ?? [],
+            ...(parts.length > 0 ? { parts: [{ type: 'text' as const, text }, ...parts] } : {}),
+          },
+        },
+        scope: options?.scope,
         // Create failed (already surfaced by the hook) — we never left this
         // page, so just unlock the composer with the text still in it.
         onError: () => setSending(false),
         onNavigate: (sessionId) => {
           // `sessionId` here is the route/Kortix session id, not the OpenCode
-          // pin the session page resolves later (`useCanonicalOpenCodeSession`
+          // pin the session page resolves later (`useCanonicalRuntimeSession`
           // /`ensureOpencodeSessionPin` mint a separate id). Stash under the
           // route id via the SDK's canonical `writeStartStash` — the session
           // page's `migrateStash` hands this off onto the resolved pin once it
           // exists, and `readStartStash` (instant shell, `useSession`) reads it
           // uniformly either side of that migration.
+          // PICKS only: the prompt (and its attachments) are already a
+          // durable inbox row via create.pending_prompt above — a prompt in
+          // the stash here would be a second delivery channel for the same
+          // message.
           writeStartStash(sessionId, {
-            prompt: text,
+            prompt: '',
             agent: options?.agent ?? null,
             model: options?.model ?? null,
             variant: options?.variant ?? null,
           });
-          if (files?.length) {
-            usePendingFilesStore.getState().setPendingFiles(files);
-          }
+          // RENDER-only copy for the boot shell, so the bubble is on screen
+          // from the session page's first frame — see `useFirstPromptPreviewStore`.
+          useFirstPromptPreviewStore.getState().setFirstPromptPreview(sessionId, text, files ?? []);
         },
       });
     },
-    [billingLoading, canRun, projectAccountId, openUpgradeDialog, newSession],
+    [billingLoading, accountState, projectAccountId, openUpgradeDialog, newSession],
   );
 
-  return (
-    <ProjectShell projectId={projectId}>
-      <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />
-    </ProjectShell>
-  );
+  return <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />;
 }

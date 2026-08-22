@@ -1,29 +1,24 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partOutput,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  Folder,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { FolderIcon as Folder } from '@phosphor-icons/react';
+import { useMemo } from 'react';
 
-
-import {
-  type ProjectEntry,
-  parseProjectListOutput,
-} from '@/lib/utils/kortix-tool-output';
+import { type ProjectEntry, parseProjectListOutput } from '@/lib/utils/kortix-tool-output';
 
 export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const output = partOutput(part);
   const projects = useMemo(() => parseProjectListOutput(output || ''), [output]);
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it, next to
+  // the list parse that is already memoised on the same string.
+  const errored = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <BasicTool
@@ -35,7 +30,7 @@ export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
       defaultOpen={defaultOpen || projects.length === 0}
       forceOpen={forceOpen}
     >
-      {isErrorOutput(output) ? (
+      {errored ? (
         <ToolOutputFallback output={output} toolName="project_list" />
       ) : projects.length > 0 ? (
         <div className="space-y-0.5">
@@ -44,7 +39,7 @@ export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
               key={project.path}
               className="text-muted-foreground/70 flex items-center gap-1.5 py-0.5 text-xs"
             >
-              <Folder className="text-muted-foreground/50 size-3.5 flex-shrink-0" />
+              <Folder className="text-muted-foreground/50 size-3.5 shrink-0" />
               <span className="truncate">{project.name}</span>
               <span className="text-muted-foreground/40 truncate font-mono text-xs">
                 {project.path}
@@ -62,4 +57,3 @@ ToolRegistry.register('project_list', ProjectListTool);
 ToolRegistry.register('project-list', ProjectListTool);
 ToolRegistry.register('oc-project_list', ProjectListTool);
 ToolRegistry.register('oc-project-list', ProjectListTool);
-

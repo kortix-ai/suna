@@ -1,10 +1,15 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { RefreshCw, ServerOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { DriveExplorer, FileExplorerSourceProvider } from '@/features/project-files';
-import { useServerStore } from '@/stores/server-store';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import {
+  ArrowClockwiseIcon as RefreshCw,
+  CloudSlashIcon as ServerOff,
+} from '@phosphor-icons/react';
+import { useTranslations } from 'next-intl';
 import { useServerHealth } from './hooks';
 import { sandboxExplorerSource } from './sandbox-explorer-source';
 
@@ -33,31 +38,46 @@ export function SandboxFileExplorer({
 /** Renders children only while the sandbox OpenCode server is reachable. */
 function SandboxServerGate({ children }: { children: React.ReactNode }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   const { data: health, isLoading: isHealthLoading, refetch } = useServerHealth();
 
-  if (!isHealthLoading && !health?.healthy) {
+  // Hold the gate closed while the first probe is in flight. Rendering the
+  // explorer during the probe made it mount, fail its own listing, and paint a
+  // second failure UI a moment before this one replaced it.
+  if (isHealthLoading) {
     return (
-      <div className="bg-background flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
-        <ServerOff className="text-muted-foreground/30 h-12 w-12" />
-        <div>
-          <h3 className="text-foreground text-base font-medium">
-            {tHardcodedUi.raw(
-              'featuresFilesComponentsFileExplorerPage.line546JsxTextServerNotReachable',
-            )}
-          </h3>
-          <p className="text-muted-foreground mt-1.5 text-sm">
+      <div className="bg-background flex h-full flex-col gap-2 p-4">
+        <Skeleton className="h-8 w-full py-0" />
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-full py-0" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!health?.healthy) {
+    return (
+      <ErrorState
+        icon={ServerOff}
+        className="bg-background h-full"
+        title={tHardcodedUi.raw(
+          'featuresFilesComponentsFileExplorerPage.line546JsxTextServerNotReachable',
+        )}
+        description={
+          <>
             {tHardcodedUi.raw(
               'featuresFilesComponentsFileExplorerPage.line548JsxTextCouldNotConnectTo',
             )}{' '}
             <code className="bg-muted rounded px-1.5 py-0.5 text-xs">{serverUrl}</code>
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-          Retry
-        </Button>
-      </div>
+          </>
+        }
+        action={
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => refetch()}>
+            <RefreshCw className="size-3.5 shrink-0" />
+            Retry
+          </Button>
+        }
+      />
     );
   }
 

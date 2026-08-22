@@ -2,8 +2,9 @@
 
 import { errorToast } from '@/components/ui/toast';
 import { isBillingEnabled } from '@/lib/config';
-import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useSubscriptionStore } from '@/stores/subscription-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { resolvedPlan } from '@kortix/sdk';
 import { useCallback } from 'react';
 
 interface UseDownloadRestrictionOptions {
@@ -53,13 +54,15 @@ export function useDownloadRestriction(
   options?: UseDownloadRestrictionOptions,
 ): UseDownloadRestrictionReturn {
   const accountState = useSubscriptionStore((state) => state.accountState);
-  const { openPricingModal } = usePricingModalStore();
+  const { openUpgradeDialog } = useUpgradeDialogStore();
 
-  const isFreeTier =
-    accountState?.subscription &&
-    (accountState.subscription.tier_key === 'free' ||
-      accountState.subscription.tier_key === 'none' ||
-      !accountState.subscription.tier_key);
+  // The RESOLVED plan family — `free` and `none` are the only two keys in it,
+  // so this covers the same plans the tier_key compare did, and additionally
+  // stops restricting downloads for an account on an admin trial (stored
+  // tier_key `free`, but paid everywhere the server enforces).
+  const isFreeTier = accountState?.subscription
+    ? resolvedPlan(accountState).family === 'free'
+    : undefined;
 
   // Downloads are restricted if user is on free tier and billing is enabled
   const isRestricted = isFreeTier && isBillingEnabled();
@@ -74,12 +77,13 @@ export function useDownloadRestriction(
       duration: 5000,
     });
 
-    // Also open the pricing modal
-    openPricingModal({
-      isAlert: true,
-      alertTitle: `Upgrade to download your ${featureName} and more`,
+    // Also open the upgrade modal. This used to target the pricing-modal
+    // store, whose modal is never mounted, so only the toast ever appeared.
+    openUpgradeDialog({
+      reason: 'subscription_required',
+      message: `Upgrade to download your ${featureName} and more`,
     });
-  }, [openPricingModal, options?.featureName]);
+  }, [openUpgradeDialog, options?.featureName]);
 
   const withRestrictionCheck = useCallback(
     <T extends (...args: any[]) => any>(callback: T) => {

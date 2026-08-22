@@ -20,7 +20,23 @@ export interface GatewayLogRow {
   input_tokens: number;
   output_tokens: number;
   cached_tokens: number;
+  cache_write_tokens: number;
+  /**
+   * What Kortix debited from your wallet — managed inference, or the platform
+   * fee on a BYOK route.
+   */
+  kortix_cost: number;
+  /**
+   * What you paid your own provider directly, on your own key. Always 0 for
+   * Kortix-managed (`billing_mode: 'credits'`) traffic, where the upstream
+   * price is Kortix's wholesale cost rather than yours.
+   */
+  provider_cost: number;
+  /** `kortix_cost + provider_cost` — every dollar this request cost you. */
+  total_cost: number;
+  /** @deprecated Identical to `provider_cost`. */
   upstream_cost: number;
+  /** @deprecated Identical to `kortix_cost`. */
   final_cost: number;
   streaming: boolean;
   billing_mode: string | null;
@@ -44,7 +60,19 @@ export interface GatewayOverview {
   window_days: number;
   requests: number;
   errors: number;
+  /** Total LLM spend in the window: `kortix_cost + provider_cost`. */
   total_cost: number;
+  /**
+   * What Kortix debited from your wallet — managed inference, or the platform
+   * fee on a BYOK route.
+   */
+  kortix_cost: number;
+  /**
+   * What you paid your own provider directly, on your own key. Always 0 for
+   * Kortix-managed (`billing_mode: 'credits'`) traffic, where the upstream
+   * price is Kortix's wholesale cost rather than yours.
+   */
+  provider_cost: number;
   input_tokens: number;
   output_tokens: number;
 }
@@ -53,7 +81,19 @@ export interface GatewaySeriesPoint {
   day: string;
   requests: number;
   errors: number;
+  /** Total LLM spend on this day: `kortix_cost + provider_cost`. */
   cost: number;
+  /**
+   * What Kortix debited from your wallet — managed inference, or the platform
+   * fee on a BYOK route.
+   */
+  kortix_cost: number;
+  /**
+   * What you paid your own provider directly, on your own key. Always 0 for
+   * Kortix-managed (`billing_mode: 'credits'`) traffic, where the upstream
+   * price is Kortix's wholesale cost rather than yours.
+   */
+  provider_cost: number;
   input_tokens: number;
   output_tokens: number;
   p50: number;
@@ -81,7 +121,19 @@ export interface GatewayModelStat {
   provider: string;
   requests: number;
   errors: number;
+  /** Total spend on this model: `kortix_cost + provider_cost`. */
   cost: number;
+  /**
+   * What Kortix debited from your wallet — managed inference, or the platform
+   * fee on a BYOK route.
+   */
+  kortix_cost: number;
+  /**
+   * What you paid your own provider directly, on your own key. Always 0 for
+   * Kortix-managed (`billing_mode: 'credits'`) traffic, where the upstream
+   * price is Kortix's wholesale cost rather than yours.
+   */
+  provider_cost: number;
   tokens: number;
 }
 
@@ -168,11 +220,27 @@ export interface GatewayRoutingRule {
   fallbackOn: GatewayFallbackCondition;
 }
 
+/** Per-model generation-parameter defaults (reasoning effort, temperature,
+ *  top_p, max output tokens) — a generic blob, extensible without a schema
+ *  change. Every field is capability-gated per model on the server; see
+ *  `@kortix/llm-catalog`'s `generationControlCapabilities`/
+ *  `clampGenerationConfig`, the single source of truth the generation-
+ *  controls panel derives its show/hide + valid-range rules from. */
+export interface GatewayModelGenerationConfig {
+  reasoningEffort?: string;
+  temperature?: number;
+  topP?: number;
+  maxOutputTokens?: number;
+}
+
 export interface GatewayProjectRoutingPolicy {
   defaultModel: string | null;
   visionModel: string | null;
   defaultFallback: GatewayFallbackChain | null;
   rules: GatewayRoutingRule[];
+  /** Optional for back-compat with callers built before this field existed —
+   *  the server defaults it to `{}` when omitted. */
+  modelGenerationConfig?: Record<string, GatewayModelGenerationConfig>;
 }
 
 export interface GatewayRoutingPolicyDocument {
@@ -208,9 +276,13 @@ export interface GatewayRoutePreview {
   models: Array<{ model: string; available: boolean }>;
 }
 
-export async function getGatewayRoutingPolicy(projectId: string): Promise<GatewayRoutingPolicyDocument> {
+export async function getGatewayRoutingPolicy(
+  projectId: string,
+): Promise<GatewayRoutingPolicyDocument> {
   return unwrap(
-    await backendApi.get<GatewayRoutingPolicyDocument>(`/projects/${projectId}/gateway/routing-policy`),
+    await backendApi.get<GatewayRoutingPolicyDocument>(
+      `/projects/${projectId}/gateway/routing-policy`,
+    ),
     'Gateway routing policy request failed',
   );
 }
@@ -220,14 +292,21 @@ export async function setGatewayRoutingPolicy(
   policy: GatewayProjectRoutingPolicy,
 ): Promise<GatewayRoutingPolicyDocument> {
   return unwrap(
-    await backendApi.put<GatewayRoutingPolicyDocument>(`/projects/${projectId}/gateway/routing-policy`, policy),
+    await backendApi.put<GatewayRoutingPolicyDocument>(
+      `/projects/${projectId}/gateway/routing-policy`,
+      policy,
+    ),
     'Gateway routing policy request failed',
   );
 }
 
-export async function resetGatewayRoutingPolicy(projectId: string): Promise<GatewayRoutingPolicyDocument> {
+export async function resetGatewayRoutingPolicy(
+  projectId: string,
+): Promise<GatewayRoutingPolicyDocument> {
   return unwrap(
-    await backendApi.delete<GatewayRoutingPolicyDocument>(`/projects/${projectId}/gateway/routing-policy`),
+    await backendApi.delete<GatewayRoutingPolicyDocument>(
+      `/projects/${projectId}/gateway/routing-policy`,
+    ),
     'Gateway routing policy request failed',
   );
 }
@@ -237,7 +316,10 @@ export async function previewGatewayRoute(
   input: GatewayRoutePreviewInput,
 ): Promise<GatewayRoutePreview> {
   return unwrap(
-    await backendApi.post<GatewayRoutePreview>(`/projects/${projectId}/gateway/routing-policy/preview`, input),
+    await backendApi.post<GatewayRoutePreview>(
+      `/projects/${projectId}/gateway/routing-policy/preview`,
+      input,
+    ),
     'Gateway route preview failed',
   );
 }
@@ -252,7 +334,9 @@ export async function listGatewayLogs(
   if (opts?.ok !== undefined) q.set('ok', String(opts.ok));
   const qs = q.toString();
   return unwrap(
-    await backendApi.get<GatewayLogsResponse>(`/projects/${projectId}/gateway/logs${qs ? `?${qs}` : ''}`),
+    await backendApi.get<GatewayLogsResponse>(
+      `/projects/${projectId}/gateway/logs${qs ? `?${qs}` : ''}`,
+    ),
     'Gateway request failed',
   );
 }
@@ -264,7 +348,10 @@ export async function getGatewayLog(projectId: string, logId: string): Promise<G
   );
 }
 
-export async function getGatewayOverview(projectId: string, days?: number): Promise<GatewayOverview> {
+export async function getGatewayOverview(
+  projectId: string,
+  days?: number,
+): Promise<GatewayOverview> {
   return unwrap(
     await backendApi.get<GatewayOverview>(
       `/projects/${projectId}/gateway/overview${days ? `?days=${days}` : ''}`,
@@ -282,7 +369,10 @@ export async function getGatewaySeries(projectId: string, days?: number): Promis
   );
 }
 
-export async function getGatewayBreakdown(projectId: string, days?: number): Promise<GatewayBreakdown> {
+export async function getGatewayBreakdown(
+  projectId: string,
+  days?: number,
+): Promise<GatewayBreakdown> {
   return unwrap(
     await backendApi.get<GatewayBreakdown>(
       `/projects/${projectId}/gateway/breakdown${days ? `?days=${days}` : ''}`,
@@ -291,7 +381,10 @@ export async function getGatewayBreakdown(projectId: string, days?: number): Pro
   );
 }
 
-export async function getGatewaySessions(projectId: string, days?: number): Promise<GatewaySessions> {
+export async function getGatewaySessions(
+  projectId: string,
+  days?: number,
+): Promise<GatewaySessions> {
   return unwrap(
     await backendApi.get<GatewaySessions>(
       `/projects/${projectId}/gateway/sessions${days ? `?days=${days}` : ''}`,
@@ -300,7 +393,10 @@ export async function getGatewaySessions(projectId: string, days?: number): Prom
   );
 }
 
-export async function getGatewayErrors(projectId: string, days?: number): Promise<GatewayErrorsResponse> {
+export async function getGatewayErrors(
+  projectId: string,
+  days?: number,
+): Promise<GatewayErrorsResponse> {
   return unwrap(
     await backendApi.get<GatewayErrorsResponse>(
       `/projects/${projectId}/gateway/errors${days ? `?days=${days}` : ''}`,
@@ -357,10 +453,7 @@ export async function createGatewayKey(
   );
 }
 
-export async function revokeGatewayKey(
-  projectId: string,
-  keyId: string,
-): Promise<{ ok: boolean }> {
+export async function revokeGatewayKey(projectId: string, keyId: string): Promise<{ ok: boolean }> {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/gateway/keys/${keyId}`),
     'Gateway request failed',
@@ -374,6 +467,11 @@ export interface GatewayPlaygroundResult {
   output?: string;
   input_tokens?: number;
   output_tokens?: number;
+  /** Final (post-markup) cost in USD, present only when the request succeeded. */
+  cost?: number;
+  /** The concrete upstream model the requested id resolved to. */
+  resolved_model?: string;
+  provider?: string;
   error?: string;
 }
 
@@ -381,17 +479,56 @@ export interface GatewayPlaygroundResponse {
   results: GatewayPlaygroundResult[];
 }
 
-/** Run one prompt against up to 6 models side by side (a model-comparison playground). */
+/** Run one prompt against up to 6 models side by side (a model-comparison playground).
+ *  `generationConfig`, when given, is a per-model map of generation-parameter
+ *  overrides (reasoning effort, temperature, top_p, max output tokens) applied
+ *  ONLY to that model's call — capability-gated + clamped server-side against
+ *  the model's live catalog entry, same as the persisted routing-policy config. */
 export async function runGatewayPlayground(
   projectId: string,
   prompt: string,
   models: string[],
+  system?: string,
+  generationConfig?: Record<string, GatewayModelGenerationConfig>,
 ): Promise<GatewayPlaygroundResponse> {
   return unwrap(
     await backendApi.post<GatewayPlaygroundResponse>(`/projects/${projectId}/gateway/playground`, {
       prompt,
       models,
+      ...(system ? { system } : {}),
+      ...(generationConfig && Object.keys(generationConfig).length ? { generationConfig } : {}),
     }),
     'Gateway request failed',
+  );
+}
+
+/**
+ * Whether a connected provider's credential actually works — "Connected"
+ * only means a secret row exists (see api-key-connect-form.tsx); this makes
+ * one cheap live check through the gateway and classifies the result.
+ * `not_connected` means no key is configured at all; `unknown` covers every
+ * inconclusive outcome (timeout, rate limit, unrelated resolution failure) —
+ * never collapsed into `invalid`, which is reserved for a confirmed
+ * provider-side credential rejection.
+ */
+export type GatewayProviderVerifyStatus = 'verified' | 'invalid' | 'unknown' | 'not_connected';
+
+export interface GatewayProviderVerifyResult {
+  status: GatewayProviderVerifyStatus;
+  message: string;
+  checked_at: string;
+}
+
+/** Verify a connected provider's credential with one cheap live completion. */
+export async function verifyGatewayProvider(
+  projectId: string,
+  providerId: string,
+): Promise<GatewayProviderVerifyResult> {
+  return unwrap(
+    await backendApi.post<GatewayProviderVerifyResult>(
+      `/projects/${projectId}/gateway/providers/${encodeURIComponent(providerId)}/verify`,
+      {},
+    ),
+    'Gateway provider verification failed',
   );
 }

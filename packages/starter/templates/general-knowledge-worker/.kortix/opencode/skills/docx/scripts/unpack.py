@@ -6,10 +6,10 @@ Each post-processing step operates directly on document.xml in the output direct
 Run coalescing and merging can be disabled independently via CLI flags.
 
 Usage:
-    python unpack.py <docx_file> <output_dir>
-    python unpack.py document.docx working/
-    python unpack.py document.docx working/ --merge-runs false
-    python unpack.py document.docx working/ --coalesce-changes false
+    python3 unpack.py <docx_file> <output_dir>
+    python3 unpack.py document.docx working/
+    python3 unpack.py document.docx working/ --merge-runs false
+    python3 unpack.py document.docx working/ --coalesce-changes false
 """
 
 import re

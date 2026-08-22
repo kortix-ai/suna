@@ -35,6 +35,8 @@ export interface OpencodeTurnError {
 }
 
 type OpencodeEventHandlers = {
+  /** Every parsed OpenCode event, before specialized dispatch. */
+  onEvent?: (event: { type?: string; properties?: unknown }) => void
   onQuestionAsked?: (req: QuestionRequest) => void
   // Fired when an opencode session finishes processing a turn (idle) or dies
   // mid-turn (error). opencode emits these for EVERY session — including
@@ -42,7 +44,11 @@ type OpencodeEventHandlers = {
   // filtering down to the root turn.
   onSessionIdle?: (sessionID: string) => void
   onSessionError?: (sessionID: string, error?: OpencodeTurnError) => void
-  onSessionStatus?: (sessionID: string, status: string) => void
+  // Fired on every `session.status` frame. `busy`/`retry` for the root is the
+  // one signal that exists for BOX-INITIATED turns (OpenCode's synthetic
+  // `<pty_exited>` wake-ups start a turn no control-plane prompt announced) —
+  // the turn-begin relay hangs off it.
+  onSessionStatus?: (sessionID: string, statusType: string) => void
   // Fired every time the /event SSE (re)subscribes successfully. Used to
   // reconcile a turn that finished BEFORE the subscription was live: a fast
   // boot could reach session.idle inside the gap between prompt_async and the
@@ -51,6 +57,14 @@ type OpencodeEventHandlers = {
   // subscribe-before-prompt ordering — makes finalize independent of subscription
   // timing.
   onConnected?: () => void
+  // Periodic terminal reconciliation. This closes the case where the SSE
+  // connection stays open but one session.idle frame is lost, or the first API
+  // relay exhausts its retries. It may only report terminal evidence.
+  onReconcile?: () => void
+}
+
+export interface OpencodeEventLoopOptions {
+  reconcileIntervalMs?: number
 }
 
 // Subscribe to opencode's SSE event stream and dispatch known event types.
@@ -60,6 +74,7 @@ export function startOpencodeEventLoop(
   opencode: Opencode,
   cfg: Config,
   handlers: OpencodeEventHandlers,
+  options: OpencodeEventLoopOptions = {},
 ): { stop(): void; connected: Promise<void> } {
   let stopping = false
   let abortController: AbortController | null = null
@@ -70,6 +85,11 @@ export function startOpencodeEventLoop(
   const connected = new Promise<void>((resolve) => {
     markConnected = resolve
   })
+  // Distinguishes "opencode hasn't bound its port yet" (boot race, retry tight)
+  // from "an established subscription dropped" (real fault, back off). See the
+  // retry loop below.
+  let everConnected = false
+  let reconcileTimer: ReturnType<typeof setInterval> | null = null
 
   async function connectOnce(): Promise<void> {
     const url = `${opencode.getInternalUrl()}/event?directory=${encodeURIComponent(cfg.workspace)}`
@@ -82,11 +102,18 @@ export function startOpencodeEventLoop(
       throw new Error(`/event subscribe non-ok: ${res.status}`)
     }
     logger.info('[opencode-events] subscribed')
+    everConnected = true
     markConnected()
     // Reconcile any turn that finished before this subscription was live. Fires
     // on every (re)connect; the handler is idempotent (per-turn dedup), so a
     // reconnect after the turn already relayed is a no-op.
     handlers.onConnected?.()
+    if (!reconcileTimer && handlers.onReconcile) {
+      reconcileTimer = setInterval(
+        () => handlers.onReconcile?.(),
+        options.reconcileIntervalMs ?? 30_000,
+      )
+    }
 
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
@@ -95,14 +122,16 @@ export function startOpencodeEventLoop(
       const { value, done } = await reader.read()
       if (done) return
       buf += decoder.decode(value, { stream: true })
-      // SSE frames are separated by a blank line.
-      let idx = buf.indexOf('\n\n')
-      while (idx !== -1) {
-        const frame = buf.slice(0, idx)
-        buf = buf.slice(idx + 2)
-        idx = buf.indexOf('\n\n')
+      // SSE permits LF and CRLF line endings. OpenCode can emit CRLF frames,
+      // including when the delimiter spans reader chunks, so retain the raw
+      // buffer and consume the complete delimiter returned by the match.
+      let boundary = /\r?\n\r?\n/.exec(buf)
+      while (boundary?.index !== undefined) {
+        const frame = buf.slice(0, boundary.index)
+        buf = buf.slice(boundary.index + boundary[0].length)
+        boundary = /\r?\n\r?\n/.exec(buf)
         const dataLines = frame
-          .split('\n')
+          .split(/\r?\n/)
           .filter((l) => l.startsWith('data:'))
           .map((l) => l.slice(5).trim())
           .filter(Boolean)
@@ -119,31 +148,54 @@ export function startOpencodeEventLoop(
       }
     }
   }
-
-  ;(async () => {
-    // Start tight (250ms): on a cold boot the first connect races opencode's
-    // port bind, and the initial-prompt path is blocked awaiting `connected`, so
-    // a fast retry minimizes the added latency before the subscription is live.
-    let backoffMs = 250
+  (async () => {
+    // Two DIFFERENT retry regimes, because the pre-connect and post-connect
+    // failures mean opposite things.
+    //
+    // Before the first successful subscribe, every failure is just "opencode
+    // hasn't bound its port yet" — a boot race, not a fault. And this is ON the
+    // critical path: maybeCreateInitialOpencodeSession blocks on `connected`
+    // before delivering the first prompt, and `opencode-session-created` (4.7s
+    // Daytona / 12.0s Platinum p50) is stamped after it. Exponential backoff
+    // here actively hurts: with attempts at 0/0.25/0.75/1.75/3.75/7.75s, an
+    // opencode that becomes ready at t=5s isn't noticed until t=7.75s — ~2.7s of
+    // pure dead time, sleeping through the readiness it was waiting for. The old
+    // code's own comment said "a fast retry minimizes the added latency" and
+    // then doubled to 15s, defeating exactly that intent.
+    //
+    // So: poll at a FLAT tight interval until connected once (bounded by the
+    // caller's own 10s race), then switch to exponential backoff, where it is
+    // correct — a drop after a successful subscribe is a real fault and
+    // hammering a sick opencode makes it worse.
+    const PRE_CONNECT_RETRY_MS = 100
+    const POST_CONNECT_BACKOFF_START_MS = 250
+    let backoffMs = PRE_CONNECT_RETRY_MS
     while (!stopping) {
       try {
         await connectOnce()
       } catch (err) {
         if (stopping) return
-        logger.warn('[opencode-events] disconnected — reconnecting', {
-          err: (err as Error).message,
-          backoffMs,
-        })
+        // Pre-connect failures are the expected boot race; don't log them as
+        // disconnects (it made a normal cold boot look broken).
+        if (everConnected) {
+          logger.warn('[opencode-events] disconnected — reconnecting', {
+            err: (err as Error).message,
+            backoffMs,
+          })
+        }
       }
       if (stopping) return
       await new Promise((r) => setTimeout(r, backoffMs))
-      backoffMs = Math.min(backoffMs * 2, 15_000)
+      backoffMs = everConnected
+        ? Math.min(Math.max(backoffMs, POST_CONNECT_BACKOFF_START_MS) * 2, 15_000)
+        : PRE_CONNECT_RETRY_MS
     }
   })().catch((err) => logger.error('[opencode-events] loop crashed', err))
 
   return {
     stop() {
       stopping = true
+      if (reconcileTimer) clearInterval(reconcileTimer)
       abortController?.abort()
     },
     connected,
@@ -169,17 +221,24 @@ export function flattenOpencodeError(e: {
 
 // Exported for unit testing — maps a raw opencode SSE event to a handler call,
 // including flattening session.error's nested error into OpencodeTurnError.
-export function dispatch(event: { type?: string; properties?: unknown }, handlers: OpencodeEventHandlers): void {
-  if (event.type === 'session.status' && handlers.onSessionStatus) {
-    const props = event.properties as { sessionID?: string; status?: { type?: string } | string } | undefined
-    const status = typeof props?.status === 'string' ? props.status : props?.status?.type
-    if (props?.sessionID && status) handlers.onSessionStatus(props.sessionID, status)
-    return
-  }
+export function dispatch(
+  event: { type?: string; properties?: unknown },
+  handlers: OpencodeEventHandlers,
+): void {
+  handlers.onEvent?.(event)
   if (event.type === 'question.asked' && handlers.onQuestionAsked) {
     const req = event.properties as QuestionRequest
     if (req?.id && req?.sessionID && Array.isArray(req.questions)) {
       handlers.onQuestionAsked(req)
+    }
+    return
+  }
+  if (event.type === 'session.status' && handlers.onSessionStatus) {
+    const props = event.properties as
+      | { sessionID?: string; status?: { type?: string } }
+      | undefined
+    if (props?.sessionID && typeof props.status?.type === 'string') {
+      handlers.onSessionStatus(props.sessionID, props.status.type)
     }
     return
   }
@@ -194,7 +253,12 @@ export function dispatch(event: { type?: string; properties?: unknown }, handler
           sessionID?: string
           error?: {
             name?: string
-            data?: { message?: string; statusCode?: number; isRetryable?: boolean; providerID?: string }
+            data?: {
+              message?: string
+              statusCode?: number
+              isRetryable?: boolean
+              providerID?: string
+            }
           }
         }
       | undefined

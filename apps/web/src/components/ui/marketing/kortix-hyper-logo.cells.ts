@@ -1,6 +1,3 @@
-// Pure grid geometry + cell builder for KortixHyperLogo, kept free of React so
-// it can be unit-tested directly and so the SSR/client renders stay in sync.
-
 export const VIEW_W = 30;
 export const VIEW_H = 25;
 

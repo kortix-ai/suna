@@ -3,7 +3,7 @@
 
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
-import { normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn } from './mirror';
+import { isGitPathNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn } from './mirror';
 import type {
   GetFileAtRefResult,
   GetFileHistoryOptions,
@@ -105,13 +105,51 @@ export async function grepRepoFiles(
   return matches;
 }
 
-export async function readRepoFile(project: GitBackedProject, filePath: string, ref?: string) {
+export async function readRepoFile(project: GitBackedProject, filePath: string, ref?: string): Promise<string> {
   const normalized = normalizeTreePath(filePath);
   if (!normalized) throw new Error('File path is required');
   const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
-  const result = await runGit(['show', `${treeRef}:${normalized}`], repoPath, false);
-  return result.stdout;
+  try {
+    const result = await runGit(['show', `${treeRef}:${normalized}`], repoPath, false);
+    return result.stdout;
+  } catch (err) {
+    // A "path does not exist in '<ref>'" `git show` failure is an expected
+    // client condition (the path simply isn't in the repo at this ref), not a
+    // server bug — convert it into a typed `RepoFileNotFoundError` instead of
+    // letting the `GitOperationError` propagate as an unhandled 500 (Better
+    // Stack pattern `a8d20288…`). Mirrors `getFileAtRef`'s `{ found: false }`
+    // sentinel from #3537, but as a typed throw so existing callers that wrap
+    // `readRepoFile` in try/catch (config/agent-config/compile-agent-config)
+    // keep working unchanged. Genuine git failures (auth, corrupt repo,
+    // timeout) still throw the original `GitOperationError`.
+    if (isGitPathNotFoundError(err)) {
+      throw new RepoFileNotFoundError(normalized, treeRef, err);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Typed error for the expected "file not in the repo at this ref" condition.
+ * Distinct from `GitOperationError` so callers can branch on the expected case
+ * (skip/empty/discover-no-auth) without swallowing genuine git failures
+ * (auth, timeout, corrupt repo) that must still surface.
+ */
+export class RepoFileNotFoundError extends Error {
+  readonly filePath: string;
+  readonly ref: string;
+  constructor(filePath: string, ref: string, cause?: unknown) {
+    super(`file not found in repository at '${ref}:${filePath}'`);
+    this.name = 'RepoFileNotFoundError';
+    this.filePath = filePath;
+    this.ref = ref;
+    if (cause !== undefined) (this as any).cause = cause;
+  }
+}
+
+export function isRepoFileNotFoundError(err: unknown): err is RepoFileNotFoundError {
+  return err instanceof RepoFileNotFoundError;
 }
 
 /**
@@ -126,29 +164,28 @@ export async function readManifestFromRepo(
   project: GitBackedProject,
   candidatePaths: string[],
   ref?: string,
-): Promise<{ path: string; content: string } | null> {
+  opts?: { forceRefresh?: boolean },
+): Promise<{ path: string; content: string; sha: string; candidatePaths: string[] } | null> {
   const normalized = candidatePaths
     .map((p) => normalizeTreePath(p))
     .filter((p): p is string => !!p);
   if (normalized.length === 0) return null;
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, opts?.forceRefresh);
   // A pathspec-scoped ls-tree prints only the candidates present at this ref
   // (order-agnostic), so we pick the highest-priority one ourselves.
-  const listed = await runGitCapture(
-    ['ls-tree', '--name-only', treeRef, '--', ...normalized],
-    repoPath,
-  );
-  const present = new Set(
-    listed.stdout
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean),
-  );
-  const winner = normalized.find((p) => present.has(p));
+  const listed = await runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath);
+  const revisions = new Map<string, string>();
+  for (const line of listed.stdout.split('\n')) {
+    const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
+    if (match?.[1] && match[2]) revisions.set(match[2], match[1]);
+  }
+  const winner = normalized.find((p) => revisions.has(p));
   if (!winner) return null;
+  const revision = revisions.get(winner);
+  if (!revision) return null;
   const shown = await runGit(['show', `${treeRef}:${winner}`], repoPath, false);
-  return { path: winner, content: shown.stdout };
+  return { path: winner, content: shown.stdout, sha: revision, candidatePaths: normalized };
 }
 
 /**

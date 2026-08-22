@@ -2,11 +2,16 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Copy, Share2, Check } from 'lucide-react';
-import { toast } from '@/lib/toast';
-import { useTranslations } from 'next-intl';
 import { Skeleton } from '@/components/ui/skeleton';
+import { copyToClipboard } from '@/lib/utils/clipboard';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  ShareNetworkIcon as Share2,
+} from '@phosphor-icons/react';
+import { useTranslations } from 'next-intl';
 import { useState } from 'react';
+import { errorToast, successToast } from '../ui/toast';
 
 interface ReferralCodeSectionProps {
   referralCode?: {
@@ -20,15 +25,13 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
   const t = useTranslations('settings.referrals');
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
+  const handleCopy = async (text: string) => {
+    if (await copyToClipboard(text)) {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
-      toast.success(t('linkCopied'));
-    } catch (error) {
-      console.error('Failed to copy:', error);
-      toast.error('Failed to copy');
+      successToast(t('linkCopied'));
+    } else {
+      errorToast('Failed to copy');
     }
   };
 
@@ -48,18 +51,18 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
         }
       }
     } else {
-      copyToClipboard(referralCode.referral_url);
+      handleCopy(referralCode.referral_url);
     }
   };
 
   if (isLoading) {
     return (
       <div className="space-y-3">
-        <Skeleton className="h-4 w-24 mb-2" />
+        <Skeleton className="mb-2 h-4 w-24" />
         <div className="flex gap-2">
           <Skeleton className="h-10 flex-1 rounded-2xl" />
           <Skeleton className="h-10 w-10 rounded-full" />
-          <Skeleton className="h-10 w-16 sm:w-20 rounded-full" />
+          <Skeleton className="h-10 w-16 rounded-full sm:w-20" />
         </div>
       </div>
     );
@@ -68,30 +71,27 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-xs sm:text-sm font-medium text-foreground mb-2 block">
+        <label className="text-foreground mb-2 block text-xs font-medium sm:text-sm">
           {t('referralLink')}
         </label>
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <Input type="text"
+            <Input
+              type="text"
               value={referralCode?.referral_url || ''}
               readOnly
-              className="text-xs sm:text-sm font-mono pr-10"
+              className="pr-10 font-mono text-xs sm:text-sm"
             />
             <div
-              className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => copyToClipboard(referralCode?.referral_url || '')}
+              className="text-muted-foreground hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2 cursor-pointer transition-colors"
+              onClick={() => handleCopy(referralCode?.referral_url || '')}
             >
-              {copiedLink ? (
-                <Check className="h-4 w-4" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
+              {copiedLink ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </div>
           </div>
           <Button
             variant="default"
-            className="h-10 px-2 sm:px-3 flex-shrink-0 w-[72px] sm:w-auto"
+            className="h-10 w-[72px] shrink-0 px-2 sm:w-auto sm:px-3"
             onClick={shareReferralLink}
           >
             <Share2 className="h-4 w-4 sm:mr-1.5" />

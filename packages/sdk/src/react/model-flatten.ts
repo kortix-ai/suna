@@ -22,6 +22,15 @@ type LooseModel =
       release_date?: string;
       family?: string;
       cost?: { input?: number; output?: number };
+      // The REAL upstream provider this model resolves against — see
+      // `FlatModel.provider` below. Absent on plain opencode `Model` values
+      // (which don't carry it); present on every gateway-served model.
+      provider?: string;
+      reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+      description?: string;
+      open_weights?: boolean;
+      last_updated?: string;
+      enabled?: boolean;
     };
 
 function hasCapabilities(model: LooseModel): model is Model {
@@ -57,7 +66,65 @@ export interface FlatModel {
   };
   /** Provider source (env, api, config, custom) */
   providerSource?: string;
+  /**
+   * The REAL upstream provider this model resolves against ('anthropic',
+   * 'openai', 'codex', 'kortix', ...) — carried explicitly off the gateway's
+   * served model so the picker never has to recover it by string-splitting
+   * `modelID`. Every gateway model is registered under `providerID: 'kortix'`;
+   * this is the field that identifies who ACTUALLY serves it. Undefined for
+   * providers/models predating this field.
+   */
+  provider?: string;
+  /** Tunable reasoning-effort values (models.dev's `reasoning_options`), when
+   *  the model exposes one. */
+  reasoningOptions?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+  /** Free-text blurb models.dev publishes for the model. */
+  description?: string;
+  /** True when the model's weights are publicly released (open-weights) vs.
+   *  closed API-only. models.dev's `open_weights` field, mirrored. */
+  openWeights?: boolean;
+  /** When models.dev last refreshed this model's own entry. */
+  lastUpdated?: string;
+  /**
+   * Whether the project OFFERS this model. Server-owned per-project
+   * enablement, resolved by the API (`/model-picker`) — the picker renders the
+   * enabled ones and "Manage models" switches on this flag. Neither re-derives
+   * it, and the gateway never refuses a request over it (display-only).
+   * Undefined on catalogs that don't carry enablement (anything but
+   * `/model-picker`), which callers read as "not applicable".
+   */
+  enabled?: boolean;
 }
+
+/**
+ * Whether `key` may be offered/resolved from `models` — present in the catalog
+ * and not turned off by the server's per-project enablement (`enabled` above).
+ * THE one predicate for "is this model selectable?"; a second, client-local
+ * visibility heuristic beside it is exactly what made the session picker and
+ * "Manage models" disagree.
+ */
+export function isOfferedModel(
+  models: FlatModel[],
+  key: { providerID: string; modelID: string },
+): boolean {
+  const model = models.find((m) => m.providerID === key.providerID && m.modelID === key.modelID);
+  return !!model && model.enabled !== false;
+}
+
+// The gateway-specific fields (`provider`, `reasoning_options`,
+// `description`, `open_weights`, `last_updated`) exist only on the
+// loose/synthetic branch of `LooseModel`, never on opencode's own canonical
+// `Model` type — read them via this narrow shape rather than widening
+// `LooseModel`'s member access rules or reaching for `any`.
+type WithGatewayFields = {
+  provider?: string;
+  reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
+  description?: string;
+  open_weights?: boolean;
+  last_updated?: string;
+  enabled?: boolean;
+  attachment?: boolean;
+};
 
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
   if (!providers) return [];
@@ -70,6 +137,9 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
     // gateway, but never render a native (bypass) provider even if one slips in.
     if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
+      // Old sandboxes can carry a baked catalog from before the synthetic model
+      // was removed. Never expose or send those stale entries.
+      if (modelID === 'auto' || modelID === 'kortix/auto') continue;
       // Narrow `model` itself (not a copy) so the loose-shape-only fields
       // (`reasoning`, `tool_call`, `modalities`) are safe to read below.
       let capabilities: FlatModel['capabilities'];
@@ -83,7 +153,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
       } else {
         capabilities = {
           reasoning: model.reasoning ?? false,
-          vision: model.modalities?.input?.includes('image') ?? false,
+          vision: model.modalities?.input?.includes('image') ?? (model as WithGatewayFields).attachment ?? false,
           toolcall: model.tool_call ?? false,
         };
       }
@@ -104,6 +174,12 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
             }
           : undefined,
         providerSource: p.source,
+        provider: (model as WithGatewayFields).provider,
+        reasoningOptions: (model as WithGatewayFields).reasoning_options,
+        description: (model as WithGatewayFields).description,
+        openWeights: (model as WithGatewayFields).open_weights,
+        lastUpdated: (model as WithGatewayFields).last_updated,
+        enabled: (model as WithGatewayFields).enabled,
       });
     }
   }

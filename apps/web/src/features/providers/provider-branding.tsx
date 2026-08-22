@@ -1,11 +1,11 @@
 'use client';
 
-import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import {
   MODEL_SELECTOR_PROVIDER_IDS as SHARED_MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS as SHARED_PROVIDER_LABELS,
 } from '@kortix/llm-catalog';
+import Image from 'next/image';
 
 export const POPULAR_PROVIDER_IDS = [
   'anthropic',
@@ -47,29 +47,58 @@ const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   vercel: { src: '/provider-icons/vercel.svg', fallback: 'VE' },
   groq: { src: '/provider-icons/groq.svg', fallback: 'GQ' },
   xai: { src: '/provider-icons/xai.svg', fallback: 'XA' },
+  // Bedrock: models.dev's canonical id is `amazon-bedrock`; keep the short
+  // `bedrock` alias for any legacy call site that still passes it.
+  'amazon-bedrock': { src: '/provider-icons/amazon-bedrock.svg', fallback: 'AW' },
   bedrock: { src: '/provider-icons/amazon-bedrock.svg', fallback: 'AW' },
+  // Moonshot ships as three distinct providers on models.dev — Moonshot AI,
+  // Moonshot AI (China), and the Kimi For Coding plan. They share the one
+  // Moonshot mark (no separate -cn / kimi asset exists), but their VERBATIM
+  // names keep them readable apart in the list.
   moonshotai: { src: '/provider-icons/moonshotai.svg', fallback: 'MS' },
-  'moonshotai-cn': { src: '/provider-icons/moonshotai-cn.svg', fallback: 'MS' },
+  'moonshotai-cn': { src: '/provider-icons/moonshotai.svg', fallback: 'MS' },
+  'kimi-for-coding': { src: '/provider-icons/moonshotai.svg', fallback: 'KI' },
   deepseek: { src: '/provider-icons/deepseek.svg', fallback: 'DS' },
   mistral: { src: '/provider-icons/mistral.svg', fallback: 'MI' },
   cohere: { src: '/provider-icons/cohere.svg', fallback: 'CO' },
+  'cohere-platform': { src: '/provider-icons/cohere.svg', fallback: 'CO' },
   llama: { src: '/provider-icons/llama.svg', fallback: 'LL' },
   huggingface: { src: '/provider-icons/huggingface.svg', fallback: 'HF' },
   cerebras: { src: '/provider-icons/cerebras.svg', fallback: 'CE' },
   togetherai: { src: '/provider-icons/togetherai.svg', fallback: 'TA' },
+  // Fireworks: `fireworks-ai` is the models.dev id; `firepass` is its
+  // pass-through variant; keep `fireworks` as a legacy alias.
+  'fireworks-ai': { src: '/provider-icons/fireworks-ai.svg', fallback: 'FW' },
+  firepass: { src: '/provider-icons/fireworks-ai.svg', fallback: 'FW' },
   fireworks: { src: '/provider-icons/fireworks-ai.svg', fallback: 'FW' },
   deepinfra: { src: '/provider-icons/deepinfra.svg', fallback: 'DI' },
   nvidia: { src: '/provider-icons/nvidia.svg', fallback: 'NV' },
+  // Google Vertex reuses the Google mark; the Anthropic-on-Vertex variant
+  // reuses the Anthropic mark so it reads as what it actually serves.
+  'google-vertex': { src: '/provider-icons/google.svg', fallback: 'GV' },
+  'google-vertex-anthropic': { src: '/provider-icons/anthropic.svg', fallback: 'GV' },
   cloudflare: { src: '/provider-icons/cloudflare-workers-ai.svg', fallback: 'CF' },
+  'cloudflare-workers-ai': { src: '/provider-icons/cloudflare-workers-ai.svg', fallback: 'CF' },
   azure: { src: '/provider-icons/azure.svg', fallback: 'AZ' },
   ollama: { src: '/provider-icons/ollama-cloud.svg', fallback: 'OL' },
   perplexity: { src: '/provider-icons/perplexity.svg', fallback: 'PE' },
+  'perplexity-agent': { src: '/provider-icons/perplexity.svg', fallback: 'PE' },
   lmstudio: { src: '/provider-icons/lmstudio.svg', fallback: 'LM' },
   v0: { src: '/provider-icons/v0.svg', fallback: 'V0' },
   wandb: { src: '/provider-icons/wandb.svg', fallback: 'WB' },
   baseten: { src: '/provider-icons/baseten.svg', fallback: 'BT' },
-  // Add all other icons - they fallback to initials if not mapped
+  // Everything else falls back to monochrome initials.
 };
+
+/**
+ * Resolve a provider id to its logo asset path, or `undefined` when the id has
+ * no mapped mark (the caller falls back to monochrome initials). Keyed on the
+ * VERBATIM models.dev provider ids so live-catalog entries resolve — see the
+ * icon-map notes above for the Moonshot trio / Bedrock / Vertex cases.
+ */
+export function providerIconSrc(providerID: string): string | undefined {
+  return PROVIDER_ICON_MAP[providerID]?.src;
+}
 
 function initialsFor(providerID: string, name?: string) {
   const label = PROVIDER_LABELS[providerID];
@@ -82,7 +111,12 @@ function initialsFor(providerID: string, name?: string) {
   }
   const source = (name || providerID).replace(/[^a-zA-Z0-9 ]/g, ' ').trim();
   const parts = source.split(/\s+/).filter(Boolean);
-  return (parts.slice(0, 2).map((part) => part[0]).join('') || providerID.slice(0, 2)).toUpperCase();
+  return (
+    parts
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join('') || providerID.slice(0, 2)
+  ).toUpperCase();
 }
 
 export function ProviderLogo({
@@ -94,26 +128,34 @@ export function ProviderLogo({
   providerID: string;
   name?: string;
   className?: string;
-  size?: 'small' | 'default' | 'large';
+  size?: 'xs' | 'small' | 'default' | 'large';
 }) {
   const iconDef = PROVIDER_ICON_MAP[providerID];
 
   const sizeClasses = {
-    small: 'size-7',
+    xs: 'size-4',
+    small: 'size-8',
     default: 'size-9',
     large: 'size-11',
   };
 
   const iconSizes = {
-    small: 14,
-    default: 18,
-    large: 22,
+    xs: 16,
+    small: 20,
+    default: 22,
+    large: 24,
   };
 
   return (
     <span
       className={cn(
-        'flex items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 shrink-0',
+        'flex shrink-0 items-center justify-center',
+        // `xs` is the INLINE size — a bare mark sitting on a line of text (a
+        // command-palette group heading), not a chip. The tile is what makes
+        // the other sizes read as an avatar, and at 16px a tile around a 12px
+        // mark is all frame and no logo. The initials fallback keeps its tile
+        // at every size: two bare letters at 9px read as debris, not a logo.
+        iconDef?.src && size === 'xs' ? 'bg-transparent' : 'bg-muted rounded-md',
         sizeClasses[size],
         className,
       )}
@@ -125,13 +167,21 @@ export function ProviderLogo({
           alt=""
           width={iconSizes[size]}
           height={iconSizes[size]}
-          className="object-contain dark:invert"
+          className={cn(
+            'object-contain dark:invert',
+            // The Kortix mark is drawn edge-to-edge with no built-in padding,
+            // so inside a tile it needs its own inset to match the other
+            // logos' optical size. At `xs` there is no tile to inset from.
+            iconDef.src === '/kortix-symbol.svg' && (size === 'xs' ? 'size-3.5' : 'size-3'),
+          )}
         />
       ) : (
-        <span className={cn(
-          'font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300',
-          size === 'small' ? 'text-xs' : size === 'large' ? 'text-xs' : 'text-xs'
-        )}>
+        <span
+          className={cn(
+            'font-semibold tracking-wide text-zinc-600 uppercase dark:text-zinc-300',
+            size === 'xs' ? 'text-[9px]' : 'text-xs',
+          )}
+        >
           {initialsFor(providerID, name)}
         </span>
       )}

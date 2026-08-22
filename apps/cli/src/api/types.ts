@@ -57,6 +57,23 @@ export interface ProjectSecret {
   configured: boolean;
   /** Which value is effective for the requesting user. */
   effective_source: 'mine' | 'shared' | 'none';
+  /** How the secret can leave Kortix storage — the stored column behind the
+   *  exposure a user sees: `runtime` = environment, `egress` = enforced at the
+   *  network, `broker`/`denied` = no sandbox presence. */
+  strategy?: 'runtime' | 'egress' | 'broker' | 'denied';
+  /** Service that consumes the secret. */
+  consumer?:
+    | 'sandbox'
+    | 'llm_gateway'
+    | 'connector'
+    | 'git_proxy'
+    | 'http_broker'
+    | 'network'
+    | null;
+  /** Whether the selected delivery path is usable. */
+  delivery_status?: 'available' | 'unavailable' | 'disabled';
+  /** True when an earlier sandbox may retain the previous value. */
+  requires_rotation?: boolean;
 }
 
 export interface ProjectSecretsResponse {
@@ -131,16 +148,27 @@ export interface ProjectSession {
 
 // ── Triggers ──────────────────────────────────────────────────────────────
 
+/** A `type: monitor` trigger's shape — see docs/specs/2026-08-12-monitors.md. */
+export type MonitorMode = 'poll' | 'stream';
+
 export interface ProjectTrigger {
   slug: string;
   path: string;
   name: string;
-  type: 'cron' | 'webhook';
+  type: 'cron' | 'webhook' | 'monitor';
   agent: string;
   enabled: boolean;
   cron: string | null;
   timezone: string;
   secret_env: string | null;
+  /** monitor only — the repo-relative command whose stdout lines are the events. */
+  run: string | null;
+  /** monitor only — `poll` runs `run` every interval; `stream` keeps it alive. */
+  mode: MonitorMode | null;
+  /** mode='poll' only — the poll period in whole seconds. */
+  interval_seconds: number | null;
+  /** monitor only — the silence watchdog in whole seconds. */
+  expect_event_within_seconds: number | null;
   prompt_template: string;
   /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
   session_mode: 'fresh' | 'reuse';

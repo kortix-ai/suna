@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildTemplateInstallPrompt } from './marketplace-install-prompts';
+import {
+  buildRegistryProjectInstallPrompt,
+  buildTemplateInstallPrompt,
+} from './marketplace-install-prompts';
 
 function templateEntry(over: Record<string, unknown> = {}) {
   return {
@@ -66,5 +69,37 @@ describe('buildTemplateInstallPrompt', () => {
     const p = buildTemplateInstallPrompt(templateEntry({ registryDependencies: [] }), 'kortix-starter:x');
     expect(p).toContain('kortix marketplace show kortix-starter:x');
     expect(p).not.toContain('Install its parts');
+  });
+});
+
+describe('buildRegistryProjectInstallPrompt', () => {
+  test('drives the post-CR handoff instead of leaving manual setup instructions', () => {
+    const p = buildRegistryProjectInstallPrompt(
+      {
+        item: {
+          name: 'seo-department',
+          type: 'registry:project',
+          title: 'SEO Department',
+          description: 'A full SEO department.',
+          registryDependencies: ['technical-seo-audit'],
+          files: [
+            {
+              path: 'kortix.yaml',
+              content: 'default_agent: seo-director\nagents:\n  seo-director:\n    skills: all\n',
+            },
+            { path: 'install.md', content: '# SEO Department Install Guide\n' },
+          ],
+        },
+      } as never,
+      'kortix_version: 2\n',
+    );
+
+    expect(p).toContain('read it from the supplied file block');
+    expect(p).toContain('ask whether to apply/merge it now');
+    expect(p).toContain('Do not merge without explicit approval');
+    expect(p).toContain('kortix cr merge <number-or-id>');
+    expect(p).toContain('structured session-start/background-session tool');
+    expect(p).toContain('Open session button');
+    expect(p).not.toContain('Once merged, start a session');
   });
 });

@@ -121,8 +121,8 @@ stale.
 - **Checkout is the only irreversible step.** Everything before it (search,
   cart-build, draft post) is reversible and safe to redo.
 - **Scoped secret.** `ORDERING_ACCOUNT_API_KEY` is injected into the sandbox
-  at runtime and is never exposed to the model's output, logs, or the Slack
-  post.
+  at runtime, scoped to this agent's grant. Never echo it into a reply, a log,
+  or the Slack post.
 - **Isolation.** Each weekly run executes in its own sandbox; only the draft
   post and (post-approval) the checkout call leave it.
 - **One draft per week.** Don't post a second draft while one is still

@@ -1,21 +1,14 @@
 'use client';
 
+import { ProductMenu } from '@/components/home/product-menu';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import {
-  Disclosure,
-  DisclosureBody,
-  DisclosureContent,
-  DisclosureTrigger,
-} from '@/components/ui/disclosure';
 import { Button, marketingButtonVariants } from '@/components/ui/marketing/button';
 import {
   NavigationMenu,
@@ -25,86 +18,111 @@ import {
   NavigationMenuList,
   NavigationMenuTrigger,
 } from '@/components/ui/navigation-menu';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { Icon } from '@/features/icon/icon';
+import { ChatGPT } from '@/features/icon/icons/chat-gpt';
+import { Claude } from '@/features/icon/icons/claude';
+import { Github } from '@/features/icon/icons/github';
+import { OpenClaw } from '@/features/icon/icons/open-claw';
+import { Viktor } from '@/features/icon/icons/viktor';
+import { Zapier } from '@/features/icon/icons/zapier';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { siteConfig } from '@/lib/site-config';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
-import { ChevronRight, Layers, Menu, Type, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import {
+  ArrowRightIcon,
+  DiscordLogoIcon,
+  DownloadSimpleIcon as Download,
+  GithubLogoIcon,
+  StackIcon as Layers,
+  LinkedinLogoIcon,
+  ListIcon as Menu,
+  TextTIcon as Type,
+  XIcon as X,
+  XLogoIcon,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { type MouseEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;
 
 const CTA_LINK = '/auth';
 
-const drawerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      duration: 0.2,
-      staggerChildren: 0.05,
-      delayChildren: 0.1,
-    },
-  },
-  exit: {
-    opacity: 0,
-    transition: { duration: 0.15 },
-  },
-};
+/**
+ * Scroll compaction — height only.
+ *
+ * At the top of the page the bar breathes. Once the reader scrolls it tucks in:
+ * the outer padding drops from 14.72px to 5.52px and the row from 52px to 40px,
+ * taking the bar from 66.7px to 51.0px (-23.5%).
+ *
+ * Nothing moves horizontally. The measure, the logo/nav gap, and every button
+ * size are identical in both states, so the only thing that animates is the
+ * vertical rhythm — the bar tightens around its contents instead of rearranging
+ * them.
+ */
+const BAR_TOP_PAD = { rest: 'pt-4', compact: 'pt-1.5' } as const;
+const BAR_ROW_HEIGHT = { rest: 'h-[52px]', compact: 'h-[40px]' } as const;
 
-const drawerMenuContainerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.06,
-    },
-  },
-};
+/**
+ * The marketing sections all sit on `mx-auto max-w-7xl px-6`. The bar's surface
+ * still spans the viewport, but its contents ride the exact same measure, so the
+ * logo's left edge and the CTA's right edge line up with the section text below.
+ */
+const CONTENT_MEASURE = 'mx-auto w-full max-w-7xl px-6';
 
-const drawerMenuVariants = {
-  hidden: { opacity: 0, x: -10 },
-  visible: {
-    opacity: 1,
-    x: 0,
-    transition: {
-      duration: 0,
-      ease: 'easeOut' as const,
-    },
-  },
-};
+/**
+ * The scrolled surface is a blur veil, not a bar with an edge. It extends 22px
+ * past the header and its mask fades the blur out over that overhang, so the
+ * frosted panel dissolves into the page instead of ending on a line. The row
+ * content sits in the fully-opaque top of the mask, so nothing behind the logo
+ * or the buttons is ever half-blurred.
+ */
+const BAR_VEIL_MASK = '[mask-image:linear-gradient(to_bottom,#000_0%,#000_72%,transparent_100%)]';
+
+/** The links a drawer row expands to; empty for a row that simply navigates. */
+function drawerSubLinks(item: NavLink): NavSubLink[] {
+  if ('menu' in item) return item.menu.columns.flatMap((column) => column.links);
+  return typeof item.href === 'string' ? [] : item.href;
+}
+
+/**
+ * The drawer is deliberately static: tapping the menu button swaps it in the
+ * same frame, with no enter motion, no level pushes, no stagger. Rows keep a
+ * `py` tall enough for a 40px+ hit area at this type size.
+ */
+const DRAWER_ROW = 'flex items-center py-2 text-lg font-medium transition-colors';
+
+const DRAWER_SOCIALS = [
+  { label: 'X', href: 'https://x.com/kortix', icon: XLogoIcon },
+  { label: 'LinkedIn', href: 'https://linkedin.com/company/kortix', icon: LinkedinLogoIcon },
+  { label: 'Discord', href: 'https://discord.com/invite/RvFhXUdZ9H', icon: DiscordLogoIcon },
+  { label: 'GitHub', href: 'https://github.com/kortix-ai/suna', icon: GithubLogoIcon },
+] as const;
 
 interface NavbarProps {
   isAbsolute?: boolean;
 }
 
 export function Navbar({ isAbsolute = false }: NavbarProps) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [openDrawerMenu, setOpenDrawerMenu] = useState<number | null>(null);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const t = useTranslations('common');
-  const lastScrollY = useRef(0);
   const isMobile = useIsMobile();
 
-  // Use-cases section is on by default; hide it by setting NEXT_PUBLIC_USE_CASES_ENABLED=false.
-  const filteredNavLinks = siteConfig.nav.links.filter(
-    (link) =>
-      process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false' || link.href !== '/use-cases',
-  );
-  const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
+  const filteredNavLinks = siteConfig.nav.links;
+  const { stars, formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
   const openDemo = useRequestDemo();
 
   const isNavActive = useCallback(
@@ -113,40 +131,56 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     [pathname],
   );
 
+  // "Brandmark" is the symbol, "Logomark" is the wordmark (the brandkit's own
+  // naming). The copied color follows the active theme so pasting into a
+  // matching canvas is legible immediately.
+  const copyBrandSvg = async (kind: 'symbol' | 'wordmark') => {
+    const color = document.documentElement.classList.contains('dark') ? 'White' : 'Black';
+    const path =
+      kind === 'symbol'
+        ? `/brandkit/Logo/Brandmark/SVG/Brandmark ${color}.svg`
+        : `/brandkit/Logo/Logomark/SVG/Logomark ${color}.svg`;
+    try {
+      const svg = await (await fetch(path)).text();
+      await navigator.clipboard.writeText(svg);
+      successToast(tHardcodedUi.raw('componentsHomeNavbar.svgCopied'));
+    } catch {
+      errorToast(tHardcodedUi.raw('componentsHomeNavbar.copyFailed'));
+    }
+  };
+
   const compareIcon = (slug: string) => {
     switch (slug) {
       case 'zapier':
-        return <Icon.Zapier />;
+        return <Zapier />;
       case 'openclaw':
-        return <Icon.OpenClaw />;
+        return <OpenClaw />;
       case 'viktor':
-        return <Icon.Viktor />;
+        return <Viktor />;
       case 'chatgpt':
-        return <Icon.ChatGPT />;
+        return <ChatGPT />;
       case 'claude':
-        return <Icon.Claude />;
+        return <Claude />;
       default:
         return null;
     }
   };
 
-  const handleScroll = useCallback(() => {
-    const currentScrollY = window.scrollY;
-
-    if (!hasScrolled && currentScrollY > SCROLL_THRESHOLD_DOWN) {
-      setHasScrolled(true);
-    } else if (hasScrolled && currentScrollY < SCROLL_THRESHOLD_UP) {
-      setHasScrolled(false);
-    }
-
-    lastScrollY.current = currentScrollY;
-  }, [hasScrolled]);
-
+  // Asymmetric thresholds: the bar compacts at 50px and only expands again below
+  // 20px, so a reader hovering around the trigger point never sees it flicker.
   useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      setHasScrolled((wasScrolled) =>
+        wasScrolled
+          ? currentScrollY >= SCROLL_THRESHOLD_UP
+          : currentScrollY > SCROLL_THRESHOLD_DOWN,
+      );
+    };
     window.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [handleScroll]);
+  }, []);
 
   useEffect(() => {
     if (!isDrawerOpen) return;
@@ -159,114 +193,95 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
 
+  // Anchor links scroll in place on the home page; everything else navigates.
+  // Either way the sheet closes.
+  const handleDrawerNavClick = (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
+    const anchor = href.startsWith('#')
+      ? href.slice(1)
+      : href.startsWith('/#')
+        ? href.slice(2)
+        : null;
+
+    if (!anchor) {
+      setIsDrawerOpen(false);
+      return;
+    }
+    e.preventDefault();
+    if (pathname !== '/') {
+      router.push(`/#${anchor}`);
+      setIsDrawerOpen(false);
+      return;
+    }
+    const element = document.getElementById(anchor);
+    element?.scrollIntoView({ behavior: 'smooth' });
+    window.history.replaceState(null, '', `/#${anchor}`);
+    setIsDrawerOpen(false);
+  };
+
+  // One flat drawer: links that navigate directly, then one labelled group per
+  // menu (Product, Company) — no second level to push into.
+  const directDrawerLinks = filteredNavLinks.filter(
+    (item): item is Extract<NavLink, { href: string }> =>
+      !('menu' in item) && typeof item.href === 'string',
+  );
+  const groupedDrawerLinks = filteredNavLinks.filter((item) => drawerSubLinks(item).length > 0);
+
   return (
     <>
       <header
         className={cn(
-          'w-full px-5 pt-4 transition-colors duration-300',
-          isAbsolute ? '' : 'sticky top-0 z-50',
-          hasScrolled && 'bg-background/80 pb-2 backdrop-blur-xl',
+          'border-border-default bg-background fixed relative inset-x-0 top-0 z-50 flex h-16 w-full flex-col items-center justify-between border-b transition-all duration-300 ease-out motion-reduce:transition-none',
         )}
       >
-        <div className="mx-auto flex h-[52px] max-w-6xl items-center justify-between">
+        <div
+          className={cn(
+            CONTENT_MEASURE,
+            'relative flex h-full w-full items-center justify-between',
+            'transition-[height] duration-300 ease-out motion-reduce:transition-none',
+          )}
+        >
           <div className="flex flex-1 items-center gap-8">
             <ContextMenu>
-              <ContextMenuTrigger asChild>
+              <ContextMenuTrigger asChild className="group/kortix-logo">
                 <Link
                   href="/"
                   aria-label="Kortix home"
-                  className="hit-area-4 flex shrink-0 items-center"
+                  className="hit-area-4 group-data-[state=open]/kortix-logo:bg-secondary group-data-[state=open]/kortix-logo:text-foreground flex shrink-0 items-center"
                 >
-                  <KortixLogo size={18} variant="logomark" />
+                  <KortixLogo size={15} variant="logomark" />
                 </Link>
               </ContextMenuTrigger>
-              <ContextMenuContent className="w-64">
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger className="gap-2 text-sm">
-                    <KortixLogo size={14} variant="symbol" />
-                    {tHardcodedUi.raw('componentsHomeNavbar.line221JsxTextDownloadSymbol')}
-                  </ContextMenuSubTrigger>
-                  <ContextMenuSubContent className="w-40">
-                    {[
-                      {
-                        label: 'Black · SVG',
-                        href: '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg',
-                        file: 'kortix-symbol-black.svg',
-                      },
-                      {
-                        label: 'Black · PNG',
-                        href: '/brandkit/Logo/Brandmark/PNG/Brandmark Black.png',
-                        file: 'kortix-symbol-black.png',
-                      },
-                      {
-                        label: 'White · SVG',
-                        href: '/brandkit/Logo/Brandmark/SVG/Brandmark White.svg',
-                        file: 'kortix-symbol-white.svg',
-                      },
-                      {
-                        label: 'White · PNG',
-                        href: '/brandkit/Logo/Brandmark/PNG/Brandmark White.png',
-                        file: 'kortix-symbol-white.png',
-                      },
-                    ].map((d) => (
-                      <ContextMenuItem
-                        key={d.file}
-                        onClick={() => {
-                          const a = document.createElement('a');
-                          a.href = d.href;
-                          a.download = d.file;
-                          a.click();
-                        }}
-                        className="cursor-pointer text-sm"
-                      >
-                        {d.label}
-                      </ContextMenuItem>
-                    ))}
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger className="gap-2 text-sm">
-                    <Type className="size-3.5 shrink-0" />
-                    {tHardcodedUi.raw('componentsHomeNavbar.line239JsxTextDownloadWordmark')}
-                  </ContextMenuSubTrigger>
-                  <ContextMenuSubContent className="w-40">
-                    {[
-                      {
-                        label: 'Black · SVG',
-                        href: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg',
-                        file: 'kortix-logo-black.svg',
-                      },
-                      {
-                        label: 'Black · PNG',
-                        href: '/brandkit/Logo/Logomark/PNG/Logomark Black.png',
-                        file: 'kortix-logo-black.png',
-                      },
-                      {
-                        label: 'White · SVG',
-                        href: '/brandkit/Logo/Logomark/SVG/Logomark White.svg',
-                        file: 'kortix-logo-white.svg',
-                      },
-                      {
-                        label: 'White · PNG',
-                        href: '/brandkit/Logo/Logomark/PNG/Logomark White.png',
-                        file: 'kortix-logo-white.png',
-                      },
-                    ].map((d) => (
-                      <ContextMenuItem
-                        key={d.file}
-                        onClick={() => {
-                          const a = document.createElement('a');
-                          a.href = d.href;
-                          a.download = d.file;
-                          a.click();
-                        }}
-                        className="cursor-pointer text-sm"
-                      >
-                        {d.label}
-                      </ContextMenuItem>
-                    ))}
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
+              {/* Interfere-style brand menu: three flat actions, no submenus.
+                  Copy puts the theme-matching SVG source on the clipboard;
+                  download hands over the whole brandkit as one zip. */}
+              <ContextMenuContent className="w-56">
+                <ContextMenuItem
+                  onClick={() => copyBrandSvg('symbol')}
+                  className="cursor-pointer gap-2 text-sm"
+                >
+                  <KortixLogo size={14} variant="symbol" className="text-foreground" />
+                  {tHardcodedUi.raw('componentsHomeNavbar.copySymbolSvg')}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onClick={() => copyBrandSvg('wordmark')}
+                  className="cursor-pointer gap-2 text-sm"
+                >
+                  <Type className="size-3.5 shrink-0" />
+                  {tHardcodedUi.raw('componentsHomeNavbar.copyWordmarkSvg')}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = '/brandkit/kortix-brand-assets.zip';
+                    a.download = 'kortix-brand-assets.zip';
+                    a.click();
+                  }}
+                  className="cursor-pointer gap-2 text-sm"
+                >
+                  <Download className="size-3.5 shrink-0" />
+                  {tHardcodedUi.raw('componentsHomeNavbar.downloadBrandAssets')}
+                </ContextMenuItem>
+                <ContextMenuSeparator />
                 <ContextMenuItem
                   onClick={() => router.push('/design-system')}
                   className="cursor-pointer gap-2 text-sm"
@@ -277,19 +292,31 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               </ContextMenuContent>
             </ContextMenu>
 
-            <nav className="hidden items-center justify-center gap-2 md:flex">
-              {filteredNavLinks.map((item) =>
-                typeof item.href === 'string' ? (
+            <nav className="hidden items-center justify-center gap-1 md:flex">
+              {filteredNavLinks.map((item) => {
+                if ('menu' in item) {
+                  return (
+                    <ProductMenu
+                      key={item.id}
+                      name={item.name}
+                      menu={item.menu}
+                      isNavActive={isNavActive}
+                    />
+                  );
+                }
+
+                return typeof item.href === 'string' ? (
                   <Button
                     key={item.id}
                     variant="ghost"
                     size="sm"
                     asChild
                     className={cn(
-                      'font-medium',
+                      'h-8 px-3 font-medium [&>svg]:hidden',
+                      'data-[state=open]:bg-secondary data-[state=open]:text-foreground data-[state=open]:hover:bg-secondary text-md',
                       isNavActive(item.href)
-                        ? 'text-foreground'
-                        : 'text-foreground/90 hover:text-foreground',
+                        ? 'bg-secondary text-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
                     <Link href={item.href}>{item.name}</Link>
@@ -301,10 +328,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                         <NavigationMenuTrigger
                           className={cn(
                             marketingButtonVariants({ variant: 'ghost', size: 'sm' }),
-                            'font-medium',
+                            'h-8 px-3 font-medium [&>svg]:hidden',
+                            'data-[state=open]:bg-secondary data-[state=open]:text-foreground data-[state=open]:hover:bg-secondary text-md',
                             item.href.some((link) => isNavActive(link.href))
-                              ? 'text-foreground'
-                              : 'text-foreground/90 hover:text-foreground data-[state=open]:text-foreground',
+                              ? 'bg-secondary text-foreground'
+                              : 'text-muted-foreground hover:text-foreground',
                           )}
                         >
                           {item.name}
@@ -329,36 +357,38 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                       </NavigationMenuItem>
                     </NavigationMenuList>
                   </NavigationMenu>
-                ),
-              )}
+                );
+              })}
             </nav>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5">
-            {formattedStars && !starsLoading && (
-              <Button variant="ghost" asChild className="hidden sm:flex">
+          <div className="flex shrink-0 items-center gap-2">
+            {/* `stars`, not `formattedStars`: the formatter returns an en dash
+                for a missing count, so keying on it printed a GitHub chip
+                reading "–" whenever /api/github-stars failed. No number, no
+                chip. */}
+            {stars !== null && !starsLoading && (
+              <Button variant="ghost" size="sm" asChild className="hidden sm:flex">
                 <Link
                   href="https://github.com/kortix-ai/suna"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <Icon.Github className="size-3.5" />
-                  <span className={cn('font-medium tabular-nums', starsLoading && 'opacity-50')}>
+                  <Github className="size-4 text-foreground" />
+                  <span className={cn('font-medium text-foreground tabular-nums', starsLoading && 'opacity-50')}>
                     {formattedStars}
                   </span>
                 </Link>
               </Button>
             )}
 
-            <Button variant="ghost" className="hidden sm:inline-flex" onClick={() => openDemo()}>
-              {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
-            </Button>
             {user ? (
-              <Button asChild>
-                <Link href="/projects">Projects</Link>
+              <Button size="sm" onClick={() => router.push(latestProjectPath(user.id))}>
+                Projects
               </Button>
             ) : (
               <Button
+                size="sm"
                 onClick={() => {
                   trackCtaSignup();
                   router.push(CTA_LINK);
@@ -371,8 +401,8 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             <Button
               onClick={toggleDrawer}
               variant="ghost"
-              size="icon"
-              className="rounded-full md:hidden"
+              size="icon-sm"
+              className="md:hidden"
               aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
             >
               <Menu className="size-5" />
@@ -380,152 +410,138 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </div>
         </div>
       </header>
-      <AnimatePresence>
-        {isDrawerOpen && isMobile && (
-          <motion.div
-            className="bg-background fixed inset-0 z-50 flex flex-col md:hidden"
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            variants={drawerVariants}
+      {/* Static full-screen drawer: appears and disappears in the same frame
+          as the tap — no scrim, no card inset, no motion. */}
+      {isDrawerOpen && isMobile && (
+        <div className="bg-background fixed inset-0 z-50 flex flex-col md:hidden">
+          {/* Header mirrors the bar: logo left, close where the menu button was. */}
+          <div
+            className={cn(CONTENT_MEASURE, 'flex h-16 shrink-0 items-center justify-between pr-4')}
           >
-            <div className="bg-background flex min-h-dvh flex-1 flex-col px-5 pt-4 pb-5">
-              <div className="flex h-[56px] items-center justify-end">
-                <Button
-                  onClick={toggleDrawer}
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-full"
-                  aria-label={tHardcodedUi.raw(
-                    'componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu',
+            <Link
+              href="/"
+              aria-label="Kortix home"
+              onClick={() => setIsDrawerOpen(false)}
+              className="flex items-center"
+            >
+              <KortixLogo size={15} variant="logomark" />
+            </Link>
+            <Button
+              onClick={toggleDrawer}
+              variant="ghost"
+              size="icon"
+              className="rounded-full"
+              aria-label={tHardcodedUi.raw('componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu')}
+            >
+              <X className="size-5" />
+            </Button>
+          </div>
+
+          {/* One flat list: direct links first, then a labelled group per menu. */}
+          <nav className="min-h-0 flex-1 overflow-y-auto px-6">
+            <ul className="flex flex-col">
+              <li>
+                <Link
+                  href="/"
+                  onClick={handleDrawerNavClick('/')}
+                  className={cn(
+                    DRAWER_ROW,
+                    isNavActive('/')
+                      ? 'text-foreground'
+                      : 'text-muted-foreground active:text-foreground',
                   )}
                 >
-                  <X className="size-5" />
-                </Button>
-              </div>
-
-              <motion.nav className="flex-1 space-y-6 p-2" variants={drawerMenuContainerVariants}>
-                <ul className="flex flex-col gap-6">
-                  {filteredNavLinks.map((item) => {
-                    const handleDrawerNavClick =
-                      (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
-                        if (!href.startsWith('#')) {
-                          setIsDrawerOpen(false);
-                          return;
-                        }
-                        e.preventDefault();
-                        if (pathname !== '/') {
-                          router.push(`/${href}`);
-                          setIsDrawerOpen(false);
-                          return;
-                        }
-                        const element = document.getElementById(href.substring(1));
-                        element?.scrollIntoView({ behavior: 'smooth' });
-                        setIsDrawerOpen(false);
-                      };
-
-                    if (typeof item.href === 'string') {
-                      return (
-                        <motion.li key={item.id} variants={drawerMenuVariants}>
-                          <Link
-                            href={item.href}
-                            onClick={handleDrawerNavClick(item.href)}
-                            className={cn(
-                              'group flex items-center justify-between text-2xl',
-                              isNavActive(item.href)
-                                ? 'text-foreground'
-                                : 'text-muted-foreground hover:text-foreground',
-                            )}
-                          >
-                            {item.name}
-
-                            <ChevronRight className="size-8 shrink-0 opacity-0 transition-transform group-hover:opacity-100" />
-                          </Link>
-                        </motion.li>
-                      );
-                    }
-
-                    return (
-                      <motion.li key={item.id} variants={drawerMenuVariants}>
-                        <Disclosure
-                          className="group w-full"
-                          open={item.href.some((link) => isNavActive(link.href))}
-                        >
-                          <DisclosureTrigger>
-                            <button
-                              type="button"
-                              className={cn(
-                                'group/trigger flex w-full items-center justify-between text-2xl',
-                                item.href.some((link) => isNavActive(link.href))
-                                  ? 'text-foreground'
-                                  : 'text-muted-foreground hover:text-foreground',
-                              )}
-                            >
-                              {item.name}
-                              <ChevronRight className="size-8 shrink-0 transition-transform group-aria-expanded/trigger:rotate-90" />
-                            </button>
-                          </DisclosureTrigger>
-                          <DisclosureContent>
-                            <DisclosureBody className="p-0 pt-4">
-                              <ul className="flex flex-col gap-4">
-                                {item.href.map((link) => (
-                                  <li key={link.href}>
-                                    <Link
-                                      href={link.href}
-                                      onClick={handleDrawerNavClick(link.href)}
-                                      className={cn(
-                                        'group flex items-center justify-between text-xl',
-                                        isNavActive(link.href)
-                                          ? 'text-foreground'
-                                          : 'text-muted-foreground hover:text-foreground',
-                                      )}
-                                    >
-                                      {link.name}
-                                      <ChevronRight className="size-6 shrink-0 opacity-0 transition-transform group-hover:opacity-100" />
-                                    </Link>
-                                  </li>
-                                ))}
-                              </ul>
-                            </DisclosureBody>
-                          </DisclosureContent>
-                        </Disclosure>
-                      </motion.li>
-                    );
-                  })}
+                  {tHardcodedUi.raw('componentsHomeNavbar.home')}
+                </Link>
+              </li>
+              {directDrawerLinks.map((item) => (
+                <li key={item.id}>
+                  <Link
+                    href={item.href}
+                    onClick={handleDrawerNavClick(item.href)}
+                    className={cn(
+                      DRAWER_ROW,
+                      isNavActive(item.href)
+                        ? 'text-foreground'
+                        : 'text-muted-foreground active:text-foreground',
+                    )}
+                  >
+                    {item.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            {groupedDrawerLinks.map((item) => (
+              <div key={item.id} className="mt-6">
+                <p className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
+                  {item.name}
+                </p>
+                <ul className="mt-1 flex flex-col">
+                  {drawerSubLinks(item).map((link) => (
+                    <li key={link.href}>
+                      <Link
+                        href={link.href}
+                        onClick={handleDrawerNavClick(link.href)}
+                        {...(link.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+                        className={cn(
+                          DRAWER_ROW,
+                          isNavActive(link.href)
+                            ? 'text-foreground'
+                            : 'text-muted-foreground active:text-foreground',
+                        )}
+                      >
+                        {link.name}
+                      </Link>
+                    </li>
+                  ))}
                 </ul>
-              </motion.nav>
+              </div>
+            ))}
+          </nav>
 
-              <motion.div
-                className="mt-auto flex flex-col gap-4"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3, duration: 0.3 }}
+          {/* Footer: demo pill, hairline, socials, login. */}
+          <div className="shrink-0 space-y-3 px-6 pb-6">
+            <Button
+              variant="secondary"
+              size="lg"
+              className="w-full"
+              onClick={() => {
+                setIsDrawerOpen(false);
+                openDemo();
+              }}
+            >
+              {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
+            </Button>
+
+            {user ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDrawerOpen(false);
+                  router.push(latestProjectPath(user.id));
+                }}
+                className="text-muted-foreground active:text-foreground flex items-center gap-1.5 text-base transition-colors"
               >
-                {user ? (
-                  <Button asChild size="xl" className="w-full text-lg">
-                    <Link href="/projects" onClick={() => setIsDrawerOpen(false)}>
-                      Projects
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button asChild size="xl" className="w-full text-lg">
-                    <Link
-                      href={CTA_LINK}
-                      onClick={() => {
-                        trackCtaSignup();
-                        setIsDrawerOpen(false);
-                      }}
-                      suppressHydrationWarning
-                    >
-                      {tI18nHardcoded.raw('autoComponentsHomeNavbarJsxTextLaunchKortix5c2db556')}
-                    </Link>
-                  </Button>
-                )}
-              </motion.div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                Projects
+                <ArrowRightIcon className="size-4" />
+              </button>
+            ) : (
+              <Button size="lg" className="w-full" asChild>
+                <Link
+                  href={CTA_LINK}
+                  onClick={() => {
+                    trackCtaSignup();
+                    setIsDrawerOpen(false);
+                  }}
+                  className="w-full"
+                >
+                  {tHardcodedUi.raw('componentsHomeNavbar.logIn')}
+                </Link>
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

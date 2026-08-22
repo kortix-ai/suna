@@ -2,7 +2,7 @@
 
 import {
   AnimatePresence,
-  motion,
+  m,
   type DOMMotionComponents,
   type HTMLMotionProps,
   type MotionProps,
@@ -15,18 +15,18 @@ type CharacterSet = string[] | readonly string[];
 type CharacterVariant = 'uppercase' | 'lowercase' | 'mixed';
 
 const motionElements = {
-  article: motion.article,
-  div: motion.div,
-  h1: motion.h1,
-  h2: motion.h2,
-  h3: motion.h3,
-  h4: motion.h4,
-  h5: motion.h5,
-  h6: motion.h6,
-  li: motion.li,
-  p: motion.p,
-  section: motion.section,
-  span: motion.span,
+  article: m.article,
+  div: m.div,
+  h1: m.h1,
+  h2: m.h2,
+  h3: m.h3,
+  h4: m.h4,
+  h5: m.h5,
+  h6: m.h6,
+  li: m.li,
+  p: m.p,
+  section: m.section,
+  span: m.span,
 } as const;
 
 type MotionElementType = Extract<keyof DOMMotionComponents, keyof typeof motionElements>;
@@ -168,9 +168,9 @@ export function HyperText({
     >
       <AnimatePresence>
         {displayText.map((letter, index) => (
-          <motion.span key={index} className={cn('', letter === ' ' ? '' : '')}>
+          <m.span key={index} className={cn('', letter === ' ' ? '' : '')}>
             {letter}
-          </motion.span>
+          </m.span>
         ))}
       </AnimatePresence>
     </MotionComponent>

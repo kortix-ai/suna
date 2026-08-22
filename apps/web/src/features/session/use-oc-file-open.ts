@@ -1,10 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { getClient } from '@/lib/opencode-sdk';
-import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
+import {
+  getRuntimePathInfo,
+  getRuntimeProjectInfo,
+  readRuntimeTextFile,
+  runtimeKeys,
+} from '@kortix/sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useState } from 'react';
 
 /**
  * Module-level cache of candidate prefixes.
@@ -31,11 +36,13 @@ function toRelative(absPath: string, prefixes: string[]): string {
  * Fetch all candidate worktree/directory prefixes.
  *
  * CONSOLIDATED: First checks the React Query cache (shared with
- * useOpenCodeCurrentProject and useOpenCodePathInfo). Only makes SDK calls
+ * useRuntimeCurrentProject and useRuntimePathInfo). Only makes SDK calls
  * as a fallback if the cache is empty. This prevents duplicate /project/current
  * and /path requests that were previously made on every tool-view mount.
  */
-async function fetchPrefixesFromSdk(queryClient?: ReturnType<typeof useQueryClient>): Promise<string[]> {
+async function fetchPrefixesFromSdk(
+  queryClient?: ReturnType<typeof useQueryClient>,
+): Promise<string[]> {
   if (cachedPrefixes && cachedPrefixes.length > 0) return cachedPrefixes;
   if (prefixFetchPromise) return prefixFetchPromise;
 
@@ -45,15 +52,17 @@ async function fetchPrefixesFromSdk(queryClient?: ReturnType<typeof useQueryClie
   return prefixFetchPromise;
 }
 
-async function fetchPrefixesFromSdkUncached(queryClient?: ReturnType<typeof useQueryClient>): Promise<string[]> {
+async function fetchPrefixesFromSdkUncached(
+  queryClient?: ReturnType<typeof useQueryClient>,
+): Promise<string[]> {
   const candidates: string[] = [];
 
   // 1) Try React Query cache first (shared with other hooks)
   if (queryClient) {
-    const cachedProject = queryClient.getQueryData<any>(opencodeKeys.currentProject());
+    const cachedProject = queryClient.getQueryData<any>(runtimeKeys.currentProject());
     if (cachedProject?.worktree) candidates.push(cachedProject.worktree);
 
-    const cachedPath = queryClient.getQueryData<any>(opencodeKeys.pathInfo());
+    const cachedPath = queryClient.getQueryData<any>(runtimeKeys.pathInfo());
     if (cachedPath?.directory) candidates.push(cachedPath.directory);
     if (cachedPath?.worktree) candidates.push(cachedPath.worktree);
   }
@@ -68,24 +77,15 @@ async function fetchPrefixesFromSdkUncached(queryClient?: ReturnType<typeof useQ
 
   // 3) Fallback: SDK calls (only on first mount before cache is populated)
   // If the sandbox URL isn't ready yet, skip for now and let the next render retry.
-  let client;
   try {
-    client = getClient();
-  } catch {
-    return [];
-  }
-
-  try {
-    const projectRes = await client.project.current();
-    const project = projectRes.data;
+    const project = await getRuntimeProjectInfo();
     if (project?.worktree) candidates.push(project.worktree);
   } catch {
     // non-critical
   }
 
   try {
-    const pathRes = await client.path.get();
-    const pathData = pathRes.data;
+    const pathData = await getRuntimePathInfo();
     if (pathData?.directory) candidates.push(pathData.directory);
     if (pathData?.worktree) candidates.push(pathData.worktree);
   } catch {
@@ -109,12 +109,6 @@ async function fetchPrefixesFromSdkUncached(queryClient?: ReturnType<typeof useQ
  * Caches the discovered prefix for future use.
  */
 async function discoverPrefixViaFileApi(absPath: string): Promise<string | null> {
-  let client;
-  try {
-    client = getClient();
-  } catch {
-    return null;
-  }
   const segments = absPath.split('/').filter(Boolean);
   if (segments.length < 2) return null;
 
@@ -123,8 +117,10 @@ async function discoverPrefixViaFileApi(absPath: string): Promise<string | null>
   for (let depth = 1; depth <= maxDepth; depth++) {
     const candidate = segments.slice(segments.length - depth).join('/');
     try {
-      const result = await client.file.read({ path: candidate });
-      if (result.data) {
+      const content = await readRuntimeFileWithRetry(candidate, () =>
+        readRuntimeTextFile(candidate),
+      );
+      if (content) {
         // Derive the prefix from the original path minus the working suffix
         const prefix = '/' + segments.slice(0, segments.length - depth).join('/');
         // Merge into cache
@@ -144,6 +140,29 @@ async function discoverPrefixViaFileApi(absPath: string): Promise<string | null>
     }
   }
   return null;
+}
+
+/**
+ * Absolute sandbox path → the project-relative path the file APIs and the
+ * session panel actually accept. Returns the input unchanged when it is
+ * already relative, or when no prefix could be discovered.
+ *
+ * Hook-free on purpose. The tool views call this through {@link useOcFileOpen},
+ * but inline code spans in markdown render dozens-to-hundreds of times per
+ * message and cannot each afford a hook instance — they were skipping the
+ * resolution entirely and handing the panel a raw `/workspace/…` path, which
+ * is why some of them opened onto "This file couldn't be opened" even when the
+ * file was right there. One implementation, two callers.
+ */
+export async function resolveRuntimePath(filePath: string): Promise<string> {
+  if (!filePath.startsWith('/')) return filePath;
+
+  const pfx = await fetchPrefixesFromSdk();
+  if (pfx.length > 0) {
+    const resolved = toRelative(filePath, pfx);
+    if (resolved !== filePath) return resolved;
+  }
+  return (await discoverPrefixViaFileApi(filePath)) ?? filePath;
 }
 
 /**
@@ -169,7 +188,9 @@ export function useOcFileOpen() {
         setPrefixes(result);
       }
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [queryClient]);
 
   /** Sync: convert absolute → relative for display */
@@ -177,7 +198,7 @@ export function useOcFileOpen() {
     (absPath: string): string => {
       if (!absPath || !absPath.startsWith('/')) return absPath;
       // Try component state first, then module cache (may be updated by file API probe)
-      const pfx = prefixes.length > 0 ? prefixes : (cachedPrefixes || []);
+      const pfx = prefixes.length > 0 ? prefixes : cachedPrefixes || [];
       if (pfx.length > 0) return toRelative(absPath, pfx);
       return absPath;
     },
@@ -196,21 +217,14 @@ export function useOcFileOpen() {
   /** Resolve an absolute path to relative, with file-API probe fallback */
   const resolveAbsPath = useCallback(
     async (filePath: string): Promise<string> => {
-      const pfx = await getPrefixes();
-      if (pfx.length > 0) {
-        const resolved = toRelative(filePath, pfx);
-        if (resolved !== filePath) return resolved; // prefix matched
+      // Warm component state from the shared prefix cache before delegating,
+      // so `toDisplayPath` re-renders with the resolved form.
+      await getPrefixes();
+      const resolved = await resolveRuntimePath(filePath);
+      if (cachedPrefixes && cachedPrefixes.length > 0) {
+        setPrefixes([...cachedPrefixes]);
       }
-      // Fallback: discover prefix by probing the file API
-      const probed = await discoverPrefixViaFileApi(filePath);
-      if (probed) {
-        // Update local state with newly discovered prefix
-        if (cachedPrefixes && cachedPrefixes.length > 0) {
-          setPrefixes([...cachedPrefixes]);
-        }
-        return probed;
-      }
-      return filePath;
+      return resolved;
     },
     [getPrefixes],
   );

@@ -3,24 +3,29 @@ name: Deploy Prod
 # PROD pipeline. Runs when `prod` advances — i.e. when a reviewed promote PR is
 # MERGED (promote.yml opens it) — or on manual dispatch. This is the ONLY place
 # a version is published: the tag `vX.Y.Z`, the GitHub Release, the image retag,
-# the EKS deploy, and the frontend all happen here, never before the prod merge.
+# the ECS deploy, and the frontend all happen here, never before the prod merge.
 # The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
 #   1. Retag the promoted staging images (kortix/kortix-*:staging-<sha8>)
 #      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds). The
 #      self-host `:stable` channel is promoted SEPARATELY and manually via
 #      promote-self-host-stable.yml — a prod release is not auto-shipped to self-hosts.
-#   2. Deploy BOTH prod backends in parallel, with perfect parity:
+#   2. Deploy the production and pre-cutover shadow backends in parallel:
 #      - ECS Fargate (the ACTIVE backend behind api.kortix.com since PR #4683):
 #        deploy-ecs rolls api + gateway task-defs rendered from the prod env
 #        blob, stamped with the clean KORTIX_VERSION.
-#      - EKS (standby): the promote PR merge already bumped infra/k8s/envs/prod,
-#        so Argo CD rolls the prod Deployment — deploy-api WATCHES it reach vX.Y.Z.
+#      - US East 2 ECS shadow: deploy-us-shadow applies the same database
+#        migrations, refreshes logical replication, and rolls the US API and
+#        gateway. It does not change production routing or enable writers.
+#        OFF by default — it runs only when the repository variable
+#        ENABLE_US_SHADOW_DEPLOY is `true`. Its data plane has been broken
+#        since 2026-08-07; see the job comment and
+#        docs/runbooks/prod-us-east-2-supabase-migration.md.
 #   3. verify-live-version curls the PUBLIC endpoints (router + each origin) and
 #      asserts the live reported version == X.Y.Z. Nothing that announces
 #      success — the GitHub Release, the Slack announce, the banner-lower — runs
-#      unless BOTH deploys succeeded AND the public API demonstrably serves the
-#      released version. A failed ECS or EKS deploy fails the whole release,
+#      unless BOTH ECS deploys succeeded AND the public API demonstrably serves the
+#      released version. A failed ECS deploy fails the whole release,
 #      loudly (learned the hard way: v0.10.0/v0.10.1 announced while deploy-ecs
 #      failed on IAM and prod kept serving the old version).
 #   4. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
@@ -29,10 +34,8 @@ name: Deploy Prod
 #
 # The prod stack is api.kortix.com + gateway.kortix.com → a Cloudflare Worker
 # (infra/cloudflare/workers/api-router) whose ACTIVE_BACKEND / GATEWAY_ACTIVE_BACKEND
-# vars pick the origin: ECS Fargate (api-ecs-fargate / gateway-ecs-fargate,
-# ACTIVE) or EKS (api-eks / gateway-eks, standby). Both backends are ALWAYS
-# deployed on every release so the flip stays instant and safe, plus kortix.com
-# on Vercel.
+# vars pick the origin: ECS Fargate (api-ecs-fargate / gateway-ecs-fargate)
+# deployed on every release, plus kortix.com on Vercel.
 
 on:
   push:
@@ -103,6 +106,61 @@ jobs:
             echo "No RELEASE_SOURCE_SHA (legacy release) — will use legacy dev fallback images"
           fi
 
+  # ── Apply production Terraform before any image rolls ───────────────────────
+  # Two roots, applied in order: environments/prod (the api.kortix.com ALB, ECS
+  # service, gateway and certs) then environments/prod-web (the frontend
+  # service). environments/prod used to be excluded here because it read an
+  # operator-local, gitignored terraform.tfvars; every value from that file is
+  # committed now except `api_image`, which this workflow supplies as the
+  # release tag it is shipping — see terraform-apply.yml.
+  #
+  # Skipped while TF_APPLY_ROLE_ARN_PROD is unset, so merging this before the
+  # IAM role exists cannot break a release. Once set, a failed apply blocks the
+  # release: shipping an image onto infrastructure that failed to converge is
+  # exactly the state this pipeline exists to prevent.
+  terraform-prod-api:
+    name: Apply prod API Terraform
+    needs: version
+    if: vars.TF_APPLY_ROLE_ARN_PROD != ''
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/prod
+      # The release this run publishes. retag-images creates the tag in
+      # parallel; nothing here pulls the image, and the ECS service ignores
+      # task_definition changes, so the ordering is infrastructure-then-image as
+      # documented. Planning the real version keeps the root from ever seeding a
+      # task-definition that points at a stale release.
+      api_image: kortix/kortix-api:${{ needs.version.outputs.version }}
+      aws_region: eu-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_PROD }}
+      github_environment: prod
+      trusted_branch: prod
+      cloudflare: true
+    secrets: inherit
+
+  terraform-prod:
+    name: Apply prod web Terraform
+    needs: [version, terraform-prod-api]
+    if: >-
+      ${{ always()
+        && vars.TF_APPLY_ROLE_ARN_PROD != ''
+        && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped') }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/prod-web
+      aws_region: eu-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_PROD }}
+      github_environment: prod
+      trusted_branch: prod
+      cloudflare: true
+    secrets: inherit
+
   # ── Raise the "release in progress" banner ──────────────────────────────────
   # Show users a CRITICAL banner for the duration of the rollout (non-dismissible
   # for members; admins can still dismiss). Best-effort and non-blocking: it never
@@ -154,27 +212,28 @@ jobs:
           SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
         run: |
           set -euo pipefail
-          # Prefer the image built from the EXACT promoted staging commit
-          # (staging-<sha8>). This covers both paths into staging:
-          #   1. main -> staging PR, where staging contains the full dev candidate.
-          #   2. targeted branch -> staging PR, where the SHA may never exist on main.
-          # For legacy/manual releases, fall back to dev-<sha8>, then dev-latest.
+          # HARD REQUIREMENT: only ever retag an image built from the EXACT
+          # promoted commit (staging-<sha8>, or dev-<sha8> as a same-commit
+          # fallback for the rare case main already built it). There is
+          # DELIBERATELY no further fallback (e.g. to :dev-latest or any
+          # "latest"-style tag): that used to silently retag an UNRELATED,
+          # arbitrarily-stale image as the release when the exact tag was
+          # missing (wrong-image incident, 2026-07). A missing exact-commit
+          # image is a hard pipeline failure, not a "best effort" — fix the
+          # staging build and retry, never ship a guess.
+          if [ -z "${SOURCE_SHA:-}" ]; then
+            echo "::error::RELEASE_SOURCE_SHA is empty — refusing to retag from any non-commit-pinned tag. This release PR was not stamped with a source commit (see promote.yml); re-cut it."
+            exit 1
+          fi
           for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
-            STAGING_TAG=""
-            DEV_TAG=""
-            if [ -n "${SOURCE_SHA:-}" ]; then
-              STAGING_TAG="staging-${SOURCE_SHA:0:8}"
-              DEV_TAG="dev-${SOURCE_SHA:0:8}"
-            fi
-            if [ -n "$STAGING_TAG" ] && docker buildx imagetools inspect "$IMAGE:$STAGING_TAG" >/dev/null 2>&1; then
+            STAGING_TAG="staging-${SOURCE_SHA:0:8}"
+            DEV_TAG="dev-${SOURCE_SHA:0:8}"
+            if docker buildx imagetools inspect "$IMAGE:$STAGING_TAG" >/dev/null 2>&1; then
               SRC_TAG="$STAGING_TAG"
-            elif [ -n "$DEV_TAG" ] && docker buildx imagetools inspect "$IMAGE:$DEV_TAG" >/dev/null 2>&1; then
+            elif docker buildx imagetools inspect "$IMAGE:$DEV_TAG" >/dev/null 2>&1; then
               SRC_TAG="$DEV_TAG"
-            elif docker buildx imagetools inspect "$IMAGE:dev-latest" >/dev/null 2>&1; then
-              SRC_TAG="dev-latest"
-              echo "::notice::$IMAGE has no ${STAGING_TAG:-staging-<sha8>} or ${DEV_TAG:-dev-<sha8>} — using :dev-latest."
             else
-              echo "::error::$IMAGE: no staging/dev image is published for this release source."
+              echo "::error::$IMAGE: no image tagged for the exact release commit ${SOURCE_SHA} (looked for :$STAGING_TAG and :$DEV_TAG). Refusing to fall back to :dev-latest or any other tag — that has shipped a stale/unrelated image before. Build+push the staging image for this commit, then re-run this job."
               exit 1
             fi
             # A prod release publishes :X.Y.Z + :latest only. The self-host
@@ -182,12 +241,23 @@ jobs:
             # CURATED, not automatic: a human promotes a proven version to
             # :stable via the "Promote Self-Host Stable" workflow (promote-self-host-stable.yml).
             # Released != auto-shipped to every self-hosted customer overnight.
-            echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + :latest"
+            SRC_DIGEST="$(docker buildx imagetools inspect "$IMAGE:$SRC_TAG" --format '{{json .Manifest}}' | jq -r '.digest // empty')"
+            [ -n "$SRC_DIGEST" ] || { echo "::error::$IMAGE:$SRC_TAG has no resolvable manifest digest."; exit 1; }
+            echo "Re-tagging $IMAGE:$SRC_TAG (digest $SRC_DIGEST) → $IMAGE:${VERSION} + :latest"
             docker buildx imagetools create \
               --tag "$IMAGE:${VERSION}" \
               --tag "$IMAGE:latest" \
               "$IMAGE:$SRC_TAG"
-            echo "✓ $IMAGE:${VERSION} (from $SRC_TAG)"
+            # Integrity check: the freshly-created :VERSION tag must be
+            # byte-identical (same digest) to the exact-commit source tag we
+            # just resolved — proves the retag copied what we intended, not a
+            # stale cached/mismatched manifest.
+            NEW_DIGEST="$(docker buildx imagetools inspect "$IMAGE:${VERSION}" --format '{{json .Manifest}}' | jq -r '.digest // empty')"
+            if [ "$NEW_DIGEST" != "$SRC_DIGEST" ]; then
+              echo "::error::$IMAGE:${VERSION} digest ($NEW_DIGEST) does not match source $IMAGE:$SRC_TAG digest ($SRC_DIGEST) — retag did not copy the expected image. Aborting."
+              exit 1
+            fi
+            echo "✓ $IMAGE:${VERSION} (from $SRC_TAG, digest $NEW_DIGEST verified)"
           done
       - name: Summary
         env:
@@ -201,6 +271,51 @@ jobs:
             echo "_Zero rebuilds — re-tagged from the promoted staging manifests._"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # ── HARD GATE: verify the retagged images actually contain the release commit ──
+  # retag-images resolves the correct source tag and digest-verifies the copy,
+  # but this is an independent, second check against a DIFFERENT source of truth:
+  # the KORTIX_COMMIT value baked into the image at build time (apps/api/Dockerfile
+  # / apps/llm-gateway/Dockerfile ENV, set from the exact checked-out sha in
+  # build-staging.yml — not the OCI org.opencontainers.image.revision label, which
+  # has been wrong/misleading before). We actually PULL and RUN the freshly
+  # retagged :VERSION image and read that env var back out of the running
+  # container, then assert it equals the release's source commit byte-for-byte.
+  # No deploy job may start until this passes — this is what makes "stale image"
+  # a hard pipeline failure instead of a silent, hours-later production incident.
+  verify-image-commits:
+    name: Verify deployed image CODE matches the release commit
+    needs: [version, retag-images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Pull + verify baked KORTIX_COMMIT on api and gateway
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SOURCE_SHA:-}" ]; then
+            echo "::error::No RELEASE_SOURCE_SHA to verify against — refusing to deploy unverified images."
+            exit 1
+          fi
+          fail=0
+          for IMAGE in kortix/kortix-api kortix/kortix-gateway; do
+            docker pull --quiet "$IMAGE:${VERSION}" >/dev/null
+            baked="$(docker run --rm --entrypoint sh "$IMAGE:${VERSION}" -c 'printf "%s" "$KORTIX_COMMIT"' || true)"
+            echo "$IMAGE:${VERSION} baked KORTIX_COMMIT=${baked:-<empty>}  expected=${SOURCE_SHA}"
+            if [ "$baked" != "$SOURCE_SHA" ]; then
+              echo "::error::$IMAGE:${VERSION} baked KORTIX_COMMIT ('${baked:-empty}') does NOT match the release source commit ('${SOURCE_SHA}'). This image is NOT built from the release commit — refusing to deploy it. Do not trust org.opencontainers.image.revision or any version-string label here; this is a direct read of the running container's baked env."
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "✓ api + gateway :${VERSION} images verified to contain release commit ${SOURCE_SHA}."
+
   # ── Build prod CLI (4 targets on one Linux runner via Bun cross-compile) ────
   build-cli:
     name: Build prod CLI (all targets)
@@ -213,7 +328,7 @@ jobs:
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -262,33 +377,35 @@ jobs:
             artifacts/kortix-linux-arm64
           if-no-files-found: error
 
-  # ── Publish the public SDKs to npm ──────────────────────────────────────────
+  # ── Publish the public npm packages ─────────────────────────────────────────
   # Three packages ship to npm on every version release, in lockstep with the
   # platform version:
   #   @kortix/llm-catalog   — the model catalog (models + managed-model defaults)
   #                           the frontend SDK consumes
   #   @kortix/sdk           — the frontend data-layer SDK; depends on
   #                           @kortix/llm-catalog@<version>, pinned in lockstep
-  #   @kortix/executor-sdk  — the programmatic face of the Executor (alongside the
-  #                           `kortix executor` CLI + `kortix executor mcp` server)
+  #   @kortix/agent-tunnel  — the local-machine tunnel CLI and library
   #
-  # Each package declares its published (dist-pointing) layout in its own
+  # @kortix/executor-sdk had one final deprecated publication at 0.12.5.
+  #
+  # Each package declares its published layout in its own
   # publishConfig. scripts/publish-npm-package.sh builds it, stages that manifest
   # (scripts/stage-npm-publish.mjs: promote publishConfig, pin workspace deps to
-  # the release version, verify every entrypoint exists in dist/) and publishes
+  # the release version, verify every entrypoint and binary exists) and publishes
   # idempotently.
   #
   # Auth is Trusted Publishing (OIDC) when the job grants id-token, else the
   # NPM_TOKEN secret (an npm automation token with publish rights on the @kortix
-  # org). With neither, the publish step skips cleanly so a release is never
-  # blocked. Once Trusted Publishing is verified per package on npmjs.com (package
+  # org). Production sets REQUIRE_NPM_AUTH=1: missing auth fails the release
+  # instead of silently omitting a package. Once Trusted Publishing is verified
+  # per package on npmjs.com (package
   # → Settings → Trusted Publisher → this repo + this workflow), the NPM_TOKEN
   # secret and the NODE_AUTH_TOKEN env line below can be removed — OIDC needs no
   # stored secret.
 
   # @kortix/llm-catalog publishes first, on its own, so @kortix/sdk's pinned
   # @kortix/llm-catalog@<version> dependency is already on the registry before the
-  # SDK (and, harmlessly, the Executor SDK) publishes.
+  # SDK publishes.
   publish-llm-catalog:
     name: Publish @kortix/llm-catalog to npm
     needs: version
@@ -303,7 +420,7 @@ jobs:
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -319,28 +436,19 @@ jobs:
         working-directory: packages/llm-catalog
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
           # Fallback only. Once Trusted Publishing is verified, delete the
           # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
 
   publish-sdk:
-    name: Publish ${{ matrix.pkg }} to npm
+    name: Publish @kortix/sdk to npm
     needs: [version, publish-llm-catalog]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # @kortix/sdk needs publish-llm-catalog (above) done first so its pinned
-          # @kortix/llm-catalog@<version> dependency already resolves on npm.
-          - pkg: '@kortix/sdk'
-            dir: sdk
-          - pkg: '@kortix/executor-sdk'
-            dir: executor-sdk
     steps:
       - uses: actions/checkout@v7
 
@@ -348,7 +456,7 @@ jobs:
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -361,13 +469,86 @@ jobs:
           npm_config_engine_strict: "false"
 
       - name: Build + publish (Trusted Publishing via OIDC; token fallback)
-        working-directory: packages/${{ matrix.dir }}
+        working-directory: packages/sdk
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
           # Fallback only. Once Trusted Publishing is verified, delete the
           # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
+
+  publish-agent-tunnel:
+    name: Publish @kortix/agent-tunnel to npm
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          corepack enable && corepack prepare pnpm@latest --activate || true
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
+        working-directory: packages/agent-tunnel
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bash ../../scripts/publish-npm-package.sh
+
+  publish-executor-sdk:
+    name: Publish and deprecate final @kortix/executor-sdk
+    needs: [version, publish-sdk]
+    if: ${{ needs.version.outputs.version == '0.12.5' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          corepack enable && corepack prepare pnpm@latest --activate || true
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build, publish, and deprecate the compatibility adapter
+        working-directory: packages/executor-sdk
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          bash ../../scripts/publish-npm-package.sh
+          npm deprecate "@kortix/executor-sdk@${VERSION}" \
+            "Deprecated: use @kortix/sdk and kortix.project(projectId).connectors"
 
   # ── Build prod desktop installers (Electron, signed) ────────────────────────
   build-desktop:
@@ -412,7 +593,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -494,9 +675,9 @@ jobs:
           if-no-files-found: error
 
   # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
-  # HARD-GATED on both backend deploys (deploy-ecs = the ACTIVE backend, and
-  # deploy-api = the EKS standby) AND on verify-live-version proving the public
-  # endpoints serve exactly X.Y.Z. The vX.Y.Z tag + Release are the public
+  # HARD-GATED on the required npm publications, ECS backend deploy (deploy-ecs),
+  # and verify-live-version proving the public endpoints serve exactly X.Y.Z.
+  # The vX.Y.Z tag + Release are the public
   # announcement — they must never exist for a version prod isn't running
   # (v0.10.0/v0.10.1 shipped Releases while deploy-ecs failed on IAM and
   # api.kortix.com kept serving the old build; that is now impossible).
@@ -506,7 +687,7 @@ jobs:
   # `attach-desktop` job, best-effort — a desktop problem can never block a release.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli, deploy-ecs, deploy-api, verify-live-version]
+    needs: [version, retag-images, build-cli, publish-sdk, publish-agent-tunnel, deploy-ecs, verify-live-version, frontend-auth-proof]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -525,9 +706,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp -v artifacts/kortix-* release/
+          cp -v ./artifacts/kortix-* release/
           cd release
-          sha256sum * > SHA256SUMS
+          sha256sum ./* > SHA256SUMS
           ls -lh
 
       - name: Create GitHub Release
@@ -570,8 +751,8 @@ jobs:
             exit 0
           fi
           cd desktop-artifacts
-          sha256sum * > DESKTOP-SHA256SUMS
-          gh release upload "${{ needs.version.outputs.tag }}" * --clobber --repo "$GITHUB_REPOSITORY"
+          sha256sum ./* > DESKTOP-SHA256SUMS
+          gh release upload "${{ needs.version.outputs.tag }}" ./* --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -580,7 +761,7 @@ jobs:
   # applied by a manual step at promote that got missed, so new code shipped
   # against a DB missing its columns. This job applies supabase/migrations
   # (tracked in kortix.schema_migrations, idempotent, halts on real failure) and
-  # deploy-api `needs:` it — so the schema is ALWAYS current before new code
+  # deploy-ecs `needs:` it — so the schema is ALWAYS current before new code
   # serves. Migrations are additive + reviewed; the runner never runs the
   # dangerous `drizzle-kit push --force` (which is why prod's ensureSchema stays a
   # no-op). See scripts/apply-migrations.sh.
@@ -590,7 +771,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
@@ -619,15 +800,16 @@ jobs:
   # Builds the canonical schema fresh from the committed migrations in a sidecar
   # Postgres, then asserts prod contains every table+column it defines. Presence-
   # only (canonical ⊆ live): tolerant of prod's legacy/cosmetic differences,
-  # strict about missing objects. deploy-api gates on this — drift blocks the roll.
+  # strict about missing objects. deploy-ecs gates on this — drift blocks the roll.
   verify-schema:
     name: Verify prod schema matches migrations
     # TEMPORARILY DISABLED. Prod is broadly diverged from the migration baseline
     # (e.g. execution_status / sandbox_provider enum values the canonical schema
     # defines but prod lacks). Reconciling that is a separate, deliberate effort;
-    # until then this presence check blocks every prod roll. Re-enable by flipping
-    # `if` back to the default and restoring `verify-schema` in deploy-api.needs.
-    if: false
+    # until then this presence check blocks every prod roll. Re-enable with the
+    # repository variable ENABLE_PROD_SCHEMA_GATE=true and restore
+    # `verify-schema` in deploy-ecs.needs.
+    if: vars.ENABLE_PROD_SCHEMA_GATE == 'true'
     needs: migrate-db
     runs-on: ubuntu-latest
     services:
@@ -647,7 +829,7 @@ jobs:
       LIVE_DB_URL: ${{ secrets.PROD_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
@@ -673,13 +855,11 @@ jobs:
           fi
           bun packages/db/scripts/verify-live-schema.ts
 
-  # ── Deploy API + gateway to prod ECS Fargate (the ACTIVE backend) ───────────
-  # api.kortix.com and gateway.kortix.com are served by ECS Fargate (the
-  # Cloudflare api-router's ACTIVE_BACKEND / GATEWAY_ACTIVE_BACKEND = ecs-fargate
-  # since PR #4683); EKS is the standby. This job rolls both prod ECS services to
-  # the release image with task-defs rendered fresh from the kortix-prod-env
-  # Secrets Manager blob (the same blob external-secrets syncs into EKS), and
-  # stamps KORTIX_VERSION=<X.Y.Z> so /v1/health reports the clean released
+  # ── Deploy API + gateway to prod ECS Fargate ────────────────────────────────
+  # api.kortix.com and gateway.kortix.com are served by ECS Fargate. This job
+  # rolls both prod ECS services to the release image with task-defs rendered
+  # fresh from the kortix-prod-env Secrets Manager blob, and stamps
+  # KORTIX_VERSION=<X.Y.Z> so /v1/health reports the clean released
   # version — release images are retagged staging manifests, so without the
   # stamp ECS would report the baked staging string (that is exactly how prod
   # "served" 0.9.109-staging.* after the v0.10.x announces). It does NOT change
@@ -691,7 +871,19 @@ jobs:
   # active backend serves old code.
   deploy-ecs:
     name: Deploy API + gateway to prod (ECS Fargate)
-    needs: [version, retag-images, migrate-db]
+    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod-api, terraform-prod]
+    # `always()` is required because both terraform jobs are SKIPPED while
+    # TF_APPLY_ROLE_ARN_PROD is unset. Every other upstream stays required, so
+    # this remains the hard gate described above. Both roots are listed: a
+    # failed terraform-prod-api skips terraform-prod, and a skip alone must not
+    # read as a pass for the root that actually failed.
+    if: >-
+      ${{ always()
+        && needs.retag-images.result == 'success'
+        && needs.verify-image-commits.result == 'success'
+        && needs.migrate-db.result == 'success'
+        && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped')
+        && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → ECS deploy role
@@ -700,6 +892,13 @@ jobs:
       AWS_REGION: eu-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
       VERSION: ${{ needs.version.outputs.version }}
+      # Non-secret task environment. KORTIX_PREVIEW_BASE_DOMAIN is the wildcard
+      # every sandbox preview origin sits under; it is declared, never derived
+      # (see apps/api/src/sandbox-proxy/preview-hosts.ts). Setting it is what
+      # makes clients stop using the path proxy, so it goes in only once the
+      # certificate pack for that wildcard is active. Unset = path proxy, which
+      # is also the complete rollback.
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -709,221 +908,69 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Roll prod ECS (api + gateway) from the prod-env blob
         run: |
-          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}"
-          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}"
+          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}" --version "${VERSION}" --database-migrated
+          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway --version "${VERSION}" --database-migrated
 
-  # ── Deploy API to prod EKS (the standby backend, kept in perfect parity) ─────
-  # The promote PR merge already bumped infra/k8s/envs/prod/values.yaml (image tag
-  # + kortixVersion), so Argo CD on the prod-eks cluster rolls the Deployment.
-  # This job WATCHES that roll finish on exactly :VERSION. kortixVersion comes
-  # from the values bump, so /v1/health reports the clean X.Y.Z — matching the
-  # KORTIX_VERSION stamp deploy-ecs puts on the active backend. EKS is the
-  # standby, but it HARD-GATES the release exactly like ECS (via
-  # verify-live-version → github-release/announce/banner-off): a standby that
-  # silently drifts is worthless the day you need the flip.
-  deploy-api:
-    name: Deploy API to prod (EKS / GitOps)
-    needs: [version, retag-images, migrate-db]
-    runs-on: ubuntu-latest
+  # ── Deploy the pre-cutover US East 2 production shadow ──────────────────────
+  # The shadow uses the native US East 2 Supabase project and separate ECS
+  # services. This job keeps its database schema, logical publication, API, and
+  # gateway on the same release as production. It does not change Cloudflare
+  # routing, production DNS, desired counts, or worker flags.
+  #
+  # DISABLED BY DEFAULT since v0.12.7. The shadow's data plane is broken in
+  # three independent places and no release needs it:
+  #   1. The source publication `kortix_us_east_2_20260725` and its replication
+  #      slot were DROPPED from prod on 2026-08-08 (wal_status was `lost`).
+  #      `scripts/prod-us-east-2/refresh-replication.sh` exits 1 with "The
+  #      enabled target subscription is missing" until both are rebuilt and the
+  #      target is fully resynced.
+  #   2. Prod still carries `kortix.project_session_connector_bindings.profile_id`,
+  #      which migration 20260806150353417_connector_compat_removal.sql dropped
+  #      and the shadow no longer has. The refresh script rejects that source
+  #      column with "The target lacks selected source columns" — the sole
+  #      failure of the v0.12.5 (job 92927632339) and v0.12.6 (job 93130050196)
+  #      shadow lanes.
+  #   3. The shadow's pending `audit_events` migrations exceed the server
+  #      statement timeout: v0.12.7 spent 24m20s on 20260807221200000 and then
+  #      failed 20260807221205000 with 57014 "canceling statement due to
+  #      statement timeout" (job 93576314456).
+  # Running that lane on every release costs 25-30 minutes, turns a green
+  # release red, and — because the job stays `in_progress` — blocks "re-run
+  # failed jobs" on the whole release run. v0.12.7 had to be cancelled outright
+  # to re-run anything else.
+  #
+  # Set the repository variable ENABLE_US_SHADOW_DEPLOY=true to turn the lane
+  # back on. Do that only after the revival checklist in
+  # docs/runbooks/prod-us-east-2-supabase-migration.md ("Reviving the shadow
+  # deploy lane") passes end to end. The reusable workflow keeps its
+  # `workflow_dispatch` trigger, so an operator can always drive the shadow by
+  # hand while the lane is off.
+  #
+  # The shadow is dark: Cloudflare routes no user traffic to it. A wedged
+  # shadow (e.g. logical replication stuck) must not block the release
+  # artifacts for the PRIMARY region — that skipped the tag, GitHub Release,
+  # and VERSION sync on v0.10.16 through v0.12.0. Nothing `needs:` this job
+  # (verify-live-version deliberately does not), so its failure shows red
+  # here but blocks nothing; verify-live-version reports shadow drift as a
+  # warning. NOTE: `continue-on-error` is NOT valid on a reusable-workflow
+  # call job — GitHub rejects the whole file (startup_failure, zero jobs).
+  # A job-level `if:` IS valid, and a skipped job leaves the run green — the
+  # same mechanism `verify-schema` uses with ENABLE_PROD_SCHEMA_GATE.
+  deploy-us-shadow:
+    name: Deploy API + gateway to US East 2 shadow
+    needs: [version, retag-images, verify-image-commits, migrate-db]
+    if: vars.ENABLE_US_SHADOW_DEPLOY == 'true'
     permissions:
-      id-token: write # OIDC → read the cluster
       contents: read
-    env:
-      AWS_REGION: eu-west-2
-      CLUSTER: kortix-prod-eks
-      NAMESPACE: kortix-prod
-      APP: kortix-api
-      ARGO_APP: kortix-prod
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
-    steps:
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Guard — cluster exists
-        id: guard
-        run: |
-          if aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::EKS cluster not found — skipping (not applied yet)."
-          fi
-
-      - name: Update kubeconfig
-        if: steps.guard.outputs.exists == 'true'
-        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
-
-      # Self-heal: a forward release OWNS prod, so the Argo app must track the
-      # `prod` branch. A break-glass rollback can repoint its targetRevision at a
-      # one-off `rollback/*` branch to deploy without merging to prod; if never
-      # pointed back, EVERY later release silently stalls in the rollout wait below
-      # (Argo keeps syncing the rollback branch, so the image never reaches
-      # :VERSION). Assert `prod` and repoint if drifted. Best-effort: never fail the
-      # deploy on this (the wait is the backstop). See docs/runbooks + kortix-rollback.
-      - name: Ensure Argo app tracks 'prod' (recover a stranded rollback repoint)
-        if: steps.guard.outputs.exists == 'true'
-        continue-on-error: true
-        run: |
-          set -uo pipefail
-          cur="$(kubectl -n argocd get application "$ARGO_APP" -o json 2>/dev/null \
-            | jq -r '[(.spec.sources // [.spec.source])[].targetRevision] | map(select(.!=null)) | unique | join(",")')"
-          if [ -z "$cur" ]; then
-            echo "::warning::Could not read Argo app $ARGO_APP — skipping self-heal; the rollout wait is the backstop."; exit 0
-          fi
-          if [ "$cur" = "prod" ]; then echo "✓ Argo app $ARGO_APP tracks 'prod'."; exit 0; fi
-          echo "::warning::Argo app $ARGO_APP was tracking '$cur' (not 'prod') — repointing to 'prod' (stranded-rollback recovery)."
-          n="$(kubectl -n argocd get application "$ARGO_APP" -o json | jq '(.spec.sources // []) | length')"
-          if [ "$n" -gt 0 ]; then
-            for i in $(seq 0 $((n-1))); do
-              kubectl -n argocd patch application "$ARGO_APP" --type json \
-                -p "[{\"op\":\"replace\",\"path\":\"/spec/sources/$i/targetRevision\",\"value\":\"prod\"}]"
-            done
-          else
-            kubectl -n argocd patch application "$ARGO_APP" --type merge \
-              -p '{"spec":{"source":{"targetRevision":"prod"}}}'
-          fi
-          kubectl -n argocd annotate application "$ARGO_APP" argocd.argoproj.io/refresh=hard --overwrite || true
-
-      # Wait for Argo CD to reconcile the promote bump and the Deployment to finish
-      # rolling out exactly :VERSION — Argo applied the new spec (observedGeneration
-      # caught up) AND every replica is updated + available. A release whose pods
-      # never go Ready never satisfies this, so the success message never fires.
-      - name: Wait for Deployment rolled out @ v${{ needs.version.outputs.version }}
-        if: steps.guard.outputs.exists == 'true'
-        id: wait
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          set -uo pipefail
-          for i in $(seq 1 80); do
-            img="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-            gen="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.metadata.generation}' 2>/dev/null || true)"
-            obs="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)"
-            desired="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
-            updated="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.updatedReplicas}' 2>/dev/null || true)"
-            avail="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
-            echo "($i/80) image=${img:-?} gen=${obs:-?}/${gen:-?} updated=${updated:-0}/${desired:-?} available=${avail:-0}"
-            if printf '%s' "$img" | grep -q ":${VERSION}$" \
-               && [ -n "$desired" ] && [ "${obs:-0}" -ge "${gen:-1}" ] \
-               && [ "${updated:-0}" = "$desired" ] && [ "${avail:-0}" = "$desired" ]; then
-              echo "deployed=true" >> "$GITHUB_OUTPUT"
-              echo "✓ EKS Deployment rolled out on :${VERSION} (${avail}/${desired} ready)"
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "::error::Deployment did not roll out to :${VERSION} within ~20m (stuck or pods never became Ready). Release blocked — nothing is announced."
-          exit 1
-
-  # ── Deploy gateway to prod (EKS / Argo CD GitOps) ───────────────────────────
-  # The promote PR merge bumped infra/k8s/envs/prod/gateway-values.yaml image.tag,
-  # so Argo CD on prod-eks rolls the kortix-gateway Deployment. This job WATCHES
-  # that roll finish on exactly :VERSION. Soft (continue-on-error) — a not-yet-
-  # applied gateway app or ingress/cert lag never blocks the rest of the release.
-  deploy-gateway:
-    name: Deploy gateway to prod (EKS / GitOps)
-    needs: [version, retag-images]
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    permissions:
       id-token: write
-      contents: read
-    env:
-      AWS_REGION: eu-west-2
-      CLUSTER: kortix-prod-eks
-      NAMESPACE: kortix-prod
-      APP: kortix-gateway
-      ARGO_APP: kortix-gateway-prod
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
-    steps:
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
+    uses: ./.github/workflows/deploy-prod-us-east-2-shadow.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      source_sha: ${{ needs.version.outputs.source_sha }}
+      synchronize_database: true
+    secrets: inherit
 
-      - name: Guard — cluster exists
-        id: guard
-        run: |
-          if aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::EKS cluster not found — skipping (not applied yet)."
-          fi
-
-      - name: Update kubeconfig
-        if: steps.guard.outputs.exists == 'true'
-        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
-
-      # Self-heal: assert the Argo app tracks `prod` and repoint if a break-glass
-      # rollback left it on a `rollback/*` branch (else the rollout wait stalls
-      # forever). Best-effort; the wait is the backstop. See the API job + kortix-rollback.
-      - name: Ensure Argo app tracks 'prod' (recover a stranded rollback repoint)
-        if: steps.guard.outputs.exists == 'true'
-        continue-on-error: true
-        run: |
-          set -uo pipefail
-          cur="$(kubectl -n argocd get application "$ARGO_APP" -o json 2>/dev/null \
-            | jq -r '[(.spec.sources // [.spec.source])[].targetRevision] | map(select(.!=null)) | unique | join(",")')"
-          if [ -z "$cur" ]; then
-            echo "::warning::Could not read Argo app $ARGO_APP — skipping self-heal; the rollout wait is the backstop."; exit 0
-          fi
-          if [ "$cur" = "prod" ]; then echo "✓ Argo app $ARGO_APP tracks 'prod'."; exit 0; fi
-          echo "::warning::Argo app $ARGO_APP was tracking '$cur' (not 'prod') — repointing to 'prod' (stranded-rollback recovery)."
-          n="$(kubectl -n argocd get application "$ARGO_APP" -o json | jq '(.spec.sources // []) | length')"
-          if [ "$n" -gt 0 ]; then
-            for i in $(seq 0 $((n-1))); do
-              kubectl -n argocd patch application "$ARGO_APP" --type json \
-                -p "[{\"op\":\"replace\",\"path\":\"/spec/sources/$i/targetRevision\",\"value\":\"prod\"}]"
-            done
-          else
-            kubectl -n argocd patch application "$ARGO_APP" --type merge \
-              -p '{"spec":{"source":{"targetRevision":"prod"}}}'
-          fi
-          kubectl -n argocd annotate application "$ARGO_APP" argocd.argoproj.io/refresh=hard --overwrite || true
-
-      # Code is the first-class copy: re-apply the committed Argo CD Application so
-      # the live app always tracks what the repo says (path / targetRevision /
-      # values). Without this, a hand-applied app that drifted (e.g. left tracking
-      # an old branch) silently freezes the gateway on a stale image while Argo
-      # reports Synced/Healthy — exactly the "not yet tracking the prod values"
-      # case the watch warns about below. Best-effort on RBAC; never blocks.
-      - name: Reconcile Argo CD Application from repo (code is source of truth)
-        if: steps.guard.outputs.exists == 'true'
-        continue-on-error: true
-        run: |
-          kubectl apply -f infra/k8s/argocd/applications/gateway-prod.yaml \
-            || echo "::warning::could not apply gateway-prod Application (argocd RBAC for the deploy role?) — live app may be drifted from the repo"
-          kubectl -n argocd annotate application kortix-gateway-prod \
-            argocd.argoproj.io/refresh=hard --overwrite 2>/dev/null || true
-
-      - name: Wait for gateway Deployment rolled out @ v${{ needs.version.outputs.version }}
-        if: steps.guard.outputs.exists == 'true'
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          set -uo pipefail
-          for i in $(seq 1 80); do
-            img="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-            gen="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.metadata.generation}' 2>/dev/null || true)"
-            obs="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)"
-            desired="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
-            updated="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.updatedReplicas}' 2>/dev/null || true)"
-            avail="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
-            echo "($i/80) image=${img:-?} gen=${obs:-?}/${gen:-?} updated=${updated:-0}/${desired:-?} available=${avail:-0}"
-            if printf '%s' "$img" | grep -q ":${VERSION}$" \
-               && [ -n "$desired" ] && [ "${obs:-0}" -ge "${gen:-1}" ] \
-               && [ "${updated:-0}" = "$desired" ] && [ "${avail:-0}" = "$desired" ]; then
-              echo "✓ EKS gateway rolled out on :${VERSION} (${avail}/${desired} ready)"
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "::warning::gateway did not roll out to :${VERSION} within ~20m (Argo lag, or kortix-gateway-prod not yet tracking the prod values)."
+  
 
   # ── Verify the release is ACTUALLY live on the public endpoints ──────────────
   # The backstop that catches ANY deploy/routing divergence regardless of cause:
@@ -934,55 +981,86 @@ jobs:
   #   HARD (unreachable OR wrong version ⇒ release fails):
   #     api.kortix.com/v1/health          — the public API, via the router
   #     gateway.kortix.com/health/live    — the public gateway, via the router
-  #   ORIGIN (wrong version ⇒ fails; unreachable ⇒ warns — a standby origin may
-  #   be deliberately dark, but if it speaks it must speak the released version):
-  #     api-ecs-fargate.kortix.com / api-eks.kortix.com
-  #     gateway-ecs-fargate.kortix.com / gateway-eks.kortix.com
+  #   ORIGIN (wrong version ⇒ fails; unreachable ⇒ warns):
+  #     api-ecs-fargate.kortix.com
+  #     gateway-ecs-fargate.kortix.com
+  #
+  # The US East 2 shadow endpoints are checked only while
+  # ENABLE_US_SHADOW_DEPLOY is `true`, and they only ever warn. With the lane
+  # off, the shadow is not deployed at all, so asserting its version would log
+  # two guaranteed, meaningless warnings on every release.
   #
   # Everything that announces success (github-release, announce, banner-off)
-  # needs: this job — a release whose live version doesn't match can no longer
-  # be published. This is what would have caught the v0.10.0/v0.10.1 night, where
-  # deploy-ecs failed twice while the release went out and api.kortix.com (ECS
-  # active) kept serving the previous build.
+  # needs this job. A release whose live version does not match cannot be
+  # published.
   verify-live-version:
     name: Verify live version == v${{ needs.version.outputs.version }}
-    needs: [version, deploy-ecs, deploy-api, deploy-gateway]
+    needs: [version, deploy-ecs]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
+      SHADOW_ENABLED: ${{ vars.ENABLE_US_SHADOW_DEPLOY }}
     steps:
       - name: Assert public + origin endpoints report v${{ needs.version.outputs.version }}
         run: |
           set -uo pipefail
 
-          # name|url|kind  (kind: required = public router host, origin = direct backend)
+          # name|url|kind|check_commit  (kind: required = public router host, origin
+          # = direct backend; check_commit = also assert /v1/health's .commit field
+          # against the release source commit — a `.version` match ALONE is not
+          # trustworthy: it is stamped externally (ECS task-def env), so a
+          # stale/wrong image can still report the "right" version
+          # string. .commit is read from the image's baked KORTIX_COMMIT, so it
+          # actually proves which code is running. Gateway's /health/live has no
+          # commit field, so only the API endpoints check it.)
           ENDPOINTS=(
-            "router-api|https://api.kortix.com/v1/health|required"
-            "router-gateway|https://gateway.kortix.com/health/live|required"
-            "origin-api-ecs|https://api-ecs-fargate.kortix.com/v1/health|origin"
-            "origin-api-eks|https://api-eks.kortix.com/v1/health|origin"
-            "origin-gateway-ecs|https://gateway-ecs-fargate.kortix.com/health/live|origin"
-            "origin-gateway-eks|https://gateway-eks.kortix.com/health/live|origin"
+            "router-api|https://api.kortix.com/v1/health|required|1"
+            "router-gateway|https://gateway.kortix.com/health/live|required|0"
+            "origin-api-ecs|https://api-ecs-fargate.kortix.com/v1/health|origin|1"
+            "origin-gateway-ecs|https://gateway-ecs-fargate.kortix.com/health/live|origin|0"
           )
+          # The dark US East 2 shadow is only deployed when the lane is on.
+          if [ "${SHADOW_ENABLED:-}" = "true" ]; then
+            ENDPOINTS+=(
+              "shadow-api-use2|https://api-use2-shadow.kortix.com/v1/health|shadow|1"
+              "shadow-gateway-use2|https://gateway-use2-shadow.kortix.com/health/live|shadow|1"
+            )
+          else
+            echo "ENABLE_US_SHADOW_DEPLOY is not 'true' — skipping the US East 2 shadow endpoints."
+          fi
 
           declare -A live
+          declare -A live_commit
           # ~5 min window: 20 polls, 15s apart. Retries absorb router/DNS/ALB
           # propagation and the last pods draining; a real mismatch stays a mismatch.
           for attempt in $(seq 1 20); do
             all_ok=1
             for e in "${ENDPOINTS[@]}"; do
-              IFS='|' read -r name url kind <<< "$e"
-              v="$(curl -fsS --max-time 10 "$url" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+              IFS='|' read -r name url kind check_commit <<< "$e"
+              body="$(curl -fsS --max-time 10 "$url" 2>/dev/null || true)"
+              v="$(printf '%s' "$body" | jq -r '.version // empty' 2>/dev/null || true)"
+              c="$(printf '%s' "$body" | jq -r '.commit // empty' 2>/dev/null || true)"
               live[$name]="$v"
-              if [ "$v" = "$VERSION" ]; then
-                echo "($attempt/20) ✓ $name  $v"
+              live_commit[$name]="$c"
+              commit_ok=1
+              if [ "$check_commit" = "1" ] && [ -n "${SOURCE_SHA:-}" ] && [ -n "$c" ]; then
+                case "$c" in
+                  "$SOURCE_SHA"*|*"${SOURCE_SHA:0:8}") commit_ok=1 ;;
+                  *) commit_ok=0 ;;
+                esac
+              fi
+              if [ "$v" = "$VERSION" ] && [ "$commit_ok" = 1 ]; then
+                echo "($attempt/20) ✓ $name  version=$v commit=${c:-n/a}"
               else
-                echo "($attempt/20) … $name  ${v:-<unreachable>}"
-                all_ok=0
+                echo "($attempt/20) … $name  version=${v:-<unreachable>} commit=${c:-n/a}"
+                if [ "$kind" != "shadow" ]; then
+                  all_ok=0
+                fi
               fi
             done
             if [ "$all_ok" = 1 ]; then
-              echo "✅ every endpoint reports v${VERSION} — release is live on both backends."
+              echo "✅ every checked endpoint reports v${VERSION} with the correct commit where available."
               exit 0
             fi
             sleep 15
@@ -991,10 +1069,20 @@ jobs:
           # Deadline: classify what's still off.
           fail=0
           for e in "${ENDPOINTS[@]}"; do
-            IFS='|' read -r name url kind <<< "$e"
+            IFS='|' read -r name url kind check_commit <<< "$e"
             v="${live[$name]:-}"
-            if [ "$v" = "$VERSION" ]; then
+            c="${live_commit[$name]:-}"
+            commit_mismatch=0
+            if [ "$check_commit" = "1" ] && [ -n "${SOURCE_SHA:-}" ] && [ -n "$c" ]; then
+              case "$c" in
+                "$SOURCE_SHA"*|*"${SOURCE_SHA:0:8}") ;;
+                *) commit_mismatch=1 ;;
+              esac
+            fi
+            if [ "$v" = "$VERSION" ] && [ "$commit_mismatch" = 0 ]; then
               continue
+            elif [ "$kind" = "shadow" ]; then
+              echo "::warning::$name ($url) reports version='${v:-<unreachable>}' commit='${c:-n/a}' — the dark US shadow is not serving v${VERSION}. Tolerated; the shadow region blocks nothing, fix it separately."
             elif [ -z "$v" ]; then
               if [ "$kind" = "required" ]; then
                 echo "::error::$name ($url) is unreachable — the PUBLIC endpoint must serve the release. Release blocked."
@@ -1002,20 +1090,22 @@ jobs:
               else
                 echo "::warning::$name ($url) is unreachable — tolerated for a direct origin (dark standby), but check it."
               fi
+            elif [ "$commit_mismatch" = 1 ]; then
+              echo "::error::$name ($url) reports version '$v' (matches) but commit '$c' does NOT match release source commit '${SOURCE_SHA}' — this backend is serving the WRONG CODE under the right version label. Release blocked. Do not trust the version string alone."
+              fail=1
             else
               echo "::error::$name ($url) reports '$v', expected '$VERSION' — a backend is serving the WRONG version. Release blocked."
               fail=1
             fi
           done
           if [ "$fail" = 1 ]; then
-            echo "::error::Live version verification failed after ~5m. Nothing will be announced; fix the deploy and re-run this workflow."
+            echo "::error::Live version/commit verification failed after ~5m. Nothing will be announced; fix the deploy and re-run this workflow."
             exit 1
           fi
           echo "✅ public endpoints report v${VERSION} (some dark origins warned above)."
 
   # ── Announce to Slack — ONLY after the release is verifiably live ────────────
-  # Moved out of deploy-api (which announced as soon as EKS rolled — even when
-  # ECS, the ACTIVE backend, had failed). Now gated on verify-live-version AND
+  # Gated on verify-live-version AND
   # github-release, so the message links a release that exists and describes a
   # version the public API demonstrably serves.
   announce:
@@ -1082,11 +1172,11 @@ jobs:
                   { type:"mrkdwn", text: ("*Version*\n`" + $version + "`") },
                   { type:"mrkdwn", text: ("*Commit*\n<" + $commit_url + "|`" + $sha8 + "`>") },
                   { type:"mrkdwn", text: ("*Released by*\n" + $actor) },
-                  { type:"mrkdwn", text: "*Where*\nECS Fargate (active) + EKS (standby) · CLI · Desktop · Web" }
+                  { type:"mrkdwn", text: "*Where*\nECS Fargate · CLI · Desktop · Web" }
                 ]},
                 { type:"actions", elements: [
                   { type:"button", text:{ type:"plain_text", text:"📦 Release notes", emoji:true }, url:$rel_url },
-                  { type:"button", text:{ type:"plain_text", text:"🚢 Argo CD", emoji:true }, url:"https://ops.kortix.com" },
+                  { type:"button", text:{ type:"plain_text", text:"🩺 API health", emoji:true }, url:"https://api.kortix.com/v1/health" },
                   { type:"button", text:{ type:"plain_text", text:"🔧 Pipeline", emoji:true }, url:$run_url }
                 ]}
               ]
@@ -1113,21 +1203,187 @@ jobs:
           done
           echo "::error::Slack failed after 5 attempts (last: ${err})."; exit 1
 
-  # ── Prod frontend (Vercel) ──────────────────────────────────────────────────
-  # No job here: the Vercel project is git-connected and auto-deploys the `prod`
-  # branch on every push (→ kortix.com) — the same way dev.kortix.com
-  # auto-deploys from `main`. The promote workflow's push to `prod` triggers it.
+  # ── Prod frontend (parallel ECS + Vercel) ───────────────────────────────────
+  deploy-web-ecs:
+    name: Deploy prod web to ECS Fargate
+    needs: [version, retag-images, deploy-ecs]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: eu-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      DOTENV_PRIVATE_KEY_PROD: ${{ secrets.WEB_DOTENV_PRIVATE_KEY_PROD }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Sync the encrypted production web profile to Secrets Manager
+        run: |
+          set -euo pipefail
+          test -n "${DOTENV_PRIVATE_KEY_PROD:-}" || {
+            echo "::error::WEB_DOTENV_PRIVATE_KEY_PROD is not configured."
+            exit 1
+          }
+          npx --yes @dotenvx/dotenvx@1.75.1 run \
+            -f apps/web/.env.prod -- bash infra/scripts/sync-web-env.sh prod
+      - name: Roll the production web service onto the release image
+        run: |
+          bash infra/scripts/ecs-deploy.sh \
+            prod \
+            "kortix/kortix-frontend:${VERSION}" \
+            --service web \
+            --version "${VERSION}" \
+            --database-migrated
+
+  publish-web-ecs-dns:
+    name: Publish prod FE-ECS DNS
+    needs: [deploy-web-ecs]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: eu-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Point only the isolated prod FE-ECS hostname at the web ALB
+        run: |
+          set -euo pipefail
+          alb="$(aws elbv2 describe-load-balancers \
+            --names kortix-prod-web-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)"
+          node infra/scripts/sync-web-dns.mjs prod "$alb"
+
+  verify-web-ecs:
+    name: Verify prod FE-ECS
+    needs: [version, publish-web-ecs-dns]
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_COMMIT: ${{ needs.version.outputs.source_sha }}
+      EXPECTED_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Verify exact release, public access, runtime config, and isolation
+        run: |
+          set -euo pipefail
+          base=https://prod-fe-ecs.kortix.com
+          for attempt in $(seq 1 30); do
+            health="$(curl -fsS --max-time 15 "$base/api/health" 2>/dev/null || true)"
+            commit="$(jq -r '.commit // empty' <<<"$health" 2>/dev/null || true)"
+            version="$(jq -r '.version // empty' <<<"$health" 2>/dev/null || true)"
+            status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$base/" || true)"
+            runtime="$(curl -fsS --max-time 15 "$base/api/runtime-config" 2>/dev/null || true)"
+            headers="$(curl -sS -D - -o /dev/null --max-time 15 "$base/" || true)"
+            vercel_headers="$(awk 'BEGIN { IGNORECASE=1 } /^x-vercel-/ { count++ } END { print count + 0 }' <<<"$headers")"
+            echo "(${attempt}/30) commit=${commit:-?} version=${version:-?} status=${status:-?} vercel_headers=$vercel_headers"
+            if [ "$commit" = "$EXPECTED_COMMIT" ] \
+              && [ "$version" = "$EXPECTED_VERSION" ] \
+              && { [ "$status" = 200 ] || [ "$status" = 307 ] || [ "$status" = 308 ]; } \
+              && grep -F '"BACKEND_URL":"https://api.kortix.com/v1"' <<<"$runtime" >/dev/null \
+              && grep -F '"APP_URL":"https://prod-fe-ecs.kortix.com"' <<<"$runtime" >/dev/null \
+              && [ "$vercel_headers" = 0 ]; then
+              echo "Prod FE-ECS serves ${EXPECTED_COMMIT} at version ${EXPECTED_VERSION}."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Prod FE-ECS did not serve the expected release."
+          exit 1
+
+  # Deploy kortix.com (Vercel) ONLY after the API provably serves the release.
+  # Vercel's git auto-deploy for `prod` is OFF (vercel.json deploymentEnabled +
+  # vercel-ignore.sh): during the 2026-08-10 v0.12.7 rollout the auto-deployed
+  # new frontend called routes the still-old API did not have, and every
+  # project load failed. Ordering the frontend after `verify-live-version`
+  # makes a mixed frontend/API pair impossible.
+  deploy-web-vercel:
+    name: Deploy prod web to Vercel (after API is live)
+    needs: [version, verify-live-version]
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Link and verify the Vercel project
+        run: |
+          set -euo pipefail
+          test -n "${VERCEL_TOKEN:-}" || { echo "::error::VERCEL_TOKEN is not configured."; exit 1; }
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          linked="$(jq -r '.projectId' .vercel/project.json)"
+          if [ "$linked" != "prj_SoUUSNJPvOTDneE0E7faWHFuWMAY" ]; then
+            echo "::error::VERCEL_PROJECT_ID resolves to '$linked', not the suna project — refusing to deploy the wrong project."
+            exit 1
+          fi
+      - name: Pin the RUNTIME frontend version env
+        run: |
+          set -euo pipefail
+          VER="${{ needs.version.outputs.version }}"
+          # The frontend resolves its VERSION at RUNTIME:
+          # apps/web/src/lib/public-env-server.ts reads NEXT_PUBLIC_KORTIX_VERSION
+          # via Reflect.get(process.env, ...), which Next.js does NOT inline at
+          # build time. So `--build-env` below never overrides a STALE Production
+          # runtime var — v0.12.8 shipped an FE stuck on the prior 0.12.7 until
+          # this runtime var was corrected by hand. Overwrite the Production
+          # runtime var to the release version so the deploy binds it correctly.
+          npx --yes vercel@latest env rm NEXT_PUBLIC_KORTIX_VERSION production --yes --token="$VERCEL_TOKEN" 2>/dev/null || true
+          printf '%s' "$VER" | npx --yes vercel@latest env add NEXT_PUBLIC_KORTIX_VERSION production --token="$VERCEL_TOKEN"
+      - name: Deploy the release frontend to production
+        run: |
+          set -euo pipefail
+          # Keep --build-env too (belt-and-braces for any build-time read); the
+          # RUNTIME var pinned in the step above is what actually drives
+          # /api/runtime-config and the frontend-auth-proof version guard.
+          npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN" \
+            --build-env "NEXT_PUBLIC_KORTIX_VERSION=${{ needs.version.outputs.version }}"
+
   frontend-note:
-    name: Prod frontend (Vercel auto-deploys prod)
-    needs: version  # gate with the rest of the pipeline (skipped on a failed promote)
+    name: Prod frontend paths active
+    needs: [version, publish-web-ecs-dns]
     runs-on: ubuntu-latest
     steps:
       - name: Note
         run: |
           {
-            echo "### Frontend → **prod** (Vercel)"
-            echo "Vercel auto-deploys the \`prod\` branch (→ kortix.com). No action needed here."
+            echo "### Frontend → **prod** (parallel)"
+            echo "- ECS: https://prod-fe-ecs.kortix.com"
+            echo "- Vercel: https://kortix.com"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  frontend-auth-proof:
+    name: Prod frontend auth configuration
+    needs: [version, frontend-note, verify-web-ecs, deploy-web-vercel]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for the released frontend and verify its EU Supabase configuration
+        run: |
+          node apps/web/scripts/validate-production-supabase-env.mjs \
+            --runtime-url https://kortix.com/api/runtime-config \
+            --expected-version "${{ needs.version.outputs.version }}" \
+            --attempts 30 \
+            --interval-ms 20000
 
   # ── Keep main's VERSION honest (post-publish, never premature) ──────────────
   # promote.yml does NOT bump main's VERSION (publishing is gated on the prod
@@ -1200,7 +1456,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: staging
           fetch-depth: 0
@@ -1233,7 +1489,7 @@ jobs:
 
   # ── Lower the "release in progress" banner — ONLY when the rollout is green ───
   # `needs: verify-live-version` with the default `if: success()` means this runs
-  # only after BOTH backends deployed (deploy-ecs + deploy-api are upstream of
+  # only after the backend deployed (deploy-ecs is upstream of
   # verify-live-version, and migrate-db is upstream of those) AND the public
   # endpoints verifiably serve the released version. If any of that fails, this
   # job is skipped and the critical banner stays raised — deliberately, so users
@@ -1242,7 +1498,7 @@ jobs:
   # rollout banner.
   maintenance-banner-off:
     name: Rollout banner (lower)
-    needs: [verify-live-version]
+    needs: [verify-live-version, frontend-auth-proof]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

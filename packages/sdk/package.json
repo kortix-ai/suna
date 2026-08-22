@@ -1,6 +1,6 @@
 {
   "name": "@kortix/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live agent streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch the raw HTTP API or OpenCode semantics.",
   "type": "module",
   "license": "Elastic-2.0",
@@ -14,7 +14,7 @@
   "sideEffects": false,
   "dependencies": {
     "@kortix/llm-catalog": "workspace:*",
-    "@opencode-ai/sdk": "1.17.11",
+    "@opencode-ai/sdk": "1.18.19",
     "zustand": "^5.0.3"
   },
   "peerDependencies": {
@@ -50,6 +50,7 @@
     "./files": "./src/deprecated/files.ts",
     "./session": "./src/deprecated/session.ts",
     "./session/url": "./src/deprecated/session-url.ts",
+    "./message-queue": "./src/core/session/message-queue.ts",
     "./turns": "./src/deprecated/turns.ts",
     "./sync-store": "./src/deprecated/sync-store.ts",
     "./server-store": "./src/deprecated/server-store.ts",
@@ -129,6 +130,10 @@
         "types": "./dist/deprecated/session-url.d.ts",
         "import": "./dist/deprecated/session-url.js"
       },
+      "./message-queue": {
+        "types": "./dist/core/session/message-queue.d.ts",
+        "import": "./dist/core/session/message-queue.js"
+      },
       "./turns": { "types": "./dist/deprecated/turns.d.ts", "import": "./dist/deprecated/turns.js" },
       "./sync-store": {
         "types": "./dist/deprecated/sync-store.d.ts",
@@ -167,8 +172,10 @@
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.75.2",
-    "@types/react": "^19.1.17",
-    "react": "^19.1.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "tsc-alias": "^1.8.17",
     "tsup": "^8.5.1",
     "typescript": "^5.4.0"

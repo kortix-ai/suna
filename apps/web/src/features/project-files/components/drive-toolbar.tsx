@@ -17,10 +17,30 @@ import { Separator } from '@/components/ui/separator';
 import type { SortField } from '@/features/file-browser/store/files-store';
 import { isWithinRoot, useFilesStore } from '@/features/file-browser/store/files-store';
 import { cn } from '@/lib/utils';
-import { HomeSolid } from '@mynaui/icons-react';
-import { ArrowUpDown, ChevronRight, Download, Eye, EyeOff, RefreshCw, Search } from 'lucide-react';
+import {
+  ArrowsDownUpIcon as ArrowUpDown,
+  CaretRightIcon as ChevronRight,
+  DownloadIcon as Download,
+  EyeIcon as Eye,
+  EyeSlashIcon as EyeOff,
+  FilePlusIcon,
+  FolderPlusIcon,
+  HouseIcon as HomeSolid,
+  PlusIcon,
+  ArrowClockwiseIcon as RefreshCw,
+  MagnifyingGlassIcon as Search,
+  UploadSimpleIcon,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from 'react';
 import { VersionSelector } from './version-selector';
 
 interface DriveToolbarProps {
@@ -33,6 +53,66 @@ interface DriveToolbarProps {
   showSearch?: boolean;
   /** Dotfile visibility toggle (list is pre-filtered by the data hook). */
   showHiddenToggle?: boolean;
+  /**
+   * Write affordances, rendered together in the "New" menu. Read-only sources
+   * (`capabilities.write === false`) pass none of them and the menu is absent —
+   * a viewer must never see an action they cannot perform.
+   */
+  onUpload?: () => void;
+  onNewFile?: () => void;
+  onNewFolder?: () => void;
+}
+
+/**
+ * The "New" menu renders only when the explorer supplied all three write
+ * handlers. Partial wiring is a bug, not a half-menu.
+ */
+export function hasWriteActions(
+  props: Pick<DriveToolbarProps, 'onUpload' | 'onNewFile' | 'onNewFolder'>,
+): boolean {
+  return Boolean(props.onUpload && props.onNewFile && props.onNewFolder);
+}
+
+type DriveMenuItemComponent = ComponentType<{
+  onClick?: () => void;
+  children: ReactNode;
+}>;
+
+/**
+ * Contents of the toolbar's "New" menu, injectable like
+ * `FolderDriveMenuItems` so the entries can be rendered — and their handlers
+ * driven — without a live Radix portal.
+ */
+export function DriveNewMenuItems({
+  Item,
+  Separator: MenuSeparator,
+  onUpload,
+  onNewFile,
+  onNewFolder,
+}: {
+  Item: DriveMenuItemComponent;
+  Separator: ComponentType;
+  onUpload?: () => void;
+  onNewFile?: () => void;
+  onNewFolder?: () => void;
+}) {
+  return (
+    <>
+      <Item onClick={onUpload}>
+        <UploadSimpleIcon className="size-3.5 shrink-0" />
+        Upload files
+      </Item>
+      <MenuSeparator />
+      <Item onClick={onNewFile}>
+        <FilePlusIcon className="size-3.5 shrink-0" />
+        New file
+      </Item>
+      <Item onClick={onNewFolder}>
+        <FolderPlusIcon className="size-3.5 shrink-0" />
+        New folder
+      </Item>
+    </>
+  );
 }
 
 export function DriveToolbar({
@@ -43,6 +123,9 @@ export function DriveToolbar({
   showVersionSelector = false,
   showSearch = false,
   showHiddenToggle = false,
+  onUpload,
+  onNewFile,
+  onNewFolder,
 }: DriveToolbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
@@ -102,6 +185,8 @@ export function DriveToolbar({
     return () => document.removeEventListener('click', handleClickOutside);
   }, [isEditing]);
 
+  const showWriteActions = hasWriteActions({ onUpload, onNewFile, onNewFolder });
+
   const handleSegmentClick = useCallback(
     (index: number) => {
       const absoluteIndex = rootPath ? index + rootSegments.length : index;
@@ -132,6 +217,7 @@ export function DriveToolbar({
               onChange={(e) => setEditValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
+                  if (e.nativeEvent.isComposing) return;
                   navigateToPath(editValue.trim() || homePath);
                   setIsEditing(false);
                 }
@@ -155,7 +241,7 @@ export function DriveToolbar({
                 size="xs"
                 className={cn('text-foreground shrink-0 font-medium')}
               >
-                <HomeSolid className="size-4" />
+                <HomeSolid weight="fill" className="size-4" />
                 <span className="text-xs">{rootPath ? homeLabel : 'workspace'}</span>
               </Button>
 
@@ -172,9 +258,10 @@ export function DriveToolbar({
                       const isLast = index === segments.length - 1;
                       // First crumb of an outside-home path anchors the absolute chain
                       const isAbsoluteAnchor = outsideHome && index === 0;
+                      const pathKey = segments.slice(0, index + 1).join('/');
 
                       return (
-                        <div key={index} className="flex shrink-0 items-center gap-0.5">
+                        <div key={pathKey} className="flex shrink-0 items-center gap-0.5">
                           {isAbsoluteAnchor ? (
                             <span className="text-muted-foreground/40 shrink-0 px-1 text-xs select-none">
                               ·
@@ -280,6 +367,32 @@ export function DriveToolbar({
           >
             {isDownloading ? <Loading /> : <Download />}
           </Button>
+
+          {showWriteActions && (
+            <>
+              <Separator
+                orientation="vertical"
+                className="ml-0.5 data-[orientation=vertical]:h-[70%]"
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="secondary" size="sm" className="ml-1 gap-1.5">
+                    <PlusIcon className="size-3.5 shrink-0" />
+                    New
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DriveNewMenuItems
+                    Item={DropdownMenuItem}
+                    Separator={DropdownMenuSeparator}
+                    onUpload={onUpload}
+                    onNewFile={onNewFile}
+                    onNewFolder={onNewFolder}
+                  />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -23,7 +23,12 @@ let mockTavilyError: Error | null = null;
 let mockSerperResults: any[] = [];
 let mockSerperError: Error | null = null;
 let mockCheckCreditsResult = { hasCredits: true, message: 'OK', balance: 100 };
-let mockDeductResult: any = { success: true, cost: 0.01, newBalance: 99, transactionId: 'tx_mock_001' };
+let mockDeductResult: any = {
+  success: true,
+  cost: 0.01,
+  newBalance: 99,
+  transactionId: 'tx_mock_001',
+};
 
 // Mock OpenRouter proxy response — full OpenAI-compat format
 let mockProxyResponse: Response | null = null;
@@ -62,14 +67,35 @@ function createMockChatResponse(overrides?: Partial<any>) {
 
 function createMockStreamResponse(): Response {
   const chunks = [
-    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4.6', choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }] },
-    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4.6', choices: [{ index: 0, delta: { content: 'Hello ' }, finish_reason: null }] },
-    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4.6', choices: [{ index: 0, delta: { content: 'world!' }, finish_reason: null }] },
-    { id: 'chatcmpl-mock-001', object: 'chat.completion.chunk', model: 'anthropic/claude-sonnet-4.6', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 } },
+    {
+      id: 'chatcmpl-mock-001',
+      object: 'chat.completion.chunk',
+      model: 'anthropic/claude-sonnet-4.6',
+      choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
+    },
+    {
+      id: 'chatcmpl-mock-001',
+      object: 'chat.completion.chunk',
+      model: 'anthropic/claude-sonnet-4.6',
+      choices: [{ index: 0, delta: { content: 'Hello ' }, finish_reason: null }],
+    },
+    {
+      id: 'chatcmpl-mock-001',
+      object: 'chat.completion.chunk',
+      model: 'anthropic/claude-sonnet-4.6',
+      choices: [{ index: 0, delta: { content: 'world!' }, finish_reason: null }],
+    },
+    {
+      id: 'chatcmpl-mock-001',
+      object: 'chat.completion.chunk',
+      model: 'anthropic/claude-sonnet-4.6',
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+    },
   ];
 
   const encoder = new TextEncoder();
-  const sseBody = chunks.map(c => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n';
+  const sseBody = chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n';
 
   return new Response(encoder.encode(sseBody), {
     status: 200,
@@ -98,7 +124,9 @@ mock.module('../middleware/auth', () => ({
     c.set('userEmail', 'test@example.com');
     await next();
   },
-  combinedAuth: async (c: any, next: any) => { await next(); },
+  combinedAuth: async (c: any, next: any) => {
+    await next();
+  },
 }));
 
 mock.module('../router/services/tavily', () => ({
@@ -119,6 +147,23 @@ mock.module('../router/services/billing', () => ({
   checkCredits: async (accountId: string, min?: number, opts?: any) => mockCheckCreditsResult,
   deductToolCredits: async (...args: any[]) => mockDeductResult,
   deductLLMCredits: async (...args: any[]) => mockDeductResult,
+}));
+
+mock.module('../router/services/llm-reservation', () => ({
+  reserveEstimatedLlmCredits: async () => {
+    if (!mockCheckCreditsResult.hasCredits) {
+      throw new BillingError(mockCheckCreditsResult.message, 402);
+    }
+    return {
+      accountId: TEST_ACCOUNT_ID,
+      modelId: 'mock-model',
+      promptTokens: 0,
+      completionTokens: 0,
+      cost: 0,
+    };
+  },
+  settleLlmReservation: async () => undefined,
+  refundLlmReservation: async () => undefined,
 }));
 
 mock.module('../router/services/llm', () => ({
@@ -147,23 +192,102 @@ mock.module('../router/services/llm', () => ({
     return {
       promptTokens: responseBody.usage.prompt_tokens ?? 0,
       completionTokens: responseBody.usage.completion_tokens ?? 0,
+      cachedTokens: responseBody.usage.prompt_tokens_details?.cached_tokens ?? 0,
+      cacheWriteTokens: responseBody.usage.prompt_tokens_details?.cache_write_tokens ?? 0,
+      upstreamCost: responseBody.usage.cost,
+    };
+  },
+  accumulateUsageChunk: (current: any, chunk: any) => {
+    if (!chunk?.usage) {
+      return current ? { ...current, ...(chunk?.model ? { model: chunk.model } : {}) } : null;
+    }
+    const next = {
+      promptTokens: chunk.usage.prompt_tokens ?? 0,
+      completionTokens: chunk.usage.completion_tokens ?? 0,
+      cachedTokens: chunk.usage.prompt_tokens_details?.cached_tokens ?? 0,
+      cacheWriteTokens: chunk.usage.prompt_tokens_details?.cache_write_tokens ?? 0,
+      upstreamCost: chunk.usage.cost,
+    };
+    return {
+      model: chunk.model ?? current?.model,
+      usage: current
+        ? {
+            promptTokens: next.promptTokens || current.usage.promptTokens,
+            completionTokens: next.completionTokens || current.usage.completionTokens,
+            cachedTokens: next.cachedTokens || current.usage.cachedTokens,
+            cacheWriteTokens: next.cacheWriteTokens || current.usage.cacheWriteTokens,
+            upstreamCost: next.upstreamCost ?? current.usage.upstreamCost,
+          }
+        : next,
     };
   },
   calculateCost: (modelConfig: any, prompt: number, completion: number) => {
-    return ((prompt / 1_000_000) * (modelConfig?.inputPer1M || 0) +
-            (completion / 1_000_000) * (modelConfig?.outputPer1M || 0)) * 1.2;
+    return (
+      ((prompt / 1_000_000) * (modelConfig?.inputPer1M || 0) +
+        (completion / 1_000_000) * (modelConfig?.outputPer1M || 0)) *
+      1.2
+    );
   },
   getAllModels: () => [
-    { id: 'minimax/minimax-m2.7', object: 'model', owned_by: 'kortix', context_window: 204800, pricing: { input: 0.30, output: 1.20 }, tier: 'free' },
-    { id: 'z-ai/glm-5-turbo', object: 'model', owned_by: 'kortix', context_window: 202752, pricing: { input: 1.20, output: 4.00 }, tier: 'free' },
-    { id: 'moonshotai/kimi-k2.5', object: 'model', owned_by: 'kortix', context_window: 262144, pricing: { input: 0.45, output: 2.20 }, tier: 'free' },
-    { id: 'minimax/minimax-m2.5', object: 'model', owned_by: 'kortix', context_window: 196608, pricing: { input: 0.20, output: 1.17 }, tier: 'free' },
+    {
+      id: 'minimax/minimax-m2.7',
+      object: 'model',
+      owned_by: 'kortix',
+      context_window: 204800,
+      pricing: { input: 0.3, output: 1.2 },
+      tier: 'free',
+    },
+    {
+      id: 'z-ai/glm-5-turbo',
+      object: 'model',
+      owned_by: 'kortix',
+      context_window: 202752,
+      pricing: { input: 1.2, output: 4.0 },
+      tier: 'free',
+    },
+    {
+      id: 'moonshotai/kimi-k2.5',
+      object: 'model',
+      owned_by: 'kortix',
+      context_window: 262144,
+      pricing: { input: 0.45, output: 2.2 },
+      tier: 'free',
+    },
+    {
+      id: 'minimax/minimax-m2.5',
+      object: 'model',
+      owned_by: 'kortix',
+      context_window: 196608,
+      pricing: { input: 0.2, output: 1.17 },
+      tier: 'free',
+    },
   ],
   getModel: (id: string) => ({
     openrouterId: id,
-    inputPer1M: id === 'minimax/minimax-m2.7' ? 0.30 : id === 'z-ai/glm-5-turbo' ? 1.20 : id === 'moonshotai/kimi-k2.5' ? 0.45 : 0.20,
-    outputPer1M: id === 'minimax/minimax-m2.7' ? 1.20 : id === 'z-ai/glm-5-turbo' ? 4.00 : id === 'moonshotai/kimi-k2.5' ? 2.20 : 1.17,
-    contextWindow: id === 'minimax/minimax-m2.7' ? 204800 : id === 'z-ai/glm-5-turbo' ? 202752 : id === 'moonshotai/kimi-k2.5' ? 262144 : 196608,
+    inputPer1M:
+      id === 'minimax/minimax-m2.7'
+        ? 0.3
+        : id === 'z-ai/glm-5-turbo'
+          ? 1.2
+          : id === 'moonshotai/kimi-k2.5'
+            ? 0.45
+            : 0.2,
+    outputPer1M:
+      id === 'minimax/minimax-m2.7'
+        ? 1.2
+        : id === 'z-ai/glm-5-turbo'
+          ? 4.0
+          : id === 'moonshotai/kimi-k2.5'
+            ? 2.2
+            : 1.17,
+    contextWindow:
+      id === 'minimax/minimax-m2.7'
+        ? 204800
+        : id === 'z-ai/glm-5-turbo'
+          ? 202752
+          : id === 'moonshotai/kimi-k2.5'
+            ? 262144
+            : 196608,
     tier: 'free' as 'free' | 'paid',
   }),
   resolveOpenRouterId: (id: string) => id,
@@ -179,7 +303,12 @@ function createRouterTestApp() {
   const app = new Hono();
   app.use('*', cors());
   app.use('*', async (c, next) => {
-    return runWithContext(c.req.method, new URL(c.req.url).pathname, () => next(), c.req.header('traceparent'));
+    return runWithContext(
+      c.req.method,
+      new URL(c.req.url).pathname,
+      () => next(),
+      c.req.header('traceparent'),
+    );
   });
 
   app.route('/v1/router', router);
@@ -204,12 +333,29 @@ function createRouterTestApp() {
 
 beforeEach(() => {
   mockTavilyResults = [
-    { title: 'Result 1', url: 'https://example.com/1', snippet: 'First result', published_date: null },
-    { title: 'Result 2', url: 'https://example.com/2', snippet: 'Second result', published_date: '2025-01-01' },
+    {
+      title: 'Result 1',
+      url: 'https://example.com/1',
+      snippet: 'First result',
+      published_date: null,
+    },
+    {
+      title: 'Result 2',
+      url: 'https://example.com/2',
+      snippet: 'Second result',
+      published_date: '2025-01-01',
+    },
   ];
   mockTavilyError = null;
   mockSerperResults = [
-    { title: 'Image 1', url: 'https://img.com/1.jpg', thumbnail_url: 'https://img.com/1_t.jpg', source_url: 'https://example.com/1', width: 800, height: 600 },
+    {
+      title: 'Image 1',
+      url: 'https://img.com/1.jpg',
+      thumbnail_url: 'https://img.com/1_t.jpg',
+      source_url: 'https://example.com/1',
+      width: 800,
+      height: 600,
+    },
   ];
   mockSerperError = null;
   mockCheckCreditsResult = { hasCredits: true, message: 'OK', balance: 100 };
@@ -383,7 +529,7 @@ describe('Router: models', () => {
     const minimax27 = body.data.find((m: any) => m.id === 'minimax/minimax-m2.7');
     expect(minimax27).toBeDefined();
     expect(minimax27.tier).toBe('free');
-    expect(minimax27.pricing.input).toBe(0.30);
+    expect(minimax27.pricing.input).toBe(0.3);
 
     const kimi = body.data.find((m: any) => m.id === 'moonshotai/kimi-k2.5');
     expect(kimi).toBeDefined();
@@ -449,8 +595,12 @@ describe('Router: chat/completions (non-streaming)', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(lastProxyTraceHeaders?.traceparent).toMatch(/^00-99999999999999999999999999999999-[0-9a-f]{16}-01$/);
-    expect(lastProxyTraceHeaders?.traceparent).not.toBe('00-99999999999999999999999999999999-8888888888888888-01');
+    expect(lastProxyTraceHeaders?.traceparent).toMatch(
+      /^00-99999999999999999999999999999999-[0-9a-f]{16}-01$/,
+    );
+    expect(lastProxyTraceHeaders?.traceparent).not.toBe(
+      '00-99999999999999999999999999999999-8888888888888888-01',
+    );
     expect(lastProxyTraceHeaders?.['X-Request-Id']).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
   });
 
@@ -501,10 +651,13 @@ describe('Router: chat/completions (non-streaming)', () => {
   });
 
   test('passes through upstream error responses', async () => {
-    mockProxyResponse = new Response(JSON.stringify({ error: { message: 'Model not found', type: 'invalid_request_error' } }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    mockProxyResponse = new Response(
+      JSON.stringify({ error: { message: 'Model not found', type: 'invalid_request_error' } }),
+      {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
     const app = createRouterTestApp();
     const res = await app.request('/v1/router/chat/completions', {
       method: 'POST',
@@ -598,7 +751,17 @@ describe('Router: chat/completions (tool support)', () => {
   test('preserves tool-role messages in request', async () => {
     const messages = [
       { role: 'user', content: 'What is the weather?' },
-      { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"location":"SF"}' } }] },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'get_weather', arguments: '{"location":"SF"}' },
+          },
+        ],
+      },
       { role: 'tool', tool_call_id: 'call_1', content: '{"temp": 65, "condition": "sunny"}' },
     ];
 

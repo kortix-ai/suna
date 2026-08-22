@@ -1,7 +1,5 @@
 'use client';
 
-import React, { useState } from 'react';
-import { KeyRound, Plug } from 'lucide-react';
 import {
   Modal,
   ModalBody,
@@ -11,8 +9,11 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { cn } from '@/lib/utils';
-import { SecretIntakeForm } from './secret-intake-form';
+import { KeyIcon as KeyRound, PlugIcon as Plug } from '@phosphor-icons/react';
+import React, { useState } from 'react';
+import { Button } from '../ui/button';
 import { ConnectorIntake } from './connector-intake';
+import { SecretIntakeForm } from './secret-intake-form';
 import { setupLinkChipLabel, type SetupLinkKind } from './util';
 
 function textOf(node: React.ReactNode): string {
@@ -49,28 +50,17 @@ export function SetupLinkButton({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={cn(
-          'inline-flex max-w-full items-center gap-1.5 rounded-full border bg-popover py-1 pr-3 pl-2',
-          'align-middle text-sm font-medium text-foreground',
-          'hover:bg-muted active:scale-[0.96]',
-          'transition-[background-color,scale] duration-150',
-        )}
-      >
+      <Button type="button" onClick={() => setOpen(true)} className={cn('max-w-full')} size="sm">
         <span className="bg-primary/[0.06] flex size-5 shrink-0 items-center justify-center rounded-full">
-          <Icon className="size-3 text-muted-foreground" />
+          <Icon className="text-muted-foreground size-3" />
         </span>
         <span className="truncate">{label}</span>
-      </button>
+      </Button>
 
       <Modal open={open} onOpenChange={setOpen}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
-            <ModalTitle>
-              {kind === 'secret' ? 'Add a project secret' : 'Connect an app'}
-            </ModalTitle>
+            <ModalTitle>{kind === 'secret' ? 'Add a project secret' : 'Connect an app'}</ModalTitle>
             <ModalDescription>
               {kind === 'secret'
                 ? 'Enter the value below. It’s encrypted and the agent never sees it.'

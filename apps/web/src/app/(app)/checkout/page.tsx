@@ -63,6 +63,9 @@ function CheckoutContent() {
       return; // Wait for Stripe to load
     }
 
+    let disposed = false;
+    let mountTimer: ReturnType<typeof setTimeout> | null = null;
+
     // Initialize Stripe checkout
     const initCheckout = async () => {
       try {
@@ -79,11 +82,14 @@ function CheckoutContent() {
           clientSecret: clientSecret,
         });
 
+        if (disposed) return;
+
         // Stop loading FIRST so the container renders
         setIsLoading(false);
 
         // Wait for DOM to update, then mount
-        setTimeout(() => {
+        mountTimer = setTimeout(() => {
+          if (disposed) return;
           const container = document.getElementById('checkout-container');
 
           if (!container) {
@@ -93,6 +99,7 @@ function CheckoutContent() {
           checkout.mount('#checkout-container');
         }, 100);
       } catch (err: any) {
+        if (disposed) return;
         console.error('Checkout initialization failed:', err);
         setError(err.message || 'Failed to load checkout. Please try again.');
         setIsLoading(false);
@@ -100,6 +107,11 @@ function CheckoutContent() {
     };
 
     initCheckout();
+
+    return () => {
+      disposed = true;
+      if (mountTimer) clearTimeout(mountTimer);
+    };
   }, [clientSecret, stripeLoaded]);
 
   return (

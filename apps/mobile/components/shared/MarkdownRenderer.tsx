@@ -1,6 +1,6 @@
 import { Text } from '@/components/ui/text';
 import type React from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 
 interface MarkdownRendererProps {
   content: string;

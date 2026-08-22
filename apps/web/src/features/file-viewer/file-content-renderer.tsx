@@ -7,7 +7,10 @@ import { CodeEditor } from '@/components/file-editors/code-editor';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
+import { StatusDot } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   appendPreviewToken,
@@ -15,32 +18,31 @@ import {
   useAuthenticatedPreviewUrl,
 } from '@/hooks/use-authenticated-preview-url';
 import { useHeicBlob } from '@/hooks/use-heic-url';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { getAuthToken } from '@/lib/auth-token';
-import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
-import { toSandboxAbsolutePath } from '@kortix/sdk/files';
+import { isSandboxNotReadyError, toSandboxAbsolutePath } from '@kortix/sdk';
+import { getActiveStaticFileHealthUrl, getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import {
-  AlertTriangle,
-  Braces,
-  Check,
-  CircleAlert,
-  Code,
-  Download,
-  Eye,
-  FileDiff,
-  FileWarning,
-  FileX,
-  Globe,
-  Loader2,
-  RotateCcw,
-  Save,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  BracketsCurlyIcon as Braces,
+  CheckIcon as Check,
+  WarningCircleIcon as CircleAlert,
+  CodeIcon as Code,
+  DownloadIcon as Download,
+  EyeIcon as Eye,
+  GitDiffIcon as FileDiff,
+  FileXIcon as FileWarning,
+  FileXIcon as FileX,
+  GlobeIcon as Globe,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  FloppyDiskIcon as Save,
+} from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
+import { usePreviewFit } from './preview-fit';
 
 // ---------------------------------------------------------------------------
 // Lazy-load heavy renderers to keep initial bundle small
@@ -226,7 +228,7 @@ function isBlobCategory(cat: FileCategory): cat is BlobCategory {
 function RendererFallback() {
   return (
     <div className="flex h-full items-center justify-center">
-      <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+      <Loading className="text-muted-foreground/40 h-4 w-4" />
     </div>
   );
 }
@@ -249,7 +251,7 @@ function FileNotFoundState({ filePath }: { filePath: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-      <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-2xl">
+      <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-sm">
         <FileX className="text-muted-foreground/40 h-6 w-6" />
       </div>
       <p className="text-muted-foreground text-sm font-medium">
@@ -300,6 +302,11 @@ export interface FileContentRendererProps {
    * "file does not exist" state. No effect on the default viewer chrome.
    */
   onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
+  /** PDF only: start the zoom plugin at fit-to-page instead of the numeric
+   *  default. No effect on any other file category. */
+  fitOnOpen?: boolean;
+  /** Additional class name for the code editor */
+  codeEditorEditorClassName?: string;
 }
 
 export function FileContentRenderer({
@@ -315,11 +322,19 @@ export function FileContentRenderer({
   markdownPreview,
   onMarkdownPreviewChange,
   onStatusChange,
+  fitOnOpen = false,
+  codeEditorEditorClassName,
 }: FileContentRendererProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const fileName = filePath.split('/').pop() || '';
   const isHeicImage = isHeicFile(fileName);
+
+  // `null` outside a <PreviewFitProvider>. Used for one thing only: telling a
+  // ratio-fitting surface that an `image` produced nothing to render, in which
+  // case no ImageRenderer is ever mounted and no renderer is left to say so
+  // itself. Every other failure is reported by the renderer that hit it.
+  const previewFit = usePreviewFit();
 
   // Data access is supplied by the surface (live workspace vs. project git-ref)
   // via <FileSourceProvider>, so this renderer stays presentation-only.
@@ -367,21 +382,16 @@ export function FileContentRenderer({
   const [isHtmlPreview, setIsHtmlPreview] = useState(true);
 
   // Build proxied static-file-server URLs for HTML preview
-  const { rewritePortPath } = useSandboxProxy();
-  const staticPort = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
-
   const htmlPreviewUrl = useMemo(() => {
     if (!isHtmlFile) return '';
-    const normalizedPath = toSandboxAbsolutePath(filePath);
-    const encodedPath = normalizedPath.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-    return rewritePortPath(staticPort, `/open?path=/${encodedPath}`);
-  }, [isHtmlFile, filePath, rewritePortPath, staticPort]);
+    return getActiveStaticFilePreviewUrl(toSandboxAbsolutePath(filePath));
+  }, [isHtmlFile, filePath]);
 
   // Health URL: hit /health on the static file server through the proxy
   const htmlHealthUrl = useMemo(() => {
     if (!isHtmlFile) return '';
-    return rewritePortPath(staticPort, '/health');
-  }, [isHtmlFile, rewritePortPath, staticPort]);
+    return getActiveStaticFileHealthUrl();
+  }, [isHtmlFile]);
 
   // Authenticate the preview session before rendering the iframe
   const authenticatedPreviewUrl = useAuthenticatedPreviewUrl(
@@ -622,6 +632,12 @@ export function FileContentRenderer({
         : null;
   const showLoadingState = needsBlob ? blobLoading : isLoading;
 
+  // A readiness 503 means the sandbox is parked or still booting — a pending
+  // state, never a failure. The file hooks keep polling while this is true
+  // (SANDBOX_WAKING_REFETCH_INTERVAL_MS), so the content appears on its own
+  // once the box is up.
+  const isSandboxWaking = !!contentError && isSandboxNotReadyError(contentError);
+
   // Detect "file not found" — either via explicit error or empty resolution
   const isNotFound = useMemo(() => {
     if (contentError) return isNotFoundError(contentError);
@@ -647,9 +663,46 @@ export function FileContentRenderer({
   useEffect(() => {
     if (!onStatusChange) return;
     if (isNotFound) onStatusChange('error');
-    else if (showLoadingState) onStatusChange('loading');
+    else if (showLoadingState || isSandboxWaking) onStatusChange('loading');
     else onStatusChange('ready');
-  }, [onStatusChange, isNotFound, showLoadingState]);
+  }, [onStatusChange, isNotFound, showLoadingState, isSandboxWaking]);
+
+  // An `image` that settled without an image to show: bytes whose mime is not
+  // `image/*` (so `imageDataUrl` stayed null and the binary/text fallback ran
+  // instead), or a HEIC whose blob never arrived. No ImageRenderer is mounted
+  // on those paths, so nothing downstream can report the failure — this is the
+  // case the surface itself has to speak for.
+  //
+  // A HEIC whose CONVERSION fails is deliberately not one of them:
+  // `use-heic-url.ts` catches the `heic2any` rejection and falls back to a blob
+  // URL over the raw bytes, which a browser with native HEIC support then
+  // renders correctly. So `heicImageUrl` is set, this predicate is false, and
+  // ImageRenderer mounts. Where the browser also cannot decode it, the release
+  // comes from ImageRenderer exhausting its own retries ~5s later — a known,
+  // accepted window during which a ratio-fitting consumer still holds the
+  // previous document's width. Widening this predicate to pre-empt it would
+  // break the browsers the fallback exists for.
+  //
+  // A HEIC whose blob just resolved is ALSO not one of them, for one render:
+  // `useHeicBlob` flips `isConverting` to true inside its effect
+  // (`use-heic-url.ts:29`), which runs after this render commits. On the
+  // render where `blobLoading` first goes false, `heicConverting` is still
+  // `false` and `heicImageUrl` is still `null` even though conversion is
+  // about to start — not because it failed. Only a HEIC whose blob never
+  // arrived (`rawBlob` still null/absent) counts as producing nothing.
+  const heicAboutToConvert = isHeicImage && !!rawBlob;
+  const imageProducedNothing =
+    fileCategory === 'image' &&
+    !showLoadingState &&
+    !heicConverting &&
+    !imageDataUrl &&
+    !heicImageUrl &&
+    !heicAboutToConvert;
+
+  useEffect(() => {
+    if (!previewFit || !imageProducedNothing) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, imageProducedNothing]);
 
   // ---------------------------------------------------------------------------
   // Shared CodeEditor props — keeps edit & read-only paths DRY
@@ -675,6 +728,10 @@ export function FileContentRenderer({
     targetLine,
   };
 
+  const discardLabel: string = tHardcodedUi.raw(
+    'featuresFilesComponentsFileContentRenderer.line600JsxAttrTitleDiscardChanges',
+  );
+
   return (
     <div className={cn('flex h-full flex-col', className)}>
       {/* Header */}
@@ -685,10 +742,7 @@ export function FileContentRenderer({
             {/* Edit state indicator */}
             {!readOnly && hasUnsavedChanges && (
               <Badge variant="warning" size="sm" className="shrink-0">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                </span>
+                <StatusDot tone="warning" pulse />
                 Edited
               </Badge>
             )}
@@ -709,13 +763,13 @@ export function FileContentRenderer({
             {(fileDiagErrorCount > 0 || fileDiagWarningCount > 0) && (
               <span className="inline-flex shrink-0 items-center gap-1.5">
                 {fileDiagErrorCount > 0 && (
-                  <span className="text-destructive inline-flex items-center gap-0.5 text-xs font-medium">
+                  <span className="text-destructive inline-flex items-center gap-0.5 text-xs font-medium tabular-nums">
                     <CircleAlert className="h-3 w-3" />
                     {fileDiagErrorCount}
                   </span>
                 )}
                 {fileDiagWarningCount > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-xs font-medium text-yellow-500">
+                  <span className="text-kortix-orange inline-flex items-center gap-0.5 text-xs font-medium tabular-nums">
                     <AlertTriangle className="h-3 w-3" />
                     {fileDiagWarningCount}
                   </span>
@@ -739,63 +793,72 @@ export function FileContentRenderer({
                   )}
                 >
                   {isSaving ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loading className="h-3.5 w-3.5" />
                   ) : (
                     <Save className="h-3.5 w-3.5" />
                   )}
                   Save
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground hover:text-foreground h-7 w-7"
-                  onClick={handleDiscard}
-                  title={tHardcodedUi.raw(
-                    'featuresFilesComponentsFileContentRenderer.line600JsxAttrTitleDiscardChanges',
-                  )}
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </Button>
+                <Hint label={discardLabel} side="bottom">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={discardLabel}
+                    className="text-muted-foreground hover:text-foreground h-7 w-7 active:scale-[0.96]"
+                    onClick={handleDiscard}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </Button>
+                </Hint>
               </>
             )}
 
             {/* HTML preview toggle */}
             {isHtmlFile && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn('h-7 w-7', isHtmlPreview && 'text-primary')}
-                onClick={() => setIsHtmlPreview((v) => !v)}
-                title={isHtmlPreview ? 'View source' : 'Preview'}
-              >
-                {isHtmlPreview ? <Code className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
-              </Button>
+              <Hint label={isHtmlPreview ? 'View source' : 'Preview'} side="bottom">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={isHtmlPreview ? 'View source' : 'Preview'}
+                  aria-pressed={isHtmlPreview}
+                  className={cn('h-7 w-7 active:scale-[0.96]', isHtmlPreview && 'text-primary')}
+                  onClick={() => setIsHtmlPreview((v) => !v)}
+                >
+                  {isHtmlPreview ? <Code className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
+                </Button>
+              </Hint>
             )}
 
             {/* JSON tree toggle */}
             {isJsonFile && fileContent?.type === 'text' && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn('h-7 w-7', isJsonTreeView && 'text-primary')}
-                onClick={() => setIsJsonTreeView((v) => !v)}
-                title={isJsonTreeView ? 'View source' : 'Tree view'}
-              >
-                <Braces className="h-4 w-4" />
-              </Button>
+              <Hint label={isJsonTreeView ? 'View source' : 'Tree view'} side="bottom">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={isJsonTreeView ? 'View source' : 'Tree view'}
+                  aria-pressed={isJsonTreeView}
+                  className={cn('h-7 w-7 active:scale-[0.96]', isJsonTreeView && 'text-primary')}
+                  onClick={() => setIsJsonTreeView((v) => !v)}
+                >
+                  <Braces className="h-4 w-4" />
+                </Button>
+              </Hint>
             )}
 
             {/* Markdown preview toggle */}
             {isMarkdownFile && fileContent?.type === 'text' && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn('h-7 w-7', isMarkdownPreview && 'text-primary')}
-                onClick={() => setIsMarkdownPreview((v) => !v)}
-                title={isMarkdownPreview ? 'View source' : 'Preview'}
-              >
-                {isMarkdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
+              <Hint label={isMarkdownPreview ? 'View source' : 'Preview'} side="bottom">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={isMarkdownPreview ? 'View source' : 'Preview'}
+                  aria-pressed={isMarkdownPreview}
+                  className={cn('h-7 w-7 active:scale-[0.96]', isMarkdownPreview && 'text-primary')}
+                  onClick={() => setIsMarkdownPreview((v) => !v)}
+                >
+                  {isMarkdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </Hint>
             )}
 
             {/* Additional header actions from parent */}
@@ -807,7 +870,7 @@ export function FileContentRenderer({
               className="h-7 gap-1.5 px-3 text-xs font-medium"
               onClick={handleDownload}
               disabled={!fileContent && !blobUrl && !rawBlob}
-              title="Download"
+              aria-label="Download"
             >
               <Download className="h-3.5 w-3.5" />
               Download
@@ -822,7 +885,7 @@ export function FileContentRenderer({
         <ClientErrorBoundary
           fallback={() => (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-              <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-2xl">
+              <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-sm">
                 <FileWarning className="text-destructive/50 h-6 w-6" />
               </div>
               <p className="text-muted-foreground text-sm font-medium">
@@ -843,20 +906,38 @@ export function FileContentRenderer({
           {/* Loading */}
           {showLoadingState && (
             <div className="flex h-full items-center justify-center">
-              <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+              <Loading className="text-muted-foreground/40 h-4 w-4" />
+            </div>
+          )}
+
+          {/* Sandbox waking — the workspace is parked or booting; the file
+              hooks keep polling and the content replaces this on its own.
+              Takes precedence over errorFallback: a waking box is not an
+              error, so no surface gets to render it as one. */}
+          {contentError && !showLoadingState && isSandboxWaking && (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+              <Loading className="text-muted-foreground/40 h-4 w-4" />
+              <p className="text-muted-foreground text-sm font-medium">Waking up the workspace…</p>
+              <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
+                {filePath}
+              </p>
+              <p className="text-muted-foreground/40 max-w-xs text-xs">
+                The sandbox is starting. This file will load automatically.
+              </p>
             </div>
           )}
 
           {/* Error */}
           {contentError &&
             !showLoadingState &&
+            !isSandboxWaking &&
             (errorFallback ? (
               errorFallback(contentError, filePath)
             ) : isNotFound ? (
               <FileNotFoundState filePath={filePath} />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-                <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-2xl">
+                <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-sm">
                   <FileWarning className="text-destructive/50 h-6 w-6" />
                 </div>
                 <p className="text-muted-foreground text-sm font-medium">
@@ -889,7 +970,12 @@ export function FileContentRenderer({
           {/* PDF preview */}
           {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
-              <PdfRenderer fileContent={fileContent.content} fileName={fileName} className="h-full" />
+              <PdfRenderer
+                fileContent={fileContent.content}
+                fileName={fileName}
+                className="h-full"
+                fitOnOpen={fitOnOpen}
+              />
             </Suspense>
           )}
 
@@ -936,7 +1022,7 @@ export function FileContentRenderer({
           {/* Audio preview */}
           {isContentReady && fileCategory === 'audio' && blobUrl && (
             <div className="flex h-full flex-col items-center justify-center gap-5 p-8">
-              <div className="bg-muted/50 flex h-14 w-14 items-center justify-center rounded-2xl">
+              <div className="bg-muted/50 flex h-14 w-14 items-center justify-center rounded-sm">
                 <svg
                   className="text-muted-foreground/40 h-6 w-6"
                   viewBox="0 0 24 24"
@@ -975,7 +1061,7 @@ export function FileContentRenderer({
               {serverHealth !== 'unavailable' &&
                 (serverHealth === 'checking' || !authenticatedPreviewUrl) && (
                   <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3">
-                    <Loader2 className="h-5 w-5 animate-spin opacity-40" />
+                    <Loading className="h-5 w-5 opacity-40" />
                     <p className="text-xs opacity-50">
                       {tHardcodedUi.raw(
                         'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',
@@ -1018,6 +1104,7 @@ export function FileContentRenderer({
           {/* HTML source — shown when preview toggle is off */}
           {isHtmlFile && !isHtmlPreview && !isLoading && !error && fileContent?.type === 'text' && (
             <CodeEditor
+              editorClassName={codeEditorEditorClassName}
               key={`html-source-${filePath}-${discardKey}`}
               {...codeEditorProps}
               className={readOnly ? 'min-h-full' : 'h-full'}
@@ -1033,7 +1120,7 @@ export function FileContentRenderer({
             !isHeicImage &&
             !['pdf', 'docx', 'pptx', 'xlsx', 'sqlite', 'video', 'audio'].includes(fileCategory) && (
               <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-                <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-2xl">
+                <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-sm">
                   <FileWarning className="text-muted-foreground/30 h-6 w-6" />
                 </div>
                 <p className="text-muted-foreground/50 text-sm">
@@ -1076,10 +1163,23 @@ export function FileContentRenderer({
                     />
                   </div>
                 ) : isMarkdownPreview && isMarkdownFile ? (
+                  // Markdown is prose, so it gets a measure. The markdown root
+                  // renders at text-[15px]; full-bleed on a wide viewport that
+                  // is ~190 characters per line, well past the comfortable
+                  // 65-90. `max-w-2xl` is the same reading column the customize
+                  // sections use, and it is a no-op in panels already narrower
+                  // than 672px. Deliberately not applied to the code editor:
+                  // code line length is the author's decision, and a narrow
+                  // column would only add horizontal scrolling.
+                  //
+                  // The cap sits on an inner element so the scroll container
+                  // stays full width and its scrollbar rides the panel edge.
                   <div key={filePath} className="h-full w-full overflow-auto p-6">
-                    <MarkdownWithFrontmatter
-                      content={hasUnsavedChanges ? latestContentRef.current : displayContent}
-                    />
+                    <div className="mx-auto w-full max-w-2xl">
+                      <MarkdownWithFrontmatter
+                        content={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                      />
+                    </div>
                   </div>
                 ) : (
                   <CodeEditor
@@ -1155,7 +1255,7 @@ function JsonNode({
     return (
       <div style={{ paddingLeft: depth * 20 }}>
         {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-yellow-500/80">{String(value)}</span>
+        <span className="text-kortix-yellow">{String(value)}</span>
       </div>
     );
   }
@@ -1164,7 +1264,7 @@ function JsonNode({
     return (
       <div style={{ paddingLeft: depth * 20 }}>
         {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-cyan-500/80">{String(value)}</span>
+        <span className="text-kortix-blue">{String(value)}</span>
       </div>
     );
   }
@@ -1174,7 +1274,7 @@ function JsonNode({
     return (
       <div style={{ paddingLeft: depth * 20 }} className="break-all">
         {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-emerald-500/80">
+        <span className="text-kortix-green">
           {tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line963JsxTextQuot')}
           {value.length > 200 ? value.slice(0, 200) + '...' : value}
           {tHardcodedUi.raw(
@@ -1186,7 +1286,7 @@ function JsonNode({
             href={value}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-1 text-xs text-blue-400/60 hover:text-blue-400"
+            className="text-kortix-blue/70 hover:text-kortix-blue ml-1 text-xs"
           >
             open
           </a>
@@ -1199,9 +1299,11 @@ function JsonNode({
     const count = value.length;
     return (
       <div>
-        <div
+        <button
+          type="button"
           style={{ paddingLeft: depth * 20 }}
-          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-lg transition-colors"
+          aria-expanded={!isCollapsed}
+          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-sm text-left transition-colors"
           onClick={() => setIsCollapsed((v) => !v)}
         >
           <span className="text-muted-foreground/40 w-3.5 text-center text-xs select-none">
@@ -1215,7 +1317,7 @@ function JsonNode({
           ) : (
             <span className="text-muted-foreground/30">[</span>
           )}
-        </div>
+        </button>
         {!isCollapsed && (
           <>
             {value.map((item, idx) => (
@@ -1235,9 +1337,11 @@ function JsonNode({
     const count = entries.length;
     return (
       <div>
-        <div
+        <button
+          type="button"
           style={{ paddingLeft: depth * 20 }}
-          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-lg transition-colors"
+          aria-expanded={!isCollapsed}
+          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-sm text-left transition-colors"
           onClick={() => setIsCollapsed((v) => !v)}
         >
           <span className="text-muted-foreground/40 w-3.5 text-center text-xs select-none">
@@ -1251,7 +1355,7 @@ function JsonNode({
           ) : (
             <span className="text-muted-foreground/30">{'{'}</span>
           )}
-        </div>
+        </button>
         {!isCollapsed && (
           <>
             {entries.map(([k, v]) => (

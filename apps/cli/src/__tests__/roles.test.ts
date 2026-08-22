@@ -12,7 +12,6 @@ const ORIGINAL_STDERR_WRITE = process.stderr.write;
 
 const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -120,13 +119,13 @@ afterEach(() => {
 });
 
 describe('kortix roles', () => {
-  test('ls lists built-in + custom roles, scoped to the active account', async () => {
+  test('ls lists system + custom roles, scoped to the active account', async () => {
     const code = await runRoles(['ls']);
     expect(code).toBe(0);
     expect(requests[0].url).toContain('/v1/accounts/account_1/iam/roles');
     const out = stripAnsi(stdout);
     expect(out).toContain('support_agent');
-    expect(out).toContain('built-in');
+    expect(out).toContain('system');
     expect(out).toContain('custom');
   });
 
@@ -187,7 +186,7 @@ describe('kortix roles', () => {
     expect(get!.url).toContain('scopeId=proj-1');
   });
 
-  test('set-actions refuses a built-in role', async () => {
+  test('set-actions refuses a system role', async () => {
     const code = await runRoles(['set-actions', 'member', '--actions', 'project.read']);
     expect(code).toBe(2);
     expect(stripAnsi(stderr)).toContain('read-only');
@@ -195,7 +194,7 @@ describe('kortix roles', () => {
     expect(requests.some((r) => r.method === 'PUT')).toBe(false);
   });
 
-  test('rm refuses a built-in role but deletes a custom one', async () => {
+  test('rm refuses a system role but deletes a custom one', async () => {
     expect(await runRoles(['rm', 'member'])).toBe(2);
     expect(requests.some((r) => r.method === 'DELETE')).toBe(false);
 
@@ -211,7 +210,7 @@ describe('kortix roles', () => {
     const out = stripAnsi(stdout);
     expect(out).toContain('[[roles]]');
     expect(out).toContain('key = "support_agent"'); // custom role
-    expect(out).not.toContain('key = "member"'); // built-in excluded
+    expect(out).not.toContain('key = "member"'); // system excluded
     expect(out).toContain('[[policies]]');
     expect(out).toContain('role_key = "support_agent"'); // bound by KEY (portable)
   });

@@ -19,14 +19,14 @@ interface ModelDefaults {
 const HELP = help`Usage: kortix agents <subcommand> [options]
 
 Per-agent settings on the linked Kortix project. Today: which MODEL each agent
-runs on — the dynamic gateway default (scope=agent), applied instantly with no
-kortix.yaml commit. A session an agent runs that asks for the synthetic \`auto\`
-model resolves to this pick, falling back to the project → account → platform
-default. (The declarative default lives in kortix.yaml as [[agents]].model.)
+runs on — an explicit concrete model (scope=agent), applied instantly with no
+kortix.yaml commit. An agent without a pin follows the project → account →
+platform default. (The declarative default lives in kortix.yaml as
+[[agents]].model.)
 
 Subcommands:
   models [--json]                 Show every agent's pinned model + the fallback default.
-  model <agent> <provider/model>  Pin an agent to a model (e.g. anthropic/claude-opus-4-8).
+  model <agent> <model-id>        Pin an agent to a plain model id (e.g. glm-5.2).
   model <agent> --clear           Clear the pin — the agent follows the default again.
 
 Global:
@@ -73,7 +73,7 @@ export async function runAgents(argv: string[]): Promise<number> {
           return 0;
         }
         const fallback =
-          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'auto';
+          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
         const entries = Object.entries(d.agentDefaults ?? {});
         process.stdout.write('\n');
         process.stdout.write(
@@ -82,7 +82,7 @@ export async function runAgents(argv: string[]): Promise<number> {
         if (entries.length === 0) {
           process.stdout.write(
             `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
-              `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <provider/model>${C.reset}\n\n`,
+              `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <model-id>${C.reset}\n\n`,
           );
           return 0;
         }
@@ -108,7 +108,7 @@ export async function runAgents(argv: string[]): Promise<number> {
           return 0;
         }
         const model = positional[1];
-        if (!model) return missing('a model (e.g. anthropic/claude-opus-4-8) — or --clear');
+        if (!model) return missing('a plain model id (e.g. glm-5.2) — or --clear');
         await ctx.client.put(base, { scope: 'agent', agentName: agent, model });
         process.stdout.write(
           `${status.ok(`${C.bold}${agent}${C.reset} → ${C.cyan}${model}${C.reset}`)} ${C.dim}(applies to new sessions)${C.reset}\n`,

@@ -1,7 +1,6 @@
 {
   // OpenCode runtime config. Docs: https://opencode.ai/docs/
   "$schema": "https://opencode.ai/config.json",
-  "theme": "system",
   // The default agent is `kortix` — a generic general-knowledge worker.
   // Edit `.kortix/opencode/agents/kortix.md` (or add more agents in that folder).
   "default_agent": "kortix",
@@ -9,10 +8,13 @@
   // so the agent has full access by default. Tighten per-tool here if you
   // want a stricter policy. Docs: https://opencode.ai/docs/permissions/
   "permission": "allow",
+  // How many levels of subagent nesting the `task` tool allows. OpenCode
+  // defaults to 1, so a subagent cannot spawn another subagent. Nothing
+  // shipped here needs more than 1, but an agent of your own that nests
+  // `task` calls would fail with "Subagent depth limit reached", so this
+  // keeps one extra level available while staying bounded. Raise it only
+  // if you actually need deeper nesting — each level multiplies token cost.
+  "subagent_depth": 2
   // Local tools in `tools/` and plugins in `plugins/` are auto-discovered.
   // Install optional tools/plugins through the Kortix marketplace.
-  // kortix-continuation is the always-on todo continuation enforcer: when a session
-  // goes idle with unfinished native todos, it re-prompts the agent to keep going
-  // instead of self-stopping mid-task (set KORTIX_CONTINUATION_DISABLED=1 to disable).
-  "plugin": ["./continuation/kortix-continuation.ts"]
 }

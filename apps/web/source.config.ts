@@ -1,6 +1,7 @@
-import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins';
+import { rehypeCodeDefaultOptions, remarkMdxMermaid } from 'fumadocs-core/mdx-plugins';
 import { defineConfig, defineDocs, frontmatterSchema } from 'fumadocs-mdx/config';
 import { z } from 'zod';
+import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT } from './src/lib/code-theme';
 
 // Docs use fumadocs/MDX. The blog does NOT — it is React-rendered from a typed
 // registry (src/lib/blog-posts.ts), so there is no blog collection here.
@@ -36,13 +37,22 @@ export const useCases = defineDocs({
 
 export default defineConfig({
   mdxOptions: {
+    // ```mermaid fences compile to <Mermaid chart="..."/> (rendered by the
+    // docs MDX component map) instead of a highlighted code block.
+    remarkPlugins: [remarkMdxMermaid],
     rehypeCodeOptions: {
       // Keep fumadocs' defaults (defaultColor: false dual-theme CSS vars, lazy
       // grammars, notation transformers); only swap the palette.
       ...rehypeCodeDefaultOptions,
-      // Intentionally mirrors SHIKI_THEME_LIGHT / SHIKI_THEME_DARK in
-      // doc-markdown.tsx so docs code matches the app's markdown renderer.
-      themes: { light: 'slack-ochin', dark: 'plastic' },
+      // Same palette as every other code surface — imported, not copied. The
+      // duplicate literal that used to sit here drifted to a different theme and
+      // its "keep in sync" comment named the wrong file.
+      themes: { light: SHIKI_THEME_LIGHT, dark: SHIKI_THEME_DARK },
+      // Emit `language-*` on the <code> element. The docs `pre` override
+      // (docs-mdx-components.tsx) renders the app CodeBlock shell, whose header
+      // shows the language — without this class rehype-code keeps the language
+      // to itself and the label has nothing to read.
+      addLanguageClass: true,
     },
   },
 });

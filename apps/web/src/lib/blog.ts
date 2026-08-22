@@ -15,6 +15,13 @@ export interface Author {
   /** Used by <UserAvatar> for initials + image lookup. */
   email: string;
   avatarUrl?: string;
+  /**
+   * This author is Kortix itself, not a person — `<PostAuthorAvatar>` renders
+   * the Kortix symbol instead of initials. A flag rather than a check on
+   * `role`, because `role` is display copy: rewording it must not silently
+   * change which mark renders.
+   */
+  isKortix?: boolean;
 }
 
 // Author registry. A post references one of these keys (`author: 'marko'`);
@@ -29,6 +36,7 @@ export const AUTHORS: Record<string, Author> = {
     name: 'The Kortix Team',
     role: 'Kortix',
     email: 'team@kortix.ai',
+    isKortix: true,
   },
 };
 
@@ -81,9 +89,11 @@ function toPost(entry: BlogPostEntry): Post {
 /** All published posts, newest first. Drafts are excluded in production. */
 export function getAllPosts(): Post[] {
   const includeDrafts = process.env.NODE_ENV !== 'production';
-  return BLOG_POSTS.filter((entry) => includeDrafts || !entry.draft)
-    .map(toPost)
-    .sort((a, b) => b.data.date.localeCompare(a.data.date));
+  const posts: Post[] = [];
+  for (const entry of BLOG_POSTS) {
+    if (includeDrafts || !entry.draft) posts.push(toPost(entry));
+  }
+  return posts.sort((a, b) => b.data.date.localeCompare(a.data.date));
 }
 
 /** The full registry entry (including the renderable blocks) for one post. */

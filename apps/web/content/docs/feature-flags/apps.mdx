@@ -1,0 +1,258 @@
+---
+title: Apps
+description: Deploy static sites, bundles, Dockerfiles, and OCI images to stable Kortix URLs.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A Kortix App is a provider-neutral serverless deployment owned by one project.
+An App owns one stable URL. Each deployment is immutable and numbered. A failed
+deployment never replaces live traffic.
+
+Apps is a [feature flag](/docs/feature-flags). Its stability is **stable**, and
+it is off by default. Turn it on per project before you deploy.
+
+Building on Apps from TypeScript? See [SDK → Apps](/docs/sdk/apps) for the
+client surface and the React hooks.
+
+## Turn Apps on
+
+Open **Settings → Experimental** and switch **Apps** on for the project. You
+need `project.customize.write`.
+
+While the flag is off:
+
+- Every Apps route answers `403` with
+  `{ error, code: "feature_disabled", feature: "apps" }`.
+- `kortix apps <subcommand>` prints the same sentence and exits `1`.
+- The **Apps** entry does not appear in the project sidebar. Opening
+  `/projects/<id>/apps` directly shows a gate screen that links to the flag. The
+  page itself never enables the feature.
+
+## Source kinds
+
+All four source kinds run on the same Kortix sandbox hosting backend. Kortix
+selects Daytona, Platinum, or E2B. They therefore share one deployment contract
+and one cold-wake contract.
+
+| Kind | Deploy this | Kortix does |
+|---|---|---|
+| `static` | Plain HTML, CSS, JS, or a prebuilt SPA or `dist/` | Serves the files |
+| `bundle` | A package source | Runs the install and build commands, then serves the output directory |
+| `dockerfile` | A repository with a Dockerfile | Builds the image, then runs your `command` on your `port` |
+| `oci_image` | A public image reference | Runs your `command` on your `port` |
+
+Pick the fastest path for the result you want:
+
+- Build Vite locally and deploy `dist/` as `static` for the lowest latency.
+- Deploy the package source as `bundle` when Kortix must run the install and
+  build.
+- Export Next.js with `output: 'export'` and deploy `out/` as `static` when the
+  App needs no server runtime.
+- Deploy server-rendered Next.js and arbitrary services as `dockerfile`, with
+  an explicit command and port.
+- Deploy an existing public image as `oci_image`, with an explicit command and
+  port.
+
+`dockerfile` and `oci_image` require `--command` and `--port`. `static` and
+`bundle` do not.
+
+## Deploy from the CLI
+
+```bash
+kortix apps deploy .
+```
+
+`deploy` creates the App on first use, registers an immutable artifact —
+uploading a `.tar.gz` for a path, or recording the reference for `--image` —
+builds it, and blocks until the stable URL is ready. The wait budget is `--wait-seconds`,
+default `1200`. Use `--no-wait` only when another process owns status tracking.
+
+```bash
+kortix apps deploy dist --slug docs --access project
+kortix apps deploy . --type dockerfile --command '["node","server.js"]' --port 3000
+kortix apps deploy --image ghcr.io/acme/service:2026-08-07 --command '["node","server.js"]' --port 3000
+```
+
+The full subcommand list:
+
+| Command | What it does |
+|---|---|
+| `kortix apps list` | List the project's Apps. `--json`. |
+| `kortix apps create <slug>` | Create an App without deploying it. |
+| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. |
+| `kortix apps show <id\|slug>` | Show the App and its deployments. `--json`. |
+| `kortix apps logs <id\|slug> [deployment]` | Read runtime logs. `--after N --limit N`. |
+| `kortix apps start <id\|slug>` | Permit requests and start the App. |
+| `kortix apps stop <id\|slug>` | Suspend compute now. |
+| `kortix apps rollback <id\|slug> <deployment>` | Move traffic to a ready deployment. |
+| `kortix apps access <id\|slug>` | Read or update the access policy. |
+| `kortix apps access-link <id\|slug>` | Create a short-lived authenticated browser URL. |
+| `kortix apps delete <id\|slug>` | Delete the App and its runtimes. `--yes`. |
+
+`--project`, `--host`, and `--json` work on every subcommand.
+
+### Deployment defaults from `kortix.yaml`
+
+An `apps.<name>` block holds local deploy defaults. The server stays the App
+control plane: the block never carries access, passwords, or member ids.
+
+```yaml
+apps:
+  docs:
+    path: docs/dist
+    type: static
+    spa: true
+    readiness_path: /
+    idle_timeout_seconds: 300
+    monthly_budget_usd: 5
+    resources:
+      cpu: 1
+      memory_gb: 2
+      disk_gb: 10
+    env:
+      PUBLIC_BASE: https://kortix.com
+    secrets:
+      API_TOKEN: docs_api_token
+```
+
+Select the block with `kortix apps deploy --manifest-app docs`. An explicit flag
+always wins over the block.
+
+### Machine, idle timeout, and budget
+
+| Setting | Default | Bounds |
+|---|---|---|
+| `cpu` | `1` | `1` to `32` cores |
+| `memory_gb` | `2` | `1` to `128` GiB |
+| `disk_gb` | `10` | `1` to `500` GiB |
+| `idle_timeout_seconds` | `300` | `120` to `86400` |
+| `monthly_budget_usd` | `5` | `0` to `100000`, or the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD` |
+
+Apps reject a machine larger than the limits instead of clamping it. An App
+records its requested spec and bills off that record, so a silent downgrade
+would charge for compute the provider never gave. An out-of-range value answers
+`400` with `code: "app_machine_out_of_range"` or `"app_budget_out_of_range"`.
+
+Creating an App past the account's App quota answers `402` with
+`code: "app_quota_exceeded"`. A duplicate slug in the same project answers
+`409`.
+
+## The stable URL
+
+Kortix assigns the hostname when the App is created and never changes it. On
+Kortix cloud it is `<env>-<slug>-<route-key>.apps.kortix.com`. Self-hosted
+deployments serve their own wildcard domain from `KORTIX_APPS_BASE_DOMAIN`.
+
+An authorized request to a suspended App resumes its sandbox, waits for
+readiness, and proxies that same request. You do not have to wake it first.
+
+While the App is waiting for its first deployment, queued, validating,
+building, provisioning, checking, activating, or starting:
+
+- A browser navigation gets a branded status page, HTTP `202`, `retry-after: 3`,
+  and a 3-second meta refresh.
+- A machine client gets `202` and JSON — for a cold start,
+  `{ code: "app_starting" }` with `retry-after: 3`.
+
+Terminal and paused states answer differently:
+
+| State | HTTP | `code` |
+|---|---|---|
+| Deployment failed | `503` | `app_deployment_failed` |
+| Deployment cancelled | `503` | `app_deployment_cancelled` |
+| Monthly compute budget reached | `402` | `app_budget_exceeded` |
+| Account cannot start compute | `402` | `app_account_unfunded` |
+| Account at its concurrent-App limit | `429` | `app_concurrency_limit` |
+
+`kortix apps stop` suspends compute immediately; the next authorized request
+resumes the App. `kortix apps start` warms it before traffic arrives.
+
+<Callout type="info" title="Cold starts stay invisible">
+The stable URL never exposes an `app_stopped` state. A provider edge that
+answers `502` during the first request after a resume is served as the ordinary
+cold-start page instead. A warm App owns its own HTTP status, including a
+deliberate application `502`.
+</Callout>
+
+## Access modes
+
+An App's access mode is a per-resource visibility setting on top of the role
+model, not a role. It decides who can open this one App. It grants no permission
+the role verdict denies. See
+[Accounts & access](/docs/accounts#per-feature-access-settings).
+
+New Apps are private. Choose one mode:
+
+| Mode | Who can open the App |
+|---|---|
+| `private` | The creator only |
+| `project` | Every principal who can read the project |
+| `restricted` | Selected users and groups |
+| `public` | Anyone, with no authentication |
+| `password` | Anyone with the App password |
+
+Set it at deploy time or afterwards:
+
+```bash
+kortix apps deploy . --access restricted --members m1,m2 --groups g1
+kortix apps access docs --mode password --password 's3cret'
+kortix apps access-link docs --json
+```
+
+Kortix access uses a five-minute exchange URL and an eight-hour, host-only,
+secure cookie. `access-link` mints that exchange URL without changing the
+policy — treat it as a secret.
+
+Changing an access policy increments its revision, which revokes every existing
+App cookie. Passwords are Argon2id hashes; the API, the CLI, and the SDK never
+return a password or its hash.
+
+<Callout type="warn" title="Never put an App password in your repo">
+`kortix.yaml` holds deployment defaults only. Pass a password with `--password`,
+or set it from the access modal.
+</Callout>
+
+Being able to see an App listed and being able to open it are different
+verdicts. A project manager sees every App in the project, so a private App
+stays manageable when its creator leaves. An account owner and an account admin
+hold manager-equivalent access on every project, so the same applies to them.
+The App record reports `viewer_can_access` for the second question.
+
+## Versions and rollback
+
+Each deployment gets the next version number for its App and is immutable. The
+deployment record keeps its source kind, hosting provider, build and runtime
+spec, attempt count, and error code.
+
+Every deployment also records who made it: `created_by`, `actor_type`
+(`human`, `agent`, `service_account`, or `system`), and the originating
+`source_session_id` when an agent deployed it.
+
+Move traffic back to any ready deployment:
+
+```bash
+kortix apps rollback docs <deployment-id>
+```
+
+Rollback starts the target deployment's runtime first, then stops the previous
+one. A target that fails to start leaves the current deployment serving.
+
+Each cold start compares the active deployment's runtime version against the
+current Kortix App runtime. The old deployment keeps serving while Kortix
+asynchronously builds one immutable replacement with the latest `kortix-appd`
+and Caddy binaries. A PostgreSQL advisory lock prevents duplicate refreshes.
+
+## The Apps page
+
+Once the flag is on, an **Apps** row appears in the project sidebar, under
+Customize. The page is operational, not a creation surface: it lists the
+project's Apps with live state, a signed preview of each running App, and the
+access controls. Deploying is `kortix apps deploy .`.
+
+An App with no active deployment reads **Not deployed**, never **Running**. A
+suspended App's preview issues the request that wakes it.
+
+Kortix opens `*.apps.kortix.com` and `*.apps.localhost` on their direct origin
+rather than through a session's web forward proxy. That preserves the host-only
+access cookie and removes one network hop.

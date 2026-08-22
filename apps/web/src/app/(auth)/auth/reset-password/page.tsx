@@ -2,16 +2,16 @@
 
 import { useTranslations } from 'next-intl';
 
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircleIcon as CheckCircle2 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, useState } from 'react';
 
-import { AuthCardShell, BackToSignIn } from '@/features/auth/auth-card-shell';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { errorToast } from '@/components/ui/toast';
+import { AuthCardShell, BackToSignIn } from '@/features/auth/auth-card-shell';
 import { resetPassword } from '../actions';
 
 function ResetPasswordContent() {
@@ -97,7 +97,6 @@ function ResetPasswordContent() {
       )}
       footer={<BackToSignIn />}
     >
-
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-3">
           <label htmlFor="password" className="text-muted-foreground text-sm font-medium">

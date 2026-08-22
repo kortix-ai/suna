@@ -1,14 +1,30 @@
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
+import { logger } from '../../lib/logger';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { isMetaAgentName } from '@kortix/shared';
 import { and, eq } from 'drizzle-orm';
+import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
+import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
+import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
+import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
-import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import {
+  projectImageAllowedForSession,
+  sandboxSlugFromSessionMetadata,
+  workspaceModeFromSessionMetadata,
+} from '../lib/session-sandbox-metadata';
+import {
+  buildSessionSandboxEnvVars,
+  sandboxCallbackDeadTunnelReason,
+  sandboxCallbackUnreachableReason,
+} from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../routes/shared';
+import { invalidateProviderCache } from '../../sandbox-proxy';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
@@ -17,6 +33,9 @@ import {
   RUNTIME_IDENTITY_ERROR,
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
+import { inspectSandboxRuntime } from '../runtime-inspection';
+import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import { prepareInPlaceRestartMetadata } from './readiness-clocks';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -97,9 +116,29 @@ export async function deleteSession(input: {
     }
   }
 
-  void pauseComputeSession(sessionId).catch((err) =>
-    console.warn(`[projects] compute pause failed for ${sessionId}:`, err),
-  );
+  // Keyed by SANDBOX id — `getOpenComputeSession` matches on
+  // sandbox_compute_sessions.sandbox_id, so the sessionId this used to pass
+  // matched nothing and the delete silently left the meter open, accruing
+  // wall-clock on a box we had just asked the provider to remove. The
+  // billing-invariant sweep (sandbox-reaper.ts reconcileOrphanComputeSessions)
+  // is the backstop for this whole class; this is the fast path.
+  if (sandbox) {
+    void pauseComputeSession(sandbox.sandboxId).catch((err) =>
+      console.warn(`[projects] compute pause failed for sandbox ${sandbox.sandboxId}:`, err),
+    );
+  }
+
+  // The provider sandbox is being removed above, so this session's connector
+  // token can never be used legitimately again — but nothing expired it, so it
+  // stayed a valid bearer forever. Awaited (not fire-and-forget) so the
+  // credential is dead before we report the session gone; a failure is logged at
+  // error level rather than failing the delete, since the box is already going.
+  await revokeSessionConnectorTokens(sessionId, accountId).catch((err) => {
+    console.error(
+      `[projects] FAILED to revoke connector tokens for deleted session ${sessionId} — a valid token may outlive its sandbox:`,
+      err,
+    );
+  });
 
   return { ok: true };
 }
@@ -135,7 +174,8 @@ export async function restartSession(input: {
     };
   }
 
-  const restartUnreachable = sandboxCallbackUnreachableReason(providerName);
+  const restartUnreachable =
+    sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
   if (restartUnreachable) {
     return {
       status: 503,
@@ -155,6 +195,7 @@ export async function restartSession(input: {
       : typeof session.metadata?.initial_prompt === 'string'
         ? (session.metadata.initial_prompt as string)
         : null;
+    const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
     const opencodeModel =
       typeof session.metadata?.opencode_model === 'string'
         ? (session.metadata.opencode_model as string)
@@ -171,6 +212,7 @@ export async function restartSession(input: {
       .where(eq(projectSessions.sessionId, sessionId));
 
     const runtimeMetadata = { restarted_at: new Date().toISOString() };
+    const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
     allocateSessionRuntime({
       sessionId,
       accountId: loaded.row.accountId,
@@ -180,7 +222,13 @@ export async function restartSession(input: {
       providerName,
       baseRef: session.baseRef ?? loaded.row.defaultBranch,
       agentName: session.agentName ?? 'default',
+      allowProjectImage: projectImageAllowedForSession(
+        session.agentName,
+        workspaceModeFromSessionMetadata(session.metadata),
+      ),
+      sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
       runtimeMetadata,
+      initialTurn,
       sessionMetadata: { ...(session.metadata ?? {}), ...runtimeMetadata },
       buildEnvVars: () =>
         buildSessionSandboxEnvVars({
@@ -192,13 +240,24 @@ export async function restartSession(input: {
           baseRef: session.baseRef ?? loaded.row.defaultBranch,
           agentName: session.agentName ?? 'default',
           initialPrompt,
+          initialTurn,
           opencodeModel,
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+          // A restarted meta coordinator must keep its meta runtime: without
+          // this the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and the
+          // meta agent config, so the daemon clones the project over the meta
+          // workspace and wipes /workspace/AGENTS.md.
+          platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
+          workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+          restoreSessionBranch: true,
         }),
-      resolveGitAuthToken: async () =>
-        (await withProjectGitAuth(loaded.row as any)).gitAuthToken ?? null,
+      resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
+      beforeActive: rehydrate
+        ? (externalId) =>
+            rehydrateSessionChat({ sessionId, externalId, provider: providerName, spec: rehydrate })
+        : undefined,
     });
   };
 
@@ -250,7 +309,7 @@ export async function restartSession(input: {
           },
         };
       }
-      await preserveEstablishedRuntime(claim.row, 'restart_removed_runtime');
+      await preserveEstablishedRuntime(claim.row, 'restart_removed_runtime', 'restart_failed');
       return {
         status: 409,
         body: {
@@ -263,16 +322,20 @@ export async function restartSession(input: {
       };
     }
 
+    const restartStartedAt = new Date();
     await db
       .update(sessionSandboxes)
-      .set({ status: 'provisioning', updatedAt: new Date() })
+      .set({
+        status: 'provisioning',
+        metadata: prepareInPlaceRestartMetadata(existingSandbox.metadata, restartStartedAt),
+        updatedAt: restartStartedAt,
+      })
       .where(eq(sessionSandboxes.sandboxId, sessionId));
     await db
       .update(projectSessions)
       .set({
         status: 'provisioning',
         error: null,
-        sandboxUrl: null,
         updatedAt: new Date(),
       })
       .where(eq(projectSessions.sessionId, sessionId));
@@ -280,12 +343,21 @@ export async function restartSession(input: {
     void (async () => {
       try {
         await provider.stop(externalId).catch(() => {});
+        invalidateProviderCache(externalId);
         await provider.start(externalId);
+        // Provider ingress credentials can change on every stop/start cycle.
+        // Remove any link resolved while the sandbox was stopped.
+        invalidateProviderCache(externalId);
         // A provider may acknowledge start before discovering that the backing
-        // runtime is gone (observed live with Platinum: POST start succeeded,
-        // the next GET returned removed). Never mark the DB running from command
-        // acceptance alone; verify provider truth first.
+        // runtime is gone. A confirmed `removed` status starts recovery.
+        // `unknown` remains non-terminal because it does not prove runtime loss.
         let verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+        if (
+          verifiedStatus === 'unknown' &&
+          (await inspectSandboxRuntime(externalId, loaded.userId))
+        ) {
+          verifiedStatus = 'running';
+        }
         for (
           let attempt = 1;
           verifiedStatus !== 'running' && verifiedStatus !== 'removed' && attempt < 15;
@@ -293,6 +365,12 @@ export async function restartSession(input: {
         ) {
           await Bun.sleep(1_000);
           verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+          if (
+            verifiedStatus === 'unknown' &&
+            (await inspectSandboxRuntime(externalId, loaded.userId))
+          ) {
+            verifiedStatus = 'running';
+          }
         }
         if (verifiedStatus === 'removed') {
           const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
@@ -303,16 +381,25 @@ export async function restartSession(input: {
           if (recovery === 'running' || recovery === 'recovering') {
             await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(() => null);
           } else {
-            await preserveEstablishedRuntime(claim.row, 'restart_post_start_removed').catch(
-              () => null,
-            );
+            await preserveEstablishedRuntime(
+              claim.row,
+              'restart_post_start_removed',
+              'restart_failed',
+            ).catch(() => null);
           }
           return;
         }
-        if (verifiedStatus !== 'running') {
+        if (verifiedStatus !== 'running' && verifiedStatus !== 'unknown') {
           throw new Error(
             `Sandbox ${externalId} did not reach running after restart (provider status: ${verifiedStatus})`,
           );
+        }
+        if (verifiedStatus === 'unknown') {
+          logger.warn('[projects] restart provider status stayed unknown; runtime polling continues', {
+            session_id: sessionId,
+            project_id: projectId,
+            external_id: externalId,
+          });
         }
         await db
           .update(sessionSandboxes)
@@ -322,8 +409,46 @@ export async function restartSession(input: {
           .update(projectSessions)
           .set({ status: 'running', updatedAt: new Date() })
           .where(eq(projectSessions.sessionId, sessionId));
+        // A restart is a stop/start of the SAME box: the provider hands back the
+        // env it was created with, so this used to cost a full boot and return
+        // byte-identical stale config. People restarted precisely to pick up a
+        // merged agent change and got the old agents back, which is most of why
+        // "there is no way to reload" felt true.
+        //
+        // Recompile from the session's ref and push. Best-effort and after the
+        // session is already marked running: a box that is up with old config
+        // beats one parked because a git read failed.
+        // A restart resumes the SAME VM, so the daemon's boot-time reconcile
+        // never re-runs and the box keeps whatever `kortix` binary its image was
+        // built with — the exact reason production sandboxes ran a CLI that
+        // predated the routes it calls. Poke the daemon to re-converge. Detached
+        // and after the session is already marked running: this must not extend
+        // the restart the user is waiting on.
+        scheduleSandboxRuntimeRefresh(sessionId, 'restart');
+        void pushSessionAgentConfigToSandbox({
+          projectId,
+          sessionId,
+          repoUrl: loaded.row.repoUrl,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+          baseRef: session.baseRef ?? loaded.row.defaultBranch,
+        }).then((result) => {
+          if (!result.applied) {
+            logger.info('[projects] restart kept the existing agent config', {
+              session_id: sessionId,
+              reason: result.reason,
+            });
+          }
+        });
       } catch (err) {
-        console.warn(`[projects] restart-in-place failed for ${sessionId}:`, err);
+        // Detached from the request (the 202 already went out) — a structured
+        // error is the only trace the reboot died and the session was parked.
+        logger.error('[projects] restart-in-place failed — session parked stopped', {
+          session_id: sessionId,
+          project_id: projectId,
+          external_id: externalId,
+          error: err instanceof Error ? err.message : String(err),
+        });
         if (isMissingRuntimeError(err)) {
           const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
           if (!claim) return;
@@ -333,9 +458,11 @@ export async function restartSession(input: {
           if (recovery === 'running' || recovery === 'recovering') {
             await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(() => null);
           } else {
-            await preserveEstablishedRuntime(claim.row, 'restart_missing_runtime').catch(
-              () => null,
-            );
+            await preserveEstablishedRuntime(
+              claim.row,
+              'restart_missing_runtime',
+              'restart_failed',
+            ).catch(() => null);
           }
           return;
         }

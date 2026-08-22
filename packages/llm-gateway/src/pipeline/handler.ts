@@ -1,6 +1,7 @@
 import type {
   AuthedPrincipal,
   AuthorizeResult,
+  GatewayAttemptFailure,
   GatewayConfig,
   GatewayHooks,
   GatewayLogger,
@@ -9,6 +10,7 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
+import { GatewayResolutionError, looksLikeTerminalAuthFailure } from '../errors';
 import type { FetchImpl } from '../http';
 import { type CircuitBreaker, backoffDelay, realSleep } from '../resilience';
 import {
@@ -16,16 +18,40 @@ import {
   type SseErrorFrame,
   calculateCost,
   extractUsageFromJson,
+  extractUsageFromSseBuffer,
   jsonHasContent,
+  jsonSoftFailureFrame,
 } from '../usage';
 import { gatewayErrorBody, gatewayErrorResponse } from './error-response';
 import { type RoutedUpstreamCandidate, runFailover } from './failover';
-import { type StreamProbeResult, probeStream, relayStream } from './streaming';
+import {
+  appendAttemptFailure,
+  errorFrameCode,
+  exhaustedRouteErrorCode,
+  failureChainMessage,
+  failureChainMetadata,
+} from './failure-chain';
+import {
+  type StreamProbeResult,
+  probeStream,
+  relayStream,
+  resolveStreamProbeTimeoutMs,
+} from './streaming';
 import { createTraceEmitter } from './trace';
+import { utf8ByteLength } from './bounded-capture';
 
 export interface ChatCompletionRequest {
   authorization: string | undefined;
   rawBody: string;
+  /**
+   * Inbound (client-facing) request's abort signal, when the host surface
+   * exposes one (e.g. Hono's `c.req.raw.signal`). Threaded through to the
+   * upstream fetch and, for streaming, to `relayStream` — so a client that
+   * disconnects mid-request actually stops the upstream from generating (and
+   * the gateway from paying for) tokens nobody will ever see, instead of the
+   * dispatch/stream loops running to completion regardless.
+   */
+  signal?: AbortSignal;
 }
 
 export interface GatewayDeps {
@@ -64,6 +90,52 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+// A dead credential (or other terminal, client-side-fixable failure) can reach
+// the gateway as a 200-status stream carrying a `data: {"error":{...}}` frame
+// instead of a non-2xx HTTP response — every OpenAI-compatible-shaped upstream
+// this gateway talks to can do this for a streaming call, so `callUpstream`
+// never throws and `probeStream`/`sseErrorFrame` exist to catch it in-band
+// instead. Blanket-502ing every one of those (this function's caller's old
+// behavior) tells an OpenAI-compatible client "transient, retry me" about a
+// failure that will NEVER succeed on retry — exactly what let a dead upstream
+// key retry silently (client-side, past the gateway's own control) until a
+// session gave up with no visible error surfaced (2026-07-17 incident; see
+// `looksLikeTerminalAuthFailure`'s doc comment for the sibling fix on the
+// THROWN-error side of the same class of bug — this is the in-band-SSE-frame
+// side). Reclassifying the response status makes it non-retryable to any
+// spec-compliant client (retry eligibility is keyed off HTTP status, not
+// response body) instead of silently retried into an empty, error-free turn.
+function statusForErrorFrame(frame: SseErrorFrame): number {
+  // The ai-sdk transport (transports/ai-sdk/sse.ts) already classifies its own
+  // upstream errors and, when it recognizes a terminal failure, embeds the
+  // real HTTP-equivalent status as a NUMERIC `code` on the frame (e.g. `401`
+  // for a dead credential, or a genuine `429`/`403` the provider itself
+  // returned mid-stream) — trust that pre-computed classification verbatim
+  // rather than re-deriving it from the message a second time. Restricted to
+  // the 4xx range: a 4xx is unambiguously "don't retry this", whereas trusting
+  // an arbitrary numeric 5xx here wouldn't change this branch's already-
+  // reasonable "transient, generic 502" default.
+  if (typeof frame.code === 'number' && frame.code >= 400 && frame.code < 500) {
+    return frame.code;
+  }
+  // Other transports (native openai-compat, OpenRouter, ...) embed a STRING
+  // code/type instead (`invalid_api_key`, `authentication_error`) — no
+  // numeric status to trust, so fall back to the same message-based
+  // classifier `toTransportError` uses for the thrown-error side.
+  return looksLikeTerminalAuthFailure(frame.message) ? 401 : 502;
+}
+
+function concatChunks(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
 function requestHasImage(body: Record<string, unknown>): boolean {
   const messages = Array.isArray(body.messages) ? body.messages : [];
   return messages.some((message) => {
@@ -85,7 +157,7 @@ function requestHasImage(body: Record<string, unknown>): boolean {
 // a few times — before falling over to a different candidate, and before ever
 // giving up — resolves the overwhelming majority of these transparently,
 // including the common case where there is only one candidate to begin with.
-const MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 3;
+export const MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE = 3;
 
 function idOf(principal: AuthedPrincipal) {
   return {
@@ -101,7 +173,7 @@ function idOf(principal: AuthedPrincipal) {
 // Uses the host's combined `authorize` hook when present (one call), else the
 // granular authenticate + assertBillingActive + assertBudget hooks. Returns a
 // uniform AuthorizeResult so the handler renders one response/trace either way.
-async function admit(
+export async function admit(
   hooks: GatewayHooks,
   token: string,
   lap: () => number,
@@ -114,21 +186,29 @@ async function admit(
     return outcome;
   }
 
-  const principal = await hooks.authenticate(token);
+  let principal = await hooks.authenticate(token);
   if (!principal) {
     step('auth_failed', { ms: lap() });
     return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
   }
 
   try {
-    await hooks.assertBillingActive(principal.accountId);
+    const billing = await hooks.assertBillingActive(principal.accountId);
+    if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
     step('billing_ok', { ms: lap() });
   } catch (err) {
-    step('billing_inactive', { ms: lap(), reason: errorMessage(err) });
+    // The host's billing gate may attach the real reason (subscription_required
+    // / insufficient_credits / no_account / ...) as a `.reason` string property
+    // on the thrown error (see apps/api's BillingGateError) — this generic
+    // pipeline package can't import that host-specific class, so it duck-types
+    // the property instead of hardcoding one constant for every billing denial.
+    const reason = (err as { reason?: unknown })?.reason;
+    const errorCode = typeof reason === 'string' && reason ? reason : 'subscription_required';
+    step('billing_inactive', { ms: lap(), reason: errorMessage(err), code: errorCode });
     return {
       ok: false,
       status: 402,
-      errorCode: 'subscription_required',
+      errorCode,
       message: err instanceof Error ? err.message : 'Billing inactive',
       principal,
     };
@@ -166,6 +246,13 @@ export async function handleChatCompletions(
   const startMs = Date.now();
 
   const emit = createTraceEmitter(hooks, logger, requestId, startedAt, startMs);
+  // Measured WITHOUT allocating the encoded bytes. `new TextEncoder().encode(
+  // req.rawBody).byteLength` built a full second copy of every request body —
+  // on top of the UTF-16 string and the JSON.parse graph below — purely to read
+  // a length off it and throw it away. On an image-heavy turn that is tens of
+  // MiB of garbage per request inside a container that OOM-killed on
+  // 2026-08-21. Same number, no copy. See bounded-capture.ts.
+  const requestBytes = utf8ByteLength(req.rawBody);
 
   let lastMark = startMs;
   const lap = (): number => {
@@ -182,7 +269,42 @@ export async function handleChatCompletions(
       ...fields,
     });
 
-  step('received', { bytes: req.rawBody.length, hasAuthHeader: Boolean(req.authorization) });
+  // Every early exit BETWEEN a successful billing-gate admission hold and the
+  // point where settle() takes over reconciliation (dispatch/routing
+  // failures, oversized/invalid bodies, no candidates, all-candidates-empty)
+  // must refund that hold — otherwise a pre-dispatch failure silently keeps
+  // the reserved dollars forever. Reuses the same recordUsage reconciliation
+  // path settle() uses (see recordGatewayUsage): a synthetic zero-usage,
+  // zero-cost event with `billingHoldUsd` set always resolves to a full
+  // refund. Fire-and-forget — never blocks or fails the response being
+  // returned to the caller.
+  const refundBillingHold = (target: AuthedPrincipal | undefined): void => {
+    const hold = target?.billingHold;
+    if (!hold) return;
+    const refundEvent: UsageEvent = {
+      promptTokens: 0,
+      completionTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
+      accountId: target.accountId,
+      actorUserId: target.userId,
+      projectId: target.projectId,
+      sessionId: target.sessionId,
+      provider: '',
+      model: 'unknown',
+      upstreamCost: 0,
+      finalCost: 0,
+      billingMode: 'none',
+      streaming: false,
+      requestId,
+      billingHoldUsd: hold.amountUsd,
+    };
+    void hooks.recordUsage(refundEvent).catch((err) =>
+      logger.warn(`[llm-gateway] billing-hold refund failed for ${requestId}:`, err),
+    );
+  };
+
+  step('received', { bytes: requestBytes, hasAuthHeader: Boolean(req.authorization) });
 
   const token = bearer(req.authorization);
   if (!token) {
@@ -202,6 +324,9 @@ export async function handleChatCompletions(
   // outcome: a principal, or a 401/402 denial with the same response + trace.
   const gate = await admit(hooks, token, lap, step);
   if (!gate.ok) {
+    // Billing succeeded (hold taken) but a LATER gate (budget) denied the
+    // request — the hold must not be kept for a request that never dispatched.
+    refundBillingHold(gate.principal);
     const denyId = gate.principal ? idOf(gate.principal) : {};
     emit({
       ...denyId,
@@ -233,18 +358,28 @@ export async function handleChatCompletions(
   // default (`maxRequestBytes` unset/0); when configured it turns an upstream
   // that silently drops an over-limit request into an immediate, actionable 413
   // instead of a multi-second retry storm that ends in a generic 502.
-  if (config.maxRequestBytes && req.rawBody.length > config.maxRequestBytes) {
-    step('request_too_large', { bytes: req.rawBody.length, limit: config.maxRequestBytes });
+  if (config.maxRequestBytes && requestBytes > config.maxRequestBytes) {
+    refundBillingHold(principal);
+    step('request_too_large', { bytes: requestBytes, limit: config.maxRequestBytes });
     emit({
       ...id,
       status: 413,
       ok: false,
       errorCode: 'request_too_large',
-      errorMessage: `Request body ${req.rawBody.length} bytes exceeds limit ${config.maxRequestBytes}`,
+      errorMessage: `Request body ${requestBytes} bytes exceeds limit ${config.maxRequestBytes}`,
     });
     return gatewayErrorResponse(413, {
-      message: `Request body of ${req.rawBody.length} bytes exceeds the ${config.maxRequestBytes}-byte limit`,
-      code: 'request_too_large', provider: '', requestedModel: '', resolvedModel: '', requestId,
+      // Digit-free on purpose. 413 is terminal, but OpenCode 1.18.14+ decides
+      // retryability by running /429|500|502|503|504|524/i over the WHOLE
+      // response body — so a byte count that merely contains "500" makes it
+      // re-upload an over-limit body five times. The exact sizes are in the
+      // gateway log line above; the client only needs to know to send less.
+      message: 'Request body exceeds the configured maximum request size',
+      code: 'request_too_large',
+      provider: '',
+      requestedModel: '',
+      resolvedModel: '',
+      requestId,
       suggestion: 'Start a new session or reduce the conversation and attachment size, then retry.',
     });
   }
@@ -253,6 +388,7 @@ export async function handleChatCompletions(
   try {
     body = JSON.parse(req.rawBody) as Record<string, unknown>;
   } catch {
+    refundBillingHold(principal);
     step('invalid_json');
     emit({ ...id, status: 400, ok: false, errorCode: 'invalid_json' });
     return gatewayErrorResponse(400, {
@@ -273,6 +409,7 @@ export async function handleChatCompletions(
       requires: { imageInput: requestHasImage(body) },
     }) ?? null;
   } catch (err) {
+    refundBillingHold(principal);
     const message = errorMessage(err);
     step('route_resolution_failed', { ms: lap(), error: message });
     emit({
@@ -299,6 +436,26 @@ export async function handleChatCompletions(
   if (routedModel !== requestedModel) {
     body.model = routedModel;
   }
+  // Prefer the host's own per-candidate resolver; fall back to treating the
+  // (legacy, primary-only) `route.generationDefaults` as good for
+  // `primaryModel` alone and nothing else — matches what the gateway did
+  // before per-candidate re-validation existed, for a host/test that hasn't
+  // migrated to `generationDefaultsForModel` yet. A real host (apps/api's
+  // routing/resolve-route.ts) always supplies `generationDefaultsForModel`.
+  const generationDefaultsForModel =
+    route?.generationDefaultsForModel ??
+    ((model: string) => (model === routedModel ? route?.generationDefaults : undefined));
+  // Project/account-configured per-model generation defaults (reasoning
+  // effort, temperature, top_p, max output tokens) are DELIBERATELY NOT
+  // injected here. `body`/`payload` stay the raw client request through the
+  // whole dispatch loop below — each candidate the failover loop tries gets
+  // its OWN freshly-clamped defaults via `route?.generationDefaultsForModel`
+  // (passed into `runFailover`), because a fallback candidate can have
+  // different capabilities (temperature support, reasoning_options, output
+  // ceiling) than `routedModel`. Baking primary-model defaults in once, up
+  // front, would forward them unrevalidated to every fallback too. Only
+  // fills fields the client didn't already set — see
+  // `applyGenerationDefaults`'s doc comment.
   step('body_parsed', {
     model: requestedModel,
     routedModel,
@@ -337,6 +494,14 @@ export async function handleChatCompletions(
         }
       : metadata;
   const candidates: RoutedUpstreamCandidate[] = [];
+  // The most specific reason NO candidates came back for a route model — a
+  // host's resolveUpstream hook can throw a GatewayResolutionError (instead of
+  // returning an empty array) when it knows exactly why (no BYOK key, plan
+  // gate, expired Codex OAuth, disabled on this deployment, ...). The FIRST one
+  // wins: routeModels[0] is what the caller actually asked for, so its failure
+  // reason is the most relevant one to surface even if later fallback models
+  // fail for other/no reasons.
+  let resolutionError: GatewayResolutionError | null = null;
   for (const routeModel of routeModels) {
     try {
       const resolved = await hooks.resolveUpstream(principal, routeModel);
@@ -346,7 +511,12 @@ export async function handleChatCompletions(
       // that cannot refresh). A configured model policy treats that like an
       // unavailable candidate and continues to the next finite fallback.
       logger.warn(`[llm-gateway] model resolution failed for ${routeModel} ${requestId}:`, err);
-      step('model_resolution_failed', { routeModel, error: errorMessage(err) });
+      step('model_resolution_failed', {
+        routeModel,
+        error: errorMessage(err),
+        ...(err instanceof GatewayResolutionError ? { code: err.code } : {}),
+      });
+      if (!resolutionError && err instanceof GatewayResolutionError) resolutionError = err;
     }
   }
   step('resolved_candidates', {
@@ -363,21 +533,27 @@ export async function handleChatCompletions(
     })),
   });
   if (!candidates.length) {
-    step('model_unavailable', { model: requestedModel, routedModel });
+    refundBillingHold(principal);
+    const errorCode = resolutionError?.code ?? 'model_unavailable';
+    const message = resolutionError?.message ?? `No upstream configured for model "${routedModel}"`;
+    const suggestion =
+      resolutionError?.suggestion ?? 'Choose another model or connect the required provider, then retry.';
+    step('model_unavailable', { model: requestedModel, routedModel, errorCode });
     emit({
       ...id,
       requestedModel,
       resolvedModel: routedModel,
       status: 400,
       ok: false,
-      errorCode: 'model_unavailable',
+      errorCode,
+      errorMessage: message,
       request: capture(body),
       metadata: routingMetadata(null),
     });
     return gatewayErrorResponse(400, {
-      message: `No upstream configured for model "${routedModel}"`, code: 'model_unavailable',
+      message, code: errorCode,
       provider: '', requestedModel, resolvedModel: routedModel, requestId,
-      suggestion: 'Choose another model or connect the required provider, then retry.',
+      suggestion,
     });
   }
 
@@ -393,43 +569,38 @@ export async function handleChatCompletions(
 
   step('dispatch_upstream', { streaming, candidateCount: candidates.length, routeModels });
 
-  // An upstream can return a syntactically valid 200 with empty `choices`/content
-  // (seen from OpenRouter/z-ai) — a real failure mode, not a legitimate zero-output
-  // turn. That never throws, so runFailover's transport-level retry/failover never
-  // sees it. This loop adds a second failover tier on top: each candidate gets a
-  // few immediate retries in place (below), and only once it's exhausted its own
-  // retries is it excluded so the remaining candidates get a turn — only once
-  // every candidate has produced nothing do we give up and tell the caller,
-  // instead of silently forwarding a blank "stop".
+  // Some upstream failures arrive inside syntactically successful HTTP 200
+  // completions. Known forms are empty completions and an exact rate-limit
+  // sentence encoded as assistant text. The transport retry layer cannot see
+  // either form. This loop validates each completion before relaying bytes.
+  // Each candidate gets three attempts before failover.
   const exhaustedCandidates = new Set<string>();
-  const emptyAttemptsByCandidate = new Map<string, number>();
+  const invalidAttemptsByCandidate = new Map<string, number>();
   const candidateKey = ({ descriptor, routeModel }: RoutedUpstreamCandidate): string =>
-    `${routeModel}\u0000${descriptor.provider}\u0000${descriptor.resolvedModel ?? ''}`;
+    `${routeModel}\u0000${descriptor.provider}\u0000${descriptor.resolvedModel ?? ''}\u0000${descriptor.credentialRef ?? ''}`;
   const sleep = config.retry?.sleep ?? realSleep;
   const rand = config.retry?.rand ?? Math.random;
   const baseDelayMs = config.retry?.baseDelayMs ?? 250;
   const maxDelayMs = config.retry?.maxDelayMs ?? 8_000;
   const jitter = config.retry?.jitter ?? true;
 
-  // Records an empty completion from a routed candidate. Retries it (via
-  // a short backoff, then `continue`) while it's under budget; once exhausted,
-  // excludes it from `remaining` so the loop moves on to the next candidate (or
-  // to the all-candidates-empty exit if there isn't one).
-  const registerEmptyCompletion = async (
+  const registerInvalidCompletion = async (
     candidate: RoutedUpstreamCandidate,
+    kind: 'empty_completion' | 'rate_limit',
     fields: Record<string, unknown>,
   ): Promise<void> => {
     const key = candidateKey(candidate);
     const { descriptor, routeModel } = candidate;
-    const attempt = (emptyAttemptsByCandidate.get(key) ?? 0) + 1;
-    emptyAttemptsByCandidate.set(key, attempt);
-    const exhausted = attempt >= MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE;
+    const attempt = (invalidAttemptsByCandidate.get(key) ?? 0) + 1;
+    invalidAttemptsByCandidate.set(key, attempt);
+    const exhausted = attempt >= MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE;
     logger.warn(
-      `[llm-gateway] empty completion from ${routeModel}@${descriptor.provider} (attempt ${attempt}/${MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE}), ${exhausted ? 'failing over' : 'retrying same candidate'} ${requestId}`,
+      `[llm-gateway] ${kind} from ${routeModel}@${descriptor.provider} (attempt ${attempt}/${MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE}), ${exhausted ? 'failing over' : 'retrying same candidate'} ${requestId}`,
     );
-    step('empty_completion_retry', {
+    step('invalid_completion_retry', {
       provider: descriptor.provider,
       routeModel,
+      kind,
       attempt,
       exhausted,
       ...fields,
@@ -438,7 +609,11 @@ export async function handleChatCompletions(
       exhaustedCandidates.add(key);
       return;
     }
-    await sleep(backoffDelay(attempt, baseDelayMs, maxDelayMs, jitter, rand));
+    // A rate-limit rejection needs a slower request ramp than an empty
+    // completion. The injected test sleeper still removes this delay in tests.
+    const retryBaseDelayMs = kind === 'rate_limit' ? Math.max(baseDelayMs, 1_000) : baseDelayMs;
+    const retryMaxDelayMs = kind === 'rate_limit' ? Math.max(maxDelayMs, 8_000) : maxDelayMs;
+    await sleep(backoffDelay(attempt, retryBaseDelayMs, retryMaxDelayMs, jitter, rand));
   };
 
   let upstream: Response | null = null;
@@ -449,53 +624,136 @@ export async function handleChatCompletions(
   let attempts = 0;
   let nonStreamBody: unknown;
   let streamProbe: StreamProbeResult | null = null;
+  // The actual payload sent to the currently-chosen candidate (its OWN
+  // freshly-clamped generation defaults, not necessarily the primary
+  // model's — see runFailover's `dispatchedPayload`). Used for tracing so
+  // the captured "request" reflects what really reached the wire.
+  let dispatchedPayload: Record<string, unknown> = payload;
   // The real upstream error behind an empty stream, if a candidate returned one
   // (see the error-frame branch below). Surfaced in place of the generic
   // empty-completion 502 when every candidate ends up producing nothing usable.
   let lastErrorFrame: SseErrorFrame | null = null;
+  // Ordered, bounded diagnostics for every candidate rejected before the turn
+  // either succeeds or exhausts its route. This is the source of truth for the
+  // client error envelope and the observability summary.
+  let attemptFailures: GatewayAttemptFailure[] = [];
+
+  // Usage from candidates the dispatch loop discarded (empty-completion retries
+  // and failed-over attempts) before ever reaching settle(). A "malformed"
+  // completion can still have consumed real upstream tokens (prompt processing,
+  // or a fully-generated-but-badly-shaped response) — most providers report
+  // `usage` even then. Accumulated here and folded into the eventually-chosen
+  // candidate's usage at settle() so Kortix doesn't eat upstream cost with zero
+  // corresponding customer charge. Purely additive: never changes what's
+  // relayed to the caller, only what gets billed.
+  let discardedUsage: TokenCounts = {
+    promptTokens: 0,
+    completionTokens: 0,
+    cachedTokens: 0,
+    cacheWriteTokens: 0,
+  };
+  let discardedUpstreamCostHint = 0;
+  let discardedUpstreamCostHintSeen = false;
+  const accumulateDiscardedUsage = (usage: ExtractedUsage | null | undefined): void => {
+    if (!usage) return;
+    const hadTokens =
+      (usage.promptTokens ?? 0) + (usage.completionTokens ?? 0) + (usage.cachedTokens ?? 0) > 0;
+    if (!hadTokens && typeof usage.upstreamCostHint !== 'number') return;
+    discardedUsage = {
+      promptTokens: discardedUsage.promptTokens + (usage.promptTokens ?? 0),
+      completionTokens: discardedUsage.completionTokens + (usage.completionTokens ?? 0),
+      cachedTokens: discardedUsage.cachedTokens + (usage.cachedTokens ?? 0),
+      cacheWriteTokens: discardedUsage.cacheWriteTokens + (usage.cacheWriteTokens ?? 0),
+    };
+    if (typeof usage.upstreamCostHint === 'number') {
+      discardedUpstreamCostHint += usage.upstreamCostHint;
+      discardedUpstreamCostHintSeen = true;
+    }
+    logger.warn(
+      `[llm-gateway] discarded attempt carried non-zero usage — folding into final billing ${requestId}`,
+    );
+  };
 
   for (;;) {
     const remaining = candidates.filter(
       (candidate) => !exhaustedCandidates.has(candidateKey(candidate)),
     );
     if (remaining.length === 0) {
+      // Every candidate failed — nothing was ever relayed to the caller, so
+      // any admission hold must be returned. (Known, documented gap: usage
+      // discarded along the way from candidates that DID carry real tokens
+      // — e.g. an empty-completion retry that still consumed upstream input
+      // processing — is NOT billed on this total-failure path; only the
+      // eventually-*successful*-candidate path below folds discarded usage
+      // in. Billing a fully-failed turn is a judgment call left as a
+      // follow-up rather than done here.)
+      refundBillingHold(principal);
       step('all_candidates_empty', { ms: lap(), tried, hadErrorFrame: Boolean(lastErrorFrame) });
       // Prefer the real upstream cause (overloaded, request too large, content
       // filter) that a candidate reported over the generic "empty" message that
       // would otherwise bury it.
-      const errorCode = lastErrorFrame ? 'upstream_error' : 'empty_completion';
-      const message = lastErrorFrame
-        ? lastErrorFrame.message
-        : 'All upstream candidates returned an empty completion';
+      const errorCode = exhaustedRouteErrorCode(attemptFailures);
+      // Status first: it decides whether the composed message may name each
+      // attempt's HTTP status. A sub-500 body that says "HTTP 500" anywhere
+      // matches OpenCode >= 1.18.14's retry regex and costs five full-prompt
+      // replays — see the note at the top of pipeline/error-response.ts.
+      const status = lastErrorFrame ? statusForErrorFrame(lastErrorFrame) : 502;
+      const message = failureChainMessage(
+        attemptFailures,
+        'All upstream candidates returned an empty completion',
+        requestId,
+        { includeStatus: status >= 500 },
+      );
       const failedCandidate = [...candidates].reverse().find((candidate) =>
         exhaustedCandidates.has(candidateKey(candidate)),
       );
       const failedDescriptor = failedCandidate?.descriptor;
+      const failureMetadata = failureChainMetadata(attemptFailures, false);
       emit({
         ...id,
         requestedModel,
-        resolvedModel: routedModel,
+        resolvedModel: failedDescriptor?.resolvedModel ?? routedModel,
+        provider: failedDescriptor?.provider ?? tried.at(-1) ?? '',
+        billingMode: failedDescriptor?.billingMode ?? 'none',
         streaming,
-        status: 502,
+        status,
         ok: false,
         errorCode,
         errorMessage: message,
+        attempts,
         candidatesTried: tried,
+        attemptFailures,
         request: capture(payload),
-        metadata: routingMetadata(null),
+        metadata: {
+          ...routingMetadata(null),
+          ...(failureMetadata ? { gatewayFailure: failureMetadata } : {}),
+        },
       });
       return json(
         gatewayErrorBody({
           message,
           code: errorCode,
-          upstreamCode: lastErrorFrame?.code,
+          // Keep both code locations canonical for OpenAI-compatible clients.
+          // OpenCode reads nested `error.code` from responseBody to decide
+          // whether it must compact after a provider rejection. Verified
+          // unchanged through 1.18.19: `provider/error.ts` (parseAPICallError →
+          // ContextOverflowError) is byte-identical to 1.17.11, and
+          // `SessionRetry.retryable()` short-circuits on ContextOverflowError
+          // before any retry classification runs.
+          upstreamCode:
+            errorCode === 'context_length_exceeded' ? errorCode : lastErrorFrame?.code,
           provider: failedDescriptor?.provider ?? tried.at(-1) ?? '',
           requestedModel,
           resolvedModel: failedDescriptor?.resolvedModel ?? routedModel,
           requestId,
-          suggestion: 'Retry the request. If the error continues, switch to another model.',
+          suggestion:
+            status === 401
+              ? 'Check the provider credentials, or switch to another model.'
+              : 'Retry the request. If the error continues, switch to another model.',
+          attemptFailures,
+          responseStatus: status,
         }),
-        502,
+        status,
       );
     }
 
@@ -516,9 +774,13 @@ export async function handleChatCompletions(
       },
       capturedRequest: capture(payload),
       fallbackOn,
+      signal: req.signal,
+      generationDefaultsForModel,
+      attemptFailures,
     });
 
     if (result.kind === 'response') {
+      refundBillingHold(principal);
       step('upstream_failed', { ms: lap(), status: result.response.status });
       return result.response;
     }
@@ -529,11 +791,15 @@ export async function handleChatCompletions(
       tried: triedThisRound,
       modelsTried: modelsTriedThisRound,
       attempts: attemptsThisRound,
+      dispatchedPayload: dispatchedPayloadThisRound,
+      attemptFailures: attemptFailuresThisRound,
     } = result.value;
+    attemptFailures = attemptFailuresThisRound;
     tried = [...tried, ...triedThisRound];
     modelsTried = [...modelsTried, ...modelsTriedThisRound]
       .filter((model, index, all) => all.indexOf(model) === index);
     attempts += attemptsThisRound;
+    dispatchedPayload = dispatchedPayloadThisRound;
     const { descriptor: chosenDescriptor, routeModel: chosenRouteModel } = chosen;
 
     if (!streaming) {
@@ -543,50 +809,150 @@ export async function handleChatCompletions(
         provider: chosenDescriptor.provider,
         routeModel: chosenRouteModel,
       });
-      if (jsonHasContent(data)) {
+      const softFailure = jsonSoftFailureFrame(data);
+      if (!softFailure && jsonHasContent(data)) {
         upstream = candidateUpstream;
         descriptor = chosenDescriptor;
         selectedRouteModel = chosenRouteModel;
         nonStreamBody = data;
         break;
       }
-      await registerEmptyCompletion(chosen, { streaming: false });
+      // Empty/malformed, but the upstream may have already billed Kortix for it
+      // (a real generation that came back badly shaped) — capture any usage
+      // before discarding the body.
+      accumulateDiscardedUsage(extractUsageFromJson(data));
+      if (softFailure) {
+        lastErrorFrame = softFailure;
+        appendAttemptFailure(attemptFailures, {
+          provider: chosenDescriptor.provider,
+          routeModel: chosenRouteModel,
+          resolvedModel: chosenDescriptor.resolvedModel,
+          stage: 'completion_validation',
+          status: statusForErrorFrame(softFailure),
+          code: errorFrameCode(softFailure),
+          message: softFailure.message,
+        });
+      } else {
+        appendAttemptFailure(attemptFailures, {
+          provider: chosenDescriptor.provider,
+          routeModel: chosenRouteModel,
+          resolvedModel: chosenDescriptor.resolvedModel,
+          stage: 'completion_validation',
+          code: 'empty_completion',
+          message: 'Upstream returned a completion without usable content',
+        });
+      }
+      await registerInvalidCompletion(chosen, softFailure ? 'rate_limit' : 'empty_completion', {
+        streaming: false,
+      });
       continue;
     }
 
     if (!candidateUpstream.body) {
-      await registerEmptyCompletion(chosen, { streaming: true, reason: 'no_body' });
+      appendAttemptFailure(attemptFailures, {
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
+        resolvedModel: chosenDescriptor.resolvedModel,
+        stage: 'completion_validation',
+        code: 'empty_completion',
+        message: 'Upstream returned a streaming response without a body',
+      });
+      await registerInvalidCompletion(chosen, 'empty_completion', {
+        streaming: true,
+        reason: 'no_body',
+      });
       continue;
     }
 
-    const probe = await probeStream(candidateUpstream.body);
-    if (probe.hasContent) {
+    const streamProbeTimeoutMs = resolveStreamProbeTimeoutMs({
+      requestBytes,
+      provider: chosenDescriptor.provider,
+      model: chosenDescriptor.resolvedModel ?? chosenRouteModel,
+      configuredTimeoutMs: config.streamProbeTimeoutMs,
+    });
+    const probe = await probeStream(candidateUpstream.body, {
+      inactivityTimeoutMs: streamProbeTimeoutMs,
+    });
+    // A slow candidate is not a broken one. The probe holds the response back
+    // only so a DEAD candidate can be swapped out before headers are committed;
+    // once it has merely run out of patience, the correct move is to commit the
+    // stream and let relayStream heartbeat downstream while the model works —
+    // not to cancel a healthy upstream mid-prefill and fail the turn. Failing
+    // over here is what produced the deterministic
+    // `upstream stream probe timeout exceeded (90000ms with no bytes)` on large
+    // Fable contexts (see PROBE_COMMIT_DEADLINE_MS in streaming.ts).
+    //
+    // Only a TIMEOUT commits. Every other content-free probe outcome below
+    // (structured error frame, transport read failure, cleanly-closed empty
+    // stream) is a real failure and still fails over.
+    const probeTimedOut = probe.readError?.code === 'stream_probe_timeout';
+    if (probe.hasContent || probeTimedOut) {
+      if (probeTimedOut) {
+        logger.info(
+          `[llm-gateway] committing slow-but-live upstream from ${chosenDescriptor.provider} ${requestId} after ${streamProbeTimeoutMs}ms with no bytes — relaying with heartbeats instead of failing over`,
+        );
+        step('upstream_slow_commit', {
+          provider: chosenDescriptor.provider,
+          routeModel: chosenRouteModel,
+          probeTimeoutMs: streamProbeTimeoutMs,
+        });
+      }
       upstream = candidateUpstream;
       descriptor = chosenDescriptor;
       selectedRouteModel = chosenRouteModel;
       streamProbe = probe;
       break;
     }
-    // A structured error frame is a definitive failure for THIS candidate, not the
-    // transient empty-stop hiccup the same-candidate retry targets — so exclude the
-    // candidate at once (no in-place retry) and remember the real error to surface
-    // if nothing usable ever arrives. Other candidates, if any, still get a turn.
+    // Most structured error frames are terminal for this candidate. A 429 is
+    // transient. Retry a 429 with rate-limit backoff before failover.
     if (probe.errorFrame) {
       lastErrorFrame = probe.errorFrame;
+      appendAttemptFailure(attemptFailures, {
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
+        resolvedModel: chosenDescriptor.resolvedModel,
+        stage: 'stream_error',
+        status: statusForErrorFrame(probe.errorFrame),
+        code: errorFrameCode(probe.errorFrame),
+        message: probe.errorFrame.message,
+      });
+      await probe.reader.cancel('upstream completion rejected by gateway').catch(() => undefined);
+      // `detail` carries the fields that actually identify WHICH part of the
+      // request the upstream rejected (OpenAI-shaped backends: `type`/`param`).
+      // Without it a body-level rejection logs as a bare "Bad Request" and is
+      // undiagnosable from logs alone — see SseErrorFrame.detail.
+      const errorDetail = probe.errorFrame.detail;
       logger.warn(
-        `[llm-gateway] upstream error frame from ${chosenDescriptor.provider} ${requestId}: "${probe.errorFrame.message}"${probe.errorFrame.code !== undefined ? ` (code ${probe.errorFrame.code})` : ''}`,
+        `[llm-gateway] upstream error frame from ${chosenDescriptor.provider} ${requestId}: "${probe.errorFrame.message}"${probe.errorFrame.code !== undefined ? ` (code ${probe.errorFrame.code})` : ''}${errorDetail ? ` detail=${JSON.stringify(errorDetail)}` : ''}`,
       );
       step('upstream_error_frame', {
         provider: chosenDescriptor.provider,
         routeModel: chosenRouteModel,
         message: probe.errorFrame.message,
         code: probe.errorFrame.code,
+        ...(errorDetail ? { detail: errorDetail } : {}),
       });
+      if (statusForErrorFrame(probe.errorFrame) === 429) {
+        await registerInvalidCompletion(chosen, 'rate_limit', {
+          streaming: true,
+          message: probe.errorFrame.message,
+          code: probe.errorFrame.code,
+        });
+        continue;
+      }
       exhaustedCandidates.add(candidateKey(chosen));
       continue;
     }
     if (probe.readError) {
       lastErrorFrame = probe.readError;
+      appendAttemptFailure(attemptFailures, {
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
+        resolvedModel: chosenDescriptor.resolvedModel,
+        stage: 'stream_probe',
+        code: errorFrameCode(probe.readError),
+        message: probe.readError.message,
+      });
       logger.warn(
         `[llm-gateway] upstream stream read failed during probe from ${chosenDescriptor.provider} ${requestId}: "${probe.readError.message}"`,
       );
@@ -598,7 +964,22 @@ export async function handleChatCompletions(
       exhaustedCandidates.add(candidateKey(chosen));
       continue;
     }
-    await registerEmptyCompletion(chosen, { streaming: true });
+    // A cleanly-closed empty stream can still carry a trailing usage-only
+    // frame (exactly the shape `stream_options.include_usage` produces) — pull
+    // it out of the probed chunks before they're discarded.
+    if (probe.chunks.length) {
+      const decoded = new TextDecoder().decode(concatChunks(probe.chunks));
+      accumulateDiscardedUsage(extractUsageFromSseBuffer(decoded));
+    }
+    appendAttemptFailure(attemptFailures, {
+      provider: chosenDescriptor.provider,
+      routeModel: chosenRouteModel,
+      resolvedModel: chosenDescriptor.resolvedModel,
+      stage: 'completion_validation',
+      code: 'empty_completion',
+      message: 'Upstream stream closed before producing usable content',
+    });
+    await registerInvalidCompletion(chosen, 'empty_completion', { streaming: true });
   }
 
   // Every loop exit above either `return`s (transport failure / all-empty) or
@@ -620,7 +1001,11 @@ export async function handleChatCompletions(
     selectedRouteModel,
   });
 
-  const traceMetadata = routingMetadata(selectedRouteModel);
+  const recoveredFailure = failureChainMetadata(attemptFailures, true);
+  const traceMetadata = {
+    ...routingMetadata(selectedRouteModel),
+    ...(recoveredFailure ? { gatewayFailure: recoveredFailure } : {}),
+  };
 
   const settle = async (
     usage: ExtractedUsage | null,
@@ -633,29 +1018,69 @@ export async function handleChatCompletions(
       requestedModel ??
       'unknown'
     ).toString();
+    // Fold in any usage from candidates the dispatch loop discarded before this
+    // one settled (empty-completion retries, failed-over attempts) — the
+    // upstream may have already charged Kortix for those even though nothing
+    // usable came back. Purely additive to what's billed; never touches what
+    // was relayed to the caller.
     const counts: TokenCounts = {
-      promptTokens: usage?.promptTokens ?? 0,
-      completionTokens: usage?.completionTokens ?? 0,
-      cachedTokens: usage?.cachedTokens ?? 0,
+      promptTokens: (usage?.promptTokens ?? 0) + discardedUsage.promptTokens,
+      completionTokens: (usage?.completionTokens ?? 0) + discardedUsage.completionTokens,
+      cachedTokens: (usage?.cachedTokens ?? 0) + discardedUsage.cachedTokens,
+      cacheWriteTokens: (usage?.cacheWriteTokens ?? 0) + discardedUsage.cacheWriteTokens,
     };
+    const combinedUpstreamCostHint =
+      typeof usage?.upstreamCostHint === 'number' || discardedUpstreamCostHintSeen
+        ? (usage?.upstreamCostHint ?? 0) + discardedUpstreamCostHint
+        : undefined;
     const markup = finalDescriptor.billingMode === 'none' ? 0 : finalDescriptor.markup;
     const { upstreamCost, finalCost } = calculateCost(
       usedModel,
       counts,
       markup,
-      usage?.upstreamCostHint,
+      combinedUpstreamCostHint,
       finalDescriptor.pricing,
     );
 
+    // promptTokens already includes cachedTokens/cacheWriteTokens as a subset
+    // (the Anthropic transport folds cache-read/cache-write into the total
+    // input count for total_tokens back-compat) — completionTokens is the only
+    // independent addend.
+    const billedTokenTotal = counts.promptTokens + counts.completionTokens;
+
     // A billable request that priced to $0 means we have no pricing for the
     // resolved model (stale catalog) — surface it so it can't silently leak.
-    if (markup > 0 && upstreamCost === 0 && counts.promptTokens + counts.completionTokens > 0) {
+    if (markup > 0 && upstreamCost === 0 && billedTokenTotal > 0) {
       logger.warn(
         `[llm-gateway] billable request priced at $0 — missing pricing? ${requestId} model=${usedModel} provider=${finalDescriptor.provider}`,
       );
     }
 
-    if (counts.promptTokens + counts.completionTokens > 0) {
+    // A billable (non-free, markup>0) route that settles with LITERALLY zero
+    // extracted usage — not merely zero-cost — means usage extraction itself
+    // came back empty (e.g. an upstream that doesn't emit a usage frame for
+    // this call shape). That's the exact failure mode that let genuine-OpenAI
+    // streaming completions bill $0 with no signal at all (the check below
+    // that gates recordUsage would otherwise skip silently). Distinct from the
+    // $0-pricing warning above, which fires only when tokens WERE counted.
+    //
+    // Gated on `!streamError`: a stream that failed mid-flight (upstream error
+    // frame, dropped connection — see streaming.ts's abort/mid-stream-error
+    // handling) legitimately delivers nothing and legitimately bills $0 —
+    // that's a failed turn, not a usage-extraction bug, and must not be
+    // conflated with "billing quietly broke" noise.
+    if (markup > 0 && billedTokenTotal === 0 && !streamError) {
+      logger.warn(
+        `[llm-gateway] billable ${streaming ? 'streaming' : 'non-streaming'} request settled with ZERO extracted usage — usage extraction likely broken for this upstream shape ${requestId} model=${usedModel} provider=${finalDescriptor.provider}`,
+      );
+    }
+
+    // Also fires on zero usage when an admission hold was taken (principal.
+    // billingHold) — even a request that produced nothing billable still
+    // reserved real dollars at admission that must be refunded, or the hold
+    // itself becomes a (small, but real) overcharge on every zero-usage
+    // request.
+    if (billedTokenTotal > 0 || principal.billingHold) {
       const event: UsageEvent = {
         ...counts,
         accountId: principal.accountId,
@@ -669,6 +1094,7 @@ export async function handleChatCompletions(
         billingMode: finalDescriptor.billingMode,
         streaming,
         requestId,
+        ...(principal.billingHold ? { billingHoldUsd: principal.billingHold.amountUsd } : {}),
       };
       try {
         await hooks.recordUsage(event);
@@ -683,6 +1109,7 @@ export async function handleChatCompletions(
       promptTokens: counts.promptTokens,
       completionTokens: counts.completionTokens,
       cachedTokens: counts.cachedTokens,
+      cacheWriteTokens: counts.cacheWriteTokens,
       upstreamCost,
       finalCost,
       streaming,
@@ -706,10 +1133,14 @@ export async function handleChatCompletions(
         : {}),
       attempts,
       candidatesTried: tried,
+      attemptFailures,
       usage: counts,
       upstreamCost,
       finalCost,
-      request: capture(payload),
+      // The candidate that actually WON, not the raw pre-dispatch payload —
+      // reflects that candidate's own freshly-clamped generation defaults
+      // (see the dispatch loop's `dispatchedPayload` assignment above).
+      request: capture(dispatchedPayload),
       response: capture(response),
       metadata: traceMetadata,
     });
@@ -728,7 +1159,13 @@ export async function handleChatCompletions(
     throw new Error(`unreachable: streaming dispatch exited without a probe result (${requestId})`);
   }
   const readable = relayStream({
-    primed: { reader: streamProbe.reader, chunks: streamProbe.chunks },
+    primed: {
+      reader: streamProbe.reader,
+      chunks: streamProbe.chunks,
+      // Present only when the probe committed on its deadline rather than on
+      // content; adopting it keeps the first post-commit chunk from being lost.
+      ...(streamProbe.pendingRead ? { pendingRead: streamProbe.pendingRead } : {}),
+    },
     captureBodies,
     requestId,
     logger,
@@ -739,6 +1176,7 @@ export async function handleChatCompletions(
       resolvedModel: finalDescriptor.resolvedModel ?? requestedModel,
       requestId,
     },
+    signal: req.signal,
   });
 
   return new Response(readable, {

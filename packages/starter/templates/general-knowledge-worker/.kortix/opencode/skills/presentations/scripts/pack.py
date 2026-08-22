@@ -4,8 +4,8 @@ Strips formatting whitespace from XML, preserving text content in DrawingML
 text elements, then compresses everything into a ZIP archive.
 
 Usage:
-    python pack.py <unpacked_dir> <output.pptx>
-    python pack.py working/ presentation.pptx
+    python3 pack.py <unpacked_dir> <output.pptx>
+    python3 pack.py working/ presentation.pptx
 """
 
 import shutil

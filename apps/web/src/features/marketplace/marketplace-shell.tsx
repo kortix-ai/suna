@@ -37,7 +37,7 @@ function Crumbs({ crumbs }: { crumbs: MarketplaceCrumb[] }) {
         {crumbs.map((crumb, i) => {
           const isLast = i === crumbs.length - 1;
           return (
-            <Fragment key={`${crumb.label}-${i}`}>
+            <Fragment key={`${crumb.label}:${crumb.href ?? ''}`}>
               <BreadcrumbItem className="min-w-0">
                 {isLast ? (
                   <BreadcrumbPage className="truncate">{crumb.label}</BreadcrumbPage>

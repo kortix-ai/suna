@@ -22,3 +22,4 @@ export type {
   FileContentResult,
   BinaryBlobResult,
 } from './file-source';
+export { PreviewFitProvider, isUsableIntrinsicSize } from './preview-fit';

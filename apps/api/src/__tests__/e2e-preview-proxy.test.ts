@@ -11,12 +11,15 @@
  * - Daytona SDK is mocked to return preview links
  * - Global fetch is mocked to simulate upstream responses
  */
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { runWithContext } from '../lib/request-context';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
+import * as realProviders from '../platform/providers';
+import * as realPreviewOwnership from '../shared/preview-ownership';
+import { __resetPromptModelSignatureCacheForTests } from '../projects/lib/sandbox-env-sync';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -48,9 +51,15 @@ let mockFetchResponses: Array<{
   error?: Error;
 }> = [];
 let mockFetchCallCount = 0;
-let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string | null }> = [];
+let mockFetchCalls: Array<{
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: string | null;
+}> = [];
 let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 let mockResolvedPreviewPorts: number[] = [];
+let mockSnapshotSyncCalls: Array<Record<string, unknown>> = [];
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -87,8 +96,12 @@ mock.module('../middleware/auth', () => ({
     c.set('userEmail', 'test@kortix.dev');
     await next();
   },
-  supabaseAuth: async (c: any, next: any) => { await next(); },
-  apiKeyAuth: async (c: any, next: any) => { await next(); },
+  supabaseAuth: async (c: any, next: any) => {
+    await next();
+  },
+  apiKeyAuth: async (c: any, next: any) => {
+    await next();
+  },
 }));
 
 // DB mock — simulate sandbox + membership queries
@@ -110,13 +123,36 @@ mock.module('../shared/db', () => {
         // (a field the sandbox-row query shape shares), which would otherwise
         // misclassify it as a sandbox-table query and starve resolveOwnerRawEnv.
         const isProjectSessionQuery = fieldKeys.includes('createdBy');
-        const isSandboxQuery = !isProjectSessionQuery && fieldKeys.some((key) =>
-          ['accountId', 'sandboxId', 'projectId', 'agentName', 'status', 'config', 'provider', 'baseUrl'].includes(key),
-        );
+        // `wakeSandbox`'s deadline probe: a one-column projection of
+        // session_sandboxes. It must be classified BEFORE the loose sandbox
+        // check and served a LIVE deadline, otherwise every wake in this file is
+        // refused as expired and the auto-wake/retry assertions all fail. The
+        // refusal path itself is covered in sandbox-proxy/wake-deadline-guard.test.ts.
+        const isDeadlineProbe = fieldKeys.length === 1 && fieldKeys[0] === 'deadlineAt';
+        const isSandboxQuery =
+          !isDeadlineProbe &&
+          !isProjectSessionQuery &&
+          fieldKeys.some((key) =>
+            [
+              'accountId',
+              'sandboxId',
+              'projectId',
+              'agentName',
+              'status',
+              'config',
+              'provider',
+              'baseUrl',
+            ].includes(key),
+          );
         const isMembershipQuery = fieldKeys.includes('accountRole');
 
         const rowsFor = (ordered = false): any[] => {
           if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
+          if (isDeadlineProbe) {
+            return mockSandboxRows().length === 0
+              ? []
+              : [{ deadlineAt: new Date(Date.now() + 60 * 60_000) }];
+          }
           if (isSandboxQuery) {
             const rows = mockSandboxRows();
             return ordered ? sortPreferredSandboxRows(rows) : rows;
@@ -157,15 +193,62 @@ mock.module('../shared/db', () => {
   };
 });
 
+const realTurnLifecycle = await import('../projects/sandbox-turn-lifecycle');
+mock.module('../projects/sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
+  beginSandboxTurn: async () => 'granted',
+  acceptSandboxTurn: async () => true,
+  abandonSandboxTurn: async () => true,
+}));
+
+// IAM — a prompt that switches to a CONCRETE agent is authorized for
+// `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
+// The real engine issues an `innerJoin` this file's `db` stub does not build, so
+// leaving it unmocked makes `authorize` throw, the forward retry 4x, and every
+// agent-switch assertion answer 502 instead of the 204 it is about.
+//
+// This file's subject is proxy FORWARDING, so the gate is held open here and the
+// gate itself — 403-before-re-mint, the requested agent as the resource, the
+// non-binding 'default' sentinel, and the no-round-trip ordinary turn — is pinned
+// in sandbox-proxy/routes/preview-agent-authz.test.ts.
+// preview.ts imports `authorize` from the barrel and `actorForUser` from
+// `iam/actor` (both pure here — `actorForUser` builds an Actor with no DB read),
+// so only the engine needs stubbing.
+mock.module('../iam', () => ({
+  PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
+  authorize: async () => ({ allowed: true, reason: 'role' }),
+}));
+
 mock.module('../shared/preview-ownership', () => ({
-  canAccessSandboxSession: async ({ userId }: { userId?: string }) =>
-    Boolean(userId && mockDbSandbox && mockDbMembership),
+  ...realPreviewOwnership,
+  // Mirrors the REAL narrowing (connector/share.ts): a session-bound caller — a
+  // sandbox token — may reach only its OWN session. Without this the mock
+  // ignored callerSessionId entirely, so a test could pass one and prove
+  // nothing; the WebSocket leg's isolation had no coverage at all.
+  canAccessSandboxSession: async ({
+    userId,
+    sessionId,
+    callerSessionId,
+  }: { userId?: string; sessionId?: string; callerSessionId?: string | null }) => {
+    if (!(userId && mockDbSandbox && mockDbMembership)) return false;
+    if (callerSessionId != null && callerSessionId !== sessionId) return false;
+    return true;
+  },
   canAccessPreviewSandbox: async ({ userId }: { userId?: string }) =>
     Boolean(userId && mockDbSandbox && mockDbMembership),
   resolvePreviewUserContext: async (sandboxId: string, userId?: string) =>
     userId && mockDbSandbox && mockDbMembership
-      ? { userId, sandboxId: mockSandboxRows()[0]?.sandboxId ?? sandboxId, sandboxRole: 'member', scopes: ['*'] }
+      ? {
+          userId,
+          sandboxId: mockSandboxRows()[0]?.sandboxId ?? sandboxId,
+          sandboxRole: 'member',
+          scopes: ['*'],
+        }
       : null,
+  // combinedAuth is bypassed in this suite (see above), so no project-scoped
+  // PAT ever reaches this — stub so the real module's shape stays satisfied
+  // for anything that imports it.
+  resolveSandboxProjectId: async () => null,
 }));
 
 // Daytona SDK mock
@@ -190,7 +273,15 @@ mock.module('../shared/daytona', () => ({
   }),
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../platform/providers', () => ({
+  ...realProviders,
+  // Whole-module replacement: every export the graph touches must be present or
+  // the file loads to 0 tests (see the secrets mock above).
+  SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},
+  providerAutoStopBackstopMinutes: () => 0,
   WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
     constructor(message: string) {
       super(message);
@@ -204,9 +295,8 @@ mock.module('../platform/providers', () => ({
         request.transport === 'websocket' &&
         classifyPtyWebSocketPath(request.path) !== null;
       return {
-        effectivePort: name === 'platinum' && (request.port === 4096 || ptyWebsocket)
-          ? 8000
-          : request.port,
+        effectivePort:
+          name === 'platinum' && (request.port === 4096 || ptyWebsocket) ? 8000 : request.port,
         websocket: ptyWebsocket
           ? {
               userContextQueryParam: '__kortix_user_context',
@@ -216,35 +306,44 @@ mock.module('../platform/providers', () => ({
       };
     };
     return {
-    routeIngress,
-    resolveIngress: async (_externalId: string, request: { port: number; path?: string; transport?: string }) => {
-      const route = routeIngress(request);
-      mockResolvedPreviewPorts.push(route.effectivePort);
-      return {
-        url: mockPreviewUrl,
-        headers: name === 'daytona'
-          ? {
-              'X-Daytona-Skip-Preview-Warning': 'true',
-              'X-Daytona-Disable-CORS': 'true',
-              ...(mockPreviewToken ? { 'X-Daytona-Preview-Token': mockPreviewToken } : {}),
-            }
-          : name === 'e2b' && mockPreviewToken
-            ? { 'e2b-traffic-access-token': mockPreviewToken }
-            : {},
-        effectivePort: route.effectivePort,
-        websocket: route.websocket,
-      };
-    },
-    ensureRunning: async (sandboxId: string) => {
-      mockWakeCalls.push(sandboxId);
-    },
-  }},
+      routeIngress,
+      resolveIngress: async (
+        _externalId: string,
+        request: { port: number; path?: string; transport?: string },
+      ) => {
+        const route = routeIngress(request);
+        mockResolvedPreviewPorts.push(route.effectivePort);
+        return {
+          url: mockPreviewUrl,
+          headers:
+            name === 'daytona'
+              ? {
+                  'X-Daytona-Skip-Preview-Warning': 'true',
+                  'X-Daytona-Disable-CORS': 'true',
+                  ...(mockPreviewToken ? { 'X-Daytona-Preview-Token': mockPreviewToken } : {}),
+                }
+              : name === 'e2b' && mockPreviewToken
+                ? { 'e2b-traffic-access-token': mockPreviewToken }
+                : {},
+          effectivePort: route.effectivePort,
+          websocket: route.websocket,
+        };
+      },
+      ensureRunning: async (sandboxId: string) => {
+        mockWakeCalls.push(sandboxId);
+      },
+    };
+  },
 }));
 
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test-version',
   config: {
     isDaytonaEnabled: () => true,
+    // The preview CORS allowlist reads this. Set to the SAME value as the real
+    // config default, because this file's collaborators resolve a mix of the
+    // mocked and the real module — a disagreement here reads as a CORS bug.
+    FRONTEND_URL: 'http://localhost:3000',
   },
 }));
 
@@ -257,10 +356,20 @@ mock.module('../projects/secrets', () => {
     names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
     revision: `rev-${projectId}`,
   });
+  // mock.module REPLACES the module wholesale — an export omitted here is a
+  // SyntaxError for anything else in the graph that imports it, which takes the
+  // WHOLE FILE to 0 tests rather than failing one case. Stub the rest, and make
+  // them throw so a real dependency is loud instead of silently undefined.
   return {
     AmbiguousSecretGrantError: class AmbiguousSecretGrantError extends Error {},
     resolveGrantedSecretEnv: () => ({}),
     isValidSecretName: () => true,
+    intersectSecretGrants: (grant: unknown, allowlist: unknown) =>
+      allowlist == null ? grant : allowlist,
+    parseSessionSecretsAllowlist: () => null,
+    secretKeyCollisionInAllowlist: () => null,
+    canonicalizeSecretsAllowlist: (v: unknown) => v,
+    secretsAllowlistPayloadConflicts: () => false,
     isValidIdentifier: () => true,
     identifierKeyConflicts: () => false,
     encryptProjectSecret: (_projectId: string, value: string) => value,
@@ -270,12 +379,37 @@ mock.module('../projects/secrets', () => {
     listProjectSecrets: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsForUser: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
+    listProjectSecretNamesForConsumer: async () => [],
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
-    projectSecretsRevision: (env: Record<string, string>) => `rev-${Object.keys(env).sort().join('-')}`,
+    materializeSecretDelivery: async () => undefined,
+    projectSecretIsConfiguredForConsumer: async () => false,
+    projectSecretsRevision: (env: Record<string, string>) =>
+      `rev-${Object.keys(env).sort().join('-')}`,
     getProjectSecretValue: async () => null,
-    getResolvedProjectSecretValue: async () => null,
+    getProjectSecretValueForConsumer: async () => null,
+    resolveProjectSecretForConsumer: async () => null,
+    resolveProjectSecretsForConsumer: async () => ({}),
+    withholdUndeliverable: () => undefined,
   };
 });
+
+mock.module('../projects/opencode-session-snapshot', () => ({
+  scheduleOpencodeSnapshotSync: (input: Record<string, unknown>) => {
+    mockSnapshotSyncCalls.push(input);
+  },
+}));
+
+// The proxy owns two of the four title hooks. Keep the REAL prompt extraction
+// (that is the part the proxy actually decides) and capture only the generator
+// call, whose own idempotency/CAS is covered by unit + integration tests.
+let mockTitleCalls: Array<Record<string, unknown>> = [];
+const realTitleGenerate = await import('../projects/session-title-generate');
+mock.module('../projects/session-title-generate', () => ({
+  ...realTitleGenerate,
+  generateSessionTitleFromFirstPrompt: async (input: Record<string, unknown>) => {
+    mockTitleCalls.push(input);
+  },
+}));
 
 // Override global fetch for proxy requests
 const originalFetch = globalThis.fetch;
@@ -291,18 +425,20 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
     return originalFetch(url, init);
   }
 
-  const responseConfig = mockFetchResponses[mockFetchCallCount] || mockFetchResponses[mockFetchResponses.length - 1];
+  const responseConfig =
+    mockFetchResponses[mockFetchCallCount] || mockFetchResponses[mockFetchResponses.length - 1];
   mockFetchCallCount++;
 
   mockFetchCalls.push({
     url: urlStr,
     method: (init?.method || 'GET').toUpperCase(),
     headers: Object.fromEntries(new Headers(init?.headers as any).entries()),
-    body: typeof init?.body === 'string'
-      ? init.body
-      : init?.body instanceof ArrayBuffer
-        ? new TextDecoder().decode(init.body)
-        : null,
+    body:
+      typeof init?.body === 'string'
+        ? init.body
+        : init?.body instanceof ArrayBuffer
+          ? new TextDecoder().decode(init.body)
+          : null,
   });
 
   if (!responseConfig) {
@@ -317,16 +453,19 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
     new Response(responseConfig.body, {
       status: responseConfig.status,
       headers: responseConfig.headers || {},
-    })
+    }),
   );
 }
 
 // ─── Import proxy app AFTER mocks ────────────────────────────────────────────
 
 const { sandboxProxyApp } = await import('../sandbox-proxy/index');
-const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import('../shared/kortix-user-context');
+const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import(
+  '../shared/kortix-user-context'
+);
 const { resolvePreviewWsUpstream } = await import('../sandbox-proxy/routes/preview');
 const { invalidateSandbox } = await import('../sandbox-proxy/backend');
+const { __resetPromptDedupe } = await import('../sandbox-proxy/prompt-dedupe');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 
@@ -334,9 +473,14 @@ function createProxyTestApp() {
   const app = new Hono();
 
   app.use('*', async (c, next) => {
-    await runWithContext(c.req.method, c.req.path, async () => {
-      await next();
-    }, c.req.header('traceparent'));
+    await runWithContext(
+      c.req.method,
+      c.req.path,
+      async () => {
+        await next();
+      },
+      c.req.header('traceparent'),
+    );
   });
 
   app.route('/v1/p', sandboxProxyApp);
@@ -364,6 +508,7 @@ function createProxyTestApp() {
 // ─── Reset ───────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
+  __resetPromptDedupe();
   invalidateSandbox(TEST_SANDBOX_ID);
   invalidateSandbox('platinum-oc-http');
   invalidateSandbox('daytona-oc-http');
@@ -386,6 +531,12 @@ beforeEach(() => {
   mockFetchCalls = [];
   mockDbUpdateCalls = [];
   mockResolvedPreviewPorts = [];
+  mockSnapshotSyncCalls = [];
+  mockTitleCalls = [];
+  // The per-sandbox env-push memo (`PROMPT_ENV_PUSH_TTL_MS`) would otherwise
+  // carry over from the previous test on the same TEST_SANDBOX_ID and skip the
+  // env-sync fetch each case queues first.
+  __resetPromptModelSignatureCacheForTests();
 
   // Install mock fetch
   globalThis.fetch = mockFetch as any;
@@ -403,6 +554,8 @@ describe('Preview proxy: websocket upstream resolution', () => {
       userId: TEST_USER_ID,
       remainingPath: '/pty/pty_test/connect',
       queryString: '',
+      callerSessionId: null,
+      boundCredentialSessionId: null,
     });
 
     expect(upstream.ok).toBe(true);
@@ -410,6 +563,40 @@ describe('Preview proxy: websocket upstream resolution', () => {
     if (upstream.ok) {
       expect(upstream.url).toBe('wss://preview.daytona.io/proxy-url/pty/pty_test/connect');
     }
+  });
+
+  test('a sandbox token may open the PTY of its OWN session', async () => {
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+      // The sandbox's own session id — the legitimate case, which must keep
+      // working or the narrowing has broken the product.
+      callerSessionId: mockDbSandbox?.sessionId ?? null,
+      boundCredentialSessionId: mockDbSandbox?.sessionId ?? null,
+    });
+    expect(upstream.ok).toBe(true);
+  });
+
+  test('a sandbox token may NOT open ANOTHER end-user’s PTY', async () => {
+    // The KaaB isolation property, on the WebSocket leg. Every session a wrapper
+    // creates shares one `created_by`, so ownership alone cannot separate
+    // end-users — the per-session gate is what does, and until now all three
+    // tests here passed `callerSessionId: null`, exercising only the unbound
+    // path. The leg was wired and unproven.
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+      callerSessionId: '99999999-9999-4999-8999-999999999999',
+      boundCredentialSessionId: '99999999-9999-4999-8999-999999999999',
+    });
+    expect(upstream.ok).toBe(false);
+    if (!upstream.ok) expect(upstream.status).toBe(403);
   });
 
   test('routes Platinum PTY websocket upstreams through the signed agent bridge on 8000', async () => {
@@ -423,13 +610,17 @@ describe('Preview proxy: websocket upstream resolution', () => {
       userId: TEST_USER_ID,
       remainingPath: '/pty/pty_test/connect',
       queryString: '',
+      callerSessionId: null,
+      boundCredentialSessionId: null,
     });
 
     expect(upstream.ok).toBe(true);
     expect(mockResolvedPreviewPorts).toEqual([8000]);
     if (upstream.ok) {
       const url = new URL(upstream.url);
-      expect(`${url.origin}${url.pathname}`).toBe('wss://8000-platinum.sbx.example/pty/pty_test/connect');
+      expect(`${url.origin}${url.pathname}`).toBe(
+        'wss://8000-platinum.sbx.example/pty/pty_test/connect',
+      );
       const queryContext = url.searchParams.get('__kortix_user_context');
       expect(queryContext).toBeTruthy();
       expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
@@ -448,6 +639,8 @@ describe('Preview proxy: websocket upstream resolution', () => {
       userId: TEST_USER_ID,
       remainingPath: '/kortix/pty/kpty_test/connect',
       queryString: '',
+      callerSessionId: null,
+      boundCredentialSessionId: null,
     });
 
     expect(upstream.ok).toBe(true);
@@ -566,11 +759,21 @@ describe('Preview proxy: ownership', () => {
         headers: { Authorization: 'Bearer test' },
       });
       expect(res.status).toBe(503);
+      // `hop: control_plane` — this answer came off our own row read, so a
+      // client must not count it as evidence that the box is unreachable.
+      expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('control_plane');
+      expect(res.headers.get('X-Kortix-Upstream-Status')).toBeNull();
       const body = await res.json();
       expect(body).toEqual({
         error: `sandbox not ready (status: ${status})`,
         port: TEST_PORT,
         status: 503,
+        hop: 'control_plane',
+        upstream_status: null,
+        // Stable machine code + retry flag: a readiness 503 is a pending
+        // state a client re-polls, never a terminal error.
+        code: 'sandbox_not_ready',
+        retry: true,
       });
     },
   );
@@ -614,7 +817,9 @@ describe('Preview proxy: ownership', () => {
 
 describe('Preview proxy: forwarding', () => {
   test('proxies GET request and returns upstream response', async () => {
-    mockFetchResponses = [{ status: 200, body: '<html>Hello</html>', headers: { 'content-type': 'text/html' } }];
+    mockFetchResponses = [
+      { status: 200, body: '<html>Hello</html>', headers: { 'content-type': 'text/html' } },
+    ];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/page`, {
       headers: { Authorization: 'Bearer test' },
@@ -675,14 +880,17 @@ describe('Preview proxy: forwarding', () => {
       { status: 204, body: '' },
     ];
     const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async?directory=%2Fworkspace`, {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer test',
-        'Content-Type': 'application/json',
+    const res = await app.request(
+      `/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async?directory=%2Fworkspace`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
       },
-      body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
-    });
+    );
 
     expect(res.status).toBe(204);
     expect(mockFetchCalls).toHaveLength(2);
@@ -699,12 +907,57 @@ describe('Preview proxy: forwarding', () => {
       llmGatewayDenyEnv: '',
       llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      opencodeEnv: {},
       refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
     );
+  });
+
+  test('titles from a REST prompt_async body, with the model the user picked for the turn', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parts: [{ type: 'text', text: 'set up the MS Graph connector' }],
+        model: { providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' },
+      }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockTitleCalls).toEqual([
+      {
+        sessionId: mockDbSandbox.sessionId,
+        projectId: TEST_PROJECT_ID,
+        accountId: mockDbSandbox.accountId,
+        userId: TEST_USER_ID,
+        firstPromptText: 'set up the MS Graph connector',
+        modelHint: 'codex/gpt-5.6-sol',
+      },
+    ]);
+  });
+
+  test('does not title a prompt body that carries no text', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parts: [{ type: 'image', url: 'x' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockTitleCalls).toEqual([]);
   });
 
   test('allows prompt_async when requested agent matches the session-bound token agent', async () => {
@@ -752,10 +1005,10 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  // Agent-lock enforcement is OFF by default (KORTIX_ENFORCE_SESSION_AGENT_LOCK
-  // unset) — in-session agent switching is allowed. A prompt may run a different
-  // concrete agent than the session booted with, and it's forwarded untouched.
-  test('allows in-session agent switching by default (no 409, concrete agent forwarded)', async () => {
+  // In-session agent switching is allowed, unconditionally — there is no flag and
+  // no refusal. A prompt may run a different concrete agent than the session
+  // booted with, and it is forwarded untouched.
+  test('allows in-session agent switching (no 409, concrete agent forwarded)', async () => {
     mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
     mockFetchResponses = [
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
@@ -827,7 +1080,9 @@ describe('Preview proxy: forwarding', () => {
   });
 
   test('does not retry non-transient project env sync HTTP errors that mention network failures', async () => {
-    mockFetchResponses = [{ status: 500, body: '{"error":"connection refused to metadata store"}' }];
+    mockFetchResponses = [
+      { status: 500, body: '{"error":"connection refused to metadata store"}' },
+    ];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
       method: 'POST',
@@ -918,8 +1173,12 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0].headers['authorization']).toBe(`Bearer ${TEST_SERVICE_KEY}`);
     expect(mockFetchCalls[0].headers['accept-encoding']).toBe('identity');
     expect(mockFetchCalls[0].headers['x-custom']).toBe('keep-me');
-    expect(mockFetchCalls[0].headers['traceparent']).toMatch(/^00-11111111111111111111111111111111-[0-9a-f]{16}-01$/);
-    expect(mockFetchCalls[0].headers['traceparent']).not.toBe('00-11111111111111111111111111111111-2222222222222222-01');
+    expect(mockFetchCalls[0].headers['traceparent']).toMatch(
+      /^00-11111111111111111111111111111111-[0-9a-f]{16}-01$/,
+    );
+    expect(mockFetchCalls[0].headers['traceparent']).not.toBe(
+      '00-11111111111111111111111111111111-2222222222222222-01',
+    );
     expect(mockFetchCalls[0].headers['x-request-id']).not.toBe('caller-controlled');
   });
 
@@ -981,12 +1240,16 @@ describe('Preview proxy: forwarding', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(res.status).toBe(200);
-    expect(mockDbUpdateCalls.some((call) =>
-      call.table === sessionSandboxes && call.updates.lastUsedAt instanceof Date,
-    )).toBe(true);
-    expect(mockDbUpdateCalls.some((call) =>
-      call.table === projectSessions && call.updates.status === 'running',
-    )).toBe(true);
+    expect(
+      mockDbUpdateCalls.some(
+        (call) => call.table === sessionSandboxes && call.updates.lastUsedAt instanceof Date,
+      ),
+    ).toBe(true);
+    expect(
+      mockDbUpdateCalls.some(
+        (call) => call.table === projectSessions && call.updates.status === 'running',
+      ),
+    ).toBe(true);
   });
 
   test('surfaces daemon signed-context rejection as 502', async () => {
@@ -1083,25 +1346,35 @@ describe('Preview proxy: forwarding', () => {
 });
 
 describe('Preview proxy: CORS', () => {
-  test('sets CORS headers when Origin is present', async () => {
+  test('sets CORS headers for the web app, and for nobody else', async () => {
+    // A preview's credential is an ambient SameSite=None cookie, so echoing an
+    // arbitrary Origin back with Allow-Credentials would let ANY site read a
+    // signed-in user's preview. Only the configured frontend is answered.
     mockFetchResponses = [{ status: 200, body: 'OK' }];
     const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
-      headers: { Authorization: 'Bearer test', Origin: 'https://app.kortix.com' },
+    const allowed = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test', Origin: 'http://localhost:3000' },
     });
-    expect(res.headers.get('access-control-allow-origin')).toBe('https://app.kortix.com');
-    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
+    expect(allowed.headers.get('access-control-allow-credentials')).toBe('true');
+
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const stranger = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test', Origin: 'https://evil.example' },
+    });
+    expect(stranger.headers.get('access-control-allow-origin')).toBeNull();
+    expect(stranger.headers.get('access-control-allow-credentials')).toBeNull();
   });
 
   test('sets CORS headers on proxy-generated sandbox auth errors', async () => {
     mockFetchResponses = [{ status: 401, body: 'bad signed context' }];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/global/event`, {
-      headers: { Authorization: 'Bearer test', Origin: 'https://dev.kortix.com' },
+      headers: { Authorization: 'Bearer test', Origin: 'http://localhost:3000' },
     });
 
     expect(res.status).toBe(502);
-    expect(res.headers.get('access-control-allow-origin')).toBe('https://dev.kortix.com');
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');
   });
 
@@ -1169,9 +1442,7 @@ describe('Preview proxy: auto-wake ("failed to get runner info")', () => {
 
 describe('Preview proxy: non-sandbox-down 400', () => {
   test('passes through 400 that is NOT sandbox-down', async () => {
-    mockFetchResponses = [
-      { status: 400, body: 'Bad request: invalid input' },
-    ];
+    mockFetchResponses = [{ status: 400, body: 'Bad request: invalid input' }];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/api`, {
       method: 'POST',
@@ -1207,14 +1478,43 @@ describe('Preview proxy: retry exhaustion', () => {
     globalThis.fetch = savedFetch;
 
     expect(res.status).toBe(502);
+    // Every attempt resolved an ingress address and then had its connection
+    // refused, on an ordinary app port — so this is the user's own process, and
+    // a probe must not read it as "the runtime is gone".
+    expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('upstream_port');
     const body = await res.json();
     expect(body).toEqual({
       error: 'sandbox upstream unreachable',
       port: TEST_PORT,
       status: 502,
+      hop: 'upstream_port',
+      upstream_status: null,
     });
     // Should have made 4 attempts (0, 1, 2, 3)
     expect(callCount).toBe(4);
+  });
+
+  // Same failure, session-data port: now it IS the runtime, and the probe must
+  // count it. The two cases differ ONLY by the port, which is the whole point of
+  // the hop.
+  test('the same connection failure on the daemon port is attributed to the daemon', async () => {
+    const savedFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.reject(new Error('Connection refused'))) as any;
+
+    const app = createProxyTestApp();
+    const origSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: any) => fn()) as any;
+
+    const res = await app.request('/v1/p/sandbox-retry-exhaust-daemon-001/8000/kortix/health', {
+      headers: { Authorization: 'Bearer test' },
+    });
+
+    globalThis.setTimeout = origSetTimeout;
+    globalThis.fetch = savedFetch;
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('daemon');
+    expect(await res.json()).toMatchObject({ hop: 'daemon' });
   });
 
   test('returns last 400 when all retries get sandbox-down (HTTP 400 path)', async () => {
@@ -1258,6 +1558,106 @@ describe('Preview proxy: retry exhaustion', () => {
     globalThis.fetch = savedFetch;
 
     // Wake should be called only once (not once per retry)
+    expect(mockWakeCalls.length).toBe(1);
+  });
+});
+
+// A blocking session turn (`POST /session/:id/message`) can legitimately run
+// long (reasoning + tool calls) — the upstream never sends response headers
+// until it's fully done. That must NOT be treated like a stalled connection:
+// no wake, no resend of the (non-idempotent) message, and a distinct,
+// honest signal instead of the generic "sandbox unreachable" 502. See
+// preview-retry-budget.ts (proxyAttemptTimeoutMs) and forwardToSandbox's
+// catch block in routes/preview.ts.
+describe('Preview proxy: long-turn completion timeout', () => {
+  test('a connect-timer abort on POST /session/:id/message returns 504 LONG_TURN_PROXY_TIMEOUT — no wake, no resend', async () => {
+    const savedFetch = globalThis.fetch;
+    const origSetTimeout = globalThis.setTimeout;
+    let callCount = 0;
+
+    // Simulate a healthy upstream that is still computing: fetch never
+    // resolves on its own, only rejects once the connect-timer aborts it —
+    // exactly what a real long reasoning/tool turn looks like from the
+    // proxy's perspective (TCP alive, no bytes yet).
+    globalThis.fetch = ((_url: any, init?: RequestInit) => {
+      callCount++;
+      const signal = init?.signal;
+      return new Promise((_resolve, reject) => {
+        const abortWith = () =>
+          reject((signal as any)?.reason ?? new DOMException('aborted', 'TimeoutError'));
+        if (signal?.aborted) {
+          abortWith();
+          return;
+        }
+        signal?.addEventListener('abort', abortWith);
+      });
+    }) as any;
+    // Fire the connect-timer (and any retry delay) synchronously instead of
+    // waiting out the real ~49.5s budget.
+    globalThis.setTimeout = ((fn: any) => {
+      fn();
+      return 0 as any;
+    }) as any;
+
+    const app = createProxyTestApp();
+    const res = await app.request(
+      `/v1/p/sandbox-long-turn-001/${TEST_PORT}/session/sess-1/message`,
+      {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parts: [{ type: 'text', text: 'do a long thing' }] }),
+      },
+    );
+
+    globalThis.setTimeout = origSetTimeout;
+    globalThis.fetch = savedFetch;
+
+    expect(res.status).toBe(504);
+    const body = await res.json();
+    expect(body.code).toBe('LONG_TURN_PROXY_TIMEOUT');
+    // Exactly one attempt: the exempted class gets ~the whole budget on
+    // attempt 0, and a timeout there must NOT resend the (non-idempotent)
+    // message — resending would duplicate the user's turn.
+    expect(callCount).toBe(1);
+    // The sandbox is healthy and still working — waking it is both wrong
+    // and wasted (an extra provider call to an already-running box).
+    expect(mockWakeCalls.length).toBe(0);
+  });
+
+  test('an ordinary connect-timer abort (non-message path) still wakes + retries as before', async () => {
+    const savedFetch = globalThis.fetch;
+    const origSetTimeout = globalThis.setTimeout;
+    let callCount = 0;
+    globalThis.fetch = ((_url: any, init?: RequestInit) => {
+      callCount++;
+      const signal = init?.signal;
+      return new Promise((_resolve, reject) => {
+        const abortWith = () =>
+          reject((signal as any)?.reason ?? new DOMException('aborted', 'TimeoutError'));
+        if (signal?.aborted) {
+          abortWith();
+          return;
+        }
+        signal?.addEventListener('abort', abortWith);
+      });
+    }) as any;
+    globalThis.setTimeout = ((fn: any) => {
+      fn();
+      return 0 as any;
+    }) as any;
+
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/sandbox-long-turn-002/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+
+    globalThis.setTimeout = origSetTimeout;
+    globalThis.fetch = savedFetch;
+
+    // Unchanged prior behavior: a plain GET that never gets bytes is a real
+    // stall, not a long-turn completion — full retry/wake path still applies.
+    expect(res.status).toBe(502);
+    expect(callCount).toBe(4);
     expect(mockWakeCalls.length).toBe(1);
   });
 });

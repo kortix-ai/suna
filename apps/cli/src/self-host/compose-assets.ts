@@ -80,14 +80,180 @@ export const officialSupabaseDockerAssets: Readonly<Record<string, string>> = {
  * The Caddyfile + updater script mounted into their respective services.
  * These are plain runtime assets (no secrets) written next to the compose
  * file and .env, same as the Supabase vendor assets.
+ *
+ * `Caddyfile` is the BASE reverse proxy — the api/gateway/frontend site blocks
+ * only. The optional wildcard *.<apps base domain> App-serving block is added
+ * at write time by renderCaddyfile() when Apps hosting is configured; it is
+ * intentionally absent here so a stack without Apps hosting is byte-for-byte
+ * this base file and the existing asserts stay stable.
  */
 export const kortixRuntimeAssets: Readonly<Record<string, string>> = {
   Caddyfile: kortixCaddyfile,
   'updater.sh': kortixUpdaterScript,
 };
 
-export function writeKortixRuntimeAssets(root: string): void {
-  writeAssets(root, kortixRuntimeAssets);
+/**
+ * The internal URL Caddy's on_demand_tls `ask` calls before issuing a
+ * certificate. It resolves to kortix-api over the Compose network and returns
+ * 200 only for a hostname this instance actually serves — a real App host or a
+ * real sandbox preview host (see edge/tls-check.ts in the API) — which is what
+ * bounds ACME issuance so a random hostname pointed at this box cannot mint
+ * unbounded certificates.
+ *
+ * Caddy allows exactly ONE global `ask`, so both wildcard families share it.
+ */
+// Deliberately the /v1/apps/edge path, not /v1/edge: this is the URL every
+// already-installed Caddyfile carries, and the API serves the same handler at
+// both. An instance whose assets update before its API image therefore keeps a
+// working gate for App hosts instead of losing on-demand TLS entirely.
+const EDGE_TLS_CHECK_URL = 'http://kortix-api:8008/v1/apps/edge/tls-check';
+
+/**
+ * The exact substring of the base Caddyfile global options block that closes it.
+ * on_demand_tls is a GLOBAL-only Caddy option, and Caddy allows exactly one
+ * global block, so the `ask` directive is injected here rather than appended as
+ * a second block. Kept as an explicit marker so a change to the base file's
+ * global block fails loudly instead of silently dropping on_demand_tls.
+ */
+const CADDY_GLOBAL_CLOSE = 'email {$KORTIX_ACME_EMAIL}\n}';
+
+/**
+ * The wildcard App-serving site block. Every deployed App publishes on
+ * <env>-<slug>-<route-key>.{$KORTIX_APPS_BASE_DOMAIN}; the API matches the real
+ * Host header (KORTIX_APPS_ALLOW_DIRECT_EDGE=true — see resolveAppHost in
+ * apps/hostnames.ts) and resolves it to exactly one App. A 2nd-level wildcard
+ * certificate is impractical, so TLS is issued PER-APP on first request via
+ * ACME HTTP-01 (`on_demand`). kortix-api is reached the SAME way as the
+ * api/gateway blocks (dynamic a upstream re-resolved every refresh + an active
+ * health check). Caddy's reverse_proxy preserves the inbound Host header and
+ * sets X-Forwarded-Proto by default (both verified with `caddy validate` —
+ * adding an explicit `header_up X-Forwarded-Proto` warns "Unnecessary"), so
+ * resolveAppHost(Host) still names the right App on the API side without any
+ * header_up override.
+ */
+const APPS_SITE_BLOCK = `# *.<apps base domain>: every deployed Kortix App, served over per-App
+# on-demand TLS. Only present when KORTIX_APPS_BASE_DOMAIN is configured — see
+# renderCaddyfile() in compose-assets.ts. The global on_demand_tls \`ask\` above
+# bounds certificate issuance to real App hosts. The inbound Host header is
+# preserved (Caddy's reverse_proxy default) so the API's resolveAppHost(Host)
+# names the right App.
+*.{$KORTIX_APPS_BASE_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		on_demand
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name kortix-api
+			port 8008
+			refresh 2s
+		}
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
+		health_uri /v1/health
+		health_interval 3s
+		health_timeout 2s
+	}
+}`;
+
+/**
+ * The wildcard preview-serving site block. Every sandbox port a browser can
+ * open publishes on <env>-p<port>-<sandbox-label>.{$KORTIX_PREVIEW_BASE_DOMAIN},
+ * so the app is alone on its own origin and root-absolute links, XHR to `/api`,
+ * `history.pushState`, service workers and WebSockets all resolve to the origin
+ * the browser is already on — none of which survive a path prefix.
+ *
+ * The API matches the real Host header (KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true —
+ * this reverse proxy is the trust boundary, there is no Cloudflare Worker to
+ * sign the claim). Caddy preserves the inbound Host and sets X-Forwarded-Proto
+ * by default, so resolvePreviewHost(Host) names the right sandbox and port with
+ * no header_up override.
+ *
+ * TLS is issued PER HOSTNAME on first request; a 2nd-level wildcard certificate
+ * is as impractical here as it is for Apps.
+ *
+ * Caddy's reverse_proxy passes WebSocket upgrades through unchanged, which the
+ * API needs — a dev server's hot reload opens one, and it is the only
+ * credential-carrying request an app's own code can make.
+ */
+const PREVIEW_SITE_BLOCK = `# *.<preview base domain>: one origin per sandbox port, served over
+# per-hostname on-demand TLS. Only present when KORTIX_PREVIEW_BASE_DOMAIN is
+# configured — see renderCaddyfile() in compose-assets.ts. The global
+# on_demand_tls \`ask\` above bounds certificate issuance to real preview hosts.
+*.{$KORTIX_PREVIEW_BASE_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		on_demand
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name kortix-api
+			port 8008
+			refresh 2s
+		}
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
+		health_uri /v1/health
+		health_interval 3s
+		health_timeout 2s
+	}
+}`;
+
+export interface RenderCaddyfileOptions {
+  /**
+   * Whether Apps hosting is configured (KORTIX_APPS_BASE_DOMAIN is set). When
+   * true, renderCaddyfile injects the global on_demand_tls `ask` and appends the
+   * wildcard *.<apps base domain> App-serving block. When false (the default),
+   * the base Caddyfile is returned unchanged, so a stack without Apps hosting
+   * never emits an empty `*.` site address or an unbounded on_demand_tls.
+   */
+  appsHostingConfigured?: boolean;
+  /**
+   * Whether sandbox previews get their own origins (KORTIX_PREVIEW_BASE_DOMAIN
+   * is set). When true, renderCaddyfile appends the wildcard
+   * `*.<preview base domain>` block — and injects the global on_demand_tls
+   * `ask` if the Apps block has not already. When false, previews stay on the
+   * path proxy (`/v1/p/{sandbox}/{port}/`), which needs no extra hostname.
+   */
+  previewHostingConfigured?: boolean;
+}
+
+/**
+ * The Caddyfile actually written for an instance: the base reverse proxy, plus
+ * the wildcard App-serving block + on_demand_tls `ask` when Apps hosting is
+ * configured.
+ */
+export function renderCaddyfile(options: RenderCaddyfileOptions = {}): string {
+  const blocks = [
+    options.appsHostingConfigured ? APPS_SITE_BLOCK : null,
+    options.previewHostingConfigured ? PREVIEW_SITE_BLOCK : null,
+  ].filter((block): block is string => block !== null);
+  if (blocks.length === 0) return kortixCaddyfile;
+  if (!kortixCaddyfile.includes(CADDY_GLOBAL_CLOSE)) {
+    throw new Error('Caddyfile global options block changed; cannot inject on_demand_tls');
+  }
+  // on_demand_tls is GLOBAL-only and Caddy allows one global block, so the
+  // `ask` is injected once no matter how many wildcard families are served.
+  const withOnDemand = kortixCaddyfile.replace(
+    CADDY_GLOBAL_CLOSE,
+    `email {$KORTIX_ACME_EMAIL}\n\n\ton_demand_tls {\n\t\task ${EDGE_TLS_CHECK_URL}\n\t}\n}`,
+  );
+  return `${withOnDemand.trimEnd()}\n\n${blocks.join('\n\n')}\n`;
+}
+
+export function writeKortixRuntimeAssets(root: string, options: RenderCaddyfileOptions = {}): void {
+  writeAssets(root, {
+    ...kortixRuntimeAssets,
+    Caddyfile: renderCaddyfile(options),
+  });
 }
 
 export interface RenderComposeOptions {
@@ -117,19 +283,6 @@ export interface RenderComposeOptions {
    * container because the official cloudflared image ships no shell at all.
    */
   namedTunnelConfigured?: boolean;
-  /**
-   * Whether the operator selected the EXPERIMENTAL `local-docker` sandbox
-   * provider (ALLOWED_SANDBOX_PROVIDERS includes it — see
-   * configureIntegrations() in commands/self-host.ts). Only then does
-   * kortix-api get the host's Docker socket mounted in (root-equivalent host
-   * access) and LOCAL_DOCKER_NETWORK pointed at this Compose project's own
-   * default network, so sandbox containers created by the provider
-   * (apps/api/src/platform/providers/local-docker.ts) are reachable by
-   * Docker DNS name. Omitted entirely — not merely unset — for every other
-   * provider, so a Daytona/Platinum/E2B instance never grants kortix-api
-   * Docker access it doesn't need.
-   */
-  localDockerConfigured?: boolean;
 }
 
 /**
@@ -184,6 +337,13 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   const kong = services['supabase-kong'];
   if (kong) {
     kong.ports = ['127.0.0.1:${SUPABASE_PORT}:8000'];
+    // Kong defaults to one nginx worker per visible CPU. Large VPS hosts and
+    // Docker Desktop can expose many CPUs while this service keeps a 384 MiB
+    // memory limit, which makes the worker set OOM-loop after startup. Two
+    // workers keep the local control plane responsive within that limit.
+    const kongEnv = { ...asRecord(kong.environment) } as Record<string, string>;
+    kongEnv.KONG_NGINX_WORKER_PROCESSES ||= '2';
+    kong.environment = kongEnv;
     // Upstream declares `depends_on: studio: condition: service_healthy` —
     // but Kong here runs fully declarative (KONG_DATABASE=off, its routes
     // come from the mounted kong.yml), so it has no runtime dependency on
@@ -204,6 +364,16 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   }
   const auth = services['supabase-auth'];
   if (auth) {
+    // A fresh GoTrue database currently applies 69 migrations before the
+    // health endpoint listens. Upstream allows only three failed probes and no
+    // start period, which marks first boot unhealthy on slower VPS hosts even
+    // though GoTrue completes normally. Successful probes still end this
+    // window immediately; the larger budget only changes the failure deadline.
+    auth.healthcheck = {
+      ...asRecord(auth.healthcheck),
+      retries: 24,
+      start_period: '120s',
+    };
     // GoTrue silently no-ops EVERY per-IP rate limit (email/SMS/OTP sent,
     // token refresh, anonymous sign-ins, ...) when GOTRUE_RATE_LIMIT_HEADER
     // is unset — see performRateLimitingWithHeader() in supabase/auth: "If no
@@ -223,7 +393,29 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
     authEnv.GOTRUE_RATE_LIMIT_TOKEN_REFRESH ||= '150';
     authEnv.GOTRUE_RATE_LIMIT_OTP ||= '30';
     authEnv.GOTRUE_RATE_LIMIT_ANONYMOUS_USERS ||= '30';
+    // Send-email hook. When EMAIL_URL is configured, GoTrue stops sending auth
+    // mail itself and posts each one to kortix-api instead, so magic links and
+    // confirmations use the same provider, sender and templates as invites —
+    // and work over Resend/SES, which GoTrue cannot speak at all. Values are
+    // substituted from .env at `docker compose` time; applyEmailWiring() in
+    // self-host/email-wiring.ts derives all three from EMAIL_URL.
+    authEnv.GOTRUE_HOOK_SEND_EMAIL_ENABLED = '${GOTRUE_HOOK_SEND_EMAIL_ENABLED}';
+    authEnv.GOTRUE_HOOK_SEND_EMAIL_URI = '${GOTRUE_HOOK_SEND_EMAIL_URI}';
+    authEnv.GOTRUE_HOOK_SEND_EMAIL_SECRETS = '${AUTH_EMAIL_HOOK_SECRET}';
     auth.environment = authEnv;
+  }
+  for (const serviceName of ['supabase-analytics', 'supabase-storage']) {
+    const service = services[serviceName];
+    if (!service) continue;
+    // Logflare and Storage also initialize database state on first boot. Keep
+    // the upstream probes and intervals, but allow the same four-minute cold
+    // start budget as Auth. This prevents Compose from aborting a healthy but
+    // slow first boot on ordinary VPS hardware.
+    service.healthcheck = {
+      ...asRecord(service.healthcheck),
+      retries: 24,
+      start_period: '120s',
+    };
   }
   const database = services['supabase-db'];
   if (database) {
@@ -248,6 +440,26 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
       retries: 20,
       start_period: '10s',
     };
+    // Connection headroom for horizontal scaling (Essentia scale work,
+    // 2026-08-21). Each kortix-api replica opens DB_POOL_MAX (15) main +
+    // DB_AUDIT_POOL_MAX (3) audit = 18 DIRECT Postgres backends; the Supabase
+    // data plane adds ~30. The image default of 100 caps the stack at ~4 api
+    // replicas; 200 (each backend ~10 MiB → ~2 GiB, fine on a typical box)
+    // lifts that to ~8-9. Injected here, NOT in the upstream-locked vendored
+    // docker-compose.yml, so it survives a Supabase bump. We keep the api on
+    // DIRECT connections rather than the supavisor transaction pooler because
+    // supavisor does NOT propagate the per-connection statement_timeout
+    // (verified on the box: a stuck query is never killed) — that timeout is the
+    // anti-cascade lever in packages/db/src/client.ts. Scale further by raising
+    // POSTGRES_MAX_CONNECTIONS (needs a db restart) and DB_POOL_MAX per replica.
+    if (Array.isArray(database.command)) {
+      const cmd = database.command as string[];
+      if (!cmd.some((arg) => String(arg).startsWith('max_connections='))) {
+        const cfgIdx = cmd.findIndex((arg) => String(arg).startsWith('config_file='));
+        const insertAt = cfgIdx >= 0 ? cfgIdx + 1 : cmd.length;
+        cmd.splice(insertAt, 0, '-c', 'max_connections=${POSTGRES_MAX_CONNECTIONS:-200}');
+      }
+    }
   }
   const supavisor = services['supabase-supavisor'];
   if (supavisor) {
@@ -275,28 +487,6 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
 
   for (const [name, rawService] of Object.entries(asRecord(kortix.services))) {
     services[name] = rawService as YamlRecord;
-  }
-
-  // local-docker (EXPERIMENTAL) is opt-in, same shape as the Caddy/cloudflared
-  // blocks below: mutate the already-parsed kortix-api service object rather
-  // than baking a static (always-present) block into kortix-compose.yml, so a
-  // non-local-docker instance's rendered compose never even mentions the
-  // Docker socket.
-  if (options.localDockerConfigured) {
-    const api = services['kortix-api'];
-    if (api) {
-      const existingVolumes = Array.isArray(api.volumes) ? api.volumes : [];
-      api.volumes = [...existingVolumes, '/var/run/docker.sock:/var/run/docker.sock'];
-      const existingEnv = isRecord(api.environment) ? api.environment : {};
-      api.environment = {
-        ...existingEnv,
-        // Sandbox containers land on THIS Compose project's own default
-        // network (the same one every other service here joins), so
-        // kortix-api reaches them by Docker DNS name
-        // (http://kortix-sb-<id>:<port> — see local-docker.ts).
-        LOCAL_DOCKER_NETWORK: `${composeProject}_default`,
-      };
-    }
   }
 
   // The Caddy reverse-proxy/TLS service is opt-in: it only makes sense (and
@@ -451,8 +641,20 @@ interface MemSpec {
 
 const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   'supabase-db': { limit: '1280m', reservation: '512m', oomScoreAdj: -900 },
-  'kortix-api': { limit: '640m', reservation: '256m' },
-  'llm-gateway': { limit: '512m', reservation: '128m' },
+  // The API HOSTS THE GATEWAY IN-PROCESS (apps/api/src/index.ts mounts
+  // `/v1/llm` via mountLlmGateway), so every byte the note below describes for
+  // the standalone gateway also transits this container. 640m was the same
+  // mistake one service down: on 2026-08-21 the dev API — capped at 1024 MiB,
+  // still under the 2 GiB proven necessary here — was OOM-killed three times
+  // in eleven minutes during an image-heavy session, and the browser was shown
+  // Cloudflare's "Bad Gateway" page. Matched to the gateway's ceiling.
+  'kortix-api': { limit: '${KORTIX_API_MEMORY_LIMIT:-2048m}', reservation: '256m' },
+  // Headroom for large multimodal requests: the gateway buffers the raw request
+  // body (image-heavy agent turns run tens of MiB — see DEFAULT_MAX_REQUEST_BYTES),
+  // so 512m was far too tight once the body ceiling was raised. Give it a generous
+  // 2 GiB default so a big image-heavy turn never OOM-kills the gateway; small
+  // boxes can dial it back via KORTIX_GATEWAY_MEMORY_LIMIT.
+  'llm-gateway': { limit: '${KORTIX_GATEWAY_MEMORY_LIMIT:-2048m}', reservation: '256m' },
   frontend: { limit: '512m', reservation: '128m' },
   'kortix-migrate': { limit: '512m', reservation: '128m' },
   'kortix-updater': { limit: '256m', reservation: '64m' },

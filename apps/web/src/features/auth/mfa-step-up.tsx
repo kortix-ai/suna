@@ -10,8 +10,11 @@
 // Members with NO enrolled factor get pointed at Settings → Security instead
 // of a dead-end code prompt.
 
+import {
+  ShieldCheckIcon as ShieldCheck,
+  ShieldWarningIcon as ShieldWarning,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -83,7 +86,13 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
   return (
     <>
       {children}
-      <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) setCode(''); }}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setCode('');
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -91,9 +100,8 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
               Verify it’s you
             </DialogTitle>
             <DialogDescription>
-              This account requires multi-factor authentication for that
-              action. Enter a code from your authenticator app to verify this
-              session.
+              This account requires multi-factor authentication for that action. Enter a code from
+              your authenticator app to verify this session.
             </DialogDescription>
           </DialogHeader>
 
@@ -118,10 +126,9 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
               />
             </div>
           ) : (
-            <InfoBanner tone="warning" title="No second factor enrolled">
-              Enroll an authenticator app under Settings → Security, then retry
-              — this account blocks gated actions until your session is
-              MFA-verified.
+            <InfoBanner tone="warning" icon={ShieldWarning} title="No second factor enrolled">
+              Enroll an authenticator app under Settings → Security, then retry — this account
+              blocks gated actions until your session is MFA-verified.
             </InfoBanner>
           )}
 

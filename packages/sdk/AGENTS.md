@@ -36,19 +36,17 @@ Learn this once and most questions answer themselves.
    billing, triggers, marketplace, audit. Lives in `platform/projects-client/` and
    `platform/platform-client/`, over `platform/api-client.ts` (`backendApi`).
 
-2. **The OpenCode v2 runtime** — an agent server running *inside a per-session
-   cloud sandbox*. Owns everything *happening in* your work: messages, parts,
-   tools, permissions, files, PTY, git. It is a third-party client
-   (`@opencode-ai/sdk/v2/client`), reached **through the Kortix API as a proxy**:
+2. **The session runtime** — OpenCode running *inside a per-session cloud
+   sandbox*. The SDK reaches its REST API through the Kortix API proxy:
 
    ```
    ${backendUrl}/p/{externalId}/{port}      →  the sandbox's opencode server
    ```
 
-**The bridge between them is session readiness.** A session's runtime does not
+**The bridge between them is session readiness.** A session runtime does not
 exist until its sandbox is provisioned or resumed. That is what `ensureReady()`
-(and `start()`, and implicitly `send()`) does: boots/resumes the sandbox, resolves
-*this* session's runtime and its canonical opencode session id.
+(and `start()`, and implicitly `send()`) does: boots or resumes the sandbox and
+resolves this session's OpenCode identity.
 
 ```ts
 const kortix = createKortix({ backendUrl, getToken })   // ← one client, one auth seam
@@ -77,7 +75,7 @@ one.
 ```
 platform/auth + platform/api-client   ← transport: token, fetch, ApiError
 platform/*-client                     ← typed REST surfaces (one file per domain)
-opencode/client                       ← the runtime client, base-url'd at the proxy
+opencode/client                       ← OpenCode REST compatibility client
 state/event-stream                    ← SSE reconnect/backoff/heartbeat/coalesce
 kortix.ts (createKortix)              ← the facade: binds ids, hides the seam
 turns/                                ← normalizes ~50 wire part types → ClassifiedPart
@@ -108,8 +106,9 @@ Follow the grain. Almost every feature is this shape:
 
 - **Session-scoped, never global.** See above. Never resolve a runtime from
   ambient state.
-- **Provider-agnostic.** "Sandbox" and "daytona" are server-side concerns. Client
-  code must never branch on the provider.
+- **Session-scoped and provider-agnostic.** The sandbox provider is a server-side
+  concern. Every session uses OpenCode REST. Host code must not add a second
+  transport.
 - **Hosts never import `@opencode-ai/sdk`.** Not `apps/web`, not the demo. If a
   host needs runtime access, it goes through `session.runtime`.
 - **Hosts never raw-`fetch` the Kortix API.** If the SDK doesn't expose it, add it
@@ -515,7 +514,8 @@ a skipped file is not a passing file.
 
 CI (`.github/workflows/package-tests.yml`) additionally runs
 `stage-npm-publish.test.mjs` and a build + stage + **dry-pack** of
-`@kortix/llm-catalog`, `@kortix/sdk`, and `@kortix/executor-sdk` on every PR.
+`@kortix/llm-catalog`, `@kortix/sdk`, and the final deprecated
+`@kortix/executor-sdk` adapter on every PR.
 That is the release gate. It catches a broken `publishConfig`; it does not catch
 a broken *install*.
 
@@ -605,9 +605,20 @@ pnpm --filter @kortix/sdk test        # bun test src — includes the tripwire
 pnpm --filter @kortix/sdk run smoke:install   # pack → install → import the tarball
 ```
 
-Baseline: **1069 passing, 0 failing, across 71 test files.** If your run shows
-fewer tests than the baseline, you did not run them all — a filtered `bun test`
-that matches nothing exits 0 and tells you nothing.
+Baseline (measured 2026-08-09): **1626 passing, 0 failing, across 129 test
+files.** This number only grows — it is a floor, not a fixed target, and it WILL
+be stale by the time you read this (it has already drifted twice: 1046 → 1069 →
+1357 → 1626, see `PROGRESS.md`). **Do not trust the literal number above without
+re-deriving it.** Get today's real count by running the full suite once on a
+clean `main` before you start:
+
+```bash
+pnpm --filter @kortix/sdk test 2>&1 | tail -3   # → "N pass, 0 fail" / "Ran N tests across M files"
+```
+
+Whatever that prints is the baseline for your session. If your own run — after
+your change — shows fewer tests than that, you did not run them all: a filtered
+`bun test` that matches nothing exits 0 and tells you nothing.
 
 **`typecheck` is not verification.** It proves the types line up. It does not prove
 the code runs, that the tripwire holds, that the tarball imports, or that streaming
@@ -678,8 +689,11 @@ against `bun 1.3.14`:
 | **`bun test some/dir/with/no/test/files`** | **`0`** | **yes — runs nothing, reports success** |
 
 So always finish on the full `pnpm --filter @kortix/sdk test`, and **check the
-count against the 1046 baseline**. A green run that says `Ran 12 tests` is a run
-you filtered by accident. A green run that says `Ran 0 tests` is not a green run.
+count against the baseline you measured at the start of this session** (see
+"Never end a turn without running the gates" above — do not compare against a
+number hardcoded in this doc, it drifts). A green run that says `Ran 12 tests`
+is a run you filtered by accident. A green run that says `Ran 0 tests` is not a
+green run.
 
 ### Then say whether it is shippable
 

@@ -162,8 +162,70 @@ const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
 const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
+const voiceJoinLinkLimiter = new TokenBucketRateLimiter('voice_join_link');
+const voiceTranscriptPollLimiter = new TokenBucketRateLimiter('voice_transcript_poll');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
+const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
+const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter('project_webhook_manifest_refresh');
+const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
+const projectSessionCreateLimiter = new TokenBucketRateLimiter('project_session_create');
 export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
+
+/**
+ * Per-project budget on session CREATES (the 2026-08-21 storm's other half: a
+ * per-minute trigger created a session every tick, forever — 60 provider
+ * provisions an hour from one project, none ever cleaned up). Checked from the
+ * session-create path (lib/sessions.ts), not a route mount, because creates
+ * arrive through several routes (UI, triggers, channels, KaaB).
+ *
+ * In-process bucket — same replica-multiplied honesty as the secret-write
+ * budget above, and the same verdict: this stops runaway loops, it does not
+ * meter exact quotas.
+ */
+export function consumeProjectSessionCreateBudget(projectId: string): RateLimitResult {
+  return projectSessionCreateLimiter.check(projectId, {
+    limit: positiveInt((config as any).KORTIX_PROJECT_SESSION_CREATES_PER_HOUR, 100),
+    windowMs: 60 * 60_000,
+  });
+}
+
+/**
+ * Per-project budget on secret WRITES (POST/PUT/PATCH/DELETE under
+ * /:projectId/secrets*). Reads pass untouched.
+ *
+ * INCIDENT 2026-08-21: agents in two projects used secrets as a config store
+ * and wrote them in loops (one made 1,017 writes in a morning). Every write
+ * fans an env push to every active sandbox in the project, so the loops became
+ * a provider-API storm that got the whole Daytona org rate-limited — failing
+ * session creates and wakes for every other customer. No human workflow writes
+ * secrets 100 times in an hour; an agent loop does.
+ *
+ * In-process buckets, so the effective ceiling is limit × API replicas when a
+ * loop happens to spread across pods. That is accepted: the goal is stopping
+ * hundreds-per-hour runaways, not metering exact quotas.
+ */
+export function createProjectSecretWriteRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const method = c.req.method.toUpperCase();
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return next();
+    const projectId = c.req.param('projectId') || 'unknown';
+    const result = projectSecretWriteLimiter.check(projectId, {
+      limit: positiveInt((config as any).KORTIX_PROJECT_SECRET_WRITES_PER_HOUR, 100),
+      windowMs: 60 * 60_000,
+    });
+    setHeaders(c, result);
+    if (!result.allowed) {
+      return c.json({
+        error: 'rate_limit_exceeded',
+        message:
+          'This project has hit its secret-write limit. Secrets are for credentials, not fast-changing state — store loop data elsewhere, or retry later.',
+        code: 'project_secret_write_limit',
+        retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+      }, 429);
+    }
+    await next();
+  };
+}
 
 export function createInviteAcceptRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
@@ -281,6 +343,71 @@ export function createDemoRequestRateLimitMiddleware() {
 }
 
 /**
+ * Guards the public, unauthenticated `GET /v1/public/voice-join/:token`
+ * endpoint (public-join-routes.ts). The token itself is 256 bits of
+ * `crypto.randomBytes` — brute-forcing it is not a realistic threat on its
+ * own — but this is still the one unauthenticated surface that turns a guess
+ * into a live LiveKit access token, so it's keyed on client IP (not the token:
+ * an attacker looping unique garbage tokens must never get to allocate one
+ * rate-limit bucket per guess) and kept tight, same posture as
+ * `createCheckEmailRateLimitMiddleware`.
+ */
+export function createVoiceJoinLinkRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const denied = await enforceRateLimit(
+      c,
+      voiceJoinLinkLimiter,
+      clientIp(c),
+      {
+        limit: positiveInt((config as any).KORTIX_VOICE_JOIN_LINK_REQS_PER_MIN, 30),
+        windowMs: 60_000,
+      },
+      {
+        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        resourceType: 'voice_join_link',
+        resourceId: null,
+        metadata: { limiter: 'voice_join_link' },
+      },
+    );
+    if (denied) return denied;
+    await next();
+  };
+}
+
+/**
+ * Guards `GET /v1/public/voice-join/:token/transcript` — the same join-link
+ * capability as above, but a POLLING endpoint, so it cannot share the resolve
+ * step's budget. The /voice page polls the durable call record every couple of
+ * seconds for as long as the call is open; at the resolve limiter's 30/min a
+ * single honest listener would rate-limit ITSELF within a minute.
+ *
+ * Still keyed on client IP for the same reason (a token-keyed bucket would let
+ * an attacker allocate one bucket per guess), and it grants strictly less than
+ * the resolve step does: transcript text for one call, never a LiveKit token.
+ */
+export function createVoiceTranscriptPollRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const denied = await enforceRateLimit(
+      c,
+      voiceTranscriptPollLimiter,
+      clientIp(c),
+      {
+        limit: positiveInt((config as any).KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN, 120),
+        windowMs: 60_000,
+      },
+      {
+        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        resourceType: 'voice_join_link',
+        resourceId: null,
+        metadata: { limiter: 'voice_transcript_poll' },
+      },
+    );
+    if (denied) return denied;
+    await next();
+  };
+}
+
+/**
  * Guards the public, unauthenticated `POST /v1/access/check-email` endpoint.
  * Its response drives the unified auth flow (sign-in vs registration), which
  * makes it an account-existence oracle by construction — the limiter is what
@@ -310,11 +437,51 @@ export function createCheckEmailRateLimitMiddleware() {
   };
 }
 
+/**
+ * Guards public project webhooks before the handler loads Git-backed trigger
+ * configuration. The rejection path does not write an audit row. An attacker
+ * must not convert a request flood into a database-write flood.
+ */
+export function createProjectWebhookRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const projectId = c.req.param('projectId') || 'unknown';
+    const result = projectWebhookLimiter.check(`${projectId}:${clientIp(c)}`, {
+      limit: positiveInt((config as any).KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN, 120),
+      windowMs: 60_000,
+    });
+    setHeaders(c, result);
+    if (!result.allowed) {
+      return c.json({
+        error: 'rate_limit_exceeded',
+        message: 'Rate limit exceeded. Please retry shortly.',
+        retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+      }, 429);
+    }
+    await next();
+  };
+}
+
+/**
+ * Bound forced Git mirror refreshes by project, independent of source IP.
+ * Each API replica owns a local mirror, so each replica needs its own budget.
+ */
+export function consumeProjectWebhookManifestRefreshBudget(projectId: string): boolean {
+  return projectWebhookManifestRefreshLimiter.check(projectId, {
+    limit: 1,
+    windowMs: 30_000,
+  }).allowed;
+}
+
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
   publicSessionShareLimiter.reset();
   demoRequestLimiter.reset();
+  voiceJoinLinkLimiter.reset();
   checkEmailLimiter.reset();
+  projectWebhookLimiter.reset();
+  projectWebhookManifestRefreshLimiter.reset();
+  projectSecretWriteLimiter.reset();
+  projectSessionCreateLimiter.reset();
   sessionLlmLimiter.reset();
 }

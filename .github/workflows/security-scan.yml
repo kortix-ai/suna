@@ -16,6 +16,7 @@ on:
     paths:
       - "infra/**"
       - "apps/*/Dockerfile"
+      - "apps/kortix-app-runtime/**"
       - ".github/workflows/security-scan.yml"
       - ".gitleaks.toml"
   workflow_dispatch:
@@ -50,7 +51,7 @@ jobs:
         env:
           TRIVY_SKIP_DB_UPDATE: "false"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
@@ -81,7 +82,7 @@ jobs:
           output: trivy-image.sarif
           exit-code: "0"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image-${{ strategy.job-index }}
@@ -96,7 +97,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - name: Checkov scan → SARIF
-        uses: bridgecrewio/checkov-action@a7683e7b72a04503521247973281ec8142e1ac1f
+        uses: bridgecrewio/checkov-action@1246d92f57abae29d5db5f9aeeed2a9813e52d7d
         with:
           directory: infra/
           framework: terraform,kubernetes,helm,dockerfile
@@ -104,7 +105,7 @@ jobs:
           output_file_path: checkov.sarif
           soft_fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
         with:
           sarif_file: checkov.sarif/results_sarif.sarif
           category: checkov
@@ -126,14 +127,14 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - name: Hadolint → SARIF
-        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5
+        uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6
         with:
           dockerfile: ${{ matrix.dockerfile }}
           format: sarif
           output-file: hadolint.sarif
           no-fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
         with:
           sarif_file: hadolint.sarif
           category: hadolint-${{ strategy.job-index }}

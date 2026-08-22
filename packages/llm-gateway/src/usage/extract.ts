@@ -5,33 +5,42 @@ export interface ExtractedUsage extends TokenUsage {
   model?: string;
 }
 
-interface UpstreamUsageShape {
+export interface UpstreamUsageShape {
   prompt_tokens?: number;
   completion_tokens?: number;
   cached_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number };
+  // `cache_write_tokens` is not part of OpenAI's own usage shape — it's the
+  // gateway's own convention (emitted by the anthropic/bedrock transport's
+  // OpenAI-shaped translation, see transports/anthropic/response.ts) for
+  // surfacing Anthropic's `cache_creation_input_tokens` so it can be priced at
+  // the cache-write premium instead of silently folded into plain input.
+  cache_write_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
   cost?: number;
 }
 
-interface UpstreamChunkShape {
+export interface UpstreamChunkShape {
   model?: string;
   usage?: UpstreamUsageShape;
 }
 
-function normalize(raw: UpstreamChunkShape | undefined): ExtractedUsage {
+export function normalizeUsageChunk(raw: UpstreamChunkShape | undefined): ExtractedUsage {
   const usage = raw?.usage;
   const cached = usage?.cached_tokens ?? usage?.prompt_tokens_details?.cached_tokens ?? 0;
+  const cacheWrite =
+    usage?.cache_write_tokens ?? usage?.prompt_tokens_details?.cache_write_tokens ?? 0;
   return {
     promptTokens: usage?.prompt_tokens ?? 0,
     completionTokens: usage?.completion_tokens ?? 0,
     cachedTokens: cached,
+    cacheWriteTokens: cacheWrite,
     upstreamCostHint: usage?.cost,
     model: raw?.model,
   };
 }
 
 export function extractUsageFromJson(json: unknown): ExtractedUsage {
-  return normalize(json as UpstreamChunkShape);
+  return normalizeUsageChunk(json as UpstreamChunkShape);
 }
 
 export function extractUsageFromSseBuffer(buffer: string): ExtractedUsage | null {
@@ -45,7 +54,7 @@ export function extractUsageFromSseBuffer(buffer: string): ExtractedUsage | null
     try {
       const chunk = JSON.parse(payload) as UpstreamChunkShape;
       if (chunk?.model) lastModel = chunk.model;
-      if (chunk?.usage) lastUsage = normalize(chunk);
+      if (chunk?.usage) lastUsage = normalizeUsageChunk(chunk);
     } catch {
       continue;
     }

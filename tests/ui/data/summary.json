@@ -1,9 +1,0 @@
-{
-  "totalFlows": 279,
-  "passed": 242,
-  "skipped": 37,
-  "cases": 867,
-  "routes": 323,
-  "domains": 31,
-  "coveragePct": 100
-}

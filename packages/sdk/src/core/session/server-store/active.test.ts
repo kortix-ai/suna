@@ -55,6 +55,17 @@ test('getActiveOpenCodeUrl falls back to the default sandbox url in self-hosted 
   expect(getActiveOpenCodeUrl()).toBe('http://backend.local/v1/p/local-sbx/8000');
 });
 
+test('getActiveOpenCodeUrl stays empty before a session binds when no default sandbox is configured', () => {
+  configureKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken: async () => 'tok',
+    billingEnabled: false,
+    sandboxId: '',
+  });
+
+  expect(getActiveOpenCodeUrl()).toBe('');
+});
+
 test('getActiveOpenCodeUrl returns empty string in a billing-enabled deployment with no active session', () => {
   configureKortix({
     backendUrl: 'http://backend.local/v1',
@@ -133,6 +144,9 @@ test('deriveSubdomainOpts always returns a fully-populated options object', () =
     sandboxId: 'sb-1',
     backendPort: 8008,
     apiBaseUrl: 'http://localhost:8008/v1',
+    // Null until GET /v1/p/config answers; that is the path form, which is
+    // correct for a deployment that serves no preview domain.
+    previewUrlTemplate: null,
   });
 });
 
@@ -140,4 +154,59 @@ test('deriveSubdomainOpts uses an empty-string sandboxId (never undefined) when 
   configureKortix({ backendUrl: 'http://localhost:8008/v1', getToken: async () => 'tok' });
 
   expect(deriveSubdomainOpts().sandboxId).toBe('');
+});
+
+// ── The reported bug, as a sequence ──
+//
+// Staging, cloud backend. A finished session's transcript renders BEFORE its
+// runtime binds, so the "Open the website" link was built with no sandbox id.
+// It shipped `https://staging-api.kortix.com/v1/p//3000/`, which returns
+// `{"error":true,"message":"Not found","status":404}`. Typing the same
+// `localhost:3000` into the preview panel's address bar worked, because that
+// surface was mounted after the runtime bound — the tell that this was a
+// timing bug, not a URL-building one.
+test('a preview URL built before the runtime binds is not a dead link, and binding fixes it', async () => {
+  const { rewriteLocalhostUrl, hasPreviewTarget } = await import('../url');
+  configureKortix({
+    backendUrl: 'https://staging-api.kortix.com/v1',
+    getToken: async () => 'tok',
+  });
+
+  // Transcript paints first — no runtime yet.
+  expect(hasPreviewTarget(deriveSubdomainOpts())).toBe(false);
+  const early = rewriteLocalhostUrl(3000, '/', deriveSubdomainOpts());
+  expect(early).not.toBe('https://staging-api.kortix.com/v1/p//3000/');
+  expect(early).toBe('http://localhost:3000/');
+
+  // The session's sandbox binds a moment later. Re-deriving — which is what
+  // the reactive hook now does, and what the click handler does per click —
+  // yields the real preview URL.
+  setCurrentRuntime('https://staging-api.kortix.com/v1/p/sb-live/8000', 'sb-live');
+  expect(hasPreviewTarget(deriveSubdomainOpts())).toBe(true);
+  expect(rewriteLocalhostUrl(3000, '/', deriveSubdomainOpts())).toBe(
+    'https://staging-api.kortix.com/v1/p/sb-live/3000/',
+  );
+});
+
+test('switching sessions re-points the preview URL instead of keeping the old sandbox', async () => {
+  const { rewriteLocalhostUrl } = await import('../url');
+  configureKortix({
+    backendUrl: 'https://staging-api.kortix.com/v1',
+    getToken: async () => 'tok',
+  });
+
+  setCurrentRuntime('https://staging-api.kortix.com/v1/p/sb-a/8000', 'sb-a');
+  expect(rewriteLocalhostUrl(3000, '/', deriveSubdomainOpts())).toContain('/p/sb-a/3000/');
+
+  setCurrentRuntime('https://staging-api.kortix.com/v1/p/sb-b/8000', 'sb-b');
+  expect(rewriteLocalhostUrl(3000, '/', deriveSubdomainOpts())).toContain('/p/sb-b/3000/');
+});
+
+test('deriveSubdomainOpts carries the preview template every host app builds URLs from', async () => {
+  // useSandboxProxy, proxySandboxUrl, buildStaticFilePreviewUrl and the
+  // app-preview iframe all build from this. Omitting previewUrlTemplate made
+  // every one of them fall back to the path form no matter what the deployment
+  // advertised — which is exactly what a user saw in the session panel.
+  const { deriveSubdomainOpts } = await import('./active');
+  expect(Object.keys(deriveSubdomainOpts())).toContain('previewUrlTemplate');
 });

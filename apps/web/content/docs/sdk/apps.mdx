@@ -1,0 +1,292 @@
+---
+title: Apps
+description: Create, deploy, and control Kortix Apps from the SDK and from React.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Apps are project-scoped serverless deployments. This page covers the SDK
+surface: the `apps` facade on a project handle, the artifact and deployment
+calls, the access calls, the exported types, and the React hooks.
+
+For what an App is, the source kinds, the CLI, the stable URL, and cold-wake
+behavior, read [Apps](/docs/feature-flags/apps).
+
+```ts
+const apps = kortix.project(projectId).apps;
+```
+
+<Callout type="info" title="Apps is a feature flag">
+Every Apps route answers `403` with `{ error, code: "feature_disabled", feature: "apps" }`
+until the project turns Apps on. Use `isFeatureDisabledError(error)` to branch
+on it. See [Feature flags](/docs/feature-flags).
+</Callout>
+
+## The apps facade
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `apps.list()` | `GET /projects/:pid/apps` | Lists the project's Apps |
+| `apps.create(input)` | `POST …/apps` | Creates an App and assigns its stable URL |
+| `apps.get(appId)` | `GET …/apps/:id` | Reads one App |
+| `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, or budget |
+| `apps.remove(appId)` | `DELETE …/apps/:id` | Deletes the App and its runtimes |
+| `apps.start(appId)` | `POST …/apps/:id/start` | Sets `desired_state` to `running` and warms the runtime |
+| `apps.stop(appId)` | `POST …/apps/:id/stop` | Suspends compute now; the next request resumes it |
+| `apps.rollback(appId, deploymentId)` | `POST …/apps/:id/rollback` | Moves traffic to a ready deployment |
+
+Artifacts are the immutable input to a deployment:
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `apps.artifacts.register(input)` | `POST …/apps/artifacts` | Registers an `archive` or an `oci_image`; returns the upload URL for an archive |
+| `apps.artifacts.uploadArchive(bytes, options?)` | — | Registers, uploads, hashes, and finalizes one `.tar.gz` in a single call |
+| `apps.artifacts.finalize(artifactId, input)` | `POST …/apps/artifacts/:id/finalize` | Confirms `sha256` and `size_bytes` for a manual upload |
+
+Deployments are immutable and numbered:
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `apps.deployments.create(appId, input)` | `POST …/apps/:id/deployments` | Starts a deployment from an artifact and a source |
+| `apps.deployments.list(appId)` | `GET …/apps/:id/deployments` | Lists the deployment history |
+| `apps.deployments.get(appId, deploymentId)` | `GET …/deployments/:did` | Reads one deployment plus its events |
+| `apps.deployments.logs(appId, deploymentId, options?)` | `GET …/deployments/:did/logs` | Reads runtime logs with a cursor |
+
+Access is the App's own authorization policy:
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `apps.access.get(appId)` | `GET …/apps/:id/access` | Reads the policy. Needs `project.customize.write` |
+| `apps.access.update(appId, input)` | `PATCH …/apps/:id/access` | Replaces the policy and bumps its revision |
+| `apps.access.session(appId)` | `POST …/apps/:id/access-session` | Mints a five-minute URL that exchanges into a host-only cookie |
+
+## Deploy a static site
+
+`uploadArchive` does the whole artifact handshake: it registers the artifact,
+checks it against `max_bytes`, `PUT`s the bytes, computes the SHA-256, and
+finalizes.
+
+```ts
+const apps = kortix.project(projectId).apps;
+
+const app = await apps.create({ slug: 'docs', name: 'Docs' });
+const artifact = await apps.artifacts.uploadArchive(tarGzBytes, {
+  onProgress: (uploaded, total) => console.log(`${uploaded}/${total}`),
+});
+
+const deployment = await apps.deployments.create(app.app_id, {
+  artifact_id: artifact.artifact_id,
+  source: { kind: 'static', spa: true },
+});
+
+console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
+```
+
+`create` accepts the machine and budget fields too: `cpu`, `memory_gb`,
+`disk_gb`, `idle_timeout_seconds`, and `monthly_budget_usd`. Omit them for the
+defaults.
+
+Wait for the deployment by polling its status:
+
+```ts
+async function waitForReady(appId: string, deploymentId: string) {
+  for (;;) {
+    const { deployment } = await apps.deployments.get(appId, deploymentId);
+    if (deployment.status === 'ready') return deployment;
+    if (deployment.status === 'failed' || deployment.status === 'cancelled') {
+      throw new Error(deployment.error ?? deployment.error_code ?? deployment.status);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+}
+```
+
+The status values are `queued`, `validating`, `building`, `provisioning`,
+`checking`, `ready`, `failed`, and `cancelled`.
+
+## Deploy an OCI image
+
+Register the immutable image reference, then declare the process command and
+the public target port:
+
+```ts
+const registered = await apps.artifacts.register({
+  kind: 'oci_image',
+  image: 'ghcr.io/acme/service:2026-08-07',
+});
+
+await apps.deployments.create(app.app_id, {
+  artifact_id: registered.artifact.artifact_id,
+  source: {
+    kind: 'oci_image',
+    image: 'ghcr.io/acme/service:2026-08-07',
+    command: ['node', 'server.js'],
+    port: 3000,
+    readiness_path: '/health',
+  },
+});
+```
+
+`register` returns `upload: null` for an `oci_image`. Only an `archive` gets an
+upload URL.
+
+`CreateAppDeploymentInput` also accepts `environment` (non-secret runtime
+values), `secrets` (runtime key to project secret name), and `provider`
+(`'daytona' | 'platinum' | 'e2b'`). Omit `provider` to use the server policy.
+
+## Read runtime logs
+
+```ts
+let cursor = 0;
+for (;;) {
+  const page = await apps.deployments.logs(app.app_id, deployment.deployment_id, {
+    after: cursor,
+    limit: 200,
+  });
+  for (const entry of page.entries) console.log(entry.source, entry.line);
+  cursor = page.next_cursor;
+  if (page.entries.length === 0) break;
+}
+```
+
+Each entry carries `cursor`, `time`, `source` (`app`, `appd`, `caddy`), and
+`line`.
+
+## Manage access
+
+```ts
+await apps.access.update(app.app_id, {
+  mode: 'restricted',
+  member_ids: [memberId],
+  group_ids: [groupId],
+});
+
+const preview = await apps.access.session(app.app_id);
+window.open(preview.url); // valid for five minutes
+```
+
+`AppAccessConfig` reports `password_configured`, never the password or its
+hash. Set a password with `{ mode: 'password', password }`. Each update
+increments `revision`, which revokes existing App cookies.
+
+## Types
+
+Every type below is exported from `@kortix/sdk`.
+
+| Type | What it holds |
+|---|---|
+| `App` | Identity, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `machine`, `idle_timeout_seconds`, `monthly_budget_usd`, `last_request_at`, `viewer_can_access` |
+| `AppDeployment` | `version`, `status`, `source_kind`, `hosting_provider`, `runtime_spec`, `build_spec`, `error_code`, `attempt_count`, `created_by`, `actor_type`, `source_session_id` |
+| `AppDeploymentDetail` | One `deployment` plus its `events` |
+| `AppAccessConfig` | `mode`, `revision`, `member_ids`, `group_ids`, `password_configured` |
+| `AppAccessMode` | `'private' \| 'project' \| 'restricted' \| 'public' \| 'password'` |
+| `AppSource` | `StaticAppSource \| BundleAppSource \| DockerfileAppSource \| OciImageAppSource` |
+| `AppArtifact` | `kind`, `status`, `sha256`, `size_bytes`, `image_reference` |
+| `AppLogEntry` · `AppLogsResponse` | One log line, and one page plus `next_cursor` |
+
+`viewer_can_access` answers whether the caller may OPEN the App, which is not
+the same as whether they can see it listed. A project manager sees every App in
+the project so a private one stays manageable when its creator leaves. Check
+this field before asking for an access session. Treat `undefined` as unknown,
+not as denied.
+
+`AppAccessMode` is a per-resource visibility setting on top of the role model,
+not a role. `restricted` names users and groups — the same principal types the
+role model uses. See
+[Accounts & access](/docs/accounts#per-feature-access-settings).
+
+`DockerfileAppSource` and `OciImageAppSource` require `command` and `port`.
+`StaticAppSource` and `BundleAppSource` do not.
+
+## React hooks
+
+`@kortix/sdk/react` exports three hooks for Apps.
+
+### useProjectApps(projectId)
+
+The project's App inventory plus its lifecycle mutations. Every mutation
+invalidates the inventory on success.
+
+```tsx
+import { useProjectApps } from '@kortix/sdk/react';
+
+function AppList({ projectId }: { projectId: string }) {
+  const apps = useProjectApps(projectId);
+  if (!apps.data) return null;
+
+  return (
+    <ul>
+      {apps.data.map((app) => (
+        <li key={app.app_id}>
+          <a href={app.url}>{app.slug}</a>
+          <button onClick={() => apps.stop.mutate(app.app_id)}>Stop</button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+It returns the query fields plus `create`, `update`, `start`, `stop`, and
+`remove`.
+
+### useAppDeployments(projectId, appId)
+
+The immutable deployment history, refetched every 5 s so a running build
+advances on its own.
+
+```tsx
+const deployments = useAppDeployments(projectId, appId);
+
+await deployments.deploy.mutateAsync({
+  artifact_id: artifact.artifact_id,
+  source: { kind: 'static', spa: true },
+});
+await deployments.rollback.mutateAsync(previousDeploymentId);
+```
+
+Both mutations invalidate the deployment list and the App inventory.
+
+### useAppAccess(projectId, appId, options?)
+
+The access policy and a short-lived access session. Both halves are separate
+queries, and each one is optional.
+
+```tsx
+const access = useAppAccess(projectId, appId, {
+  policy: canEditAccess,
+  session: app.viewer_can_access,
+});
+
+access.policy.data;  // AppAccessConfig
+access.session.data; // { url, expires_at }
+await access.update.mutateAsync({ mode: 'project' });
+```
+
+| Option | Default | Use `false` when |
+|---|---|---|
+| `policy` | `true` | The surface only previews the App. `GET …/access` is an administrative read and answers `403` for a caller without project-manager permissions. |
+| `session` | `true` | The caller may see the App but not open it. Pass `app.viewer_can_access`. |
+
+A grid of Apps that leaves both options at `true` fires one policy read and one
+session mint per App, and each is a `403` for a member who may not open that
+App.
+
+## Errors
+
+```ts
+import { featureDisabledKey, isFeatureDisabledError } from '@kortix/sdk';
+
+try {
+  await kortix.project(projectId).apps.list();
+} catch (error) {
+  if (isFeatureDisabledError(error)) {
+    console.log(`${featureDisabledKey(error)} is off for this project`);
+  }
+}
+```
+
+Other answers you should handle: `409` for a duplicate slug, `402` with
+`app_quota_exceeded` when the account is at its App limit, and `400` with
+`app_machine_out_of_range` or `app_budget_out_of_range` for a spec outside its
+bounds.

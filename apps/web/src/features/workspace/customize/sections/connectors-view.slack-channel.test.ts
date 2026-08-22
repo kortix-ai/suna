@@ -3,20 +3,21 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 const sourcePath = join(import.meta.dir, 'connectors-view.tsx');
-const source = readFileSync(sourcePath, 'utf8');
+const source = [
+  readFileSync(sourcePath, 'utf8'),
+  readFileSync(join(import.meta.dir, 'discover-catalogue.tsx'), 'utf8'),
+].join('\n');
 
 describe('Slack channel connector catalogue', () => {
   test('uses the built-in Slack install flow instead of creating the reserved slug', () => {
-    expect(source).toContain('<AddSlackProfileCard projectId={projectId} onAdded={onAdded} />');
-    expect(source).not.toMatch(/<ChannelProfileCard[\s\S]*slug="kortix_slack"/);
+    expect(source).toContain('<AddSlackConnectionCard projectId={projectId} onAdded={onAdded} />');
+    expect(source).not.toMatch(/<ChannelConnectionCard[\s\S]*slug="kortix_slack"/);
   });
 
-  test('keeps Slack out of the Pipedream Easy Connect catalogue', () => {
+  test('keeps Slack out of the Pipedream OAuth Discover catalogue', () => {
     expect(source).toContain("new Set(['slack', 'slack_v2'])");
-    expect(source).toContain(
-      'const visibleApps = apps.filter((app) => !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug));',
-    );
-    expect(source).toContain('{visibleApps.map((app) => (');
+    expect(source).toContain('apps.filter((app) => !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug))');
+    expect(source).toContain('const discoverCards = [...connectorCards, ...pipedreamOAuthCards]');
   });
 
   test('uses Slack branding for the built-in channel card', () => {
@@ -40,8 +41,8 @@ describe('Slack channel connector catalogue', () => {
 });
 
 describe('Email channel connector catalogue', () => {
-  test('keeps Email profiles behind the experimental flag', () => {
-    expect(source).toContain('{emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}');
+  test('keeps Email connections behind the experimental flag', () => {
+    expect(source).toContain('{emailChannelEnabled && <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} />}');
   });
 
   test('supports managed inbox creation and attaching an existing AgentMail inbox', () => {

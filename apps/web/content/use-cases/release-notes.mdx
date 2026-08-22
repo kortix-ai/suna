@@ -87,7 +87,7 @@ model, the agent can:
 
 The agent's output is a **PR against the changelog**, nothing more — it does not
 publish, tag, or announce. A human reviews the wording and merges. Credentials are
-encrypted in the secrets manager and injected at runtime, never shown to the model
+encrypted in the secrets manager and injected at runtime, scoped to the agents you grant them to
 or written to logs.
 
 </Step>
@@ -112,11 +112,10 @@ instead of assembling the notes from scratch.
 The agent reads the repository and writes a draft, so the access is scoped and
 contained:
 
-- **Isolation.** Every release runs in its own microVM sandbox. The session reads
-  the PR history and drafts the notes; only the changelog branch leaves the
-  sandbox.
+- **Isolation.** Every release runs in its own isolated sandbox. The session reads
+  the PR history and drafts the notes; only the changelog branch is written back out.
 - **Scoped secrets.** The GitHub credentials are encrypted in the secrets manager
-  and injected into the sandbox at runtime, never exposed to the model or the logs.
+  and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **PR-gated.** The agent opens a pull request against the changelog and stops. It
   never publishes or announces the release; a human reviews the wording and merges.
 - **Everything is code.** The agent's configuration, skills, and permissions are

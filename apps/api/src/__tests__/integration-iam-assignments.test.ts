@@ -1,0 +1,425 @@
+/**
+ * The ONE write path: `assignRole` / `revokeAssignment` / `listAssignments`.
+ *
+ * Proves the five guarantees that are currently spread across 129 write sites
+ * with no common contract:
+ *   1. the WRITER is authorized, and the action depends on WHAT is granted
+ *   2. an account can never reach zero owners
+ *   3. a role carrying a non-delegable permission cannot be assigned
+ *   4. a re-grant is an upsert, not a duplicate (iam_policies has no unique
+ *      constraint at all today, and :bulk-import happily creates duplicates)
+ *   5. the grant is visible to `authorize` immediately, and the revoke is too
+ *      (positive-only caching + a synchronous bust on the writing replica)
+ */
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { and, eq, sql } from 'drizzle-orm';
+import { auditEvents, roleAssignments } from '@kortix/db';
+import { db, hasDatabase } from '../shared/db';
+import { authorize, clearAuthorizeCaches } from '../iam/authorize';
+import { assignRole, listAssignments, revokeAssignment, SYSTEM_ACTOR } from '../iam/assignments';
+import { loadSystemRoles } from '../iam/catalog';
+import type { Actor } from '../iam/actor';
+
+const ACCOUNT = crypto.randomUUID();
+const PROJECT = crypto.randomUUID();
+const uid = () => crypto.randomUUID();
+
+const owner = uid();
+const secondOwner = uid();
+const admin = uid();
+const plainMember = uid();
+const target = uid();
+const groupId = uid();
+
+const jwt = (userId: string): Actor => ({
+  userId,
+  accountId: ACCOUNT,
+  credential: { kind: 'jwt' },
+  ctx: {},
+});
+
+let escalatingRoleId = '';
+
+async function raw(text: string): Promise<void> {
+  await db.execute(sql.raw(text));
+}
+
+beforeAll(async () => {
+  if (!hasDatabase) return;
+  await raw(`insert into kortix.accounts (account_id, name) values ('${ACCOUNT}', 'assignments-test')`);
+  await raw(
+    `insert into kortix.projects (project_id, account_id, name, repo_url)
+     values ('${PROJECT}','${ACCOUNT}','p','https://example.invalid/p.git')`,
+  );
+  await raw(`insert into kortix.account_groups (group_id, account_id, name) values ('${groupId}','${ACCOUNT}','g')`);
+
+  const roles = await loadSystemRoles();
+  const sys = (scope: string, key: string) => roles.byKey.get(`${scope}:${key}`)!.roleId;
+
+  // Seed the writers' own membership directly — bootstrapping an account's
+  // first owner is not itself an authorized act.
+  for (const [userId, key] of [
+    [owner, 'owner'],
+    [secondOwner, 'owner'],
+    [admin, 'admin'],
+    [plainMember, 'member'],
+    [target, 'member'],
+  ] as const) {
+    await raw(
+      `insert into kortix.role_assignments (account_id, principal_type, principal_id, role_id, scope_type, source)
+       values ('${ACCOUNT}','user','${userId}','${sys('account', key)}','account','system')`,
+    );
+  }
+  // account_members carries is_super_admin + the MFA join; none of these are
+  // super-admins, which is the point — the guards below must actually run.
+  //
+  // account_role MUST match the assignment above. It used to be hardcoded
+  // 'member' for everyone, which the dual-write mirror trigger
+  // (20260819015728000_rbac_dual_write_mirror) now treats as a demotion: an
+  // account_members INSERT retracts every other system account-scope assignment
+  // for that user, so the owner rows above were deleted the moment this loop
+  // ran. That is the trigger working — the fixture was the thing that was
+  // inconsistent, because no real writer sets the two stores to different roles.
+  for (const [userId, key] of [
+    [owner, 'owner'],
+    [secondOwner, 'owner'],
+    [admin, 'admin'],
+    [plainMember, 'member'],
+    [target, 'member'],
+  ] as const) {
+    await raw(
+      `insert into kortix.account_members (user_id, account_id, account_role, is_super_admin)
+       values ('${userId}','${ACCOUNT}','${key}', false)`,
+    );
+  }
+
+  // A custom role carrying a NON-DELEGABLE permission. Nothing stops such a row
+  // existing — validateActions gates the CREATE route, not the table — so the
+  // assign-time ceiling has to be real.
+  escalatingRoleId = uid();
+  await raw(
+    `insert into kortix.iam_roles (role_id, account_id, key, name, scope_type)
+     values ('${escalatingRoleId}','${ACCOUNT}','escalating','Escalating','account')`,
+  );
+  await raw(
+    `insert into kortix.iam_role_actions (role_id, action)
+     values ('${escalatingRoleId}','member.super_admin.grant'), ('${escalatingRoleId}','account.read')`,
+  );
+  clearAuthorizeCaches();
+});
+
+afterAll(async () => {
+  if (!hasDatabase) return;
+  await raw(`delete from kortix.accounts where account_id = '${ACCOUNT}'`);
+});
+
+describe.if(hasDatabase)('assignRole / revokeAssignment', () => {
+  test('a plain member cannot hand out a project role', async () => {
+    await expect(
+      assignRole(jwt(plainMember), ACCOUNT, {
+        principal: { type: 'user', id: target },
+        roleKey: 'manager',
+        scope: { type: 'project', id: PROJECT },
+      }),
+    ).rejects.toThrow();
+  });
+
+  test('an owner can, and the grant is live on the next authorize', async () => {
+    const before = await authorize(jwt(target), 'project.write', { type: 'project', id: PROJECT });
+    expect(before.allowed).toBe(false);
+    expect(before.reason).toBe('no_project_membership');
+
+    const row = await assignRole(jwt(owner), ACCOUNT, {
+      principal: { type: 'user', id: target },
+      roleKey: 'manager',
+      scope: { type: 'project', id: PROJECT },
+    });
+    expect(row.roleKey).toBe('manager');
+    expect(row.scopeType).toBe('project');
+    expect(row.scopeId).toBe(PROJECT);
+    expect(row.source).toBe('manual');
+    expect(row.grantedBy).toBe(owner);
+
+    const after = await authorize(jwt(target), 'project.write', { type: 'project', id: PROJECT });
+    expect(after).toEqual({ allowed: true, reason: 'role' });
+  });
+
+  test('re-granting is an upsert, not a duplicate', async () => {
+    const expires = new Date(Date.now() + 60 * 60 * 1000);
+    const again = await assignRole(jwt(owner), ACCOUNT, {
+      principal: { type: 'user', id: target },
+      roleKey: 'manager',
+      scope: { type: 'project', id: PROJECT },
+      expiresAt: expires,
+    });
+    const rows = await listAssignments({
+      accountId: ACCOUNT,
+      principal: { type: 'user', id: target },
+      scopeType: 'project',
+      scopeId: PROJECT,
+    });
+    expect(rows.filter((r) => r.roleKey === 'manager')).toHaveLength(1);
+    expect(again.expiresAt?.getTime()).toBe(expires.getTime());
+  });
+
+  test('an object assignment is one row and needs project.members.manage', async () => {
+    await expect(
+      assignRole(jwt(plainMember), ACCOUNT, {
+        principal: { type: 'group', id: groupId },
+        roleKey: 'agent-user',
+        scope: { type: 'project', id: PROJECT },
+        object: { type: 'agent', id: 'finance-bot' },
+      }),
+    ).rejects.toThrow();
+
+    const row = await assignRole(jwt(owner), ACCOUNT, {
+      principal: { type: 'group', id: groupId },
+      roleKey: 'agent-user',
+      scope: { type: 'project', id: PROJECT },
+      object: { type: 'agent', id: 'finance-bot' },
+    });
+    expect(row.objectType).toBe('agent');
+    expect(row.objectId).toBe('finance-bot');
+    expect(row.roleKey).toBe('agent-user');
+  });
+
+  test('a role carrying a non-delegable permission cannot be assigned', async () => {
+    await expect(
+      assignRole(jwt(owner), ACCOUNT, {
+        principal: { type: 'user', id: target },
+        roleId: escalatingRoleId,
+        scope: { type: 'account' },
+      }),
+    ).rejects.toThrow(/non-delegable/);
+  });
+
+  test('the last owner cannot be revoked, the second-to-last can', async () => {
+    const owners = await listAssignments({
+      accountId: ACCOUNT,
+      scopeType: 'account',
+      principals: [
+        { type: 'user', id: owner },
+        { type: 'user', id: secondOwner },
+      ],
+    });
+    const ownerRows = owners.filter((r) => r.roleKey === 'owner');
+    expect(ownerRows).toHaveLength(2);
+
+    // A DEMOTION is a grant plus a revoke: give the second owner the member
+    // floor first, so removing `owner` leaves them in the account. Revoking the
+    // only account role a principal holds is offboarding, and the assertion
+    // below pins that it is refused here and pointed at the route that does it
+    // completely (tokens + seat + identity row).
+    await assignRole(jwt(owner), ACCOUNT, {
+      principal: { type: 'user', id: secondOwner },
+      roleKey: 'member',
+      scope: { type: 'account' },
+    });
+    const first = ownerRows.find((r) => r.principalId === secondOwner)!;
+    await revokeAssignment(jwt(owner), ACCOUNT, first.assignmentId);
+
+    // One owner left: revoking it must be refused.
+    const last = ownerRows.find((r) => r.principalId === owner)!;
+    await expect(revokeAssignment(jwt(owner), ACCOUNT, last.assignmentId)).rejects.toThrow(/last owner/);
+  });
+
+  test("a principal's ONLY account role cannot be revoked here — that is offboarding", async () => {
+    const [membership] = (
+      await listAssignments({
+        accountId: ACCOUNT,
+        scopeType: 'account',
+        principal: { type: 'user', id: plainMember },
+      })
+    ).filter((r) => r.roleIsSystem);
+    expect(membership).toBeDefined();
+    await expect(
+      revokeAssignment(jwt(owner), ACCOUNT, membership.assignmentId),
+    ).rejects.toThrow(/only account role/);
+  });
+
+  test('a revoke is visible to authorize immediately', async () => {
+    const rows = await listAssignments({
+      accountId: ACCOUNT,
+      principal: { type: 'user', id: target },
+      scopeType: 'project',
+      scopeId: PROJECT,
+    });
+    const manager = rows.find((r) => r.roleKey === 'manager')!;
+    await revokeAssignment(jwt(owner), ACCOUNT, manager.assignmentId);
+    const after = await authorize(jwt(target), 'project.write', { type: 'project', id: PROJECT });
+    expect(after.allowed).toBe(false);
+  });
+
+  test('SYSTEM_ACTOR skips writer authz and only that — source and audit still land', async () => {
+    const row = await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+      principal: { type: 'user', id: target },
+      roleKey: 'member',
+      scope: { type: 'project', id: PROJECT },
+      source: 'scim',
+    });
+    expect(row.source).toBe('scim');
+    expect(row.grantedBy).toBeNull();
+  });
+
+  test('every write emitted exactly one iam.assignment.* audit event', async () => {
+    const rows = await db
+      .select({ action: auditEvents.action, resourceId: auditEvents.resourceId })
+      .from(auditEvents)
+      .where(and(eq(auditEvents.accountId, ACCOUNT), sql`${auditEvents.action} like 'iam.assignment.%'`));
+    const granted = rows.filter((r) => r.action === 'iam.assignment.granted');
+    const revoked = rows.filter((r) => r.action === 'iam.assignment.revoked');
+    // 5 successful grants (manager, manager re-grant, object grant, scim member)
+    // and 2 successful revokes across the tests above.
+    expect(granted.length).toBeGreaterThanOrEqual(4);
+    expect(revoked.length).toBeGreaterThanOrEqual(2);
+    expect(rows.every((r) => r.resourceId != null)).toBe(true);
+  });
+
+  test('shape constraints are enforced by the database, not only by the writer', async () => {
+    const roles = await loadSystemRoles();
+    const managerId = roles.byKey.get('project:manager')!.roleId;
+    // An account-scope row that names a project.
+    await expect(async () =>
+      db.insert(roleAssignments).values({
+        accountId: ACCOUNT,
+        principalType: 'user',
+        principalId: uid(),
+        roleId: managerId,
+        scopeType: 'account',
+        scopeId: PROJECT,
+      }),
+    ).toThrow();
+    // An object_type with no object_id.
+    await expect(async () =>
+      db.insert(roleAssignments).values({
+        accountId: ACCOUNT,
+        principalType: 'user',
+        principalId: uid(),
+        roleId: managerId,
+        scopeType: 'project',
+        scopeId: PROJECT,
+        objectType: 'agent',
+      }),
+    ).toThrow();
+    // An unknown principal_type.
+    await expect(async () =>
+      db.insert(roleAssignments).values({
+        accountId: ACCOUNT,
+        principalType: 'robot',
+        principalId: uid(),
+        roleId: managerId,
+        scopeType: 'project',
+        scopeId: PROJECT,
+      }),
+    ).toThrow();
+  });
+});
+
+// ── Provenance: `granted_by` survives a SYSTEM_ACTOR write ──────────────────
+//
+// P7 live check, 2026-08-19. Six writers (project role, group grant, object
+// grant, invite bootstrap, …) pass `SYSTEM_ACTOR` because their ROUTE already
+// authorized the caller — but they do know the human who granted, and their
+// legacy row has always recorded it. `writerUserId(SYSTEM_ACTOR)` is null, and
+// the upsert's `granted_by = excluded.granted_by` overwrote the granter the
+// mirror trigger had just copied across. `GET /projects/:id/access` served
+// `granted_by: null` for every project role, and once the legacy tables are
+// dropped at cutover the column would have been unrecoverable.
+describe.if(hasDatabase)('assignRole — granted_by provenance', () => {
+  const provTarget = uid();
+  const provProject = crypto.randomUUID();
+
+  test('an explicit grantedBy wins over the writer, and a system re-grant never erases it', async () => {
+    await raw(
+      `insert into kortix.projects (project_id, account_id, name, repo_url)
+       values ('${provProject}','${ACCOUNT}','prov','https://example.invalid/prov.git')`,
+    );
+    await raw(
+      `insert into kortix.account_members (user_id, account_id, account_role, is_super_admin)
+       values ('${provTarget}','${ACCOUNT}','member', false)`,
+    );
+
+    // SYSTEM_ACTOR + an explicit granter: the granter is what lands.
+    const first = await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+      principal: { type: 'user', id: provTarget },
+      roleKey: 'member',
+      scope: { type: 'project', id: provProject },
+      grantedBy: owner,
+      source: 'manual',
+    });
+    expect(first.grantedBy).toBe(owner);
+
+    // A later SYSTEM_ACTOR re-grant with no granter must not null it out.
+    const second = await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+      principal: { type: 'user', id: provTarget },
+      roleKey: 'member',
+      scope: { type: 'project', id: provProject },
+      source: 'system',
+    });
+    expect(second.assignmentId).toBe(first.assignmentId);
+    const [row] = await db
+      .select({ grantedBy: roleAssignments.grantedBy })
+      .from(roleAssignments)
+      .where(eq(roleAssignments.assignmentId, first.assignmentId));
+    expect(row!.grantedBy).toBe(owner);
+
+    // A real writer re-granting DOES record themselves.
+    clearAuthorizeCaches();
+    const third = await assignRole(jwt(owner), ACCOUNT, {
+      principal: { type: 'user', id: provTarget },
+      roleKey: 'member',
+      scope: { type: 'project', id: provProject },
+      source: 'manual',
+    });
+    expect(third.grantedBy).toBe(owner);
+
+    await raw(`delete from kortix.projects where project_id = '${provProject}'`);
+  });
+});
+
+// ── The people list is people ───────────────────────────────────────────────
+//
+// P7 live check, 2026-08-19. `customRoleBindings` speaks the legacy principal
+// vocabulary, `token` included, and the project access reader branches
+// `member ? user : GROUP`. With no principal filter, an account-scope custom
+// role held by a SERVICE ACCOUNT fell into the group branch and
+// `GET /projects/:id/access` rendered it as a nameless "Group" with a raw uuid
+// and no role. The legacy query this replaced said `principal_type IN
+// ('member','group')` in so many words; `principalTypes` says it again.
+describe.if(hasDatabase)('customRoleBindings — principalTypes', () => {
+  test('a service-account binding is excluded when the caller asks for member/group only', async () => {
+    const { customRoleBindings } = await import('../iam/read-models');
+    const sa = uid();
+    await raw(
+      `insert into kortix.service_accounts (service_account_id, account_id, name, public_prefix, secret_hash)
+       values ('${sa}','${ACCOUNT}','p7-sa','p7pfx','x')`,
+    );
+    // A perfectly ordinary, delegable custom role — the point is the PRINCIPAL,
+    // not the permissions.
+    const readerRoleId = uid();
+    await raw(
+      `insert into kortix.iam_roles (role_id, account_id, key, name, scope_type)
+       values ('${readerRoleId}','${ACCOUNT}','p7-sa-reader','SA Reader','account')`,
+    );
+    await raw(
+      `insert into kortix.iam_role_actions (role_id, action) values ('${readerRoleId}','account.read')`,
+    );
+    await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+      principal: { type: 'service_account', id: sa },
+      roleId: readerRoleId,
+      scope: { type: 'account' },
+      source: 'system',
+    });
+
+    const unfiltered = await customRoleBindings({ accountId: ACCOUNT, reachingProjectId: PROJECT });
+    expect(unfiltered.some((b) => b.principalId === sa && b.principalType === 'token')).toBe(true);
+
+    const peopleOnly = await customRoleBindings({
+      accountId: ACCOUNT,
+      reachingProjectId: PROJECT,
+      principalTypes: ['member', 'group'],
+    });
+    expect(peopleOnly.some((b) => b.principalId === sa)).toBe(false);
+    expect(peopleOnly.every((b) => b.principalType !== 'token')).toBe(true);
+  });
+});

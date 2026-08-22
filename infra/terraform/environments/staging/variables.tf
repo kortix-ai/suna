@@ -7,7 +7,12 @@ variable "aws_region" {
 variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID for kortix.com. Supply via TF_VAR_cloudflare_zone_id."
   type        = string
-  default     = ""
+  # The kortix.com zone id. Not a secret — it is already exposed as the
+  # CLOUDFLARE_ZONE_ID repo variable and appears in every Cloudflare API URL.
+  # It defaults here because an empty value resolves zone_id to null on every
+  # cloudflare_record, and zone_id forces replacement: a plan run without the
+  # gitignored tfvars proposed destroying and recreating live production DNS.
+  default = "af378d3df4e4dd5052a1fcbf263b685d"
 }
 
 variable "cloudflare_api_token" {
@@ -70,12 +75,6 @@ variable "api_secrets" {
   description = "Secret env vars: name -> Secrets Manager/SSM ARN. Populate via tfvars; never inline secret values."
   type        = map(string)
   default     = {}
-}
-
-variable "enable_https" {
-  description = "Create the ACM cert + HTTPS listener (needs the Cloudflare token for DNS validation). false = HTTP-only ALB, e.g. for parallel validation."
-  type        = bool
-  default     = true
 }
 
 variable "manage_dns" {

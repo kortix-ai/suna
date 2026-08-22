@@ -1,6 +1,8 @@
 'use client';
 
-import { ArrowRight, FileDiff } from 'lucide-react';
+import { useFeatureFlag } from '@kortix/sdk/react';
+import { ArrowRightIcon as ArrowRight, GitDiffIcon as FileDiff } from '@phosphor-icons/react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -12,9 +14,8 @@ import { ChangeRequestDetailDialog } from '@/features/project-files/components/c
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
+import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useCustomizeStore } from '@/stores/customize-store';
 
 interface CrController {
   crs: ChangeRequest[];
@@ -27,7 +28,7 @@ interface CrController {
 }
 
 function useOpenCrController(): CrController {
-  const { data } = useChangeRequests('open', { refetchInterval: 20_000 });
+  const { data } = useChangeRequests('open', { refetchInterval: 60_000 });
   const crs = useMemo(() => data?.change_requests ?? [], [data?.change_requests]);
   const count = crs.length;
 
@@ -118,14 +119,14 @@ function OpenCrChooser({
 function NavItemInner({ projectId }: { projectId: string }) {
   const c = useOpenCrController();
   const isMobile = useIsMobile();
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const router = useRouter();
   // When the Review Center is enabled for this project, this pill becomes the
   // single entry point into the unified inbox (Customize → Review) — change
   // requests, approvals and agent outputs all live in one place — instead of
   // opening a single CR's detail dialog. Its badge then counts the SAME unified
   // "needs_you" set the per-session row dots and the Customize rail read, so the
   // pill, the dots, and the rail always agree on one number.
-  const reviewEnabled = useReviewCenterEnabled(projectId);
+  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
   const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
 
   // Flag on → the unified inbox's "awaiting you" count (open CRs are a subset of
@@ -143,7 +144,8 @@ function NavItemInner({ projectId }: { projectId: string }) {
       className="text-sm! font-medium [&_svg]:size-4!"
       onClick={
         reviewEnabled
-          ? () => openCustomize('review')
+          ? // Review is a section of the Customize bar's Settings tab now.
+            () => router.push(projectSettingsSectionHref(projectId, 'review'))
           : c.count === 1
             ? () => c.openCr(c.crs[0].cr_id)
             : undefined

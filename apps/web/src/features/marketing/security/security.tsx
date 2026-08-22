@@ -7,9 +7,15 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
-import { Heatmap } from '@paper-design/shaders-react';
 import { ShaderSafe } from '@/components/ui/shader-safe';
-import { Eye, Key, Layers2, Server, Shield } from 'lucide-react';
+import { Heatmap } from '@paper-design/shaders-react';
+import {
+  EyeIcon as Eye,
+  KeyIcon as Key,
+  StackSimpleIcon as Layers2,
+  HardDrivesIcon as Server,
+  ShieldIcon as Shield,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';
@@ -64,7 +70,7 @@ const Security = () => {
   const [activeId, setActiveId] = useState<string>(ACCORDION[0].id);
 
   return (
-    <section className="mx-auto max-w-6xl rounded-sm px-6 py-16 sm:py-24 lg:px-0">
+    <section className="mx-auto max-w-7xl rounded-sm px-6 py-24 md:py-30 lg:px-0">
       <div className="mb-16 max-w-2xl space-y-3">
         <p className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
           {tHome('enterpriseEyebrow')}
@@ -91,7 +97,7 @@ const Security = () => {
                 scale={0.65}
                 image="/shaders/heatmap-mark.svg"
                 frame={407072.499999992}
-                colors={['var(--kortix-orange)', '#fafafa', '#242424']}
+                colors={['#d18b19', '#fafafa', '#242424']}
                 colorBack="#ffffff00"
                 className="shrink-0"
                 style={{

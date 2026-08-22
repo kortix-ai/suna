@@ -107,4 +107,22 @@ describe('POST /access/check-email unified auth-flow modes', () => {
     const { status } = await checkEmail('not-an-email');
     expect(status).toBe(400);
   });
+
+  test.each([
+    ['application/xml', '<root><email>x@example.com</email></root>'],
+    ['application/x-www-form-urlencoded', 'email=x@example.com'],
+    ['text/plain', 'not-json'],
+  ])('unsupported %s input is rejected with 400', async (contentType, body) => {
+    const response = await accessControlApp.request('/check-email', {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: true,
+      message: 'Validation failed',
+      status: 400,
+    });
+  });
 });

@@ -1,16 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import { probeStream, relayStream } from './streaming';
+import { probeStream, relayStream, resolveStreamProbeTimeoutMs } from './streaming';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 function controllableUpstream() {
   let controller!: ReadableStreamDefaultController<Uint8Array>;
-  const stream = new ReadableStream<Uint8Array>({ start(c) { controller = c; } });
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) { controller = c; },
+    cancel() { cancelled = true; },
+  });
   return {
     stream,
     push: (s: string) => controller.enqueue(enc.encode(s)),
     close: () => controller.close(),
+    get cancelled() { return cancelled; },
   };
 }
 
@@ -155,6 +160,173 @@ describe('probeStream', () => {
     const result = await probeStream(stream);
     expect(result.hasContent).toBe(false);
   });
+
+  test('leaves a slow stream OPEN on timeout so the caller can commit it', async () => {
+    const up = controllableUpstream();
+    const result = await probeStream(up.stream, { inactivityTimeoutMs: 20 });
+
+    expect(result.hasContent).toBe(false);
+    expect(result.readError).toEqual({
+      message: 'upstream stream probe timeout exceeded (20ms with no bytes)',
+      code: 'stream_probe_timeout',
+    });
+    // The whole point of the commit path: a still-prefilling upstream must not
+    // be cancelled. Cancelling here is what killed healthy large-context turns.
+    expect(up.cancelled).toBe(false);
+    expect(result.pendingRead).toBeDefined();
+  });
+
+  test('hands the in-flight read to the caller so no post-timeout chunk is lost', async () => {
+    const up = controllableUpstream();
+    const result = await probeStream(up.stream, { inactivityTimeoutMs: 20 });
+    expect(result.pendingRead).toBeDefined();
+
+    // The chunk the model finally produces resolves the read that was already
+    // in flight when the deadline expired. A caller that issued a fresh
+    // reader.read() instead would queue behind this promise and never see it.
+    up.push('data: {"choices":[{"delta":{"content":"late but real"}}]}\n\n');
+    const first = await result.pendingRead!;
+    expect(first.done).toBe(false);
+    expect(new TextDecoder().decode(first.value)).toContain('late but real');
+  });
+
+  test('holds and classifies the production soft rate-limit completion before relaying bytes', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{"content":" To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}\n\n',
+    );
+    up.push('data: [DONE]\n\n');
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(false);
+    expect(result.errorFrame).toEqual({
+      message:
+        'Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time.',
+      code: 429,
+      detail: { type: 'soft_rate_limit' },
+    });
+  });
+
+  test('relays the exact soft-failure sentence when streaming usage is non-zero', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":20,"total_tokens":32}}\n\n',
+    );
+    up.push('data: [DONE]\n\n');
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(true);
+    expect(result.errorFrame).toBeUndefined();
+  });
+
+  test('does not release a soft-failure prefix at the normal chunk budget', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly."}}]}\n\n',
+    );
+    for (let index = 0; index < 70; index += 1) up.push(': provider-heartbeat\n\n');
+    up.push(
+      'data: {"choices":[{"delta":{"content":" To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}\n\n',
+    );
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(false);
+    expect(result.errorFrame?.code).toBe(429);
+  });
+});
+
+describe('resolveStreamProbeTimeoutMs', () => {
+  test('keeps the 30-second default for an ordinary small prompt', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({ requestBytes: 64_000, provider: 'openrouter', model: 'x' }),
+    ).toBe(30_000);
+  });
+
+  test('does not scale with request size — a 2MiB prompt gets the same deadline', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 2_023_225,
+        provider: 'aster',
+        model: 'glm-5.2',
+      }),
+    ).toBe(30_000);
+  });
+
+  test('does not special-case a provider or model', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 64_000,
+        provider: 'aster',
+        model: 'glm-5.2',
+      }),
+    ).toBe(30_000);
+  });
+
+  // Regression lock. The retired ladder was
+  // `30_000 + ceil((bytes - 64KiB) / 1MiB) * 15_000`, capped at 120_000, so
+  // every request body between 3,211,776 and 4,259,840 bytes resolved to
+  // exactly 90_000 — the deadline that deterministically killed healthy
+  // large-context Fable turns. No request size may ever produce it again.
+  test('no request size can resolve to the 90-second cliff again', () => {
+    for (let bytes = 0; bytes <= 16 * 1024 * 1024; bytes += 64 * 1024) {
+      const resolved = resolveStreamProbeTimeoutMs({
+        requestBytes: bytes,
+        provider: 'anthropic',
+        model: 'claude-fable-5',
+      });
+      expect(resolved).toBe(30_000);
+    }
+  });
+
+  test('an explicit operator timeout remains an exact override', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 2_023_225,
+        provider: 'aster',
+        model: 'glm-5.2',
+        configuredTimeoutMs: 12_345,
+      }),
+    ).toBe(12_345);
+  });
+
+  test('zero keeps the default deadline', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 64_000,
+        provider: 'aster',
+        model: 'glm-5.2',
+        configuredTimeoutMs: 0,
+      }),
+    ).toBe(30_000);
+  });
+
+  test('an extreme request is not given a longer deadline', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 50 * 1024 * 1024,
+        provider: 'openrouter',
+        model: 'x',
+      }),
+    ).toBe(30_000);
+  });
 });
 
 describe('relayStream with a primed reader', () => {
@@ -247,5 +419,243 @@ describe('probeStream error frames', () => {
     up.close();
     const probe = await probeStream(up.stream);
     expect(probe.hasContent).toBe(false);
+  });
+});
+
+// Regression coverage for the client-disconnect finding: the gateway must stop
+// reading (and paying for) upstream tokens the instant the caller is gone,
+// instead of draining an upstream that never closes on its own.
+describe('relayStream client abort propagation', () => {
+  function cancellableUpstream() {
+    let cancelled = false;
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    return {
+      stream,
+      push: (s: string) => controller.enqueue(enc.encode(s)),
+      isCancelled: () => cancelled,
+    };
+  }
+
+  test('an inbound abort cancels the upstream reader and ends the relay even though upstream never closes', async () => {
+    const up = cancellableUpstream();
+    const ac = new AbortController();
+    let settleCalls = 0;
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: false,
+      requestId: 'r-abort-1',
+      logger: noop,
+      settle: async () => {
+        settleCalls += 1;
+      },
+      heartbeatMs: 10_000,
+      signal: ac.signal,
+    });
+    const collected = drain(out);
+    up.push('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n');
+    await delay(10);
+    ac.abort();
+    // The mock upstream never calls close() — if the abort weren't honored this
+    // would hang forever (bounded only by the 15-minute default inactivity
+    // deadline). Resolving here proves the relay stopped on its own.
+    await collected;
+    expect(up.isCancelled()).toBe(true);
+    await delay(10);
+    expect(settleCalls).toBe(1);
+  });
+
+  test('a signal already aborted before the relay starts never issues a read, just cancels and settles', async () => {
+    const up = cancellableUpstream();
+    const ac = new AbortController();
+    ac.abort();
+    let settledResponse: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: false,
+      requestId: 'r-abort-2',
+      logger: noop,
+      settle: async (_usage, response) => {
+        settledResponse = response;
+      },
+      heartbeatMs: 10_000,
+      signal: ac.signal,
+    });
+    await drain(out);
+    expect(up.isCancelled()).toBe(true);
+    await delay(10);
+    expect(settledResponse).toBeNull();
+  });
+});
+
+// Regression coverage for the unbounded-buffer finding: usage/error
+// extraction stays O(1) per chunk (the incremental scanner) regardless of
+// total stream size. The trace capture retained alongside it is a separate
+// concern and is BOUNDED (head + tail + an honest marker) — an ordinary
+// response is still retained byte-for-byte, but a response large enough to
+// threaten the process is truncated rather than allowed to kill it. An
+// OOM-killed container writes no trace at all, which is the one outcome
+// strictly worse than a truncated one. See bounded-capture.ts.
+describe('relayStream response buffer', () => {
+  test('retains an ordinary response byte-for-byte, matching everything relayed to the client', async () => {
+    const up = controllableUpstream();
+    let settledPreview: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: true,
+      requestId: 'r-full-1',
+      logger: noop,
+      settle: async (_usage, response) => {
+        settledPreview = response;
+      },
+      heartbeatMs: 10_000,
+    });
+    const collected = drain(out);
+    const big = 'x'.repeat(5_000);
+    up.push(`data: {"choices":[{"delta":{"content":"${big}"}}]}\n\n`);
+    up.push('data: [DONE]\n\n');
+    up.close();
+    const text = await collected;
+    await delay(10); // let the detached finally run settle()
+    // The retained trace preview is byte-for-byte what reached the client —
+    // no truncation, no gap between the two.
+    expect(typeof settledPreview).toBe('string');
+    expect((settledPreview as string).length).toBe(text.length);
+    expect(settledPreview).toBe(text);
+  });
+
+  test('a response large enough to threaten the process is bounded, and says so', async () => {
+    const up = controllableUpstream();
+    let settledPreview: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: true,
+      requestId: 'r-bounded-1',
+      logger: noop,
+      settle: async (_usage, response) => {
+        settledPreview = response;
+      },
+      heartbeatMs: 10_000,
+    });
+    const collected = drain(out);
+    // 40 MB of streamed content — the shape of an image-heavy turn.
+    for (let i = 0; i < 40; i++) {
+      up.push(`data: {"choices":[{"delta":{"content":"${'z'.repeat(1_000_000)}"}}]}\n\n`);
+    }
+    up.push('data: [DONE]\n\n');
+    up.close();
+    const text = await collected;
+    await delay(10);
+    const retained = settledPreview as string;
+    // Everything still reached the client untouched...
+    expect(text.length).toBeGreaterThan(40_000_000);
+    // ...while what we HOLD is kilobytes, not tens of megabytes.
+    expect(retained.length).toBeLessThan(200_000);
+    // And the trace is honest about the gap rather than pretending.
+    expect(retained).toContain('truncated');
+    expect(retained.endsWith('data: [DONE]\n\n')).toBe(true);
+  });
+
+  test('extracts usage correctly from a long stream while retaining the full preview alongside it', async () => {
+    const up = controllableUpstream();
+    let settledUsage: unknown = 'unset';
+    let settledPreview: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: true,
+      requestId: 'r-full-2',
+      logger: noop,
+      settle: async (usage, response) => {
+        settledUsage = usage;
+        settledPreview = response;
+      },
+      heartbeatMs: 10_000,
+    });
+    const collected = drain(out);
+    const big = 'y'.repeat(10_000);
+    up.push(`data: {"choices":[{"delta":{"content":"${big}"}}]}\n\n`);
+    up.push(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":22}}\n\n',
+    );
+    up.push('data: [DONE]\n\n');
+    up.close();
+    const text = await collected;
+    await delay(10);
+    expect(settledUsage).toMatchObject({ promptTokens: 11, completionTokens: 22 });
+    expect(settledPreview).toBe(text);
+  });
+});
+
+// Regression coverage for the no-total-deadline finding: a stalled upstream
+// that accepts the connection, sends some bytes, then goes completely silent
+// forever (never closes) must eventually be treated as dead, not propped up
+// by heartbeats indefinitely.
+describe('relayStream inactivity deadline', () => {
+  test('aborts a stalled-but-never-closed upstream after the inactivity budget and surfaces a timeout error', async () => {
+    let cancelled = false;
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    let settledError: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: stream,
+      captureBodies: false,
+      requestId: 'r-inactive',
+      logger: noop,
+      settle: async (_usage, _response, streamError) => {
+        settledError = streamError;
+      },
+      heartbeatMs: 10,
+      inactivityTimeoutMs: 30,
+    });
+    const collected = drain(out);
+    controller.enqueue(enc.encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'));
+    // Upstream goes silent forever after this single chunk — never closes.
+    const text = await collected;
+    expect(text).toContain('stream_inactivity_timeout');
+    expect(cancelled).toBe(true);
+    await delay(10);
+    expect(settledError).toMatchObject({ code: 'stream_inactivity_timeout' });
+  });
+
+  test('a slow-thinking model that keeps trickling bytes never trips the inactivity deadline', async () => {
+    const up = controllableUpstream();
+    let settledError: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: false,
+      requestId: 'r-slow-thinker',
+      logger: noop,
+      settle: async (_usage, _response, streamError) => {
+        settledError = streamError;
+      },
+      heartbeatMs: 10,
+      inactivityTimeoutMs: 30,
+    });
+    const collected = drain(out);
+    // Each chunk arrives just under the inactivity budget, resetting the clock.
+    up.push('data: {"choices":[{"delta":{"content":"a"}}]}\n\n');
+    await delay(20);
+    up.push('data: {"choices":[{"delta":{"content":"b"}}]}\n\n');
+    await delay(20);
+    up.push('data: [DONE]\n\n');
+    up.close();
+    const text = await collected;
+    expect(text).not.toContain('stream_inactivity_timeout');
+    await delay(10); // let the detached finally run settle()
+    expect(settledError).toBeNull();
   });
 });

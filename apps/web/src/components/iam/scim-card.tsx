@@ -12,11 +12,22 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { getEnv } from '@/lib/env-config';
 import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
-import { listAccountMembers } from '@kortix/sdk/projects-client';
+import { listAccountMembers } from '@kortix/sdk';
+import {
+  CaretDownIcon as ChevronDown,
+  CheckIcon as Check,
+  KeyIcon as KeyRound,
+  PlusIcon as Plus,
+  ArrowClockwiseIcon as RefreshCw,
+  ShieldCheckIcon as ShieldCheck,
+  TrashIcon as Trash2,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, Users } from 'lucide-react';
 import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
+
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,7 +46,9 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CopyRow, formatRelative } from '@/features/workspace/shared/access';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
   type CreatedScimToken,
   type ScimToken,
@@ -45,6 +58,11 @@ import {
   listScimTokens,
   revokeScimToken,
 } from '@/lib/iam-client';
+import { SCIM_PROVIDER_GUIDES } from '@/features/sso-setup/guides';
+
+// Static registry — filter once at module load instead of on every render.
+const START_SYNC_GUIDES = SCIM_PROVIDER_GUIDES.filter((g) => g.config.startSyncHint);
+import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 
 interface ScimCardProps {
   accountId: string;
@@ -58,7 +76,14 @@ interface ScimCardProps {
  * the wizard's verify-step panel (features/sso-setup/setup-wizard.tsx
  * ProvisionedStatusPanel).
  */
-function ProvisioningHealthPanel({ accountId }: { accountId: string }) {
+function ProvisioningHealthPanel({
+  accountId,
+  lastSyncAt,
+}: {
+  accountId: string;
+  /** Newest last_used_at across active SCIM tokens — when the IdP last called us. */
+  lastSyncAt: string | null;
+}) {
   const membersQuery = useQuery({
     queryKey: ['scim-verify-members', accountId],
     queryFn: () => listAccountMembers(accountId),
@@ -75,6 +100,7 @@ function ProvisioningHealthPanel({ accountId }: { accountId: string }) {
   const scimGroups = (groupsQuery.data ?? []).filter((g) => g.source === 'scim');
   const scimMemberCount = scimGroups.reduce((sum, g) => sum + (g.member_count ?? 0), 0);
   const isLoading = membersQuery.isLoading || groupsQuery.isLoading;
+  const freshness = scimSyncFreshness(lastSyncAt);
 
   return (
     <div className="border-border/60 bg-muted/10 space-y-2 rounded-md border px-3 py-2.5">
@@ -93,7 +119,7 @@ function ProvisioningHealthPanel({ accountId }: { accountId: string }) {
             groupsQuery.refetch();
           }}
         >
-          <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
+          {isLoading ? <Loading className="size-3.5" /> : <RefreshCw className="size-3.5" />}
         </Button>
       </div>
       {isLoading ? (
@@ -108,32 +134,33 @@ function ProvisioningHealthPanel({ accountId }: { accountId: string }) {
           </span>
         </p>
       )}
+      {/* Two lines on purpose: label + value stay on one unbreakable line,
+          the schedule explainer wraps underneath — the old single-flex row
+          wrapped mid-label ("Last sync / activity") on narrow cards. */}
+      <div className="space-y-0.5 text-xs">
+        <p className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              freshness === 'live' && 'bg-kortix-green',
+              freshness === 'recent' && 'bg-kortix-green/60',
+              freshness === 'quiet' && 'bg-muted-foreground/40',
+              freshness === 'never' && 'bg-amber-500',
+            )}
+          />
+          <span className="text-muted-foreground whitespace-nowrap">Last sync activity</span>
+          <span className="text-foreground whitespace-nowrap font-medium">
+            {lastSyncAt ? formatRelative(lastSyncAt) : 'none yet'}
+          </span>
+        </p>
+        <p className="text-muted-foreground pl-3">
+          {freshness === 'never'
+            ? 'Your IdP hasn’t connected — check provisioning is running there.'
+            : 'Your IdP pushes on its own schedule — Entra ~every 40 min; most others as changes happen.'}
+        </p>
+      </div>
     </div>
   );
-}
-
-function formatRelative(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const diffMs = Date.now() - d.getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return d.toLocaleDateString();
-}
-
-async function copyToClipboard(value: string, successMsg = 'Copied to clipboard') {
-  try {
-    await navigator.clipboard.writeText(value);
-    successToast(successMsg);
-  } catch {
-    errorToast('Copy failed — select and copy manually');
-  }
 }
 
 export function ScimCard({ accountId, canManage }: ScimCardProps) {
@@ -145,6 +172,9 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
     queryKey: ['scim-tokens', accountId],
     queryFn: () => listScimTokens(accountId),
     staleTime: 30_000,
+    // Poll so "Last sync activity" (last_used_at, stamped by every IdP call)
+    // stays current while the card is open — a sync run shows up live.
+    refetchInterval: 30_000,
   });
   // Same query key SsoCard uses — React Query dedupes this, so checking
   // whether SAML is connected here costs no extra round-trip. Light-touch
@@ -178,14 +208,37 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
   );
   const scimBaseIsAbsolute = isAbsoluteHttpUrl(scimBaseUrl);
 
+  // Header status chip — the card leads with STATE, not reference data. Same
+  // freshness semantics as the health panel: amber only for the one genuinely
+  // wrong state (token minted but the IdP has never called).
+  const lastSyncAt = latestScimSyncAt(tokens);
+  const freshness = scimSyncFreshness(lastSyncAt);
+  const activeTokenCount = tokens.filter((t) => t.status === 'active').length;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-0.5">
-          <p className="text-foreground text-sm font-medium">SCIM provisioning</p>
+          <p className="text-foreground flex items-center gap-2 text-sm font-medium">
+            Directory Sync
+            {tokens.length > 0 &&
+              (freshness === 'never' ? (
+                <Badge variant="warning" size="sm">
+                  waiting for IdP
+                </Badge>
+              ) : freshness === 'quiet' ? (
+                <Badge variant="outline" size="sm">
+                  connected
+                </Badge>
+              ) : (
+                <Badge variant="success" size="sm">
+                  active
+                </Badge>
+              ))}
+          </p>
           <p className="text-muted-foreground text-xs">
-            Connect Okta, Azure AD, or any SCIM 2.0 provider to sync users and groups into this
-            account.
+            Sync users and groups from Microsoft Entra, Okta, OneLogin, JumpCloud, PingOne, or any
+            SCIM 2.0 provider.
           </p>
         </div>
         {canManage && (
@@ -205,138 +258,245 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
       )}
 
       <div className="bg-popover rounded-md border">
-        <div className="space-y-4 px-4 py-5">
-          {tokens.length > 0 && <ProvisioningHealthPanel accountId={accountId} />}
-          {/* Endpoint URL */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">SCIM base URL</Label>
-            <div className="flex items-center gap-2">
-              <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                {scimBaseUrl}
-              </code>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label="Copy SCIM base URL"
-                onClick={() => copyToClipboard(scimBaseUrl, 'SCIM URL copied')}
-              >
-                <Copy className="size-3.5 shrink-0" />
-              </Button>
-            </div>
-            <p className="text-muted-foreground text-xs">
-              {scimBaseIsAbsolute ? (
-                <>
-                  Your IdP appends <code>/Users</code> and <code>/Groups</code>.
-                </>
-              ) : (
-                <>
-                  Prepend your API origin (e.g. <code>https://api.kortix.com</code>). The IdP
-                  appends <code>/Users</code> and <code>/Groups</code>.
-                </>
-              )}
-            </p>
-          </div>
+        {/* State first: the live health line is the card's headline content —
+            reference values live in the collapsed sections below. */}
+        <div className="px-4 py-4">
+          {tokensQuery.isLoading ? (
+            <Skeleton className="h-12 w-full rounded-md" />
+          ) : tokensQuery.isError ? (
+            <ErrorState
+              size="sm"
+              title="Couldn't load SCIM status"
+              description={tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined}
+              action={
+                <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : tokens.length > 0 ? (
+            <ProvisioningHealthPanel accountId={accountId} lastSyncAt={lastSyncAt} />
+          ) : (
+            <EmptyState
+              icon={KeyRound}
+              size="sm"
+              title="Not connected yet"
+              description="Run the guided setup — it mints the bearer token and walks your IdP's provisioning config step by step."
+            />
+          )}
+        </div>
 
-          {/* IdP setup hint — what to fill in on the Okta / Azure side, so admins
-              don't have to guess the identifier + auth from docs. */}
-          <div className="bg-muted/20 text-muted-foreground space-y-1.5 rounded-md border px-3 py-2.5 text-xs">
-            <p className="text-foreground text-xs font-medium">Configure your IdP with</p>
-            <div className="flex gap-2">
-              <span className="w-24 shrink-0">Identifier</span>
-              <span className="text-foreground">
-                <code className="bg-muted/60 rounded px-1 py-0.5 font-mono">userName</code> — the
-                user's email
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <span className="w-24 shrink-0">Auth</span>
-              <span className="text-foreground">Bearer token — Okta HTTP Header mode</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="w-24 shrink-0">Actions</span>
-              <span className="text-foreground">
-                Push users &amp; groups; deactivation deprovisions
-              </span>
-            </div>
-          </div>
+        {/* Setup-time reference: collapsed once things work — but OPEN while a
+            minted token is still waiting for its first IdP call, because that
+            is exactly when the admin is pasting these values into the IdP. It
+            tucks itself away automatically on the first successful sync. */}
+        <div className="border-border border-t">
+          {/* `defaultOpen` + `key`, not `open`: this wants a derived STARTING
+              value the admin can then override, which a controlled `open` with
+              no `onOpenChange` cannot express — it would now freeze the trigger.
+              The key re-seeds it when the prompt condition actually flips, so it
+              still opens on a fresh token and tucks away after the first sync,
+              while a manual collapse in between sticks. */}
+          <Disclosure
+            key={tokens.length > 0 && freshness === 'never' ? 'awaiting-first-sync' : 'synced'}
+            className="group"
+            defaultOpen={tokens.length > 0 && freshness === 'never'}
+          >
+            <DisclosureTrigger>
+              <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-foreground text-sm font-medium">Setup values</p>
+                  <p className="text-muted-foreground mt-0.5 text-xs">
+                    The SCIM base URL, what to enter on the IdP side, and how each provider starts
+                    automatic sync.
+                  </p>
+                </div>
+                <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+              </div>
+            </DisclosureTrigger>
+            <DisclosureContent contentClassName="border-border border-t">
+              <div className="space-y-4 px-4 py-4">
+                {/* Endpoint URL */}
+                <div className="space-y-1.5">
+                  <CopyRow
+                    label="SCIM base URL"
+                    value={scimBaseUrl}
+                    successMessage="SCIM URL copied"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    {scimBaseIsAbsolute ? (
+                      <>
+                        Your IdP appends <code>/Users</code> and <code>/Groups</code>.
+                      </>
+                    ) : (
+                      <>
+                        Prepend your API origin (e.g. <code>https://api.kortix.com</code>). The IdP
+                        appends <code>/Users</code> and <code>/Groups</code>.
+                      </>
+                    )}
+                  </p>
+                </div>
+
+                {/* IdP setup hint — what to fill in on the Okta / Azure side, so admins
+                    don't have to guess the identifier + auth from docs. */}
+                <div className="bg-muted/20 text-muted-foreground space-y-1.5 rounded-md border px-3 py-2.5 text-xs">
+                  <p className="text-foreground text-xs font-medium">Configure your IdP with</p>
+                  <div className="flex gap-2">
+                    <span className="w-24 shrink-0">Identifier</span>
+                    <span className="text-foreground">
+                      <code className="bg-muted/60 rounded px-1 py-0.5 font-mono">userName</code> —
+                      the user's email
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="w-24 shrink-0">Auth</span>
+                    <span className="text-foreground">Bearer token — Okta HTTP Header mode</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="w-24 shrink-0">Actions</span>
+                    <span className="text-foreground">
+                      Push users &amp; groups; deactivation deprovisions
+                    </span>
+                  </div>
+                </div>
+
+                {/* Per-provider "flip this switch" cheat sheet — the guides
+                    registry is the single source of truth (startSyncHint),
+                    each row deep-links into that provider's guided setup. An
+                    admin stuck at "waiting for IdP" sees exactly what to turn
+                    on without re-entering the wizard. */}
+                <div className="bg-muted/20 text-muted-foreground space-y-2 rounded-md border px-3 py-2.5 text-xs">
+                  <p className="text-foreground text-xs font-medium">
+                    Start automatic sync in your IdP
+                  </p>
+                  {START_SYNC_GUIDES.map((g) => (
+                    <div key={g.id} className="flex gap-2">
+                      <span className="w-24 shrink-0">{g.name.split(' (')[0]}</span>
+                      <span className="text-foreground min-w-0 flex-1">
+                        {g.config.startSyncHint}{' '}
+                        <Link
+                          href={`/accounts/${accountId}/scim-setup?provider=${g.id}`}
+                          className="text-muted-foreground hover:text-foreground underline underline-offset-2"
+                        >
+                          Guide
+                        </Link>
+                      </span>
+                    </div>
+                  ))}
+                  <p>Once enabled, users and groups sync on their own — no manual pushing.</p>
+                </div>
+              </div>
+            </DisclosureContent>
+          </Disclosure>
         </div>
 
         <div className="border-border border-t">
-          <div className="flex items-center justify-between gap-3 px-4 py-3">
-            <div>
-              <p className="text-foreground text-sm font-medium">Bearer tokens</p>
-              <p className="text-muted-foreground text-xs">
-                Each token authenticates a single IdP integration. Rotate by minting a new one and
-                revoking the old.
-              </p>
-            </div>
-            {canManage && (
-              <Button
-                onClick={() => setCreateOpen(true)}
-                size="sm"
-                variant="secondary"
-                className="shrink-0 gap-1.5"
-              >
-                <Plus className="size-4 shrink-0" />
-                New SCIM token
-              </Button>
-            )}
-          </div>
-
-          <div className="border-border border-t">
-            {tokensQuery.isLoading && (
-              <div className="space-y-2 px-4 py-4">
-                <Skeleton className="h-12 rounded-md" />
-                <Skeleton className="h-12 rounded-md" />
-              </div>
-            )}
-
-            {!tokensQuery.isLoading && tokens.length === 0 && (
-              <div className="px-4 py-4">
-                <EmptyState
-                  icon={KeyRound}
-                  size="sm"
-                  title="No SCIM tokens yet"
-                  description="Create one to connect your IdP."
-                />
-              </div>
-            )}
-
-            {!tokensQuery.isLoading && tokens.length > 0 && (
-              <div className="divide-border divide-y">
-                {tokens.map((t) => (
-                  <div key={t.token_id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">{t.name}</span>
-                        <Badge variant={t.status === 'active' ? 'success' : 'muted'} size="sm">
-                          {t.status}
-                        </Badge>
-                      </div>
-                      <div className="text-muted-foreground mt-0.5 flex items-center gap-3 text-xs">
-                        <code className="font-mono">{t.public_prefix}</code>
-                        <span>·</span>
-                        <span>Last used {formatRelative(t.last_used_at)}</span>
-                        <span>·</span>
-                        <span>Created {formatRelative(t.created_at)}</span>
-                      </div>
-                    </div>
-                    {canManage && t.status === 'active' && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Revoke ${t.name}`}
-                        onClick={() => setRevokeTarget(t)}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="size-3.5 shrink-0" />
-                      </Button>
+          <Disclosure className="group">
+            <DisclosureTrigger>
+              <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-foreground flex items-center gap-2 text-sm font-medium">
+                    Bearer tokens
+                    {activeTokenCount > 0 && (
+                      <Badge variant="muted" size="sm">
+                        {activeTokenCount} active
+                      </Badge>
                     )}
-                  </div>
-                ))}
+                  </p>
+                  <p className="text-muted-foreground mt-0.5 text-xs">
+                    Each token authenticates a single IdP connection — rotate by minting a new one
+                    and revoking the old.
+                  </p>
+                </div>
+                <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
               </div>
-            )}
-          </div>
+            </DisclosureTrigger>
+            <DisclosureContent contentClassName="border-border border-t">
+              {canManage && (
+                <div className="flex justify-end px-4 pt-3">
+                  <Button
+                    onClick={() => setCreateOpen(true)}
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0 gap-1.5"
+                  >
+                    <Plus className="size-4 shrink-0" />
+                    New SCIM token
+                  </Button>
+                </div>
+              )}
+
+              {tokensQuery.isLoading && (
+                <div className="space-y-2 px-4 py-4">
+                  <Skeleton className="h-12 rounded-md" />
+                  <Skeleton className="h-12 rounded-md" />
+                </div>
+              )}
+
+              {!tokensQuery.isLoading && tokensQuery.isError && (
+                <div className="px-4 py-4">
+                  <ErrorState
+                    size="sm"
+                    title="Couldn't load SCIM tokens"
+                    description={
+                      tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined
+                    }
+                    action={
+                      <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
+                        Retry
+                      </Button>
+                    }
+                  />
+                </div>
+              )}
+
+              {!tokensQuery.isLoading && !tokensQuery.isError && tokens.length === 0 && (
+                <div className="px-4 py-4">
+                  <EmptyState
+                    icon={KeyRound}
+                    size="sm"
+                    title="No SCIM tokens yet"
+                    description="Create one to connect your IdP."
+                  />
+                </div>
+              )}
+
+              {!tokensQuery.isLoading && !tokensQuery.isError && tokens.length > 0 && (
+                <div className="divide-border divide-y">
+                  {tokens.map((t) => (
+                    <div key={t.token_id} className="flex items-center gap-3 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium">{t.name}</span>
+                          <Badge variant={t.status === 'active' ? 'success' : 'muted'} size="sm">
+                            {t.status}
+                          </Badge>
+                        </div>
+                        <div className="text-muted-foreground mt-0.5 flex items-center gap-3 text-xs">
+                          <code className="font-mono">{t.public_prefix}</code>
+                          <span>·</span>
+                          <span>Last used {formatRelative(t.last_used_at)}</span>
+                          <span>·</span>
+                          <span>Created {formatRelative(t.created_at)}</span>
+                        </div>
+                      </div>
+                      {canManage && t.status === 'active' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Revoke ${t.name}`}
+                          onClick={() => setRevokeTarget(t)}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="size-3.5 shrink-0" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </DisclosureContent>
+          </Disclosure>
         </div>
       </div>
 
@@ -420,45 +580,15 @@ function CreateScimTokenDialog({
           <ModalDescription>
             {created
               ? 'Copy the token now — it will not be shown again. Then configure it in your IdP.'
-              : 'Mint a bearer token for an IdP integration. Each integration should get its own token so revocation is targeted.'}
+              : 'Mint a bearer token for an IdP connection. Each connection should get its own token so revocation is targeted.'}
           </ModalDescription>
         </ModalHeader>
 
         {created ? (
           <>
             <ModalBody className="min-w-0 space-y-4">
-              <div>
-                <Label className="text-xs">Token</Label>
-                <div className="mt-1 flex min-w-0 items-center gap-2">
-                  <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                    {created.secret}
-                  </code>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label="Copy token"
-                    onClick={() => copyToClipboard(created.secret, 'Token copied')}
-                  >
-                    <Copy className="size-3.5 shrink-0" />
-                  </Button>
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs">SCIM base URL</Label>
-                <div className="mt-1 flex min-w-0 items-center gap-2">
-                  <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                    {scimBaseUrl}
-                  </code>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label="Copy URL"
-                    onClick={() => copyToClipboard(scimBaseUrl, 'URL copied')}
-                  >
-                    <Copy className="size-3.5 shrink-0" />
-                  </Button>
-                </div>
-              </div>
+              <CopyRow label="Token" value={created.secret} successMessage="Token copied" />
+              <CopyRow label="SCIM base URL" value={scimBaseUrl} successMessage="URL copied" />
             </ModalBody>
             <ModalFooter>
               <Button size="sm" onClick={() => handleClose(false)} className="gap-1.5">

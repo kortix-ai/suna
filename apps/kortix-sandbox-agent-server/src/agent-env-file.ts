@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, wr
 import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 
+import { egressShimEnv } from './egress-shim'
 import { logger } from './logger'
 import type { ProjectEnvStore } from './project-env'
 
@@ -40,7 +41,7 @@ const SHELL_SESSION_CREDS = [
   'KORTIX_TOKEN',
   'KORTIX_CLI_TOKEN',
   'KORTIX_SANDBOX_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
+  'KORTIX_CLI_TOKEN',
   'KORTIX_PROJECT_ID',
   'KORTIX_API_URL',
   'KORTIX_FRONTEND_URL',
@@ -121,6 +122,14 @@ function renderShellEnv(
     }
     lines.push(`export ${name}=${shellQuote(value)}`)
   }
+  // The egress shim's proxy + CA variables, when a shim is running. NOT secrets
+  // and NOT KORTIX_-prefixed: a proxy URL and some file paths. They belong here
+  // rather than in the daemon's own process env, because putting HTTPS_PROXY on
+  // the daemon would route the shim's OWN broker call back through the shim.
+  // Empty object when no shim runs, which is the common case.
+  for (const [name, value] of Object.entries(egressShimEnv())) {
+    lines.push(`export ${name}=${shellQuote(value)}`)
+  }
   // Per-session identity/context creds (SHELL_SESSION_CREDS allowlist). Emitted
   // LAST so they win over any stale inherited value, and bypass the KORTIX_*
   // filter above because the agent's shells legitimately need them — this is the
@@ -145,7 +154,10 @@ export function writeAgentEnvFile(
 ): boolean {
   const snapshot = store.snapshot()
   const bootEnv = opts.bootEnv ?? process.env
-  const bootNames = bootSecretNames(bootEnv)
+  // Hot delivery can add a name that was absent from the boot-time list and
+  // later revoke it. Keep every managed name in the unset set so a shell that
+  // inherited the old value cannot retain it after revocation.
+  const managedNames = [...new Set([...bootSecretNames(bootEnv), ...snapshot.knownNames])].sort()
   // Pull the per-session identity creds from the live process env (reloadSessionEnv
 // populates process.env from /etc/pt-env on warm-snapshot restore). On a no-restart hot-swap the
   // daemon has these but the reused seed opencode does not — so writing them here
@@ -155,7 +167,7 @@ export function writeAgentEnvFile(
     const v = bootEnv[name]
     if (typeof v === 'string' && v.length > 0) sessionCreds[name] = v
   }
-  return atomicWrite(opts.sh ?? AGENT_ENV_SH, renderShellEnv(snapshot.env, bootNames, sessionCreds))
+  return atomicWrite(opts.sh ?? AGENT_ENV_SH, renderShellEnv(snapshot.env, managedNames, sessionCreds))
 }
 
 // Best-effort shred on shutdown: overwrite-in-place with random bytes then

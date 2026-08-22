@@ -2,32 +2,32 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ExternalLink,
-  Globe,
-  MonitorPlay,
-  Copy,
-  Check,
-  RefreshCw,
-  Maximize2,
-  Minimize2,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { UnifiedMarkdown } from '@/components/markdown';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { openTabAndNavigate } from '@/stores/tab-store';
+import { CopyButton } from '@/components/markdown/copy-button';
+import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
+import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { cn } from '@/lib/utils';
+import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
   detectLocalhostUrls,
   toInternalUrl,
   type DetectedLocalhostUrl,
 } from '@/lib/utils/sandbox-url';
-import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { openTabAndNavigate } from '@/stores/tab-store';
+import {
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  ArrowsOutSimpleIcon as Maximize2,
+  ArrowsInSimpleIcon as Minimize2,
+  MonitorPlayIcon as MonitorPlay,
+  ArrowClockwiseIcon as RefreshCw,
+} from '@phosphor-icons/react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface SandboxUrlDetectorProps {
   content: string;
@@ -77,13 +77,7 @@ function usePortReachability(proxyUrl: string): ReachabilityStatus {
 // Inline iframe preview — embedded directly in the chat thread
 // ---------------------------------------------------------------------------
 
-function InlineIframePreview({
-  proxyUrl,
-  port,
-}: {
-  proxyUrl: string;
-  port: number;
-}) {
+function InlineIframePreview({ proxyUrl, port }: { proxyUrl: string; port: number }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // Inject auth token for cloud preview proxy URLs
   const authenticatedUrl = useAuthenticatedPreviewUrl(proxyUrl);
@@ -132,66 +126,57 @@ function InlineIframePreview({
   return (
     <div
       className={cn(
-        'mt-2 rounded-2xl border border-border/50 overflow-hidden transition-colors duration-200',
+        'border-border/50 mt-2 overflow-hidden rounded-md border transition-colors duration-200',
         expanded ? 'h-[480px]' : 'h-[280px]',
       )}
     >
       {/* Mini toolbar */}
-      <div className="flex items-center gap-1.5 h-8 px-2.5 bg-muted/40 border-b border-border/30 shrink-0">
-        <div className="flex-1 flex items-center gap-1.5 min-w-0">
-          <Globe className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-          <span className="text-xs text-muted-foreground font-mono truncate">
-            localhost:{port}
-          </span>
+      <div className="bg-muted/40 border-border/30 flex h-8 shrink-0 items-center gap-1.5 border-b px-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <Globe className="text-muted-foreground/50 h-3 w-3 shrink-0" />
+          <span className="text-muted-foreground truncate font-mono text-xs">localhost:{port}</span>
         </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={handleRefresh}
-              className="p-1 rounded hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-            >
-              <RefreshCw className={cn('h-3 w-3', isLoading && 'animate-spin')} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">Refresh</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="p-1 rounded hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-            >
-              {expanded ? (
-                <Minimize2 className="h-3 w-3" />
-              ) : (
-                <Maximize2 className="h-3 w-3" />
-              )}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            {expanded ? 'Collapse' : 'Expand'}
-          </TooltipContent>
-        </Tooltip>
+        <Hint side="top" label="Refresh preview">
+          <button
+            type="button"
+            onClick={handleRefresh}
+            aria-label="Refresh preview"
+            className="hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground hit-area-2 rounded p-1 transition-colors active:scale-[0.96]"
+          >
+            <RefreshCw className={cn('size-3', isLoading && 'animate-spinner-spin')} />
+          </button>
+        </Hint>
+        <Hint side="top" label={expanded ? 'Collapse preview' : 'Expand preview'}>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-label={expanded ? 'Collapse preview' : 'Expand preview'}
+            className="hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground hit-area-2 rounded p-1 transition-colors active:scale-[0.96]"
+          >
+            {expanded ? <Minimize2 className="size-3" /> : <Maximize2 className="size-3" />}
+          </button>
+        </Hint>
       </div>
 
       {/* Iframe — only render once auth token is ready */}
-      <div className="relative flex-1 h-[calc(100%-2rem)]">
+      <div className="relative h-[calc(100%-2rem)] flex-1">
         {(isLoading || !isAuthReady) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-10">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin" />
+          <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
+            <div className="text-muted-foreground flex items-center gap-2">
+              <Loading className="size-4 shrink-0" />
               <span className="text-xs">{!isAuthReady ? 'Authenticating...' : 'Loading...'}</span>
             </div>
           </div>
         )}
         {hasError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
-            <div className="text-center text-muted-foreground">
-              <p className="text-xs">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line186JsxTextFailedToLoad')}</p>
-              <button
-                onClick={handleRefresh}
-                className="text-xs text-primary hover:underline mt-1"
-              >
+          <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
+            <div className="text-muted-foreground text-center">
+              <p className="text-xs">
+                {tHardcodedUi.raw(
+                  'componentsThreadContentSandboxUrlDetector.line186JsxTextFailedToLoad',
+                )}
+              </p>
+              <button onClick={handleRefresh} className="text-primary mt-1 text-xs hover:underline">
                 Retry
               </button>
             </div>
@@ -203,7 +188,7 @@ function InlineIframePreview({
             ref={iframeRef}
             src={authenticatedUrl}
             title={`Preview :${port}`}
-            className="w-full h-full border-0 bg-white"
+            className="h-full w-full border-0 bg-white"
             sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
             onLoad={handleLoad}
             onError={handleError}
@@ -214,216 +199,6 @@ function InlineIframePreview({
   );
 }
 
-// ---------------------------------------------------------------------------
-// SandboxPreviewCard — the inline card shown in chat
-// ---------------------------------------------------------------------------
-
-function SandboxPreviewCard({
-  detected,
-  proxyUrl,
-}: {
-  detected: DetectedLocalhostUrl;
-  proxyUrl: string;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [copied, setCopied] = useState(false);
-  const [showInlinePreview, setShowInlinePreview] = useState(true);
-  const reachability = usePortReachability(proxyUrl);
-
-  const isReachable = reachability === 'reachable';
-  const isChecking = reachability === 'checking';
-
-  const tabId = `preview:${detected.port}`;
-  const tabHref = `/p/${detected.port}`;
-
-  // The internal URL is what the user sees (the container-side address)
-  const internalUrl = toInternalUrl(detected.port, detected.path);
-
-  /** Open (or activate) the preview tab and navigate to it. */
-  const navigateToPreviewTab = useCallback(() => {
-    openTabAndNavigate({
-      id: tabId,
-      title: `localhost:${detected.port}`,
-      type: 'preview',
-      href: tabHref,
-      metadata: enrichPreviewMetadata({
-        url: proxyUrl,
-        port: detected.port,
-        originalUrl: internalUrl,
-      }),
-    });
-  }, [detected, proxyUrl, internalUrl, tabId, tabHref]);
-
-  const handleOpenExternal = useCallback(() => {
-    window.open(proxyUrl, '_blank', 'noopener,noreferrer');
-  }, [proxyUrl]);
-
-  const handleCopyUrl = useCallback(() => {
-    navigator.clipboard.writeText(proxyUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [proxyUrl]);
-
-  const displayPath = detected.path !== '/' ? detected.path : '';
-
-  return (
-    <div className="my-3">
-      <div className="group/card relative rounded-2xl border border-border/50 bg-muted/20 overflow-hidden transition-colors duration-200 hover:border-border/80 hover:bg-muted/30">
-        {/* Top accent gradient — color reflects reachability */}
-        <div className={cn(
-          'absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent to-transparent',
-          isReachable ? 'via-emerald-500/50' : isChecking ? 'via-amber-500/40' : 'via-red-500/40',
-        )} />
-
-        <div className="flex items-center gap-3 px-3.5 py-2.5">
-          {/* Status icon */}
-          <div className="relative flex-shrink-0">
-            <div className={cn(
-              'w-8 h-8 rounded-lg border flex items-center justify-center transition-colors',
-              isReachable
-                ? 'bg-emerald-500/8 border-emerald-500/15 group-hover/card:bg-emerald-500/12'
-                : isChecking
-                  ? 'bg-amber-500/8 border-amber-500/15'
-                  : 'bg-red-500/8 border-red-500/15',
-            )}>
-              <Globe className={cn(
-                'w-4 h-4',
-                isReachable
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : isChecking
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-red-600 dark:text-red-400',
-              )} />
-            </div>
-            {/* Status dot */}
-            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
-              {isReachable && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400/50" />
-              )}
-              <span className={cn(
-                'relative inline-flex rounded-full h-2.5 w-2.5 ring-[1.5px] ring-background',
-                isReachable ? 'bg-emerald-500' : isChecking ? 'bg-amber-500 animate-pulse' : 'bg-red-500',
-              )} />
-            </span>
-          </div>
-
-          {/* Clickable URL — opens the preview tab */}
-          <button
-            onClick={navigateToPreviewTab}
-            className="flex-1 min-w-0 text-left cursor-pointer group/link"
-          >
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-sm font-semibold text-foreground tabular-nums group-hover/link:text-primary transition-colors">
-                localhost:{detected.port}
-              </span>
-              {displayPath && (
-                <span className="text-xs text-muted-foreground font-mono truncate group-hover/link:text-primary/70 transition-colors">
-                  {displayPath}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground/60 leading-tight mt-0.5 group-hover/link:text-muted-foreground/80 transition-colors">
-              {isReachable ? 'Service running' : isChecking ? 'Checking port...' : 'Port not reachable'}
-            </p>
-          </button>
-
-          {/* Action buttons */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            {/* Inline preview toggle */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    'h-7 w-7 text-muted-foreground/50 hover:text-foreground',
-                    showInlinePreview && 'text-primary bg-primary/8',
-                  )}
-                  onClick={() => setShowInlinePreview((v) => !v)}
-                >
-                  {showInlinePreview ? (
-                    <Minimize2 className="h-3.5 w-3.5" />
-                  ) : (
-                    <Maximize2 className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {showInlinePreview ? 'Hide preview' : 'Show inline preview'}
-              </TooltipContent>
-            </Tooltip>
-
-            {/* Copy URL */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground/50 hover:text-foreground"
-                  onClick={handleCopyUrl}
-                >
-                  {copied ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-500" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {copied ? 'Copied!' : 'Copy URL'}
-              </TooltipContent>
-            </Tooltip>
-
-            {/* Open in browser */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground/50 hover:text-foreground"
-                  onClick={handleOpenExternal}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line385JsxTextOpenInBrowser')}</TooltipContent>
-            </Tooltip>
-
-            {/* Open as tab — primary action */}
-            <Button
-              variant="default"
-              size="sm"
-              className="h-7 text-xs gap-1.5 px-3 ml-1 "
-              onClick={navigateToPreviewTab}
-            >
-              <MonitorPlay className="h-3.5 w-3.5" />
-              Preview
-            </Button>
-          </div>
-        </div>
-
-        {/* Inline iframe preview — toggleable */}
-        {showInlinePreview && (
-          <div className="px-3.5 pb-3">
-            <InlineIframePreview proxyUrl={proxyUrl} port={detected.port} />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SandboxUrlChip — compact chip for URLs found inside code blocks
-// ---------------------------------------------------------------------------
-
-/**
- * A lightweight, single-line chip for localhost URLs that were found inside
- * markdown code blocks. These are typically example/documentation URLs rather
- * than live services, so we show a minimal UI without an iframe or
- * reachability polling.
- */
 function SandboxUrlChip({
   detected,
   proxyUrl,
@@ -466,67 +241,111 @@ function SandboxUrlChip({
   const displayPath = detected.path !== '/' ? detected.path : '';
 
   return (
-    <div className="group/chip flex items-center gap-2 px-3 py-1.5 rounded-2xl border border-border/40 bg-muted/15 hover:border-border/60 hover:bg-muted/25 transition-colors">
-      {/* Globe icon */}
-      <Globe className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+    <div className="group/chip hover:bg-sidebar flex items-center gap-2 px-3 py-2">
+      <Globe className="text-muted-foreground size-3.5 shrink-0" />
 
-      {/* URL label — clickable to open preview tab */}
       <button
         onClick={navigateToPreviewTab}
-        className="flex items-baseline gap-1 min-w-0 text-left group/link"
+        className="group/link flex min-w-0 items-baseline gap-1 text-left"
       >
-        <span className="text-xs font-medium text-foreground/80 tabular-nums group-hover/link:text-primary transition-colors whitespace-nowrap">
+        <span className="text-foreground/80 group-hover/link:text-primary text-xs font-medium whitespace-nowrap tabular-nums transition-colors">
           localhost:{detected.port}
         </span>
         {displayPath && (
-          <span className="text-xs text-muted-foreground/60 font-mono truncate group-hover/link:text-primary/70 transition-colors">
+          <span className="text-muted-foreground/60 group-hover/link:text-primary/70 truncate font-mono text-xs transition-colors">
             {displayPath}
           </span>
         )}
       </button>
 
       {/* Compact action buttons — only visible on hover */}
-      <div className="flex items-center gap-0.5 ml-auto shrink-0 opacity-0 group-hover/chip:opacity-100 transition-opacity">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={handleCopyUrl}
-              className="p-1 rounded hover:bg-muted/60 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-            >
-              {copied ? (
-                <Check className="h-3 w-3 text-emerald-500" />
-              ) : (
-                <Copy className="h-3 w-3" />
-              )}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">{copied ? 'Copied!' : 'Copy URL'}</TooltipContent>
-        </Tooltip>
+      <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/chip:opacity-100">
+        <CopyButton code={proxyUrl} />
+        <Hint
+          label={tHardcodedUi.raw(
+            'componentsThreadContentSandboxUrlDetector.line509JsxTextOpenInBrowser',
+          )}
+          side="top"
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={handleOpenExternal}
+            aria-label={tHardcodedUi.raw(
+              'componentsThreadContentSandboxUrlDetector.line509JsxTextOpenInBrowser',
+            )}
+          >
+            <ExternalLink className="size-4" />
+          </Button>
+        </Hint>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={handleOpenExternal}
-              className="p-1 rounded hover:bg-muted/60 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-            >
-              <ExternalLink className="h-3 w-3" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line509JsxTextOpenInBrowser')}</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={navigateToPreviewTab}
-              className="p-1 rounded hover:bg-muted/60 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-            >
-              <MonitorPlay className="h-3 w-3" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line521JsxTextOpenPreview')}</TooltipContent>
-        </Tooltip>
+        <Hint
+          label={tHardcodedUi.raw(
+            'componentsThreadContentSandboxUrlDetector.line521JsxTextOpenPreview',
+          )}
+          side="top"
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={navigateToPreviewTab}
+            aria-label={tHardcodedUi.raw(
+              'componentsThreadContentSandboxUrlDetector.line521JsxTextOpenPreview',
+            )}
+          >
+            <MonitorPlay className="size-4" />
+          </Button>
+        </Hint>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CodeBlockEndpoints — self-contained chip list for localhost URLs in code
+// ---------------------------------------------------------------------------
+
+export type CodeBlockEndpointsProps = {
+  /** Markdown (or plain) content to scan for localhost URLs inside code blocks. */
+  content: string;
+  className?: string;
+};
+
+/**
+ * Detects localhost URLs inside markdown code blocks and renders compact chips.
+ * Self-contained: strips system tags, resolves proxy URLs, returns null when empty.
+ * Safe to mount anywhere a content string is available.
+ */
+export function CodeBlockEndpoints({ content, className }: CodeBlockEndpointsProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const { proxyUrl } = useSandboxProxy();
+
+  const rawContent = typeof content === 'string' ? content : content ? String(content) : '';
+  const safeContent = stripKortixSystemTags(rawContent);
+
+  const urls = useMemo(() => {
+    const detected: { detected: DetectedLocalhostUrl; proxyUrl: string }[] = [];
+    for (const d of detectLocalhostUrls(safeContent)) {
+      if (!d.inCodeBlock) continue;
+      detected.push({ detected: d, proxyUrl: proxyUrl(d.originalUrl) ?? d.originalUrl });
+    }
+    return detected;
+  }, [safeContent, proxyUrl]);
+
+  if (urls.length === 0) return null;
+
+  return (
+    <div
+      className={cn(
+        'bg-secondary flex flex-col divide-y overflow-hidden rounded-md border border-t',
+        className,
+      )}
+    >
+      {urls.map(({ detected: d, proxyUrl: resolved }) => (
+        <SandboxUrlChip key={`code-${d.port}-${d.path}`} detected={d} proxyUrl={resolved} />
+      ))}
     </div>
   );
 }
@@ -548,61 +367,11 @@ export const SandboxUrlDetector: React.FC<SandboxUrlDetectorProps> = ({
   content,
   isStreaming = false,
 }) => {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   // Strip kortix_system XML tags before any processing/rendering.
   // These tags contain internal/system content injected by OpenCode plugins
   // that should not appear in the UI.
   const rawContent = typeof content === 'string' ? content : content ? String(content) : '';
   const safeContent = stripKortixSystemTags(rawContent);
 
-  const { proxyUrl } = useSandboxProxy();
-
-  const detected = useMemo(() => detectLocalhostUrls(safeContent), [safeContent]);
-
-  const proxyUrls = useMemo(
-    () => detected.map((d) => proxyUrl(d.originalUrl) ?? d.originalUrl),
-    [detected, proxyUrl],
-  );
-
-  // Split into two tiers: live service URLs (plain text) vs example URLs (code blocks)
-  const { liveUrls, codeBlockUrls } = useMemo(() => {
-    const live: Array<{ detected: DetectedLocalhostUrl; proxyUrl: string }> = [];
-    const code: Array<{ detected: DetectedLocalhostUrl; proxyUrl: string }> = [];
-    detected.forEach((d, i) => {
-      const entry = { detected: d, proxyUrl: proxyUrls[i] };
-      if (d.inCodeBlock) {
-        code.push(entry);
-      } else {
-        live.push(entry);
-      }
-    });
-    return { liveUrls: live, codeBlockUrls: code };
-  }, [detected, proxyUrls]);
-
-  if (detected.length === 0) {
-    return <UnifiedMarkdown content={safeContent} isStreaming={isStreaming} />;
-  }
-
-  return (
-    <div>
-      <UnifiedMarkdown content={safeContent} isStreaming={isStreaming} />
-
-      {/* Plain-text localhost URLs are now rendered as inline preview cards
-          directly inside UnifiedMarkdown — no separate SandboxPreviewCard needed. */}
-
-      {/* Compact chips for URLs found inside code blocks (examples/docs) */}
-      {codeBlockUrls.length > 0 && (
-        <div className="mt-3 flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground/50 font-medium uppercase tracking-wider">{tHardcodedUi.raw('componentsThreadContentSandboxUrlDetector.line590JsxTextEndpointsMentionedInCode')}</span>
-          {codeBlockUrls.map(({ detected: d, proxyUrl }) => (
-            <SandboxUrlChip
-              key={`code-${d.port}-${d.path}`}
-              detected={d}
-              proxyUrl={proxyUrl}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return <UnifiedMarkdown content={safeContent} isStreaming={isStreaming} />;
 };

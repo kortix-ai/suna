@@ -19,6 +19,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
@@ -37,6 +38,10 @@ function baseConfig(over: Partial<Config> = {}): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    cloneDepth: 1,
+    workload: '',
+    monitorsJson: '',
+    monitorBoxEpoch: '',
     ...over,
   }
 }
@@ -45,6 +50,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
 function startCloneCredentialServer(opts: {
   expectToken: string
   pushToken: string | null
+  username?: string
 }) {
   const calls: { auth: string | null; path: string }[] = []
   const server = Bun.serve({
@@ -61,7 +67,7 @@ function startCloneCredentialServer(opts: {
       return Response.json({
         repo_url: 'https://git.example.test/repo-abc',
         auth: opts.pushToken
-          ? { username: 'x-access-token', token: opts.pushToken, type: 'basic' }
+          ? { username: opts.username ?? 'x-access-token', token: opts.pushToken, type: 'basic' }
           : null,
         source: 'managed',
       })
@@ -91,6 +97,20 @@ describe('git credential helper', () => {
       // It authenticated with the sandbox KORTIX_TOKEN, not anything else.
       expect(srv.calls.at(-1)?.auth).toBe('Bearer kortix_sb_secret')
       expect(srv.calls.at(-1)?.path).toBe('/v1/projects/proj-1/git/clone-credential')
+    } finally {
+      srv.stop()
+    }
+  })
+
+  it('uses the provider-selected username for Code Storage credentials', async () => {
+    const srv = startCloneCredentialServer({
+      expectToken: 'kortix_sb_secret',
+      pushToken: 'code-storage-jwt',
+      username: 't',
+    })
+    try {
+      const out = await resolveGitCredentialOutput(baseConfig({ apiUrl: srv.url }))
+      expect(out).toBe('username=t\npassword=code-storage-jwt\n')
     } finally {
       srv.stop()
     }

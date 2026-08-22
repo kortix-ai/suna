@@ -58,7 +58,7 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="sm:max-w-md">
+      <AlertDialogContent className="sm:max-w-md" overlayClassName="bg-black/25 backdrop-blur-sm">
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription asChild>
@@ -66,19 +66,14 @@ export function ConfirmDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>
-            {cancelLabel}
-          </AlertDialogCancel>
+          <AlertDialogCancel disabled={isPending}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
               onConfirm();
             }}
             disabled={isPending}
-            className={cn(
-              buttonVariants({ variant: confirmVariant }),
-              'gap-1.5',
-            )}
+            className={cn(buttonVariants({ variant: confirmVariant, size: 'sm' }), 'gap-1.5')}
           >
             {confirmIcon}
             {isPending ? `${confirmLabel}…` : confirmLabel}

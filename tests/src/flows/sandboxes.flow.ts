@@ -5,8 +5,9 @@
  * Existing spec ids:
  *   SNAP-1  GET  /snapshots                (read)
  *   SNAP-2  POST /snapshots/rebuild        (manage + account write)
- *   SBX-1   sandbox create = implicit on session create (no endpoint)
- *   SBX-2   sandbox stop   = session DELETE (no endpoint)
+ * Sandbox create (implicit on session create) and sandbox stop (session DELETE)
+ * carry no endpoint of their own, so they carry no flow id — see the sandbox
+ * boundary note in spec/end-to-end.md section 8.
  *
  * New ids added here for the standalone read/CRUD/config endpoints:
  *   SNAP-3  POST /snapshots/fix-with-agent
@@ -33,7 +34,10 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/snapshots", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.templates").exists("$.builds");
+      // `status` is the derived "can a session start" verdict every UI alert
+      // reads. Without it the panel falls back to showing nothing, so it is
+      // part of the contract, not an optional extra.
+      r.status(200).body().exists("$.templates").exists("$.builds").exists("$.status.state");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -55,6 +59,7 @@ flow(
   "SNAP-2",
   {
     domain: "sandboxes",
+    requires: ["daytona"],
     routes: ["POST /v1/projects/:projectId/snapshots/rebuild"],
   },
   async (ctx) => {
@@ -157,6 +162,7 @@ flow(
   "SBX-4",
   {
     domain: "sandboxes",
+    requires: ["daytona"],
     routes: [
       "POST /v1/projects/:projectId/sandbox-templates",
       "PATCH /v1/projects/:projectId/sandbox-templates/:templateId",
@@ -241,34 +247,37 @@ flow(
       r.status(404);
     });
 
-    // If the create succeeded, exercise the real CRUD on the created row.
-    await ctx.step("PATCH + build + DELETE created template (if created)", async () => {
-      if (!templateId) {
-        ctx.skip("template create did not yield an id in this environment");
-      }
-      const patched = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          "/v1/projects/:projectId/sandbox-templates/:templateId",
-          { name: "e2e renamed" },
-          { params: { projectId: p.id, templateId: templateId! } },
-        );
-      patched.status([200, 400, 404]);
+    // Template creation and PATCH both start provider builds. The flow carries
+    // the `daytona` capability so the local profile excludes the whole action.
+    if (templateId) {
+      const createdTemplateId = templateId;
+      await ctx.step("PATCH and build the created template on a provider-backed target", async () => {
+        const patched = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch(
+            "/v1/projects/:projectId/sandbox-templates/:templateId",
+            { name: "e2e renamed" },
+            { params: { projectId: p.id, templateId: createdTemplateId } },
+          );
+        patched.status([200, 400, 404]);
 
-      // build = fire-and-forget → 202; assert the trigger only.
-      const built = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          "/v1/projects/:projectId/sandbox-templates/:templateId/build",
-          {},
-          { params: { projectId: p.id, templateId: templateId! } },
-        );
-      built.status([200, 202, 404]);
+        const built = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            "/v1/projects/:projectId/sandbox-templates/:templateId/build",
+            {},
+            { params: { projectId: p.id, templateId: createdTemplateId } },
+          );
+        built.status([200, 202, 404]);
+      });
+    }
 
+    await ctx.step("DELETE the created template when creation returned an id", async () => {
+      if (!templateId) return;
       const del = await ctx.client
         .as(ctx.P.OWNER)
         .del("/v1/projects/:projectId/sandbox-templates/:templateId", {
-          params: { projectId: p.id, templateId: templateId! },
+          params: { projectId: p.id, templateId },
         });
       del.status([200, 204, 400, 404, 409]);
     });
@@ -291,6 +300,40 @@ flow(
           { slug: "nope", image: "ubuntu:22.04" },
           { params: { projectId: p.id } },
         );
+      r.status(401);
+    });
+  },
+);
+
+// ─── SBX-5: list sandbox templates ("sandboxes" surface) ──────────────────
+// Same underlying `listSandboxTemplates` read as SBX-3's sandbox-templates
+// route, exposed at the `/sandboxes` path the dashboard's Sandbox panel calls.
+// A fresh project has no sessions, so `items` is real content (the resolved
+// template set for this project), not literally empty.
+flow(
+  "SBX-5",
+  {
+    domain: "sandboxes",
+    routes: ["GET /v1/projects/:projectId/sandboxes"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("OWNER lists sandboxes → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.items").exists("$.provider_mode");
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
       r.status(401);
     });
   },

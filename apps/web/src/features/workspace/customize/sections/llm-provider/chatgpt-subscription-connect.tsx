@@ -1,16 +1,18 @@
 'use client';
 
+import { ChatGptDeviceChallenge } from '@/components/projects/chatgpt-device-challenge';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { pollProjectProviderOAuth, startProjectProviderOAuth } from '@kortix/sdk';
+import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
-  pollProjectProviderOAuth,
-  startProjectProviderOAuth,
-} from '@kortix/sdk/projects-client';
+  CheckCircleIcon as CheckCircle2,
+  WarningIcon as TriangleAlert,
+} from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -25,7 +27,7 @@ export function ChatGptSubscriptionConnect({
   onConnected,
 }: {
   projectId: string;
-  onConnected: () => void;
+  onConnected: (providerId: string) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -56,9 +58,6 @@ export function ChatGptSubscriptionConnect({
       const start = await startProjectProviderOAuth(projectId, 'openai', {});
       if (cancelledRef.current) return;
       setChallenge({ url: start.verification_url, code: start.user_code });
-      if (start.verification_url) {
-        window.open(start.verification_url, '_blank', 'noopener,noreferrer');
-      }
 
       const interval = Math.max(2000, start.interval_ms || 3000);
       const deadline = start.expires_at || Date.now() + 10 * 60_000;
@@ -75,9 +74,9 @@ export function ChatGptSubscriptionConnect({
         if (res.status === 'success') {
           setPhase('done');
           successToast('ChatGPT subscription connected to this project');
-          queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+          queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
           refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
-          onConnected();
+          onConnected('codex');
           return;
         }
         if (res.status === 'failed') {
@@ -109,7 +108,7 @@ export function ChatGptSubscriptionConnect({
   const waiting = phase === 'waiting';
 
   return (
-    <div className="border-border/50 bg-muted/20 rounded-2xl border p-4">
+    <div className="bg-popover rounded-md border px-4 py-4">
       <div className="flex items-start gap-3">
         <ProviderLogo providerID="openai" name="OpenAI" size="default" />
         <div className="min-w-0 flex-1">
@@ -127,7 +126,7 @@ export function ChatGptSubscriptionConnect({
       </div>
 
       {waiting && (
-        <div className="border-border/50 bg-background/70 mt-3 rounded-2xl border p-3">
+        <div className="border-border bg-muted/30 mt-3 rounded-md border p-3">
           {challenge ? (
             <>
               <div className="text-foreground text-xs font-medium">
@@ -135,32 +134,9 @@ export function ChatGptSubscriptionConnect({
                   'autoComponentsProjectsProjectProviderModalJsxTextAuthorizeInThed882ae47',
                 )}
               </div>
-              {challenge.url && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 h-8 gap-1.5 px-3"
-                  onClick={() => window.open(challenge.url, '_blank', 'noopener,noreferrer')}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {tHardcodedUi.raw(
-                    'autoComponentsProjectsProjectProviderModalJsxTextOpenAuthPaged0381841',
-                  )}
-                </Button>
-              )}
-              {challenge.code ? (
-                <div className="mt-3">
-                  <div className="text-muted-foreground text-xs">
-                    {tHardcodedUi.raw(
-                      'autoComponentsProjectsProjectProviderModalJsxTextEnterThisCodee346992b',
-                    )}
-                  </div>
-                  <div className="border-border/60 bg-muted text-foreground mt-1 w-fit rounded-2xl border px-3 py-2 font-mono text-lg font-semibold tracking-normal">
-                    {challenge.code}
-                  </div>
-                </div>
-              ) : null}
+              <div className="mt-3">
+                <ChatGptDeviceChallenge url={challenge.url} code={challenge.code} />
+              </div>
             </>
           ) : (
             <div className="text-foreground text-xs font-medium">
@@ -177,18 +153,17 @@ export function ChatGptSubscriptionConnect({
       )}
 
       {phase === 'done' && (
-        <div className="text-foreground/80 border-kortix-green/20 bg-kortix-green/[0.06] mt-3 flex items-start gap-2 rounded-2xl border px-3 py-2.5 text-xs">
+        <InfoBanner tone="success" icon={CheckCircle2} className="mt-3 text-xs">
           {tHardcodedUi.raw(
             'autoComponentsProjectsProjectProviderModalJsxTextChatGPTSubscriptionConnectedcf12bc87',
           )}
-        </div>
+        </InfoBanner>
       )}
 
       {error && (
-        <div className="bg-destructive/5 text-destructive mt-3 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-          <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>{error}</span>
-        </div>
+        <InfoBanner tone="destructive" icon={TriangleAlert} className="mt-3 text-xs">
+          {error}
+        </InfoBanner>
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">

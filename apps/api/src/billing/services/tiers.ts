@@ -1,16 +1,29 @@
 import { config } from '../../config';
 import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../../types';
+// Config-free tier facts live in their own module so genuinely pure consumers
+// (billing-state.ts) can import them without booting env validation. Re-exported
+// here so every existing `from './tiers'` import keeps working — one definition.
+// Only what this module CALLS. Everything else from tier-facts reaches
+// consumers through the re-export block below — importing a name here purely to
+// re-export it is a dead local binding (CodeQL flags it, and `isPaidTier` had
+// been sitting unused on this line since before the credit plans landed).
+import { isPerSeatAccount } from './tier-facts';
+
+export {
+  MINIMUM_CREDIT_FOR_RUN,
+  accountMetersCompute,
+  isCreditPlanAccount,
+  isLegacyAccount,
+  isPaidTier,
+  isPerSeatAccount,
+} from './tier-facts';
 
 export const TOKEN_PRICE_MULTIPLIER = 1.2;
-export const MINIMUM_CREDIT_FOR_RUN = 0.01;
 export const DEFAULT_TOKEN_COST = 0.000002;
 export const CREDITS_PER_DOLLAR = 100;
 
 /** One-time credit grant per machine provisioned ($5 = 500 display credits). */
 export const MACHINE_CREDIT_BONUS = 5;
-
-/** Markup applied to managed VPS prices for additional instances. */
-export const COMPUTE_PRICE_MARKUP = 1.2;
 
 /**
  * Margin multiplier applied to the live models.dev cost on every LLM gateway
@@ -55,13 +68,9 @@ export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 15;
 /** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 
-// Per-second sandbox compute pricing, keyed off the reserved spec (kortix.yaml's
-// `sandbox:` block). The constants below are Daytona's PUBLISHED LIST rates (kept as
-// list so they're easy to re-sync from the pricing page). Our ACTUAL cost is
-// list × the volume discount Daytona gives us (DAYTONA_DISCOUNT). The debit
-// emitter charges:
-//     cost = spec × list_rate × DAYTONA_DISCOUNT × COMPUTE_PRICE_MARKUP
-// i.e. we pass the discount through (cheaper for users) and keep a margin on top.
+// Per-second customer pricing for the reserved sandbox spec in kortix.yaml.
+// These rates apply to every hosted provider. Each rate is 1.2× Daytona's
+// published list rate.
 // Daytona list (https://www.daytona.io/pricing, as of 2026-06):
 //   vCPU  $0.0504 / core-hour → 0.000014   per core-second
 //   RAM   $0.0162 / GiB-hour  → 0.0000045  per GB-second
@@ -69,13 +78,9 @@ export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 // We bill the full reserved spec — Daytona's first-5-GiB-free RAM/disk allowance
 // is an ORG-level promo to us, not a per-sandbox grant, so passing it per sandbox
 // would under-bill.
-export const COMPUTE_CPU_PRICE_PER_CORE_SECOND = 0.000014;
-export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND = 0.0000045;
-export const COMPUTE_DISK_PRICE_PER_GB_SECOND = 0.00000003;
-/** Volume discount Daytona gives us off list (≈50%) → our real cost = list ×
- *  this. Applied before the markup so users are billed on our actual (discounted)
- *  cost, not Daytona's list. Bump toward 1.0 if the discount shrinks. */
-export const DAYTONA_DISCOUNT = 0.5;
+export const COMPUTE_CPU_PRICE_PER_CORE_SECOND = 0.0000168;
+export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND = 0.0000054;
+export const COMPUTE_DISK_PRICE_PER_GB_SECOND = 0.000000036;
 /** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
 export const COMPUTE_ARCHIVE_DISK_MULTIPLIER = 0.25;
 
@@ -93,7 +98,7 @@ export const MAX_PROJECTS_PER_ACCOUNT = 200;
 export const MAX_CONCURRENT_SANDBOXES_PER_SEAT = 3;
 export const MAX_SEATS_PER_ACCOUNT = 100;
 
-export type BillingModel = 'legacy' | 'per_seat';
+export type BillingModel = 'legacy' | 'per_seat' | 'credit';
 
 /** Default auto-topup for a per-seat account given its current seat count. */
 export function defaultAutoTopupForSeats(seatCount: number): { threshold: number; amount: number } {
@@ -112,6 +117,58 @@ export function defaultAutoTopupForSeats(seatCount: number): { threshold: number
  */
 export function grantForSeats(seatCount: number): number {
   return INCLUDED_CREDITS_PER_SEAT_USD * Math.max(1, seatCount);
+}
+
+/**
+ * Included-usage share of every subscription dollar: $25 of each $40 seat.
+ * The one ratio the whole renewal-grant rule reduces to — see
+ * `resolveRenewalGrant`.
+ */
+export const INCLUDED_CREDITS_RATIO = INCLUDED_CREDITS_PER_SEAT_USD / PER_SEAT_PRICE_USD;
+
+/**
+ * THE renewal-grant rule: what a paid subscription-cycle invoice puts in the
+ * wallet. One resolver, resolved from the SUBSCRIPTION that was billed, in
+ * precedence order:
+ *
+ *   1. Per-seat: seats × $25 — the seat count is the contract. (For the
+ *      standard $40 seat price this equals amount × INCLUDED_CREDITS_RATIO
+ *      exactly; the seat count stays authoritative for discounted invoices.)
+ *   2. A tier with a configured monthly grant (v3 credit plans, free): that
+ *      grant, unchanged.
+ *   3. Everything else that PAID — the legacy zoo (machine subscriptions,
+ *      legacy `pro`, retired tier_* keys with no grant): the money that
+ *      actually moved × INCLUDED_CREDITS_RATIO. Before this rule those
+ *      renewals granted 0: a $40/mo "Kortix Computer" customer paid every
+ *      month, sat at a $0 wallet, and could not run anything. There is no
+ *      per-key mapping table to maintain — the paid invoice IS the mapping.
+ *
+ * Pure — testable without Stripe or a DB.
+ */
+export function resolveRenewalGrant(args: {
+  tierName: string;
+  billingModel: string | null | undefined;
+  seatCount: number | null | undefined;
+  /** invoice.amount_paid, in USD (Stripe reports cents — divide by 100). */
+  amountPaidUsd: number;
+}): { credits: number; description: string } {
+  if (args.tierName === 'per_seat' || isPerSeatAccount(args.billingModel)) {
+    const seats = Math.max(1, args.seatCount ?? 1);
+    const credits = grantForSeats(seats);
+    return {
+      credits,
+      description: `Monthly renewal: ${credits} credits (${seats} ${seats === 1 ? 'seat' : 'seats'})`,
+    };
+  }
+  const configured = getMonthlyCredits(args.tierName);
+  if (configured > 0) {
+    return { credits: configured, description: `Monthly renewal: ${configured} credits` };
+  }
+  const credits = Math.round(Math.max(0, args.amountPaidUsd) * INCLUDED_CREDITS_RATIO * 100) / 100;
+  return {
+    credits,
+    description: `Monthly renewal: ${credits} credits (legacy subscription, $${args.amountPaidUsd} paid)`,
+  };
 }
 
 // ─── Compute instance definitions ───────────────────────────────────────────
@@ -209,17 +266,81 @@ const TIERS: Record<string, TierConfig> = {
   // Billing v2 — per-member seat plan. $25 × seat_count / month.
   // The TIERS entry models a single seat; multi-seat math is in
   // grantForSeats() and applied at subscription create + renew.
+  //
+  // GRANDFATHERED (billing v3). Existing per-seat customers keep this tier
+  // exactly as it is — same price, same $25/seat grant, same 200-session cap,
+  // and `models: ['all']` so their managed-model access is NOT withdrawn under
+  // them. It is `hidden` only so the self-serve grid stops offering it to new
+  // customers; every existing subscription resolves it unchanged.
   per_seat: {
     name: 'per_seat',
-    displayName: 'Team',
+    displayName: 'Team (legacy seats)',
     monthlyPrice: PER_SEAT_PRICE_USD,
     yearlyPrice: 0,
     monthlyCredits: INCLUDED_CREDITS_PER_SEAT_USD,
     canPurchaseCredits: true,
     models: ['all'],
     dailyCreditConfig: null,
-    hidden: false,
+    hidden: true,
     concurrentSessionLimit: 200,
+    entitlements: SELF_SERVE,
+  },
+
+  // ── Billing v3 — flat credit plans ───────────────────────────────────────
+  // The plan carries the credit pool and the concurrency limit; headcount does
+  // not enter the price. Seats priced humans, but the cost driver is agents,
+  // and agents run unattended — a team of two could run fifty of them, and a
+  // Kortix-as-a-Backend customer serves end users who are not seats at all.
+  //
+  // `models: []` — NO included managed LLM. `tierGrantsAllModels` is false, so
+  // the wallet funds sandbox compute only, exactly as the free tier already
+  // works. BYOK, OpenCode and ChatGPT-subscription paths are untouched; a
+  // managed key is billed against the wallet only for tiers that grant models.
+  // This takes Kortix out of a short position on model prices: an upstream
+  // increase can no longer eat a fixed plan's margin.
+  //
+  // Price : credits holds at 1.6 : 1, which is ~48% gross margin when a plan
+  // burns its whole pool (COGS = pool ÷ KORTIX_MARKUP). Keep that ratio if you
+  // add a tier — it is the number that makes the ladder coherent.
+  starter: {
+    name: 'starter',
+    displayName: 'Starter',
+    monthlyPrice: 40,
+    yearlyPrice: 0,
+    monthlyCredits: 25,
+    canPurchaseCredits: true,
+    models: [],
+    dailyCreditConfig: null,
+    hidden: false,
+    concurrentSessionLimit: 3,
+    entitlements: SELF_SERVE,
+  },
+
+  team: {
+    name: 'team',
+    displayName: 'Team',
+    monthlyPrice: 200,
+    yearlyPrice: 0,
+    monthlyCredits: 125,
+    canPurchaseCredits: true,
+    models: [],
+    dailyCreditConfig: null,
+    hidden: false,
+    concurrentSessionLimit: 10,
+    entitlements: SELF_SERVE,
+  },
+
+  scale: {
+    name: 'scale',
+    displayName: 'Scale',
+    monthlyPrice: 800,
+    yearlyPrice: 0,
+    monthlyCredits: 500,
+    canPurchaseCredits: true,
+    models: [],
+    dailyCreditConfig: null,
+    hidden: false,
+    concurrentSessionLimit: 30,
     entitlements: SELF_SERVE,
   },
 
@@ -561,8 +682,23 @@ export function getAllTiers(): TierConfig[] {
   return Object.values(TIERS);
 }
 
+/**
+ * Tiers the product may advertise.
+ *
+ * A tier must also be BUYABLE, not merely unhidden. Checkout resolves a Stripe
+ * price and throws `No price configured for this tier` when there is none, so a
+ * tier defined ahead of its Stripe products would otherwise be listed as an
+ * option that fails the moment anyone clicks it.
+ *
+ * Deriving this instead of carrying a second `hidden` flag means the v3 credit
+ * plans stay dark until their prices are created, then appear on their own —
+ * there is no flag to remember to flip, and no window where the grid offers a
+ * plan the billing system cannot sell.
+ */
 export function getVisibleTiers(): TierConfig[] {
-  return Object.values(TIERS).filter((t) => !t.hidden && t.name !== 'none');
+  return Object.values(TIERS).filter(
+    (t) => !t.hidden && t.name !== 'none' && resolvePriceId(t.name, 'monthly') !== null,
+  );
 }
 
 export function isValidTier(name: string): boolean {
@@ -577,11 +713,6 @@ export function canPurchaseCredits(tierName: string): boolean {
   return getTier(tierName).canPurchaseCredits;
 }
 
-/** Returns true if the tier is a paid tier (not free/none). */
-export function isPaidTier(tierName: string): boolean {
-  return tierName !== 'free' && tierName !== 'none';
-}
-
 /**
  * Whether a tier unlocks the full model catalog — i.e. the premium LLM gateway
  * (Claude/GPT/Gemini/…), not just OpenCode's built-in Zen models.
@@ -593,46 +724,23 @@ export function isPaidTier(tierName: string): boolean {
  * entitled to premium models as per-seat teams (the gateway meters every account
  * the same way), and gating on `isPerSeatAccount` wrongly locked them out.
  *
- * Pure function of tier config only — deliberately environment-agnostic (see
- * unit-tier-model-entitlement.test.ts, which locks this in as an invariant).
- * Callers that need a dev/preview QA exemption from the paywall should go
- * through `accountIsFreeTierForModels` below, not inline this.
+ * Pure function of tier config only. Environment and wallet balance cannot
+ * grant managed-model entitlement.
  */
 export function tierGrantsAllModels(tierName: string): boolean {
   return getTier(tierName).models.includes('all');
 }
 
 /**
- * Whether an account (given its resolved billing tier) should be treated as
- * free-tier for MANAGED-MODEL access — i.e. blocked from every premium Kortix
- * model and left with BYOK/Codex only. Same as `!tierGrantsAllModels(tier)`
- * everywhere EXCEPT dev/preview, which never enforce this particular paywall.
+ * Whether a resolved billing tier is blocked from Kortix-managed models.
  *
- * Why: every dev/preview signup — including every fresh PR-preview test/QA
- * account — defaults to tier 'free' (`models: []`), so without this exemption
- * it can never get a managed-model candidate. `auto` (the session default)
- * resolves to `glm-5.2`, the gateway's resolveCandidates returns `[]`, and
- * every agent turn 400s "No upstream configured for model glm-5.2" — confirmed
- * against the dev DB on 2026-07-05: gateway_request_logs shows exactly this for
- * a same-day free-tier signup, while OTHER dev accounts with a paid tier
- * succeed against the SAME openrouter/bedrock upstreams in the same window.
- * The upstream config is fine; only entitlement is missing. Prod keeps the
- * real paywall; staging keeps it too (staging is where the free-tier paywall
- * itself gets verified against Stripe test mode). dev + preview are internal
- * engineering/QA surfaces, not customer-facing, so paywalling them only breaks
- * testing, for no revenue-protection benefit.
- *
- * `env` defaults to the real deployed `INTERNAL_KORTIX_ENV` — it's a parameter
- * (not a direct `config` read) purely so tests can exercise every environment
- * branch deterministically in-process, without module-mocking `../config`
- * (which risks leaking a stubbed config into unrelated test files sharing the
- * same bun test process).
+ * The environment argument remains for source compatibility. It has no effect.
+ * `free`, `none`, and unknown tiers are blocked in every environment.
  */
 export function accountIsFreeTierForModels(
   tierName: string,
-  env: string = config.INTERNAL_KORTIX_ENV,
+  _env: string = config.INTERNAL_KORTIX_ENV,
 ): boolean {
-  if (env === 'dev' || env === 'preview') return false;
   return !tierGrantsAllModels(tierName);
 }
 
@@ -655,21 +763,6 @@ export function tierHasEntitlement(tierName: string, key: keyof TierEntitlements
 export function resolvePerSeatPriceId(): string | null {
   const prices = getStripePrices();
   return prices.subscriptions.per_seat?.monthly ?? null;
-}
-
-/**
- * Per-seat code paths must no-op for legacy customers. Use this guard at every
- * branch that would otherwise mutate Stripe quantity / grant seat credits /
- * meter compute / mint per-member YOLO tokens.
- */
-export function isPerSeatAccount(billingModel: string | null | undefined): boolean {
-  return billingModel === 'per_seat';
-}
-
-export function isLegacyAccount(billingModel: string | null | undefined): boolean {
-  // Default for null/undefined is legacy — safer to skip new behaviour than to
-  // accidentally bill a legacy customer twice.
-  return billingModel !== 'per_seat';
 }
 
 /**

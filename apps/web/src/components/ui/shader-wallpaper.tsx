@@ -1,5 +1,6 @@
 'use client';
 
+import { useReducedMotion } from 'motion/react';
 import { useTheme } from 'next-themes';
 import dynamic from 'next/dynamic';
 import { memo } from 'react';
@@ -20,6 +21,10 @@ const WaveDistortion = dynamic(() => import('@/lib/shaders-react').then((m) => m
 export const ShaderWallpaper = memo(function ShaderWallpaper() {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
+  // Same contract as the other wallpapers: reduced motion freezes the
+  // composition (speed 0) instead of removing it, which also makes the
+  // still-image export of this wallpaper reproducible.
+  const reduceMotion = useReducedMotion() ?? false;
 
   // Kortix brand is pure monochrome (white/black). Light mode mirrors the
   // dark preset: pure white base with a mid-grey dither tone (so the dots
@@ -43,7 +48,13 @@ export const ShaderWallpaper = memo(function ShaderWallpaper() {
         }}
       >
         <Dither colorA={colorA} colorB={colorB} pattern="bayer8" pixelSize={7} threshold={0.41}>
-          <Plasma colorA="#ffffff" contrast={0.9} density={0.3} intensity={1.3} speed={1} />
+          <Plasma
+            colorA="#ffffff"
+            contrast={0.9}
+            density={0.3}
+            intensity={1.3}
+            speed={reduceMotion ? 0 : 1}
+          />
           <WaveDistortion
             angle={waveAngle}
             edges="mirror"

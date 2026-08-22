@@ -1,5 +1,10 @@
-import { and, eq, inArray } from 'drizzle-orm';
-import { accountMembers, projectMembers, projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { projects } from '@kortix/db';
+import {
+  accountRoleMap,
+  isAccountManagerRole,
+  projectRoleGrants,
+} from '../../iam/read-models';
 import { sendProjectAccessRequestEmail } from '../../accounts/email';
 import { config } from '../../config';
 import { db } from '../../shared/db';
@@ -22,29 +27,21 @@ export async function notifyProjectAccessRequestManagers(input: {
     .where(eq(projects.projectId, input.projectId))
     .limit(1);
 
-  const [accountManagers, explicitProjectManagers] = await Promise.all([
-    db
-      .select({ userId: accountMembers.userId })
-      .from(accountMembers)
-      .where(
-        and(
-          eq(accountMembers.accountId, input.accountId),
-          inArray(accountMembers.accountRole, ['owner', 'admin']),
-        ),
-      ),
-    db
-      .select({ userId: projectMembers.userId })
-      .from(projectMembers)
-      .where(
-        and(
-          eq(projectMembers.projectId, input.projectId),
-          eq(projectMembers.projectRole, 'manager'),
-        ),
-      ),
+  // Who can approve this: account owners/admins (implicit Manager everywhere)
+  // plus anyone holding the project `manager` role here. Both from
+  // `role_assignments`, so the notification reaches exactly the people the
+  // approve route will actually let through.
+  const [accountRoles, projectGrants] = await Promise.all([
+    accountRoleMap(input.accountId),
+    projectRoleGrants({ accountId: input.accountId, projectId: input.projectId }),
   ]);
-
   const reviewerIds = Array.from(
-    new Set([...accountManagers, ...explicitProjectManagers].map((row) => row.userId)),
+    new Set([
+      ...[...accountRoles.entries()]
+        .filter(([, role]) => isAccountManagerRole(role))
+        .map(([userId]) => userId),
+      ...projectGrants.filter((g) => g.projectRole === 'manager').map((g) => g.userId),
+    ]),
   ).filter((userId) => userId !== input.requesterUserId);
   if (reviewerIds.length === 0) return;
 

@@ -22,9 +22,15 @@ import {
   getSessionAudit,
   listSessionsNeedingInput,
   resolveApproval,
-} from '@kortix/sdk/projects-client';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+} from '@kortix/sdk';
+import {
+  type QueryClient,
+  useInfiniteQuery,
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 
 /**
  * Per-session pending-approval summary for the sidebar "needs input" badge.
@@ -60,18 +66,15 @@ export function useSessionsNeedingInputForProjects(projectIds: string[]) {
       refetchInterval: 12_000,
     })),
   });
-  const dataList = results.map((r) => r.data);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- merge when any result changes
-  return useMemo(() => {
-    const sessions: Record<string, number> = {};
-    let total = 0;
-    for (const d of dataList) {
-      if (!d) continue;
-      for (const [k, v] of Object.entries(d.sessions)) sessions[k] = v;
-      total += d.total ?? 0;
-    }
-    return { sessions, total };
-  }, [JSON.stringify(dataList)]);
+  const sessions: Record<string, number> = {};
+  let total = 0;
+  for (const result of results) {
+    const data = result.data;
+    if (!data) continue;
+    for (const [key, count] of Object.entries(data.sessions)) sessions[key] = count;
+    total += data.total ?? 0;
+  }
+  return { sessions, total };
 }
 
 /** One poll cadence for the shared session-audit query, so both surfaces (panel
@@ -107,8 +110,9 @@ export function useSessionAudit(
     queryKey: sessionAuditKey(projectId, sessionId),
     // `enabled` guards presence, so the `?? ''` fallbacks are never exercised.
     queryFn: () =>
-      getSessionAudit(projectId ?? '', sessionId ?? '', undefined, {
+      getSessionAudit(projectId ?? '', sessionId ?? '', 1000, {
         showErrors: !options?.silent,
+        includeEvents: false,
       }),
     enabled,
     staleTime: 10_000,
@@ -116,26 +120,90 @@ export function useSessionAudit(
   });
 }
 
-/** Approve/deny mutation that invalidates the shared audit query on settle. */
-export function useResolveApproval(projectId: string | undefined, sessionId: string | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation({
+/**
+ * Paginated canonical session timeline.
+ *
+ * This query does not poll. Pending approvals use `useSessionAudit`, whose
+ * lightweight request excludes historical events. Loading more history never
+ * makes the 15-second approval poll refetch pages the user already read.
+ */
+export function useSessionAuditTimeline(
+  projectId: string | undefined,
+  sessionId: string | undefined,
+  options?: Pick<UseSessionAuditOptions, 'enabled' | 'silent'>,
+) {
+  const enabled = !!projectId && !!sessionId && (options?.enabled ?? true);
+  return useInfiniteQuery({
+    queryKey: ['session-audit-timeline', projectId ?? '', sessionId ?? ''] as const,
+    queryFn: ({ pageParam }) =>
+      getSessionAudit(projectId ?? '', sessionId ?? '', 200, {
+        cursor: typeof pageParam === 'string' ? pageParam : undefined,
+        includeEvents: true,
+        showErrors: !options?.silent,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled,
+    staleTime: 10_000,
+  });
+}
+
+/**
+ * Mutation options for approve/deny, extracted out of `useResolveApproval` so
+ * this is directly testable without rendering a component (see
+ * `session-audit-shared.test.ts`).
+ *
+ * Every call site (`SessionApprovalPrompt`, `SessionAuditPanel`,
+ * `SessionPendingApprovalsIndicator`) passes its own call-time `onError` to
+ * `resolve.mutate(vars, { onError })` and shows a specific, actionable toast
+ * (e.g. "Failed to resolve approval"). Without a hook-level `onError` here,
+ * TanStack Query's `defaultMutationOptions()` merge falls back to the
+ * QueryClient's global default mutation `onError`
+ * (`apps/web/src/app/react-query-provider.tsx`) — which ALSO fires, in
+ * addition to (not instead of) the call-time one. That produced a confusing
+ * SECOND toast — the generic "Failed to perform action: <message>" — anytime
+ * a resolve failed, most visibly when the target execution had already been
+ * resolved elsewhere (the resolve endpoint can be hit with zero browsers
+ * open, and the audit poll can lag a few seconds behind), which 404s with a
+ * bare "not found". The no-op `onError` below opts this mutation out of the
+ * global default, matching the same pattern already used by
+ * `useAbortRuntimeSession` — every consumer already owns its own error UX.
+ */
+export function resolveApprovalMutationOptions(
+  projectId: string | undefined,
+  sessionId: string | undefined,
+  queryClient: QueryClient,
+) {
+  return {
+    // No `scope`: a decision applies to exactly the call that asked for it.
+    // 'session' / 'session_all' were removed — a one-click "stop asking"
+    // pre-authorised later calls with different arguments, defeating the gate.
     mutationFn: ({
       executionId,
       decision,
-      scope = 'once',
     }: {
       executionId: string;
       decision: 'approve' | 'deny';
-      scope?: 'once' | 'session' | 'session_all';
     }) => {
       if (!projectId) throw new Error('No project in context');
-      return resolveApproval(projectId, executionId, decision, scope);
+      return resolveApproval(projectId, executionId, decision);
     },
+    // See the jsdoc above `useResolveApproval` — opts out of the global
+    // default mutation `onError` so it doesn't double-toast alongside each
+    // call site's own, more specific error handling.
+    onError: () => {},
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: sessionAuditKey(projectId, sessionId) });
     },
-  });
+  };
+}
+
+/** Approve/deny mutation that invalidates the shared audit query on settle —
+ *  see `resolveApprovalMutationOptions` above for why it opts out of the
+ *  global default mutation `onError`. */
+export function useResolveApproval(projectId: string | undefined, sessionId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation(resolveApprovalMutationOptions(projectId, sessionId, queryClient));
 }
 
 export function riskTone(risk: string | null): 'destructive' | 'warning' | 'muted' {

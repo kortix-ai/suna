@@ -1,19 +1,25 @@
-// IAM V2 route: the self-serve **enterprise demo** toggle.
+// IAM V2 route: the **enterprise demo** state (read) + operator-only toggle.
 //
 // Enterprise features (SSO, SCIM, …) are normally gated behind the sales-
-// assigned `enterprise` tier (see requireEntitlement + tiers.ts). This toggle
-// lets any account member flip on an interactive PREVIEW of that surface for
-// their own account — no sales contact, no billing change — so prospects can
-// feel the enterprise features and we can dogfood them in development.
+// assigned `enterprise` tier (see requireEntitlement + tiers.ts). The demo
+// flag flips on an interactive PREVIEW of that surface for one account.
 //
-// Deliberately NOT behind requireEntitlement: unlocking the demo is the whole
-// point. It is fail-closed (default off) and clearly labelled a demo in the UI;
-// real production use still requires a signed Enterprise agreement.
+// The WRITE is platform-admin-only. It used to be self-serve (any account
+// member with write), which made "enterprise demo" a free entitlement anyone
+// could grant themselves; enabling it is now an operator decision, made in the
+// admin console (POST /v1/admin/api/accounts/{id}/enterprise-demo — see
+// admin/index.ts). This PUT stays for API-shape compatibility but enforces the
+// same platform-admin role. The GET stays account-read so the account page can
+// show the state. Fail-closed (default off); real production use still
+// requires a signed Enterprise agreement.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
-import { isDemoEnterprise, setDemoEnterprise } from '../../billing/repositories/credit-accounts';
+import { actorOf } from '../../iam/actor';
+import { isDemoEnterprise } from '../../billing/repositories/credit-accounts';
+import { applyAdminOverride } from '../../billing/services/account-write-owner';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, readBody } from './helpers';
 
@@ -35,7 +41,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
     return c.json({ enabled: await isDemoEnterprise(accountId) });
   },
 );
@@ -45,7 +51,7 @@ iamRouter.openapi(
     method: 'put',
     path: '/{accountId}/iam/enterprise-demo',
     tags: ['iam'],
-    summary: 'Enable or disable the enterprise demo for the account',
+    summary: 'Enable or disable the enterprise demo for the account (platform admin only)',
     ...auth,
     request: {
       params: AccountIdParam,
@@ -59,7 +65,12 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    // Operator decision, not self-serve — platform admin role required. (No
+    // account-membership check: admins are typically not members of the
+    // account they are enabling the demo for.)
+    if (!(await isPlatformAdmin(userId))) {
+      return c.json({ error: 'Platform admin role required', code: 'admin_required' }, 403);
+    }
 
     const body = await readBody(c);
     if (typeof body.enabled !== 'boolean') {
@@ -67,7 +78,11 @@ iamRouter.openapi(
     }
 
     const before = await isDemoEnterprise(accountId);
-    await setDemoEnterprise(accountId, body.enabled);
+    await applyAdminOverride(
+      accountId,
+      { demoEnterprise: body.enabled },
+      { userId, action: 'enterprise_demo.set' },
+    );
     await auditIam(c, {
       accountId,
       action: body.enabled ? 'enterprise_demo.enable' : 'enterprise_demo.disable',

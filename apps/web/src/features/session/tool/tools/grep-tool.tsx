@@ -1,33 +1,24 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
+import { InlineGrepResults, parseGrepOutput } from '@/features/session/tool/shared/file-list';
 import {
   BasicTool,
   isErrorOutput,
-  ToolEmptyState,
-  ToolOutputFallback,
   partInput,
-  partStreamingInput,
   partOutput,
   partStatus,
+  partStreamingInput,
+  ToolEmptyState,
+  ToolOutputFallback,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  InlineGrepResults,
-  parseGrepOutput,
-} from '@/features/session/tool/shared/file-list';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import {
-  Search,
-} from 'lucide-react';
+import { getDirectory } from '@/ui';
+import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  useMemo,
-} from 'react';
-import {
-  getDirectory,
-} from '@/ui';
-
+import { useMemo } from 'react';
 
 export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -52,9 +43,9 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={<Search className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Grep',
+        title: 'Searched',
         subtitle: directory,
         args: [
           ...args,
@@ -70,20 +61,22 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       locked={locked}
     >
       {hasResults ? (
-        <div data-scrollable className="max-h-72 overflow-auto">
+        <ToolResultCard>
           <InlineGrepResults
             groups={grepResult.groups}
-            onFileClick={(fp) => openFile(fp)}
+            onFileClick={openFile}
             toDisplayPath={toDisplayPath}
             disabled={!navigationEnabled}
           />
-        </div>
+        </ToolResultCard>
       ) : isNoResults ? (
-        <ToolEmptyState
-          message={tHardcodedUi.raw(
-            'componentsSessionToolRenderers.line3485JsxAttrMessageNoMatchingResultsFound',
-          )}
-        />
+        <ToolResultCard>
+          <ToolEmptyState
+            message={tHardcodedUi.raw(
+              'componentsSessionToolRenderers.line3485JsxAttrMessageNoMatchingResultsFound',
+            )}
+          />
+        </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback output={output} toolName="grep" />
       ) : null}
@@ -91,4 +84,3 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   );
 }
 ToolRegistry.register('grep', GrepTool);
-

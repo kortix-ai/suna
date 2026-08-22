@@ -1,7 +1,13 @@
 'use client';
 
+import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { cn } from '@/lib/utils';
-import { Check, ChevronRight, Copy, Laptop } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  LaptopIcon as Laptop,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
@@ -11,40 +17,37 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * terminal so "how do I get a shell into this from my machine?" is answered
  * right where a shell already lives.
  *
- * Collapsed, it shows just the one command that matters (`kortix sessions
- * connect <id>`) with a copy button. Expanded, it adds the one-time install
- * step and a one-line explainer.
+ * Collapsed, it teases the one command that works on any machine — the
+ * one-time CLI install. Expanded, it shows the full two-step flow:
+ * 1. install, 2. `kortix sessions connect <id>`.
  */
 export function SessionTerminalConnectBar({ projectSessionId }: { projectSessionId: string }) {
   const [expanded, setExpanded] = useState(false);
   const connectCmd = `kortix sessions connect ${projectSessionId}`;
-  const installCmd = 'npm i -g @kortix/cli';
+  const installCmd = useDeploymentCliInstallCommand(undefined);
 
   return (
-    <div className="shrink-0 border-b border-white/10 bg-[#15151d] text-[13px]">
+    <div className="border-terminal-border bg-terminal-surface shrink-0 border-b text-[13px]">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-white/60 transition-colors hover:text-white/80"
+        className="text-terminal-fg/60 hover:text-terminal-fg/85 flex min-h-9 w-full items-center gap-2 px-3 py-2 text-left transition-colors"
         aria-expanded={expanded}
       >
         <Laptop className="h-3.5 w-3.5 shrink-0" />
         <span className="shrink-0 font-medium">Connect from your machine</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-white/35">{connectCmd}</span>
+        <span className="text-terminal-fg/40 min-w-0 flex-1 truncate font-mono">{installCmd}</span>
         <ChevronRight
-          className={cn(
-            'h-3.5 w-3.5 shrink-0 transition-transform',
-            expanded && 'rotate-90',
-          )}
+          className={cn('h-3.5 w-3.5 shrink-0 transition-transform', expanded && 'rotate-90')}
         />
       </button>
 
       {expanded && (
-        <div className="space-y-2.5 px-3 pb-3 pt-0.5">
-          <p className="text-xs leading-relaxed text-white/45">
+        <div className="space-y-2.5 px-3 pt-0.5 pb-3">
+          <p className="text-terminal-fg/50 text-xs leading-relaxed">
             Attach your local OpenCode TUI straight to this session&apos;s sandbox. The CLI opens a
             local proxy, injects your Kortix token, then runs{' '}
-            <span className="font-mono text-white/60">opencode attach</span>.
+            <span className="text-terminal-fg/70 font-mono">opencode attach</span>.
           </p>
           <CommandRow label="1. Install the CLI (once)" command={installCmd} />
           <CommandRow label="2. Attach to this session" command={connectCmd} />
@@ -69,13 +72,17 @@ function CommandRow({ label, command }: { label: string; command: string }) {
 
   return (
     <div className="space-y-1">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-white/35">{label}</div>
-      <div className="flex items-center gap-2 rounded-md border border-white/10 bg-black/40 px-2.5 py-1.5">
-        <code className="min-w-0 flex-1 truncate font-mono text-white/80">{command}</code>
+      <div className="text-terminal-fg/40 text-[11px] font-medium tracking-wide uppercase">
+        {label}
+      </div>
+      <div className="border-terminal-border bg-terminal-fg/[0.06] flex items-center gap-2 rounded-md border px-2.5 py-1">
+        <code className="text-terminal-fg/90 min-w-0 flex-1 truncate font-mono">{command}</code>
+        {/* `after:-inset-1.5` lifts the 28px control to a 40px hit area
+            without growing the row it sits in. */}
         <button
           type="button"
           onClick={copy}
-          className="shrink-0 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+          className="text-terminal-fg/50 hover:bg-terminal-fg/10 hover:text-terminal-fg/90 relative flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-sm transition-[background-color,transform] after:absolute after:-inset-1.5 after:content-[''] active:scale-[0.96]"
           aria-label={copied ? 'Copied' : 'Copy command'}
         >
           {copied ? (

@@ -52,10 +52,14 @@ export {
   archiveRepoSubtree,
   getFileAtRef,
   getFileHistory,
+  RepoFileNotFoundError,
+  isRepoFileNotFoundError,
 } from './git/files';
 
 export {
   resolveCommitSha,
+  resolveFastBootGitHint,
+  buildSingleParentDeltaBundle,
   listCommits,
   getCommit,
   getCommitDiff,
@@ -64,6 +68,8 @@ export {
 
 export {
   listBranches,
+  remoteBranchExists,
+  resolveRemoteBranchTip,
   createRemoteSessionBranch,
   deleteRemoteSessionBranch,
   commitFileToBranch,
@@ -74,6 +80,7 @@ export {
   getBranchDiff,
   getDiffBetweenShas,
   previewMerge,
+  MergeConflictError,
   mergeBranches,
   diffStat,
   resolveBranchAheadState,

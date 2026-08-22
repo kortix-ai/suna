@@ -1,13 +1,14 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
-import { cn } from '@/lib/utils';
 import { useToolNavigation } from '@/features/session/tool/shared/infrastructure';
-import { Check, ChevronRight, Clock, ExternalLink, Loader2, MessageCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
+import {
+  ArrowSquareOutIcon as ExternalLink,
+  ChatCircleIcon as MessageCircle,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { stripAnsi } from '@/ui';
+import { useEffect, useState } from 'react';
 
 export function formatBashOutput(rawOutput: string): {
   content: string;
@@ -25,19 +26,18 @@ export function formatBashOutput(rawOutput: string): {
     const sections = trimmed.split(/^(={2,}\s.*)/m);
     let hasJson = false;
     const formatted = sections
-      .map((section) => {
+      .flatMap((section) => {
         const st = section.trim();
-        if (!st) return '';
-        if (/^={2,}\s/.test(st)) return st;
+        if (!st) return [];
+        if (/^={2,}\s/.test(st)) return [st];
         try {
           const parsed = JSON.parse(st);
           hasJson = true;
-          return JSON.stringify(parsed, null, 2);
+          return [JSON.stringify(parsed, null, 2)];
         } catch {
-          return st;
+          return [st];
         }
       })
-      .filter(Boolean)
       .join('\n\n');
     if (hasJson) return { content: formatted, lang: 'json' };
   }
@@ -101,12 +101,14 @@ export function formatSessionTime(timestamp: number): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+const sessionTimeFallbackFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+
 export function formatSessionTimeFallback(timestamp: number): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(timestamp));
+  return sessionTimeFallbackFormat.format(new Date(timestamp));
 }
 
 export function SessionTimeLabel({ timestamp }: { timestamp: number }) {
@@ -149,12 +151,12 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
               : 'group cursor-default opacity-70 transition-colors',
           )}
         >
-          <MessageCircle className="text-muted-foreground group-hover:text-foreground/60 mt-0.5 size-3.5 flex-shrink-0 transition-colors" />
+          <MessageCircle className="text-muted-foreground group-hover:text-foreground/60 mt-0.5 size-3.5 shrink-0 transition-colors" />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <span className="text-foreground truncate text-xs font-medium">{s.title}</span>
               {s.summary && s.summary.files > 0 && (
-                <span className="flex flex-shrink-0 items-center gap-1.5 text-xs">
+                <span className="flex shrink-0 items-center gap-1.5 text-xs">
                   <DiffStat additions={s.summary.additions} deletions={s.summary.deletions} />
                   <span className="text-muted-foreground">
                     {s.summary.files} file{s.summary.files !== 1 ? 's' : ''}
@@ -164,12 +166,12 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
             </div>
             <div className="text-muted-foreground flex items-center gap-2 text-xs">
               <span className="truncate font-mono">{s.slug || s.id}</span>
-              <span className="flex-shrink-0">
+              <span className="shrink-0">
                 <SessionTimeLabel timestamp={s.time.updated} />
               </span>
             </div>
           </div>
-          <ExternalLink className="text-muted-foreground/0 group-hover:text-muted-foreground mt-1 size-3 flex-shrink-0 transition-colors" />
+          <ExternalLink className="text-muted-foreground/0 group-hover:text-muted-foreground mt-1 size-3 shrink-0 transition-colors" />
         </button>
       ))}
     </div>
@@ -225,7 +227,11 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
         <div
           key={msg.index}
           className={cn(
-            'overflow-hidden rounded-2xl border',
+            // `rounded-md`, not `rounded-2xl`: this card nests inside the bash
+            // tool's own `rounded-md` command card, and a 16px radius inside an
+            // 8px one reads as a pill dropped into a panel. The conformance
+            // sweep only scans `tool/tools/`, so this file never caught it.
+            'overflow-hidden rounded-md border',
             msg.role === 'user' ? 'border-border/60' : 'border-border/40',
           )}
         >
@@ -245,13 +251,11 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
             </span>
             <span className="text-muted-foreground/50 ml-auto text-xs">#{msg.index}</span>
             {msg.cost > 0 && (
-              <span className="text-muted-foreground/50 text-xs">
-                ${msg.cost.toFixed(4)}
-              </span>
+              <span className="text-muted-foreground/50 text-xs">${msg.cost.toFixed(4)}</span>
             )}
           </div>
           <div className="px-2.5 py-1.5">
-            <div className="text-foreground/90 text-xs leading-relaxed break-words whitespace-pre-wrap">
+            <div className="text-foreground/90 text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
               {msg.content.slice(0, 800)}
               {msg.content.length > 800 && (
                 <span className="text-muted-foreground/50">
@@ -289,4 +293,3 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
     </div>
   );
 }
-

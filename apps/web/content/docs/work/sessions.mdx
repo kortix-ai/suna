@@ -1,0 +1,109 @@
+---
+title: Sessions
+description: A session is a git branch and a sandbox where the agent works.
+---
+
+A session is one unit of agent work. Kortix cuts a git branch and provisions
+a sandbox for it. The session id, the branch name, and the sandbox id are the
+same value.
+
+## Status
+
+A session reaches one of 4 states in practice.
+
+| Status | Meaning |
+|---|---|
+| `provisioning` | Kortix cuts the branch and requests the sandbox. |
+| `running` | The sandbox is live and reachable. |
+| `stopped` | The session is paused, by you or by idle auto-stop. |
+| `failed` | Provisioning failed. |
+
+The database defines 3 more values (`queued`, `branching`, `completed`).
+Kortix does not write them for a session today.
+
+## Stop, resume, and idle auto-stop
+
+You can stop a session yourself. Resume brings back the same sandbox with the
+same filesystem and runtime identity. Only the running processes and memory
+reset. The OpenCode conversation remains attached to the session.
+
+Kortix also stops an idle session for you:
+
+- After 15 minutes idle, for a normal session.
+- After 5 minutes idle, for a session a trigger started.
+
+An open dashboard tab does not keep a session alive. A busy agent turn blocks
+the stop. The maintenance sweep runs every 5 minutes. A normal automatic Stop
+therefore occurs approximately 15 to 20 minutes after the terminal turn.
+
+Self-host operators can set `KORTIX_SANDBOX_AUTOSTOP_MINUTES` to change the
+normal idle grace. This setting does not change active-turn protection.
+
+## What stop and delete keep
+
+<Callout type="warn" title="Deletion is permanent">
+Deleting a session destroys its sandbox for good. Kortix keeps the session
+record and the git branch, so you can still recover pushed work. Anything not
+pushed is gone.
+</Callout>
+
+Stop and resume keep the sandbox's identity and filesystem. Delete destroys
+the sandbox. Git is the only durable record: work the agent commits and
+pushes survives; everything else does not.
+
+## Runtime
+
+Every session uses OpenCode REST. Kortix stores the selected OpenCode agent and
+model when the session starts. Restart and resume keep the same session runtime.
+
+## Session access
+
+A session is private to the person who created it. The owner opens **Session
+access** and picks one of 3 options.
+
+| Option | Who can open the session |
+|---|---|
+| Only you | The owner alone. This is the default. |
+| Specific people | The owner, plus the members and groups the owner picks. |
+| Whole project | Every member of the project. |
+
+Everyone with access reads the conversation and continues it.
+
+**Only the owner changes this.** A project manager who did not create the
+session can open it once it is shared with them, and can stop, restart, or
+delete it. They cannot rewrite who else can open it. Sharing a session with a
+manager is not handing them its access list.
+
+One kind of session has no human owner: the ones a trigger creates, which run
+under the trigger agent's identity. Project managers govern those. Set the
+policy for all of them on the trigger itself, under **Session access** on the
+trigger — saving there also updates the sessions that trigger already created.
+
+<Callout type="warn" title="A session keeps its owner">
+Removing someone from the account does not move their sessions to anyone else.
+Their access policy freezes as it was. A project manager can still stop or
+delete those sessions — deleting is the way to revoke a session nobody owns any
+more.
+</Callout>
+
+## Sharing a preview
+
+You can share a session's live preview with a public link, in view-only or
+interactive mode. Minting that link is the session owner's call, for the same
+reason: the link is unauthenticated, so anyone holding the URL reads the
+session without signing in. A project manager can list and revoke a session's
+links without owning it — revoking only ever removes access.
+
+## Providers
+
+Kortix runs sessions on Daytona, Platinum, or E2B Cloud. A project follows
+the platform default, or requests a provider switch through the SDK — see
+[SDK reference](/docs/sdk/reference). A switch to a different provider is
+durable: the current provider keeps serving while the target warms, then
+activates. Every provider runs the same sandbox image.
+
+For the full status enum, injected environment variables, and daemon
+endpoints, see [Runtime](/docs/work/runtime). For how a session picks its
+agent, see [Agents](/docs/project/agents). For sessions a schedule or webhook
+starts, see [Triggers](/docs/connect/triggers). To land session work on the
+default branch, see [Change requests](/docs/work/change-requests).

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, extname, join, normalize } from 'node:path'
 
 import { logger } from './logger'
@@ -7,7 +7,9 @@ import { logger } from './logger'
  * Static Web Server — ported from main's `core/services/static-web.js`
  * (formerly an always-on s6 service on port 3211). The new architecture has no
  * s6: the single `kortix-agent` daemon owns the sandbox, so this runs
- * in-process as a second Bun.serve listener bound to localhost:3211.
+ * in-process as a second Bun.serve listener on port 3211. NOTE it binds
+ * 0.0.0.0, not localhost — this comment claimed localhost for a long time and
+ * it was never true, which is part of how the exposure below went unnoticed.
  *
  * It is reachable from the app exactly as before — through the agent server's
  * `/proxy/3211/*` reverse proxy and the `p3211-<sandboxId>` subdomain route.
@@ -24,7 +26,42 @@ import { logger } from './logger'
 
 const DEFAULT_STATIC_PORT = 3211
 
-const ALLOWED_ROOTS = ['/workspace', '/tmp', '/home', '/opt']
+/**
+ * Where agent OUTPUT lives. This server exists to serve HTML the agent
+ * produced (see the header comment), and that lands in the repo or in scratch.
+ *
+ * `/home` and `/opt` used to be here, and `/home` is where the daemon writes
+ * the session's credentials — `~/.config/kortix-opencode.json` holds the
+ * session's LLM gateway key and connector PAT, `~/.local/share/opencode/auth.json`
+ * holds the account's Codex/OpenCode subscription credential. This listener has
+ * no authentication of its own, so any caller who reached port 3211 could read
+ * both. Mode 0600 was no defence: the reader IS the process that wrote them.
+ *
+ * Removing them is a deliberate narrowing. If some flow genuinely serves a
+ * preview out of the home directory it will now 403 — that is the intended
+ * trade, and the file API on :8000 (authenticated, session-scoped) remains the
+ * way to read anything outside these roots.
+ */
+const ALLOWED_ROOTS = ['/workspace', '/tmp']
+
+/**
+ * Paths refused no matter which root they sit under.
+ *
+ * Redundant with ALLOWED_ROOTS today, and that is the point: this holds even if
+ * someone later widens the roots again, which is exactly how the leak got in.
+ * Matched on the normalized absolute path, so `/workspace/../home/...` cannot
+ * dodge it — `normalize()` has already collapsed the traversal.
+ */
+const DENIED_PATH_SEGMENTS = [
+  '/.config/',
+  '/.local/share/opencode/',
+  '/.ssh/',
+  '/.aws/',
+  '/.gnupg/',
+  '/.netrc',
+  '/.git-credentials',
+  '/.kortix/secrets',
+]
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -78,8 +115,51 @@ function toAbsPath(rawPath: string): string | null {
   return normalize(decoded)
 }
 
+function isDenied(absPath: string): boolean {
+  // `absPath` is normalized, so a traversal has collapsed before it gets here
+  // and cannot smuggle a denied segment past this.
+  const probe = `${absPath}/`
+  return DENIED_PATH_SEGMENTS.some((segment) => probe.includes(segment))
+}
+
+function underAny(absPath: string, roots: readonly string[]): boolean {
+  return roots.some((root) => absPath === root || absPath.startsWith(root + '/'))
+}
+
 function isAllowed(absPath: string): boolean {
-  return ALLOWED_ROOTS.some((root) => absPath === root || absPath.startsWith(root + '/'))
+  if (isDenied(absPath)) return false
+  return underAny(absPath, ALLOWED_ROOTS)
+}
+
+/**
+ * The allowed roots with their OWN symlinks resolved.
+ *
+ * Needed because the post-resolve check compares a fully resolved file path,
+ * and a root can itself be a link — macOS `/tmp` is a link to `/private/tmp`,
+ * so comparing a resolved path against the literal roots refused every
+ * legitimate file under it. A container could do the same to `/workspace`.
+ * Resolve both sides or the comparison is not like-for-like.
+ *
+ * Computed once; the roots do not move while the process runs.
+ */
+let resolvedRootsCache: string[] | null = null
+function resolvedRoots(): string[] {
+  if (resolvedRootsCache) return resolvedRootsCache
+  resolvedRootsCache = ALLOWED_ROOTS.map((root) => {
+    try {
+      return realpathSync(root)
+    } catch {
+      // A root that does not exist on this box cannot match anything anyway.
+      return root
+    }
+  })
+  return resolvedRootsCache
+}
+
+/** Is the path we are about to OPEN — links followed — inside the roots? */
+function isAllowedResolved(realPath: string): boolean {
+  if (isDenied(realPath)) return false
+  return underAny(realPath, ALLOWED_ROOTS) || underAny(realPath, resolvedRoots())
 }
 
 function stripTrailingSlash(value: string): string {
@@ -232,13 +312,44 @@ function serveDirectory(absPath: string, baseUrl: string): Response {
   })
 }
 
+function forbidden(): Response {
+  return new Response(`Forbidden path. Allowed roots: ${ALLOWED_ROOTS.join(', ')}`, {
+    status: 403,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
+  })
+}
+
 function serveFile(absPath: string, baseUrl: string, injectBaseTag = false): Response {
   try {
-    if (!isAllowed(absPath)) {
-      return new Response(`Forbidden path. Allowed roots: ${ALLOWED_ROOTS.join(', ')}`, {
-        status: 403,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8', ...corsHeaders },
+    if (!isAllowed(absPath)) return forbidden()
+
+    // AUTHORIZE THE PATH THAT WILL ACTUALLY BE OPENED.
+    //
+    // `normalize()` collapses `..` but does NOT follow symlinks, while
+    // `readFileSync` does — so the check above and the read below could be
+    // looking at two different files. The agent can write to every allowed
+    // root, so it can also create the link:
+    //
+    //   ln -s /home/kortix/.config /workspace/x
+    //   GET /abs/workspace/x/kortix-opencode.json   ->  the session's PAT
+    //
+    // Re-checking the resolved path closes that. The literal check stays in
+    // front of it so an obviously out-of-bounds request is still refused
+    // without touching the filesystem.
+    let realPath: string
+    try {
+      realPath = realpathSync(absPath)
+    } catch (err) {
+      const code = (err as { code?: string })?.code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return notFound(absPath)
+      throw err
+    }
+    if (realPath !== absPath && !isAllowedResolved(realPath)) {
+      logger.warn('[static-web] refused a link out of the allowed roots', {
+        requested: absPath,
+        resolved: realPath,
       })
+      return forbidden()
     }
 
     const mime = getMime(absPath)
@@ -246,14 +357,14 @@ function serveFile(absPath: string, baseUrl: string, injectBaseTag = false): Res
     // For HTML loaded via /open?path=, inject a <base> tag so relative asset
     // references (CSS, JS, images) resolve through the /abs/ route.
     if (injectBaseTag && isHtml(absPath)) {
-      const raw = readFileSync(absPath, 'utf-8')
+      const raw = readFileSync(realPath, 'utf-8')
       const patched = injectBase(raw, absPath, baseUrl)
       return new Response(patched, {
         headers: { 'Content-Type': mime, ...corsHeaders },
       })
     }
 
-    const data = readFileSync(absPath)
+    const data = readFileSync(realPath)
     return new Response(data, {
       headers: { 'Content-Type': mime, ...corsHeaders },
     })
@@ -391,7 +502,11 @@ export function startStaticWebServer(port: number = DEFAULT_STATIC_PORT): Static
       hostname: '0.0.0.0',
       // Large media files (video/audio) over slow links can exceed Bun's
       // default 10s idle timeout mid-transfer; give downloads room to finish.
-      idleTimeout: 120,
+      // idleTimeout DISABLED (0): Bun's max is 255s and Bun does not reset the
+      // idle timer on server->client writes, so any fixed ceiling can still cut
+      // a slow large transfer mid-stream. 0 lets the transfer finish; a real
+      // client disconnect still aborts the request.
+      idleTimeout: 0,
       fetch: (req) => handleRequest(req, boundPort),
     })
     boundPort = server.port ?? port

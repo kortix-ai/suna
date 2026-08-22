@@ -16,34 +16,27 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
+import { Plus } from '@/features/icon/icons/plus';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
-import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { listAccounts, type KortixAccount } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import {
-  CheckCircleSolid,
-  ChevronsUpDown,
-  CogOneSolid,
-  CreditCardSolid,
-  Search,
-} from '@mynaui/icons-react';
-import { Icon } from '../icon/icon';
+  CheckCircleIcon as CheckCircleSolid,
+  CaretUpDownIcon as ChevronsUpDown,
+  GearSixIcon as CogOneSolid,
+  CreditCardIcon as CreditCardSolid,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 
-export type AccountSwitcherVariant = 'header' | 'sidebar';
-
-export function AccountSwitcher({
-  variant = 'header',
-  className,
-}: {
-  variant?: AccountSwitcherVariant;
-  className?: string;
-}) {
+export function AccountSwitcher({ className }: { className?: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
@@ -107,44 +100,28 @@ export function AccountSwitcher({
   };
 
   const label = activeAccount?.name || 'Account';
-  const tile = <EntityAvatar label={label} size={variant === 'header' ? 'xs' : 'sm'} />;
+  const tile = <EntityAvatar label={label} size="xs" />;
 
-  const trigger =
-    variant === 'header' ? (
-      <Button
-        variant="ghost"
-        size="sm"
-        className={cn('max-sm:gap-1 max-sm:px-1.5', className)}
-        aria-label={tHardcodedUi.raw(
-          'componentsLayoutAccountSwitcher.line137JsxAttrAriaLabelSwitchAccount',
-        )}
-      >
-        {tile}
-        <span className="max-w-40 truncate text-sm font-medium sm:inline">{label}</span>
-        <ChevronsUpDown className="text-muted-foreground hidden size-3 shrink-0 lg:block" />
-      </Button>
-    ) : (
-      <SidebarMenuButton
-        size="lg"
-        className={cn(
-          'group/trigger relative h-auto gap-2 rounded-2xl border border-transparent bg-transparent px-1.5 py-1',
-          'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
-          'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
-        )}
-      >
-        {tile}
-        <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-          {label}
-        </span>
-        <ChevronsUpDown className="text-muted-foreground/40 ml-auto size-3 shrink-0 group-data-[collapsible=icon]:hidden" />
-      </SidebarMenuButton>
-    );
+  const trigger = (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn('max-sm:gap-1 max-sm:px-1.5', className)}
+      aria-label={tHardcodedUi.raw(
+        'componentsLayoutAccountSwitcher.line137JsxAttrAriaLabelSwitchAccount',
+      )}
+    >
+      {tile}
+      <span className="max-w-40 truncate text-sm font-medium sm:inline">{label}</span>
+      <ChevronsUpDown className="text-muted-foreground hidden size-3 shrink-0 lg:block" />
+    </Button>
+  );
 
   if (accountsQuery.isLoading && !activeAccount) {
-    // Header: render nothing while accounts load. The breadcrumb logo + page
+    // Render nothing while accounts load. The breadcrumb logo + page
     // label carry the header on their own, so a skeleton chip between them just
     // reads as noise — collapse it so it's simply `[logo] [label]`.
-    return variant === 'header' ? null : <Skeleton className="h-9 w-full rounded-lg" />;
+    return null;
   }
 
   const dropdown = (
@@ -190,7 +167,12 @@ export function AccountSwitcher({
                   <span className="min-w-0 flex-1 truncate text-sm leading-tight font-medium">
                     {itemLabel}
                   </span>
-                  {active && <CheckCircleSolid className="text-kortix-green size-3.5 shrink-0" />}
+                  {active && (
+                    <CheckCircleSolid
+                      weight="fill"
+                      className="text-kortix-green size-3.5 shrink-0"
+                    />
+                  )}
                 </DropdownMenuItem>
               );
             })
@@ -206,7 +188,7 @@ export function AccountSwitcher({
               router.push(`/accounts/${activeAccount.account_id}`);
             }}
           >
-            <CogOneSolid className="size-3.5" />
+            <CogOneSolid weight="fill" className="size-3.5" />
             <span className="flex-1 truncate text-sm font-medium">
               {tI18nHardcoded.raw(
                 'autoFeaturesLayoutAccountSwitcherJsxTextAccountSettings2afa9a37',
@@ -229,7 +211,7 @@ export function AccountSwitcher({
 
         {canCreateAccount && (
           <DropdownMenuItem onSelect={() => deferAfterClose(() => setCreateOpen(true))}>
-            <Icon.Plus className="size-3.5" />
+            <Plus className="size-3.5" />
             <span className="flex-1 truncate text-sm font-medium">
               {tHardcodedUi.raw('componentsLayoutAccountSwitcher.line286JsxTextNewAccount')}
             </span>
@@ -243,7 +225,7 @@ export function AccountSwitcher({
               )
             }
           >
-            <CreditCardSolid className="size-3.5" />
+            <CreditCardSolid weight="fill" className="size-3.5" />
             <span className="flex-1 truncate text-sm font-medium">Billing</span>
           </DropdownMenuItem>
         )}
@@ -253,15 +235,7 @@ export function AccountSwitcher({
 
   return (
     <>
-      {variant === 'sidebar' ? (
-        <SidebarMenu>
-          <SidebarMenuItem className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
-            {dropdown}
-          </SidebarMenuItem>
-        </SidebarMenu>
-      ) : (
-        dropdown
-      )}
+      {dropdown}
 
       <CreateAccountModal
         open={createOpen}
@@ -275,10 +249,17 @@ export function AccountSwitcher({
           });
           void queryClient.invalidateQueries({ queryKey: ['accounts'] });
           setSelectedAccountId(account.account_id);
+          // qk.projects.scope(): reaches every account's list (and the
+          // accountless slot), the same reach the old bare projects-literal
+          // prefix match had. Account creation is rare — over-invalidating
+          // costs nothing measurable.
           void queryClient.invalidateQueries({
-            queryKey: ['projects', account.account_id],
+            queryKey: qk.projects.scope(),
           });
-          router.push('/projects');
+          // The landing door, NOT the remembered project: that cookie names a
+          // project in the account being left. The door re-resolves the latest
+          // project for the account just switched to.
+          router.push(PROJECT_LANDING_PATH);
         }}
       />
     </>

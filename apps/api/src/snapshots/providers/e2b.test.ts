@@ -37,16 +37,22 @@ mock.module('e2b', () => ({
   waitForProcess: (processName: string) => `wait-for-process:${processName}`,
 }));
 mock.module('../../config', () => ({
-  config: { E2B_API_KEY: 'e2b-test-key' },
+  config: {
+    E2B_API_KEY: 'e2b-test-key',
+    E2B_DOMAIN: 'e2b.essentia.kortix.com',
+  },
 }));
 mock.module('../build-context', () => ({
   DEFAULT_CPU: 2,
   DEFAULT_MEMORY_GB: 4,
   KORTIX_ENTRYPOINT: '/usr/local/bin/kortix-entrypoint',
-  stageBuildContext: async () => ({
-    contextDir: '/tmp/kortix-e2b-adapter-test',
-    composedPath: '/tmp/kortix-e2b-adapter-test/Dockerfile',
-  }),
+  stageRuntimeBuildContext: async (input: { runtimeProfile?: string }) => {
+    const contextDir =
+      input.runtimeProfile === 'fast'
+        ? '/tmp/kortix-e2b-fast-adapter-test'
+        : '/tmp/kortix-e2b-adapter-test';
+    return { contextDir, composedPath: `${contextDir}/Dockerfile` };
+  },
 }));
 
 const originalFetch = globalThis.fetch;
@@ -63,6 +69,25 @@ afterEach(() => {
 });
 
 describe('E2B template adapter', () => {
+  test('stages the fast runtime profile through its dedicated renderer', async () => {
+    await e2bProvider.buildSnapshot({
+      snapshotName: 'kortix-fast-dev-abc',
+      slug: 'default',
+      userDockerfile: '# platform fast cold-boot runtime',
+      runtimeProfile: 'fast',
+      spec: {},
+    });
+
+    expect(builderCalls[0]).toEqual({
+      method: 'Template',
+      args: [{ fileContextPath: '/tmp/kortix-e2b-fast-adapter-test' }],
+    });
+    expect(builderCalls[1]).toEqual({
+      method: 'fromDockerfile',
+      args: ['/tmp/kortix-e2b-fast-adapter-test/Dockerfile'],
+    });
+  });
+
   test('builds the shared staged Dockerfile without snapshotting a tokenless runtime process', async () => {
     const logs: string[] = [];
 
@@ -165,9 +190,10 @@ describe('E2B template adapter', () => {
     await e2bProvider.deleteSnapshot('kortix-e2b-template');
 
     expect(requests.at(-1)).toEqual({
-      url: 'https://api.e2b.dev/templates/tpl-target',
+      url: 'https://api.e2b.essentia.kortix.com/templates/tpl-target',
       method: 'DELETE',
       apiKey: 'e2b-test-key',
     });
+    expect(requests[0]?.url).toBe('https://api.e2b.essentia.kortix.com/templates');
   });
 });

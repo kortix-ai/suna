@@ -1,7 +1,15 @@
 'use client';
 
-import { TrashSolid } from '@mynaui/icons-react';
-import { Check, Copy, Info, Monitor, MoreHorizontal, ScrollText, Shield } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  InfoIcon as Info,
+  MonitorIcon as Monitor,
+  DotsThreeIcon as MoreHorizontal,
+  ScrollIcon as ScrollText,
+  ShieldIcon as Shield,
+  TrashIcon,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState, type ReactNode } from 'react';
 
@@ -21,6 +29,18 @@ import { useCopy } from '@/hooks/use-copy';
 import { cn } from '@/lib/utils';
 import { TunnelAuditTable } from './tunnel-audit-table';
 import { TunnelScopeToggles } from './tunnel-scope-toggles';
+
+// Hoisted so render does not rebuild a formatter per row. Options mirror the
+// spec defaults of `Date.prototype.toLocaleString()` (numeric date + time), so
+// output is byte-identical to the previous inline calls.
+const DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
 
 interface TunnelSettingsDialogProps {
   tunnel: TunnelConnection | null;
@@ -90,8 +110,8 @@ export function TunnelSettingsDialog({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={onDelete} variant="destructive">
-                    <TrashSolid className="shrink-0" />
+                  <DropdownMenuItem onClick={onDelete}>
+                    <TrashIcon className="shrink-0" />
                     Delete connection
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -207,7 +227,7 @@ function ConnectionInfoTab({ connection }: { connection: TunnelConnection }) {
           <span className="text-muted-foreground text-sm">None</span>
         ),
     },
-    { label: 'Created', value: new Date(connection.createdAt).toLocaleString() },
+    { label: 'Created', value: DATE_TIME_FORMAT.format(new Date(connection.createdAt)) },
   ];
 
   if (connection.lastHeartbeatAt) {
@@ -215,7 +235,7 @@ function ConnectionInfoTab({ connection }: { connection: TunnelConnection }) {
       label: 'Last Heartbeat',
       value: (
         <span className="text-sm tabular-nums">
-          {new Date(connection.lastHeartbeatAt).toLocaleString()}
+          {DATE_TIME_FORMAT.format(new Date(connection.lastHeartbeatAt))}
         </span>
       ),
     });

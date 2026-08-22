@@ -9,29 +9,37 @@
 // per account+flow+provider in localStorage.
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  KeyRound,
-  RefreshCw,
-  RotateCcw,
-  Search,
-  ShieldCheck,
-  Users,
-} from 'lucide-react';
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  ArrowSquareOutIcon as ExternalLink,
+  KeyIcon as KeyRound,
+  ArrowClockwiseIcon as RefreshCw,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  MagnifyingGlassIcon as Search,
+  ShieldCheckIcon as ShieldCheck,
+  UsersIcon as Users,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -49,9 +57,11 @@ import {
   listScimTokens,
 } from '@/lib/iam-client';
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
+import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 import { buildScimBaseUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
-import { listAccountMembers } from '@kortix/sdk/projects-client';
+import { relativeTime } from '@/lib/utils/date';
+import { listAccountMembers } from '@kortix/sdk';
 import {
   type GuideStep,
   PROVIDER_GUIDES,
@@ -72,6 +82,11 @@ const PROVIDER_ICONS: Record<ProviderGuide['id'], string> = {
   entra: '/provider-icons/azure.svg',
   okta: '/provider-icons/okta.svg',
   google: '/provider-icons/google-workspace.svg',
+  cloudflare: '/provider-icons/cloudflare.svg',
+  onelogin: '/provider-icons/onelogin.svg',
+  jumpcloud: '/provider-icons/jumpcloud.svg',
+  pingone: '/provider-icons/pingone.svg',
+  auth0: '/provider-icons/auth0.svg',
   custom: '/provider-icons/generic-provider.svg',
 };
 
@@ -166,24 +181,27 @@ async function copyValue(value: string, msg: string) {
  */
 function InstructionText({ text }: { text: string }) {
   const parts = text.split(/"([^"]+)"/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        i % 2 === 1 ? (
-          <code
-            // biome-ignore lint/suspicious/noArrayIndexKey: static text, stable order
-            key={i}
-            className="bg-muted/60 text-foreground rounded px-1 py-0.5 font-mono text-xs"
-          >
-            {part}
-          </code>
-        ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static text, stable order
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </>
-  );
+  // Key each segment by its character offset in the source text — stable and
+  // unique even when the same fragment appears twice.
+  const nodes: ReactNode[] = [];
+  let offset = 0;
+  parts.forEach((part, i) => {
+    const quoted = i % 2 === 1;
+    nodes.push(
+      quoted ? (
+        <code
+          key={`q${offset}`}
+          className="bg-muted/60 text-foreground rounded px-1 py-0.5 font-mono text-xs"
+        >
+          {part}
+        </code>
+      ) : (
+        <span key={`t${offset}`}>{part}</span>
+      ),
+    );
+    offset += part.length + (quoted ? 2 : 0);
+  });
+  return <>{nodes}</>;
 }
 
 /**
@@ -216,7 +234,7 @@ function SchematicPanel({ schematic }: { schematic: StepSchematic }) {
                 {row.value ?? row.label}
               </Badge>
             ) : row.value ? (
-              <code className="bg-muted/50 min-w-0 max-w-[60%] truncate rounded px-1.5 py-0.5 font-mono text-xs">
+              <code className="bg-muted/50 max-w-[60%] min-w-0 truncate rounded px-1.5 py-0.5 font-mono text-xs">
                 {row.value}
               </code>
             ) : null}
@@ -348,6 +366,12 @@ function ClaimsTable({
   );
 }
 
+// window.location.origin never changes for a loaded document, so the
+// subscription is a no-op; the server snapshot is empty.
+const subscribeToOrigin = () => () => {};
+const getBrowserOrigin = () => window.location.origin;
+const getServerOrigin = () => '';
+
 function SpValueRows({
   urls,
   entityIdLabel = 'Identifier (Entity ID)',
@@ -363,11 +387,11 @@ function SpValueRows({
   includeSignOnUrl?: boolean;
 }) {
   // The SP-initiated sign-in page is this app's own origin — the exact value
-  // we set live ({origin}/auth), computed instead of described.
-  const signOnUrl = useMemo(
-    () => (typeof window === 'undefined' ? null : `${window.location.origin}/auth`),
-    [],
-  );
+  // we set live ({origin}/auth), computed instead of described. Read through
+  // useSyncExternalStore (same pattern as use-deployment-cli-install-command)
+  // so the browser value settles during hydration instead of after paint.
+  const origin = useSyncExternalStore(subscribeToOrigin, getBrowserOrigin, getServerOrigin);
+  const signOnUrl = origin ? `${origin}/auth` : null;
   if (!urls) return null;
   const entityRow = <CopyRow label={entityIdLabel} value={urls.entityId} />;
   const acsRow = <CopyRow label={acsLabel} value={urls.acsUrl} />;
@@ -505,38 +529,45 @@ function MetadataInputStep({
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        {(
-          [
-            ['url', 'Dynamic configuration', 'Recommended — a metadata URL'],
-            ['xml', 'Manual configuration', 'Paste the metadata XML'],
-          ] as const
-        ).map(([m, title, sub]) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setMode(m)}
-            aria-pressed={mode === m}
-            className={cn(
-              'rounded-md border px-4 py-3 text-left transition-colors',
-              mode === m
-                ? 'border-foreground bg-popover'
-                : 'border-border/60 bg-card hover:border-border text-muted-foreground',
-            )}
-          >
-            <span className={cn('block text-sm font-medium', mode === m && 'text-foreground')}>
-              {title}
-            </span>
-            <span className="text-muted-foreground block text-xs">{sub}</span>
-          </button>
-        ))}
+        {
+          // Google (and any xml-preferred IdP) hosts NO metadata URL, so the
+          // 'url' card would send a rule-following admin to a dead input.
+          // Drop it — and its "Recommended" lure — for those providers.
+          (config.preferredMetadata === 'xml'
+            ? ([['xml', 'Paste the metadata XML', 'Your IdP offers an XML download only']] as const)
+            : ([
+                ['url', 'Dynamic configuration', 'Recommended — a metadata URL'],
+                ['xml', 'Manual configuration', 'Paste the metadata XML'],
+              ] as const)
+          ).map(([m, title, sub]) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              aria-pressed={mode === m}
+              className={cn(
+                'rounded-md border px-4 py-3 text-left transition-colors',
+                mode === m
+                  ? 'border-foreground bg-popover'
+                  : 'border-border/60 bg-card hover:border-border text-muted-foreground',
+              )}
+            >
+              <span className={cn('block text-sm font-medium', mode === m && 'text-foreground')}>
+                {title}
+              </span>
+              <span className="text-muted-foreground block text-xs">{sub}</span>
+            </button>
+          ))
+        }
       </div>
 
       <div className="border-border/60 bg-popover space-y-1.5 rounded-md border p-4">
-        <Label>
+        <Label htmlFor="sso-idp-metadata">
           {mode === 'url' ? 'Identity provider metadata URL' : 'Identity provider metadata XML'}
         </Label>
         {mode === 'url' ? (
           <Input
+            id="sso-idp-metadata"
             value={url}
             onChange={(e) => {
               setUrl(e.target.value);
@@ -547,6 +578,7 @@ function MetadataInputStep({
           />
         ) : (
           <textarea
+            id="sso-idp-metadata"
             value={xml}
             onChange={(e) => {
               setXml(e.target.value);
@@ -724,7 +756,7 @@ function ImportForm({
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label>Federation metadata</Label>
+          <Label htmlFor="entra-federation-metadata">Federation metadata</Label>
           <div className="border-border/70 inline-flex overflow-hidden rounded-md border">
             {(
               [
@@ -750,6 +782,7 @@ function ImportForm({
         </div>
         {metaKind === 'url' ? (
           <Input
+            id="entra-federation-metadata"
             value={metaUrl}
             onChange={(e) => setMetaUrl(e.target.value)}
             placeholder={config.metadataUrlPlaceholder ?? 'https://…/saml/metadata.xml'}
@@ -758,6 +791,7 @@ function ImportForm({
           />
         ) : (
           <textarea
+            id="entra-federation-metadata"
             value={metaXml}
             onChange={(e) => setMetaXml(e.target.value)}
             placeholder="<EntityDescriptor …>…</EntityDescriptor>"
@@ -818,25 +852,43 @@ function ImportForm({
 // (ScimValuesPanel below) then keeps both visible on every remaining Entra
 // step, instead of vanishing the moment you click Continue.
 
-function StepBlocks({
-  blocks,
-  spUrls,
-}: {
-  blocks: StepBlock[];
-  spUrls: SamlSpUrls | null;
-}) {
+/** Content-derived key for a static guide block (kind + its distinguishing
+ *  field), so keys survive without leaning on the iteration index. */
+function stepBlockKey(block: StepBlock): string {
+  switch (block.kind) {
+    case 'text':
+      return `text:${block.text}`;
+    case 'sp-values':
+      return `sp-values:${block.entityIdLabel ?? ''}:${block.acsLabel ?? ''}`;
+    case 'claims-table':
+      return `claims-table:${block.rows.map((r) => r.name).join(',')}`;
+    case 'schematic':
+      return `schematic:${block.schematic.title}`;
+    default:
+      return `image:${block.src}`;
+  }
+}
+
+function StepBlocks({ blocks, spUrls }: { blocks: StepBlock[]; spUrls: SamlSpUrls | null }) {
+  // Static guide data — keys come from block content, with a per-render
+  // occurrence counter to disambiguate a repeated identical block.
+  const seen = new Map<string, number>();
+  const keyed = blocks.map((block) => {
+    const base = stepBlockKey(block);
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return { block, key: n === 0 ? base : `${base}#${n}` };
+  });
   return (
     <>
-      {blocks.map((block, i) =>
+      {keyed.map(({ block, key }) =>
         block.kind === 'text' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <p key={i} className="text-foreground text-sm leading-relaxed">
+          <p key={key} className="text-foreground text-sm leading-relaxed">
             <InstructionText text={block.text} />
           </p>
         ) : block.kind === 'sp-values' ? (
           <SpValueRows
-            // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-            key={i}
+            key={key}
             urls={spUrls}
             entityIdLabel={block.entityIdLabel}
             acsLabel={block.acsLabel}
@@ -844,11 +896,12 @@ function StepBlocks({
             includeSignOnUrl={block.includeSignOnUrl}
           />
         ) : block.kind === 'claims-table' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <ClaimsTable key={i} rows={block.rows} />
+          <ClaimsTable key={key} rows={block.rows} />
+        ) : block.kind === 'schematic' ? (
+          // Standalone schematic — no backing screenshot (SCIM provider guides).
+          <SchematicPanel key={key} schematic={block.schematic} />
         ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <StepFigure key={i} src={block.src} alt={block.alt} schematic={block.schematic} />
+          <StepFigure key={key} src={block.src} alt={block.alt} schematic={block.schematic} />
         ),
       )}
     </>
@@ -1121,7 +1174,14 @@ function SsoTestStatusPanel({
   );
 }
 
-function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
+function ProvisionedStatusPanel({
+  accountId,
+  cadenceHint,
+}: {
+  accountId: string;
+  /** Per-provider "when does the IdP push" copy (guide.config.syncCadenceHint). */
+  cadenceHint?: string;
+}) {
   const membersQuery = useQuery({
     queryKey: ['scim-verify-members', accountId],
     queryFn: () => listAccountMembers(accountId),
@@ -1134,11 +1194,25 @@ function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
     refetchInterval: 8_000,
     staleTime: 4_000,
   });
+  // Same key as the connect step's resume query — this observer just adds
+  // polling so "Last sync activity" ticks while the admin watches the IdP run.
+  const tokensQuery = useQuery({
+    queryKey: ['scim-tokens', accountId],
+    queryFn: () => listScimTokens(accountId),
+    refetchInterval: 8_000,
+    staleTime: 4_000,
+  });
 
   const scimGroups = (groupsQuery.data ?? []).filter((g) => g.source === 'scim');
   const scimMemberCount = scimGroups.reduce((sum, g) => sum + (g.member_count ?? 0), 0);
   const totalMembers = membersQuery.data?.length ?? null;
   const isLoading = membersQuery.isLoading || groupsQuery.isLoading;
+
+  // Kortix is the SCIM server: the freshest signal we own is when the IdP
+  // last made an authenticated SCIM call (stamped on every request, including
+  // no-change reconciliation reads). Active tokens only.
+  const lastSyncAt = latestScimSyncAt(tokensQuery.data ?? []);
+  const freshness = scimSyncFreshness(lastSyncAt);
 
   return (
     <div className="border-border/70 bg-popover space-y-3 rounded-md border p-4">
@@ -1157,10 +1231,35 @@ function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
           onClick={() => {
             membersQuery.refetch();
             groupsQuery.refetch();
+            tokensQuery.refetch();
           }}
         >
           <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
         </Button>
+      </div>
+      {/* Two lines on purpose — mirrors the SCIM card's panel so the label +
+          value never wrap mid-phrase on narrow layouts. */}
+      <div className="space-y-0.5 text-xs">
+        <p className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              freshness === 'live' && 'bg-kortix-green',
+              freshness === 'recent' && 'bg-kortix-green/60',
+              freshness === 'quiet' && 'bg-muted-foreground/40',
+              freshness === 'never' && 'bg-amber-500',
+            )}
+          />
+          <span className="text-muted-foreground whitespace-nowrap">Last sync activity</span>
+          <span className="text-foreground whitespace-nowrap font-medium">
+            {lastSyncAt ? relativeTime(lastSyncAt) : 'none yet'}
+          </span>
+        </p>
+        {freshness === 'never' && !tokensQuery.isLoading && (
+          <p className="text-muted-foreground pl-3">
+            Your IdP hasn’t connected — check provisioning is running there.
+          </p>
+        )}
       </div>
       {isLoading ? (
         <Skeleton className="h-12 w-full rounded-md" />
@@ -1190,8 +1289,9 @@ function ProvisionedStatusPanel({ accountId }: { accountId: string }) {
         </div>
       )}
       <p className="text-muted-foreground text-xs">
-        Refreshes automatically every few seconds — give Entra's provisioning cycle a minute after
-        you click Start (or use Provision on demand for an instant push).
+        Refreshes automatically every few seconds.{' '}
+        {cadenceHint ??
+          'Your IdP pushes changes on its own schedule — no manual action needed on the Kortix side.'}
       </p>
     </div>
   );
@@ -1336,7 +1436,9 @@ function StepBody({
         />
       ) : step.kind === 'test' ? (
         <div className="space-y-4">
-          {flow === 'scim' && <ProvisionedStatusPanel accountId={accountId} />}
+          {flow === 'scim' && (
+            <ProvisionedStatusPanel accountId={accountId} cadenceHint={config.syncCadenceHint} />
+          )}
           {flow === 'sso' && (
             <SsoTestStatusPanel accountId={accountId} baselineRef={ssoBaselineRef} />
           )}
@@ -1427,13 +1529,19 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
 
   const [activeStep, setActiveStep] = useState(0);
   const [completed, setCompleted] = useState<string[]>([]);
+  // Change-provider / start-over confirmation (Kortix allows ONE SSO provider
+  // per account, so switching mid-setup abandons the current one). Declared
+  // with the other hooks — above the early returns — so it can never be called
+  // conditionally (react-hooks/rules-of-hooks).
+  const [confirmAction, setConfirmAction] = useState<'change' | 'reset' | null>(null);
 
   // Restore progress when a guide opens; jump to the first incomplete step.
   useEffect(() => {
     if (!guide) return;
     const done = loadCompleted(flow, accountId, guide.id);
     setCompleted(done);
-    const firstOpen = guide.steps.findIndex((s) => !done.includes(s.id));
+    const doneSet = new Set(done);
+    const firstOpen = guide.steps.findIndex((s) => !doneSet.has(s.id));
     setActiveStep(firstOpen === -1 ? guide.steps.length - 1 : firstOpen);
   }, [accountId, flow, guide]);
 
@@ -1467,10 +1575,39 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
     if (idx >= 0 && idx < guide.steps.length - 1) setActiveStep(idx + 1);
   };
 
-  const startOver = () => {
+  // In-progress state = anything that would be lost by switching away or
+  // resetting. Kortix allows ONE SSO provider per account, so changing
+  // provider mid-setup abandons the current one — mirror Vercel and confirm
+  // + actually reset it, rather than leaking stale half-configured state.
+  // (confirmAction is declared with the hooks above — never after a return.)
+  const metadataStashed =
+    typeof window !== 'undefined' && guide
+      ? loadMetadataStash(accountId, guide.id) !== null
+      : false;
+  const hasProgress = completed.length > 0 || metadataStashed || scimMinted !== null;
+
+  const clearCurrentProgress = () => {
+    if (!guide) return;
     setCompleted([]);
     saveCompleted(flow, accountId, guide.id, []);
+    setScimMinted(null);
+    ssoBaselineRef.current = null;
+    try {
+      window.localStorage.removeItem(metadataStashKey(accountId, guide.id));
+    } catch {
+      /* non-critical */
+    }
+  };
+
+  const startOver = () => {
+    clearCurrentProgress();
     setActiveStep(0);
+  };
+
+  const changeProviderRoute = `/accounts/${accountId}/${config.route}`;
+  const goChangeProvider = () => {
+    clearCurrentProgress();
+    router.push(changeProviderRoute);
   };
 
   const finish = () => {
@@ -1480,6 +1617,9 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
 
   // biome-ignore lint/style/noNonNullAssertion: guide.steps is always non-empty (guide is checked above) and the index is clamped into range.
   const step = guide.steps[Math.min(activeStep, guide.steps.length - 1)]!;
+
+  // One Set for the per-step done lookups in the rail below.
+  const completedSet = new Set(completed);
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -1492,15 +1632,23 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={startOver} className="gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => (hasProgress ? setConfirmAction('reset') : startOver())}
+            className="gap-1.5"
+          >
             <RotateCcw className="size-3.5 shrink-0" />
             Start over
           </Button>
-          <Button asChild variant="ghost" size="sm">
-            <Link href={`/accounts/${accountId}/${config.route}`}>
-              <ArrowLeft className="mr-1.5 size-3.5 shrink-0" />
-              Change provider
-            </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => (hasProgress ? setConfirmAction('change') : goChangeProvider())}
+            className="gap-1.5"
+          >
+            <ArrowLeft className="mr-1.5 size-3.5 shrink-0" />
+            Change provider
           </Button>
         </div>
       </div>
@@ -1510,7 +1658,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
             solid active circle, muted upcoming. Whole row is the target. */}
         <nav aria-label="Setup steps" className="space-y-1 self-start">
           {guide.steps.map((s, i) => {
-            const isDone = completed.includes(s.id);
+            const isDone = completedSet.has(s.id);
             const isActive = i === activeStep;
             return (
               <button
@@ -1592,6 +1740,32 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmAction !== null}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+        title={confirmAction === 'change' ? 'Change provider?' : 'Start over?'}
+        description={
+          confirmAction === 'change' ? (
+            <span>
+              You can connect only one identity provider per account. Your in-progress{' '}
+              <strong>{guide.name}</strong> setup will be reset.
+            </span>
+          ) : (
+            <span>
+              This clears your progress for <strong>{guide.name}</strong> and returns to the first
+              step.
+            </span>
+          )
+        }
+        confirmLabel={confirmAction === 'change' ? 'Change provider' : 'Start over'}
+        confirmVariant="destructive"
+        onConfirm={() => {
+          if (confirmAction === 'change') goChangeProvider();
+          else startOver();
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 }

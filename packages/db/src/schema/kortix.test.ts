@@ -1,6 +1,10 @@
 import { describe, test, expect } from 'bun:test';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import {
+  permissions,
+  objectPolicies,
+  roleAssignments,
+  iamRoles,
   kortixSchema,
   sandboxStatusEnum,
   sandboxProviderEnum,
@@ -12,7 +16,6 @@ import {
   apiKeyStatusEnum,
   apiKeyTypeEnum,
   accountRoleEnum,
-  scopeEffectEnum,
   tunnelStatusEnum,
   platformRoleEnum,
   changeRequestStatusEnum,
@@ -20,6 +23,8 @@ import {
   accountMembers,
   projects,
   projectMembers,
+  projectSessions,
+  projectSessionConnectorBindings,
   projectGroupGrants,
   projectGitConnections,
   projectLlmRoutingPolicies,
@@ -27,7 +32,23 @@ import {
   sandboxMembers,
   kortixApiKeys,
   sandboxComputeSessions,
+  apps,
+  appArtifacts,
+  appDeployments,
+  appRuntimes,
+  appDeploymentEvents,
+  creditAccounts,
+  creditLedger,
+  usageEvents,
+  gatewayRequestLogs,
+  auditEvents,
+  auditSessionSequences,
+  auditWebhookDeliveries,
   accountSsoProviders,
+  connectorAuthorizationStrategyEnum,
+  connectorCalls,
+  connectorConnections,
+  connectors,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -69,12 +90,7 @@ describe('kortix enums', () => {
 
   test('sandbox_provider enum lists supported providers', () => {
     expect(sandboxProviderEnum.enumName).toBe('sandbox_provider');
-    expect(sandboxProviderEnum.enumValues).toEqual([
-      'daytona',
-      'platinum',
-      'e2b',
-      'local-docker',
-    ]);
+    expect(sandboxProviderEnum.enumValues).toEqual(['daytona', 'platinum', 'e2b']);
   });
 
   test('project_status enum is active or archived', () => {
@@ -94,24 +110,20 @@ describe('kortix enums', () => {
   });
 
   test('session_lifecycle_command_status enum includes dead_lettered', () => {
-    expect(sessionLifecycleCommandStatusEnum.enumName).toBe(
-      'session_lifecycle_command_status',
-    );
+    expect(sessionLifecycleCommandStatusEnum.enumName).toBe('session_lifecycle_command_status');
     expect(sessionLifecycleCommandStatusEnum.enumValues).toContain('dead_lettered');
   });
 
-  test('project_role enum carries manager, editor, member, and the deprecated viewer', () => {
-    // `viewer` is retired (folded into `member`) but remains in the enum because
-    // Postgres can't drop an enum member — nothing reads or writes it.
+  test('project_role enum keeps the retired `editor` and `viewer` values it cannot drop', () => {
+    // Only `manager` and `member` are assignable. `viewer` folds into `member`
+    // and `editor` folds into `manager` (removed 2026-08-18, rows rewritten by
+    // 20260818120000000_project_role_editor_to_manager). Both remain in the
+    // enum because Postgres can't drop an enum member — nothing writes either.
     expect(projectRoleEnum.enumValues).toEqual(['manager', 'editor', 'member', 'viewer']);
   });
 
   test('project_access_request_status enum has the expected values', () => {
-    expect(projectAccessRequestStatusEnum.enumValues).toEqual([
-      'pending',
-      'approved',
-      'rejected',
-    ]);
+    expect(projectAccessRequestStatusEnum.enumValues).toEqual(['pending', 'approved', 'rejected']);
   });
 
   test('api_key_status enum has the expected values', () => {
@@ -124,10 +136,6 @@ describe('kortix enums', () => {
 
   test('account_role enum is ordered owner, admin, member', () => {
     expect(accountRoleEnum.enumValues).toEqual(['owner', 'admin', 'member']);
-  });
-
-  test('scope_effect enum is grant or revoke', () => {
-    expect(scopeEffectEnum.enumValues).toEqual(['grant', 'revoke']);
   });
 
   test('platform_role enum is non-empty and named', () => {
@@ -144,6 +152,152 @@ describe('kortix enums', () => {
     expect(changeRequestStatusEnum.enumName).toBe('change_request_status');
     expect(changeRequestStatusEnum.enumValues.length).toBeGreaterThan(0);
   });
+
+  test('connector authorization strategy is project or user', () => {
+    expect(connectorAuthorizationStrategyEnum.enumName).toBe('connector_authorization_strategy');
+    expect(connectorAuthorizationStrategyEnum.enumValues).toEqual(['project', 'user']);
+  });
+});
+
+describe('canonical audit ledger', () => {
+  test('exposes reconstruction, provenance, source-ledger, redaction, and integrity columns', () => {
+    expect(columnNames(auditEvents)).toEqual(
+      expect.arrayContaining([
+        'opencode_session_id',
+        'turn_id',
+        'message_id',
+        'tool_call_id',
+        'execution_id',
+        'session_sequence',
+        'agent_id',
+        'agent_name',
+        'initiator_actor_type',
+        'initiator_actor_id',
+        'parent_event_id',
+        'delegation_depth',
+        'authoritative_source',
+        'client_reported_source',
+        'phase',
+        'causation_id',
+        'source_ledger',
+        'source_record_id',
+        'source_revision',
+        'input_summary',
+        'output_summary',
+        'input_sha256',
+        'output_sha256',
+        'error_code',
+        'error_message',
+        'integrity_previous_hash',
+        'integrity_hash',
+      ]),
+    );
+  });
+
+  test('indexes ordered session reads and idempotent source-ledger projections', () => {
+    expect(indexNames(auditEvents)).toEqual(
+      expect.arrayContaining([
+        'idx_audit_events_account_project_sequence',
+        'idx_audit_events_account_session_sequence',
+        'idx_audit_events_source_phase',
+        'idx_audit_events_action_pattern',
+      ]),
+    );
+  });
+
+  test('preserves tenant scope when the account record is deleted', () => {
+    expect(getTableConfig(auditEvents).foreignKeys).toHaveLength(0);
+  });
+
+  test('stores one monotonic allocator row per session', () => {
+    expect(primaryColumn(auditSessionSequences)).toBe('session_id');
+    expect(columnNames(auditSessionSequences)).toEqual([
+      'session_id',
+      'last_sequence',
+      'last_integrity_hash',
+      'updated_at',
+    ]);
+  });
+
+  test('stores durable retry and dead-letter state for each webhook event', () => {
+    expect(columnNames(auditWebhookDeliveries)).toEqual(
+      expect.arrayContaining([
+        'delivery_id',
+        'webhook_id',
+        'event_id',
+        'status',
+        'attempts',
+        'next_attempt_at',
+        'locked_until',
+        'last_status',
+        'last_error',
+        'delivered_at',
+      ]),
+    );
+  });
+});
+
+describe('connectors', () => {
+  test('uses canonical physical database identifiers', () => {
+    expect(getTableConfig(connectors).name).toBe('connectors');
+    expect(getTableConfig(connectorConnections).name).toBe('connector_connections');
+    expect(getTableConfig(connectorCalls).name).toBe('connector_calls');
+  });
+
+  test('store one authorization strategy on each connector', () => {
+    expect(columnNames(connectors)).toContain('authorization_strategy');
+  });
+
+  test('maps connector call identifiers to the transition execution_id column', () => {
+    expect(primaryColumn(connectorCalls)).toBe('execution_id');
+  });
+
+  test('uses canonical physical index identifiers', () => {
+    expect(indexNames(connectors)).toEqual([
+      'idx_connectors_project',
+      'idx_connectors_account',
+      'idx_connectors_project_slug',
+      'idx_connectors_tenant_identity',
+      'idx_connectors_tenant_alias',
+    ]);
+    expect(indexNames(connectorConnections)).toEqual([
+      'idx_connector_connections_tenant_identity',
+      'idx_connector_connections_connector_identity',
+      'idx_connector_connections_default_project',
+      'idx_connector_connections_default_owner',
+      'idx_connector_connections_owner_label',
+      'idx_connector_connections_project_label',
+      'idx_connector_connections_project',
+      'idx_connector_connections_connector',
+    ]);
+    expect(indexNames(connectorCalls)).toEqual([
+      'idx_connector_calls_project',
+      'idx_connector_calls_project_session_created',
+      'idx_connector_calls_connector',
+      'idx_connector_calls_connection',
+      'idx_connector_calls_status',
+    ]);
+  });
+
+  test('uses connection_id for every active connection reference', () => {
+    expect(columnNames(connectorConnections)).toContain('connection_id');
+    expect(columnNames(connectorConnections)).not.toContain('profile_id');
+    expect(columnNames(connectorCalls)).toContain('connection_id');
+    expect(columnNames(connectorCalls)).not.toContain('profile_id');
+    expect(columnNames(projectSessionConnectorBindings)).toContain('connection_id');
+  });
+});
+
+describe('project session connector bindings', () => {
+  test('store whether connector bindings were configured explicitly', () => {
+    const column = getTableConfig(projectSessions).columns.find(
+      (candidate) => candidate.name === 'connector_bindings_configured',
+    );
+
+    expect(column).toBeDefined();
+    expect(column?.notNull).toBe(true);
+    expect(column?.default).toBe(false);
+  });
 });
 
 describe('sandbox compute provider attribution', () => {
@@ -152,6 +306,95 @@ describe('sandbox compute provider attribution', () => {
     expect(indexNames(sandboxComputeSessions)).toContain(
       'idx_sandbox_compute_sessions_provider_time',
     );
+  });
+});
+
+describe('Kortix Apps schema', () => {
+  test('stores stable app routing and an atomic active deployment pointer', () => {
+    expect(getTableConfig(apps).name).toBe('apps');
+    expect(columnNames(apps)).toEqual(
+      expect.arrayContaining([
+        'app_id',
+        'project_id',
+        'route_key',
+        'desired_state',
+        'active_deployment_id',
+        'idle_timeout_seconds',
+        'monthly_budget_usd',
+      ]),
+    );
+    expect(indexNames(apps)).toContain('apps_project_slug_live_unique');
+  });
+
+  test('stores immutable artifacts and deployment versions', () => {
+    expect(getTableConfig(appArtifacts).name).toBe('app_artifacts');
+    expect(getTableConfig(appDeployments).name).toBe('app_deployments');
+    expect(columnNames(appDeployments)).toEqual(expect.arrayContaining([
+      'created_by',
+      'source_session_id',
+      'actor_type',
+    ]));
+    expect(indexNames(appDeployments)).toContain('app_deployments_app_version_unique');
+  });
+
+  test('stores provider runtimes and append-only deployment events', () => {
+    expect(getTableConfig(appRuntimes).name).toBe('app_runtimes');
+    expect(getTableConfig(appDeploymentEvents).name).toBe('app_deployment_events');
+    expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_deployment');
+  });
+
+  test('attributes compute windows to App runtimes', () => {
+    expect(columnNames(sandboxComputeSessions)).toEqual(
+      expect.arrayContaining(['workload_type', 'app_runtime_id']),
+    );
+  });
+});
+
+describe('warm project sessions', () => {
+  // `idx_project_sessions_one_available_warm` used to arbitrate a warm-session
+  // create race. A warm session is now an ordinary session and a duplicate costs
+  // one extra box, bounded by the reserved concurrent-session slot, so the index
+  // was dropped (migrations/20260813203000000_drop_one_available_warm_index).
+  // Re-declaring it would make `db:generate` emit a CREATE against a dropped
+  // index, so the schema must stay free of it.
+  test('declares no partial unique index on the warm marker', () => {
+    const index = getTableConfig(projectSessions).indexes.find(
+      (candidate) => candidate.config.name === 'idx_project_sessions_one_available_warm',
+    );
+
+    expect(index).toBeUndefined();
+  });
+});
+
+describe('billing precision', () => {
+  test('wallet and ledger columns preserve sub-cent LLM charges', () => {
+    for (const [table, names] of [
+      [
+        creditAccounts,
+        [
+          'balance_precise',
+          'expiring_credits_precise',
+          'non_expiring_credits_precise',
+          'daily_credits_balance_precise',
+        ],
+      ],
+      [creditLedger, ['amount_precise', 'balance_after_precise']],
+      [usageEvents, ['cost_usd_precise']],
+      [gatewayRequestLogs, ['upstream_cost_precise', 'final_cost_precise']],
+    ] as const) {
+      const columnNamesToCheck: readonly string[] = names;
+      const columns = getTableConfig(table).columns.filter((column) =>
+        columnNamesToCheck.includes(column.name),
+      );
+      expect(columns).toHaveLength(names.length);
+      for (const column of columns) {
+        expect(column.getSQLType()).toBe('numeric(20, 10)');
+      }
+    }
+  });
+
+  test('gateway logs store cache-write tokens directly', () => {
+    expect(columnNames(gatewayRequestLogs)).toContain('cache_write_tokens');
   });
 });
 
@@ -208,9 +451,7 @@ describe('account_members table', () => {
   });
 
   test('account_role defaults to owner', () => {
-    const col = getTableConfig(accountMembers).columns.find(
-      (c) => c.name === 'account_role',
-    );
+    const col = getTableConfig(accountMembers).columns.find((c) => c.name === 'account_role');
     expect(col?.default).toBe('owner');
   });
 });
@@ -258,31 +499,29 @@ describe('project_llm_routing_policies table', () => {
   test('stores one versioned routing document per project with audit fields', () => {
     expect(getTableConfig(projectLlmRoutingPolicies).name).toBe('project_llm_routing_policies');
     expect(primaryColumn(projectLlmRoutingPolicies)).toBe('project_id');
-    expect(columnNames(projectLlmRoutingPolicies)).toEqual(expect.arrayContaining([
-      'vision_model',
-      'default_fallback_models',
-      'default_fallback_on',
-      'rules',
-      'updated_by',
-      'created_at',
-      'updated_at',
-    ]));
+    expect(columnNames(projectLlmRoutingPolicies)).toEqual(
+      expect.arrayContaining([
+        'vision_model',
+        'default_fallback_models',
+        'default_fallback_on',
+        'rules',
+        'updated_by',
+        'created_at',
+        'updated_at',
+      ]),
+    );
   });
 });
 
 describe('project_members table', () => {
   test('project_role defaults to member (the floor role)', () => {
-    const col = getTableConfig(projectMembers).columns.find(
-      (c) => c.name === 'project_role',
-    );
+    const col = getTableConfig(projectMembers).columns.find((c) => c.name === 'project_role');
     expect(col?.default).toBe('member');
   });
 
   test('enforces a unique project/user index', () => {
     const cfg = getTableConfig(projectMembers);
-    const unique = cfg.indexes.find(
-      (i) => i.config.name === 'idx_project_members_project_user',
-    );
+    const unique = cfg.indexes.find((i) => i.config.name === 'idx_project_members_project_user');
     expect(unique?.config.unique).toBe(true);
   });
 });
@@ -302,17 +541,13 @@ describe('project_git_connections table', () => {
   });
 
   test('managed flag defaults to false', () => {
-    const col = getTableConfig(projectGitConnections).columns.find(
-      (c) => c.name === 'managed',
-    );
+    const col = getTableConfig(projectGitConnections).columns.find((c) => c.name === 'managed');
     expect(col?.default).toBe(false);
   });
 
   test('enforces a unique project index', () => {
     const cfg = getTableConfig(projectGitConnections);
-    const unique = cfg.indexes.find(
-      (i) => i.config.name === 'idx_project_git_connections_project',
-    );
+    const unique = cfg.indexes.find((i) => i.config.name === 'idx_project_git_connections_project');
     expect(unique?.config.unique).toBe(true);
   });
 });
@@ -381,9 +616,7 @@ describe('kortixApiKeys table', () => {
 
   test('enforces a unique public_key index', () => {
     const cfg = getTableConfig(kortixApiKeys);
-    const unique = cfg.indexes.find(
-      (i) => i.config.name === 'idx_kortix_api_keys_public_key',
-    );
+    const unique = cfg.indexes.find((i) => i.config.name === 'idx_kortix_api_keys_public_key');
     expect(unique?.config.unique).toBe(true);
   });
 });
@@ -396,11 +629,107 @@ describe('accountSsoProviders table', () => {
   });
 
   test('enforce_sso is a not-null boolean defaulting to false', () => {
-    const col = getTableConfig(accountSsoProviders).columns.find(
-      (c) => c.name === 'enforce_sso',
-    );
+    const col = getTableConfig(accountSsoProviders).columns.find((c) => c.name === 'enforce_sso');
     expect(col).toBeDefined();
     expect(col?.notNull).toBe(true);
     expect(col?.default).toBe(false);
+  });
+});
+
+describe('canonical RBAC tables (PR2)', () => {
+  test('permissions is keyed by the action string itself', () => {
+    // The catalog IS the set of legal action strings, so the PK is the action
+    // and role_permissions.action can carry a real foreign key to it — the first
+    // time in this system's history that a role's action list is checked against
+    // anything but a JS Set at write time.
+    const cfg = getTableConfig(permissions);
+    const action = cfg.columns.find((c) => c.name === 'action');
+    expect(action?.primary).toBe(true);
+    expect(cfg.columns.map((c) => c.name).sort()).toEqual(
+      [
+        'action',
+        'area',
+        'created_at',
+        'delegable',
+        'description',
+        'implies',
+        'level',
+        'resource_type',
+        'scope_type',
+        'updated_at',
+      ].sort(),
+    );
+  });
+
+  test('permissions.delegable defaults to true', () => {
+    // false is the escalation ceiling (the old NON_DELEGABLE_ACTIONS Set), so a
+    // new permission must be delegable unless someone says otherwise.
+    const col = getTableConfig(permissions).columns.find((c) => c.name === 'delegable');
+    expect(col?.notNull).toBe(true);
+    expect(col?.default).toBe(true);
+  });
+
+  test('object_policies is one row per object TYPE', () => {
+    // Deny-by-default for agents is a property of the object type, not of the
+    // caller's tier — that was the `managerTier` argument threaded through
+    // isProjectResourceUsableByMember.
+    const cfg = getTableConfig(objectPolicies);
+    const key = cfg.columns.find((c) => c.name === 'object_type');
+    expect(key?.primary).toBe(true);
+    const dflt = cfg.columns.find((c) => c.name === 'unscoped_default_for_member');
+    expect(dflt?.notNull).toBe(true);
+  });
+
+  test('role_assignments carries every column the five legacy stores did', () => {
+    const cfg = getTableConfig(roleAssignments);
+    const names = cfg.columns.map((c) => c.name);
+    for (const required of [
+      'assignment_id',
+      'account_id',
+      'principal_type',
+      'principal_id',
+      'role_id',
+      'scope_type',
+      'scope_id',
+      'object_type',
+      'object_id',
+      'expires_at',
+      'granted_by',
+      'source',
+    ]) {
+      expect(names).toContain(required);
+    }
+    // object_id is TEXT, not uuid: an agent name / skill slug is a git-manifest
+    // key, exactly as iam_resource_grants.resource_id was.
+    const objectId = cfg.columns.find((c) => c.name === 'object_id');
+    expect(objectId?.getSQLType()).toBe('text');
+    expect(objectId?.notNull).toBe(false);
+  });
+
+  test('role_assignments indexes the four lookups the engine makes', () => {
+    const cfg = getTableConfig(roleAssignments);
+    const names = cfg.indexes.map((i) => i.config.name);
+    expect(names).toContain('idx_role_assignments_principal');
+    expect(names).toContain('idx_role_assignments_scope');
+    expect(names).toContain('idx_role_assignments_role');
+    expect(names).toContain('idx_role_assignments_account');
+  });
+
+  test('iam_roles.account_id is nullable so a system role can be one row', () => {
+    // NULL = a seeded system role shared by every account. Every legacy read
+    // filters account_id = :id, so those rows are invisible to old code.
+    const col = getTableConfig(iamRoles).columns.find((c) => c.name === 'account_id');
+    expect(col?.notNull).toBe(false);
+  });
+
+  test('project_members finally has a primary key', () => {
+    // It shipped with only idx_project_members_project_user, which is also every
+    // upsert's ON CONFLICT target — the one index guaranteeing correctness was
+    // the one a cleanup was most likely to drop (42P10, the account_members
+    // incident). The unique index is deliberately kept alongside the PK.
+    const cfg = getTableConfig(projectMembers);
+    const pk = cfg.primaryKeys[0];
+    expect(pk?.columns.map((c) => c.name)).toEqual(['project_id', 'user_id']);
+    expect(cfg.indexes.some((i) => i.config.name === 'idx_project_members_project_user')).toBe(true);
   });
 });

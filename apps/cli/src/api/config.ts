@@ -1,4 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { sandboxEnvValue } from './sandbox-env.ts';
@@ -35,7 +36,7 @@ export const DEFAULT_API_BASE = process.env.KORTIX_DEFAULT_API_BASE ?? 'https://
 // Local `pnpm dev` API server.
 export const DEFAULT_LOCAL_DEV_API_BASE = 'http://localhost:8008';
 // Kortix-internal hosted dev API.
-export const DEFAULT_INTERNAL_DEV_API_BASE = 'http://dev-api.kortix.com';
+export const DEFAULT_INTERNAL_DEV_API_BASE = 'https://dev-api.kortix.com';
 // The self-host Docker stack publishes its API on this port by default
 // (see `kortix self-host` DEFAULT_API_URL). The built-in `selfhost` host is
 // pre-pointed here so `kortix hosts use selfhost` works before login;
@@ -54,7 +55,7 @@ const LEGACY_LOCAL_HOST_NAME = 'local'; // → selfhost (localhost:13738)
 const LEGACY_LOCAL_API_BASE = 'http://localhost:13738';
 
 /** The global default project for a host — used by every project-scoped
- *  command (executor, connectors, sessions, …) when the cwd is not bound
+ *  command (connectors, sessions, …) when the cwd is not bound
  *  to a project via `.kortix/link.json`. Carries its account_id so the
  *  default always resolves under the right account. */
 export interface DefaultProjectRef {
@@ -188,9 +189,9 @@ export function deleteConfig(): void {
 
 /**
  * Resolve the active Host for the current invocation. Priority:
- *   1. KORTIX_CLI_TOKEN env var (synthetic ephemeral host, never persisted),
- *      falling back to KORTIX_EXECUTOR_TOKEN — both carry the session-scoped
- *      executor PAT the platform injects into a sandbox. (The SANDBOX credential
+ *   1. KORTIX_CLI_TOKEN env var (synthetic ephemeral host, never persisted).
+ *      It carries the session-scoped PAT the platform injects into a sandbox.
+ *      (The SANDBOX credential
  *      — KORTIX_SANDBOX_TOKEN / its legacy KORTIX_TOKEN alias — is deliberately
  *      NOT used here: it's the daemon's identity, not the user's, and does not
  *      authenticate against the project-scoped API routes the CLI calls.)
@@ -199,14 +200,14 @@ export function deleteConfig(): void {
  *   4. The `active` host in config.json
  */
 /**
- * True when the platform-injected sandbox token (KORTIX_CLI_TOKEN /
- * KORTIX_EXECUTOR_TOKEN) is present. `activeHost()` then resolves to a
+ * True when the platform-injected `KORTIX_CLI_TOKEN` is present.
+ * `activeHost()` then resolves to a
  * synthetic env host, which must outrank a `.kortix/link.json` host —
  * inside a sandbox the named host has no stored credentials, so honoring
  * the link would strand a fully-authenticated CLI on "not logged in".
  */
 function sandboxCliToken(): string | undefined {
-  return sandboxEnvValue('KORTIX_CLI_TOKEN') || sandboxEnvValue('KORTIX_EXECUTOR_TOKEN');
+  return sandboxEnvValue('KORTIX_CLI_TOKEN');
 }
 
 export function hasEnvTokenHost(): boolean {
@@ -394,6 +395,106 @@ export function validateHostName(name: string): void {
 
 // ─── Internal ─────────────────────────────────────────────────────────────
 
+/** Loopback, RFC1918, link-local, and CGNAT IPv4 ranges. */
+function isPrivateIPv4(host: string): boolean {
+  const [a, b] = host.split('.').map(Number);
+  return (
+    a === 0 || // unspecified 0.0.0.0/8
+    a === 10 || // 10.0.0.0/8
+    a === 127 || // loopback
+    (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
+    (a === 192 && b === 168) || // 192.168.0.0/16
+    (a === 169 && b === 254) || // 169.254.0.0/16 link-local
+    (a === 100 && b >= 64 && b <= 127) // 100.64.0.0/10 CGNAT
+  );
+}
+
+/** Loopback, unspecified, unique-local, link-local, and mapped private IPv4. */
+function isPrivateIPv6(host: string): boolean {
+  if (host === '::' || host === '::1') return true;
+
+  // WHATWG URL parsing canonicalizes `::ffff:192.168.1.50` to
+  // `::ffff:c0a8:132`. Recover the mapped IPv4 before applying its ranges.
+  const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
+  if (mapped) {
+    const value = Number.parseInt(mapped[1], 16) * 0x10000 + Number.parseInt(mapped[2], 16);
+    const ipv4 = [
+      (value >>> 24) & 0xff,
+      (value >>> 16) & 0xff,
+      (value >>> 8) & 0xff,
+      value & 0xff,
+    ].join('.');
+    return isPrivateIPv4(ipv4);
+  }
+
+  const firstHextet = Number.parseInt(host.split(':', 1)[0], 16);
+  return (
+    (firstHextet >= 0xfc00 && firstHextet <= 0xfdff) || // fc00::/7 unique-local
+    (firstHextet >= 0xfe80 && firstHextet <= 0xfebf) // fe80::/10 link-local
+  );
+}
+
+/**
+ * Is this host unreachable from the public internet — i.e. somewhere plain
+ * `http` is the legitimate, intended scheme?
+ *
+ * Loopback is the obvious case, but a self-host reaches its own API over any of:
+ *   - a container/service name on a private network — `http://kortix-api:8000`
+ *     (single-label: a public FQDN always has a dot)
+ *   - a LAN or VPC address — `http://192.168.1.50:8000`, `http://10.2.0.7:8000`
+ *   - a private DNS suffix — `.local`, `.internal`, `.lan`, `.home.arpa`
+ * None of those can present a public certificate, so upgrading them to https
+ * cannot succeed — it only replaces a working request with an opaque failure.
+ */
+function isPrivateHostname(rawHost: string): boolean {
+  const host = rawHost
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
+    .toLowerCase();
+  const ipFamily = isIP(host);
+  if (ipFamily === 4) return isPrivateIPv4(host);
+  if (ipFamily === 6) return isPrivateIPv6(host);
+  if (host === 'localhost') return true;
+
+  // A non-IP name without a dot is a container/service name, not a public FQDN.
+  if (!host.includes('.')) return true;
+  return (
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    host.endsWith('.lan') ||
+    host.endsWith('.home.arpa')
+  );
+}
+
+/**
+ * Kortix cloud APIs are HTTPS-only. A remote `http://` base 308-redirects to
+ * https, and `fetch` drops the `Authorization` header on the scheme change — so
+ * the bearer token silently never arrives and the call 401s as "Token rejected
+ * by the API" even after a successful browser login (and the same drop breaks
+ * the sandbox proxy, which reads the stored base directly). Upgrade any REMOTE
+ * http base to https; localhost / self-host (legitimately plain http) stay put.
+ *
+ * "Self-host" is why the predicate is `isPrivateHostname` and not just
+ * loopback: a compose deployment talks to its API as `http://kortix-api:8000`
+ * or `http://192.168.x.y:8000`, and forcing https there turns a working
+ * cleartext request into a TLS handshake against a non-TLS port — which
+ * surfaces only as an unexplained "Unable to connect", with no hint that the
+ * CLI rewrote the scheme.
+ */
+export function secureRemoteBase(base: string): string {
+  try {
+    const u = new URL(base);
+    if (u.protocol === 'http:' && !isPrivateHostname(u.hostname)) {
+      u.protocol = 'https:';
+      return u.toString().replace(/\/$/, '');
+    }
+  } catch {
+    // Not a parseable absolute URL — leave it for the caller/fetch to reject.
+  }
+  return base;
+}
+
 function normalizeConfig(parsed: Partial<Config>): Config {
   const hosts = parsed.hosts ?? {};
   const cleaned: Record<string, Host> = {};
@@ -402,7 +503,7 @@ function normalizeConfig(parsed: Partial<Config>): Config {
     const h = value as Partial<Host>;
     if (typeof h.token !== 'string') continue;
     cleaned[name] = {
-      url: h.url ?? DEFAULT_API_BASE,
+      url: secureRemoteBase(h.url ?? DEFAULT_API_BASE),
       token: h.token,
       user_id: h.user_id ?? '',
       user_email: h.user_email ?? '',

@@ -1,4 +1,223 @@
-import catalogJson from "./catalog.generated.json" with { type: "json" };
+import catalogJson from './catalog.generated.json' with { type: 'json' };
+
+export {
+  DEFAULT_ENABLEMENT_WINDOW_MONTHS,
+  defaultEnabledModelIds,
+  type EnablementCandidate,
+} from './enablement';
+
+// ─── Kortix-owned provider auth requirements ────────────────────────────────
+//
+// *** THE PROBLEM THIS FIXES ***
+// `CatalogProvider.env` (models.dev's `env` field, in catalog.generated.json)
+// lists EVERY env var the upstream's OFFICIAL SDK recognizes across ALL of
+// that SDK's supported auth methods — not what KORTIX's own gateway
+// transport actually reads. Most providers have exactly one implemented auth
+// method, so `env` happens to be the right requirement as-is. A few don't:
+//
+//   - `amazon-bedrock`: models.dev lists BOTH the SigV4 access-key pair
+//     (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY) AND the bearer-token var
+//     (AWS_BEARER_TOKEN_BEDROCK) plus AWS_REGION — because the AWS SDK
+//     supports both. Kortix's bedrock transport
+//     (packages/llm-gateway/src/transports/bedrock/request.ts) authenticates
+//     ONLY with the bearer token; the BYOK resolver
+//     (apps/api/src/llm-gateway/resolution/resolve-candidates.ts +
+//     models/provider-registry.ts) reads ONLY AWS_BEARER_TOKEN_BEDROCK +
+//     AWS_REGION. SigV4 signing is unimplemented (explicit
+//     TODO(bedrock-sigv4) in request.ts). Treating all 4 vars as one AND-of-
+//     everything requirement made a fully-working Bedrock connection show as
+//     "not connected" and made the connect form demand 2 dead fields.
+//
+//   - `google`: models.dev lists three ALIASES for the same single credential
+//     (GOOGLE_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY / GEMINI_API_KEY — all
+//     three are recognized interchangeably by @ai-sdk/google). Requiring all
+//     three together (the old AND-of-`env` behavior) made Google
+//     unconnectable through the modal — nobody sets three key aliases to the
+//     same value. Any ONE of them is sufficient.
+//
+// Providers NOT listed in the override map below have exactly one
+// implemented method, taken straight from the catalog's `env` — this map
+// only holds CORRECTIONS, so it stays small, and every entry must cite the
+// transport code that justifies it (grep-able so it doesn't silently rot).
+//
+// *** THE MODEL ***
+// A provider's real requirement is one or more independent auth METHODS
+// (`ProviderAuthRequirement.methods`); a provider is "connected" when ANY
+// method's env vars are ALL present (`isProviderAuthSatisfied`). This is
+// deliberately more general than a flat env-var list so a provider can gain
+// a second method later (e.g. Bedrock SigV4) without breaking existing
+// connections on the first one — see the amazon-bedrock entry's comment.
+//
+// *** WHO USES THIS ***
+// The single source of truth for BOTH "what fields does the connect form
+// ask for" (always `methods[0]`, via `primaryAuthEnvVars`) and "is this
+// provider connected" (`isProviderAuthSatisfied` over the FULL requirement)
+// — in the web provider modal (apps/web/src/lib/llm-providers.ts,
+// apps/web/src/hooks/opencode/provider-selection.ts), the SDK's native-mode
+// provider merge (packages/sdk/src/react/provider-selection.ts), and the CLI
+// (apps/cli/src/commands/providers.ts). All three derive from this module so
+// they can't drift from each other or from what the gateway/transports
+// actually read.
+//
+// *** AUDIT (2026-07-17) ***
+// Checked every catalog provider with more than one `env` var against
+// `packages/llm-gateway/src/catalog/compatibility.ts` (providerKindForNpm)
+// and `apps/api/src/llm-gateway/resolution/*`. Besides bedrock/google above:
+// azure, azure-cognitive-services, cloudflare-ai-gateway,
+// cloudflare-workers-ai, databricks, google-vertex,
+// google-vertex-anthropic, neon, privatemode-ai, and snowflake-cortex all
+// list multiple env vars that are genuinely DIFFERENT-PURPOSE fields of one
+// method (e.g. Vertex's project + location + credentials path) — real AND
+// requirements, not alias/extra-method lists — and none of them has a
+// gateway BYOK transport at all yet (providerKindForNpm returns null), so
+// they're only ever used in native mode, where every listed var is read
+// directly by the upstream SDK. No mismatch there; no override needed.
+//
+// NOTE: deliberately inlined here (not a separate ./auth-requirements
+// module) — this package publishes dist/ via `tsc` with
+// moduleResolution:"Bundler" (see tsconfig.build.json), which does not emit
+// the explicit .js extensions plain Node ESM needs on relative imports.
+// Every other export in this package has always lived in this one file for
+// the same reason; keep new code here too rather than reintroducing a
+// cross-file import that only breaks post-publish (`bun test`/`tsc --noEmit`
+// both resolve it fine in-repo, which is why this class of bug doesn't show
+// up until the SDK's install-smoke test actually runs the published tarball).
+
+export interface ProviderAuthMethod {
+  /** Optional label, surfaced only if a provider ever exposes >1 method in the UI (none do today — the connect form always uses methods[0]). */
+  label?: string;
+  /** Every one of these project-secret env vars must be set for this method to count as satisfied. */
+  envVars: string[];
+}
+
+export interface ProviderAuthRequirement {
+  /**
+   * One or more independent ways to authenticate. A provider is CONNECTED if
+   * ANY method's envVars are all present — see `isProviderAuthSatisfied`.
+   */
+  methods: ProviderAuthMethod[];
+}
+
+interface CatalogProviderLike {
+  id: string;
+  env?: string[];
+}
+
+const PROVIDER_AUTH_REQUIREMENT_OVERRIDES: Record<string, ProviderAuthRequirement> = {
+  'amazon-bedrock': {
+    methods: [
+      {
+        label: 'Bearer token',
+        // See the module doc comment above for the full trail. When SigV4
+        // signing lands, ADD a second method here (e.g. `{ label: 'IAM
+        // access key', envVars: ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY',
+        // 'AWS_REGION'] }`) — do not replace this one; existing bearer-token
+        // connections must keep working.
+        envVars: ['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION'],
+      },
+    ],
+  },
+  google: {
+    methods: [
+      // GOOGLE_GENERATIVE_AI_API_KEY first: the name @ai-sdk/google's own
+      // docs lead with, and what Kortix's CLI/UI have always written when
+      // connecting Google — kept as the connect form's primary field.
+      { envVars: ['GOOGLE_GENERATIVE_AI_API_KEY'] },
+      { envVars: ['GOOGLE_API_KEY'] },
+      { envVars: ['GEMINI_API_KEY'] },
+    ],
+  },
+};
+
+/**
+ * The auth requirement Kortix actually enforces for a catalog provider.
+ * Falls back to a single method requiring every var in `provider.env`
+ * (unchanged behavior) unless an override above corrects it.
+ */
+export function providerAuthRequirement(provider: CatalogProviderLike): ProviderAuthRequirement {
+  const override = PROVIDER_AUTH_REQUIREMENT_OVERRIDES[provider.id];
+  if (override) return override;
+  const env = provider.env ?? [];
+  return { methods: env.length > 0 ? [{ envVars: env }] : [] };
+}
+
+/**
+ * The env vars the connect form should collect for a provider — always the
+ * first (primary) auth method. Every provider has exactly one usable method
+ * today; this is the field list `ApiKeyConnectForm` renders and writes.
+ */
+export function primaryAuthEnvVars(provider: CatalogProviderLike): string[] {
+  return providerAuthRequirement(provider).methods[0]?.envVars ?? [];
+}
+
+/**
+ * True when at least one of the requirement's auth methods has every one of
+ * its env vars present, per `hasEnvVar`. ANY-OF-methods, ALL-OF-vars-within-
+ * a-method — the one predicate every "is this provider connected" check
+ * (web connect modal, model-selector gating, native-mode provider merge, CLI
+ * `providers ls`) should use instead of hand-rolling `envVars.every(...)`
+ * over the raw catalog list.
+ */
+export function isProviderAuthSatisfied(
+  requirement: ProviderAuthRequirement,
+  hasEnvVar: (envVar: string) => boolean,
+): boolean {
+  return requirement.methods.some(
+    (method) => method.envVars.length > 0 && method.envVars.every(hasEnvVar),
+  );
+}
+
+// One entry of models.dev's `reasoning_options` array. models.dev emits
+// THREE real shapes today (verified against the live api.json, 2026-07):
+//   - `{type:'effort', values:[...]}`       — a model-specific enum of effort
+//     labels (e.g. gpt-5.6-sol's `["none","low","medium","high","xhigh","max"]`).
+//     ~1522 models.
+//   - `{type:'toggle'}`                     — reasoning is a plain on/off
+//     switch, no enum/range. ~925 models.
+//   - `{type:'budget_tokens', min?, max?}`  — a raw thinking-token budget
+//     range, no discrete values. ~498 models, INCLUDING mainline Anthropic
+//     (claude-sonnet-4-5, claude-haiku-4-5, claude-opus-4-1 and dated
+//     variants all carry ONLY this shape — no `effort` entry at all).
+// `values`/`min`/`max` are all OPTIONAL on one shared interface (rather than a
+// strict discriminated union) so a 4th `type` models.dev adds later still
+// round-trips through the catalog without a type change here — this mirrors
+// the file's existing "never invent a literal union for an upstream enum"
+// convention. MUST ingest every shape faithfully — filtering to
+// `Array.isArray(values)` used to silently drop the toggle/budget_tokens
+// shapes (57.8% of all models with reasoning_options, including every
+// mainline Claude model). See `generationControlCapabilities` below for how
+// each shape maps to a UI control.
+export interface CatalogReasoningOption {
+  type: string;
+  values?: string[];
+  min?: number;
+  max?: number;
+}
+
+// A single price tier (models.dev's `cost.tiers[]` / `cost.context_over_200k`
+// shape) — an alternate per-token price that applies once some threshold
+// (currently always a context-size breakpoint) is crossed.
+export interface CatalogCostTier {
+  input?: number;
+  output?: number;
+  cache_read?: number;
+  cache_write?: number;
+  tier?: { type: string; size: number };
+}
+
+export interface CatalogCost {
+  input?: number;
+  output?: number;
+  cache_read?: number;
+  cache_write?: number;
+  tiers?: CatalogCostTier[];
+  context_over_200k?: CatalogCostTier;
+}
+
+export interface CatalogModalities {
+  input?: string[];
+  output?: string[];
+}
 
 export interface CatalogModel {
   id: string;
@@ -7,11 +226,184 @@ export interface CatalogModel {
   // Capabilities mirrored from models.dev by
   // apps/web/scripts/enrich-llm-catalog-capabilities.ts.
   // Single source of truth — consumers derive flags from these, never hardcode.
+  // Free-text blurb models.dev publishes for the model (e.g. picker tooltips).
+  description?: string;
   attachment?: boolean; // image / file input (vision)
   reasoning?: boolean;
+  // Present only for reasoning-capable models that expose a tunable knob —
+  // `[{type:'effort', values:[...]}]` today. A reasoning model with NO
+  // entry here (reasoning:true, reasoning_options absent/empty) still
+  // supports reasoning but doesn't publish a client-settable effort enum —
+  // generationControlCapabilities below then exposes NO effort control for it
+  // (we never fabricate effort values that models.dev doesn't advertise).
+  reasoning_options?: CatalogReasoningOption[];
   tool_call?: boolean;
+  // false means the model has a FIXED sampling temperature and rejects a
+  // client-supplied one (e.g. gpt-5.6-sol) — never show/send a temperature
+  // control for such a model.
   temperature?: boolean;
-  limit?: { context?: number; output?: number };
+  structured_output?: boolean;
+  // True when the model interleaves reasoning with tool calls (models.dev's
+  // `interleaved` flag) — some reasoning models can emit a tool call mid
+  // chain-of-thought rather than only after it completes. models.dev emits
+  // TWO shapes for this field (verified against the live api.json,
+  // 2026-07): a plain `boolean` (~34 models) AND an object like
+  // `{field:'reasoning_content'}` naming the response field the interleaved
+  // content arrives on (~623 models — the large majority). Filtering to
+  // `typeof === 'boolean'` used to silently drop the object shape entirely;
+  // both are ingested verbatim now.
+  interleaved?: boolean | { field?: string };
+  // True when the model's weights are publicly released (open-weights model,
+  // e.g. a self-hostable Llama/DeepSeek/Qwen checkpoint) vs. a closed API-only
+  // model. models.dev's `open_weights` field, mirrored verbatim.
+  open_weights?: boolean;
+  // Training data cutoff, models.dev's free-text field (e.g. "2026-02-16").
+  knowledge?: string;
+  // When models.dev last refreshed this model's own entry (distinct from
+  // `released`, the model's original release date).
+  last_updated?: string;
+  // Model family/lineage grouping (e.g. "gpt-sol", "claude-4", "o").
+  family?: string;
+  modalities?: CatalogModalities;
+  limit?: { context?: number; input?: number; output?: number };
+  cost?: CatalogCost;
+}
+
+// ─── Generation controls — capability-gated, single source of truth ────────
+//
+// The one place that decides "which generation knobs does this model
+// support, and what are their valid ranges" — consumed by BOTH the web UI
+// (to show/hide/bound a control) and the gateway resolution layer (to decide
+// which configured per-model default is safe to inject, and how to clamp
+// it). Never hardcode a per-model exception outside this function; extend
+// the capability derivation here instead so every consumer stays in sync.
+
+/** Generic per-model generation defaults a project can configure. Extensible
+ *  without a schema/migration change — see packages/db's jsonb column. */
+export interface GenerationConfig {
+  reasoningEffort?: string;
+  temperature?: number;
+  topP?: number;
+  maxOutputTokens?: number;
+}
+
+export interface GenerationControlCapabilities {
+  /**
+   * Present iff the model publishes a REAL reasoning_options knob — from
+   * EITHER an `effort` entry (its exact `values`) OR a `budget_tokens` entry
+   * (a synthesized standard low/medium/high tier set — `budget_tokens` has no
+   * discrete values of its own, but it IS a real published knob, e.g. every
+   * mainline Claude model, which the transport maps via
+   * `resolveAnthropicThinkingBudget`/`REASONING_EFFORT_BUDGET_TOKENS`
+   * — so exposing an effort-style control for it is not fabrication the way
+   * inventing one for a bare `reasoning:true` model with NO reasoning_options
+   * at all would be). A `toggle` entry gets no control here (on/off is not an
+   * effort enum) but does not crash — see the `toggle` branch below. Absent
+   * entirely when the model publishes no real reasoning_options at all (we
+   * never fabricate one out of thin air).
+   */
+  reasoningEffort?: { values: string[] };
+  /** True iff the model accepts a client-supplied temperature (models.dev
+   *  `temperature:false` means FIXED — e.g. gpt-5.6-sol — hide the control). */
+  temperature: boolean;
+  /** top_p has no distinct models.dev flag — gated on the same standard-
+   *  sampling capability as temperature (documented heuristic: models that
+   *  reject a custom temperature reject a custom top_p too). */
+  topP: boolean;
+  /** Present iff the model declares a positive max output-token window —
+   *  the ceiling a "max output tokens" control must clamp to. */
+  maxOutputTokens?: { ceiling: number };
+}
+
+// The standard effort tiers synthesized for a `budget_tokens`-shaped
+// reasoning_options entry (no discrete `values` of its own to mirror). Chosen
+// to match `REASONING_EFFORT_BUDGET_TOKENS`'s well-known low/medium/high keys
+// (packages/llm-gateway/src/transports/ai-sdk/request.ts) so every value this
+// control can offer resolves to a real thinking-token budget downstream —
+// never an effort label the transport wouldn't know what to do with.
+const BUDGET_TOKENS_EFFORT_TIERS = ['low', 'medium', 'high'] as const;
+
+/** Pure capability derivation — NEVER a per-model id lookup table. */
+export function generationControlCapabilities(
+  model: CatalogModel | undefined | null,
+): GenerationControlCapabilities {
+  if (!model) return { temperature: false, topP: false };
+
+  // Only expose an effort control when the model publishes a REAL
+  // reasoning_options entry — never fabricate one for a model that publishes
+  // none. Two shapes yield a control (see the field doc above): `effort`
+  // (its own exact values) and `budget_tokens` (synthesized standard tiers —
+  // it has no discrete values, but it's a real published knob, e.g. every
+  // mainline Claude model). A `toggle` entry matches neither branch below and
+  // falls through to `undefined` — deliberately: on/off isn't an effort enum,
+  // and there's no separate toggle-control surface wired today, so this is
+  // the "don't crash, don't fabricate" no-op for it.
+  const effortOption = model.reasoning_options?.find((option) => option.type === 'effort');
+  const budgetTokensOption = model.reasoning_options?.find(
+    (option) => option.type === 'budget_tokens',
+  );
+  const reasoningEffort = effortOption?.values?.length
+    ? { values: effortOption.values }
+    : budgetTokensOption
+      ? { values: [...BUDGET_TOKENS_EFFORT_TIERS] }
+      : undefined;
+
+  const temperature = model.temperature === true;
+  const ceiling = model.limit?.output;
+  const maxOutputTokens = typeof ceiling === 'number' && ceiling > 0 ? { ceiling } : undefined;
+
+  return {
+    reasoningEffort,
+    temperature,
+    topP: temperature,
+    maxOutputTokens,
+  };
+}
+
+/**
+ * Drop/clamp every field of a (possibly user- or client-supplied)
+ * `GenerationConfig` against what `model` actually supports — the single
+ * gate BOTH the routing-policy write path (persistence) and the gateway
+ * resolution-layer injection path (see apps/api's routing/resolve-route.ts)
+ * must run a value through before it's trusted. A field the model doesn't
+ * support is silently dropped (never a validation error) so a model swap
+ * doesn't require the caller to also scrub unrelated config.
+ */
+export function clampGenerationConfig(
+  config: GenerationConfig | null | undefined,
+  model: CatalogModel | undefined | null,
+): GenerationConfig {
+  if (!config) return {};
+  const caps = generationControlCapabilities(model);
+  const out: GenerationConfig = {};
+
+  if (
+    typeof config.reasoningEffort === 'string' &&
+    caps.reasoningEffort?.values.includes(config.reasoningEffort)
+  ) {
+    out.reasoningEffort = config.reasoningEffort;
+  }
+  if (
+    typeof config.temperature === 'number' &&
+    caps.temperature &&
+    Number.isFinite(config.temperature)
+  ) {
+    out.temperature = Math.min(2, Math.max(0, config.temperature));
+  }
+  if (typeof config.topP === 'number' && caps.topP && Number.isFinite(config.topP)) {
+    out.topP = Math.min(1, Math.max(0, config.topP));
+  }
+  if (
+    typeof config.maxOutputTokens === 'number' &&
+    caps.maxOutputTokens &&
+    Number.isFinite(config.maxOutputTokens)
+  ) {
+    out.maxOutputTokens = Math.min(
+      caps.maxOutputTokens.ceiling,
+      Math.max(1, Math.floor(config.maxOutputTokens)),
+    );
+  }
+  return out;
 }
 
 interface CatalogProvider {
@@ -39,15 +431,41 @@ export interface ManagedModel {
   name: string;
   // The upstream's own model id, interpreted per `transport`:
   //   'bedrock'      → a Bedrock id (`us.anthropic.claude-opus-4-8`)
-  //   'openrouter'   → an OpenRouter slug (`z-ai/glm-5.2`)
+  //   'openrouter'   → an OpenRouter slug (`deepseek/deepseek-v4-flash`)
+  //   'aster'        → an AsterLab OpenAI-compatible model id (`glm-5.2`)
   upstreamModelId: string;
   // Which upstream + wire format carries it:
   //   'bedrock'      → Anthropic-on-Bedrock InvokeModel payload (Claude only)
   //   'openrouter'   → OpenRouter openai-compatible chat completions
-  transport: "bedrock" | "openrouter";
+  //   'aster'        → AsterLab openai-compatible chat completions
+  transport: 'aster' | 'bedrock' | 'openrouter';
+  // Optional provider id used for model-picker branding. Routing still uses
+  // `transport`; this field does not select or authenticate an upstream.
+  providerBrand?: string;
   // models.dev id for live pricing — upstream ids don't always match the catalog.
+  // Must be the model's REAL models.dev id (dashes, e.g. `claude-opus-4-8`) —
+  // Kortix's own managed `id` above is dotted for display (`claude-opus-4.8`)
+  // but models.dev never uses dots in a Claude id. See
+  // `pricingRefLookupCandidates` below, which normalizes dot→dash as a safety
+  // net for consumers, but this field itself should always be the correct
+  // dashed id so pricing/capability lookups hit on the first try.
   pricingRef: string;
-  tier: "flagship" | "balanced" | "fast";
+  // Explicit upstream pricing for providers that do not return cost metadata
+  // and whose direct price differs from models.dev's provider entry.
+  pricing?: {
+    inputPerMillion: number;
+    outputPerMillion: number;
+    cachedInputPerMillion?: number;
+    cacheWritePerMillion?: number;
+    contextOver200k?: {
+      inputPerMillion: number;
+      outputPerMillion: number;
+      cachedInputPerMillion?: number;
+      cacheWritePerMillion?: number;
+      contextThreshold: number;
+    };
+  };
+  tier: 'flagship' | 'balanced' | 'fast';
   // Vision (image input). Curated explicitly: managed slugs don't all exist on
   // models.dev (z-ai≠zhipuai, qwen≠alibaba, dotted vs dashed Claude ids), so
   // unlike BYOK models these can't derive it from the generated catalog.
@@ -65,6 +483,26 @@ export interface ManagedModel {
   openrouterProvider?: Record<string, unknown>;
 }
 
+// A managed model's `pricingRef` is supposed to be the model's real
+// models.dev id, but Kortix's own display id is dotted (`claude-opus-4.8`)
+// while models.dev Claude ids are dashed (`claude-opus-4-8`) — a mismatch
+// here silently misses the models.dev lookup and falls back to a permissive
+// synthetic capability record (no reasoning_options, temperature always
+// true), which is wrong for real models. Consumers doing a `provider/model`
+// lookup by `pricingRef` should try these candidates in order rather than
+// a single exact match, so a dotted/dashed slip degrades gracefully instead
+// of silently losing real capability data.
+export function pricingRefLookupCandidates(pricingRef: string): string[] {
+  const slash = pricingRef.indexOf('/');
+  if (slash <= 0) return [pricingRef];
+  const providerId = pricingRef.slice(0, slash);
+  const modelId = pricingRef.slice(slash + 1);
+  const candidates = [pricingRef];
+  const dashed = `${providerId}/${modelId.replace(/\./g, '-')}`;
+  if (dashed !== pricingRef) candidates.push(dashed);
+  return candidates;
+}
+
 // Managed model ids are single-segment (no `provider/` prefix). They are served
 // to opencode under the `kortix` provider, so opencode references them as
 // `kortix/<id>` (e.g. `kortix/claude-opus-4.8`) and sends `<id>` as the wire
@@ -73,72 +511,300 @@ export interface ManagedModel {
 // (`anthropic/claude-...` → the user's own key) without the two ever colliding.
 //
 // Every managed model runs through OUR keys and is billed as Kortix credits with
-// markup, so the gateway enforces budgets/logging/spend on all of them. Claude
-// runs on Bedrock (the proven Anthropic-payload InvokeModel transport);
-// everything else goes via OpenRouter.
+// markup, so the gateway enforces budgets/logging/spend on all of them. GLM
+// runs through AsterLab. DeepSeek V4 Flash runs on OpenRouter.
+//
+// 2026-08-10: Claude Opus 4.8 / Claude Sonnet 4.6 (Bedrock) and Kimi K3
+// (AsterLab) are deactivated — their entries are kept below, commented out, so
+// reactivation is a diff-review away. Consequences of a removed id:
+// stored account/project/agent defaults pointing at one degrade to the
+// platform default via `degradeUnservableDefault` (the servability probe
+// throws `model_not_found`), and an explicit request errors with
+// `model_not_found`.
+//
+// Same day, three cheap near-frontier models were added (all OpenRouter
+// transport): Muse Spark 1.2, MiniMax M3, and GPT-5.6 Luna. All three carry
+// vision, which restores an image-input path after the Claude removal
+// (LLM_GATEWAY_VISION_MODEL defaults to gpt-5.6-luna, the cheapest vision
+// model), and DeepSeek V4 Flash became the platform default (cheapest
+// credible agentic coder; beats GLM 5.2 on every published agentic
+// benchmark while costing ~10x less per unit of work).
 export const MANAGED_MODELS: ManagedModel[] = [
   {
-    id: "claude-opus-4.8",
-    name: "Claude Opus 4.8",
-    upstreamModelId: "us.anthropic.claude-opus-4-8",
-    transport: "bedrock",
-    pricingRef: "anthropic/claude-opus-4.8",
-    tier: "flagship",
+    // Grok 4.6 through OpenRouter's first-party xAI endpoint. The explicit
+    // xAI preference keeps routing on the model owner while fallbacks preserve
+    // availability. The pricingRef supplies its context tier: $2/$6 per
+    // million input/output tokens, doubled above a 200k-token prompt.
+    id: 'grok-4.6',
+    name: 'Grok 4.6',
+    upstreamModelId: 'x-ai/grok-4.6',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/x-ai/grok-4.6',
+    pricing: {
+      inputPerMillion: 2,
+      cachedInputPerMillion: 0.5,
+      outputPerMillion: 6,
+      contextOver200k: {
+        inputPerMillion: 4,
+        cachedInputPerMillion: 1,
+        outputPerMillion: 12,
+        contextThreshold: 200_000,
+      },
+    },
+    tier: 'flagship',
     vision: true,
-    limit: { context: 1_000_000, output: 64_000 },
+    limit: { context: 500_000, output: 500_000 },
+    openrouterProvider: {
+      order: ['xai'],
+      allow_fallbacks: true,
+    },
   },
+  // {
+  //   id: 'claude-opus-4.8',
+  //   name: 'Claude Opus 4.8',
+  //   upstreamModelId: 'us.anthropic.claude-opus-4-8',
+  //   transport: 'bedrock',
+  //   pricingRef: 'anthropic/claude-opus-4-8',
+  //   pricing: {
+  //     inputPerMillion: 5,
+  //     cachedInputPerMillion: 0.5,
+  //     cacheWritePerMillion: 6.25,
+  //     outputPerMillion: 25,
+  //   },
+  //   tier: 'flagship',
+  //   vision: true,
+  //   limit: { context: 1_000_000, output: 64_000 },
+  // },
+  // {
+  //   id: 'claude-sonnet-4.6',
+  //   name: 'Claude Sonnet 4.6',
+  //   upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
+  //   transport: 'bedrock',
+  //   pricingRef: 'anthropic/claude-sonnet-4-6',
+  //   pricing: {
+  //     inputPerMillion: 3,
+  //     cachedInputPerMillion: 0.3,
+  //     cacheWritePerMillion: 3.75,
+  //     outputPerMillion: 15,
+  //   },
+  //   tier: 'balanced',
+  //   vision: true,
+  //   limit: { context: 1_000_000, output: 64_000 },
+  // },
   {
-    id: "claude-sonnet-4.6",
-    name: "Claude Sonnet 4.6",
-    upstreamModelId: "us.anthropic.claude-sonnet-4-6",
-    transport: "bedrock",
-    pricingRef: "anthropic/claude-sonnet-4.6",
-    tier: "balanced",
-    vision: true,
-    limit: { context: 1_000_000, output: 64_000 },
-  },
-  {
-    id: "glm-5.2",
-    name: "GLM 5.2",
-    upstreamModelId: "z-ai/glm-5.2",
-    transport: "openrouter",
-    pricingRef: "z-ai/glm-5.2",
-    tier: "balanced",
+    id: 'glm-5.2',
+    name: 'GLM 5.2',
+    upstreamModelId: 'glm-5.2',
+    transport: 'aster',
+    pricingRef: 'z-ai/glm-5.2',
+    pricing: {
+      inputPerMillion: 1,
+      cachedInputPerMillion: 0.2,
+      cacheWritePerMillion: 1,
+      outputPerMillion: 4,
+    },
+    tier: 'balanced',
     vision: false,
     limit: { context: 1_000_000, output: 131_072 },
-    // Prefer Z.AI's first-party endpoint (99.9%+ uptime, native fp8). Fallbacks
-    // stay enabled so an actual Z.AI outage still routes rather than failing.
-    openrouterProvider: { order: ["z-ai"], allow_fallbacks: true },
   },
+  // {
+  //   // Kimi K3 (Moonshot AI) served through AsterLab's OpenAI-compatible
+  //   // endpoint — same `aster` transport + ASTER_API_KEY as GLM 5.2, so no new
+  //   // credential is needed. AsterLab accepts the bare `kimi-k3` slug on
+  //   // https://api.asterlab.ai/v1/chat/completions. `pricingRef` resolves to a
+  //   // REAL models.dev entry (moonshotai/kimi-k3), so capability lookups borrow
+  //   // the real reasoning_options (toggle + effort low/high/max) and
+  //   // temperature:false (K3 rejects a client-sent temperature) instead of the
+  //   // permissive synthetic fallback. `pricing` is the published Moonshot
+  //   // upstream rate ($3/$15, $0.30 cache read); Aster is an OpenAI-compatible
+  //   // proxy — verify against Aster's own price list and adjust via the
+  //   // LLM_GATEWAY_MANAGED_MODELS overlay if Aster's rate differs.
+  //   id: 'kimi-k3',
+  //   name: 'Kimi K3',
+  //   upstreamModelId: 'kimi-k3',
+  //   transport: 'aster',
+  //   pricingRef: 'moonshotai/kimi-k3',
+  //   pricing: {
+  //     inputPerMillion: 3,
+  //     cachedInputPerMillion: 0.3,
+  //     outputPerMillion: 15,
+  //   },
+  //   tier: 'balanced',
+  //   vision: true,
+  //   limit: { context: 1_048_576, output: 131_072 },
+  // },
   {
-    id: "qwen3.7-max",
-    name: "Qwen3.7 Max",
-    upstreamModelId: "qwen/qwen3.7-max",
-    transport: "openrouter",
-    pricingRef: "qwen/qwen3.7-max",
-    tier: "balanced",
+    id: 'deepseek-v4-flash',
+    name: 'DeepSeek V4 Flash',
+    upstreamModelId: 'deepseek/deepseek-v4-flash',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/deepseek/deepseek-v4-flash',
+    pricing: {
+      inputPerMillion: 0.0938,
+      cachedInputPerMillion: 0.01876,
+      cacheWritePerMillion: 0.0938,
+      outputPerMillion: 0.1876,
+    },
+    tier: 'balanced',
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
+    // 21 OpenRouter endpoints serve this slug and they are NOT interchangeable.
+    // Unpinned, OpenRouter picks freely and prompt-cache locality is luck:
+    // replaying a BYTE-IDENTICAL body measured 0% then 99% cached on
+    // consecutive calls, and identical input tokenizes differently per endpoint
+    // (7041 / 7066 / 7081 / 7127 / 7361 prompt_tokens), which is the direct
+    // proof that turns land on different hosts. Landing on `coreweave/fp8`
+    // measured 0/0/99/5/0% cached across five calls (it also publishes a p99
+    // latency of 107_688ms); landing on `alibaba/fp8` or `streamlake/fp8`
+    // measured a stable 99%. In the production logs the difference is 4.4x on
+    // cost alone: $0.0032832 for a 0%-cached turn vs $0.0007499 for the same
+    // turn at 97%.
+    //
+    // Order rationale:
+    //  - `deepseek` first: the ONLY endpoint reporting
+    //    `supports_implicit_caching: true`, with the best published stats
+    //    (p50 848ms / 79 tok/s / 100% uptime) and a cache-read price ~10x below
+    //    the community hosts. NOTE it is currently REJECTED for our account
+    //    ("No allowed providers are available for the selected model" — an
+    //    OpenRouter account data-policy setting, not something code can fix),
+    //    so today it is skipped and the next entry serves. It is listed first
+    //    so the pin becomes optimal the moment that account setting is changed.
+    //  - then `alibaba`, `baidu`, `novita`: reachable today, fp8 (never an fp4
+    //    requantization), the full 1_048_576 context this entry advertises, and
+    //    >=99.8% 30m uptime with the best measured p50 latency of the reachable
+    //    set. Verified live: this order lands 6/6 calls on one endpoint.
+    // Excluded by construction: `io-net/fp8` (32_768 context) and
+    // `akashml/fp8` (131_072) cannot hold a session this model advertises as
+    // 1M-context, and `morph`/`mancer` publish no cache-read price at all.
+    //
+    // `allow_fallbacks` stays TRUE on purpose: this is a cache-locality and
+    // quality preference, not a hard pin, so an outage across the listed hosts
+    // degrades to the rest of the pool exactly like today instead of failing
+    // the platform's fallback model outright.
+    openrouterProvider: {
+      order: ['deepseek', 'alibaba', 'baidu', 'novita'],
+      allow_fallbacks: true,
+    },
   },
   {
-    id: "deepseek-v4-pro",
-    name: "DeepSeek V4 Pro",
-    upstreamModelId: "deepseek/deepseek-v4-pro",
-    transport: "openrouter",
-    pricingRef: "deepseek/deepseek-v4-pro",
-    tier: "balanced",
+    // DeepSeek V4 Pro's 2026-08-13 GA snapshot through OpenRouter. The
+    // immutable upstream slug prevents a future `latest` alias from changing
+    // behavior without a catalog review. OpenRouter currently exposes two
+    // endpoints: first-party DeepSeek at $0.435/$0.87 per million tokens, and
+    // GMICloud at exactly 4x that price. The Kortix OpenRouter account cannot
+    // use the first-party endpoint under its current data policy (live canary:
+    // HTTP 404 `No endpoints available matching your guardrail restrictions
+    // and data policy`). Pin GMICloud and bill its actual price. Do not add the
+    // first-party endpoint without changing both the account policy and price.
+    id: 'deepseek-v4-pro-0813',
+    name: 'DeepSeek V4 Pro 0813',
+    upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
+    pricing: {
+      inputPerMillion: 1.74,
+      cachedInputPerMillion: 0.145,
+      outputPerMillion: 3.48,
+    },
+    tier: 'balanced',
     vision: false,
-    limit: { context: 1_048_576, output: 64_000 },
+    limit: { context: 1_048_575, output: 384_000 },
+    openrouterProvider: {
+      order: ['gmicloud'],
+      allow_fallbacks: true,
+    },
   },
   {
-    id: "deepseek-v4-flash",
-    name: "DeepSeek V4 Flash",
-    upstreamModelId: "deepseek/deepseek-v4-flash",
-    transport: "openrouter",
-    pricingRef: "deepseek/deepseek-v4-flash",
-    tier: "balanced",
-    vision: false,
-    limit: { context: 1_048_576, output: 64_000 },
+    // Meta's Muse Spark 1.2 via OpenRouter. Exactly ONE endpoint serves the
+    // standard slug (Meta first-party: 1_048_576 ctx, tools, 100% 30m uptime
+    // measured 2026-08-10), so the pin is trivial. NEVER switch this to the
+    // `meta/muse-spark-1.2-contributor` slug — its 10x-cheaper tier grants
+    // Meta training rights over prompts and completions, which is
+    // disqualifying for customer sessions. `pricingRef` is the model's REAL
+    // models.dev id (live api.json has it as of 2026-08-10; the committed
+    // catalog.generated.json snapshot predates the 2026-08-05 release, so
+    // snapshot-only consumers fall back to the synthetic capability record
+    // until the next snapshot regen — the served runtime catalog fetches
+    // live models.dev and resolves it).
+    id: 'muse-spark-1.2',
+    name: 'Muse Spark 1.2',
+    upstreamModelId: 'meta/muse-spark-1.2',
+    transport: 'openrouter',
+    pricingRef: 'meta/muse-spark-1.2',
+    pricing: {
+      inputPerMillion: 1.25,
+      cachedInputPerMillion: 0.15,
+      outputPerMillion: 4.25,
+    },
+    tier: 'balanced',
+    vision: true,
+    limit: { context: 1_048_576, output: 131_072 },
+    openrouterProvider: {
+      order: ['meta'],
+      allow_fallbacks: true,
+    },
+  },
+  {
+    // MiniMax M3 via OpenRouter. 9 endpoints serve the slug (measured
+    // 2026-08-10) and they are NOT interchangeable:
+    //  - `gmicloud` (the cheapest, $0.24/$0.96) advertises NO tool support —
+    //    routing there breaks the agent harness outright, hence the explicit
+    //    `ignore`;
+    //  - `parasail` caps max_completion_tokens at 32_768 and `venice` at
+    //    65_536 against the 131_072 this entry advertises;
+    //  - context spans 256_000 (morph) to 1_048_576 (parasail).
+    // Order: `minimax` first (first-party, 524_288 ctx, 512_000 max out,
+    // 99.85% uptime), then `novita` (1_000_000 ctx, 131_072 max out, 99.88%).
+    // The advertised limit is the SAFE INTERSECTION of the two pinned hosts
+    // (ctx 524_288, output 131_072) so a session sized to this entry can land
+    // on either without truncation.
+    id: 'minimax-m3',
+    name: 'MiniMax M3',
+    upstreamModelId: 'minimax/minimax-m3',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/minimax/minimax-m3',
+    pricing: {
+      inputPerMillion: 0.3,
+      cachedInputPerMillion: 0.06,
+      outputPerMillion: 1.2,
+    },
+    tier: 'balanced',
+    vision: true,
+    limit: { context: 524_288, output: 131_072 },
+    openrouterProvider: {
+      order: ['minimax', 'novita'],
+      ignore: ['gmicloud'],
+      allow_fallbacks: true,
+    },
+  },
+  {
+    // OpenAI's GPT-5.6 Luna via OpenRouter. First-party OpenAI endpoints plus
+    // Azure and Bedrock all advertise tools + 1_050_000 ctx / 128_000 max out
+    // (measured 2026-08-10); pin `openai` for cache locality. `pricingRef`
+    // resolves to the REAL models.dev openrouter entry — temperature:false
+    // (Luna rejects a client-sent temperature; advertising support would 400
+    // the turn) and the none→max effort ladder. `pricing` is OpenAI's
+    // published post-2026-07-30 rate ($0.20/$1.20, $0.02 cache read).
+    // KNOWN CAVEAT: measured TTFT at MAX reasoning effort is ~144s (median
+    // 1.87s at defaults) — fine for background agents, poor for interactive
+    // max-effort use.
+    id: 'gpt-5.6-luna',
+    name: 'GPT-5.6 Luna',
+    upstreamModelId: 'openai/gpt-5.6-luna',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/openai/gpt-5.6-luna',
+    pricing: {
+      inputPerMillion: 0.2,
+      cachedInputPerMillion: 0.02,
+      outputPerMillion: 1.2,
+    },
+    tier: 'balanced',
+    vision: true,
+    limit: { context: 1_050_000, output: 128_000 },
+    openrouterProvider: {
+      order: ['openai'],
+      allow_fallbacks: true,
+    },
   },
 ];
 
@@ -155,172 +821,171 @@ export function isManagedModelId(id: string): boolean {
 export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);
 
 export const MANAGED_FLAGSHIP_MODEL_ID = (
-  MANAGED_MODELS.find((m) => m.tier === "flagship") ?? MANAGED_MODELS[0]
+  MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]
 ).id;
 
-// ─── AUTO: managed model selection ──────────────────────────────────────────
-// The catalog advertises a synthetic `auto` model presented to users as
-// "automatically picks the cheapest, most efficient model for the task." When a
-// request asks for it, the gateway resolves it to a concrete managed model and
-// bills it as the resolved model.
-//
-// AUTO resolves to Codex GPT-5.6 Sol. The gateway's finite model-fallback policy
-// then falls back to managed GLM 5.2 if Codex cannot serve the turn.
-//
-// AUTO is currently HIDDEN from the picker (see AUTO_MODEL_ENABLED): every session
-// explicitly opts into a concrete model. The resolution path below stays fully
-// intact — the sandbox still defaults `small_model`/headless sessions to `auto`,
-// and a stale gateway caller asking for raw `auto` still resolves — so re-exposing
-// the toggle is a one-line flip.
-export const AUTO_MODEL_ID = "auto";
+/** Concrete Kortix-managed default used when no account or project default exists. */
+export const PLATFORM_DEFAULT_MODEL_ID = 'deepseek-v4-flash';
 
-// Whether AUTO is exposed in the model picker. Off for now: we want an explicit
-// opt-in on which model to use, and will bring AUTO back later. The web app reads
-// this through `featureFlags.enableAutoModel`, which can override it per-deploy via
-// NEXT_PUBLIC_ENABLE_AUTO_MODEL. The server keeps serving + resolving `auto`
-// regardless, so this only gates the UI.
-export const AUTO_MODEL_ENABLED = false;
-
-// The single "what to choose for auto" knob: a gateway wire model. It may be a
-// managed bare id (`glm-5.2`) or a provider-qualified id (`codex/gpt-5.6-sol`).
-export const AUTO_DEFAULT_MODEL_ID = "codex/gpt-5.6-sol";
-
-const AUTO_TARGET_MODEL = AUTO_DEFAULT_MODEL_ID;
-const AUTO_VISION_MODEL = "claude-sonnet-4.6"; // when the request has image content
-
-function requestHasImage(body: Record<string, unknown>): boolean {
-  const messages = Array.isArray(body.messages) ? body.messages : [];
-  for (const message of messages) {
-    const content = (message as { content?: unknown }).content;
-    if (
-      Array.isArray(content) &&
-      content.some(
-        (part) =>
-          !!part &&
-          typeof part === "object" &&
-          (part as { type?: unknown }).type === "image_url",
-      )
-    ) {
-      return true;
-    }
+function modelsByWireId(catalog: Catalog): Map<string, CatalogModel> {
+  const byId = new Map<string, CatalogModel>();
+  for (const provider of catalog.providers) {
+    for (const model of provider.models) byId.set(`${provider.id}/${model.id}`, model);
   }
-  return false;
+  return byId;
 }
 
 /**
- * Map a requested model to a concrete managed model when (and only when) it is
- * the synthetic `auto` id. Returns null for any other model (a no-op pass-through
- * the caller treats as "use the requested model as-is"). Pure + dependency-free
- * so both the in-process mount and the standalone gateway can call it locally.
+ * Resolve a gateway WIRE model id to its full `CatalogModel` — the capability
+ * record `generationControlCapabilities`/`clampGenerationConfig` gate against.
+ * The CANONICAL wire-id → model resolver: it stitches together the three id
+ * shapes a gateway request can carry, so a caller never has to string-split
+ * `<provider>/<model>` or special-case managed slugs itself.
  *
- * `opts.defaultModel` is the account/agent-configured default for the calling
- * principal (a concrete wire model, never `auto`). It takes precedence over the
- * platform text default, so `auto` resolves to what the account actually wants.
- * The vision override still applies: if the chosen target is a managed text-only
- * model and the request carries an image, swap to a vision-capable model so
- * attachments aren't silently dropped. A vision-capable or BYOK default is kept.
+ *   - `codex/<id>`      → the genuine OpenAI catalog entry (`openai/<id>`).
+ *   - `<provider>/<id>` → that provider's catalog entry (BYOK models).
+ *   - bare `<id>`       → a managed slug, resolved via its `pricingRef` (the
+ *                         model's real models.dev id) so e.g. `claude-opus-4.8`
+ *                         gets Claude's real `reasoning_options`/`limit` instead
+ *                         of a permissive fallback; a synthesized minimal record
+ *                         (reasoning/tool_call/temperature all true) when the
+ *                         managed slug has no models.dev entry to borrow from.
+ *
+ * `catalog` defaults to the bundled static `CATALOG`. apps/api passes the LIVE
+ * models.dev snapshot instead (its own thin wrapper of the same name) so the
+ * host-side generation-controls clamp sees fresh capabilities; the standalone
+ * gateway transport, which has no runtime snapshot, uses the bundled catalog.
  */
-export function pickAutoModel(
-  model: string,
-  body: Record<string, unknown>,
-  opts?: { defaultModel?: string | null },
-): string | null {
-  if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`)
-    return null;
-  const target = opts?.defaultModel || AUTO_TARGET_MODEL;
-  if (requestHasImage(body)) {
-    const bareId = target.startsWith("kortix/") ? target.slice("kortix/".length) : target;
-    const managed = getManagedModel(bareId);
-    if (managed && !managed.vision) return AUTO_VISION_MODEL;
+export function catalogModelForWireModel(
+  wireModel: string,
+  catalog: Catalog = CATALOG,
+): CatalogModel | undefined {
+  if (wireModel.startsWith('codex/')) {
+    return modelsByWireId(catalog).get(`openai/${wireModel.slice('codex/'.length)}`);
   }
-  return target;
+  const slash = wireModel.indexOf('/');
+  if (slash > 0) {
+    const providerId = wireModel.slice(0, slash);
+    const modelId = wireModel.slice(slash + 1);
+    return catalog.providers
+      .find((provider) => provider.id === providerId)
+      ?.models.find((model) => model.id === modelId);
+  }
+  const managed = getManagedModel(wireModel);
+  if (managed) {
+    const catalogById = modelsByWireId(catalog);
+    const byPricingRef = pricingRefLookupCandidates(managed.pricingRef)
+      .map((ref) => catalogById.get(ref))
+      .find((entry): entry is CatalogModel => entry !== undefined);
+    if (byPricingRef) return byPricingRef;
+    return {
+      id: managed.id,
+      name: managed.name,
+      reasoning: true,
+      tool_call: true,
+      temperature: true,
+      limit: managed.limit,
+    };
+  }
+  return undefined;
 }
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
-  "kortix",
-  "opencode",
-  "anthropic",
-  "openai",
-  "github-copilot",
-  "google",
-  "openrouter",
-  "vercel",
+  'kortix',
+  'opencode',
+  'anthropic',
+  'openai',
+  'github-copilot',
+  'google',
+  'openrouter',
+  'vercel',
 ] as const;
 
 export const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  codex: "ChatGPT",
-  google: "Google",
-  xai: "xAI",
-  moonshotai: "Moonshot",
-  "moonshotai-cn": "Moonshot",
-  opencode: "OpenCode Zen",
-  kortix: "Kortix",
-  firmware: "Firmware",
-  bedrock: "AWS Bedrock",
-  openrouter: "OpenRouter",
-  "github-copilot": "GitHub Copilot",
-  vercel: "Vercel",
-  groq: "Groq",
-  deepseek: "DeepSeek",
-  mistral: "Mistral",
-  cohere: "Cohere",
-  llama: "Llama",
-  huggingface: "Hugging Face",
-  cerebras: "Cerebras",
-  togetherai: "Together AI",
-  fireworks: "Fireworks",
-  deepinfra: "DeepInfra",
-  nvidia: "NVIDIA",
-  cloudflare: "Cloudflare",
-  azure: "Azure",
-  ollama: "Ollama",
-  perplexity: "Perplexity",
-  lmstudio: "LM Studio",
-  v0: "v0",
-  wandb: "W&B",
-  baseten: "Baseten",
-  minimax: "Moonshot",
-  "minimax-cn": "Moonshot",
-  siliconflow: "SiliconFlow",
-  "siliconflow-cn": "SiliconFlow",
-  zhipuai: "ZhipuAI",
-  "zhipuai-cn": "ZhipuAI",
-  "google-vertex": "Google Vertex",
-  "google-vertex-anthropic": "Vertex Anthropic",
-  "azure-cognitive-services": "Azure Cognitive",
-  "cloudflare-ai-gateway": "Cloudflare Gateway",
-  "github-models": "GitHub Models",
-  "ollama-cloud": "Ollama Cloud",
-  "kai Coding Plan": "AI21",
-  zaicodingplan: "AI21",
-  venice: "Venice",
-  upstage: "Upstage",
-  nebius: "Nebius",
-  vultr: "Vultr",
-  friendli: "Friendli",
-  poe: "Poe",
-  requesty: "Requesty",
-  "sap-ai-core": "SAP AI Core",
-  scaleway: "Scaleway",
-  inception: "Inception",
-  morph: "Morph",
-  abacus: "Abacus",
-  bailing: "Bailing",
-  chutes: "Chutes",
-  fastrouter: "FastRouter",
-  helicone: "Helicone",
-  iflowcn: "iFlytek",
-  inference: "Inference",
-  "io-net": "IO.net",
-  "kimi-for-coding": "Kimi",
-  lucidquery: "LucidQuery",
-  modelscope: "ModelScope",
-  "nano-gpt": "NanoGPT",
-  ovhcloud: "OVHcloud",
-  submodel: "Submodel",
-  synthetic: "Synthetic",
-  xiaomi: "Xiaomi",
-  zenmux: "Zenmux",
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  codex: 'ChatGPT',
+  google: 'Google',
+  xai: 'xAI',
+  moonshotai: 'Moonshot',
+  'moonshotai-cn': 'Moonshot',
+  opencode: 'OpenCode Zen',
+  kortix: 'Kortix',
+  firmware: 'Firmware',
+  // models.dev's canonical provider id is `amazon-bedrock` (see
+  // `PROVIDER_AUTH_REQUIREMENT_OVERRIDES` above and `catalog.generated.json`),
+  // and that is the id the gateway stamps onto `GatewayModel.provider`. The
+  // short `bedrock` alias is kept for legacy call sites, mirroring the icon
+  // map in apps/web's provider-branding. Missing the canonical key here is
+  // what made the picker label the whole Bedrock group "Kortix": the label
+  // lookup fell through to `FlatModel.providerName`, which is always "Kortix"
+  // under the gateway.
+  'amazon-bedrock': 'Amazon Bedrock',
+  bedrock: 'Amazon Bedrock',
+  openrouter: 'OpenRouter',
+  'github-copilot': 'GitHub Copilot',
+  vercel: 'Vercel',
+  groq: 'Groq',
+  deepseek: 'DeepSeek',
+  mistral: 'Mistral',
+  cohere: 'Cohere',
+  llama: 'Llama',
+  huggingface: 'Hugging Face',
+  cerebras: 'Cerebras',
+  togetherai: 'Together AI',
+  fireworks: 'Fireworks',
+  deepinfra: 'DeepInfra',
+  nvidia: 'NVIDIA',
+  cloudflare: 'Cloudflare',
+  azure: 'Azure',
+  ollama: 'Ollama',
+  perplexity: 'Perplexity',
+  lmstudio: 'LM Studio',
+  v0: 'v0',
+  wandb: 'W&B',
+  baseten: 'Baseten',
+  // MiniMax is its own distinct BYOK provider (minimax.io / minimaxi.com) —
+  // not Moonshot. Was mislabeled 'Moonshot' for both regional variants.
+  minimax: 'MiniMax',
+  'minimax-cn': 'MiniMax',
+  siliconflow: 'SiliconFlow',
+  'siliconflow-cn': 'SiliconFlow',
+  zhipuai: 'ZhipuAI',
+  'zhipuai-cn': 'ZhipuAI',
+  'google-vertex': 'Google Vertex',
+  'google-vertex-anthropic': 'Vertex Anthropic',
+  'azure-cognitive-services': 'Azure Cognitive',
+  'cloudflare-ai-gateway': 'Cloudflare Gateway',
+  'github-models': 'GitHub Models',
+  'ollama-cloud': 'Ollama Cloud',
+  'kai Coding Plan': 'AI21',
+  zaicodingplan: 'AI21',
+  venice: 'Venice',
+  upstage: 'Upstage',
+  nebius: 'Nebius',
+  vultr: 'Vultr',
+  friendli: 'Friendli',
+  poe: 'Poe',
+  requesty: 'Requesty',
+  'sap-ai-core': 'SAP AI Core',
+  scaleway: 'Scaleway',
+  inception: 'Inception',
+  morph: 'Morph',
+  abacus: 'Abacus',
+  bailing: 'Bailing',
+  chutes: 'Chutes',
+  fastrouter: 'FastRouter',
+  helicone: 'Helicone',
+  iflowcn: 'iFlytek',
+  inference: 'Inference',
+  'io-net': 'IO.net',
+  'kimi-for-coding': 'Kimi',
+  lucidquery: 'LucidQuery',
+  modelscope: 'ModelScope',
+  'nano-gpt': 'NanoGPT',
+  ovhcloud: 'OVHcloud',
+  submodel: 'Submodel',
+  synthetic: 'Synthetic',
+  xiaomi: 'Xiaomi',
+  zenmux: 'Zenmux',
 };

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -21,11 +22,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import Loading from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
-import type { ProjectBranch, ProjectSession } from '@kortix/sdk/projects-client';
-import { Layers } from 'lucide-react';
+import type { ProjectBranch, ProjectSession } from '@kortix/sdk';
+import { StackIcon as Layers } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBranches } from '../hooks/use-branches';
@@ -106,7 +106,9 @@ export function OpenChangeRequestDialog({
 }: OpenChangeRequestDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const lastSessionRef = useRef<ProjectSession | null>(session);
-  if (session) lastSessionRef.current = session;
+  useEffect(() => {
+    if (session) lastSessionRef.current = session;
+  }, [session]);
   const activeSession = session ?? lastSessionRef.current;
   const sessionMode = activeSession !== null;
 

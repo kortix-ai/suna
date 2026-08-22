@@ -51,6 +51,7 @@ aren't a schema-shape diff.
 
 - **Schema shape** is defined in `kortix.ts`. You edit the schema and *generate* the SQL — you don't hand-write schema DDL. (Data migrations, RLS, custom functions, and CONCURRENTLY operations are the exception — hand-written; see below.)
 - **Migration files** in `packages/db/migrations/` are **immutable, timestamp-named** `YYYYMMDDHHMMSSmmm_slug.sql` (17-digit UTC — node-pg-migrate's native format; collision-safe across parallel branches). The one exception is the `.concurrent.ts` escape hatch, same timestamp prefix, different suffix — see [Roll-forward safety](#roll-forward-safety-transactions-per-file-and-the-concurrently-escape-hatch).
+- A merged migration that fails its first hosted deployment remains immutable. A runtime correction must live in `scripts/migration-runtime-overrides.ts`, match the exact committed SHA-256, change the minimum required statement, fail closed on drift, and have an integration test. The migration runner prints each applied override.
 - **Applied state** lives in `kortix_migrations.pgmigrations` (node-pg-migrate's table; one row per migration, by name — **not** the `public` schema, and not the same table CI/local dev might assume by default).
 
 ### Tracking is by NAME, not checksum (known tradeoff)
@@ -126,7 +127,8 @@ Target a specific DB (secrets never go through the shell): the adapter reads `DA
 - Never edit a migration that has been applied anywhere. Not even a typo. Write a new one. (Tracking is by name — there's no checksum to catch you. Discipline matters. The `immutability` CI job enforces this at PR time.)
 - One logical change per migration.
 - Generated/hand-written SQL is reviewed by a human before it touches a database.
-- Every migration needs `lock_timeout`/`statement_timeout` set (squawk: `require-timeout-settings`) — the template pre-fills this.
+- Every migration needs `lock_timeout`/`statement_timeout` set (squawk: `require-timeout-settings`) — **both** `migrate:create` and `migrate:generate` pre-fill this. (`migrate:generate` did not until 2026-08-05; it renamed drizzle-kit's output through unchanged, so generated migrations were born failing the rule.)
+- A `.concurrent.ts` migration takes the **opposite** `lock_timeout` to a `.sql` one: `'180s'`, never 2–5 s. `CREATE INDEX CONCURRENTLY` waits on every older transaction and `lock_timeout` governs that wait, so a short budget fails on live prod regardless of table size. Enforced — below 120 s fails lint. See [Roll-forward safety](#lock_timeout-in-a-concurrentts-file-is-the-opposite-of-the-house-value).
 - Any migration that **drops or alters** a constraint, unique index, column, or enum value needs a `-- mixed-version-safe: <justification>` (or `-- enum-value-checked: <justification>` for `ADD VALUE`) comment, or CI fails it — see [Zero-downtime rules](#zero-downtime-rules-checklist). Same rule for `.concurrent.ts` (e.g. a `DROP INDEX CONCURRENTLY`) — use a `//` comment there instead of `--`.
 
 ---
@@ -198,9 +200,41 @@ merge-conflict markers, duplicate timestamps — which they already pass).
 on — gets full enforcement.** The list only ever stays fixed; nothing is
 ever added to it.
 
+Each later guard gets its **own** baseline with its own cutoff, rather than
+reopening the 2026-07-16 list:
+
+| Baseline | Guard | Cutoff |
+| --- | --- | --- |
+| `grandfathered-migrations.json` | mixed-version + enum-value annotations, squawk | 2026-07-16 |
+| `backfill-grandfathered-migrations.json` | top-level DML in a single-transaction `.sql` migration | 2026-08-10 (`centralized_audit_v2` outage) |
+| `concurrent-lock-timeout-grandfathered-migrations.json` | the 120 s `lock_timeout` floor for CONCURRENTLY migrations | 2026-08-19 (deploy-prod run `32248002434`) |
+
+The cutoffs are independent: a file exempt from one guard is still held to the
+others. Same contract for all three — the lists are fixed, and nothing is ever
+added to them.
+
 See `packages/db/SQUAWK_BASELINE.md` for the one-time squawk retro-lint
 report over the pre-existing corpus (178 findings, none fixed, none blocking
 — informational only).
+
+### When a migration merges red: `squawk-waivers.json`
+
+The squawk check is **not** a required status check, so a PR can merge with it
+failing. That leaves a hole the grandfather list cannot cover: squawk lints file
+TEXT, merged migrations are immutable, and squawk's target set is *every*
+non-exempt file rather than the ones a PR adds. So one red merge fails the lint
+on every unrelated PR from then on, and there is no way to fix the file.
+
+`packages/db/squawk-waivers.json` is the escape hatch, deliberately **separate**
+from `grandfathered-migrations.json` — that file means "existed before
+2026-07-16" and must keep meaning only that. A waiver entry names the file,
+states every finding, why it cannot be fixed, and what root cause was fixed so
+it does not recur. `scripts/squawk-lint.ts` prints the whole waiver list on
+every run, so the debt stays visible.
+
+Adding a **new** migration to this list is almost always wrong: fix it in the PR
+that adds it, while the file is still mutable. Today it holds exactly one entry
+(`20260805030712000_enterprise_entitled_flag.sql`, merged in #6120).
 
 ---
 
@@ -256,6 +290,62 @@ immediately after it in the same `pnpm migrate` invocation applies correctly
 in the reopened transaction. `scripts/lint-migrations.ts` flags any
 `.concurrent.ts` file with a multi-statement `pgm.sql()` call.
 
+### `lock_timeout` in a `.concurrent.ts` file is the OPPOSITE of the house value
+
+**Use `set lock_timeout = '180s'` in a CONCURRENTLY migration — never the 2–5 s
+a plain `.sql` migration uses.** This is lint-enforced: a new `.concurrent.ts`
+file that runs a CONCURRENTLY operation and sets `lock_timeout` below **120 s**
+fails `pnpm --filter @kortix/db lint`.
+
+The reason the house value is short does not apply here, and following it breaks
+the migration outright. `CREATE INDEX CONCURRENTLY` does not merely take a brief
+lock at the end: to make its scans safe it must wait for **every transaction in
+the database that began before it**, taking a `ShareLock` on each one's virtual
+transaction id — once before it starts, and again before it finishes. And
+`lock_timeout` governs that wait.
+
+So on a live system the table's own size is irrelevant. Prod takes an
+`audit_events` write on nearly every request and runs multi-second session-turn
+transactions, so *some* transaction outlives a 5-second budget almost every
+time. The build is then cancelled with `55P03` and — because CIC is
+non-transactional — leaves an **INVALID index** behind, which makes a plain
+re-run fail with "already exists".
+
+Meanwhile the only lock a CIC actually *holds* is `ShareUpdateExclusive` on the
+target table, which excludes other DDL and `VACUUM` but never queries or writes.
+A long wait here blocks no user. That is the whole asymmetry: the short value
+protects against DDL that blocks traffic; a CIC is not that.
+
+`'0'` (wait indefinitely) is also accepted by the lint, as is omitting
+`lock_timeout` entirely — Postgres defaults it to `0`. Keep `statement_timeout`
+generous too (`'30min'` in the scaffold): an index build on a large table
+legitimately runs for minutes, and the `.sql` header's 30 s budget would kill it.
+
+**When it has already failed** (`55P03` during `Apply DB migrations to prod`):
+
+1. Find the leftover — `select indexrelname from pg_stat_user_indexes s join
+   pg_index i on i.indexrelid = s.indexrelid where not i.indisvalid;`
+2. `drop index concurrently if exists <it>;`
+3. Re-run the migration's exact statements in `psql` with
+   `set lock_timeout='180s'; set statement_timeout='30min';` and confirm
+   `indisvalid`.
+4. Record it: `insert into kortix_migrations.pgmigrations (name, run_on) values
+   ('<file basename without extension>', now());` — the ledger must match what is
+   live.
+5. `gh run rerun <deploy-prod run> --failed`; the migrate step now sees nothing
+   pending.
+
+Migration files are immutable once merged, so **do not edit the failing file** —
+fix the template and the house rule for the next one, which is what the 120 s
+floor is.
+
+*Incident: v0.13.0 deploy-prod run `32248002434` failed its migration job twice
+this way, first on `kortix.iam_roles` (6 rows, 80 kB), then on
+`kortix.account_tokens` (30 k rows). The 6-row table is what proved size was not
+the variable. Pre-floor `.concurrent.ts` files are exempt via
+`concurrent-lock-timeout-grandfathered-migrations.json` — they are immutable and
+already applied.*
+
 ---
 
 ## How migrations are applied, per environment
@@ -297,7 +387,7 @@ mode we've actually hit:
 
 | Job | Enforces | Failure mode it prevents |
 |---|---|---|
-| `lint` | Filename shape, no merge markers, no empty files/placeholders, no duplicate timestamps, **mixed-version guard, enum-value annotation** (new migrations only) | Malformed migrations; the `20260713220001000` class; the `sandbox_provider` enum-drift class |
+| `lint` | Filename shape, no merge markers, no empty files/placeholders, no duplicate timestamps, **mixed-version guard, enum-value annotation, backfill-DML guard, CONCURRENTLY `lock_timeout` floor** (new migrations only) | Malformed migrations; the `20260713220001000` class; the `sandbox_provider` enum-drift class; the `centralized_audit_v2` backfill outage; the `32248002434` `55P03` CIC class |
 | `squawk` | Deterministic Postgres locking/downtime rules (new migrations only) — see `.squawk.toml` | Non-concurrent index ops, unvalidated constraints, missing timeout headers, ACCESS EXCLUSIVE type changes, ... |
 | `immutability` | Already-merged migration files are never modified | Silent schema drift between environments that ran the file at different times |
 | `sequence` | New migrations sort after every already-merged migration | The historical `_journal`/`pgmigrations` ordering-dedupe incident |
@@ -397,7 +487,7 @@ it previously silently produced nothing.
 ## Known gaps / cleanup backlog
 
 - **`kortix.ts` adoption:** ~22 tables exist in the DB (e.g. `provider_events`, `executions`, `gateway_*`) captured by the baseline but not yet modelled in `kortix.ts`. Until adopted, they're baseline-managed (hand-written migrations), not drizzle-generated.
-- **Duplicate function overloads:** `public.atomic_use_credits` and `atomic_grant_renewal_credits` each have a stale extra overload — drop the dead ones in a contract migration.
+- ~~**Duplicate function overloads:** `public.atomic_use_credits` and `atomic_grant_renewal_credits` each have a stale extra overload~~ — DONE in `20260730012238065_credit_use_credits_single_overload.sql`. `atomic_use_credits` is now a single 4-parameter function with defaults on `p_description`/`p_ledger_type`, so arities 2–4 all resolve to it; the dead 7-argument `atomic_grant_renewal_credits` overload is gone. `tests/migration/credit-rpc-overloads.test.ts` fails if any `public.atomic_*` function ever regains two overloads with overlapping callable arity — but it is **not wired into CI yet** (it spins up its own Postgres and needs docker). Run it by hand (`bun test tests/migration/credit-rpc-overloads.test.ts`) when touching a credit RPC; do not assume a green PR proves function uniqueness. **Note `packages/db/drizzle/0000_bootstrap.sql` still defines only the OLD 5-argument `atomic_use_credits`** — that is fine (bootstrap runs before the baseline and this migration corrects it), but do not treat the bootstrap file as the current shape.
 - **Legacy trackers:** `supabase_migrations.schema_migrations`, `drizzle.__drizzle_migrations`, `kortix.api_schema_migrations` are dead. Drop after prod is also cut over.
 - **No repo-wide git pre-push hook** wires `pnpm --filter @kortix/db lint` automatically yet — it's a documented, not enforced, local step (CI is the real gate).
 

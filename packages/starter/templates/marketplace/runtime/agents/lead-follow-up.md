@@ -6,7 +6,6 @@ description: >-
   Google Calendar availability — holding every message at a human approval
   gate before it sends.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

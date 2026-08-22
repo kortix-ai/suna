@@ -64,22 +64,23 @@ export function ModelPicker({
           {filtered.map((m) => {
             const selected = value?.providerID === m.providerID && value?.modelID === m.modelID;
             return (
-              <button
+              <Button
                 key={`${m.providerID}/${m.modelID}`}
                 type="button"
+                variant="ghost"
                 onClick={() => {
                   onChange({ providerID: m.providerID, modelID: m.modelID });
                   setOpen(false);
                   setQuery('');
                 }}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
+                className="h-auto w-full justify-start gap-2 px-2 py-1.5 text-left"
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm">{m.modelName}</div>
                   <div className="truncate text-xs text-muted-foreground">{m.providerName}</div>
                 </div>
                 {selected && <Check className="size-4 shrink-0 text-muted-foreground" />}
-              </button>
+              </Button>
             );
           })}
           {filtered.length === 0 && (

@@ -36,11 +36,53 @@ mock.module('../channels/slack/selection', () => ({
   setChannelConversationPolicy: async () => undefined,
 }));
 
+// Model decisions no longer read a hardcoded RECOMMENDED_MODELS list off the
+// selection module. They resolve the channel's project/account through
+// `model-gate`, then list the REAL served catalog (managed + connected BYOK)
+// through the picker, so a pick can never 404. Mock that graph — mocking only
+// `selection` leaves `channelModelContext` unmocked, it returns null against no
+// DB, and every model command answers "connect a project first" instead of
+// exercising what these tests are about.
+let modelGate: unknown = {
+  projectId: 'p1',
+  accountId: 'a1',
+  ownerUserId: 'u1',
+  freeManagedOnly: false,
+};
+mock.module('../channels/slack/model-gate', () => ({
+  // The gate follows the binding: an unbound channel has no project.
+  channelModelContext: async () => (selection ? modelGate : null),
+}));
+let servable = true;
+mock.module('../llm-gateway/resolution/default-model', () => ({
+  isModelServableForAccount: async () => servable,
+  resolveEffectiveModel: async () => ({ model: 'anthropic/claude-opus-4-8', source: 'project' }),
+}));
+mock.module('../llm-gateway/models/picker', () => ({
+  listPickerModels: async () => ({
+    models: [
+      {
+        id: 'anthropic/claude-opus-4-8',
+        label: 'Claude Opus 4.8',
+        provider: 'anthropic',
+        managed: false,
+        hint: 'Most capable',
+      },
+      { id: 'kortix/glm-5.2', label: 'GLM 5.2', provider: 'kortix', managed: true, hint: null },
+    ],
+    projectDefault: { model: 'kortix/glm-5.2', source: 'project', label: 'GLM 5.2' },
+  }),
+  labelForModelRef: (id: string) =>
+    id === 'anthropic/claude-opus-4-8' ? 'Claude Opus 4.8' : id,
+}));
+
 // Identity layer — kept out of the db chain so it doesn't disturb dbResults
 // ordering. Controllable per-test via `identityRow`.
 let identityRow: { userId: string } | null = null;
 mock.module('../channels/slack/identity', () => ({
   lookupSlackIdentity: async () => identityRow,
+  linkSlackIdentity: async () => {},
+  resolveSlackActor: async () => ({ userId: 'user-1' }),
   revokeSlackIdentity: async () => true,
   lookupSlackUserIdForKortixUser: async () => null,
 }));
@@ -76,15 +118,20 @@ beforeEach(() => {
   setModelResult = true;
   setAgentCalls.length = 0;
   setModelCalls.length = 0;
+  servable = true;
 });
 
 describe('help', () => {
-  test('lists the new agents / models / session commands', async () => {
+  // Discovery moved into the one `/kortix` panel; help now documents the
+  // typed shortcuts that survived it. Asserting the retired `agents`/`models`
+  // list here just pinned the old design.
+  test('points at the panel and lists the typed shortcuts', async () => {
     const resp = await handleSlashCommand('help', '', ctx);
     const txt = allText(resp);
-    expect(txt).toContain('agents');
-    expect(txt).toContain('models');
-    expect(txt).toContain('session');
+    expect(txt).toContain('control panel');
+    for (const shortcut of ['model <id>', 'agent <name>', 'switch', 'policy', 'sessions']) {
+      expect(txt).toContain(shortcut);
+    }
   });
 });
 
@@ -130,16 +177,25 @@ describe('/kortix models', () => {
     // current model is marked
     expect(allText(resp)).toContain('✓ ');
   });
-  test('unbound channel → prompts to switch', async () => {
+  test('unbound channel → prompts to connect one', async () => {
     selection = null;
     const resp = await handleSlashCommand('models', '', ctx);
-    expect(allText(resp)).toContain('No project bound');
+    expect(allText(resp)).toContain('No project is connected to this channel yet');
   });
 });
 
 describe('/kortix model <id>', () => {
-  test('rejects a malformed id without writing', async () => {
+  // Shape is no longer the gate — servability is, so an id that cannot be
+  // served is refused whatever it looks like. The property under test is
+  // unchanged and is the one that matters: nothing unusable is ever stored.
+  test('refuses an unservable id without writing', async () => {
+    servable = false;
     const resp = await handleSlashCommand('model', 'not-a-model', ctx);
+    expect(resp.text).toContain("isn't available for this workspace");
+    expect(setModelCalls.length).toBe(0);
+  });
+  test('still refuses an id with whitespace on shape alone', async () => {
+    const resp = await handleSlashCommand('model', 'not a model', ctx);
     expect(resp.text).toContain("doesn't look like a model id");
     expect(setModelCalls.length).toBe(0);
   });
@@ -153,10 +209,10 @@ describe('/kortix model <id>', () => {
     expect(setModelCalls).toEqual([null]);
     expect(resp.text).toContain('reset');
   });
-  test('unbound channel → prompts to switch, no write', async () => {
+  test('unbound channel → prompts to connect one, no write', async () => {
     selection = null;
     const resp = await handleSlashCommand('model', 'anthropic/claude-opus-4-8', ctx);
-    expect(resp.text).toContain('Bind a project first');
+    expect(resp.text).toContain('Connect a project first');
     expect(setModelCalls.length).toBe(0);
   });
 });

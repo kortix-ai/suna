@@ -1,9 +1,9 @@
 'use client';
 
-import { KeyRound, Plug, Wrench } from 'lucide-react';
+import { KeyIcon as KeyRound, PlugIcon as Plug, WrenchIcon as Wrench } from '@phosphor-icons/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,12 +39,15 @@ import {
 } from '@/features/projects/modal/github-setup-required-panel';
 import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
-import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk/projects-client';
+import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
+import { prepareMarketplaceInstallSessionNavigation } from './marketplace-session-navigation';
 
 /** Sentinel `Select` value for "create a new project" (real project ids are
  *  UUIDs, so this can never collide). */
@@ -71,6 +74,7 @@ export function AddToProjectModal({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const closeCustomize = useSettingsPanelStore((s) => s.close);
   const isProject = item.type === 'registry:project';
   const humanizedTitle = item.title.replaceAll('-', ' ');
 
@@ -152,31 +156,45 @@ export function AddToProjectModal({
           starter_template: 'general-knowledge-worker',
           source_item_id: isProject ? item.id : undefined,
         });
-        queryClient.invalidateQueries({ queryKey: ['projects'] });
+        // qk.projects.scope(): restores the reach the old bare
+        // projects-literal prefix match had — every account's list, and the
+        // accountless slot the marketplace picker itself reads.
+        queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
 
         const sessionId = isProject
           ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })
           : (await installSession.mutateAsync({ projectId: project.project_id, id: item.id }))
               .session_id;
-        onOpenChange(false);
-        router.replace(
-          sessionId
-            ? `/projects/${project.project_id}/sessions/${sessionId}`
-            : `/projects/${project.project_id}`,
+        const sessionHref = prepareMarketplaceInstallSessionNavigation(
+          queryClient,
+          router,
+          project.project_id,
+          sessionId,
         );
+        onOpenChange(false);
+        closeCustomize();
+        router.replace(sessionHref ?? `/projects/${project.project_id}`);
         return;
       }
 
       const projectId = target;
       const { session_id } = await installSession.mutateAsync({ projectId, id: item.id });
+      const sessionHref = prepareMarketplaceInstallSessionNavigation(
+        queryClient,
+        router,
+        projectId,
+        session_id,
+      );
       onOpenChange(false);
-      router.push(`/projects/${projectId}/sessions/${session_id}`);
+      closeCustomize();
+      router.push(sessionHref ?? `/projects/${projectId}`);
     } catch (e) {
       if (isManagedGitUnavailableError(e)) {
         const gitSettingsAccountId =
           resolvedAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
         errorToast("Managed git isn't set up on this server", {
-          description: 'An admin needs to connect GitHub in Git settings before projects can be created.',
+          description:
+            'An admin needs to connect GitHub in Git settings before projects can be created.',
           ...(gitSettingsAccountId
             ? {
                 button: (

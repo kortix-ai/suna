@@ -6,12 +6,13 @@
  * provider-neutral behaviour: create repo → mint push token → register project.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectGitConnections, projectMembers, projects } from '@kortix/db';
 
 process.env.KORTIX_DEFAULT_MARKETPLACES = '';
+process.env.MANAGED_GIT_PROVIDER = 'github';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
@@ -24,12 +25,14 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 let insertedProject: any | null;
 let grantedProjectRole: any | null;
+let updatedProjectSets: any[];
 let seedFilePaths: string[];
 let seedBaseFilePaths: string[];
 let seedFilesByPath: Map<string, string>;
 let canonicalMembership: boolean;
 let managedPat: string | null;
 let provisionedInitialToken: string | null;
+let remoteBranchAfterSeed: boolean;
 
 function setTestAuth(userId = USER_ID, userEmail = 'ship@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -77,7 +80,12 @@ const stubBackend = {
     };
   },
   deleteRepo: async () => { backendCalls.push('deleteRepo'); },
-  buildUpstream: (ref: any) => ({ url: ref.upstreamUrl, headers: {} }),
+  buildUpstream: (ref: any, token: string | null) => ({
+    url: ref.upstreamUrl,
+    headers: token
+      ? { Authorization: `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}` }
+      : {},
+  }),
   seedFiles: async (_ref: any, _token: string, files: Array<{ path: string; content: string }>, opts: { baseFiles?: Array<{ path: string; content: string }> }) => {
     backendCalls.push('seedFiles');
     seedFilePaths = files.map((file) => file.path).sort();
@@ -95,6 +103,14 @@ mock.module('../projects/git-backends', () => ({
   managedGithubOwner: () => REPO_OWNER,
   managedGithubOwnerType: () => undefined,
   managedGithubToken: () => managedPat,
+  parseBasicAuthHeader: (value?: string | null) => {
+    if (!value?.startsWith('Basic ')) return null;
+    const decoded = Buffer.from(value.slice(6), 'base64').toString('utf8');
+    const separator = decoded.indexOf(':');
+    return separator > 0
+      ? { username: decoded.slice(0, separator), token: decoded.slice(separator + 1) }
+      : null;
+  },
 }));
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -114,11 +130,33 @@ mock.module('../middleware/auth', () => ({
 // verifying provision/delete behavior, not the access-control engine itself.
 mockIamEngineAllowAll();
 
-// grantProjectRole syncs IAM policy rows; no-op those (they hit tables the
-// lightweight db mock doesn't model).
-mockIamMembershipSyncNoop();
+// The read models answer from the same `canonicalMembership` switch the db shim
+// uses for `account_members`, so the "no membership in that account" case still
+// reaches the 403 it asserts.
+mockIamReadModels({
+  members: () =>
+    canonicalMembership ? [{ userId: USER_ID, accountId: ACCOUNT_ID, accountRole: 'owner' }] : [],
+});
+// `grantProjectRole` IS one `assignRole` call now, and it is no longer
+// best-effort — it writes `role_assignments`, which this file's lightweight db
+// mock does not model. Bypass the write path; the provision behaviour under test
+// is unaffected by where the grant lands.
+mockIamAssignments({
+  onGrant: (input) => {
+    if (input.scope.type !== 'project') return;
+    grantedProjectRole = {
+      accountId: input.accountId,
+      projectId: input.scope.id,
+      userId: input.principal.id,
+      projectRole: input.roleKey,
+      grantedBy: (input as { grantedBy?: string | null }).grantedBy ?? null,
+    };
+  },
+});
 
 mock.module('../projects/git', () => ({
+  MergeConflictError: class MergeConflictError extends Error {},
+  isRepoFileNotFoundError: () => false,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
@@ -128,12 +166,14 @@ mock.module('../projects/git', () => ({
   readRepoFile: async () => '',
   readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
+  remoteBranchExists: async () => remoteBranchAfterSeed,
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   resolveCommitSha: async () => 'a'.repeat(40),
+  resolveFastBootGitHint: async () => ({ baseSha: 'a'.repeat(40) }),
   resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),
@@ -150,7 +190,10 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module("../snapshots/builder", () => ({
+  routedPerProjectWarmImageName: () => "kpp2-test",
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  ensureFastSandboxImage: async () => ({ snapshotName: "kortix-fast-test", slug: "default", contentHash: "f".repeat(64), built: false, isDefault: true, runtimeProfile: "fast" }),
+  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
@@ -164,6 +207,12 @@ mock.module("../snapshots/builder", () => ({
   reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => "a".repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: "kortix-ppwarm-test",
+    tip: "a".repeat(40),
+    built: false,
+    provider: "daytona",
+  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
@@ -308,7 +357,23 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-    update: () => ({ set: () => ({ where: () => ({ returning: async () => [] }) }) }),
+    update: (table: unknown) => ({
+      set: (values: any) => ({
+        where: () => {
+          if (table === projects) updatedProjectSets.push(values);
+          // Real drizzle's UPDATE builder is thenable at every chain step
+          // (a caller may `.catch()` it directly without `.returning()` —
+          // see r1.ts's best-effort default_agent metadata mirror write, and
+          // the several other `.where(...).catch(() => {})` call sites this
+          // mirrors), so this stub must be too: a real Promise (which
+          // supplies `.then`/`.catch`) that ALSO exposes `.returning()` for
+          // callers that chain it.
+          const result: any = Promise.resolve([]);
+          result.returning = async () => [];
+          return result;
+        },
+      }),
+    }),
     delete: () => ({ where: async () => {} }),
   },
 }));
@@ -331,6 +396,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
   beforeEach(() => {
     setTestAuth();
     insertedProject = null;
+    updatedProjectSets = [];
     grantedProjectRole = null;
     seedFilePaths = [];
     seedBaseFilePaths = [];
@@ -340,6 +406,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     backendConfigured = true;
     managedPat = null;
     provisionedInitialToken = PUSH_TOKEN;
+    remoteBranchAfterSeed = true;
   });
 
   test('provisions a managed repo + scoped token and registers the project', async () => {
@@ -362,6 +429,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(body.repo_url).toBe(expectedRepoUrl);
     expect(body.repo_id).toBe(EXTERNAL_REPO_ID);
     expect(body.push_token).toBe(PUSH_TOKEN);
+    expect(body.git_username).toBe('x-access-token');
 
     // Persisted row records the canonical typed git-remote reference.
     expect(insertedProject).toMatchObject({
@@ -381,6 +449,8 @@ describe('POST /v1/projects/provision (managed git)', () => {
         },
       },
     });
+    // Provisioning does not stamp hidden experimental runtime metadata.
+    expect(insertedProject?.metadata).not.toHaveProperty('experimental');
     expect(grantedProjectRole).toMatchObject({
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
@@ -390,6 +460,64 @@ describe('POST /v1/projects/provision (managed git)', () => {
 
     // Provisioned the repo through the backend seam (no seeding without flag).
     expect(backendCalls).toEqual(['createRepo']);
+
+    // An unseeded managed repo is a legitimate `kortix ship` state, but it must
+    // be RECORDED, not silently indistinguishable from a seeded one.
+    expect(insertedProject.metadata.git.seed).toMatchObject({
+      seeded: false,
+      expected: false,
+      reason: 'caller_opted_out',
+    });
+    expect(body.seeded).toBe(false);
+  });
+
+  test('does not report an active project when the seed pushed but left no default branch', async () => {
+    remoteBranchAfterSeed = false;
+
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'Silently Empty',
+        seed_starter: true,
+        starter_template: 'minimal',
+      }),
+    });
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toContain('main');
+    expect(body.code).toBe('seed_verification_failed');
+
+    // The orphan repo + project row are rolled back, so no user can land in a
+    // structurally empty project that claims to be active.
+    expect(backendCalls).toContain('deleteRepo');
+  });
+
+  test('records the completed seed on the project when the default branch is verified', async () => {
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'Verified Seed',
+        seed_starter: true,
+        starter_template: 'minimal',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.seeded).toBe(true);
+    expect(updatedProjectSets.length).toBeGreaterThan(0);
+    expect(insertedProject.metadata.git.seed).toMatchObject({
+      seeded: false,
+      expected: true,
+      reason: 'pending',
+    });
   });
 
   test('does not return the server-global managed GitHub PAT as a provision push token', async () => {
@@ -419,7 +547,12 @@ describe('POST /v1/projects/provision (managed git)', () => {
     });
 
     expect(res.status).toBe(503);
-    expect(await res.text()).toContain('repo-scoped installation token');
+    const body = await res.json();
+    // Fails closed AND points at the path that actually works: the org-wide
+    // token is never exported, clients push through the git proxy origin.
+    expect(body.error).toContain('org-wide token');
+    expect(body.error).toContain('git_origin_url');
+    expect(body.git_origin_url).toBeTruthy();
   });
 
   test('rejects an explicit account the caller has no membership in', async () => {
@@ -467,12 +600,12 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // No lock is ever produced — the engine that wrote it is deleted.
     expect(seedFilePaths).not.toContain('registry-lock.json');
     // The requested marketplace skills are NOT deterministically installed —
-    // only the always-present kortix-system skill (part of the base minimal
+    // only the committed kortix-cli skill (part of the base minimal
     // scaffold) is present.
     expect(seedFilePaths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
     expect(seedFilePaths).not.toContain('.kortix/opencode/skills/deep-research/SKILL.md');
     expect(seedFilePaths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
-    expect(seedFilePaths).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
+    expect(seedFilePaths).toContain('.kortix/opencode/skills/kortix-cli/SKILL.md');
     expect(seedFilePaths).toContain('kortix.yaml');
 
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/show.ts');
@@ -480,6 +613,15 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/web_search.ts');
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
     expect(seedBaseFilePaths).not.toContain('registry-lock.json');
+
+    // The bug this route fix closes: the base template's kortix.yaml declares
+    // `default_agent: kortix`, but project.metadata.default_agent was never
+    // mirrored from it — so every session silently stored the non-binding
+    // 'default' sentinel and any agent-scope model pin set on 'kortix' was
+    // never applied (see llm-gateway/resolution/default-model.ts). Provision
+    // must now stamp the mirror at creation time.
+    expect(updatedProjectSets).toHaveLength(1);
+    expect(updatedProjectSets[0]?.metadata).toHaveProperty('queryChunks');
   });
 
   test('returns 503 when managed git is not configured', async () => {

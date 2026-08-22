@@ -115,28 +115,55 @@ FROM kortix.executor_connectors c;
 ALTER TABLE kortix.executor_credentials
   ADD COLUMN profile_id uuid;
 
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM kortix.executor_credentials WHERE user_id IS NOT NULL
-  ) THEN
-    RAISE EXCEPTION 'session connector profile migration refuses to promote personal executor credentials';
-  END IF;
-  IF EXISTS (
-    SELECT connector_id
-    FROM kortix.executor_credentials
-    GROUP BY connector_id
-    HAVING count(*) > 1
-  ) THEN
-    RAISE EXCEPTION 'session connector profile migration found multiple shared credentials for one connector';
-  END IF;
-END $$;
+-- Preserve legacy personal credentials as member-owned profiles. A connector
+-- may legitimately have both its shared project credential and one credential
+-- per member; treating that supported shape as fatal blocked the 0.9.103 prod
+-- migration and left the deployed API ahead of its schema.
+INSERT INTO kortix.executor_connection_profiles (
+  account_id, project_id, connector_id, owner_type, owner_id, label,
+  status, is_default, metadata, created_by
+)
+SELECT
+  c.account_id,
+  c.project_id,
+  c.connector_id,
+  'member',
+  ec.user_id::text,
+  c.name,
+  'active',
+  false,
+  jsonb_build_object(
+    'migrated_from_legacy', true,
+    'legacy_personal_credential', true,
+    'connector_slug', c.slug,
+    'provider', c.provider_type
+  ),
+  ec.user_id
+FROM kortix.executor_credentials ec
+JOIN kortix.executor_connectors c ON c.connector_id = ec.connector_id
+WHERE ec.user_id IS NOT NULL;
 
 UPDATE kortix.executor_credentials ec
 SET profile_id = p.profile_id
 FROM kortix.executor_connection_profiles p
 WHERE p.connector_id = ec.connector_id
-  AND p.is_default = true;
+  AND (
+    (ec.user_id IS NULL AND p.is_default = true)
+    OR (
+      ec.user_id IS NOT NULL
+      AND p.owner_type = 'member'
+      AND p.owner_id = ec.user_id::text
+    )
+  );
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM kortix.executor_credentials WHERE profile_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'session connector profile migration left credentials without profiles';
+  END IF;
+END $$;
 
 ALTER TABLE kortix.executor_credentials
   ADD CONSTRAINT executor_credentials_connector_profile_fk

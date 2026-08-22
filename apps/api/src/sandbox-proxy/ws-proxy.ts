@@ -22,13 +22,60 @@
 // 8000.
 // ════════════════════════════════════════════════════════════════════════════
 
-import { authenticatePreviewPrincipal } from './preview-auth';
+import { authenticatePreviewPrincipalDetailed } from './preview-auth';
 import { resolvePreviewWsUpstream } from './routes/preview';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
+import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports';
+import { resolveSandboxIngress } from './backend';
+import { establishPreviewSession, resolvePreviewRequest, sessionFromCookies } from './preview-origin';
 
-// opencode's internal port — its PTY WebSocket endpoint lives here, reachable
-// via a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
-const OPENCODE_INTERNAL_PORT = 4096;
+// opencode's PTY WebSocket endpoint lives on opencode's own port, reachable via
+// a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
+//
+// That port MOVES. A verified config reload boots the replacement opencode on
+// the idle half of the port pair and promotes it, so after one reload the live
+// port is the other half and this constant points at a dead socket. It is now
+// only the fallback for a daemon too old to report where opencode actually is.
+const OPENCODE_FALLBACK_PORT = OPENCODE_PRIMARY_PORT;
+
+/** The daemon's own port — where its health endpoint answers. */
+const AGENT_PORT = 8000;
+
+/**
+ * Ask the box which port opencode is on right now.
+ *
+ * Deliberately NOT cached: the value changes on exactly the event we care about
+ * (a reload), so a cache would be stale precisely when it matters and would
+ * reintroduce the dead-socket bug it was meant to avoid. A PTY connect is a
+ * human opening a terminal — rare enough to afford one short round-trip.
+ *
+ * Falls back to 4096 on anything unexpected: an older daemon that does not
+ * report the field, an unreachable box, a slow one. That is the previous
+ * behaviour, so this can only improve on it.
+ */
+async function resolveLiveOpencodePort(sandboxId: string): Promise<number> {
+  try {
+    const { url, headers } = await resolveSandboxIngress(sandboxId, {
+      port: AGENT_PORT,
+      transport: 'http',
+    });
+    const res = await fetch(`${url.replace(/\/$/, '')}/kortix/health`, {
+      headers,
+      signal: AbortSignal.timeout(2_000),
+    });
+    if (!res.ok) return OPENCODE_FALLBACK_PORT;
+    const body = (await res.json().catch(() => null)) as { opencode_port?: unknown } | null;
+    const port = body?.opencode_port;
+    // Must be one of the pair. A daemon reporting anything else is either
+    // misconfigured or not the daemon, and following it blindly would let a
+    // response body redirect the PTY at an arbitrary port inside the sandbox.
+    return typeof port === 'number' && Number.isInteger(port) && isOpencodePort(port)
+      ? port
+      : OPENCODE_FALLBACK_PORT;
+  } catch {
+    return OPENCODE_FALLBACK_PORT;
+  }
+}
 
 /** Per-connection state stashed on the upgraded socket's `data`. */
 export interface PreviewWsData {
@@ -77,19 +124,105 @@ export async function preparePreviewWsUpgrade(
 
   const { sandboxId, port, remainingPath } = match;
 
-  const userId = await authenticatePreviewPrincipal(url.searchParams.get('token'), sandboxId);
-  if (!userId) return { ok: false, status: 401, message: 'unauthorized' };
+  const principal = await authenticatePreviewPrincipalDetailed(
+    url.searchParams.get('token'),
+    sandboxId,
+  );
+  if (!principal) return { ok: false, status: 401, message: 'unauthorized' };
+
+  return resolveUpgradeForPrincipal({
+    sandboxId,
+    port,
+    remainingPath,
+    search: url.search,
+    userId: principal.userId,
+    callerSessionId: principal.sessionId,
+  });
+}
+
+/**
+ * Upgrade a WebSocket that arrived on a preview ORIGIN.
+ *
+ * The path form authenticates with `?token=` because it has nowhere else to put
+ * a credential. An app on its own origin does not have that option at all: it
+ * writes `new WebSocket('/hmr')`, and neither a header nor a query parameter is
+ * reachable from that call — which is exactly why the origin proxy issues a
+ * cookie. WebSocket handshakes are ordinary HTTP requests and carry it.
+ *
+ * Sandbox and port come from the Host header, so the whole path belongs to the
+ * app; `/v1/p/...` means nothing here.
+ */
+export async function preparePreviewHostWsUpgrade(
+  req: Request,
+  url: URL,
+): Promise<
+  | { ok: true; data: PreviewWsData }
+  | { ok: false; status: number; message: string }
+> {
+  const resolved = resolvePreviewRequest(req, url);
+  if (!resolved) return { ok: false, status: 404, message: 'not a preview host' };
+  if (!resolved.verified) return { ok: false, status: 403, message: 'unsigned preview host' };
+  const { target } = resolved;
+
+  // A WebSocket handshake is a cross-site-capable, cookie-bearing request that
+  // no CORS policy governs: evil.com can open one and the browser attaches the
+  // `SameSite=None` preview cookie. Require the browser's own same-site answer.
+  const wsSite = req.headers.get('sec-fetch-site');
+  if (wsSite && wsSite !== 'same-origin' && wsSite !== 'none') {
+    return { ok: false, status: 403, message: 'cross-site websocket to a preview' };
+  }
+
+  let session = sessionFromCookies(req, target);
+  if (!session) {
+    // No cookie yet — accept the same one-shot credential the HTTP handshake
+    // takes, so a client that opens a socket before any page load still works.
+    const established = await establishPreviewSession(req, url, target);
+    if ('refusal' in established) {
+      return { ok: false, status: established.refusal.status, message: established.refusal.message };
+    }
+    session = established.session;
+  }
+  if (session.kind !== 'principal') {
+    // A public share is a read-only view of an artifact, not a socket.
+    return { ok: false, status: 403, message: 'websocket not available on a shared preview' };
+  }
+
+  return resolveUpgradeForPrincipal({
+    sandboxId: session.sandboxId,
+    port: target.port,
+    remainingPath: url.pathname || '/',
+    search: url.search,
+    userId: session.userId,
+    callerSessionId: session.callerSessionId,
+  });
+}
+
+/** Shared tail of both upgrade paths: pick the upstream port and resolve it. */
+async function resolveUpgradeForPrincipal(input: {
+  sandboxId: string;
+  port: number;
+  remainingPath: string;
+  search: string;
+  userId: string;
+  callerSessionId: string | null;
+}): Promise<
+  | { ok: true; data: PreviewWsData }
+  | { ok: false; status: number; message: string }
+> {
+  const { sandboxId, port, remainingPath, userId, callerSessionId } = input;
 
   // opencode PTY (and any other opencode endpoint) must reach opencode directly
   // on 4096 — the daemon on 8000 can't carry a WebSocket. Everything else is
   // proxied against the port the client addressed.
   const ptyKind = classifyPtyWebSocketPath(remainingPath);
-  const upstreamPort = ptyKind === 'opencode' ? OPENCODE_INTERNAL_PORT : port;
+  const upstreamPort =
+    ptyKind === 'opencode' ? await resolveLiveOpencodePort(sandboxId) : port;
 
-  // Strip our own auth token before forwarding — opencode authenticates via the
-  // Daytona preview token header, not our query param.
-  const upstreamQuery = new URLSearchParams(url.search);
+  // Strip our own auth credentials before forwarding — opencode authenticates
+  // via the Daytona preview token header, not our query params.
+  const upstreamQuery = new URLSearchParams(input.search);
   upstreamQuery.delete('token');
+  upstreamQuery.delete('public_share');
   const queryString = upstreamQuery.toString() ? `?${upstreamQuery.toString()}` : '';
 
   try {
@@ -99,6 +232,10 @@ export async function preparePreviewWsUpgrade(
       userId,
       remainingPath,
       queryString,
+      callerSessionId,
+      // A PreviewPrincipal's sessionId is the SANDBOX's own token binding, never
+      // a Supabase login id — so it is also the correct agent binding.
+      boundCredentialSessionId: callerSessionId,
     });
     if (!upstream.ok) {
       return { ok: false, status: upstream.status, message: upstream.message };

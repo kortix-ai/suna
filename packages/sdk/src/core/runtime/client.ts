@@ -25,6 +25,9 @@ import {
 // there is exactly one set of type declarations in play for host code, even if
 // multiple `@opencode-ai/sdk` copies exist on disk.
 export type * from "@opencode-ai/sdk/v2/client";
+// The 1.18.x generator renamed `V2Event*` → `Event*`; those names stay public
+// here until the next @kortix/sdk major.
+export type * from "./opencode-v2-event-aliases";
 export type { OpencodeClient };
 
 import { authenticatedFetch } from "../http/auth";
@@ -215,11 +218,26 @@ export interface SystemReloadResult {
 }
 
 /**
- * Reload the in-sandbox Kortix services daemon (opencode + its plugins).
- * `'dispose-only'` tears down and re-creates config without a full process
- * restart; `'full'` restarts the whole daemon process. Hits the active
- * runtime's `POST /kortix/services/system/reload` — same auth path as every
- * other sandbox call (`authenticatedFetch` via the active server URL).
+ * Apply the sandbox's current config to its running agent runtime.
+ *
+ * `'dispose-only'` — `POST /global/dispose`. opencode re-reads its config FILE
+ * from disk, in-process: same pid, ~51ms, and an in-flight turn survives.
+ * `'full'` — `POST /kortix/refresh`. The daemon pulls the workspace and restarts
+ * opencode. Slower (~8s) and it DOES end the turn in flight, but it is the only
+ * client-reachable path that re-runs spawn-time setup.
+ *
+ * Both endpoints were verified against opencode 1.17.11 on 2026-08-03 and
+ * `/global/dispose` re-verified against the pinned 1.18.19 on 2026-08-20 —
+ * see docs/SESSION_CONFIG_RELOAD.md.
+ *
+ * This used to POST `/kortix/services/system/reload`, which does not exist. That
+ * path falls through to opencode's SPA catch-all, so the call got `200` with an
+ * HTML body and died on `response.json()` — both command-palette entries built
+ * on it have never worked. Mobile was unaffected because it calls
+ * `/global/dispose` directly.
+ *
+ * The `ok`-plus-`content-type` check below is why that failure is not
+ * repeatable: against this server a 200 alone does not mean the route exists.
  */
 export async function systemReload(mode: SystemReloadMode): Promise<SystemReloadResult> {
 	const url = getActiveOpenCodeUrl();
@@ -228,11 +246,12 @@ export async function systemReload(mode: SystemReloadMode): Promise<SystemReload
 			code: 'RUNTIME_UNAVAILABLE',
 		});
 	}
-	const response = await authenticatedFetch(`${url}/kortix/services/system/reload`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ mode }),
-	});
+	const path = mode === 'full' ? '/kortix/refresh' : '/global/dispose';
+	const response = await authenticatedFetch(`${url}${path}`, { method: 'POST' });
+	const contentType = response.headers.get('content-type') ?? '';
+	// Case-insensitive, and `application/<vendor>+json` counts. A false negative
+	// here would report a working endpoint as missing.
+	const isJson = /^application\/([\w.+-]+\+)?json\b/i.test(contentType.trim());
 	if (!response.ok) {
 		throw new ApiError(`System reload failed (${response.status}): ${await daemonErrorMessage(response)}`, {
 			status: response.status,
@@ -240,5 +259,34 @@ export async function systemReload(mode: SystemReloadMode): Promise<SystemReload
 			code: 'RUNTIME_UNAVAILABLE',
 		});
 	}
-	return response.json() as Promise<SystemReloadResult>;
+	if (!isJson) {
+		// A 200 with HTML is opencode's SPA catch-all — the route is not there.
+		throw new ApiError(`System reload endpoint is unavailable on this sandbox (${path})`, {
+			status: response.status,
+			response,
+			code: 'RUNTIME_UNAVAILABLE',
+		});
+	}
+	let body: unknown;
+	try {
+		body = await response.json();
+	} catch (err) {
+		// JSON content-type with an unparseable body is a protocol regression, not
+		// a reload that declined. Surface it with the parse detail instead of
+		// flattening it into a generic "did not confirm".
+		throw new ApiError(
+			`System reload returned malformed JSON from ${path}: ${err instanceof Error ? err.message : String(err)}`,
+			{ status: response.status, response, code: 'RUNTIME_UNAVAILABLE' },
+		);
+	}
+	// `/global/dispose` answers a bare `true`; `/kortix/refresh` answers an
+	// object with `ok`. Neither matches SystemReloadResult, so build it here
+	// rather than changing a shape callers already consume.
+	const success = body === true || (typeof body === 'object' && body !== null && (body as { ok?: unknown }).ok === true);
+	return {
+		success,
+		mode,
+		steps: success ? [mode === 'full' ? 'refreshed workspace and restarted runtime' : 'reloaded config in place'] : [],
+		errors: success ? [] : [`the sandbox did not confirm the reload (${path})`],
+	};
 }

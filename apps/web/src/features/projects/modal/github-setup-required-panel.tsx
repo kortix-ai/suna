@@ -7,7 +7,7 @@
 // Kortix GitHub App" install card, which only makes sense on the hosted
 // deployment (there's no hosted Kortix App to install on self-host).
 
-import { Github } from 'lucide-react';
+import { GithubLogoIcon as Github } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 
@@ -34,6 +34,10 @@ interface GitHubSetupRequiredPanelProps {
   onNavigate?: () => void;
   secondaryAction?: ReactNode;
   size?: 'sm' | 'default';
+  /** Forwarded to the underlying EmptyState wrapper — e.g. `pt-0` to collapse
+   *  its own top padding when something (like the repository-source Tabs)
+   *  already sits directly above it. */
+  className?: string;
 }
 
 export function GitHubSetupRequiredPanel({
@@ -42,6 +46,7 @@ export function GitHubSetupRequiredPanel({
   onNavigate,
   secondaryAction,
   size = 'default',
+  className,
 }: GitHubSetupRequiredPanelProps) {
   const router = useRouter();
 
@@ -49,6 +54,7 @@ export function GitHubSetupRequiredPanel({
     <EmptyState
       icon={Github}
       size={size}
+      className={className}
       title="GitHub isn't connected on this server yet"
       description={
         isAdmin

@@ -1,9 +1,10 @@
-import { accountMembers, accounts } from '@kortix/db';
+import { accountMembers, accountMemberships, accounts } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { db } from '../../shared/db';
 import { defaultAccountName } from './app';
 
@@ -30,15 +31,20 @@ export async function bootstrapPersonalAccount(
     .returning({ accountId: accounts.accountId });
 
   if (created.length > 0) {
+    // IDENTITY, then the OWNER role. `SYSTEM_ACTOR`: the platform is the writer
+    // here — there is no one to authorize, the account is being created FOR this
+    // user.
     await db
-      .insert(accountMembers)
-      .values({
-        userId,
-        accountId: userId,
-        accountRole: 'owner',
-        isSuperAdmin: true,
-      })
+      .insert(accountMemberships)
+      .values({ userId, accountId: userId, isSuperAdmin: true })
       .onConflictDoNothing();
+    await assignRole(SYSTEM_ACTOR, userId, {
+      principal: { type: 'user', id: userId },
+      roleKey: 'owner',
+      scope: { type: 'account' },
+      source: 'system',
+      exclusive: true,
+    });
 
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       try {

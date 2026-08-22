@@ -4,8 +4,8 @@ Extracts the ZIP contents, formats all XML with consistent indentation,
 and normalizes curly quotation marks to XML entities.
 
 Usage:
-    python unpack.py <pptx_file> <output_dir>
-    python unpack.py slides.pptx working/
+    python3 unpack.py <pptx_file> <output_dir>
+    python3 unpack.py slides.pptx working/
 """
 
 import re

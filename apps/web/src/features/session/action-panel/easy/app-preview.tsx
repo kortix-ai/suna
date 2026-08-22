@@ -20,36 +20,48 @@
  */
 
 import { Button } from '@/components/ui/button';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
-import { useCopy } from '@/hooks/use-copy';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
+import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
-import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
+import { type CreateSessionPublicShareInput, probePreviewPort } from '@kortix/sdk';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Link as LinkIcon,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-  RefreshCw,
-} from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  ArrowSquareOutIcon,
+  GlobeIcon as Globe,
+  ArrowClockwiseIcon as GrRefresh,
+  SparkleIcon as SparklesSolid,
+  WarningIcon,
+} from '@phosphor-icons/react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { GrRefresh } from 'react-icons/gr';
-import { TbExternalLink } from 'react-icons/tb';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
+import {
+  PREVIEW_MAX_WAIT_MS,
+  PREVIEW_PROBE_INTERVAL_MS,
+  type PreviewProbe,
+  type SandboxHealth,
+  previewErrorReason,
+  previewLoadSuccessState,
+  previewLoadVerdict,
+  runtimeSandboxHealth,
+  sandboxRecents,
+  shouldArmLoadTimeout,
+  shouldKeepProbingPort,
+} from './easy-panel-logic';
+import { PanelWidthButton, type ShareContext, ViewerActions } from './viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -59,9 +71,13 @@ import { CloseButton, DetailSidebarToggle } from './detail-view';
 // same process, as this component's render tests need to. Reading through
 // `getState()` for both snapshots sidesteps that — same live value, same
 // reactivity via `subscribe`, no behavior change in the browser or real SSR.
-const getSandboxAliveSnapshot = () => {
-  const s = useSandboxConnectionStore.getState();
-  return s.status === 'connected' && s.healthy === true;
+const getSandboxHealthSnapshot = (): SandboxHealth => {
+  const s = useRuntimeConnectionStore.getState();
+  return runtimeSandboxHealth({
+    status: s.status,
+    healthy: s.healthy,
+    initialCheckDone: s.initialCheckDone,
+  });
 };
 
 /** Split a URL so the hostname can be rendered brighter than the rest. */
@@ -79,17 +95,24 @@ function splitUrlForDisplay(url: string): { prefix: string; host: string; rest: 
 export function AppPreview({
   url,
   name,
+  shareContext,
   onClose,
-  onAskForChanges,
+  onSendToAgent,
 }: {
   /** The internal sandbox URL the agent handed over, e.g. http://localhost:3000. */
   url: string;
   name: string;
+  /** Project-session ids the share link is scoped to. Absent on a booting or
+   *  transient session, which is why Copy link is omitted rather than disabled
+   *  there — same rule as `ShareFileButton`. */
+  shareContext?: ShareContext;
   onClose: () => void;
-  /** Seeds the composer with a starter line about this app and closes the
-   *  detail (W12). Omitted entirely (not disabled) where there's no session
-   *  composer to hand it to. */
-  onAskForChanges?: () => void;
+  /** "Send to agent" — shown in the "Couldn't load" error state next to
+   *  Retry, in the merge-conflict "Solve with agent" style. Seeds the session
+   *  composer with a prompt asking the agent to bring the app back up. Omitted
+   *  entirely (not disabled) when there's no handler — the error screen then
+   *  shows only Retry, exactly as before. */
+  onSendToAgent?: () => void;
 }) {
   // The app runs on localhost *inside the sandbox*, which the browser cannot
   // reach. The proxy is what makes it openable at all.
@@ -99,57 +122,145 @@ export function AppPreview({
   const [history, setHistory] = useState<string[]>([url]);
   const [index, setIndex] = useState(0);
   const current = history[index] ?? url;
+  // The quick-view "Open Browser" with no running app hands over url: '' —
+  // no port to load, nothing to spin on. Land on the address bar instead.
+  const noApp = !current;
+
+  // The landing's "Recents" — the shared history BrowserPanel also shows,
+  // filtered to sandbox ports (the only URLs this address bar will open).
+  const recents = useBrowserRecentsStore((s) => s.recents);
+  const localhostRecents = useMemo(() => sandboxRecents(recents), [recents]);
   const port = useMemo(() => parseLocalhostUrl(current)?.port ?? 0, [current]);
 
   const proxied = useMemo(() => proxyUrl(current) ?? current, [proxyUrl, current]);
   // Null while the auth token is still being fetched — the landing state holds.
   const previewUrl = useAuthenticatedPreviewUrl(proxied);
+  const hasPreview = !!previewUrl;
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const loadTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [addressValue, setAddressValue] = useState(current);
   const [isEditing, setIsEditing] = useState(false);
   const [addressError, setAddressError] = useState(false);
   const addressRef = useRef<HTMLInputElement>(null);
 
-  const isExpanded = useIsExpanded();
-  const toggleExpanded = useToggleExpanded();
   const isMobile = useIsMobile();
-  const { copied, copy } = useCopy({ successMessage: 'Link copied' });
 
-  const sandboxAlive = useSyncExternalStore(
-    useSandboxConnectionStore.subscribe,
-    getSandboxAliveSnapshot,
-    getSandboxAliveSnapshot,
+  // Copy link mints a PUBLIC share and copies `/share/session/{token}`.
+  // It used to copy `previewUrl` — the authenticated `/v1/p/{sandbox}/{port}/…`
+  // proxy URL — which only ever worked in the tab that had the
+  // `__preview_session` cookie. Everyone else got a 401 on a link that also
+  // leaked the sandbox id.
+  const shareInput = useMemo<CreateSessionPublicShareInput | null>(() => {
+    if (port <= 0) return null;
+    const path = parseLocalhostUrl(current)?.path || '/';
+    return { mode: 'view', preview: { label: name, url: current, port, path } };
+  }, [current, name, port]);
+
+  const sandboxHealth = useSyncExternalStore(
+    useRuntimeConnectionStore.subscribe,
+    getSandboxHealthSnapshot,
+    getSandboxHealthSnapshot,
   );
 
   useEffect(() => {
     if (!isEditing) setAddressValue(current);
   }, [current, isEditing]);
 
-  const clearLoadTimeout = useCallback(() => {
-    if (loadTimeout.current) {
-      clearTimeout(loadTimeout.current);
-      loadTimeout.current = null;
-    }
-  }, []);
-
+  // ─── The port watch. ─────────────────────────────────────────────────────
   // Cross-origin iframes frequently never fire onLoad OR onError, so both the
-  // spinner and the error card would otherwise hang on a dead server. After 5s
-  // of silence, assume the worst and say so — a blank frame reads as "your app
-  // is broken" with no explanation, which is worse than an honest error (W8).
+  // spinner and the error card would otherwise hang forever. This used to be a
+  // flat 5s timer that declared "Couldn't load" on that silence — but silence
+  // is not evidence, and a first hit on a cold dev-server route takes 30-60s
+  // (CLAUDE.md), so healthy apps were being failed mid-compile.
+  //
+  // So ask the port instead of watching the clock. The preview proxy answers
+  // 502/503/504 ITSELF when it cannot open a connection, which makes a NEGATIVE
+  // verdict fast and independent of how slow the app is; a positive verdict is
+  // only ever as fast as the app, and the iframe's own onLoad is the better
+  // signal for that anyway. `previewLoadVerdict` owns every decision; this is
+  // the loop that feeds it (one probe in flight at a time, so a stalled port
+  // delays the next probe instead of stacking sockets).
+  //
+  // Armed only once the iframe actually has a `src` (`hasPreview`): the auth
+  // token fetch that produces `previewUrl` can itself take a few seconds, and
+  // arming at mount burned that wait against the app's budget.
   useEffect(() => {
-    if (!isLoading) return;
-    clearLoadTimeout();
-    loadTimeout.current = setTimeout(() => {
+    if (!shouldArmLoadTimeout({ isLoading, noApp, hasPreview }) || !previewUrl) return;
+
+    const startedAt = Date.now();
+    let unreachableSince = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let alive = true;
+    const controller = new AbortController();
+
+    const fail = () => {
+      alive = false;
       setIsLoading(false);
       setHasError(true);
-    }, 5000);
-    return clearLoadTimeout;
-  }, [isLoading, refreshKey, clearLoadTimeout]);
+    };
+
+    // Sandbox health is read from the store at decision time, not closed over:
+    // it must reach the next tick WITHOUT restarting the watch, or every write
+    // by the runtime poll would reset the elapsed clock.
+    const decide = (probe: PreviewProbe, waitedMs: number) => {
+      const verdict = previewLoadVerdict({
+        sandbox: getSandboxHealthSnapshot(),
+        probe,
+        unreachableForMs: unreachableSince ? Date.now() - unreachableSince : 0,
+        waitedMs,
+      });
+      if (verdict === 'failed') fail();
+      return verdict;
+    };
+
+    const tick = async () => {
+      const probe = await probePreviewPort(previewUrl, { signal: controller.signal });
+      if (!alive) return;
+
+      // Continuity, not a count: any answer at all clears the streak, so a
+      // server that restarts mid-wait never accumulates its way to an error.
+      if (probe === 'unreachable') unreachableSince ||= Date.now();
+      else unreachableSince = 0;
+
+      const watchedMs = Date.now() - startedAt;
+      if (decide(probe, watchedMs) === 'failed') return;
+
+      const unreachableForMs = unreachableSince ? Date.now() - unreachableSince : 0;
+      if (shouldKeepProbingPort({ probe, unreachableForMs, watchedMs })) {
+        timer = setTimeout(tick, PREVIEW_PROBE_INTERVAL_MS);
+      }
+      // Otherwise the probe has said all it can. The iframe's own onLoad and
+      // the bound below carry the rest — no more requests at the user's app.
+    };
+
+    // The bound gets its own timer rather than riding the poll: a probe that
+    // stalls stretches the loop's cadence, and the ceiling must not stretch
+    // with it.
+    const deadline = setTimeout(() => {
+      if (alive) decide('unknown', PREVIEW_MAX_WAIT_MS);
+    }, PREVIEW_MAX_WAIT_MS);
+
+    void tick();
+
+    return () => {
+      alive = false;
+      controller.abort();
+      clearTimeout(deadline);
+      if (timer) clearTimeout(timer);
+    };
+  }, [isLoading, refreshKey, noApp, hasPreview, previewUrl]);
+
+  // Nothing to load, so land the cursor on the address bar — the fastest way
+  // in once you know the port. `focusWithoutScroll`: this fires while the
+  // detail card is still sliding in from x:100%, and a bare focus() would
+  // scroll the panel's overflow-hidden ancestors sideways to reveal it —
+  // the stuck-shifted-layout bug.
+  useEffect(() => {
+    if (noApp) focusWithoutScroll(addressRef.current);
+  }, [noApp]);
 
   const reload = useCallback(() => {
     setIsLoading(true);
@@ -159,6 +270,9 @@ export function AppPreview({
 
   const navigateTo = useCallback(
     (next: string) => {
+      // Feed the shared recents (the same list BrowserPanel's landing shows)
+      // so the port map builds up from either surface.
+      useBrowserRecentsStore.getState().addRecent(next);
       setHistory((prev) => [...prev.slice(0, index + 1), next]);
       setIndex((i) => i + 1);
       reload();
@@ -208,8 +322,6 @@ export function AppPreview({
     },
     [addressValue, navigateTo],
   );
-
-  const hasPreview = !!previewUrl;
 
   // At rest the bar shows the full URL; this overlay re-renders it with the
   // hostname highlighted, which an <input> can't do (it can't mix text colors).
@@ -299,92 +411,37 @@ export function AppPreview({
           </div>
         </form>
 
-        {onAskForChanges && (
-          <Hint label="Ask for changes" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Ask for changes"
-              onClick={onAskForChanges}
-              className="active:scale-[0.96]"
+        {/* An app has no file to save and no text to put on a clipboard, so the
+            split button's primary falls through to `Copy link` — the one thing
+            you can hand someone for a running port. Opening the app in a real
+            browser tab is the only capability the panel itself cannot offer,
+            so it stays, behind the caret rather than as a seventh glyph. */}
+        <ViewerActions
+          shareContext={shareContext}
+          shareInput={shareInput}
+          className="ml-0.5"
+          extraMenuItems={
+            <DropdownMenuItem
+              disabled={!hasPreview}
+              onSelect={() => {
+                if (!previewUrl) return;
+                track('app_opened_new_tab');
+                window.open(previewUrl, '_blank', 'noopener,noreferrer');
+              }}
             >
-              <MessageSquarePlus className="size-4" />
-            </Button>
-          </Hint>
-        )}
+              <ArrowSquareOutIcon />
+              Open in a new tab
+            </DropdownMenuItem>
+          }
+        />
 
-        <Hint label="Open in a new tab" side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={!hasPreview}
-            aria-label="Open in a new tab"
-            onClick={() => {
-              if (!previewUrl) return;
-              track('app_opened_new_tab');
-              window.open(previewUrl, '_blank', 'noopener,noreferrer');
-            }}
-          >
-            <TbExternalLink className="size-4" />
-          </Button>
-        </Hint>
-
-        <Hint label={copied ? 'Copied' : 'Copy link'} side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={!hasPreview}
-            aria-label="Copy link"
-            onClick={() => {
-              if (!previewUrl) return;
-              track('app_link_copied');
-              copy(previewUrl);
-            }}
-            className="active:scale-[0.96]"
-          >
-            {/* Morph, not a hard swap — same box, cross-faded (kortix-design-system
-                → "Button icon-swap"). */}
-            <span className="relative inline-flex size-4 items-center justify-center">
-              <AnimatePresence initial={false} mode="popLayout">
-                <motion.span
-                  key={copied ? 'check' : 'link'}
-                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                  className="absolute inset-0 inline-flex items-center justify-center"
-                >
-                  {copied ? (
-                    <Check className="text-kortix-green size-4" />
-                  ) : (
-                    <LinkIcon className="size-4" />
-                  )}
-                </motion.span>
-              </AnimatePresence>
-            </span>
-          </Button>
-        </Hint>
-
-        {/* The store flip is a no-op on mobile — the drawer never reads
-            `isExpanded` — so the control was dead weight there. */}
-        {!isMobile && (
-          <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleExpanded}
-              aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
-            >
-              {isExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-            </Button>
-          </Hint>
-        )}
+        <PanelWidthButton isMobile={isMobile} />
 
         <CloseButton onClose={onClose} />
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        {isLoading && hasPreview && (
+        {isLoading && hasPreview && !noApp && (
           <div className="bg-background/80 absolute inset-0 z-10 flex items-center justify-center">
             <div className="text-muted-foreground flex flex-col items-center gap-2">
               <Loading className="size-4" />
@@ -393,33 +450,74 @@ export function AppPreview({
           </div>
         )}
 
-        {hasError && (
-          <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
-            <div className="flex max-w-sm flex-col items-center gap-4 px-4 text-center">
-              <span className="bg-kortix-orange/15 flex size-9 items-center justify-center rounded-sm">
-                <AlertTriangle className="text-kortix-orange size-5" />
-              </span>
-              <div>
-                <p className="text-sm font-medium">Couldn&apos;t load {name}</p>
-                {/* The single most common cause, said plainly: the agent started
-                    the server a moment ago and it isn't listening yet. */}
-                <p className="text-muted-foreground mt-1 text-xs">
-                  {!sandboxAlive
-                    ? 'This workspace has stopped, so the app isn’t reachable anymore.'
-                    : port
-                      ? `The app on port ${port} may not be running yet.`
-                      : 'The app may not be running yet.'}
-                </p>
-              </div>
+        {hasError && !noApp && (
+          <ErrorState
+            icon={WarningIcon}
+            size="sm"
+            className="bg-background absolute inset-0 z-10"
+            title={`Couldn't load ${name}`}
+            /* The single most common cause, said plainly: the agent started the
+               server a moment ago and it isn't listening yet. Only a SETTLED
+               `dead` verdict earns the stopped-workspace wording — see
+               `previewErrorReason`. */
+            description={previewErrorReason({ sandbox: sandboxHealth, port })}
+            action={
               <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
-                <RefreshCw className="size-3.5 shrink-0" />
                 Retry
               </Button>
-            </div>
-          </div>
+            }
+            secondaryAction={
+              onSendToAgent ? (
+                <Button size="sm" className="gap-1.5" onClick={onSendToAgent}>
+                  <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
+                  Send to agent
+                </Button>
+              ) : null
+            }
+          />
         )}
 
-        {hasPreview ? (
+        {noApp ? (
+          /* Landing — recent ports when we have them (the same list
+             BrowserPanel's landing shows), a quiet search hint otherwise. */
+          localhostRecents.length > 0 ? (
+            <div className="h-full overflow-y-auto">
+              <div className="mx-auto w-full max-w-md px-6 py-12">
+                <section className="space-y-3">
+                  <h3 className="text-muted-foreground px-2 text-sm">Recents</h3>
+                  <ul className="space-y-1">
+                    {localhostRecents.map((recent) => (
+                      <li key={recent.url}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const parsed = parseLocalhostUrl(recent.url);
+                            if (parsed) navigateTo(toInternalUrl(parsed.port, parsed.path));
+                          }}
+                          className="hover:bg-foreground/5 flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors active:scale-[0.99]"
+                        >
+                          <span className="flex size-5 shrink-0 items-center justify-center">
+                            <Globe className="text-muted-foreground/60 size-4" />
+                          </span>
+                          <span className="text-foreground/90 min-w-0 flex-1 truncate text-sm">
+                            {recentDisplayLabel(recent.url)}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-muted-foreground flex flex-col items-center gap-4 px-4 text-center">
+                <Globe className="size-12 opacity-20" />
+                <p className="text-sm">Search a URL or port</p>
+              </div>
+            </div>
+          )
+        ) : hasPreview ? (
           <iframe
             key={refreshKey}
             src={previewUrl}
@@ -427,11 +525,18 @@ export function AppPreview({
             className="h-full w-full border-0"
             sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
             onLoad={() => {
-              clearLoadTimeout();
-              setIsLoading(false);
+              // A load is positive evidence the app is up, which overrides a
+              // `hasError` an earlier verdict set — otherwise the error card
+              // (absolute inset-0 z-10) keeps covering a working app until a
+              // manual Retry (see `previewLoadSuccessState`). Clearing
+              // `isLoading` also disarms the port watch: its effect is gated on
+              // `shouldArmLoadTimeout`, so the state change tears it down.
+              const next = previewLoadSuccessState();
+              setIsLoading(next.isLoading);
+              setHasError(next.hasError);
             }}
             onError={() => {
-              clearLoadTimeout();
+              // A real error event is its own evidence — no probe needed.
               setIsLoading(false);
               setHasError(true);
             }}

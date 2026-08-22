@@ -1,13 +1,14 @@
 import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
+import { isServerDeadlineNoiseMessage } from '@/lib/browser-error-noise';
 import { isBillingEnabled } from '@/lib/config';
+import { isSilentTimeoutError } from '@/lib/timeout-toast-policy';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
-import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import * as Sentry from '@sentry/nextjs';
+import type { BillingState } from '@kortix/sdk';
 import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
+import * as Sentry from '@sentry/nextjs';
 
-const TOP_UP_LABEL = 'Top up';
 const MANAGE_PLAN_LABEL = 'Manage plan';
 
 export interface ApiError extends Error {
@@ -162,6 +163,10 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     console.error('API Error:', error, context);
   }
 
+  if (isSilentTimeoutError(error)) {
+    return;
+  }
+
   // Report server errors (5xx) and genuine network failures to Better Stack via
   // Sentry. 4xx errors are expected (auth, validation) and don't need alerting.
   //
@@ -178,7 +183,34 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   // `Request completed: … 503 …` warn log. Real 5xx server errors and genuine
   // connectivity loss (NETWORK_ERROR) still report. The message-shape backstop
   // for leak paths lives in browser-error-noise.ts (`isClientRequestTimeoutMessage`).
-  if (status >= 500 || error?.code === 'NETWORK_ERROR') {
+  //
+  // The API's server-side request-deadline 503 (`Request exceeded the <N>s server
+  // processing deadline`, from `RequestDeadlineHTTPException`) is ALSO not
+  // captured here. It is the SAME expected/retryable degradation class as the
+  // client timeout above, just observed server-side: the API's deadline net
+  // bounds a slow downstream / pool-saturated request and returns a clean 503 +
+  // Retry-After (de-noised from the API's OWN Sentry by #4524). But the 503
+  // RESPONSE crosses into the frontend as an `ApiError(status: 503)` (the SDK's
+  // `makeRequest` extracts `.message`), and WITHOUT this guard the `status >=
+  // 500` branch below would capture it to the FRONTEND Sentry (app 2346967 — a
+  // SEPARATE app from the API's 2346961). That is exactly how Better Stack
+  // FRONTEND pattern `a330bea1…` (`ApiError: Request exceeded the 25s server
+  // processing deadline`, on the `useSessionAudit` background poll) reached the
+  // frontend telemetry despite #4524's API-side classification — the two Sentry
+  // apps are independent. The `TRANSIENT_GATEWAY_STATUSES` retry (#4609) absorbs
+  // a single transient 503 on idempotent reads, but persistent saturation (the
+  // prod breadcrumbs showed 3 non-200 audit 503s) exhausts the 2-retry loop and
+  // surfaces the deadline 503 to `onError` → here. React-query retries the
+  // background poll; the saturation signal stays in per-route metrics + the
+  // structured 503 warn log. The message-shape backstop for leak paths
+  // (`<ClientErrorBoundary>` / route-error / `onunhandledrejection`) lives in
+  // browser-error-noise.ts (`isServerDeadlineNoiseMessage`). A genuine 503 with
+  // a different message (`sandbox waking up`, `HTTP 503: Service Unavailable`)
+  // still reports — only the typed deadline message the API's
+  // `RequestDeadlineHTTPException` emits is excluded.
+  const errorMessage = typeof error?.message === 'string' ? error.message : '';
+  const isServerDeadline503 = status === 503 && isServerDeadlineNoiseMessage(errorMessage);
+  if ((status >= 500 && !isServerDeadline503) || error?.code === 'NETWORK_ERROR') {
     Sentry.captureException(
       error instanceof Error ? error : new Error(error?.message || String(error)),
       {
@@ -217,44 +249,35 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   const v2AccountId: string | undefined =
     typeof v2Detail?.account_id === 'string' ? v2Detail.account_id : undefined;
 
-  // No active plan → pitch the one central Team plan subscribe modal.
+  // Billing block on a user action (session start, send, purchase). One modal
+  // handles both shapes and picks the right view off the 402's billing_model +
+  // has_subscription: a genuinely-free/no-plan account gets the subscribe pitch;
+  // a paying Team account whose wallet ran dry gets the top-up view (packages +
+  // custom amount + auto-top-up) — never the wrong "you're on Free" pitch.
   if (
     isBillingEnabled() &&
     v2Status === 402 &&
-    (v2Code === 'subscription_required' || v2Code === 'no_account')
+    (v2Code === 'subscription_required' ||
+      v2Code === 'no_account' ||
+      v2Code === 'insufficient_credits')
   ) {
     useUpgradeDialogStore.getState().openUpgradeDialog({
       reason: v2Code,
       message: v2Message ?? '',
       balance: v2Balance,
       accountId: v2AccountId,
+      billingModel:
+        typeof v2Detail?.billing_model === 'string' ? v2Detail.billing_model : undefined,
+      hasSubscription:
+        typeof v2Detail?.has_subscription === 'boolean' ? v2Detail.has_subscription : undefined,
+      // The unambiguous state (billing-state.ts). Preferred over `code`, which
+      // is deliberately lossy — a drained Free wallet and a drained Team wallet
+      // both arrive as `insufficient_credits`.
+      billingState:
+        typeof v2Detail?.billing_state === 'string'
+          ? (v2Detail.billing_state as BillingState)
+          : undefined,
     });
-    return;
-  }
-
-  // Already on a plan but the wallet ran dry. Don't pitch a subscription —
-  // they're subscribed and can still CRUD sessions; only metered LLM/compute
-  // spend is affected. Nudge a top-up instead of blocking with the modal.
-  if (isBillingEnabled() && v2Status === 402 && v2Code === 'insufficient_credits') {
-    const title = 'Out of credits';
-    if (!shouldSuppressDuplicate(v2Status, title)) {
-      warningToast(title, {
-        description: 'Top up your wallet or turn on auto-refill to keep using compute and LLMs.',
-        duration: 6000,
-        button: (
-          <Button
-            size="sm"
-            onClick={() =>
-              useAccountSettingsModalStore
-                .getState()
-                .openAccountSettings({ tab: 'billing', highlight: 'credits' })
-            }
-          >
-            {TOP_UP_LABEL}
-          </Button>
-        ),
-      });
-    }
     return;
   }
 
@@ -314,9 +337,12 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
         duration: 6000,
       });
     } else {
-      usePricingModalStore.getState().openPricingModal({
-        isAlert: true,
-        alertTitle: errorUI.alertTitle,
+      // Was openPricingModal() on the pricing-modal store, whose modal
+      // (NewInstanceModal) is not mounted anywhere — every non-credits 402
+      // therefore surfaced NOTHING. GlobalUpgradeModal is the live surface.
+      useUpgradeDialogStore.getState().openUpgradeDialog({
+        reason: 'subscription_required',
+        message: errorUI.alertTitle,
       });
     }
     return;

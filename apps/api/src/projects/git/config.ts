@@ -9,6 +9,7 @@ import {
   parseManifestText,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
+import { resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
@@ -185,6 +186,7 @@ export function resolveConfigAgents(
           mode: native?.mode ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
+          sandbox: spec.sandbox ?? null,
           // Surface the per-agent allowlists so the UI can show (read-only) what
           // secrets/connectors/CLI powers each declared agent is scoped to.
           scope: {
@@ -325,6 +327,14 @@ export async function loadProjectConfig(
     signals,
     manifest_raw: manifestRaw,
     manifest,
+    // The authoritative version verdict. Computed here so no client ever has to
+    // infer a version from the raw text — and so an unreadable manifest reports
+    // `unknown` instead of being mistaken for a legacy v1.
+    manifest_version: resolveManifestVerdict({
+      raw: manifestRaw,
+      format: manifestFormat,
+      path: resolved?.path ?? null,
+    }),
     env: envRequirements(manifest),
     open_code_raw: openCodeRaw,
     // v2 makes the manifest's declared default authoritative. Legacy projects

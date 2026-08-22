@@ -20,7 +20,13 @@ import {
 
 const dockerOk = sh(['docker', 'info']).ok;
 const CONTAINER = 'kortix-wt-migrate-test';
-const PORT = Number(process.env.WT_MIGRATE_TEST_PORT || 55440);
+// Host port for the throwaway container. MUST stay BELOW 32768: Linux's default
+// ephemeral range is 32768-60999 (`/proc/sys/net/ipv4/ip_local_port_range`), and
+// an outbound socket from the suite can transiently own a port in it — Docker
+// then fails the run with `bind: address already in use`. The previous 554xx
+// defaults sat inside that range and flaked CI on two different ports in a
+// single run.
+const PORT = Number(process.env.WT_MIGRATE_TEST_PORT || 5440);
 const ROOT = repoRoot();
 const ports: Ports = { ...computePorts(0), sbDb: PORT };
 
@@ -34,14 +40,28 @@ suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
   beforeAll(async () => {
     sh(['docker', 'rm', '-f', CONTAINER]);
     const up = sh([
-      'docker', 'run', '-d', '--name', CONTAINER,
-      '-e', 'POSTGRES_PASSWORD=postgres',
-      '-e', 'POSTGRES_USER=postgres',
-      '-e', 'POSTGRES_DB=postgres',
-      '--tmpfs', '/var/lib/postgresql/data',
-      '-p', `127.0.0.1:${PORT}:5432`,
+      'docker',
+      'run',
+      '-d',
+      '--name',
+      CONTAINER,
+      '-e',
+      'POSTGRES_PASSWORD=postgres',
+      '-e',
+      'POSTGRES_USER=postgres',
+      '-e',
+      'POSTGRES_DB=postgres',
+      '--tmpfs',
+      '/var/lib/postgresql/data',
+      '-p',
+      `127.0.0.1:${PORT}:5432`,
       'postgres:16-alpine',
-      '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
+      '-c',
+      'fsync=off',
+      '-c',
+      'synchronous_commit=off',
+      '-c',
+      'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
     for (let i = 0; i < 60; i++) {
@@ -55,24 +75,23 @@ suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
     sh(['docker', 'rm', '-f', CONTAINER]);
   });
 
-  test(
-    'builds the kortix schema from scratch (prereqs + node-pg-migrate)',
-    async () => {
-      const code = await runMigrate(ROOT, ports);
-      expect(code).toBe(0);
+  test('builds the kortix schema from scratch (prereqs + node-pg-migrate)', async () => {
+    const code = await runMigrate(ROOT, ports);
+    expect(code).toBe(0);
 
-      expect(hasKortixSchema(ports)).toBe(true);
+    expect(hasKortixSchema(ports)).toBe(true);
 
-      const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
-      const count = Number(
-        sh(['psql', url, '-tAc',
-          "select count(*) from information_schema.tables where table_schema='kortix' and table_type='BASE TABLE'",
-        ]).stdout.trim(),
-      );
-      expect(count).toBeGreaterThanOrEqual(80);
-    },
-    180_000,
-  );
+    const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
+    const count = Number(
+      sh([
+        'psql',
+        url,
+        '-tAc',
+        "select count(*) from information_schema.tables where table_schema='kortix' and table_type='BASE TABLE'",
+      ]).stdout.trim(),
+    );
+    expect(count).toBeGreaterThanOrEqual(80);
+  }, 180_000);
 
   test('is idempotent — a second run applies nothing and still exits 0', async () => {
     const code = await runMigrate(ROOT, ports);
@@ -82,5 +101,6 @@ suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
 });
 
 if (!dockerOk) {
+  // biome-ignore lint/suspicious/noSkippedTests: This integration suite requires a running Docker daemon.
   test.skip('worktree runMigrate integration (docker unavailable — skipped)', () => {});
 }

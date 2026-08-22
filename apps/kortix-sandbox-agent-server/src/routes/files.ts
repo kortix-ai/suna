@@ -28,6 +28,21 @@ import { isLikelyBinary, mimeTypeFor } from '../file-mime'
 
 const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
 
+async function readFileSnapshot(filePath: string): Promise<{ data: Buffer; size: number }> {
+  const handle = await fs.open(filePath, 'r')
+  try {
+    const stat = await handle.stat()
+    if (stat.isDirectory()) {
+      const error = new Error('Path is a directory') as NodeJS.ErrnoException
+      error.code = 'EISDIR'
+      throw error
+    }
+    return { data: await handle.readFile(), size: stat.size }
+  } finally {
+    await handle.close()
+  }
+}
+
 /**
  * Which of `absPaths` are git-ignored. Uses `git check-ignore -z --stdin` (NUL
  * I/O so paths with spaces/newlines are safe). Returns an empty set when the
@@ -137,6 +152,48 @@ export function createFilesRouter(cfg: Config): Hono {
     return resolved
   }
 
+  /**
+   * The on-disk NAME for one uploaded part — never a path.
+   *
+   * `file.name` is fully client-controlled and used to be interpolated straight
+   * into the destination as `${targetDir}/${file.name}`. `path.resolve` then
+   * collapsed any `../`, and the only check applied was `resolvePath`'s, which
+   * validates against the ALLOWED ROOTS (`/workspace`, `/opt`, `/tmp`, `/home`)
+   * and NOT against the target directory. So a caller uploading to
+   * `/workspace/uploads` could create a file anywhere under any of those roots
+   * by naming it `../../opt/evil.sh`. That was reachable and is fixed here.
+   *
+   * `path.basename` is the fix: the name can no longer contain a separator at
+   * all. `.` and `..` basename to themselves, so they are rejected explicitly.
+   *
+   * Returns null when there is no usable name, which the caller turns into a
+   * 400. Writing a placeholder would be worse — see `filename` below for how a
+   * zero-byte part loses its name and used to land as a file called
+   * "undefined".
+   */
+  function safeUploadName(raw: unknown): string | null {
+    if (typeof raw !== 'string') return null
+    const base = path.basename(raw.trim())
+    if (!base || base === '.' || base === '..' || base.includes('\0')) return null
+    return base
+  }
+
+  /**
+   * Join a validated target directory and a bare filename, and prove the result
+   * stayed inside that directory.
+   *
+   * `safeUploadName` already makes an escape structurally impossible. This is
+   * the assertion that keeps it impossible if someone later relaxes that.
+   */
+  function resolveUploadDest(targetDir: string, name: string): string {
+    const dir = resolvePath(targetDir)
+    const resolved = path.resolve(dir, name)
+    if (resolved !== dir && !resolved.startsWith(dir + '/')) {
+      throw new Error('Access denied: filename escapes the target directory')
+    }
+    return resolved
+  }
+
   /** Short high-entropy suffix (~12 chars) for disambiguating filenames. */
   function uniqueSuffix(): string {
     const ts = Date.now().toString(36)
@@ -202,14 +259,13 @@ export function createFilesRouter(cfg: Config): Hono {
       return c.json({ error: (err as Error).message }, 403)
     }
 
-    const stat = await fs.stat(resolved).catch(() => null)
-    if (!stat) return c.json({ error: 'File not found' }, 404)
-    if (stat.isDirectory()) return c.json({ error: 'Path is a directory' }, 400)
-
-    let data: Buffer
+    let snapshot: { data: Buffer; size: number }
     try {
-      data = await fs.readFile(resolved)
+      snapshot = await readFileSnapshot(resolved)
     } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+      if (code === 'EISDIR') return c.json({ error: 'Path is a directory' }, 400)
       logger.warn('[files] raw read failed', { path: resolved, error: (err as Error).message })
       return c.json({ error: (err as Error).message }, 500)
     }
@@ -217,11 +273,11 @@ export function createFilesRouter(cfg: Config): Hono {
     // fs.readFile returns an exact-sized Buffer (a Uint8Array view) — a valid
     // BodyInit, sent verbatim. Never text/html, so clients don't mistake it
     // for the SPA shell and reject it.
-    return new Response(data, {
+    return new Response(snapshot.data, {
       status: 200,
       headers: {
         'Content-Type': mimeTypeFor(resolved, true),
-        'Content-Length': String(stat.size),
+        'Content-Length': String(snapshot.size),
         'Cache-Control': 'no-store',
       },
     })
@@ -245,33 +301,32 @@ export function createFilesRouter(cfg: Config): Hono {
       return c.json({ error: (err as Error).message }, 403)
     }
 
-    const stat = await fs.stat(resolved).catch(() => null)
-    if (!stat) return c.json({ error: 'File not found' }, 404)
-    if (stat.isDirectory()) return c.json({ error: 'Path is a directory' }, 400)
-
-    let data: Buffer
+    let snapshot: { data: Buffer; size: number }
     try {
-      data = await fs.readFile(resolved)
+      snapshot = await readFileSnapshot(resolved)
     } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+      if (code === 'EISDIR') return c.json({ error: 'Path is a directory' }, 400)
       logger.warn('[files] content read failed', { path: resolved, error: (err as Error).message })
       return c.json({ error: (err as Error).message }, 500)
     }
 
-    const binary = isLikelyBinary(data, resolved)
+    const binary = isLikelyBinary(snapshot.data, resolved)
     if (binary) {
       return c.json({
         type: 'binary',
-        content: data.toString('base64'),
+        content: snapshot.data.toString('base64'),
         encoding: 'base64',
         mimeType: mimeTypeFor(resolved, true),
-        size: stat.size,
+        size: snapshot.size,
       })
     }
     return c.json({
       type: 'text',
-      content: data.toString('utf8'),
+      content: snapshot.data.toString('utf8'),
       mimeType: mimeTypeFor(resolved, false),
-      size: stat.size,
+      size: snapshot.size,
     })
   })
 
@@ -350,20 +405,47 @@ export function createFilesRouter(cfg: Config): Hono {
     }
 
     const targetDir = typeof body['path'] === 'string' ? (body['path'] as string) : undefined
+    // Bun's multipart parser DROPS `filename` on a ZERO-LENGTH part, so a
+    // genuinely empty upload arrives with `file.name === undefined`. That used
+    // to interpolate straight into the destination and write a file literally
+    // named "undefined" (or, with no `path` field, throw a TypeError out as an
+    // opaque 500). Clients therefore send the name in its own `filename` field,
+    // which survives an empty body. Only meaningful for a single-file request —
+    // with several parts there is no way to say which one it names, so it is
+    // used strictly as a per-part fallback and never overrides a real name.
+    const filenameHint = typeof body['filename'] === 'string' ? (body['filename'] as string) : undefined
     const results: { path: string; size: number }[] = []
 
     try {
       for (const [key, value] of Object.entries(body)) {
-        if (key === 'path') continue
+        if (key === 'path' || key === 'filename') continue
         const files = Array.isArray(value) ? value : [value]
         for (const file of files) {
           if (typeof file === 'string') continue
           if (!(file instanceof globalThis.File)) continue
-          const dest = targetDir
-            ? `${targetDir}/${file.name}`
-            : key === 'file' || key === 'file[]'
-              ? file.name
-              : key
+
+          let dest: string
+          if (targetDir) {
+            const name = safeUploadName(file.name || filenameHint)
+            if (!name) {
+              return c.json({ error: 'Upload is missing a usable filename' }, 400)
+            }
+            dest = resolveUploadDest(targetDir, name)
+          } else if (key === 'file' || key === 'file[]') {
+            // No target directory: the name alone is the destination, resolved
+            // against the workspace by `resolvePath`. Still a bare name only.
+            const name = safeUploadName(file.name || filenameHint)
+            if (!name) {
+              return c.json({ error: 'Upload is missing a usable filename' }, 400)
+            }
+            dest = name
+          } else {
+            // Field-name-as-path convention: the FIELD NAME is the destination
+            // path. This one is intentionally a path, not a name, and stays
+            // guarded by `resolvePath`'s allowed-roots check.
+            dest = key
+          }
+
           const buffer = await file.arrayBuffer()
           const actualPath = await writeUploadUnique(dest, buffer)
           results.push({ path: actualPath, size: buffer.byteLength })

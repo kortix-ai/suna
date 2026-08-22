@@ -3,6 +3,7 @@ import type { AppEnv } from '../types';
 import { makeOpenApiApp, json } from '../openapi';
 import { versionRouter } from './routes/version';
 import { githubAppSetupRouter } from './routes/github-app';
+import { bootTimelineRouter } from './routes/boot-timeline';
 
 // Platform sub-app. The legacy /v1/platform/sandbox/* lifecycle surface
 // (one-per-account sandbox lifecycle, members, invites, pool admin, backup
@@ -29,5 +30,9 @@ platformApp.route('/sandbox/version', versionRouter);
 // /v1/platform/github-app/{manifest-start,manifest-callback,install-callback,status}
 // — the in-app self-host GitHub App setup flow (DB-backed managed App config).
 platformApp.route('/github-app', githubAppSetupRouter);
+// /v1/platform/boot-timeline — the in-sandbox daemon relays its own boot marks
+// here at runtime-ready. Makes in-guest boot latency queryable next to the host
+// marks (provider_events, kind 'boot'); see services/boot-timeline-store.ts.
+platformApp.route('/boot-timeline', bootTimelineRouter);
 
 export { platformApp };

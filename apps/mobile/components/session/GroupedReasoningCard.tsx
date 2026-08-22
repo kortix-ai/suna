@@ -36,7 +36,6 @@ import Animated, {
   withSequence,
   Easing,
   FadeIn,
-  FadeOut,
 } from 'react-native-reanimated';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {

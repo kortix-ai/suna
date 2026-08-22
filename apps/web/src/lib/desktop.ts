@@ -12,19 +12,22 @@
 export const DESKTOP_UA_TOKEN = 'KortixDesktop';
 
 /**
- * Base path for desktop installer downloads. The `/download` route resolves the
- * latest installer for the visitor's OS (or `?platform=macos|windows|linux`)
- * and 302s to it — same pattern as the CLI's `/install`. Override with
+ * Base path for desktop downloads. `/download` is the public page; the
+ * `/download/<platform>` children 302 to the latest installer for that OS —
+ * same pattern as the CLI's `/install`. Override with
  * NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL if needed.
  */
 export const DESKTOP_DOWNLOAD_URL =
   process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL || '/download';
 
-/** Build a per-platform download URL, e.g. desktopDownloadUrl('macos'). */
+/**
+ * Build a per-platform download URL, e.g. desktopDownloadUrl('macos') →
+ * '/download/macos'. Without a platform this returns '/download', which is the
+ * public page — it lets the visitor choose, and highlights their OS.
+ */
 export function desktopDownloadUrl(platform?: 'macos' | 'windows' | 'linux'): string {
   if (!platform) return DESKTOP_DOWNLOAD_URL;
-  const sep = DESKTOP_DOWNLOAD_URL.includes('?') ? '&' : '?';
-  return `${DESKTOP_DOWNLOAD_URL}${sep}platform=${platform}`;
+  return `${DESKTOP_DOWNLOAD_URL.replace(/\/$/, '')}/${platform}`;
 }
 
 /**
@@ -160,15 +163,57 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
 const ZOOM_STEP = 1.1;
 
+/**
+ * The desktop shell renders the web app one notch smaller than the browser
+ * does. A desktop window is a fixed frame the user sizes once, not a tab among
+ * tabs, so the web's default type and control sizes read oversized in it —
+ * every native app it sits beside is denser.
+ *
+ * This is REAL browser zoom (`webContents.setZoomFactor`), not CSS `zoom`. CSS
+ * `zoom` does not scale viewport units, so `h-svh` / `min-h-svh` / `h-dvh`
+ * would each resolve to 90% of the window and leave a dead strip at the bottom
+ * — and the capabilities layout pins its tab bar with `h-svh` specifically.
+ * Browser zoom changes the CSS-pixel scale itself, so viewport units, media
+ * queries and DPI all stay correct.
+ *
+ * MUST equal `--kx-desktop-zoom` in globals.css, which divides the title-bar
+ * offsets back out: the macOS traffic lights are drawn by the OS in WINDOW
+ * pixels and do not zoom, so a CSS offset of 72px would land at 64.8px and
+ * break the alignment. desktop-titlebar.test.ts asserts the two agree.
+ */
+export const DESKTOP_BASE_ZOOM = 0.94;
+
 const clampZoom = (n: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n));
 
-export function getDesktopZoom(): number {
-  if (typeof window === 'undefined') return 1;
+/**
+ * A stored zoom is an ABSOLUTE factor, so it only means anything relative to
+ * the base it was chosen against. Stamp the base alongside it: a user's own
+ * Cmd+/Cmd- still survives restarts, but once the shell's default moves, values
+ * picked against the old one are stale and the new default wins.
+ *
+ * Without this, changing DESKTOP_BASE_ZOOM is a no-op for anyone who has ever
+ * touched the zoom keys — the app keeps rendering at their old factor and the
+ * new default is invisible.
+ */
+function readStoredZoom(): number | null {
+  const raw = window.localStorage.getItem(ZOOM_KEY);
+  if (!raw) return null;
   try {
-    const v = parseFloat(window.localStorage.getItem(ZOOM_KEY) || '');
-    return Number.isFinite(v) ? clampZoom(v) : 1;
+    const parsed = JSON.parse(raw) as { scale?: number; base?: number };
+    if (parsed?.base !== DESKTOP_BASE_ZOOM) return null; // chosen against an older default
+    return Number.isFinite(parsed.scale) ? clampZoom(parsed.scale!) : null;
   } catch {
-    return 1;
+    // Pre-versioning value: a bare number, chosen against an older default.
+    return null;
+  }
+}
+
+export function getDesktopZoom(): number {
+  if (typeof window === 'undefined') return DESKTOP_BASE_ZOOM;
+  try {
+    return readStoredZoom() ?? DESKTOP_BASE_ZOOM;
+  } catch {
+    return DESKTOP_BASE_ZOOM;
   }
 }
 
@@ -185,9 +230,22 @@ async function invokeSetZoom(scale: number): Promise<void> {
 export async function setDesktopZoom(scale: number): Promise<number> {
   const next = clampZoom(scale);
   try {
-    window.localStorage.setItem(ZOOM_KEY, String(next));
+    // Stamped with the base it was chosen against — see readStoredZoom.
+    window.localStorage.setItem(
+      ZOOM_KEY,
+      JSON.stringify({ scale: next, base: DESKTOP_BASE_ZOOM }),
+    );
   } catch {
     /* private mode */
+  }
+  // Publish the LIVE factor to CSS. The title-bar offsets divide by it to stay
+  // pinned to the OS window controls, which never zoom — so this has to track
+  // the user's Cmd+/Cmd- too, not just the shell default. globals.css seeds it
+  // with DESKTOP_BASE_ZOOM so the very first paint is already correct.
+  try {
+    document.documentElement.style.setProperty('--kx-desktop-zoom', String(next));
+  } catch {
+    /* no document (SSR) */
   }
   await invokeSetZoom(next);
   return next;
@@ -195,7 +253,8 @@ export async function setDesktopZoom(scale: number): Promise<number> {
 
 export const zoomIn = () => setDesktopZoom(getDesktopZoom() * ZOOM_STEP);
 export const zoomOut = () => setDesktopZoom(getDesktopZoom() / ZOOM_STEP);
-export const zoomReset = () => setDesktopZoom(1);
+/** Back to the shell's own scale, not the browser's 100%. */
+export const zoomReset = () => setDesktopZoom(DESKTOP_BASE_ZOOM);
 
 /* ─── Frontend URL override (self-hosting) ───────────────────────────────
    The switcher lives in the hidden native menu (Kortix → Frontend URL). Its

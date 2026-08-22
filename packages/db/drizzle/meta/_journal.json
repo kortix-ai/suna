@@ -15,6 +15,377 @@
       "when": 1784204732306,
       "tag": "20260716122532_sandbox_provider_add_local_docker",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784298695986,
+      "tag": "20260717143135_executor_postman_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784375548825,
+      "tag": "20260718115228_account_model_preferences_project_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784393153201,
+      "tag": "20260718164553_add_project_model_generation_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784665625784,
+      "tag": "20260721202705_add_audit_events_occurred_at_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784711662984,
+      "tag": "20260722091422_add_session_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784720046773,
+      "tag": "20260722113406_add_session_secrets_allowlist",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784764450225,
+      "tag": "20260722235410_provider_transitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784829248655,
+      "tag": "20260723175408_add_provider_transitions_lease_epoch",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784900386151,
+      "tag": "20260724133946_session_connector_bindings_inherit_unbound",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784937680824,
+      "tag": "20260725000120_executor_oauth_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784941778905,
+      "tag": "20260725010938_gateway_billing_precision_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784942492106,
+      "tag": "20260725012132_gateway_cost_precision_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784942520000,
+      "tag": "20260725012200_voice_call_turns",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785024428383,
+      "tag": "20260726000708_project_sessions_one_available_warm",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785078159762,
+      "tag": "20260726150239_voice_join_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785114368302,
+      "tag": "20260727010608_exact_trigger_scheduler",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785144061558,
+      "tag": "20260727092101_multi_connections_per_connector",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785151590373,
+      "tag": "20260727112630_usage_events_origin_ref",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785152081893,
+      "tag": "20260727113441_project_sessions_origin_active_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785160455055,
+      "tag": "20260727135415_connection_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1785227078974,
+      "tag": "20260728082438_project_sessions_project_origin_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785245173903,
+      "tag": "20260728132613_secret_delivery_strategy",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785269446728,
+      "tag": "20260728201046_add_project_disabled_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785272948205,
+      "tag": "20260728210908_acp_session_envelopes",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785292200000,
+      "tag": "20260729023000_add_project_model_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1785361936857,
+      "tag": "20260729215216_executor_policy_arg_conditions",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1785369892539,
+      "tag": "20260730000452_sandbox_deadline",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1785387189606,
+      "tag": "20260730045309_connector_authorization_strategy_and_session_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1785416744610,
+      "tag": "20260730130544_drop_acp_session_envelopes",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1785486954869,
+      "tag": "20260731083554_centralized_audit_envelope",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785514015171,
+      "tag": "20260731160655_session_required_connectors",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785702120462,
+      "tag": "20260802202200_executor_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785953661988,
+      "tag": "20260805181421_session_pending_questions",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785961753530,
+      "tag": "20260805202913_secret_consumer_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785963447201,
+      "tag": "20260805205727_provision_idempotency_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786024867650,
+      "tag": "20260806140107_connector_physical_cutover",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786028633408,
+      "tag": "20260806150353_connector_compat_removal",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786067397287,
+      "tag": "20260807014957_add_kortix_apps",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786114559482,
+      "tag": "20260807145559_app_deployment_provenance_schema_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786121841282,
+      "tag": "20260807165721_remove_local_docker_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786129586815,
+      "tag": "20260807190626_trial_and_entitlement_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786137170442,
+      "tag": "20260807211250_add_app_access_control_rebase",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1786196649694,
+      "tag": "20260808134409_centralized_audit_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786306539063,
+      "tag": "20260809201539_preserve_tunnel_audit_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1786449706506,
+      "tag": "20260811120146_account_entitlement_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786453326204,
+      "tag": "20260811130206_impersonation_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786501589424,
+      "tag": "20260812022629_monitor_events_and_boxes",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786503220628,
+      "tag": "20260812025340_monitor_workload_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786997013968,
+      "tag": "20260817200333_session_turns",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1787104143156,
+      "tag": "20260819014903_gateway_otel_configs",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1787112452646,
+      "tag": "20260819040732_rbac_canonical_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1787151312427,
+      "tag": "20260819145512_rbac_cutover_drop_dead_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1787151328313,
+      "tag": "20260819145528_rbac_cutover_account_memberships",
+      "breakpoints": true
     }
   ]
 }

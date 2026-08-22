@@ -7,9 +7,9 @@
  * opencode client. DOM-bound helpers (download / zip) stay in the host UI and
  * consume `readBlob`/`list` from here.
  */
-import { getClient } from '../runtime/client';
+import { getClient, RuntimeNotReadyError } from '../runtime/client';
 import { getActiveOpenCodeUrl } from '../session/server-store/active';
-import { getAuthToken, authenticatedFetch } from '../http/auth';
+import { authenticatedFetch } from '../http/auth';
 import { ApiError } from '../http/api/errors';
 import type {
   FileContent,
@@ -19,6 +19,7 @@ import type {
   OpenCodeProjectInfo,
   ServerHealth,
   UploadResult,
+  WriteFileResult,
 } from './types';
 
 // Re-export the file types from the `@kortix/sdk/files` subpath too, so hosts can
@@ -56,13 +57,40 @@ async function errorMessage(res: Response): Promise<string> {
 }
 
 /**
+ * Resolve the daemon base url for ONE operation — or refuse to run it.
+ *
+ * `getActiveOpenCodeUrl()` returns `''` on a billing-enabled deployment until a
+ * session runtime is bound (`session/server-store/active.ts`). Interpolating
+ * that `''` into a template makes the request URL RELATIVE, so the browser sent
+ * the user's file AND their bearer token to the WEB origin
+ * (`https://dev.kortix.com/file/upload`), which answered with the Next.js 404
+ * HTML shell — surfacing as "Upload failed (404): Not Found".
+ *
+ * The send path already refuses this race (`runtime/client.ts` `getClient()`
+ * throws `RuntimeNotReadyError`); the files transport now refuses it the same
+ * way, with the same error class, so a host can classify both with one
+ * `instanceof` and retry once the session is ready. An explicitly-passed empty
+ * string is refused too — a caller that hands us a blank base url has the same
+ * unresolved runtime, and falling back to the module-global would silently
+ * target a DIFFERENT session's sandbox.
+ *
+ * Every operation in this module goes through here. A relative-URL fetch must
+ * be impossible from this file.
+ */
+function requireBaseUrl(baseUrl?: string): string {
+  const resolved = (baseUrl ?? getActiveOpenCodeUrl()).trim();
+  if (!resolved) throw new RuntimeNotReadyError();
+  return resolved;
+}
+
+/**
  * GET a daemon JSON endpoint (list/status/find), surfacing the server's error.
  * `baseUrl` defaults to the module-global "active" sandbox for back-compat —
  * pass an explicit one (e.g. from `kortix.session(pid, sid).files`) to hit a
  * SPECIFIC session's own runtime instead.
  */
-async function fetchDaemonJson<T>(relUrl: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<T> {
-  const response = await authenticatedFetch(`${baseUrl}${relUrl}`);
+async function fetchDaemonJson<T>(relUrl: string, baseUrl?: string): Promise<T> {
+  const response = await authenticatedFetch(`${requireBaseUrl(baseUrl)}${relUrl}`);
   if (!response.ok) {
     throw new ApiError(await errorMessage(response), { status: response.status, response });
   }
@@ -116,16 +144,18 @@ export const toWorkspaceRelative = toDaemonPath;
  * the module-global "active" sandbox; pass one explicitly to target a
  * specific session's runtime (see `kortix.session(pid, sid).files`).
  */
-export async function listFiles(dirPath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<FileNode[]> {
+export async function listFiles(dirPath: string, baseUrl?: string): Promise<FileNode[]> {
+  const base = requireBaseUrl(baseUrl);
   const daemonPath = toDaemonPath(dirPath) || '.';
-  const nodes = await fetchDaemonJson<FileNode[]>(`/file?path=${encodeURIComponent(daemonPath)}`, baseUrl);
+  const nodes = await fetchDaemonJson<FileNode[]>(`/file?path=${encodeURIComponent(daemonPath)}`, base);
   return nodes.map((node) => ({ ...node, path: node.absolute || `/workspace/${node.path}` }));
 }
 
 /** Read a file's content (text, or base64 for binaries). Daemon `GET /file/content`. */
-export async function readFile(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<FileContent> {
+export async function readFile(filePath: string, baseUrl?: string): Promise<FileContent> {
+  const base = requireBaseUrl(baseUrl);
   const daemonPath = toDaemonPath(filePath);
-  const response = await authenticatedFetch(`${baseUrl}/file/content?path=${encodeURIComponent(daemonPath)}`);
+  const response = await authenticatedFetch(`${base}/file/content?path=${encodeURIComponent(daemonPath)}`);
   if (!response.ok) {
     throw new ApiError(await errorMessage(response), { status: response.status, response });
   }
@@ -133,9 +163,10 @@ export async function readFile(filePath: string, baseUrl: string = getActiveOpen
 }
 
 /** Raw byte read. Daemon `GET /file/raw`. Throws (so callers can fall back). */
-async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<Blob> {
+async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl?: string): Promise<Blob> {
+  const base = requireBaseUrl(baseUrl);
   const daemonPath = toDaemonPath(filePath);
-  const response = await authenticatedFetch(`${baseUrl}/file/raw?path=${encodeURIComponent(daemonPath)}`);
+  const response = await authenticatedFetch(`${base}/file/raw?path=${encodeURIComponent(daemonPath)}`);
   if (!response.ok) {
     throw new ApiError(await errorMessage(response), { status: response.status, response });
   }
@@ -155,11 +186,14 @@ async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl: str
 }
 
 /** Read a file as a Blob — prefers `/file/raw`, falls back to base64 `/file/content`. */
-export async function readBlob(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<Blob> {
+export async function readBlob(filePath: string, baseUrl?: string): Promise<Blob> {
+  // Resolve BEFORE the try: an unresolved runtime must surface as
+  // `RuntimeNotReadyError`, not be swallowed into the base64 fallback path.
+  const base = requireBaseUrl(baseUrl);
   try {
-    return await readFileRaw(filePath, undefined, baseUrl);
+    return await readFileRaw(filePath, undefined, base);
   } catch { /* fall back to JSON content endpoint */ }
-  const result = await readFile(filePath, baseUrl);
+  const result = await readFile(filePath, base);
   if (result.encoding === 'base64' && result.content) {
     const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
     return new Blob([bytes], { type: result.mimeType || 'application/octet-stream' });
@@ -168,8 +202,8 @@ export async function readBlob(filePath: string, baseUrl: string = getActiveOpen
 }
 
 /** Git file status — uncommitted changes. Daemon `GET /file/status`. */
-export function getFileStatus(baseUrl: string = getActiveOpenCodeUrl()): Promise<GitFileStatus[]> {
-  return fetchDaemonJson<GitFileStatus[]>(`/file/status`, baseUrl);
+export async function getFileStatus(baseUrl?: string): Promise<GitFileStatus[]> {
+  return fetchDaemonJson<GitFileStatus[]>(`/file/status`, requireBaseUrl(baseUrl));
 }
 
 /**
@@ -187,17 +221,19 @@ export function getFileStatus(baseUrl: string = getActiveOpenCodeUrl()): Promise
 export async function findFiles(
   query: string,
   options?: { type?: 'file' | 'directory'; limit?: number },
-  baseUrl: string = getActiveOpenCodeUrl(),
+  baseUrl?: string,
 ): Promise<string[]> {
+  const base = requireBaseUrl(baseUrl);
   const params = new URLSearchParams({ query });
   if (options?.type) params.set('type', options.type);
   if (options?.limit) params.set('limit', String(options.limit));
-  return fetchDaemonJson<string[]>(`/find/file?${params.toString()}`, baseUrl);
+  return fetchDaemonJson<string[]>(`/find/file?${params.toString()}`, base);
 }
 
 /** Ripgrep text search. Daemon `GET /find`. Tolerates flat + nested rg-JSON. */
-export async function findText(pattern: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<FindMatch[]> {
-  const raw = await fetchDaemonJson<Array<Record<string, any>>>(`/find?pattern=${encodeURIComponent(pattern)}`, baseUrl);
+export async function findText(pattern: string, baseUrl?: string): Promise<FindMatch[]> {
+  const base = requireBaseUrl(baseUrl);
+  const raw = await fetchDaemonJson<Array<Record<string, any>>>(`/find?pattern=${encodeURIComponent(pattern)}`, base);
   return raw.map((item) => ({
     path: typeof item.path === 'string' ? item.path : (item.path?.text ?? ''),
     lines: typeof item.lines === 'string' ? item.lines : (item.lines?.text ?? ''),
@@ -211,6 +247,65 @@ export async function findText(pattern: string, baseUrl: string = getActiveOpenC
 const UPLOAD_RETRY_DELAYS_MS = [400, 1200];
 const isTransient = (s: number) => s === 408 || s === 429 || s === 502 || s === 503 || s === 504;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * A thrown request that retrying cannot fix.
+ *
+ * The status path has always discriminated (see `isTransient`); the throw path
+ * did not, and retried everything. So a body too large for the deadline blew
+ * that same deadline on all three attempts, and the caller waited roughly three
+ * times the timeout to be told `Upload failed: signal timed out`. Re-sending an
+ * identical body against an identical budget cannot succeed — the only thing
+ * the retries bought was a longer wait for the same answer.
+ *
+ * `TimeoutError` is what `AbortSignal.timeout()` raises; `AbortError` is a
+ * caller cancelling on purpose, which must never be "retried" back to life.
+ */
+function isUnretryableThrow(error: unknown): boolean {
+  const name = (error as { name?: unknown } | null)?.name;
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
+/** The floor for any upload — the platform-wide default request deadline. */
+const UPLOAD_TIMEOUT_FLOOR_MS = 30_000;
+/**
+ * The ceiling. A stuck upload must not wedge a server-side handler forever.
+ *
+ * It is NOT the API proxy's budget, and must not be clamped down to it. The
+ * proxy's `PROXY_RETRY_BUDGET_MS` (50s, `apps/api/src/sandbox-proxy/`) starts
+ * only AFTER the request body is fully buffered
+ * (`preview.ts` does `await c.req.raw.clone().arrayBuffer()` before
+ * `proxyStartedAt`), so the client-visible duration is
+ * `body upload time + ≤50s upstream`, not 50s total. Clamping this ceiling to
+ * ~60s would abort every upload whose body alone takes longer than that on a
+ * slow uplink — the exact failure `uploadTimeoutMsForBytes` exists to prevent.
+ * At the assumed 256 KB/s floor this ceiling only binds above ~222 MB.
+ */
+const UPLOAD_TIMEOUT_CEILING_MS = 15 * 60_000;
+/**
+ * Assumed floor throughput. Deliberately pessimistic: the deadline exists to
+ * catch a *stuck* upload, not to race a slow one, so erring long costs a late
+ * error message while erring short costs a failed upload that would have
+ * succeeded. ~256 KB/s ≈ a weak mobile uplink.
+ */
+const UPLOAD_ASSUMED_BYTES_PER_MS = 256;
+
+/**
+ * How long to give an upload of `bytes`.
+ *
+ * A flat 30s is the platform default for every request, which is right for a
+ * JSON call and wrong for a body: a 200 KB screenshot and a 30 MB zip were
+ * getting the same budget, and the zip lost. Scales with size, clamped at both
+ * ends. Exported so callers (and tests) can reason about the deadline they are
+ * about to be held to.
+ */
+export function uploadTimeoutMsForBytes(bytes?: number): number {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) {
+    return UPLOAD_TIMEOUT_FLOOR_MS;
+  }
+  const scaled = UPLOAD_TIMEOUT_FLOOR_MS + bytes / UPLOAD_ASSUMED_BYTES_PER_MS;
+  return Math.min(UPLOAD_TIMEOUT_CEILING_MS, Math.max(UPLOAD_TIMEOUT_FLOOR_MS, Math.round(scaled)));
+}
 
 async function uploadErrorMessage(res: Response): Promise<string> {
   const text = await res.text().catch(() => '');
@@ -237,6 +332,8 @@ async function uploadWithRetry(
       res = await send(buildForm());
     } catch (err) {
       lastError = err;
+      // A timeout or a deliberate abort is terminal — see `isUnretryableThrow`.
+      if (isUnretryableThrow(err)) break;
       if (attempt === UPLOAD_RETRY_DELAYS_MS.length) break;
       await sleep(UPLOAD_RETRY_DELAYS_MS[attempt]);
       continue;
@@ -257,60 +354,237 @@ async function uploadWithRetry(
  * module-global "active" sandbox; pass one explicitly to target a specific
  * session's runtime.
  */
-export function uploadFile(
+export async function uploadFile(
   file: File | Blob,
   targetPath?: string,
   filename?: string,
-  baseUrl: string = getActiveOpenCodeUrl(),
+  baseUrl?: string,
 ): Promise<UploadResult[]> {
+  const base = requireBaseUrl(baseUrl);
+  // The deadline follows the body. The platform-wide 30s is a hang detector
+  // for a JSON call; against a 30 MB attachment it is a throughput limit, and
+  // the attachment loses.
+  const timeoutMs = uploadTimeoutMsForBytes(file.size);
+  // The name the file must land under. `File.name` is the fallback for a host
+  // that already named its blob; a bare `Blob` has none, and then the daemon
+  // resolves the destination from the `path` field alone.
+  const name = filename || (file instanceof File ? file.name : '') || '';
   return uploadWithRetry(
     () => {
       const form = new FormData();
       const rawPath = (targetPath ?? '').trim();
       if (rawPath) form.append('path', rawPath.startsWith('/') ? rawPath : `/${rawPath}`);
-      if (filename) form.append('file', file, filename);
+      // The name travels as its OWN field, not only as the multipart part's
+      // `filename` parameter. Bun 1.3.14's multipart parser DROPS `filename`
+      // on a ZERO-LENGTH part, so a genuinely empty upload reached the daemon
+      // with `file.name === undefined` and landed as a file literally named
+      // "undefined". The SDK used to dodge that by writing a single space into
+      // every "new empty file" — which made every empty `.json` invalid and
+      // every new file 1 byte of 0x20. This field survives an empty body; the
+      // daemon reads it as the per-part fallback (`filenameHint` in
+      // `apps/kortix-sandbox-agent-server/src/routes/files.ts`).
+      if (name) form.append('filename', name);
+      if (name) form.append('file', file, name);
       else form.append('file', file);
       return form;
     },
-    (form) => authenticatedFetch(`${baseUrl}/file/upload`, { method: 'POST', body: form }),
+    (form) =>
+      authenticatedFetch(`${base}/file/upload`, { method: 'POST', body: form }, { timeoutMs }),
   );
 }
 
-/** Upload content to a specific path via the field-name-as-path convention. */
-function uploadToPath(filePath: string, content: Blob, baseUrl: string = getActiveOpenCodeUrl()): Promise<UploadResult[]> {
+/**
+ * Upload content to a specific path via the field-name-as-path convention.
+ *
+ * Goes through `authenticatedFetch` like every other write. It used to call a
+ * bare `fetch()` with a hand-rolled `Authorization` header, which silently
+ * skipped the size-scaled deadline, the 401 stale-token refresh-and-retry, the
+ * `X-Kortix-Client` header, and `platformConfig().fetch` — so every host that
+ * injects its own fetch (mobile, whitelabel) was bypassed on this one path.
+ */
+function uploadToPath(filePath: string, content: Blob, baseUrl?: string): Promise<UploadResult[]> {
+  const base = requireBaseUrl(baseUrl);
+  const timeoutMs = uploadTimeoutMsForBytes(content.size);
   return uploadWithRetry(
     () => {
       const form = new FormData();
       form.append(filePath, content, filePath.split('/').pop() || 'file');
       return form;
     },
-    async (form) => {
-      const headers: Record<string, string> = {};
-      const token = await getAuthToken();
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      return fetch(`${baseUrl}/file/upload`, { method: 'POST', body: form, headers });
-    },
+    (form) =>
+      authenticatedFetch(`${base}/file/upload`, { method: 'POST', body: form }, { timeoutMs }),
   );
 }
 
-/** Create an empty file at a path. */
-export function createFile(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<UploadResult[]> {
+/**
+ * Create an EMPTY file at a path — 0 bytes, not one space.
+ *
+ * Implemented on `writeFile`, and that is a ROLLOUT requirement, not a style
+ * choice. The `filename` form field `uploadFile` sends is read by the daemon,
+ * and the daemon is **baked into the sandbox image**
+ * (`/usr/local/bin/kortix-agent`, `apps/sandbox/Dockerfile`). `/v1/runtime-assets`
+ * reconciles only the CLI binary and the managed skills (`cli_sha256`,
+ * `managed_skills_hash`) — it does NOT ship the daemon. So this SDK reaches
+ * production with the web app immediately while every sandbox provisioned
+ * before the image rebuild keeps its OLD daemon for the life of the box.
+ *
+ * On an old daemon a genuinely 0-byte part loses its filename in Bun's
+ * multipart parser and a direct upload lands as a file literally named
+ * "undefined". `writeFile` renames the path the daemon REPORTED onto the
+ * requested path, so both fleets converge on the right answer:
+ *
+ * - new daemon → temp name lands → renamed to the target;
+ * - old daemon → "undefined" lands → renamed to the target.
+ *
+ * Concurrency holds on the old fleet too: two simultaneous creates both aim at
+ * "undefined", the daemon's `O_EXCL` + suffix retry hands the second one
+ * `undefined-<suffix>`, and each call renames only the path IT was told — so
+ * they cannot cross.
+ *
+ * Returns `UploadResult[]` — the published shape, unchanged.
+ */
+export async function createFile(filePath: string, baseUrl?: string): Promise<UploadResult[]> {
+  const base = requireBaseUrl(baseUrl);
   const rawPath = filePath.trim();
   const absolutePath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
   const parts = absolutePath.split('/');
+  // Keep the historical fallbacks exactly: a trailing slash yields 'untitled',
+  // and a bare name anchors under /workspace.
   const fileName = parts.pop() || 'untitled';
   const dirPath = parts.join('/') || '/workspace';
-  return uploadFile(new File([' '], fileName, { type: 'application/octet-stream' }), dirPath, undefined, baseUrl);
+  const written = await writeFile(
+    `${dirPath}/${fileName}`,
+    new Blob([], { type: 'application/octet-stream' }),
+    base,
+  );
+  return [{ path: written.path, size: written.bytes }];
 }
 
 /** Copy a file (read source bytes → upload to dest). */
-export async function copyFile(sourcePath: string, destPath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<UploadResult[]> {
-  return uploadToPath(destPath, await readBlob(sourcePath, baseUrl), baseUrl);
+export async function copyFile(sourcePath: string, destPath: string, baseUrl?: string): Promise<UploadResult[]> {
+  const base = requireBaseUrl(baseUrl);
+  return uploadToPath(destPath, await readBlob(sourcePath, base), base);
+}
+
+// ── overwrite-in-place ───────────────────────────────────────────────────────
+
+/** Parent directory of an absolute sandbox path ('/workspace/a/b.md' → '/workspace/a'). */
+/**
+ * Strip trailing `/` without a regex.
+ *
+ * The obvious `replace(/\/+$/, '')` is POLYNOMIAL (CodeQL js/polynomial-redos):
+ * `\/+$` is unanchored, so on `"a" + "/".repeat(n) + "b"` the engine retries the
+ * whole run from every position — O(n²). `filePath` arrives from host UI input,
+ * so it is uncontrolled. An index walk is O(n) and needs no backtracking.
+ *
+ * `toSandboxAbsolutePath`'s `/^\/+/` is fine by contrast: anchored at the start,
+ * so it is only ever attempted at position 0.
+ */
+function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return value.slice(0, end);
+}
+
+function sandboxDirname(absPath: string): string {
+  const index = absPath.lastIndexOf('/');
+  return index <= 0 ? '/' : absPath.slice(0, index);
+}
+
+/** Final segment of an absolute sandbox path ('/workspace/a/b.md' → 'b.md'). */
+function sandboxBasename(absPath: string): string {
+  return absPath.slice(absPath.lastIndexOf('/') + 1);
+}
+
+/**
+ * Short high-entropy token for the temp + backup names below.
+ *
+ * `crypto.randomUUID` exists only in a secure context (https or localhost), so
+ * a self-hosted white-label served over plain http would throw — the same trap
+ * `platform/session-id.ts` documents. Guarded, never bare.
+ */
+function writeToken(): string {
+  const c = typeof crypto !== 'undefined' ? crypto : undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  if (c?.getRandomValues) {
+    const bytes = new Uint8Array(8);
+    c.getRandomValues(bytes);
+    return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Write `content` to the EXACT `filePath`, overwriting whatever is there.
+ *
+ * The daemon's upload endpoint never overwrites: it writes with `flag: 'wx'`
+ * (`O_CREAT | O_EXCL`) and, on `EEXIST`, retries under a suffixed name,
+ * returning the path the bytes actually landed at. So "save this edited file"
+ * used to write a DIFFERENT file (`notes-mdx8k2-3f9a1c04.md`) while the viewer
+ * re-read the original path and showed pre-edit bytes under a "File saved"
+ * toast — silent data loss.
+ *
+ * This is the missing primitive: upload to a temp name, then `POST /file/rename`
+ * over the target (`fs.rename` overwrites atomically). The existing file is
+ * moved aside first and restored if the swap fails, so a failed write can never
+ * destroy the original. Reported as `{ path, bytes }` for the path the bytes
+ * ended up at — which is always the path you asked for, or a throw.
+ *
+ * `apps/cli` (`writeSessionFile`) and `apps/mobile` each hand-rolled this; they
+ * are the reason it belongs here.
+ */
+export async function writeFile(
+  filePath: string,
+  content: Blob | File,
+  baseUrl?: string,
+): Promise<WriteFileResult> {
+  const base = requireBaseUrl(baseUrl);
+  const absPath = toSandboxAbsolutePath(stripTrailingSlashes(filePath.trim()));
+  const name = sandboxBasename(absPath);
+  if (!name) {
+    throw new ApiError(`writeFile needs a file path, got "${filePath}"`, { code: 'INVALID_PATH' });
+  }
+  const parent = sandboxDirname(absPath);
+  // A missing parent is the common case for a brand-new file; an existing one
+  // makes this a no-op (mkdir is recursive + idempotent server-side).
+  await mkdir(parent, base).catch(() => undefined);
+
+  const token = writeToken();
+  const results = await uploadFile(content, parent, `.${name}.kortix-write-${token}`, base);
+  const uploaded = results[0]?.path;
+  if (!uploaded) {
+    throw new ApiError(`Upload returned no file for ${absPath}`, { code: 'UPLOAD_NO_RESULT' });
+  }
+  // The daemon's returned path is authoritative — it may have uniquified even
+  // the temp name (a concurrent writer), and renaming the name we ASKED for
+  // would then move the wrong file.
+  const actual = toSandboxAbsolutePath(uploaded);
+
+  const backupPath = `${absPath}.kortix-write-backup-${token}`;
+  let backedUp = false;
+  try {
+    await renameFile(absPath, backupPath, base);
+    backedUp = true;
+  } catch {
+    // Nothing at the target yet — no backup needed, and no failure either.
+  }
+  try {
+    await renameFile(actual, absPath, base);
+  } catch (error) {
+    // Put the original back exactly where it was, then drop the orphaned temp.
+    if (backedUp) await renameFile(backupPath, absPath, base).catch(() => undefined);
+    await deleteFile(actual, base).catch(() => undefined);
+    throw error;
+  }
+  if (backedUp) await deleteFile(backupPath, base).catch(() => undefined);
+
+  const written = results[0]?.size;
+  return { path: absPath, bytes: typeof written === 'number' ? written : content.size };
 }
 
 /** Delete a file/dir (recursive). Daemon `DELETE /file`. */
-export async function deleteFile(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<boolean> {
-  const res = await authenticatedFetch(`${baseUrl}/file`, {
+export async function deleteFile(filePath: string, baseUrl?: string): Promise<boolean> {
+  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}/file`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: filePath }),
@@ -322,8 +596,8 @@ export async function deleteFile(filePath: string, baseUrl: string = getActiveOp
 }
 
 /** Create a directory (recursive, idempotent). Daemon `POST /file/mkdir`. */
-export async function mkdir(dirPath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<boolean> {
-  const res = await authenticatedFetch(`${baseUrl}/file/mkdir`, {
+export async function mkdir(dirPath: string, baseUrl?: string): Promise<boolean> {
+  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}/file/mkdir`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: dirPath }),
@@ -335,8 +609,8 @@ export async function mkdir(dirPath: string, baseUrl: string = getActiveOpenCode
 }
 
 /** Rename/move a file or directory. Daemon `POST /file/rename`. */
-export async function renameFile(from: string, to: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<boolean> {
-  const res = await authenticatedFetch(`${baseUrl}/file/rename`, {
+export async function renameFile(from: string, to: string, baseUrl?: string): Promise<boolean> {
+  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}/file/rename`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ from, to }),
@@ -373,6 +647,8 @@ export const files = {
   findFiles,
   findText,
   upload: uploadFile,
+  /** Overwrite-in-place. The daemon's upload NEVER overwrites — see `writeFile`. */
+  write: writeFile,
   create: createFile,
   copy: copyFile,
   remove: deleteFile,

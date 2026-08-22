@@ -100,7 +100,7 @@ describe('selectSnapshotsToReap — safety invariants', () => {
     padToOrgSize(
       [
         snap('kortix-tpl-user', { lastUsedAt: ago(30) }),
-        snap('kortix-ppwarm-aaaaaaaa-tip', { lastUsedAt: ago(1) }),
+        snap('kortix-ppwarm-aaaaaaaa-111111111111', { lastUsedAt: ago(1) }),
         snap('daytona-small', { lastUsedAt: ago(400) }),
         snap('bench-container-ubuntu2204', { lastUsedAt: ago(400) }),
       ],
@@ -139,19 +139,39 @@ describe('selectSnapshotsToReap — safety invariants', () => {
   it('keeps the freshest ppwarm tip per project and reaps its stragglers', () => {
     const all = padToOrgSize(
       [
-        snap('kortix-ppwarm-0945686d-new', { lastUsedAt: ago(1) }),
-        snap('kortix-ppwarm-0945686d-old', { lastUsedAt: ago(2) }),
-        snap('kortix-ppwarm-0945686d-older', { lastUsedAt: ago(3) }),
-        snap('kortix-ppwarm-ffffffff-solo', { lastUsedAt: ago(5) }),
+        snap('kortix-ppwarm-0945686d-111111111111', { lastUsedAt: ago(1) }),
+        snap('kortix-ppwarm-0945686d-222222222222', { lastUsedAt: ago(2) }),
+        snap('kortix-ppwarm-0945686d-333333333333', { lastUsedAt: ago(3) }),
+        snap('kortix-ppwarm-ffffffff-444444444444', { lastUsedAt: ago(5) }),
       ],
       UNDER_TARGET,
     );
     const reaped = names(run(all));
-    expect(reaped).not.toContain('kortix-ppwarm-0945686d-new');
-    expect(reaped).toContain('kortix-ppwarm-0945686d-old');
-    expect(reaped).toContain('kortix-ppwarm-0945686d-older');
+    expect(reaped).not.toContain('kortix-ppwarm-0945686d-111111111111');
+    expect(reaped).toContain('kortix-ppwarm-0945686d-222222222222');
+    expect(reaped).toContain('kortix-ppwarm-0945686d-333333333333');
     // A project's only tip is live until proven idle.
-    expect(reaped).not.toContain('kortix-ppwarm-ffffffff-solo');
+    expect(reaped).not.toContain('kortix-ppwarm-ffffffff-444444444444');
+  });
+
+  // Two concurrently-live code versions produce two live warm names for the SAME
+  // project (different base identities). The freshly-built "superseded" one is
+  // very likely the other runtime's CURRENT tip — deleting it triggers an
+  // immediate full re-bake (churn), and symmetric reaps loop forever.
+  it('spares a freshly-built "superseded" ppwarm tip (mixed-version protection)', () => {
+    const minutes = (n: number) => new Date(NOW - n * 60_000).toISOString();
+    const all = padToOrgSize(
+      [
+        snap('kortix-ppwarm-0945686d-111111111111', { lastUsedAt: minutes(1) }),
+        snap('kortix-ppwarm-0945686d-222222222222', { lastUsedAt: minutes(10), createdAt: minutes(10) }),
+        snap('kortix-ppwarm-0945686d-333333333333', { lastUsedAt: ago(2) }),
+      ],
+      UNDER_TARGET,
+    );
+    const reaped = names(run(all));
+    expect(reaped).not.toContain('kortix-ppwarm-0945686d-111111111111');
+    expect(reaped).not.toContain('kortix-ppwarm-0945686d-222222222222');
+    expect(reaped).toContain('kortix-ppwarm-0945686d-333333333333');
   });
 
   // One Daytona org, many databases: a ppwarm tip we can't attribute may belong to
@@ -159,14 +179,14 @@ describe('selectSnapshotsToReap — safety invariants', () => {
   it('reaps a long-idle ppwarm tip but spares a recently used one', () => {
     const all = padToOrgSize(
       [
-        snap('kortix-ppwarm-aaaaaaaa-stale', { lastUsedAt: ago(20) }),
-        snap('kortix-ppwarm-bbbbbbbb-fresh', { lastUsedAt: ago(2) }),
+        snap('kortix-ppwarm-aaaaaaaa-111111111111', { lastUsedAt: ago(20) }),
+        snap('kortix-ppwarm-bbbbbbbb-222222222222', { lastUsedAt: ago(2) }),
       ],
       UNDER_TARGET,
     );
     const reaped = names(run(all));
-    expect(reaped).toContain('kortix-ppwarm-aaaaaaaa-stale');
-    expect(reaped).not.toContain('kortix-ppwarm-bbbbbbbb-fresh');
+    expect(reaped).toContain('kortix-ppwarm-aaaaaaaa-111111111111');
+    expect(reaped).not.toContain('kortix-ppwarm-bbbbbbbb-222222222222');
   });
 
   it('keeps anything with no usable timestamp — cannot prove it is idle', () => {
@@ -201,7 +221,7 @@ describe('selectSnapshotsToReap — ppwarm LRU budget', () => {
       [
         ...Array.from({ length: ppwarmCount }, (_, i) =>
           // distinct proj8 per tip → no "superseded tip" rule can fire
-          snap(`kortix-ppwarm-${i.toString(16).padStart(8, '0')}-tip`, {
+          snap(`kortix-ppwarm-${i.toString(16).padStart(8, '0')}-${(i + 1).toString(16).padStart(12, '0')}`, {
             lastUsedAt: new Date(NOW - idleHours * 3_600_000).toISOString(),
           }),
         ),
@@ -225,18 +245,18 @@ describe('selectSnapshotsToReap — ppwarm LRU budget', () => {
   it('evicts oldest-first', () => {
     const all = padToOrgSize(
       [
-        snap('kortix-ppwarm-aaaaaaaa-tip', {
+        snap('kortix-ppwarm-aaaaaaaa-111111111111', {
           lastUsedAt: new Date(NOW - 50 * 3_600_000).toISOString(),
         }),
-        snap('kortix-ppwarm-bbbbbbbb-tip', {
+        snap('kortix-ppwarm-bbbbbbbb-222222222222', {
           lastUsedAt: new Date(NOW - 10 * 3_600_000).toISOString(),
         }),
       ],
       QUOTA_GC_ORG_TARGET + 1,
     );
     const reaped = names(run(all));
-    expect(reaped).toContain('kortix-ppwarm-aaaaaaaa-tip');
-    expect(reaped).not.toContain('kortix-ppwarm-bbbbbbbb-tip');
+    expect(reaped).toContain('kortix-ppwarm-aaaaaaaa-111111111111');
+    expect(reaped).not.toContain('kortix-ppwarm-bbbbbbbb-222222222222');
   });
 
   // Evicting a hot project's tip frees a slot it reclaims on its next session:
@@ -256,5 +276,54 @@ describe('selectSnapshotsToReap — ppwarm LRU budget', () => {
   it('does not flag budgetUnresolved once target is reachable', () => {
     const res = run(liveOrg(69, 30));
     expect(res.budgetUnresolved).toBe(false);
+  });
+});
+
+describe('selectSnapshotsToReap — FIX-K-lite pinned-image guard', () => {
+  const ppw = (proj: string, hash: string, days: number, extra: Partial<SnapshotLike> = {}) =>
+    snap(`kortix-ppwarm-${proj}-${hash}`, { lastUsedAt: ago(days), createdAt: ago(days), ...extra });
+
+  it("never reaps a project's LIVE pinned tip even when a proj8 collision makes it look superseded", () => {
+    // Projects A and B collide on proj8 (both `c0111ab e`). A's superseded-tip
+    // selection sweeps up B's LIVE pinned tip over the org-wide list — the bug.
+    const current = ppw('c0111abe', 'aaaaaaaaaaaa', 1); // A's freshest tip (kept)
+    const aSuperseded = ppw('c0111abe', 'bbbbbbbbbbbb', 3); // A's genuinely stale tip
+    const bPinned = ppw('c0111abe', 'cccccccccccc', 3); // B's LIVE pinned image (collision)
+    const all = padToOrgSize([current, aSuperseded, bPinned], 84);
+
+    // Unguarded: both non-current tips are reaped — B's live image among them.
+    const unguarded = selectSnapshotsToReap({ all, referenced: new Set(), now: NOW });
+    expect(unguarded.doomed.map((d) => d.snapshot.name)).toContain(bPinned.name);
+
+    // Guarded: B's pinned image is excluded from the reap pool entirely.
+    const guarded = selectSnapshotsToReap({ all, referenced: new Set(), pinnedImages: new Set([bPinned.name]), now: NOW });
+    const doomed = guarded.doomed.map((d) => d.snapshot.name);
+    expect(doomed).not.toContain(bPinned.name); // LIVE pinned image survives
+    expect(doomed).toContain(aSuperseded.name); // A's genuinely superseded tip still reaped
+  });
+
+  it('protects a pinned image matched by external id (snapshot id), not just name', () => {
+    const pinnedById = ppw('c0222abe', 'dddddddddddd', 3, { id: 'ext-tpl-123' });
+    const sibling = ppw('c0222abe', 'eeeeeeeeeeee', 1);
+    const all = padToOrgSize([pinnedById, sibling], 84);
+    const guarded = selectSnapshotsToReap({ all, referenced: new Set(), pinnedImages: new Set(['ext-tpl-123']), now: NOW });
+    expect(guarded.doomed.map((d) => d.snapshot.name)).not.toContain(pinnedById.name);
+  });
+
+  it('excludes every ppwarm candidate when pin protection is unavailable', () => {
+    const ppwarm = ppw('c0333abe', 'ffffffffffff', 30, { state: 'error' });
+    const standard = snap('kortix-default-broken', { state: 'error' });
+    const all = padToOrgSize([ppwarm, standard], QUOTA_GC_ORG_HIGH_WATER);
+    const result = selectSnapshotsToReap({
+      all,
+      referenced: new Set(),
+      pinnedImages: new Set(),
+      ppwarmPinProtectionAvailable: false,
+      now: NOW,
+    });
+
+    expect(result.doomed.map((candidate) => candidate.snapshot.name)).toEqual([
+      standard.name,
+    ]);
   });
 });

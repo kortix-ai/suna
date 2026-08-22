@@ -7,6 +7,12 @@ import { ButtonProps, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 
+// Depth is derived from context on purpose — an alert that confirms for a
+// dialog must be rendered INSIDE that dialog's React tree, which nests it a
+// band above automatically. Rendering it as a sibling and hand-tuning a depth
+// looks right but still breaks: Radix reads pointer ownership off the React
+// tree, so the dialog underneath treats every click in the alert as an
+// outside-click and dismisses itself.
 function AlertDialog({
   children,
   ...props
@@ -54,12 +60,13 @@ function AlertDialogOverlay({
 function AlertDialogContent({
   className,
   style,
+  overlayClassName,
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Content>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Content> & { overlayClassName?: string }) {
   const depth = useDialogDepth();
   return (
     <AlertDialogPortal>
-      <AlertDialogOverlay />
+      <AlertDialogOverlay className={overlayClassName} />
       <AlertDialogPrimitive.Content
         data-slot="alert-dialog-content"
         className={cn(
@@ -100,7 +107,7 @@ function AlertDialogTitle({
   return (
     <AlertDialogPrimitive.Title
       data-slot="alert-dialog-title"
-      className={cn('text-lg font-semibold', className)}
+      className={cn('text-lg font-medium', className)}
       {...props}
     />
   );
@@ -113,7 +120,7 @@ function AlertDialogDescription({
   return (
     <AlertDialogPrimitive.Description
       data-slot="alert-dialog-description"
-      className={cn('text-muted-foreground text-[0.95rem] leading-snug', className)}
+      className={cn('text-muted-foreground text-[0.9rem] leading-snug', className)}
       {...props}
     />
   );

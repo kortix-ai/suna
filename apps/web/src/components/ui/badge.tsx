@@ -27,7 +27,7 @@ const badgeColors = {
 type BadgeColor = keyof typeof badgeColors;
 
 const badgeVariants = cva(
-  'border-transparent disabled:border-alpha-300 focus-visible:ring-offset-background outline-hidden has-focus-visible:ring-2 pointer-events-none inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-xs font-medium leading-none ring-blue-600 transition-all focus-visible:ring-2 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:ring-0 [&>svg]:pointer-events-none bg-accent text-accent-foreground hover:bg-accent focus:bg-accent focus-visible:bg-accent has-[>svg]:gap-2 has-[>svg]:pl-[10px] [&>svg]:size-3 h-6 rounded-full',
+  'border-transparent disabled:border-alpha-300 focus-visible:ring-offset-background outline-hidden has-focus-visible:ring-2 pointer-events-none inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-xs font-medium leading-none ring-blue-600 transition-[color,background-color,border-color,box-shadow,opacity,scale] focus-visible:ring-2 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:ring-0 [&>svg]:pointer-events-none bg-accent text-accent-foreground hover:bg-accent focus:bg-accent focus-visible:bg-accent has-[>svg]:gap-2 has-[>svg]:pl-[10px] [&>svg]:size-3 h-6 rounded-full',
   {
     variants: {
       variant: {
@@ -43,7 +43,7 @@ const badgeVariants = cva(
         update: 'border-transparent text-kortix-orange bg-chart-2/25 border',
         kortix: 'border-transparent text-foreground bg-kortix-base/25 border',
         warning:
-          'border-transparent bg-amber-400/30 border  text-amber-800  dark:bg-amber-400/30 dark:text-amber-800',
+          'border-transparent bg-amber-400/30 border  text-amber-800  dark:bg-amber-900/30 dark:text-amber-400',
         outline: 'text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
         new: 'border-transparent bg-primary/15 text-primary',
         beta: 'border-transparent bg-primary/15 text-primary',
@@ -56,6 +56,7 @@ const badgeVariants = cva(
         default: 'px-3 gap-1 [&>svg]:size-4',
         sm: 'h-5 px-2 gap-0.5 has-[>svg]:gap-1 [&>svg]:size-3',
         xs: 'h-5 px-1.5 text-[11px] gap-0.5 has-[>svg]:gap-1.5 [&>svg]:size-2',
+        tabular: 'h-5 min-w-5 px-1.5 text-[11px] tabular-nums gap-0 has-[>svg]:gap-1 [&>svg]:size-2',
       },
     },
     defaultVariants: {

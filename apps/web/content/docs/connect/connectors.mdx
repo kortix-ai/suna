@@ -1,0 +1,359 @@
+---
+title: Connectors
+description: How connectors and connections give agents scoped access to external tools.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+A connector links a project to an external tool or service. The agent
+calls it as a tool. Kortix brokers each call, so the sandbox never holds the
+connector credential.
+
+You declare most connectors in `kortix.yaml`. See the
+[manifest reference](/docs/project/manifest) for every field. Kortix declares
+channel and computer connectors when you connect a chat platform or a
+machine.
+
+## Connectors and connections
+
+A connector is the agent-facing reach package. It is not a role, and it holds no
+Kortix permission: an agent reaches a connector only when its manifest grant
+lists the slug and the role verdict allows the call. See
+[One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings). A
+connector contains:
+
+- a project-unique slug
+- a display name
+- a provider app
+- one authorization strategy
+- connector policies
+
+A connection is one connected account or credential for the connector.
+Every connection uses the connector's policies.
+
+The authorization strategy is:
+
+- `project` for connections available to eligible project members
+- `user` for a connection owned by the acting project member
+
+A service account is a principal, but it is not a person, so it cannot use a
+member's `user` connection. Multiple connectors can reference the same provider
+app. Use separate connectors
+when one app needs different policies.
+
+## Providers
+
+A connector uses one provider type:
+
+- **pipedream** — managed OAuth for supported SaaS apps
+- **openapi**, **postman**, **graphql**, **http** — direct API connectors
+- **mcp** — a remote MCP server over HTTP or SSE
+- **channel** — a chat platform connection
+- **computer** — one permissioned connector profile for one connected machine
+
+See [Slack and channels](/docs/connect/slack) and
+[Computers](/docs/connect/computers) for the managed provider flows.
+
+## Authentication and policy
+
+A connection authenticates with:
+
+- OAuth through Pipedream, a channel install, or a native OAuth2 grant
+- an API key or token entered through the dashboard or SDK
+
+Kortix encrypts connection data and resolves it server-side for each tool
+call. The agent requests an action. Kortix attaches the credential, checks the
+agent grant and connector-connection policy, calls the external API, and returns
+the result.
+
+Connector policies belong to the connector. A connection cannot
+override them. Project guardrails apply above connector-connection policies.
+
+By default, an unmatched connector action runs without approval. Set
+`policy.default_mode: risk` to require approval for unmatched write and
+destructive actions. Set `sensitive: true` to make `require_approval` the
+connector's unmatched-action default, including reads. Explicit project
+or connector-connection rules still apply first.
+
+### Approve one governed call
+
+`require_approval` creates one decision for one connector call. The Connector
+returns `202 pending_approval` with `approval_url`, `approval_summary`, and
+`execution_id`. It does not keep an HTTP request open.
+
+Share `approval_url` with any teammate. The URL identifies the request but does
+not grant authority. The page requires a signed-in Kortix account. Kortix then
+verifies that the account can access and approve actions in the project.
+
+The approval page shows the redacted parameters that the connector will receive.
+Approve or deny the call once. Kortix sends the decision back into the session
+through a durable callback. An approval applies only to the exact request
+digest. A changed recipient, subject, body, channel, URL, or other parameter
+requires a new decision.
+
+Open the session's **Audit** panel to use the same parameter view. Historical
+entries remain read-only. There is no session-wide approval option. Use an
+explicit `always_run` policy only when a connector action must run unattended.
+
+## Connect with OAuth
+
+<Steps>
+<Step>
+### Open the project's Connectors page
+
+Open the project. Select **Connectors**, then select the app.
+
+</Step>
+<Step>
+### Select the connection scope
+
+Select **Project** for a shared project connection. Select **User** for a
+connection owned by the acting project member.
+
+</Step>
+<Step>
+### Complete authorization
+
+Complete the OAuth flow. Kortix stores the connected account as a connection.
+
+</Step>
+</Steps>
+
+## Connect an MCP server that uses OAuth 2.1
+
+Kortix implements the MCP authorization specification. Open the connector,
+select **Add credential**, then select the **OAuth 2.0** tab. Kortix probes the
+server and reads its metadata:
+
+1. The unauthenticated probe returns `401` with
+   `WWW-Authenticate: Bearer resource_metadata="…"`.
+2. Kortix reads the protected resource metadata (RFC 9728) at that URL, or at
+   `/.well-known/oauth-protected-resource`.
+3. Kortix reads the authorization server metadata (RFC 8414 or OpenID Connect
+   discovery) for the first authorization server the resource names.
+
+When that server advertises `registration_endpoint`, Kortix registers itself as
+an OAuth client (RFC 7591) and shows one button: **Connect &lt;server&gt;**. You
+create no application, and you copy no client ID or secret. Kortix then runs
+Authorization Code with PKCE (S256) and binds the token to the server with the
+`resource` parameter (RFC 8707).
+
+Register this redirect URI when a server needs one in advance:
+
+```text
+https://api.kortix.com/v1/connectors/oauth2/callback
+```
+
+When the server publishes endpoints but no `registration_endpoint`, Kortix
+prefills the authorization URL, token URL, and scopes. Enter the client ID of an
+app you create with that provider. When the server publishes no metadata, enter
+every field.
+
+Kortix keeps the MCP session: it runs `initialize` and
+`notifications/initialized` on demand, then sends `Mcp-Session-Id` on later
+calls. A server that answers without a session never sees the handshake.
+
+Kortix binds each connection to the authorization server that issued it. When
+the callback carries an `iss` parameter (RFC 9207), Kortix rejects it unless it
+matches the recorded issuer — a code minted by a different server is refused
+before it is redeemed.
+
+### Authorize from the CLI
+
+The dashboard is one way to run this flow, not the only one. Declare the
+connector in `kortix.yaml`, then authorize it from a terminal or an agent
+session:
+
+```yaml
+connectors:
+  - slug: read-ai
+    name: Read AI
+    provider: mcp
+    url: 'https://api.read.ai/mcp'
+    auth:
+      type: bearer
+```
+
+```text
+kortix connectors authorize read-ai --json
+```
+
+The command creates the connection, runs the discovery chain, registers Kortix
+as a client when the server supports RFC 7591, and returns the URL to approve:
+
+```json
+{
+  "connection_id": "7b1a16b2-...",
+  "registered": true,
+  "scopes": ["openid", "offline_access", "mcp:execute", "meeting:read"],
+  "authorization_url": "https://authn.read.ai/oauth2/auth?response_type=code&...",
+  "expires_at": "2026-08-19T14:48:26.345Z"
+}
+```
+
+An agent returns `authorization_url` to the person it is working with. After
+they approve, the agent confirms:
+
+```text
+kortix connectors authorize read-ai --status
+```
+
+The command exits non-zero while the status is `error`. Use `--scope` to narrow
+what is requested. Use `--client-id` and `--client-secret` for a server that
+does not support dynamic client registration.
+
+The same steps are available on the SDK — `discoverConnectionOAuth2Resource`,
+`registerConnectionOAuth2Client`, `startConnectionOAuth2Authorization`, and
+`getConnectionOAuth2Status`.
+
+Kortix refetches the connector's tool catalog as soon as authorization
+completes, so the connector leaves the `error` state without a manual sync.
+
+### Self-hosted: give the box a stable public URL
+
+The callback URL is derived from `KORTIX_URL`, the public origin of your API.
+Authorization servers compare `redirect_uri` byte for byte, so the value must be
+stable.
+
+A self-host install started with the zero-config quick tunnel gets a **new**
+`https://<random>.trycloudflare.com` hostname every time `cloudflared`
+restarts. The callback URL changes with it. A server that supports dynamic
+client registration recovers on its own — the next authorization registers a
+new client against the current URL. A server that needs a pre-registered OAuth
+app does not: you must update its allowed redirect URI after every restart.
+
+Set `CLOUDFLARE_TUNNEL_TOKEN` and `CLOUDFLARE_TUNNEL_HOSTNAME` for a named
+tunnel, or point `KORTIX_URL` at your own domain. Then register one callback
+URL once:
+
+```text
+https://<your-kortix-host>/v1/connectors/oauth2/callback
+```
+
+## Connect a direct API with OAuth2
+
+Direct connectors support:
+
+- client credentials
+- authorization code with PKCE
+- device authorization
+- dynamic client registration (RFC 7591)
+
+For client credentials, enter the token URL, client ID, scopes, and client
+secret. You can use `client_secret_basic`, `client_secret_post`,
+`client_secret_jwt`, or `private_key_jwt` token-endpoint authentication.
+
+For authorization code, enter the authorization URL and token URL. For device
+authorization, enter the device-authorization URL and token URL. An RFC 8414
+discovery URL can provide these endpoints.
+
+Kortix encrypts the OAuth2 configuration and tokens. It refreshes access tokens
+before expiry, and it stores each rotated refresh token. Revoking the connection
+blocks the next connector call.
+
+For Microsoft Graph, use:
+
+```text
+https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token
+https://graph.microsoft.com/.default
+```
+
+For direct SharePoint REST calls, use the SharePoint resource scope:
+
+```text
+https://{tenant}.sharepoint.com/.default
+```
+
+## Connect with an API key
+
+<Steps>
+<Step>
+### Declare the connector
+
+```yaml
+connectors:
+  - slug: stripe-read
+    name: Stripe read access
+    provider: openapi
+    spec: 'https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json'
+    authorization_strategy: project
+    auth:
+      type: bearer
+    policies:
+      - match: 'get_*'
+        action: always_run
+      - match: '*'
+        action: block
+```
+
+`authorization_strategy` defaults to `project` when the manifest omits it.
+
+</Step>
+<Step>
+### Merge the change request
+
+Kortix reads the manifest from the default branch. The connector becomes
+active after the change request merges.
+
+</Step>
+<Step>
+### Add the connection
+
+Open the connector and set its credential. Kortix stores the value
+encrypted. It does not write the value to the manifest.
+
+</Step>
+</Steps>
+
+## Grant an agent access
+
+Add the connector slug to the agent's `connectors` field:
+
+```yaml
+agents:
+  release-bot:
+    connectors: [stripe-read]
+    connectors_required: [stripe-read]
+```
+
+`connectors_required` must be a subset of `connectors`. A session for this agent
+returns `409 CONNECTOR_CONNECTION_REQUIRED` before sandbox startup when it
+cannot resolve a valid active connection.
+
+Omit `connectors`, and the agent gets `none`. Merge the change before it takes
+effect.
+
+## Select a session connection
+
+Default resolution follows the connector's authorization strategy. A
+session can select a specific connection:
+
+```json
+{
+  "connector_bindings": {
+    "stripe-read": {
+      "connection_id": "00000000-0000-4000-8000-000000000000"
+    }
+  }
+}
+```
+
+The binding key is the connector slug. The value is an active connection that
+matches the connector's strategy.
+
+Use `GET /projects/{projectId}/sessions/{sessionId}/scope` to read the effective
+binding. Use `PUT` on the same path to replace it. The replacement applies to
+the next tool call without restarting the session.
+
+## Use a connector in a session
+
+Inside a session, use the Connector CLI:
+
+```text
+kortix connectors ls
+kortix connectors call stripe-read <action> '<json-args>'
+```
+
+`connectors` lists the connectors in scope. `call` runs one action.
+
+Slack and Microsoft Teams connect from the dashboard the same way as OAuth apps. Connecting Slack writes a `channel` connector to `kortix.yaml` for you. See [Slack & channels](/docs/connect/slack).

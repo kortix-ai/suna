@@ -1,9 +1,11 @@
 'use client';
 
+import { ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
+
+import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { useCallback, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -16,18 +18,28 @@ import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   type SandboxAlertSeverity,
+  formatSandboxProviders,
   resolveSandboxAlertSeverity,
+  sandboxHealthIsActive,
   selectCurrentSandboxFailure,
+  selectSandboxStatus,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { relativeTime } from '@/lib/relative-time';
+import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type ProjectSandboxHealth,
+  type SandboxRuntimeStatus,
   fixSandboxWithAgent,
   getProjectSandboxHealth,
   rebuildProjectSnapshot,
-} from '@kortix/sdk/projects-client';
-import { DangerTriangleSolid, SparklesSolid } from '@mynaui/icons-react';
+} from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
+import {
+  WarningIcon as DangerTriangleSolid,
+  SparkleIcon as SparklesSolid,
+} from '@phosphor-icons/react';
 
 export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];
 
@@ -37,6 +49,11 @@ const SEVERITY_TONE: Record<SandboxAlertSeverity, { text: string; icon: string; 
     icon: 'text-destructive',
     dot: 'bg-destructive',
   },
+  warning: {
+    text: 'text-kortix-orange',
+    icon: 'text-kortix-orange',
+    dot: 'bg-kortix-orange',
+  },
   building: {
     text: 'text-muted-foreground',
     icon: 'text-muted-foreground',
@@ -45,7 +62,8 @@ const SEVERITY_TONE: Record<SandboxAlertSeverity, { text: string; icon: string; 
 };
 
 const SEVERITY_LABEL: Record<SandboxAlertSeverity, string> = {
-  critical: 'Fix sandbox build',
+  critical: 'Sandbox build failing',
+  warning: 'Sandbox partly unavailable',
   building: 'Sandbox build running…',
 };
 
@@ -60,16 +78,38 @@ const CATEGORY_LABEL: Record<string, string> = {
   unknown: 'Build failed',
 };
 
+/**
+ * One honest sentence about what the user can do right now. Never present-tense
+ * a failure that no longer applies, and never imply sessions are down when only
+ * one of several routable providers is.
+ */
+function describeSandboxSeverity(
+  severity: SandboxAlertSeverity,
+  status: SandboxRuntimeStatus | null,
+): string {
+  if (severity === 'building') {
+    return 'A new sandbox image is building. Sessions can start once it’s ready.';
+  }
+  if (severity === 'warning') {
+    const ready = formatSandboxProviders(status?.ready_providers ?? []);
+    const failed = formatSandboxProviders(status?.failed_providers ?? []);
+    return failed && ready
+      ? `The image is ready on ${ready} but failing on ${failed}, so some new sessions won’t start.`
+      : 'The sandbox image is unavailable on some providers, so some new sessions won’t start.';
+  }
+  return 'New sessions can’t start until this image builds.';
+}
+
 export function useSandboxHealth(projectId: string) {
   return useQuery<ProjectSandboxHealth>({
     queryKey: SANDBOX_HEALTH_QUERY_KEY(projectId),
     queryFn: () => getProjectSandboxHealth(projectId),
-    staleTime: 8_000,
+    staleTime: 30_000,
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (!data) return 15_000;
-      if (data.building || selectCurrentSandboxFailure(data)) return 8_000;
-      return 30_000;
+      if (!data) return 30_000;
+      if (sandboxHealthIsActive(data)) return 8_000;
+      return 120_000;
     },
     refetchOnWindowFocus: true,
   });
@@ -81,7 +121,7 @@ export function useSandboxRecovery(projectId: string) {
 
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: SANDBOX_HEALTH_QUERY_KEY(projectId) });
-    queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId] });
+    queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
   }, [queryClient, projectId]);
 
   const retry = useMutation({
@@ -106,6 +146,12 @@ export function useSandboxRecovery(projectId: string) {
   return { retry, fixWithAgent };
 }
 
+/** The two leaves the alert's controls assert, batched into one probe. */
+const SANDBOX_ALERT_GATE_ACTIONS: readonly string[] = [
+  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
+  PROJECT_ACTIONS.PROJECT_WRITE,
+];
+
 function SandboxAlertContent({
   projectId,
   health,
@@ -116,34 +162,45 @@ function SandboxAlertContent({
   severity: SandboxAlertSeverity;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const router = useRouter();
+  // Sandbox templates is a section of the Customize bar's Settings tab now, so
+  // "Details" is a route, not an overlay open.
+  const openSandboxSection = useCallback(
+    () => router.push(projectSettingsSectionHref(projectId, 'sandbox')),
+    [router, projectId],
+  );
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
+  // The alert TEXT is information a plain member needs — "new sessions can't
+  // start until this image builds" explains why the composer is refusing them.
+  // Its CONTROLS are not: "Details" routes into Customize → Settings → Sandbox
+  // (project.customize.read) and both recovery actions rebuild the project's
+  // image (project.write). Neither leaf is in the member floor role (#6522), so
+  // for a member every one of those buttons was a "forbidden" waiting to
+  // happen. Hidden on a RECEIVED denial only, one batched probe for both.
+  const caps = useProjectCans(projectId, SANDBOX_ALERT_GATE_ACTIONS);
+  const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed !== false;
+  const canRecover = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed !== false;
+  const status = selectSandboxStatus(health);
   const failure = selectCurrentSandboxFailure(health);
-  // Only offer the agent for failures it can actually act on. Infra categories
-  // (quota, provider, timeout, runtime, tunnel) aren't repo-editable, and the fix
-  // session itself needs a bootable sandbox — the very thing the failure denied —
-  // so the button would fail to start the session meant to diagnose the failure.
-  // `fixable_by_agent` is server-derived; the API rejects the rest with 409.
-  const canFixWithAgent =
-    !!failure &&
-    failure.fixable_by_agent &&
-    !!health.latest_build &&
-    health.latest_build.status === 'ready';
+  const failedAt = failure ? relativeTime(failure.finished_at ?? failure.started_at) : '';
+  // Server-derived, and deliberately not re-derived here: the agent only helps
+  // with repo-editable failures, and its fix session itself needs a bootable
+  // sandbox — the very thing the failure may have denied. The API gates on
+  // exactly this and answers 409 otherwise.
+  const canFixWithAgent = status?.fix_with_agent_available ?? false;
 
   return (
     <div className="w-full overflow-hidden">
       <div className="px-2 pb-3">
         <p className="text-muted-foreground text-xs text-balance">
-          {severity === 'critical'
-            ? 'New sessions will rebuild on the next start, but the most recent build is failing.'
-            : 'A new sandbox image is building. Sessions can start once it’s ready.'}
+          {describeSandboxSeverity(severity, status)}
         </p>
-        {!failure && (
+        {!failure && severity !== 'building' && canOpenDetails && (
           <Button
             variant="transparent"
             size="sm"
             className="text-foreground/70 m-0 inline-flex h-fit w-fit p-0 align-baseline text-xs"
-            onClick={() => openCustomize('sandbox')}
+            onClick={openSandboxSection}
           >
             Details
           </Button>
@@ -153,61 +210,90 @@ function SandboxAlertContent({
       {failure && (
         <div className="border-border/60 border-t px-2 py-3">
           <div className="mb-1.5 flex min-w-0 items-center gap-2">
-            <Badge variant="destructive" size="sm">
+            <Badge variant={severity === 'critical' ? 'destructive' : 'warning'} size="sm">
               {CATEGORY_LABEL[failure.error_category ?? 'unknown'] ?? failure.error_category}
             </Badge>
-            <Button
-              variant="link"
-              size="sm"
-              className="text-foreground/70 m-0 ml-auto inline-flex h-fit w-fit p-0 text-xs hover:no-underline"
-              onClick={() => openCustomize('sandbox')}
-            >
-              Details
-            </Button>
+            {/* When it failed, always — an undated error reads as a live one. */}
+            {failedAt ? (
+              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                {failedAt}
+              </span>
+            ) : null}
+            {canOpenDetails ? (
+              <Button
+                variant="link"
+                size="sm"
+                className="text-foreground/70 m-0 ml-auto inline-flex h-fit w-fit p-0 text-xs hover:no-underline"
+                onClick={openSandboxSection}
+              >
+                Details
+              </Button>
+            ) : null}
           </div>
           {failure.error && (
-            <pre className="bg-muted text-muted-foreground max-h-32 overflow-auto rounded-lg p-2 text-xs break-words whitespace-pre-wrap">
+            <pre className="bg-muted text-muted-foreground max-h-32 overflow-auto rounded-lg p-2 text-xs wrap-break-word whitespace-pre-wrap">
               {failure.error}
             </pre>
           )}
         </div>
       )}
 
+      {/* Nothing left to offer once both gates close — drop the divider too, so
+          a member sees a clean informational card instead of an empty tray. */}
+      {!canOpenDetails && !canRecover ? null : (
       <div className="border-border flex flex-col gap-2 border-t p-3">
-        {canFixWithAgent && (
-          <Button
-            size="sm"
-            className="w-full"
-            disabled={fixWithAgent.isPending}
-            onClick={() => fixWithAgent.mutate()}
-          >
-            {fixWithAgent.isPending ? (
-              <Loading className="text-foreground! size-3.5" />
-            ) : (
-              <SparklesSolid className="size-3.5" />
+        {severity === 'building' ? (
+          canOpenDetails ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="w-full border"
+              onClick={openSandboxSection}
+            >
+              Details
+            </Button>
+          ) : null
+        ) : (
+          <>
+            {canFixWithAgent && canRecover && (
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={fixWithAgent.isPending}
+                onClick={() => fixWithAgent.mutate()}
+              >
+                {fixWithAgent.isPending ? (
+                  <Loading className="text-foreground! size-3.5" />
+                ) : (
+                  <SparklesSolid weight="fill" className="size-3.5" />
+                )}
+                {tI18nHardcoded.raw(
+                  'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsxe7d8ac75',
+                )}
+              </Button>
             )}
-            {tI18nHardcoded.raw(
-              'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsxe7d8ac75',
-            )}
-          </Button>
+            {canRecover ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="w-full border"
+              disabled={retry.isPending}
+              onClick={() => retry.mutate(failure?.template_slug)}
+            >
+              {retry.isPending ? (
+                <Loading className="text-foreground! size-3.5" />
+              ) : (
+                <RefreshCw className="size-3.5" />
+              )}
+              {tI18nHardcoded.raw(
+                'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsx8794c0a3',
+              )}
+            </Button>
+            ) : null}
+          </>
         )}
-        <Button
-          size="sm"
-          variant="secondary"
-          className="w-full border"
-          disabled={retry.isPending}
-          onClick={() => retry.mutate(failure?.template_slug)}
-        >
-          {retry.isPending ? (
-            <Loading className="text-foreground! size-3.5" />
-          ) : (
-            <RefreshCw className="size-3.5" />
-          )}
-          {tI18nHardcoded.raw(
-            'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsx8794c0a3',
-          )}
-        </Button>
       </div>
+      )}
     </div>
   );
 }
@@ -237,7 +323,7 @@ export function ProjectSandboxAlert({ projectId }: { projectId: string }) {
             {severity === 'building' ? (
               <Loading className="text-muted-foreground!" />
             ) : (
-              <DangerTriangleSolid className="size-4" />
+              <DangerTriangleSolid weight="fill" className="size-4" />
             )}
             <span>{SEVERITY_LABEL[severity]}</span>
           </SidebarMenuButton>
@@ -264,7 +350,7 @@ export function ProjectSandboxAlertRailItem({ projectId }: { projectId: string }
             {severity === 'building' ? (
               <Loading className={cn('size-4', tone.icon)} />
             ) : (
-              <DangerTriangleSolid className={cn('size-4', tone.icon)} />
+              <DangerTriangleSolid weight="fill" className={cn('size-4', tone.icon)} />
             )}
             {severity !== 'building' && (
               <span className={cn('absolute top-1.5 right-1.5 size-1.5 rounded-full', tone.dot)} />

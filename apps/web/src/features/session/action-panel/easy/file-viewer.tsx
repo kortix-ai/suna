@@ -6,47 +6,41 @@
  * The view toggle is not a universal control, because "source" only means
  * something for a file whose rendered form differs from its text:
  *
- *   - **HTML** renders to something you can look at AND is code you might want
- *     to read. It is the one file type that earns a Preview/Source toggle, so
- *     that toggle lives at the far left of its toolbar.
+ *   - **HTML and SVG** render to something you can look at AND are code you
+ *     might want to read. They are the file types that earn a Preview/Source
+ *     toggle, so that toggle lives at the far left of their toolbar.
  *   - **Markdown** is meant to be read as a document. A non-technical user has
  *     no reason to see `##` and `**`, so there is no toggle — just the document.
  *   - **Everything else** is source. Showing it is the whole job; a toggle
  *     would have one meaningful position.
  *
  * So the toolbar is: what you're looking at (left) and what you can do with it
- * (right — copy, download, full screen, close). Every file gets the same right
- * side, so the actions never move.
+ * (right). The right side is one split button — `Copy`, with a caret holding
+ * `Copy link` and `Download file` — then full screen and close. Every file gets
+ * the same right side, built by `ViewerActions`, so the actions never move and
+ * this toolbar cannot drift from `PreviewShell`'s.
  */
 
-import { CopyButton } from '@/components/markdown/copy-button';
+import { HighlightedCode } from '@/components/markdown/code';
 import { DocMarkdown } from '@/components/markdown/doc-markdown';
-import { Button } from '@/components/ui/button';
-import { CodeBlockCode } from '@/components/ui/code-block';
-import Hint from '@/components/ui/hint';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  downloadFile,
-  isBrowserViewable,
-  openFileInNewTab,
-} from '@/features/files/api/opencode-files';
+  MarkdownFrontmatterCard,
+  parseFrontmatter,
+} from '@/components/markdown/markdown-frontmatter';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
-import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
-import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import {
-  Code2,
-  Download,
-  ExternalLink,
-  Eye,
-  Loader2,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-} from 'lucide-react';
-import { useState } from 'react';
+import { CodeSimpleIcon as Code2, EyeIcon as Eye } from '@phosphor-icons/react';
+import { useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
+import {
+  PanelWidthButton,
+  type ShareContext,
+  ViewerActions,
+  fileShareInput,
+} from './viewer-actions';
 
 type View = 'preview' | 'source';
 
@@ -71,6 +65,9 @@ const LANGUAGE_BY_EXT: Record<string, string> = {
   css: 'css',
   html: 'html',
   htm: 'html',
+  // An SVG is an XML document. Shiki has no `svg` grammar of its own, and `xml`
+  // is what it would alias to anyway.
+  svg: 'xml',
   sql: 'sql',
 };
 
@@ -88,151 +85,76 @@ export function isMarkdown(fileName: string): boolean {
   return ext === 'md' || ext === 'mdx';
 }
 
-/** HTML is the only file whose rendered form and source are both worth seeing. */
+/** HTML has a rendered form and a source, and both are worth seeing. */
 export function isHtml(fileName: string): boolean {
   const ext = extensionOf(fileName);
   return ext === 'html' || ext === 'htm';
 }
 
 /**
- * Download fetches the file's real bytes before the browser save dialog can
- * appear, so on anything bigger than a note there is a real wait. Without a
- * pending state the button looks broken and gets clicked again — which starts a
- * second fetch. The spinner both explains the pause and blocks the double-click.
+ * SVG is the other one. It classifies as an *image* everywhere else in the app
+ * (`getFileCategory`), which is true of how it looks and wrong about what it
+ * is: the daemon deliberately keeps `.svg` out of its binary-extension set
+ * ("svg is XML text", `file-mime.ts`), so the bytes that arrive here are
+ * readable markup. `FilePreview` uses this to route SVG down the text path
+ * instead of the image one, which is the only reason a source view is possible
+ * at all.
  */
-export function DownloadButton({ path, fileName }: { path: string; fileName: string }) {
-  const [downloading, setDownloading] = useState(false);
-
-  const handleDownload = async () => {
-    if (downloading) return;
-    setDownloading(true);
-    try {
-      await downloadFile(path, fileName);
-      track('deliverable_downloaded', { scope: 'one' });
-    } catch {
-      // The browser reports its own failure; the button just needs to recover.
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  return (
-    <Hint label="Download" side="bottom">
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => void handleDownload()}
-        disabled={downloading}
-        aria-label="Download"
-        aria-busy={downloading}
-        className="size-7 active:scale-[0.96] disabled:opacity-100"
-      >
-        {downloading ? (
-          <Loader2 className="text-muted-foreground size-3.5 animate-spin motion-reduce:animate-none" />
-        ) : (
-          <Download className="size-3.5" />
-        )}
-      </Button>
-    </Hint>
-  );
-}
-
-/**
- * Same fetch-then-act shape as `DownloadButton` (and the same reason for a
- * pending state — a slow sandbox fetch behind a silent click reads as a
- * broken button and invites a second, overlapping click). Shown only for
- * formats a tab can actually render (`isBrowserViewable`) — an omitted
- * control beats a disabled one with no explanation (W4).
- */
-export function OpenInNewTabButton({ path }: { path: string }) {
-  const [opening, setOpening] = useState(false);
-
-  const handleOpen = async () => {
-    if (opening) return;
-    setOpening(true);
-    try {
-      await openFileInNewTab(path);
-    } catch {
-      // The browser reports its own failure; the button just needs to recover.
-    } finally {
-      setOpening(false);
-    }
-  };
-
-  return (
-    <Hint label="Open in a new tab" side="bottom">
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => void handleOpen()}
-        disabled={opening}
-        aria-label="Open in a new tab"
-        aria-busy={opening}
-        className="size-7 active:scale-[0.96] disabled:opacity-100"
-      >
-        {opening ? (
-          <Loader2 className="text-muted-foreground size-3.5 animate-spin motion-reduce:animate-none" />
-        ) : (
-          <ExternalLink className="size-3.5" />
-        )}
-      </Button>
-    </Hint>
-  );
+export function isSvg(fileName: string): boolean {
+  return extensionOf(fileName) === 'svg';
 }
 
 export function FileViewer({
   content,
   fileName,
   path,
+  shareContext,
   onClose,
-  onAskForChanges,
   className,
 }: {
   content: string;
   fileName: string;
   /** Sandbox path — needed to download the real bytes. */
   path?: string;
+  /** Forwarded to `ViewerActions`, exactly as `PreviewShell` does. This toolbar
+   *  and `PreviewShell`'s are required to render the same controls (see the
+   *  contract in `viewer-actions.tsx`); omitting it here is what left every
+   *  text and markdown file with no way to produce a public link. */
+  shareContext?: ShareContext;
   onClose?: () => void;
-  /** Seeds the composer with a starter line about this file and closes the
-   *  detail (W12). Omitted entirely (not disabled) where there's no session
-   *  composer to hand it to. */
-  onAskForChanges?: () => void;
   className?: string;
 }) {
   const html = isHtml(fileName);
+  const svg = isSvg(fileName);
   const markdown = isMarkdown(fileName);
+  // The files whose rendered form and source are both worth seeing — the ones
+  // that earn the toggle, and the ones whose preview owns the pane's scrolling
+  // instead of the pane owning theirs.
+  const renders = html || svg;
   const [view, setView] = useState<View>('preview');
 
-  const isExpanded = useIsExpanded();
-  const toggleExpanded = useToggleExpanded();
   const isMobile = useIsMobile();
 
   return (
     <div className={cn('flex h-full min-h-0 min-w-0 flex-col', className)}>
-      <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2.5 py-2.5">
         <span className="flex min-w-0 items-center gap-2.5">
           <DetailSidebarToggle className="size-7" />
-          {html ? (
-            // Only HTML earns the toggle — and it sits at the far left, before
-            // the name, because it changes what the name is showing you.
+          {renders ? (
+            // Only a file with both a rendered form and a source earns the
+            // toggle — and it sits at the far left, before the name, because it
+            // changes what the name is showing you.
             <Tabs value={view} onValueChange={(next) => setView(next as View)}>
               <TabsList type="default" size="sm" className="h-7 border-b-0 p-0">
                 <TabsTrigger
                   size="xs"
                   value="preview"
-                  variant="a_accent-i_transparent"
                   aria-label="Preview"
                   className="h-7 w-7 px-0"
                 >
                   <Eye className="size-3.5" />
                 </TabsTrigger>
-                <TabsTrigger
-                  size="xs"
-                  value="source"
-                  variant="a_accent-i_transparent"
-                  aria-label="Source"
-                  className="h-7 w-7 px-0"
-                >
+                <TabsTrigger size="xs" value="source" aria-label="Source" className="h-7 w-7 px-0">
                   <Code2 className="size-3.5" />
                 </TabsTrigger>
               </TabsList>
@@ -245,43 +167,20 @@ export function FileViewer({
           <span className="text-foreground truncate text-sm font-medium">{fileName}</span>
         </span>
 
-        {/* Same actions in the same place for every file — they never move. */}
-        <span className="flex shrink-0 items-center gap-0.5">
-          {onAskForChanges && (
-            <Hint label="Ask for changes" side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Ask for changes"
-                onClick={onAskForChanges}
-                className="size-7 active:scale-[0.96]"
-              >
-                <MessageSquarePlus className="size-3.5" />
-              </Button>
-            </Hint>
-          )}
-          <CopyButton code={content} />
-          {path && isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
-          {path && <DownloadButton path={path} fileName={fileName} />}
-          {/* The store flip is a no-op on mobile — the drawer never reads
-              `isExpanded` — so the control was dead weight there. */}
-          {!isMobile && (
-            <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={toggleExpanded}
-                aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
-                className="size-7 active:scale-[0.96]"
-              >
-                {isExpanded ? (
-                  <Minimize2 className="size-3.5" />
-                ) : (
-                  <Maximize2 className="size-3.5" />
-                )}
-              </Button>
-            </Hint>
-          )}
+        {/* Same actions in the same place for every file — they never move.
+            Text is the one kind whose content a clipboard can hold, so `Copy`
+            here copies the file itself and `Copy link` drops into the menu. */}
+        <span className="flex shrink-0 items-center gap-1">
+          <ViewerActions
+            copy={{
+              run: () => navigator.clipboard.writeText(content),
+              ariaLabel: 'Copy file contents',
+            }}
+            shareContext={shareContext}
+            shareInput={fileShareInput(path, fileName)}
+            download={path ? { path, fileName } : undefined}
+          />
+          <PanelWidthButton isMobile={isMobile} />
           {onClose && <CloseButton onClose={onClose} />}
         </span>
       </div>
@@ -294,13 +193,14 @@ export function FileViewer({
       <div
         className={cn(
           'min-h-0 min-w-0 flex-1',
-          html && view === 'preview' ? 'overflow-hidden' : 'overflow-auto',
+          renders && view === 'preview' ? 'overflow-hidden' : 'overflow-auto',
         )}
       >
         <FileBody
           content={content}
           fileName={fileName}
           html={html}
+          svg={svg}
           markdown={markdown}
           view={view}
         />
@@ -309,19 +209,50 @@ export function FileViewer({
   );
 }
 
+/**
+ * SVG source text → a URL an `<img>` can load.
+ *
+ * A blob URL rather than a `data:` URI: `btoa` chokes on any SVG containing
+ * non-Latin1 characters (an embedded label in any non-Latin script), and the
+ * percent-encoded alternative inflates large traced artwork into a megabyte-long
+ * attribute. The blob is created in an effect, never in `useMemo` —
+ * `URL.createObjectURL` doesn't exist during SSR, and a memo is allowed to be
+ * recomputed and discarded, which would leak the URL it created. Returns null
+ * for the first client frame, which is why the caller gates on it.
+ */
+function useSvgObjectUrl(content: string, enabled: boolean): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setUrl(null);
+      return;
+    }
+    const next = URL.createObjectURL(new Blob([content], { type: 'image/svg+xml' }));
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [content, enabled]);
+
+  return url;
+}
+
 function FileBody({
   content,
   fileName,
   html,
+  svg,
   markdown,
   view,
 }: {
   content: string;
   fileName: string;
   html: boolean;
+  svg: boolean;
   markdown: boolean;
   view: View;
 }) {
+  const svgUrl = useSvgObjectUrl(content, svg && view === 'preview');
+
   // The rendered page IS the document: it owns the pane edge to edge, and its
   // own <body> sets whatever margin it wants. Padding it would frame someone
   // else's page inside ours.
@@ -339,31 +270,59 @@ function FileBody({
     );
   }
 
+  // The same inertness bargain HTML strikes with `sandbox=""`, made a different
+  // way: an SVG loaded through `<img>` renders in the browser's secure static
+  // mode — no script execution, no external fetches, no interactivity. That
+  // matters here because an agent wrote this file, and `isBrowserViewable`
+  // already refuses to open SVG in a real tab for exactly that reason.
+  //
+  // Everything else — zoom, pan, wheel, fit-to-screen, the % reset readout — is
+  // `ImageRenderer`'s, unchanged. The backdrop swatches are the one thing it
+  // gains here: SVG artwork is usually transparent, so which background it sits
+  // on is a question only the viewer can answer.
+  if (svg && view === 'preview') {
+    if (!svgUrl) return null;
+    return <ImageRenderer url={svgUrl} fileName={fileName} controls="always" backdrop />;
+  }
+
   if (markdown) {
+    // Frontmatter has to come off BEFORE the markdown parser sees it. Handed
+    // the raw file, markdown reads the block as prose: the opening `---` is a
+    // thematic break and the closing `---` is a setext underline, so an agent
+    // definition rendered as a stray horizontal rule followed by its entire
+    // metadata as one giant bold heading. Same split, same card as the chat's
+    // inline preview (`MarkdownWithFrontmatter`), so both panes agree on what
+    // an agent file looks like.
+    const { frontmatter, body } = parseFrontmatter(content);
     return (
-      <div className="px-4 pb-4">
+      <div className="p-6">
+        {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
         {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
             escaped text rather than becoming live DOM. */}
-        <DocMarkdown content={content} allowHtml={false} />
+        <DocMarkdown content={body} allowHtml={false} />
       </div>
     );
   }
 
-  // `CodeBlockCode`, not `CodeHighlight`: the latter wraps the code in a
-  // document-style block — a tinted card, a language chip, and its own copy
+  // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a
+  // document-style card — a tinted surface, a language chip, and its own copy
   // button. That chrome is right for a snippet embedded IN prose. Here the code
   // IS the document, so the chrome just boxes the file inside a second box and
   // puts a second copy button next to the toolbar's. Plain highlighted text,
-  // filling the pane, is the whole job.
+  // filling the pane, is the whole job — which is exactly what HighlightedCode
+  // renders, so none of the old override classes are needed to strip it.
   //
-  // The padding goes on the <pre> itself, not a wrapper: the tinted background
-  // should run the full width of the pane, with the code inset inside it — a
-  // padded wrapper would inset the tint too and leave a white margin around it.
+  // No palette override: there is only one. This pane and the diff viewer beside
+  // it both render under min-dark / min-light (see @/lib/code-theme). The
+  // CodeMirror editor still carries its own Pierre-derived theme and does NOT
+  // match — a known, accepted gap, not an oversight.
+  //
+  // Only the horizontal padding is dropped, not the vertical: the pane's own
+  // background should run edge to edge, so the code is inset from the bottom
+  // but flush to the sides.
   return (
-    <CodeBlockCode
-      code={content}
-      language={languageFor(fileName)}
-      className="[&_pre]:!bg-transparent [&_pre]:rounded-none [&_pre]:!px-0 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
-    />
+    <div className="pb-4 [&_code]:text-[13px]">
+      <HighlightedCode code={content} language={languageFor(fileName)} />
+    </div>
   );
 }

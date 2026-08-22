@@ -1,9 +1,8 @@
-import { tool } from "@opencode-ai/plugin";
+import { tool } from "./lib/tool";
 import { getEnv, getKortixRouterBase } from "./lib/get-env";
-// NOTE: @tavily/core is imported lazily inside execute() — a top-level import
-// makes opencode load this heavy SDK at sandbox boot (every tool module is
-// evaluated eagerly), which added ~seconds to cold session start. Deferring it
-// to first use keeps boot fast and only pays the cost when the tool is run.
+
+const TAVILY_DEFAULT_URL = "https://api.tavily.com";
+const SEARCH_TIMEOUT_MS = 60_000;
 
 interface SearchResult {
   title: string;
@@ -25,6 +24,73 @@ interface SearchResponse {
   results: SearchResult[];
   images?: SearchImage[];
   responseTime?: number;
+}
+
+interface TavilyApiResponse {
+  answer?: string;
+  results?: Array<{
+    title?: string;
+    url?: string;
+    content?: string;
+    score?: number;
+    published_date?: string;
+    raw_content?: string;
+  }>;
+  images?: Array<string | { url?: string; description?: string }>;
+  response_time?: number;
+}
+
+async function search(
+  apiBaseURL: string,
+  apiKey: string,
+  query: string,
+  options: {
+    searchDepth: "basic" | "advanced";
+    topic: "general" | "news" | "finance";
+    maxResults: number;
+  },
+): Promise<SearchResponse> {
+  const response = await fetch(`${apiBaseURL.replace(/\/+$/, "")}/search`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query,
+      search_depth: options.searchDepth,
+      topic: options.topic,
+      max_results: options.maxResults,
+      include_answer: true,
+      include_images: true,
+      include_image_descriptions: true,
+    }),
+    signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+  });
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw new Error(`${response.status} Error: ${bodyText}`);
+  }
+
+  const data = JSON.parse(bodyText) as TavilyApiResponse;
+  return {
+    query,
+    answer: data.answer,
+    results: (data.results ?? []).map((result) => ({
+      title: result.title ?? "",
+      url: result.url ?? "",
+      content: result.content ?? "",
+      score: result.score ?? 0,
+      publishedDate: result.published_date,
+      rawContent: result.raw_content,
+    })),
+    images: (data.images ?? []).map((image) =>
+      typeof image === "string"
+        ? { url: image }
+        : { url: image.url ?? "", description: image.description },
+    ),
+    responseTime: data.response_time,
+  };
 }
 
 function formatSingle(query: string, response: SearchResponse): string {
@@ -84,16 +150,15 @@ export default tool({
     // KORTIX_SANDBOX_TOKEN (KORTIX_TOKEN kept as a legacy fallback); the router
     // injects the real upstream key. Fall back to a raw TAVILY_API_KEY only when
     // KORTIX_API_URL is unset (self-host/direct).
-    const apiBaseURL = getKortixRouterBase("tavily") ?? undefined;
-    const apiKey = apiBaseURL
+    const apiBaseURL = getKortixRouterBase("tavily") ?? TAVILY_DEFAULT_URL;
+    const usesKortixRouter = getKortixRouterBase("tavily") !== null;
+    const apiKey = usesKortixRouter
       ? getEnv("KORTIX_SANDBOX_TOKEN") || getEnv("KORTIX_TOKEN")
       : getEnv("TAVILY_API_KEY");
-    if (!apiKey) return apiBaseURL
+    if (!apiKey) return usesKortixRouter
       ? "Error: KORTIX_SANDBOX_TOKEN not set."
       : "Error: TAVILY_API_KEY not set.";
 
-    const { tavily } = await import("@tavily/core");
-    const client = tavily({ apiKey, ...(apiBaseURL ? { apiBaseURL } : {}) });
     const maxResults = Math.max(1, Math.min(args.num_results ?? 5, 20));
     const topic = (args.topic as "general" | "news" | "finance") ?? "general";
 
@@ -107,14 +172,11 @@ export default tool({
       q: string,
     ): Promise<{ query: string; data?: SearchResponse; error?: string }> => {
       try {
-        const response = (await client.search(q, {
+        const response = await search(apiBaseURL, apiKey, q, {
           searchDepth: (args.search_depth as "basic" | "advanced") || "basic",
           topic,
           maxResults,
-          includeAnswer: true,
-          includeImages: true,
-          includeImageDescriptions: true,
-        })) as unknown as SearchResponse;
+        });
         return { query: q, data: response };
       } catch (e) {
         return { query: q, error: String(e) };

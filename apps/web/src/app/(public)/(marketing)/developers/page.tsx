@@ -2,39 +2,39 @@
 
 import { CliDemo } from '@/components/home/cli-demo';
 import { Reveal } from '@/components/home/reveal';
+import { HighlightedCode } from '@/components/markdown/code';
 import { Badge } from '@/components/ui/badge';
-import { CodeBlockCode } from '@/components/ui/code-block';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { Icon } from '@/features/icon/icon';
+import { Github } from '@/features/icon/icons/github';
 import { useCopy } from '@/hooks/use-copy';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import {
-  ArrowRight,
-  Boxes,
-  Check,
-  Copy,
-  Cpu,
-  FileCode2,
-  GitBranch,
-  GitPullRequest,
-  KeyRound,
-  Plug,
-  Server,
-  Terminal as TerminalIcon,
-  Workflow,
-} from 'lucide-react';
+  CheckIcon as AiOutlineCheck,
+  ArrowRightIcon as ArrowRight,
+  CubeIcon as Boxes,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  CpuIcon as Cpu,
+  FileCodeIcon as FileCode2,
+  GitBranchIcon as GitBranch,
+  GitPullRequestIcon as GitPullRequest,
+  ArrowRightIcon as HiArrowRight,
+  KeyIcon as KeyRound,
+  PlugIcon as Plug,
+  HardDrivesIcon as Server,
+  TerminalIcon,
+  FlowArrowIcon as Workflow,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
-import { AiOutlineCheck } from 'react-icons/ai';
-import { HiArrowRight } from 'react-icons/hi';
+import { useCallback } from 'react';
 
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
 const DOCS_URL = '/docs';
-const DEFAULT_INSTALL_HOST = 'kortix.com';
 const fav = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 
 const C = {
@@ -134,11 +134,10 @@ function CodeFile({ name, code, language }: { name: string; code: string; langua
   const tab = name.split('/').pop() ?? name;
   return (
     <CodeWindowFrame tab={tab} className="px-0">
-      <CodeBlockCode
-        code={code.trim()}
-        language={language}
-        className="p-0 text-sm *:p-0 [&_pre]:!rounded-none [&_pre]:!bg-transparent [&_pre]:p-0 [&_span]:p-0"
-      />
+      {/* No wrapper classes: the frame already supplies the scroller, the
+          vertical padding, and `font-mono text-sm`. Every class this call used
+          to pass existed only to switch off the old card. */}
+      <HighlightedCode code={code.trim()} language={language} />
     </CodeWindowFrame>
   );
 }
@@ -157,7 +156,8 @@ const MENTAL_MODEL = [
   {
     icon: Server,
     title: 'You own the stack',
-    desc: 'Open and source-available. Self-host the exact same stack, bring your own runtime and model keys. No black box, no lock-in.',
+    // ACCURACY: say "open source" and stop — never characterise the licence.
+    desc: 'Open source. Self-host the exact same stack, bring your own runtime and model keys. No black box, no lock-in.',
   },
 ];
 
@@ -220,7 +220,8 @@ const RUNS_ANYWHERE = [
   {
     icon: Server,
     title: 'Self-host anywhere',
-    desc: 'A laptop, a VPS, your own VPC, or fully air-gapped — the exact same stack as Kortix cloud.',
+    // ACCURACY: not "air-gapped" — `self-host start` pulls images from docker.io.
+    desc: 'A laptop, a VPS, or your own VPC — the exact same stack as Kortix cloud.',
   },
   {
     icon: Cpu,
@@ -290,8 +291,6 @@ function Step({
   flip?: boolean;
 }) {
   const { copied, copy } = useCopy();
-  const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
-  const installCmd = `curl -fsSL https://${installHost}/install | bash`;
 
   const badgeClass =
     'border-border bg-card text-foreground flex size-9 shrink-0 items-center justify-center rounded border font-mono text-sm font-medium ';
@@ -302,7 +301,7 @@ function Step({
       <span className="hidden lg:flex">
         <span className={cn('sticky top-40 z-10 shrink-0', badgeClass)}>{n}</span>
       </span>
-      <div className="grid w-full max-w-6xl min-w-0 flex-1 grid-cols-1 items-start gap-8 lg:grid-cols-2 lg:gap-14">
+      <div className="grid w-full max-w-7xl min-w-0 flex-1 grid-cols-1 items-start gap-8 lg:grid-cols-2 lg:gap-14">
         <Reveal className={cn(flip && 'min-h-0 flex-1 grow space-y-5 lg:order-2')}>
           <div className="flex items-center gap-3.5 lg:hidden">
             <span className={cn(badgeClass)}>{n}</span>
@@ -315,9 +314,15 @@ function Step({
             <div className="bg-card mt-5 flex items-center justify-between gap-4 rounded-sm border p-3 px-5">
               <div className="flex gap-3">
                 <span className="text-foreground font-mono text-sm">$ </span>
-                <span className="text-foreground font-mono text-sm select-all">{installCmd}</span>
+                <span className="text-foreground font-mono text-sm select-all">
+                  {KORTIX_CLI_INSTALL_COMMAND}
+                </span>
               </div>
-              <Button size="icon-sm" variant="ghost" onClick={() => copy(installCmd)}>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => copy(KORTIX_CLI_INSTALL_COMMAND)}
+              >
                 {copied ? <Check className="text-primary size-4" /> : <Copy className="size-4" />}
               </Button>
             </div>
@@ -435,7 +440,7 @@ function ConnectorsRequestPath() {
           <Server className="text-foreground size-4 shrink-0" />
           <span className="font-medium">
             {tI18nHardcoded.raw(
-              'autoAppPublicMarketingDevelopersPageJsxTextKortixExecutor80880ab2',
+              'autoAppPublicMarketingDevelopersPageJsxTextKortixConnector80880ab2',
             )}
           </span>
           <span className="text-muted-foreground ml-auto text-[10px] sm:text-[11px]">
@@ -483,9 +488,9 @@ function HeroWorkspace() {
           {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheRepoIsf35cb375')}
         </div>
         <div className="text-foreground px-4 py-3 font-mono text-sm">
-          {REPO_TREE.map(([name, depth, kind], i) => (
+          {REPO_TREE.map(([name, depth, kind]) => (
             <div
-              key={i}
+              key={name}
               className="flex items-center gap-2 py-0.5"
               style={{ paddingLeft: `${depth * 14}px` }}
             >
@@ -527,11 +532,7 @@ function HeroWorkspace() {
           </span>
         </div>
         <div className="text-foreground overflow-x-auto text-sm">
-          <CodeBlockCode
-            code={KORTIX_YAML}
-            language="yaml"
-            className="[&_pre]:rounded-none [&_pre]:px-0"
-          />
+          <HighlightedCode code={KORTIX_YAML} language="yaml" />
         </div>
       </div>
     </div>
@@ -541,18 +542,11 @@ function HeroWorkspace() {
 export default function DevelopersPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { copied, copy } = useCopy();
-  const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tHome = useCallback(
     (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
     [tHardcodedUi],
   );
-
-  const installCmd = `curl -fsSL https://${installHost}/install | bash`;
-
-  useEffect(() => {
-    setInstallHost(window.location.host);
-  }, []);
 
   return (
     <div className="bg-background relative w-full">
@@ -563,7 +557,7 @@ export default function DevelopersPage() {
         <div className="absolute inset-0 z-0 mask-y-to-95%">
           <KortixLetterField seed={3382} />
         </div>
-        <div className="relative z-10 mx-auto max-w-6xl px-6 lg:px-0">
+        <div className="relative z-10 mx-auto max-w-7xl px-6 lg:px-0">
           <section className="w-full">
             <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
               {tI18nHardcoded.raw(
@@ -585,14 +579,20 @@ export default function DevelopersPage() {
               <div className="bg-card flex items-center gap-4 rounded-sm border p-3 px-5">
                 <div className="flex gap-3">
                   <span className="text-foreground font-mono text-sm">$ </span>
-                  <span className="text-foreground font-mono text-sm select-all">{installCmd}</span>
+                  <span className="text-foreground font-mono text-sm select-all">
+                    {KORTIX_CLI_INSTALL_COMMAND}
+                  </span>
                 </div>
-                <Button size="icon-sm" variant="ghost" onClick={() => copy(installCmd)}>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => copy(KORTIX_CLI_INSTALL_COMMAND)}
+                >
                   {copied ? <Check className="text-primary size-4" /> : <Copy className="size-4" />}
                 </Button>
               </div>
               <Button
-                size="xl"
+                size="lg"
                 variant="secondary"
                 className="ring-ring/15 p-3 px-5 ring-2"
                 asChild
@@ -619,7 +619,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <Reveal>
           <div className="mb-8 max-w-2xl">
             <Eyebrow>
@@ -654,8 +654,8 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="flex flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
-        <div className="mx-auto w-full max-w-6xl">
+      <section className="flex flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
+        <div className="mx-auto w-full max-w-7xl">
           <Reveal>
             <div className="mb-8 max-w-2xl">
               <Eyebrow>
@@ -895,7 +895,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <Reveal>
           <div className="mb-8 max-w-2xl">
             <Eyebrow>
@@ -957,7 +957,7 @@ export default function DevelopersPage() {
       </section>
 
       {/* Scalability */}
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
           <Reveal>
             <Eyebrow>Scale</Eyebrow>
@@ -1047,7 +1047,7 @@ export default function DevelopersPage() {
       </section>
 
       {/* Connectors */}
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
           <Reveal className="lg:order-2">
             <Eyebrow>Connectors</Eyebrow>
@@ -1084,7 +1084,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <Reveal>
           <div className="mb-2 max-w-2xl">
             <Eyebrow>
@@ -1122,7 +1122,7 @@ export default function DevelopersPage() {
             },
             {
               icon: Plug,
-              title: 'Self-healing integrations',
+              title: 'Self-healing connections',
               body: 'When a token expires or a service blips, Kortix refreshes it or asks you to reconnect in plain language — never a cryptic error.',
             },
             {
@@ -1151,66 +1151,6 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
-        <Reveal>
-          <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
-            <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
-              <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
-                <div className="space-y-2">
-                  <Badge variant="update" className="rounded">
-                    {tI18nHardcoded.raw(
-                      'autoAppPublicMarketingDevelopersPageJsxTextStartBuilding83387fa7',
-                    )}
-                  </Badge>
-                  <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                    {tI18nHardcoded.raw(
-                      'autoAppPublicMarketingDevelopersPageJsxTextShipYourFirst187209c6',
-                    )}
-                  </h2>
-
-                  <span className="text-muted-foreground text-sm leading-relaxed">
-                    {tI18nHardcoded.raw(
-                      'autoAppPublicMarketingDevelopersPageJsxTextInstallTheCLIbd0e41b0',
-                    )}{' '}
-                    <span className="text-foreground font-mono text-sm">
-                      {tI18nHardcoded.raw(
-                        'autoAppPublicMarketingDevelopersPageJsxTextKortixInit263fedee',
-                      )}
-                    </span>
-                    {tI18nHardcoded.raw(
-                      'autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670',
-                    )}
-                  </span>
-                </div>
-
-                <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                  <Button size="lg" asChild className="w-full">
-                    <Link href={DOCS_URL}>
-                      {tI18nHardcoded.raw(
-                        'autoAppPublicMarketingDevelopersPageJsxTextReadTheDocs7dfe8373',
-                      )}
-                      <HiArrowRight className="size-4" />
-                    </Link>
-                  </Button>
-                  <Button asChild size="lg" className="w-full" variant="accent">
-                    <Link href={GITHUB_URL}>
-                      {tI18nHardcoded.raw(
-                        'autoAppPublicMarketingDevelopersPageJsxTextStarOnGitHub32a38178',
-                      )}
-                      <Icon.Github />
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-              <div className="col-span-8 mask-y-from-90% mask-x-from-90%">
-                <KortixGrid count={58} seed={4228} />
-              </div>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
-      <div className="h-24 sm:h-28" />
     </div>
   );
 }

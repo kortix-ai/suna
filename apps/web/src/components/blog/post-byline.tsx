@@ -1,11 +1,13 @@
-import { UserAvatar } from '@/components/ui/user-avatar';
+import { PostAuthorAvatar } from '@/components/blog/post-author-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { formatPostDate, type Author } from '@/lib/blog';
 import { cn } from '@/lib/utils';
 
 /**
- * Author + date + reading time. The full variant heads an article; the compact
- * variant (no role, smaller avatar) sits in list cards.
+ * Author + date + reading time. The full variant heads an article and gets a
+ * size-10 avatar plus the author's role; the compact variant sits at the foot
+ * of a list card, where a size-6 avatar keeps it a meta line rather than a
+ * second focal point.
  */
 export function PostByline({
   author,
@@ -21,28 +23,26 @@ export function PostByline({
   className?: string;
 }) {
   return (
-    <div className={cn('flex items-center gap-3', className)}>
-      <UserAvatar
-        email={author.email}
-        name={author.name}
-        avatarUrl={author.avatarUrl}
-        size={compact ? 'sm' : 'md'}
-      />
-      <div className="min-w-0">
-        <div
-          className={cn(
-            'font-medium text-foreground',
-            compact ? 'text-xs' : 'text-sm',
-          )}
-        >
-          {author.name}
-        </div>
-        <InlineMeta className={compact ? 'mt-0' : 'mt-0.5'}>
-          {!compact && author.role ? author.role : null}
+    <div className={cn('flex items-center', compact ? 'gap-2.5' : 'gap-3', className)}>
+      <PostAuthorAvatar author={author} size={compact ? 'sm' : 'lg'} />
+      {compact ? (
+        // One line in cards: the author's name reads as the first meta item, so
+        // it shares the separator rhythm instead of stacking a second row.
+        <InlineMeta className="min-w-0">
+          <span className="text-foreground/80 font-medium">{author.name}</span>
           <time dateTime={date}>{formatPostDate(date)}</time>
           {`${readingTime} min read`}
         </InlineMeta>
-      </div>
+      ) : (
+        <div className="min-w-0">
+          <div className="text-foreground text-sm font-medium">{author.name}</div>
+          <InlineMeta className="mt-0.5">
+            {author.role ? author.role : null}
+            <time dateTime={date}>{formatPostDate(date)}</time>
+            {`${readingTime} min read`}
+          </InlineMeta>
+        </div>
+      )}
     </div>
   );
 }

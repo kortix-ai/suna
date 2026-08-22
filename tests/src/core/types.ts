@@ -2,12 +2,14 @@
  * Shared interface hub. Interfaces only (no runtime), so the flow registry,
  * fixtures, and runner can reference each other without import cycles.
  */
-import type { Client, Identity } from "./client";
-import type { Capabilities, Env } from "./env";
+import type { Client, Identity } from './client';
+import type { Capabilities, Env } from './env';
 
 export type Capability = keyof Capabilities;
 
-export type ProjectRole = "user" | "editor" | "manager";
+// Two assignable project roles. `user` is the legacy spelling of `member`
+// (still folded server-side); `editor` was removed on 2026-08-18 and now 400s.
+export type ProjectRole = 'user' | 'member' | 'manager';
 
 /** A provisioned identity with the data flows assert against. */
 export interface Principal extends Identity {
@@ -55,23 +57,34 @@ export interface TeamFixture {
   /** The team account id (OWNER is its owner). */
   id: string;
   /** Synthesize a user, add to this account at the given role, return its principal. */
-  addMember(role: "admin" | "member"): Promise<Principal>;
+  addMember(role: 'admin' | 'member'): Promise<Principal>;
   /** Grant a project role to an account member (PUT access). */
   grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
-  /** Provision a project owned by this team account. */
-  project(opts?: { name?: string }): Promise<CreatedProject>;
+  /** Create a project owned by this team account. */
+  project(opts?: {
+    name?: string;
+    seed?: boolean;
+    managedGit?: boolean;
+    metadata?: Record<string, unknown>;
+  }): Promise<CreatedProject>;
 }
 
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */
 export interface Fixtures {
   /**
    * Create a fresh run-scoped project (default: OWNER's personal account).
-   * `seed: true` seeds the starter (initial commit on the default branch) so a
-   * sandbox can materialize the repo — REQUIRED for any flow that boots a
-   * session/sandbox. Unseeded projects (the default) are an empty repo, fine for
-   * metadata/boundary flows and much cheaper.
+   * The default fixture creates only database state. It does not create an
+   * upstream Git repository. Use `managedGit: true` when a flow exercises Git.
+   * `seed: true` implies managed Git and seeds the starter so a sandbox can
+   * materialize the repository.
    */
-  project(opts?: { name?: string; accountId?: string; seed?: boolean }): Promise<CreatedProject>;
+  project(opts?: {
+    name?: string;
+    accountId?: string;
+    seed?: boolean;
+    managedGit?: boolean;
+    metadata?: Record<string, unknown>;
+  }): Promise<CreatedProject>;
   /**
    * A single shared, READ-ONLY project provisioned once per run and reused — use
    * this in flows that only READ a project (never mutate its manifest/name/state),
@@ -79,13 +92,35 @@ export interface Fixtures {
    * secondary rate limit). Mutating flows must use project() for isolation.
    */
   sharedProject(): Promise<CreatedProject>;
+  /**
+   * A single seeded project for flows that create isolated sessions but do not
+   * mutate the project's base branch or project-wide Git configuration.
+   */
+  sharedSeededProject(): Promise<CreatedProject>;
   /** Create a session in a project (provisions a real sandbox). */
   session(project: CreatedProject, opts?: { prompt?: string }): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */
   pat(opts?: { name?: string }): Promise<string>;
   /** Create a team account with member/role helpers (auto-torn-down). */
-  team(opts?: { name?: string }): Promise<TeamFixture>;
-  /** A unique run-scoped name with the e2e-<runId>- prefix. */
+  team(opts?: { name?: string; enterprise?: boolean }): Promise<TeamFixture>;
+  /** Create an isolated user with only its personal account (auto-torn-down). */
+  user(opts?: { label?: string }): Promise<Principal>;
+  /**
+   * Create an isolated user with a SPECIFIC email (auto-torn-down). Use this to
+   * become the addressee of a previously-created account/project invite — the
+   * accept/decline handlers reject callers whose email doesn't match the invite.
+   */
+  userWithEmail(email: string, opts?: { label?: string }): Promise<Principal>;
+  /**
+   * A unique run-scoped name with the `e2e-<runId>-` prefix.
+   *
+   * Stable within one flow ATTEMPT (two calls with the same slug return the
+   * same string, so a create and its later read agree) and distinct across
+   * attempts (attempt 2 appends `-r2`). Attempt-scoping is required, not
+   * cosmetic: a retried flow re-creates its fixtures but a name derived only
+   * from the run id would still collide with whatever the previous attempt
+   * committed before it failed.
+   */
   name(slug: string): string;
 }
 
@@ -107,6 +142,15 @@ export interface FlowMeta {
   routes?: string[];
   /** Registers as a tracked skip (yellow in the report) instead of running. */
   todo?: string;
+  /**
+   * Quarantined: registered and reported, never run — the API-flow mirror of
+   * the browser lane's `@quarantine` tag. Only for a flow whose failure is a
+   * NAMED pre-existing defect that cannot be fixed from this tree (edge infra,
+   * a product defect with its own tracked follow-up). The string must say what
+   * the defect is and where it is tracked. `--require-all` accepts it (unlike
+   * `todo`, which is an unimplemented contract and stays a failure).
+   */
+  quarantine?: string;
 }
 
 export interface FlowContext {

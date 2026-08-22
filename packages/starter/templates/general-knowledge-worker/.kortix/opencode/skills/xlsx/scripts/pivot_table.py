@@ -2,8 +2,8 @@
 Create and delete Excel pivot tables via LibreOffice's DataPilot engine.
 
 Usage:
-    python pivot_table.py create <excel_file> <config_json> [timeout]
-    python pivot_table.py delete <excel_file> <source_sheet> <pivot_name> [timeout]
+    python3 pivot_table.py create <excel_file> <config_json> [timeout]
+    python3 pivot_table.py delete <excel_file> <source_sheet> <pivot_name> [timeout]
 
 Config JSON fields:
     source_sheet   — sheet with source data (headers in row 1)

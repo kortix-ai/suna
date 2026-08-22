@@ -7,12 +7,38 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
-import { agentMayPerform, agentMayUseConnector, agentMayUseEnv, assertAgentScope } from '../iam/agent-scope';
+import {
+  agentMayPerform,
+  canonicalizeGrantActions,
+  agentMayUseConnector,
+  agentMayUseEnv,
+  assertAgentScope,
+  isProjectSessionPrincipal,
+} from '../iam/agent-scope';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 
 function loadAgents(body: string) {
   return extractAgents(parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`));
 }
+
+describe('isProjectSessionPrincipal', () => {
+  const context = (values: Record<string, unknown>) =>
+    ({ get: (key: string) => values[key] }) as never;
+
+  test('does not treat a Supabase auth session as a project session', () => {
+    expect(
+      isProjectSessionPrincipal(
+        context({ authType: 'supabase', sessionId: 'supabase-auth-session' }),
+      ),
+    ).toBe(false);
+  });
+
+  test('recognizes a project-scoped token session', () => {
+    expect(
+      isProjectSessionPrincipal(context({ authType: 'pat', sessionId: 'project-session' })),
+    ).toBe(true);
+  });
+});
 
 describe('grantFromLoadedAgents — resolution rule', () => {
   test('no [[agents]] section → null (no restriction, backward-compatible)', () => {
@@ -30,7 +56,9 @@ kortix_cli = ["project.trigger.create", "project.cr.open"]
     expect(grantFromLoadedAgents('release-bot', loaded)).toEqual({
       agent: 'release-bot',
       connectors: ['github'],
-      kortixCli: ['project.trigger.create', 'project.cr.open'],
+      // `project.cr.open` in the manifest, `project.gitops.push` here:
+      // `grantFromLoadedAgents` normalizes the retired spelling on the way out.
+      kortixCli: ['project.trigger.create', 'project.gitops.push'],
       env: 'all', // env key omitted → defaults to 'all' (back-compat for the new dimension)
     });
   });
@@ -82,7 +110,7 @@ kortix_cli = "all"
   // Regression: a session that boots with the non-binding `default` sentinel in a
   // GOVERNED project must NOT be default-denied. No agent is ever named `default`
   // — the runtime resolves it to the configured `default_agent` (a GP agent), so
-  // default-denying it stripped every connector and made `kortix executor
+  // default-denying it stripped every connector and made `kortix connectors
   // connectors` return [] (and hid synthetic channel/computer connectors). The
   // sentinel is non-binding → null (no restriction, still capped at the user).
   test('`default` sentinel under governance → null (non-binding), not default-deny', () => {
@@ -144,7 +172,7 @@ describe('grantFromLoadedAgents — v2 `default_agent` sentinel resolution', () 
     expect(grantFromLoadedAgents('default', loaded)).toEqual({
       agent: 'support',
       connectors: ['github'],
-      kortixCli: ['project.cr.open'],
+      kortixCli: ['project.gitops.push'], // normalized from the manifest's cr.open
       env: [], // v2 deny-by-default (secrets omitted)
     });
   });
@@ -212,25 +240,50 @@ describe('agentMayPerform — kortix_cli gate', () => {
   test('granted action → allowed', () => {
     expect(agentMayPerform({ agent: 'a', kortixCli: ['project.cr.open'], connectors: [] }, 'project.cr.open')).toBe(true);
   });
-  test('non-granted action → denied (the cr.open-but-not-merge case)', () => {
-    const grant = { agent: 'a', kortixCli: ['project.cr.open'], connectors: [] };
-    expect(agentMayPerform(grant, 'project.cr.merge')).toBe(false);
+  test('non-granted action → denied (the push-but-not-merge case)', () => {
+    const grant = { agent: 'a', kortixCli: ['project.gitops.push'], connectors: [] };
+    expect(agentMayPerform(grant, 'project.gitops.merge')).toBe(false);
   });
   test('empty grant → everything denied', () => {
     expect(agentMayPerform({ agent: 'a', kortixCli: [], connectors: [] }, 'project.trigger.create')).toBe(false);
   });
-  test('cr.open ≡ gitops.push alias: holding either satisfies the other (no double-gate)', () => {
+  // `project.cr.open` / `project.cr.merge` were the SAME capability as the
+  // gitops leaves under a second name, and spec §2.4 collapsed them — neither is
+  // in `kortix.permissions` any more. They are corrected on INPUT, once, when
+  // the grant is resolved (`canonicalizeGrantActions`), not aliased at every
+  // check. `agentMayPerform` is a plain membership test, so an UN-normalized
+  // manifest spelling grants nothing: that is the point, and the reason the
+  // normalization has its own test below.
+  test('the retired cr.* spellings grant nothing once they reach the gate', () => {
     const crOnly = { agent: 'a', kortixCli: ['project.cr.open'], connectors: [] };
-    expect(agentMayPerform(crOnly, 'project.gitops.push')).toBe(true); // fold gates the commit as gitops.push
-    const pushOnly = { agent: 'a', kortixCli: ['project.gitops.push'], connectors: [] };
-    expect(agentMayPerform(pushOnly, 'project.cr.open')).toBe(true); // route gates CR-create as cr.open
-    // merge pair is independent — cr.open does NOT unlock merge
+    expect(agentMayPerform(crOnly, 'project.gitops.push')).toBe(false);
     expect(agentMayPerform(crOnly, 'project.gitops.merge')).toBe(false);
-    expect(agentMayPerform(crOnly, 'project.cr.merge')).toBe(false);
   });
-  test('cr.merge ≡ gitops.merge alias', () => {
-    const mergeOnly = { agent: 'a', kortixCli: ['project.cr.merge'], connectors: [] };
-    expect(agentMayPerform(mergeOnly, 'project.gitops.merge')).toBe(true);
+  test('canonicalizeGrantActions rewrites them to the catalog spelling', () => {
+    expect(
+      canonicalizeGrantActions({ agent: 'a', kortixCli: ['project.cr.open'], connectors: [] }),
+    ).toEqual({ agent: 'a', kortixCli: ['project.gitops.push'], connectors: [] });
+    expect(
+      canonicalizeGrantActions({ agent: 'a', kortixCli: ['project.cr.merge'], connectors: [] }),
+    ).toEqual({ agent: 'a', kortixCli: ['project.gitops.merge'], connectors: [] });
+    // …and the two halves of a pair collapse to ONE entry, not a duplicate.
+    expect(
+      canonicalizeGrantActions({
+        agent: 'a',
+        kortixCli: ['project.cr.open', 'project.gitops.push'],
+        connectors: [],
+      })!.kortixCli,
+    ).toEqual(['project.gitops.push']);
+    // 'all' and null pass through untouched.
+    expect(canonicalizeGrantActions(null)).toBeNull();
+    expect(
+      canonicalizeGrantActions({ agent: 'a', kortixCli: 'all', connectors: [] })!.kortixCli,
+    ).toBe('all');
+  });
+  test('the merge pair stays independent of the push pair', () => {
+    const pushOnly = { agent: 'a', kortixCli: ['project.gitops.push'], connectors: [] };
+    expect(agentMayPerform(pushOnly, 'project.gitops.push')).toBe(true);
+    expect(agentMayPerform(pushOnly, 'project.gitops.merge')).toBe(false);
   });
 });
 
@@ -253,15 +306,15 @@ describe('assertAgentScope — throws 403 on deny', () => {
     return { get: (k: string) => (k === 'agentGrant' ? grant : undefined) } as any;
   }
   test('throws for a non-granted action', () => {
-    const c = fakeCtx({ agent: 'a', kortixCli: ['project.cr.open'], connectors: [] });
-    expect(() => assertAgentScope(c, 'project.cr.merge')).toThrow();
+    const c = fakeCtx({ agent: 'a', kortixCli: ['project.gitops.push'], connectors: [] });
+    expect(() => assertAgentScope(c, 'project.gitops.merge')).toThrow();
   });
   test('does not throw for a granted action', () => {
-    const c = fakeCtx({ agent: 'a', kortixCli: ['project.cr.open'], connectors: [] });
-    expect(() => assertAgentScope(c, 'project.cr.open')).not.toThrow();
+    const c = fakeCtx({ agent: 'a', kortixCli: ['project.gitops.push'], connectors: [] });
+    expect(() => assertAgentScope(c, 'project.gitops.push')).not.toThrow();
   });
   test('does not throw when there is no grant (human / laptop CLI)', () => {
     const c = fakeCtx(null);
-    expect(() => assertAgentScope(c, 'project.cr.merge')).not.toThrow();
+    expect(() => assertAgentScope(c, 'project.gitops.merge')).not.toThrow();
   });
 });

@@ -8,6 +8,7 @@ import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, removeHost, upsertHost, type Host } from '../api/config.ts';
 import { confirm, prompt, selectFrom } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
+import { openInBrowser } from '../browser.ts';
 import {
   instanceDir as configInstanceDir,
   loadInstanceConfig,
@@ -22,11 +23,12 @@ import {
   writeSupabaseVendorAssets,
 } from '../self-host/compose-assets.ts';
 import { SHARED_SELF_HOST_DEFAULTS } from '../self-host/shared-runtime-defaults.ts';
+import { applyEmailWiring } from '../self-host/email-wiring.ts';
+import { parseEmailTargets, redactUrl } from '@kortix/shared/email-url';
 import {
   CATEGORY_LABELS,
   groupSecretsByCategory,
   isUpdaterManagedKey,
-  maskSecretValue,
   ROTATABLE_GENERATED_KEYS,
   SECRET_DEFS,
   secretDefFor,
@@ -214,8 +216,8 @@ interface SelfHostEnv {
   MANAGED_GIT_GITHUB_TOKEN: string;
   MANAGED_GIT_GITHUB_OWNER: string;
   MANAGED_GIT_GITHUB_INSTALL_ID: string;
-  INTEGRATION_AUTH_PROVIDER: string;
-  KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: string;
+  CONNECTOR_AUTH_PROVIDER: string;
+  KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: string;
   PIPEDREAM_CLIENT_ID: string;
   PIPEDREAM_CLIENT_SECRET: string;
   PIPEDREAM_PROJECT_ID: string;
@@ -382,7 +384,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
 
   // The complete guided `init` flow, in this exact order and no other
   // questions (everything else is dashboard/env-only — see
-  // configureIntegrations()'s own doc comment): 1) reachability — the first
+  // configureConnections()'s own doc comment): 1) reachability — the first
   // real decision, since it decides whether agent sessions can call back to
   // this API at all; 2) admin email; 3) deployment shape (Enterprise
   // license); 4) sandbox provider + its key; 5) Pipedream (optional); 6) a
@@ -397,8 +399,8 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
     await promptAdminEmail(env, flags);
     await promptFeatureFlags(env, flags);
   }
-  if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
-    await configureIntegrations(env, flags);
+  if (shouldPrompt(flags) && connectionReviewNeeded(env)) {
+    await configureConnections(env, flags);
   }
   if (shouldPrompt(flags) && existing === null) {
     await promptUpdatePolicyCompact(env, flags);
@@ -439,7 +441,7 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
   process.stdout.write('\n');
-  renderIntegrationSummary(env);
+  renderConnectionSummary(env);
   process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Switch API  ${C.reset}${C.cyan}kortix hosts use selfhost${C.reset}${C.dim} / ${C.reset}${C.cyan}kortix hosts use cloud${C.reset}\n\n`);
@@ -453,8 +455,8 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   }
 
   const env = loadEnvWithDefaults(flags)!;
-  if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
-    await configureIntegrations(env, flags);
+  if (shouldPrompt(flags) && connectionReviewNeeded(env)) {
+    await configureConnections(env, flags);
   }
 
   // `init` and `start` can run on separate invocations (init non-interactively,
@@ -536,7 +538,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`${status.ok('Self-hosted Kortix is starting')}\n`);
   process.stdout.write(`${C.dim}  Dashboard: ${C.reset}${C.cyan}${env.PUBLIC_URL}${C.reset}\n`);
   process.stdout.write(`${C.dim}  Logs:      ${C.reset}${C.cyan}kortix self-host logs${C.reset}\n\n`);
-  renderIntegrationSummary(env);
+  renderConnectionSummary(env);
   renderAfterStartNote();
   return 0;
 }
@@ -630,6 +632,25 @@ function selfHostDoctor(flags: GlobalFlags): number {
         ? actual
         : `stale KORTIX_INSTANCE_DIR="${recorded}" (actual: ${actual}) — run \`kortix self-host configure\` (or any of init/start/update/env set) to reconcile`,
     });
+  }
+  if (existsSync(envPath(flags.instance))) {
+    // A malformed EMAIL_URL is silent otherwise: the API logs one line at the
+    // first send and then skips delivery, so the operator learns about it from
+    // a missing invite. Parse it here, with the same parser the API uses.
+    const env = loadEnv(flags.instance);
+    const raw = (env?.EMAIL_URL ?? '').trim();
+    if (raw) {
+      const { targets, errors } = parseEmailTargets(raw);
+      checks.push({
+        name: 'email-url',
+        ok: errors.length === 0 && targets.length > 0,
+        detail: errors.length
+          ? errors.join('; ')
+          : targets.length
+            ? `${targets.map((target) => target.kind).join(' → ')} (${redactUrl(raw.split(',')[0]!.trim())})`
+            : 'no usable provider',
+      });
+    }
   }
   const ok = checks.every((check) => check.ok);
   if (flags.json) {
@@ -1054,7 +1075,8 @@ async function selfHostVersion(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`\n  ${C.dim}images${C.reset}\n`);
   process.stdout.write(`  ${C.dim}  api      ${C.reset}${env.API_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}  frontend ${C.reset}${env.FRONTEND_IMAGE}\n`);
-  process.stdout.write(`  ${C.dim}  gateway  ${C.reset}${env.GATEWAY_IMAGE}\n\n`);
+  process.stdout.write(`  ${C.dim}  gateway  ${C.reset}${env.GATEWAY_IMAGE}\n`);
+  process.stdout.write('\n');
   process.stdout.write(`  ${C.dim}Update: ${C.reset}${C.cyan}kortix self-host update${C.reset}${C.dim} (current channel) or ${C.reset}${C.cyan}--tag <version>${C.reset}\n\n`);
   return 0;
 }
@@ -1382,6 +1404,7 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
   }
 
   const changedKeys: string[] = [];
+  const previousEmailUrl = env.EMAIL_URL ?? '';
 
   // `env set KEY` (no '=') — prompt interactively for exactly one key.
   if (args.length === 1 && !args[0]!.includes('=')) {
@@ -1414,9 +1437,18 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
     }
   }
 
+  // EMAIL_URL is the one email setting; everything else it implies (the GoTrue
+  // send-email hook, its shared secret, the sender identity, and the auth
+  // behavior flags) is derived here rather than typed by the operator.
+  const wiring = applyEmailWiring(env, previousEmailUrl);
+  changedKeys.push(...wiring.changed);
+
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
   process.stdout.write(`${status.ok(`Updated ${changedKeys.join(', ')}`)}\n`);
+  for (const note of wiring.notes) {
+    process.stdout.write(`  ${C.dim}${note}${C.reset}\n`);
+  }
   return restartServicesForKeys(flags.instance, env, changedKeys);
 }
 
@@ -1618,7 +1650,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   }
   // Same ordering as `init`: reachability first (the decision that determines
   // whether agent sandboxes can work at all), then admin email, then feature
-  // flags, then integrations (Daytona) — see selfHostInit() for the full
+  // flags, then connections (Daytona) — see selfHostInit() for the full
   // rationale. Admin email is asked here on EVERY `configure` (not only on a
   // fresh init the way selfHostInit gates it): an operator who skipped it at
   // init and later runs `configure` to fix that would otherwise find that
@@ -1631,17 +1663,17 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   await promptReachability(env, flags);
   await promptAdminEmail(env, flags);
   await promptFeatureFlags(env, flags);
-  await configureIntegrations(env, flags);
+  await configureConnections(env, flags);
   await configureUpdatePolicy(env, flags);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
-  process.stdout.write(`${status.ok('Updated self-host integration config')}\n`);
+  process.stdout.write(`${status.ok('Updated self-host connection config')}\n`);
   process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n`);
   if (reachabilityMode(env) !== 'domain') {
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
   process.stdout.write('\n');
-  renderIntegrationSummary(env);
+  renderConnectionSummary(env);
   return 0;
 }
 
@@ -1716,16 +1748,11 @@ async function promptUpdatePolicyCompact(env: SelfHostEnv, flags: GlobalFlags): 
   env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
 }
 
-// 'local-docker' is EXPERIMENTAL: runs sandboxes as containers on THIS same
-// machine via the local Docker socket — no cloud account, not horizontally
-// scalable, and noticeably slower (it builds sandbox images locally on this
-// machine). Not recommended for production — listed last and non-default in
-// the wizard below. See apps/api/src/platform/providers/local-docker.ts.
-const SANDBOX_PROVIDER_CHOICES = ['daytona', 'platinum', 'e2b', 'local-docker'] as const;
+const SANDBOX_PROVIDER_CHOICES = ['daytona', 'platinum', 'e2b'] as const;
 type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
 
 /**
- * The CLI's guided-integrations step: the two things that genuinely cannot
+ * The CLI's guided-connections step: the two things that genuinely cannot
  * be set any other way — the agent sandbox runtime (an env-only credential
  * the API reads at boot, no in-app settings surface exists for it) and
  * Pipedream's OPERATOR-level OAuth app credentials (also env-only — the
@@ -1736,7 +1763,7 @@ type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
  * model picker). "The full flow needs to be perfect, all the other bullshit
  * needs to be removed" — this function IS that trim.
  */
-async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
+async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Agent sandbox runtime${C.reset}\n`);
   const currentProvider = sandboxProviders(env)[0];
   const defaultProvider = (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
@@ -1753,8 +1780,7 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
     process.stdout.write(
       `  ${C.cyan}daytona${C.reset}      ${C.dim}https://app.daytona.io (default, recommended)${C.reset}\n` +
         `  ${C.cyan}platinum${C.reset}     ${C.dim}https://www.platinum.dev (recommended) — Kortix's own microVM sandbox provider${C.reset}\n` +
-        `  ${C.cyan}e2b${C.reset}          ${C.dim}https://e2b.dev (also supported)${C.reset}\n` +
-        `  ${C.cyan}local-docker${C.reset} ${C.dim}[experimental] runs sandboxes as containers on this same machine — slower (builds sandbox images locally on this machine), not recommended for production${C.reset}\n`,
+        `  ${C.cyan}e2b${C.reset}          ${C.dim}https://e2b.dev (also supported)${C.reset}\n`,
     );
     provider = await selectFrom('Sandbox provider', SANDBOX_PROVIDER_CHOICES, defaultProvider);
   }
@@ -1766,14 +1792,64 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
     env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
   } else if (provider === 'e2b') {
     env.E2B_API_KEY = await promptSecret('E2B API key', env.E2B_API_KEY);
+    // The cluster this instance talks to. E2B Cloud is e2b.dev; a self-hosted
+    // E2B cluster has its own base domain. Both the template builds and the
+    // sandbox creates use this one value (apps/api platform/providers/e2b-domain).
+    env.E2B_DOMAIN = await prompt(
+      'E2B base domain (E2B Cloud: e2b.dev — a self-hosted E2B cluster uses its own)',
+      env.E2B_DOMAIN || 'e2b.dev',
+    );
   } else if (provider === 'platinum') {
     env.PLATINUM_API_KEY = await promptSecret('Platinum API key', env.PLATINUM_API_KEY);
     env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
     env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
   }
-  // local-docker: no credentials to collect — the local Docker socket IS the
-  // "account". writeCompose()/renderFullDockerCompose() wires the socket
-  // mount + LOCAL_DOCKER_NETWORK in automatically for this provider.
+  // Kortix Apps (optional, default skip): Apps publish on a wildcard domain
+  // this instance serves. When configured, the bundled Caddy proxy adds a
+  // `*.<apps base domain>` site block that reverse-proxies to kortix-api and
+  // issues a certificate PER-APP on first request via ACME HTTP-01 (on_demand)
+  // — so only a `*.<domain>` DNS record is needed, NOT a wildcard certificate,
+  // and no reverse proxy has to be hand-wired. Requires a domain (Caddy only
+  // runs in domain mode). Kortix Cloud fronts Apps with a Cloudflare Worker
+  // that signs each request; a self-host has no such Worker, so its own reverse
+  // proxy is the trust boundary and direct edge traffic is accepted.
+  if (shouldPrompt(flags)) {
+    const appsMode = await selectFrom(
+      'Kortix Apps hosting (optional, serves deployed Apps on their own domain): configure/skip',
+      ['skip', 'configure'] as const,
+      env.KORTIX_APPS_BASE_DOMAIN ? 'configure' : 'skip',
+    );
+    if (appsMode === 'configure') {
+      env.KORTIX_APPS_BASE_DOMAIN = await prompt(
+        'Apps base domain (needs a *.<domain> DNS record pointing at this instance; Caddy issues per-App certificates on demand)',
+        env.KORTIX_APPS_BASE_DOMAIN,
+      );
+      env.KORTIX_APPS_ALLOW_DIRECT_EDGE = 'true';
+    }
+  }
+
+  // Sandbox preview origins (optional, default skip): serves every sandbox port
+  // a browser can open on its OWN hostname,
+  // <env>-p<port>-<sandbox>.<preview base domain>. Without it previews use the
+  // path proxy (/v1/p/<sandbox>/<port>/), which works for tools but not for a
+  // browser: an app that emits <a href="/learn">, an XHR to /api, pushState, a
+  // service worker or a WebSocket resolves those against the API origin and
+  // escapes the prefix. Same mechanics as Apps above — a *.<domain> DNS record
+  // plus per-hostname on-demand certificates, no wildcard certificate needed.
+  if (shouldPrompt(flags)) {
+    const previewMode = await selectFrom(
+      'Sandbox preview origins (optional, makes browser previews of sandbox ports work like a real site): configure/skip',
+      ['skip', 'configure'] as const,
+      env.KORTIX_PREVIEW_BASE_DOMAIN ? 'configure' : 'skip',
+    );
+    if (previewMode === 'configure') {
+      env.KORTIX_PREVIEW_BASE_DOMAIN = await prompt(
+        'Preview base domain (needs a *.<domain> DNS record pointing at this instance; Caddy issues per-preview certificates on demand)',
+        env.KORTIX_PREVIEW_BASE_DOMAIN,
+      );
+      env.KORTIX_PREVIEW_ALLOW_DIRECT_EDGE = 'true';
+    }
+  }
 
   // Pipedream (optional, default skip): the ONE other env-only credential
   // that belongs here — the platform-level OAuth app Pipedream issues per
@@ -1789,7 +1865,7 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
       pipedreamConfigured(env) ? 'configure' : 'skip',
     );
     if (pdMode === 'configure') {
-      env.INTEGRATION_AUTH_PROVIDER = 'pipedream';
+      env.CONNECTOR_AUTH_PROVIDER = 'pipedream';
       env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
       env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
       env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
@@ -1798,11 +1874,11 @@ async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Prom
     }
   }
 
-  env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED = 'true';
+  env.KORTIX_SELF_HOST_CONNECTIONS_REVIEWED = 'true';
 }
 
 // Managed git (GitHub) is deliberately NOT configured from this guided flow
-// anymore — see configureIntegrations() above. It's configured in-app instead
+// anymore — see configureConnections() above. It is configured in-app instead
 // (Settings → Git, DB-backed) after `start`. The old configureManagedGit()/
 // runConnectGithubInteractive()/describeGithubMode()/inferGithubMode() guided
 // wizard was removed along with it; `connect-github` (the standalone
@@ -1836,23 +1912,16 @@ export function sandboxProviders(env: Record<string, string>): string[] {
   return (env.ALLOWED_SANDBOX_PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-/** The key each sandbox provider needs to be considered "ready" — mirrors
- *  isProviderEnabled() in apps/api/src/config.ts. 'local-docker' has none: its
- *  "account" is the local Docker socket, checked lazily by the API itself. */
+/** The key each sandbox provider needs to be considered ready. */
 const SANDBOX_PROVIDER_KEY: Record<string, string> = {
   daytona: 'DAYTONA_API_KEY',
   e2b: 'E2B_API_KEY',
   platinum: 'PLATINUM_API_KEY',
 };
 
-/** A configured sandbox provider is one named in ALLOWED_SANDBOX_PROVIDERS
- *  whose required key is actually set — whichever of daytona/e2b/platinum was
- *  chosen at `init`/`configure` (see configureIntegrations()) — or
- *  'local-docker', which needs no key at all. */
+/** A configured sandbox provider is selected and has its required key. */
 export function sandboxProviderConfigured(env: Record<string, string>): boolean {
-  return sandboxProviders(env).some(
-    (provider) => provider === 'local-docker' || !!env[SANDBOX_PROVIDER_KEY[provider] ?? ''],
-  );
+  return sandboxProviders(env).some((provider) => !!env[SANDBOX_PROVIDER_KEY[provider] ?? '']);
 }
 
 /** Managed git provider configured? Required to create/CRUD projects. */
@@ -1917,7 +1986,7 @@ export interface MissingSecretItem {
  * the LLM key are BOTH configured after `start`, in the web dashboard —
  * managed git at Settings → Git (DB-backed, not env/CLI-owned) and the LLM key
  * as BYOK via the model picker — so neither blocks `init`/`start` here
- * anymore; see gitProviderConfigured()/renderIntegrationSummary() for the
+ * anymore; see gitProviderConfigured()/renderConnectionSummary() for the
  * (non-blocking) status display. Reconciled against sandboxProviderConfigured
  * so a Daytona key configured via any accepted shape reports as satisfied.
  * Pure function of `env` — no filesystem/process access — so it's safe to
@@ -1954,7 +2023,7 @@ export function missingRequiredSecrets(env: Record<string, string>): MissingSecr
 
 /**
  * Make sure required secrets get a chance to be set — never a hard gate.
- * Interactive TTY: drive the guided integrations flow until satisfied or the
+ * Interactive TTY: drive the guided connections flow until satisfied or the
  * operator declines to continue. Non-interactive (`--yes` / no TTY / CI) or
  * an interactive operator who declined: print a loud warning with an
  * itemized list and the exact `env set` fix command for each, then PROCEED
@@ -1976,7 +2045,7 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
     process.stdout.write(`\n  ${C.dim}Let's set them now.${C.reset}\n`);
 
     while (missing.length > 0) {
-      await configureIntegrations(env, flags);
+      await configureConnections(env, flags);
       missing = missingRequiredSecrets(env);
       if (missing.length === 0) break;
       process.stdout.write(`\n  ${C.yellow}Still missing:${C.reset}\n`);
@@ -1997,14 +2066,14 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
   return 0;
 }
 
-function integrationReviewNeeded(env: SelfHostEnv): boolean {
-  // The sandbox runtime (Daytona) is the only CLI-required integration left —
+function connectionReviewNeeded(env: SelfHostEnv): boolean {
+  // The sandbox runtime (Daytona) is the only CLI-required connection left —
   // the API won't boot agent sessions without it, and there is no in-app
   // settings surface for it (unlike managed git/LLM, both configured in the
   // dashboard after `start`). A missing key always warrants the wizard, even
   // after a prior review.
   if (!sandboxProviderConfigured(env)) return true;
-  if (env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED === 'true') return false;
+  if (env.KORTIX_SELF_HOST_CONNECTIONS_REVIEWED === 'true') return false;
   return true;
 }
 
@@ -2012,10 +2081,10 @@ function shouldPrompt(flags: GlobalFlags): boolean {
   return !flags.yes && process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
-function renderIntegrationSummary(env: SelfHostEnv): void {
+function renderConnectionSummary(env: SelfHostEnv): void {
   // The ONLY row gated as configured/missing here is the sandbox runtime — the
-  // one integration the CLI still requires (see missingRequiredSecrets()).
-  // Everything else (managed git, LLM key, connectors, SMTP) is dashboard
+  // one connection the CLI still requires (see missingRequiredSecrets()).
+  // Everything else (managed git, LLM key, connectors, EMAIL_URL) is dashboard
   // territory — see renderAfterStartNote() below, not a CLI configured/missing
   // gate that would incorrectly suggest a CLI fix is needed.
   const provider = sandboxProviders(env)[0];
@@ -2027,7 +2096,7 @@ function renderIntegrationSummary(env: SelfHostEnv): void {
     },
   ];
 
-  process.stdout.write(`  ${C.dim}Integrations${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Connections${C.reset}\n`);
   for (const row of rows) {
     const marker = row.configured ? `${C.green}configured${C.reset}` : `${C.yellow}missing${C.reset}`;
     process.stdout.write(`  ${C.dim}- ${C.reset}${row.name}: ${marker}`);
@@ -2049,7 +2118,7 @@ function renderIntegrationSummary(env: SelfHostEnv): void {
  */
 function renderAfterStartNote(): void {
   process.stdout.write(
-    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (projects) · connect your model key in the app (BYOK) · optional: connectors, SMTP — all in the dashboard.${C.reset}\n\n`,
+    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (projects) · connect your model key in the app (BYOK) · optional: connectors · email with ${C.reset}env set EMAIL_URL=smtp://user:pass@host:587${C.dim}.${C.reset}\n\n`,
   );
 }
 
@@ -2091,22 +2160,20 @@ async function ensurePort(
 
 function composeHasRunningServices(instance: string): boolean {
   if (!existsSync(composePath(instance)) || !existsSync(envPath(instance))) return false;
+  // `docker compose ps` reparses the entire generated stack and can take long
+  // enough to hit the CLI/test timeout even when this project has no
+  // containers. Compose already labels every container with the project name,
+  // so a bounded `docker ps` label lookup is the exact, cheaper question here:
+  // "does this instance currently have at least one running container?"
   const result = spawnSync(
     'docker',
     [
-      'compose',
-      '--project-name',
-      composeProject(instance),
-      '--env-file',
-      envPath(instance),
-      '-f',
-      composePath(instance),
       'ps',
-      '--services',
+      '--quiet',
       '--filter',
-      'status=running',
+      `label=com.docker.compose.project=${composeProject(instance)}`,
     ],
-    { cwd: instanceDir(instance), encoding: 'utf8' },
+    { cwd: instanceDir(instance), encoding: 'utf8', timeout: 3_000 },
   );
   return result.status === 0 && result.stdout.trim().length > 0;
 }
@@ -2227,6 +2294,20 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // Auth + agent sandbox defaults shared with every self-host flavor — see
     // shared-runtime-defaults.ts for why these must not be duplicated here.
     ...SHARED_SELF_HOST_DEFAULTS,
+    // ONE setting turns on email, for auth AND product mail alike:
+    //   kortix self-host env set EMAIL_URL=smtp://user:pass@smtp.example.com:587
+    // applyEmailWiring() derives the GoTrue send-email hook, the shared HMAC
+    // secret, the sender identity and the auth behavior flags from it.
+    EMAIL_URL: '',
+    EMAIL_FROM: '',
+    AUTH_EMAIL_HOOK_SECRET: '',
+    GOTRUE_HOOK_SEND_EMAIL_ENABLED: 'false',
+    GOTRUE_HOOK_SEND_EMAIL_URI: '',
+    // GoTrue refuses to boot without an SMTP host, so a fresh instance carries
+    // this inert placeholder quartet until real email is configured. The API
+    // recognizes exactly this combination as "not configured" rather than
+    // trying to deliver invites through it — see legacySmtpTarget() in
+    // apps/api/src/lib/email/transport.ts.
     SMTP_ADMIN_EMAIL: 'admin@localhost',
     SMTP_HOST: 'localhost',
     SMTP_PORT: '587',
@@ -2280,6 +2361,8 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // and collects only that provider's key(s).
     DAYTONA_API_KEY: '',
     E2B_API_KEY: '',
+    // E2B Cloud by default; a self-hosted E2B cluster sets its own base domain.
+    E2B_DOMAIN: 'e2b.dev',
     PLATINUM_API_KEY: '',
     PLATINUM_API_URL: '',
     PLATINUM_TEMPLATE: '',
@@ -2297,8 +2380,21 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // self-host (so they can configure the managed GitHub App etc. in-app).
     // Set at init via --admin-email or the guided prompt; the API reads it.
     KORTIX_PLATFORM_ADMIN_EMAILS: flags.adminEmail ?? '',
-    INTEGRATION_AUTH_PROVIDER: 'pipedream',
-    KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: 'false',
+    // Kortix Apps. Blank base domain = the API derives `apps.<its own domain>`.
+    // KORTIX_APPS_ALLOW_DIRECT_EDGE tells the API that no Cloudflare Apps
+    // Worker fronts it, so App requests arriving from the operator's own
+    // reverse proxy are served instead of rejected for a missing edge signature.
+    KORTIX_APPS_BASE_DOMAIN: '',
+    KORTIX_APPS_ALLOW_DIRECT_EDGE: '',
+    // Sandbox preview origins. Blank = previews stay on the path proxy.
+    // KORTIX_PREVIEW_ALLOW_DIRECT_EDGE tells the API that no Cloudflare preview
+    // Worker fronts it, so a preview request arriving from the operator's own
+    // reverse proxy is served on its real Host header instead of being rejected
+    // for a missing edge signature.
+    KORTIX_PREVIEW_BASE_DOMAIN: '',
+    KORTIX_PREVIEW_ALLOW_DIRECT_EDGE: '',
+    CONNECTOR_AUTH_PROVIDER: 'pipedream',
+    KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: 'false',
     PIPEDREAM_CLIENT_ID: '',
     PIPEDREAM_CLIENT_SECRET: '',
     PIPEDREAM_PROJECT_ID: '',
@@ -2310,14 +2406,20 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
 function writeCompose(instance: string, env: SelfHostEnv): void {
   const root = instanceDir(instance);
   writeSupabaseVendorAssets(root);
-  writeKortixRuntimeAssets(root);
+  // Apps hosting (optional) adds a wildcard *.<apps base domain> App-serving
+  // site block to the Caddyfile. Gated on KORTIX_APPS_BASE_DOMAIN, the single
+  // signal that turns it on; Caddy itself only runs in domain mode, so the
+  // block is inert without a domain.
+  writeKortixRuntimeAssets(root, {
+    appsHostingConfigured: Boolean(env.KORTIX_APPS_BASE_DOMAIN?.trim()),
+    previewHostingConfigured: Boolean(env.KORTIX_PREVIEW_BASE_DOMAIN?.trim()),
+  });
   writeFileSync(
     composePath(instance),
     renderFullDockerCompose(composeProject(instance), {
       domainConfigured: Boolean(env.KORTIX_DOMAIN?.trim()),
       tunnelConfigured: reachabilityMode(env) === 'tunnel',
       namedTunnelConfigured: namedTunnelConfigured(env),
-      localDockerConfigured: sandboxProviders(env).includes('local-docker'),
     }),
     { encoding: 'utf8', mode: 0o600 },
   );
@@ -2365,7 +2467,7 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
 
   // Frontend "Connect your tools" / connector-catalogue UI mirrors whether
   // Pipedream is FULLY configured — same three fields
-  // apps/api/src/executor/pipedream.ts's own pipedreamConfigured() requires.
+  // apps/api/src/connectors/pipedream.ts's own pipedreamConfigured() requires.
   // Recomputed on every write (not just when the now-removed guided-init
   // Pipedream question used to run) so setting/clearing PIPEDREAM_CLIENT_ID
   // et al. via `env set` directly keeps this in sync too.
@@ -2421,6 +2523,12 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
 
   env.API_EXTERNAL_URL = `${env.SUPABASE_PUBLIC_URL.replace(/\/$/, '')}/auth/v1`;
   env.SITE_URL = env.PUBLIC_URL;
+
+  // Reconcile the email-derived keys on every write. Passing the CURRENT
+  // EMAIL_URL as the previous value makes this a no-transition reconcile: the
+  // hook URI/secret self-heal, while the auth behavior flags are left exactly
+  // as the operator last set them.
+  applyEmailWiring(env, env.EMAIL_URL);
 
   // Always recomputed (never `||=`) — see the KORTIX_INSTANCE_DIR field's doc
   // comment on SelfHostEnv. Unconditional on purpose: if the instance
@@ -2598,10 +2706,4 @@ function supabaseJwt(role: string, secret: string): string {
 
 function b64url(value: string): string {
   return Buffer.from(value).toString('base64url');
-}
-
-export function openInBrowser(url: string): void {
-  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-  spawnSync(cmd, args, { stdio: 'ignore' });
 }

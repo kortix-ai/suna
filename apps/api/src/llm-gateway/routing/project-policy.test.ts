@@ -13,6 +13,7 @@ const valid = {
       fallbackOn: "transient" as const,
     },
   ],
+  modelGenerationConfig: {},
 };
 
 describe("project gateway routing policy input", () => {
@@ -30,6 +31,7 @@ describe("project gateway routing policy input", () => {
       visionModel: null,
       defaultFallback: null,
       rules: [],
+      modelGenerationConfig: {},
     });
     expect(
       parseProjectRoutingPolicyInput({
@@ -99,5 +101,52 @@ describe("project gateway routing policy input", () => {
       ...valid,
       defaultFallback: { models: ["auto"], fallbackOn: "any-error" },
     })).toThrow("concrete model ids");
+  });
+
+  test("modelGenerationConfig defaults to {} when omitted (back-compat with pre-existing payloads)", () => {
+    const { defaultModel, visionModel, defaultFallback, rules } = valid;
+    const parsed = parseProjectRoutingPolicyInput({
+      defaultModel,
+      visionModel,
+      defaultFallback,
+      rules,
+    });
+    expect(parsed.modelGenerationConfig).toEqual({});
+  });
+
+  test("accepts a per-model generation config keyed by wire model id", () => {
+    const parsed = parseProjectRoutingPolicyInput({
+      ...valid,
+      modelGenerationConfig: {
+        "openai/gpt-5.6-sol": { reasoningEffort: "high", maxOutputTokens: 4096 },
+      },
+    });
+    expect(parsed.modelGenerationConfig).toEqual({
+      "openai/gpt-5.6-sol": { reasoningEffort: "high", maxOutputTokens: 4096 },
+    });
+  });
+
+  test("rejects an out-of-range temperature/top_p in a generation config entry", () => {
+    expect(() =>
+      parseProjectRoutingPolicyInput({
+        ...valid,
+        modelGenerationConfig: { "openai/gpt-4.1": { temperature: 3 } },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseProjectRoutingPolicyInput({
+        ...valid,
+        modelGenerationConfig: { "openai/gpt-4.1": { topP: -1 } },
+      }),
+    ).toThrow();
+  });
+
+  test("caps the number of models a generation config may cover", () => {
+    const modelGenerationConfig = Object.fromEntries(
+      Array.from({ length: 101 }, (_, index) => [`vendor/model-${index}`, { temperature: 0.5 }]),
+    );
+    expect(() =>
+      parseProjectRoutingPolicyInput({ ...valid, modelGenerationConfig }),
+    ).toThrow();
   });
 });

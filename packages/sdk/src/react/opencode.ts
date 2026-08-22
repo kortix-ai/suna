@@ -38,11 +38,56 @@ export { KortixProjectProvider, useKortixRouteProjectId } from './route-project'
 export * from './use-opencode-sessions';
 export * from './use-opencode-events';
 export * from './use-opencode-local';
+export * from './use-model-defaults';
+export * from './use-model-enablement';
+export * from './use-session-model-selection';
 export * from './use-opencode-mcp';
 export * from './use-opencode-pty';
 export * from './use-opencode-config';
 export * from './use-model-store';
 export * from './use-session-sync';
+export { useOpenCodeAgents as useRuntimeAgents } from './use-opencode-sessions/agents';
+export { useOpenCodeCommands as useRuntimeCommands } from './use-opencode-sessions/commands';
+export {
+  useOpenCodeCurrentProject as useRuntimeCurrentProject,
+  useOpenCodePathInfo as useRuntimePathInfo,
+} from './use-opencode-sessions/projects';
+export { useOpenCodeProviders as useRuntimeProviders } from './use-opencode-sessions/providers';
+export {
+  mintSessionWireMessageId,
+  promptOpenCodeMessage as promptRuntimeMessage,
+  useOpenCodeMessages as useRuntimeMessages,
+} from './use-opencode-sessions/messages';
+export {
+  useOpenCodeSession as useRuntimeSession,
+  useOpenCodeSessionDiff as useRuntimeSessionDiff,
+  useOpenCodeSessionTodo as useRuntimeSessionTodo,
+  useOpenCodeSessions as useRuntimeSessions,
+} from './use-opencode-sessions/sessions';
+// The session's file changes — branch commits + working tree, ONE query key.
+// Every Changes surface reads this; see `use-opencode-sessions/vcs.ts`.
+export {
+  useOpenCodeVcsDiff as useRuntimeVcsDiff,
+  type VcsDiffMode,
+  type VcsFileDiff,
+} from './use-opencode-sessions/vcs';
+export { useOpenCodeRuntimeReady as useRuntimeReady } from './use-opencode-sessions/keys';
+export { useOpenCodeEventStream as useRuntimeEventStream } from './use-opencode-events';
+export { useOpenCodeLocal as useRuntimeLocal } from './use-opencode-local';
+export { useOpenCodePtyList as useRuntimePtyList } from './use-opencode-pty';
+export { useOpenCodeConfig as useRuntimeConfig } from './use-opencode-config';
+export { useUpdateOpenCodeConfig as useUpdateRuntimeConfig } from './use-opencode-config';
+export {
+  clearOpencodeEnsureGuard as clearRuntimeEnsureGuard,
+  useCanonicalOpenCodeSession as useCanonicalRuntimeSession,
+} from './use-canonical-opencode-session';
+export { opencodeKeys as runtimeKeys } from './use-opencode-sessions/keys';
+export { useExecuteOpenCodeCommand as useExecuteRuntimeCommand } from './use-opencode-sessions/commands';
+export { useAbortOpenCodeSession as useAbortRuntimeSession } from './use-opencode-sessions/messages';
+export {
+  useCreateOpenCodeSession as useCreateRuntimeSession,
+  useSummarizeOpenCodeSession as useSummarizeRuntimeSession,
+} from './use-opencode-sessions/sessions';
 // Runtime health has three independent layers, each covering a failure mode
 // the others can't see — do not collapse them:
 //   1. Boot readiness is server-truth: `useSession`'s /start resolves
@@ -70,10 +115,17 @@ export * from './use-runtime-reconnect';
 // `useSessionSync` does NOT surface them, so a host that renders interactive
 // prompts must read them from this store.
 export { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+export { useOpenCodePendingStore as useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 export {
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
 } from '../browser/stores/sandbox-connection-store';
+export {
+  requestRuntimeReconnect,
+  useSandboxConnectionStore as useRuntimeConnectionStore,
+} from '../browser/stores/sandbox-connection-store';
+export { useServerStore as useRuntimeStore } from '../browser/stores/server-store';
+export { useSyncStore as useSessionStateStore } from '../browser/stores/sync-store';
 export * from './use-session-prefetch';
 // Relocated from `platform/projects-client/session-sandbox` — it types against
 // react-query's QueryClient, which the framework-free REST layer must not.
@@ -86,8 +138,21 @@ export * from './provider-refresh';
 // picker BEFORE a session runtime exists (e.g. on a "new session" screen) by
 // feeding `project(id).llmCatalog()` through these, with correct provider/model
 // ids — no guessing the gateway-vs-BYOK key format.
-export { flattenModels, type FlatModel } from './model-flatten';
-export { projectLlmCatalogToProviderList } from './provider-selection';
+export { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
+export {
+  GATEWAY_PROVIDER_IDS,
+  LLM_PROVIDER_CREDENTIALS,
+  connectedGatewayProviderIdsFromSecretNames,
+  filterToGatewayProviders,
+  applyEnablementToProviderList,
+  filterToNativeProviders,
+  mergeProjectSecretConnectedProviders,
+  mergeProviderLists,
+  normalizeProviderList,
+  projectLlmCatalogToProviderList,
+  providerListHasGateway,
+  providerListHasModels,
+} from './provider-selection';
 export { useProjectModels } from './use-project-models';
 export { useProjectConfig } from './use-project-config';
 export type { ProjectConfigSummary } from '../core/rest/projects-client';
@@ -105,7 +170,34 @@ export {
   type UseSessionOptions,
 } from './use-session';
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
+export {
+  useSessionPrompts,
+  sessionPromptsPollMs,
+  startSessionWithPrompt,
+  isOptimisticSessionPrompt,
+  optimisticSessionPrompt,
+  applyOptimisticPrompt,
+  settleOptimisticPrompt,
+  removeOptimisticPrompt,
+  reconcileOptimisticPrompts,
+  OPTIMISTIC_PROMPT_PREFIX,
+  SESSION_PROMPTS_POLL_MS,
+  SESSION_PROMPTS_IDLE_POLL_MS,
+  type StartSessionWithPromptAdapters,
+  type UseSessionPromptsResult,
+} from './use-session-prompts';
+export { useSessionWorkingStore } from '../browser/stores/session-working-store';
+export {
+  useSessionWorking,
+  workingPollMs,
+  buildWorkingInputs,
+  WORKING_POLL_ACTIVE_MS,
+  WORKING_POLL_IDLE_MS,
+  type SessionTurnObservation,
+  type UseSessionWorkingOptions,
+} from './use-session-working';
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
+export { useRuntimeBootStalled, RUNTIME_BOOT_STALL_MS } from './use-runtime-boot-stalled';
 export {
   useQuestionSelfHeal,
   hasRunningQuestionTool,

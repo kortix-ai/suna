@@ -1,11 +1,16 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, count, eq, sql } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
-import { accountMembers, accounts, projects } from "@kortix/db";
+import { accountMembers, accountMemberships, accounts, projects } from "@kortix/db";
 import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
+import { actorOf } from '../../iam/actor';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { accountRolesForUser } from '../../iam/read-models';
+import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
+import { sortAccountsForListing } from "./account-order";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import {
   AccountDetailSchema,
@@ -41,27 +46,70 @@ export function registerAccountRoutes(): void {
       const userId = c.get('userId') as string;
       const userEmail = c.get('userEmail') as string;
 
+      // ACT-AS: the operator's OWN accounts are not part of this session. The
+      // list is what the whole app scopes itself from — the sidebar reads it,
+      // then asks for that account's projects — so returning the admin's own
+      // memberships here would make every downstream call carry the wrong
+      // account id, which `resolveScopedAccountId` then (correctly) refuses.
+      // One account in, one account out: the account the banner names.
+      const impersonated = impersonatedAccountFor(userId);
+      if (impersonated) {
+        const [row] = await db
+          .select()
+          .from(accounts)
+          .where(eq(accounts.accountId, impersonated))
+          .limit(1);
+        if (!row) return c.json([]);
+        return c.json([
+          {
+            account_id: row.accountId,
+            name: accountDisplayName(row.name, null),
+            slug: row.accountId.slice(0, 8),
+            created_at: row.createdAt.toISOString(),
+            updated_at: row.updatedAt.toISOString(),
+            // Owner, matching the effective role every other gate resolves for
+            // an impersonated request (see iam/engine-v2.ts and
+            // projects/lib/git.ts). A lower label here would make the console
+            // hide controls the server would in fact allow.
+            account_role: 'owner',
+            is_primary_owner: true,
+          },
+        ]);
+      }
+
       await autoClaimPendingInvites(userId, userEmail);
 
-      const memberships = await db
-        .select({
-          accountId: accountMembers.accountId,
-          accountRole: accountMembers.accountRole,
-          name: accounts.name,
-          createdAt: accounts.createdAt,
-          updatedAt: accounts.updatedAt,
-        })
-        .from(accountMembers)
-        .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-        .where(eq(accountMembers.userId, userId));
+      // `account_members` says WHICH accounts; `role_assignments` says at what
+      // role. Reading the role off the join labelled the switcher with a value
+      // the engine no longer decides on.
+      const [membershipRows, rolesByAccount] = await Promise.all([
+        db
+          .select({
+            accountId: accountMembers.accountId,
+            name: accounts.name,
+            createdAt: accounts.createdAt,
+            updatedAt: accounts.updatedAt,
+          })
+          .from(accountMembers)
+          .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
+          .where(eq(accountMembers.userId, userId)),
+        accountRolesForUser(userId),
+      ]);
+      const memberships = membershipRows.map((m) => ({
+        ...m,
+        accountRole: rolesByAccount.get(m.accountId) ?? 'member',
+      }));
 
       if (memberships.length > 0) {
         const displayNames = await resolveAccountDisplayNames(memberships, {
           userId,
           email: userEmail,
         });
+        // Deterministic order (owned first, oldest first): the web landing
+        // door falls back to the FIRST account of this list, so an unordered
+        // result made the default landing account nondeterministic.
         return c.json(
-          memberships.map((m) => ({
+          sortAccountsForListing(memberships).map((m) => ({
             account_id: m.accountId,
             name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
             slug: m.accountId.slice(0, 8),
@@ -148,11 +196,20 @@ export function registerAccountRoutes(): void {
 
       const [account] = await db.insert(accounts).values({ name }).returning();
 
-      await db.insert(accountMembers).values({
+      // IDENTITY, then the OWNER role. `SYSTEM_ACTOR`: nobody holds a
+      // permission in an account that did not exist a statement ago, so there is
+      // no writer to authorize — creating it is the authorization.
+      await db.insert(accountMemberships).values({
         userId,
         accountId: account.accountId,
-        accountRole: 'owner',
         isSuperAdmin: true,
+      });
+      await assignRole(SYSTEM_ACTOR, account.accountId, {
+        principal: { type: 'user', id: userId },
+        roleKey: 'owner',
+        scope: { type: 'account' },
+        source: 'system',
+        exclusive: true,
       });
 
       return c.json(
@@ -275,7 +332,7 @@ export function registerAccountRoutes(): void {
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
       const body = await readBody(c);
       const name = normalizeString(body.name);

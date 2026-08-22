@@ -1,0 +1,530 @@
+import { expect, test } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { createApiJsonClient } from '../helpers/http';
+import {
+  type AuthSession,
+  type AuthUser,
+  createAuthUser,
+  deleteAuthUser,
+  installBrowserSessionDirect,
+  signIn,
+} from '../helpers/session-auth';
+
+const enabled = process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1';
+const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
+const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
+const password = 'SdkOnlySession123!';
+const api = createApiJsonClient(apiBase);
+const authOptions = { supabaseUrl, password };
+const databaseUrl = process.env.E2E_DATABASE_URL
+  || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+
+test.use({
+  launchOptions: {
+    args: ['--disable-gpu', '--disable-webgl', '--disable-webgl2'],
+  },
+});
+
+function executeSql(sql: string): string {
+  return execFileSync(
+    'psql',
+    [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-At', '-c', sql],
+    { encoding: 'utf8' },
+  ).trim();
+}
+
+function readAccountTier(accountId: string): string {
+  return executeSql(
+    `SELECT tier FROM kortix.credit_accounts WHERE account_id = '${accountId}'`,
+  );
+}
+
+function fundAccount(accountId: string): void {
+  executeSql(
+    `INSERT INTO kortix.credit_accounts (
+       account_id,
+       balance,
+       balance_precise,
+       non_expiring_credits,
+       non_expiring_credits_precise,
+       tier
+     )
+     VALUES ('${accountId}', 1000, 1000, 1000, 1000, 'tier_2_20')
+     ON CONFLICT (account_id)
+     DO UPDATE SET
+       balance = 1000,
+       balance_precise = 1000,
+       non_expiring_credits = 1000,
+       non_expiring_credits_precise = 1000,
+       tier = 'tier_2_20'`,
+  );
+}
+
+function readSessionStatuses(sessionId: string): {
+  projectSession: string;
+  sandbox: string;
+} {
+  const [projectSession, sandbox] = executeSql(
+    `SELECT ps.status || '|' || ss.status
+       FROM kortix.project_sessions ps
+       JOIN kortix.session_sandboxes ss ON ss.session_id = ps.session_id
+      WHERE ps.session_id = '${sessionId}'`,
+  ).split('|');
+  if (!projectSession || !sandbox) {
+    throw new Error(`missing runtime status for session ${sessionId}`);
+  }
+  return { projectSession, sandbox };
+}
+
+interface AccountSummary {
+  account_id: string;
+  personal_account?: boolean;
+}
+
+interface ProjectSummary {
+  project_id: string;
+}
+
+interface ProjectSession {
+  session_id: string;
+  opencode_session_id?: string | null;
+  sandbox_url?: string | null;
+}
+
+interface BillingState {
+  subscription: {
+    tier_key: string;
+  };
+}
+
+interface ModelDefaults {
+  freeTier: boolean;
+  resolvedForCaller: string | null;
+}
+
+interface ModelPicker {
+  models: Record<string, unknown>;
+}
+
+interface SessionStart {
+  stage: string;
+  sandbox?: {
+    status?: string;
+    external_id?: string | null;
+  } | null;
+}
+
+async function waitForReadySession(
+  token: string,
+  projectId: string,
+  sessionId: string,
+): Promise<void> {
+  const deadline = Date.now() + 10 * 60_000;
+  let last = '';
+  while (Date.now() < deadline) {
+    const result = await api<SessionStart>(
+      token,
+      'POST',
+      `/projects/${projectId}/sessions/${sessionId}/start?wait_ms=8000`,
+      {},
+    );
+    last = `${result.stage}:${result.sandbox?.status ?? 'none'}`;
+    if (
+      result.stage === 'ready'
+      && result.sandbox?.status === 'active'
+      && result.sandbox.external_id
+    ) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(`session did not become ready: ${last}`);
+}
+
+/**
+ * QUARANTINED against a deployed target — runs in `tests-browser-nightly.yml`,
+ * excluded from the blocking release gate.
+ *
+ * Only the FIRST test here has ever run on a deployed target. The `beforeAll`
+ * below used to exceed the deployed lane's 120s hook budget, so Playwright
+ * skipped all three; fixing that (`test.setTimeout` INSIDE the hook) is what
+ * made the other two execute for the first time, and they turn out to encode
+ * assumptions that only hold on the local stack:
+ *
+ *  - Stale locators. `Agent picker` / `Model picker` appear nowhere in
+ *    apps/web, so they matched nothing on any environment. Replaced above with
+ *    the one control on that rail that has a fixed accessible name.
+ *  - Local-only transport shape. `expect(runtimeRequests).toHaveLength(1)`
+ *    counts `POST /v1/p/…/prompt_async`. Against staging that count is ZERO
+ *    while the prompt still round-trips correctly — the model answers and the
+ *    reply renders — so the browser reaches the runtime by a different path
+ *    there. The assertion is not merely mis-tuned: it guards "exactly one
+ *    prompt submission", which is what stops a duplicate send from silently
+ *    doubling LLM spend. It is deliberately NOT deleted to make the lane green;
+ *    it needs the correct deployed path, which is a separate investigation.
+ *
+ * `test.describe.serial` shares `projectId`/`sessionId` across all three, so
+ * the tag cannot be scoped to the two offenders without splitting the fixture.
+ * The first test does pass now (verified twice against staging, 45.8s and
+ * 1.4m) and keeps running nightly.
+ *
+ * To un-quarantine: establish what the browser's runtime transport is on a
+ * deployed target, re-assert the exactly-once property against it, then split
+ * or re-tag.
+ */
+test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () => {
+  test.skip(!enabled, 'Set E2E_ENABLE_SDK_ONLY_SESSION=1 for the real sandbox flow.');
+  test.setTimeout(12 * 60_000);
+
+  let user: AuthUser;
+  let auth: AuthSession;
+  let accountId = '';
+  let projectId = '';
+  let sessionId = '';
+
+  test.beforeAll(async () => {
+    // `test.setTimeout(12 min)` above applies to the TESTS, not to this hook —
+    // a hook keeps the config timeout, which the deployed lane caps at 120s
+    // (`playwright.config.ts` deployedTimeoutMs). This hook creates a user,
+    // provisions a starter project, and boots a real cloud sandbox against a
+    // deployed API whose database sits in another region, which does not fit in
+    // 120s: release runs 32306385663 and 32310893789 both died here with
+    // `"beforeAll" hook timeout of 120000ms exceeded` and skipped the two tests
+    // behind it. Calling setTimeout INSIDE the hook is what re-times the hook.
+    test.setTimeout(12 * 60_000);
+    const email = `sdk-only-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
+    user = await createAuthUser(email, authOptions);
+    auth = await signIn(email, authOptions);
+    accountId = user.id;
+
+    const accounts = await api<AccountSummary[]>(auth.access_token, 'GET', '/accounts');
+    const account = accounts.find((item) => item.personal_account) ?? accounts[0];
+    expect(account?.account_id).toBe(accountId);
+    fundAccount(accountId);
+    expect(readAccountTier(accountId)).toBe('tier_2_20');
+
+    const project = await api<ProjectSummary>(
+      auth.access_token,
+      'POST',
+      '/projects/provision',
+      {
+        account_id: accountId,
+        name: `SDK-only E2E ${Date.now()}`,
+        seed_starter: true,
+      },
+      201,
+    );
+    projectId = project.project_id;
+    expect(readAccountTier(accountId)).toBe('tier_2_20');
+    await api(
+      auth.access_token,
+      'PATCH',
+      `/projects/${projectId}/onboarding`,
+      { completed: true },
+    );
+    expect(readAccountTier(accountId)).toBe('tier_2_20');
+    const billing = await api<BillingState>(
+      auth.access_token,
+      'GET',
+      `/billing/account-state?account_id=${accountId}`,
+    );
+    expect(billing.subscription.tier_key).toBe('tier_2_20');
+    const defaults = await api<ModelDefaults>(
+      auth.access_token,
+      'GET',
+      `/projects/${projectId}/model-defaults`,
+    );
+    expect(defaults.freeTier).toBe(false);
+    expect(defaults.resolvedForCaller).toBeTruthy();
+    const picker = await api<ModelPicker>(
+      auth.access_token,
+      'GET',
+      `/projects/${projectId}/model-picker`,
+    );
+    expect(Object.keys(picker.models).length).toBeGreaterThan(0);
+
+    const session = await api<ProjectSession>(
+      auth.access_token,
+      'POST',
+      `/projects/${projectId}/sessions`,
+      {
+        name: 'SDK-only browser session',
+      },
+      201,
+    );
+    sessionId = session.session_id;
+    await waitForReadySession(auth.access_token, projectId, sessionId);
+  });
+
+  test.afterAll(async () => {
+    if (projectId && sessionId) {
+      await api(auth.access_token, 'DELETE', `/projects/${projectId}/sessions/${sessionId}`)
+        .catch(() => {});
+    }
+    if (projectId) {
+      await api(auth.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
+    }
+    if (accountId) {
+      execFileSync(
+        'psql',
+        [
+          databaseUrl,
+          '-v',
+          'ON_ERROR_STOP=1',
+          '-c',
+          `DELETE FROM kortix.accounts WHERE account_id = '${accountId}'`,
+        ],
+        { stdio: 'ignore' },
+      );
+    }
+    if (user?.id) {
+      await deleteAuthUser(user.id, {
+        supabaseUrl,
+        envFiles: ['apps/api/.env', 'apps/web/.env'],
+      });
+    }
+  });
+
+  test('project navigation never reads inactive transcripts or wakes a stopped sandbox', async ({
+    page,
+  }) => {
+    const transcriptReads: string[] = [];
+    const startRequests: string[] = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (
+        request.method() === 'GET'
+        && /^\/v1\/p\/[^/]+\/(?:8000|4096)\/session\/[^/]+\/message$/.test(url.pathname)
+      ) {
+        transcriptReads.push(request.url());
+      }
+      if (
+        request.method() === 'POST'
+        && url.pathname.endsWith(`/projects/${projectId}/sessions/${sessionId}/start`)
+      ) {
+        startRequests.push(request.url());
+      }
+    });
+
+    await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
+    await expect(page).toHaveURL(`/projects/${projectId}`);
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({
+      timeout: 120_000,
+    });
+    await page.waitForTimeout(2_000);
+
+    expect(transcriptReads).toEqual([]);
+    expect(startRequests).toEqual([]);
+
+    const sessions = await api<ProjectSession[]>(
+      auth.access_token,
+      'GET',
+      `/projects/${projectId}/sessions`,
+    );
+    const session = sessions.find((item) => item.session_id === sessionId);
+    const runtimeUrl = session?.sandbox_url;
+    const openCodeSessionId = session?.opencode_session_id;
+    expect(runtimeUrl).toBeTruthy();
+    expect(openCodeSessionId).toBeTruthy();
+    if (!runtimeUrl || !openCodeSessionId) {
+      throw new Error(`session ${sessionId} is missing its runtime mapping`);
+    }
+
+    await api(
+      auth.access_token,
+      'POST',
+      `/projects/${projectId}/sessions/${sessionId}/stop`,
+      {},
+    );
+    await expect
+      .poll(() => readSessionStatuses(sessionId), { timeout: 60_000 })
+      .toEqual({ projectSession: 'stopped', sandbox: 'stopped' });
+
+    const passiveRead = await page.evaluate(
+      async ({ accessToken, openCodeSessionId, runtimeUrl }) => {
+        const response = await fetch(
+          `${runtimeUrl}/session/${encodeURIComponent(openCodeSessionId)}/message?directory=${encodeURIComponent('/workspace')}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        return response.status;
+      },
+      {
+        accessToken: auth.access_token,
+        openCodeSessionId,
+        runtimeUrl,
+      },
+    );
+    expect(passiveRead).toBe(503);
+    expect(transcriptReads).toHaveLength(1);
+    expect(startRequests).toEqual([]);
+    expect(readSessionStatuses(sessionId)).toEqual({
+      projectSession: 'stopped',
+      sandbox: 'stopped',
+    });
+
+    const explicitStart = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return (
+        request.method() === 'POST'
+        && url.pathname.endsWith(`/projects/${projectId}/sessions/${sessionId}/start`)
+      );
+    });
+    await page.goto(`/projects/${projectId}/sessions/${sessionId}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await explicitStart;
+    await expect(page.getByTestId('session-chat')).toBeVisible({ timeout: 120_000 });
+    await expect
+      .poll(() => readSessionStatuses(sessionId), { timeout: 120_000 })
+      .toEqual({ projectSession: 'running', sandbox: 'active' });
+  });
+
+  test('streams a real prompt through the SDK and keeps the project UI functional', async ({
+    page,
+  }) => {
+    const runtimeRequests: string[] = [];
+    const globalEventRequests: string[] = [];
+    const acpRequests: string[] = [];
+    const failedKortixResponses: string[] = [];
+
+    page.on('request', (request) => {
+      if (request.url().includes('/global/event')) {
+        globalEventRequests.push(request.url());
+      }
+      if (request.url().includes('/kortix/acp/')) {
+        acpRequests.push(request.url());
+      }
+      if (
+        request.method() === 'POST'
+        && request.url().includes('/v1/p/')
+        && request.url().includes('/prompt_async')
+      ) {
+        runtimeRequests.push(request.url());
+      }
+    });
+    page.on('response', (response) => {
+      if (
+        response.status() >= 400
+        && (response.url().includes('/v1/projects/') || response.url().includes('/v1/p/'))
+      ) {
+        failedKortixResponses.push(
+          `${response.status()} ${response.request().method()} ${response.url()}`,
+        );
+      }
+    });
+
+    await installBrowserSessionDirect(
+      page,
+      auth,
+      `/projects/${projectId}/sessions/${sessionId}`,
+      authOptions,
+    );
+
+    await expect(page).toHaveURL(`/projects/${projectId}/sessions/${sessionId}`);
+    await expect(page.getByTestId('session-layout')).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByTestId('session-chat')).toBeVisible({ timeout: 120_000 });
+    // This asserted `Agent picker` and `Model picker`. Neither string exists
+    // anywhere in apps/web, so both locators matched nothing on every
+    // environment — dead assertions, hidden because the `beforeAll` above used
+    // to exceed its timeout and Playwright skipped this test instead of running
+    // it. Fixing that hook is what exposed them.
+    //
+    // Neither picker has a stable accessible name to replace them with. The
+    // model trigger is labelled by its current selection ("DeepSeek V4 Flash…",
+    // "No model"). The agent trigger has two branches: the pickable one carries
+    // `aria-label="Select agent"` (`composer/agent-selector.tsx:207`), but the
+    // `primaryAgents.length === 0` branch (:178-190) renders a DISABLED button
+    // named by the unavailable hint or by the agent's display name — and that is
+    // the branch this session takes.
+    //
+    // `Attach files` (`composer-underbar.tsx:136`) is the one control on that
+    // rail with a fixed name, so it carries the "composer bottom rail rendered"
+    // assertion. Follow-up: give both triggers `aria-label="Select model"` /
+    // an unconditional `Select agent`, then assert them here — a control whose
+    // only accessible name is its own value is an accessibility gap, not just
+    // an untestable one.
+    await expect(page.getByRole('button', { name: 'Attach files' })).toBeVisible();
+    const welcomeCard = page.getByRole('complementary', { name: /Welcome from Marko/i });
+    if (await welcomeCard.isVisible().catch(() => false)) {
+      await welcomeCard.getByRole('button', { name: 'Dismiss' }).click({ force: true });
+    }
+
+    const input = page.getByRole('textbox', { name: 'Message input' });
+    await expect(input).toBeVisible();
+    await input.fill('Reply with exactly one word: PONG');
+    await page.getByRole('button', { name: 'Send message' }).click({ force: true });
+
+    await expect(page.getByText('PONG', { exact: true }).last()).toBeVisible({
+      timeout: 120_000,
+    });
+    expect(runtimeRequests).toHaveLength(1);
+    expect(globalEventRequests.length).toBeGreaterThan(0);
+    expect(acpRequests).toEqual([]);
+    expect(failedKortixResponses).toEqual([]);
+
+    await page.getByRole('button', { name: /^Files$/ }).click();
+    await expect(page).toHaveURL(`/projects/${projectId}/sessions/${sessionId}`);
+    await expect(page.getByText('kortix.yaml', { exact: true }).first()).toBeVisible({
+      timeout: 60_000,
+    });
+  });
+
+  test('falls back from a warm-session agent mismatch without reporting a global error', async ({
+    page,
+  }) => {
+    const mismatchConsoleErrors: string[] = [];
+    page.on('console', (message) => {
+      const text = message.text();
+      if (
+        message.type() === 'error'
+        && (
+          text.includes('WARM_SESSION_CONFIGURATION_MISMATCH')
+          || text.includes('The warm session does not match the selected agent or sandbox')
+        )
+      ) {
+        mismatchConsoleErrors.push(text);
+      }
+    });
+
+    const warmReady = page.waitForResponse((response) => (
+      response.request().method() === 'POST'
+      && response.url().endsWith(`/projects/${projectId}/sessions/warm`)
+      && response.status() === 200
+    ));
+    await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
+    await warmReady;
+
+    const input = page.getByRole('textbox', { name: 'Message input' });
+    await expect(input).toBeVisible({ timeout: 120_000 });
+    const agentPicker = page.getByRole('button', { name: 'Agent picker' });
+    await agentPicker.click();
+    await page.getByText('harness-reflector', { exact: true }).click();
+    await expect(agentPicker).toContainText('harness-reflector');
+    await input.fill('Reply with exactly one word: PONG');
+
+    const mismatchResponse = page.waitForResponse((response) => (
+      response.request().method() === 'POST'
+      && response.url().endsWith(`/projects/${projectId}/sessions/warm/claim`)
+      && response.status() === 409
+    ));
+    const fallbackCreate = page.waitForResponse((response) => (
+      response.request().method() === 'POST'
+      && response.url().endsWith(`/projects/${projectId}/sessions`)
+      && response.status() === 201
+    ));
+    const startedAt = Date.now();
+    await page.getByRole('button', { name: 'Send message' }).click({ force: true });
+    await mismatchResponse;
+    await fallbackCreate;
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${projectId}/sessions/[0-9a-f-]+$`),
+      { timeout: 60_000 },
+    );
+    await expect(page.getByText('PONG', { exact: true }).last()).toBeVisible({
+      timeout: 180_000,
+    });
+    expect(Date.now() - startedAt).toBeLessThan(180_000);
+    expect(mismatchConsoleErrors).toEqual([]);
+  });
+});

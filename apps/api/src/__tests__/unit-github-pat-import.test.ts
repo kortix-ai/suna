@@ -52,14 +52,16 @@ describe('serializeGitHubInstallations — PAT fallback for the "Use a token" se
     expect(result.installations).toEqual([]);
   });
 
-  test('no App installation, PAT fallback owner given -> synthesizes a connected installation', () => {
-    const result = serializeGitHubInstallations([], ACCOUNT_ID, null, 'globex-corp');
+  test('PAT fallback stays importable while preserving the App install path', () => {
+    const installUrl = 'https://github.com/apps/kortix/installations/new?state=signed';
+    const result = serializeGitHubInstallations([], ACCOUNT_ID, installUrl, 'globex-corp');
 
     expect(result.installed).toBe(true);
     expect(result.configured).toBe(true);
-    expect(result.requires_installation).toBe(false);
+    expect(result.requires_installation).toBe(true);
     expect(result.installation_id).toBe(PAT_MANAGED_GIT_INSTALLATION_ID);
     expect(result.owner_login).toBe('globex-corp');
+    expect(result.install_url).toBe(installUrl);
     expect(result.installations).toEqual([
       expect.objectContaining({
         installation_id: PAT_MANAGED_GIT_INSTALLATION_ID,

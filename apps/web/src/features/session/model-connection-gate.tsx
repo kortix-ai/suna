@@ -1,11 +1,15 @@
 'use client';
 
-import { CreditCard, KeyRound } from 'lucide-react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { CreditCardIcon, KeyIcon } from '@phosphor-icons/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
+
+/** Stable empty list so the hook's `models = []` default isn't re-allocated per render. */
+const EMPTY_MODELS: FlatModel[] = [];
 
 /**
  * The single "no model connected" teaching moment — an icon, a plain-English
@@ -20,14 +24,15 @@ export function ModelConnectionGate({
   size?: 'sm' | 'default';
   className?: string;
 }) {
-  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
+    useModelConnectionGate(EMPTY_MODELS);
 
   return (
     <>
       {modal}
       <EmptyState
         className={className}
-        icon={KeyRound}
+        icon={KeyIcon}
         size={size}
         title="Connect a model to start chatting"
         description={
@@ -38,16 +43,12 @@ export function ModelConnectionGate({
         action={
           showUpgradeOption ? (
             <Button type="button" size="sm" onClick={openUpgrade}>
-              <CreditCard className="size-3.5" />
+              <CreditCardIcon className="size-3.5" />
               Upgrade
             </Button>
           ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => openConnectProvider('providers')}
-            >
-              <KeyRound className="size-3.5" />
+            <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
+              <KeyIcon className="size-3.5" />
               Bring your own key
             </Button>
           )
@@ -60,7 +61,7 @@ export function ModelConnectionGate({
               variant="outline"
               onClick={() => openConnectProvider('providers')}
             >
-              <KeyRound className="size-3.5" />
+              <KeyIcon className="size-3.5" />
               Bring your own key
             </Button>
           ) : undefined
@@ -87,7 +88,8 @@ const BAR_EXIT = { type: 'spring', duration: 0.35, bounce: 0 } as const;
  * animation assumes it renders once with the final answer, not per-query.
  */
 export function ModelConnectionBar({ show }: { show: boolean }) {
-  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
+    useModelConnectionGate(EMPTY_MODELS);
   const reduceMotion = useReducedMotion();
 
   return (
@@ -95,7 +97,7 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
       {modal}
       <AnimatePresence initial={false}>
         {show && (
-          <motion.div
+          <m.div
             key="model-connection-bar"
             initial={reduceMotion ? { opacity: 0 } : { height: 0 }}
             animate={
@@ -110,15 +112,15 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
             }
             className="relative z-0 overflow-hidden"
           >
-            <motion.div
+            <m.div
               initial={reduceMotion ? false : { y: '-100%' }}
               animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
               exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
-              className="border-border bg-foreground/10 dark:bg-accent mx-3 -mt-3 rounded-b-xl border"
+              className="border-border bg-muted mx-3 -mt-3 rounded-b-md border"
             >
               <div className="flex items-center justify-between gap-3 pt-[18px] pr-2 pb-1.5 pl-4">
                 <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
-                  <KeyRound className="size-3.5 shrink-0" />
+                  <KeyIcon className="size-3.5 shrink-0" />
                   <span className="truncate">
                     No model connected
                     <span className="hidden sm:inline"> — connect one to start chatting</span>
@@ -126,26 +128,29 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {showUpgradeOption && (
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
                       onClick={openUpgrade}
-                      className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] active:scale-[0.96]"
+                      className="hit-area-1 gap-1.5 rounded-full text-xs"
                     >
-                      <CreditCard className="size-3.5" />
+                      <CreditCardIcon className="size-3.5 shrink-0" />
                       Upgrade
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button
                     type="button"
+                    size="sm"
                     onClick={() => openConnectProvider('providers')}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-xs font-medium transition-[background-color,transform] active:scale-[0.96]"
+                    className="hit-area-1 rounded-full text-xs"
                   >
                     Connect model
-                  </button>
+                  </Button>
                 </div>
               </div>
-            </motion.div>
-          </motion.div>
+            </m.div>
+          </m.div>
         )}
       </AnimatePresence>
     </>

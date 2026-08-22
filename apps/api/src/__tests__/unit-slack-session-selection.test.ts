@@ -30,6 +30,12 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     error: null,
     createdBy: 'user-1',
     visibility: 'project',
+    origin: 'user',
+    originRef: null,
+    secretsAllowlist: null,
+    requiredConnectors: null,
+    connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
     metadata: {},
     createdAt: now,
     updatedAt: now,
@@ -82,9 +88,8 @@ mock.module('../iam', () => ({
   ...realIam,
   authorize: async () => ({ allowed: true }),
   assertAuthorized: async () => {},
-  filterAccessibleProjectResources: async (
-    _userId: string,
-    _accountId: string,
+  filterAccessibleObjects: async (
+    _actor: unknown,
     _projectId: string,
     _resourceType: string,
     resourceIds: readonly string[],
@@ -109,7 +114,9 @@ mock.module('../channels/slack/turn', () => ({
   relayTurnStep: async () => {},
   rowToHandle: () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
 }));
+const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
+  ...realInstallStore,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
   SLACK_TEAM_ID: 'SLACK_TEAM_ID',
@@ -124,6 +131,7 @@ mock.module('../channels/install-store', () => ({
   loadSlackSigningSecretForProject: async () => null,
   loadSlackTeamNameForProject: async () => null,
   loadSlackTokenForProject: async () => 'xoxb-test',
+  loadTeamsInstall: async () => null,
   loadTelegramWebhookSecretForProject: async () => null,
   saveSlackInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
   saveSlackOauthInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
@@ -133,6 +141,8 @@ mock.module('../channels/slack-api', () => ({
   appendStream: async () => {},
   deleteMessage: async () => {},
   getChannelName: async () => 'general',
+  isBotUser: async () => true,
+  findBotUserIdByName: async () => null,
   joinChannel: async () => true,
   openDmChannel: async () => 'D1',
   postBlocks: async () => 'ts',

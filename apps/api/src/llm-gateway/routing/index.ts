@@ -1,13 +1,16 @@
 import type { ModelRouteInput, ModelRoutePlan, AuthedPrincipal } from '@kortix/llm-gateway';
 import { config } from '../../config';
-import { gatewayModelCatalog } from '../models/catalog-models';
+import { catalogModelForWireModel, gatewayModelCatalog } from '../models/catalog-models';
+import { platformDefaultModelId } from '../models/served-managed-models';
 import { createGatewayRouteResolver } from './resolve-route';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 
 const routingCatalog = () => gatewayModelCatalog('gateway-routing');
 
 const resolver = createGatewayRouteResolver({
-  defaultModel: config.LLM_GATEWAY_DEFAULT_MODEL,
+  // The RESOLVABLE platform default, not the raw configured one — `auto` must
+  // never resolve to a managed model whose transport credential is absent.
+  defaultModel: platformDefaultModelId(),
   visionModel: config.LLM_GATEWAY_VISION_MODEL,
   policies: config.LLM_GATEWAY_FALLBACK_POLICIES,
   supportsImage: (model) => {
@@ -15,6 +18,7 @@ const resolver = createGatewayRouteResolver({
     return routingCatalog()[wire]?.attachment === true;
   },
   getProjectPolicy: getProjectRoutingPolicy,
+  catalogModelFor: (model) => catalogModelForWireModel(model),
 });
 
 export function resolveGatewayRoute(

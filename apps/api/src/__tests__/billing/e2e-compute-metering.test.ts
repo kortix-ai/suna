@@ -47,11 +47,17 @@ interface InMemorySession {
 }
 
 let sessions: InMemorySession[] = [];
+let insertedComputeSessionData: Record<string, unknown> | null = null;
 let debitCalls: { accountId: string; amount: number; description: string; ledgerType: string }[] = [];
 let simulateUniqueViolationOnInsert = false;
+let holdFirstDebit = false;
+let releaseFirstDebit: (() => void) | null = null;
+let firstDebitStarted: Promise<void> = Promise.resolve();
+let signalFirstDebitStarted: (() => void) | null = null;
 
 mock.module('../../billing/repositories/compute-sessions', () => ({
   insertComputeSession: async (data: any) => {
+    insertedComputeSessionData = data;
     if (simulateUniqueViolationOnInsert) {
       simulateUniqueViolationOnInsert = false;
       const err = new Error('duplicate open compute session') as Error & { code?: string };
@@ -70,9 +76,9 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
       diskGb: data.diskGb,
       gpuCount: data.gpuCount ?? 0,
       state: data.state ?? 'active',
-      startedAt: new Date().toISOString(),
+      startedAt: data.startedAt ?? new Date().toISOString(),
       endedAt: null,
-      lastBilledAt: new Date().toISOString(),
+      lastBilledAt: data.lastBilledAt ?? new Date().toISOString(),
       costUsd: '0',
       ledgerId: null,
       metadata: data.metadata ?? {},
@@ -91,10 +97,46 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
         (a, b) =>
           new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
       )[0] ?? null,
-  updateComputeSession: async (id: string, patch: any) => {
-    const row = sessions.find((s) => s.id === id);
-    if (!row) return;
-    Object.assign(row, patch, { updatedAt: new Date().toISOString() });
+  // The claim/release pair the real repository uses. Implemented FAITHFULLY
+  // rather than stubbed true: the compare-and-set IS the fix (one settler wins a
+  // window, the loser bills nothing), so a fake that always succeeded would let
+  // the double-billing regression back in with the suite still green.
+  claimComputeWindow: async (input: {
+    id: string;
+    expectedLastBilledAt: string;
+    nextLastBilledAt: string;
+    addCostUsd: number;
+    terminalState?: 'stopped' | 'finalized';
+  }) => {
+    const row = sessions.find((r: any) => r.id === input.id);
+    if (!row) return false;
+    if (row.endedAt !== null && row.endedAt !== undefined) return false;
+    if (row.lastBilledAt !== input.expectedLastBilledAt) return false;
+    row.lastBilledAt = input.nextLastBilledAt;
+    row.costUsd = String(Number(row.costUsd ?? 0) + input.addCostUsd);
+    if (input.terminalState) {
+      row.state = input.terminalState;
+      row.endedAt = input.nextLastBilledAt;
+    }
+    return true;
+  },
+  releaseComputeWindow: async (input: {
+    id: string;
+    claimedLastBilledAt: string;
+    revertToLastBilledAt: string;
+    subCostUsd: number;
+    terminalState?: 'stopped' | 'finalized';
+  }) => {
+    const row = sessions.find((r: any) => r.id === input.id);
+    if (!row) return false;
+    if (row.lastBilledAt !== input.claimedLastBilledAt) return false;
+    row.lastBilledAt = input.revertToLastBilledAt;
+    row.costUsd = String(Number(row.costUsd ?? 0) - input.subCostUsd);
+    if (input.terminalState) {
+      row.state = 'active';
+      row.endedAt = null;
+    }
+    return true;
   },
   findStaleActiveSessions: async (cutoff: Date) =>
     sessions.filter(
@@ -110,6 +152,12 @@ mock.module('../../billing/services/credits', () => ({
   getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
   deductCredits: async (accountId: string, amount: number, description: string, ledgerType = 'usage') => {
     debitCalls.push({ accountId, amount, description, ledgerType });
+    if (holdFirstDebit && debitCalls.length === 1) {
+      signalFirstDebitStarted?.();
+      await new Promise<void>((resolve) => {
+        releaseFirstDebit = resolve;
+      });
+    }
     return { success: true, cost: amount, newBalance: 0, transactionId: 'tx_test' };
   },
   deductForLlmUsage: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: null }),
@@ -131,8 +179,14 @@ const SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
 beforeEach(() => {
   sessions = [];
+  insertedComputeSessionData = null;
   debitCalls = [];
   simulateUniqueViolationOnInsert = false;
+  holdFirstDebit = false;
+  releaseFirstDebit = null;
+  firstDebitStarted = new Promise<void>((resolve) => {
+    signalFirstDebitStarted = resolve;
+  });
   resetMockRegistry();
   // Default to a per-seat account so metering engages.
   mockRegistry.getCreditAccount = async () =>
@@ -154,6 +208,17 @@ describe('compute metering — per-seat happy path', () => {
     expect(sessions[0].state).toBe('active');
     expect(sessions[0].endedAt).toBeNull();
     expect(debitCalls.length).toBe(0);
+  });
+
+  test('start pins the initial billing cursor to the stored start timestamp', async () => {
+    await startComputeSession({
+      sandboxId: 'sb_timestamp_precision',
+      accountId: 'acc_test_123',
+      spec: SPEC,
+    });
+
+    expect(typeof insertedComputeSessionData?.startedAt).toBe('string');
+    expect(insertedComputeSessionData?.lastBilledAt).toBe(insertedComputeSessionData?.startedAt);
   });
 
   test('pause finalizes the row, debits with compute_debit type, and matches cost formula', async () => {
@@ -178,6 +243,35 @@ describe('compute metering — per-seat happy path', () => {
 
     expect(sessions[0].state).toBe('stopped');
     expect(sessions[0].endedAt).not.toBeNull();
+  });
+
+  test('concurrent closes use one terminal cutoff and cannot bill past ended_at', async () => {
+    await startComputeSession({
+      sandboxId: 'sb_close_race',
+      accountId: 'acc_test_123',
+      spec: SPEC,
+    });
+
+    const initialCursor = new Date(Date.now() - 5_000);
+    const firstCutoff = new Date(initialCursor.getTime() + 1_000);
+    const secondCutoff = new Date(initialCursor.getTime() + 2_000);
+    sessions[0].lastBilledAt = initialCursor.toISOString();
+    holdFirstDebit = true;
+
+    const firstClose = pauseComputeSession('sb_close_race', firstCutoff);
+    await firstDebitStarted;
+
+    // The first debit is deliberately held between the cursor claim and the
+    // old non-atomic ended_at write. A second closer can otherwise claim the
+    // next 1s window and close later before the first caller writes backwards.
+    await pauseComputeSession('sb_close_race', secondCutoff);
+    releaseFirstDebit?.();
+    await firstClose;
+
+    expect(debitCalls).toHaveLength(1);
+    expect(sessions[0].state).toBe('stopped');
+    expect(sessions[0].lastBilledAt).toBe(firstCutoff.toISOString());
+    expect(sessions[0].endedAt).toBe(firstCutoff.toISOString());
   });
 
   test('resume opens a brand new row, old row stays closed', async () => {
@@ -307,13 +401,12 @@ describe('compute metering — cost calculation', () => {
     expect(calculateComputeCost(SPEC, 0)).toBe(0);
   });
 
-  test('hourly cost is in the expected range for a 2/4/20 sandbox', () => {
+  test('hourly cost is $0.201312 for a 2/4/20 sandbox', () => {
     const c = calculateComputeCost(SPEC, 3600);
-    expect(c).toBeGreaterThan(0.10);
-    expect(c).toBeLessThan(0.15);
+    expect(c).toBeCloseTo(0.201312, 8);
   });
 
-  test('provider attribution is persisted and E2B uses its own rate card', async () => {
+  test('provider attribution is persisted and hosted providers use one customer rate', async () => {
     await startComputeSession({
       sandboxId: 'sb_e2b',
       accountId: 'acc_test_123',
@@ -322,8 +415,13 @@ describe('compute metering — cost calculation', () => {
     });
 
     expect(sessions[0].provider).toBe('e2b');
-    expect(calculateComputeCost(SPEC, 3600, 'e2b')).toBeGreaterThan(
+    expect(calculateComputeCost(SPEC, 3600, 'e2b')).toBeCloseTo(
       calculateComputeCost(SPEC, 3600, 'daytona'),
+      8,
+    );
+    expect(calculateComputeCost(SPEC, 3600, 'platinum')).toBeCloseTo(
+      calculateComputeCost(SPEC, 3600, 'daytona'),
+      8,
     );
   });
 });

@@ -11,7 +11,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { getStarterFiles, isKortixManagedSkillName } from '../src/index';
+import { getManagedSkillFiles, getStarterFiles, isKortixManagedSkillName } from '../src/index';
 
 const outDir = process.argv[2] ?? join(import.meta.dir, '..', 'dist', 'managed-skills');
 
@@ -22,7 +22,15 @@ function skillNameOf(path: string): string | null {
   return path.slice(SKILLS_PREFIX.length).split('/')[0] || null;
 }
 
-const files = getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker' });
+// `templates/managed/` holds the family itself; `templates/base/` still carries
+// `kortix-cli` (the one managed skill deliberately left in the scaffold). Both
+// roots feed the bake, so the injected set stays complete no matter which root a
+// skill lives in — the failure mode that silently stranded `kortix-computer`
+// under `templates/marketplace/` for its entire life.
+const files = [
+  ...getManagedSkillFiles(),
+  ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker' }),
+];
 const skills = new Set<string>();
 let count = 0;
 for (const f of files) {

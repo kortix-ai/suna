@@ -24,8 +24,20 @@ async function slackApiCall(
   token: string,
   method: string,
   body: Record<string, unknown>,
-  opts: { retries?: number; idempotent?: boolean } = {},
+  opts: { retries?: number; idempotent?: boolean; form?: boolean } = {},
 ): Promise<SlackApiResult> {
+  // `form` sends application/x-www-form-urlencoded instead of JSON.
+  //
+  // NOT a style preference. Slack's older read methods do not parse a JSON body
+  // at all: the params are silently dropped and the call is answered as though
+  // they were never sent. users.info answers `user_not_found` — for a user id
+  // that Slack itself had just returned from users.list, and that Slack renders
+  // correctly as <@ID> in a message. Measured on dev 2026-08-19 from
+  // /ecs/kortix-dev: `[slack-api] users.info failed { error: "user_not_found" }`.
+  //
+  // That failure mode is silent and looks like bad data rather than a bad
+  // request, which is exactly how it cost an evening: the caller concluded the
+  // bot did not exist.
   // `idempotent` (default true) controls whether ambiguous failures are retried.
   // A 429 is ALWAYS safe to retry — Slack guarantees the request wasn't processed
   // — but a 5xx / timeout / network error on a non-idempotent WRITE
@@ -40,10 +52,18 @@ async function slackApiCall(
       const res = await fetch(`${SLACK_API_BASE}/${method}`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Type': opts.form
+            ? 'application/x-www-form-urlencoded; charset=utf-8'
+            : 'application/json; charset=utf-8',
           authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(body),
+        body: opts.form
+          ? new URLSearchParams(
+              Object.entries(body)
+                .filter(([, v]) => v !== undefined && v !== null)
+                .map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]),
+            ).toString()
+          : JSON.stringify(body),
         signal: AbortSignal.timeout(10_000),
       });
       if (res.status === 429) {
@@ -445,6 +465,72 @@ export async function publishHomeView(
   } catch (err) {
     console.warn('[slack-api] views.publish error', err);
     return false;
+  }
+}
+
+// Resolve a bot by the name a human would type, e.g. "Incident reporter".
+//
+// The slash command is registered with should_escape:false, so Slack sends the
+// LITERAL text "@Incident reporter" — never <@U…>. Telling an operator to type
+// the thing Slack will not encode is how `link-bot @TheBot` shipped as usage
+// that could not work.
+//
+// Bots only: this feeds link-bot, and returning a human here would hand that
+// person's identity to whoever ran the command. An ambiguous match returns null
+// rather than guessing — two apps with the same display name is a bad reason to
+// bind the wrong one.
+//
+// One page of 1000 covers any workspace this is plausible in; beyond that the
+// operator can paste the member ID, which always works.
+export async function findBotUserIdByName(token: string, name: string): Promise<string | null> {
+  const want = name.trim().replace(/^@/, '').toLowerCase();
+  if (!want) return null;
+  try {
+    const r = await slackApiCall(token, 'users.list', { limit: 1000 }, { form: true });
+    if (!r.ok) {
+      console.warn('[slack-api] users.list failed', { error: r.error });
+      return null;
+    }
+    const members = (r.members ?? []) as Array<{
+      id?: string; name?: string; deleted?: boolean;
+      is_bot?: boolean; is_app_user?: boolean;
+      profile?: { display_name?: string; real_name?: string };
+    }>;
+    const hits = members.filter((m) => {
+      if (m.deleted || !m.id) return false;
+      if (!m.is_bot && !m.is_app_user) return false;
+      return [m.name, m.profile?.display_name, m.profile?.real_name]
+        .some((n) => (n ?? '').trim().toLowerCase() === want);
+    });
+    return hits.length === 1 ? hits[0]!.id! : null;
+  } catch (err) {
+    console.warn('[slack-api] users.list error', err);
+    return null;
+  }
+}
+
+// Is this Slack principal an app/bot rather than a person?
+//
+// `link-bot` writes the (workspace, slack_user) -> kortix_user row that
+// resolveSlackActor treats as authoritative, so binding a HUMAN's id would make
+// that person's later Slack actions run as whoever linked them. Human and bot
+// ids are indistinguishable by shape (both U…/W…), so only Slack can answer.
+//
+// Returns null on ANY uncertainty — missing scope, transport error, unknown user
+// — and the caller refuses. Guessing "probably a bot" here is the impersonation.
+export async function isBotUser(token: string, userId: string): Promise<boolean | null> {
+  try {
+    const r = await slackApiCall(token, 'users.info', { user: userId }, { form: true });
+    if (!r.ok) {
+      console.warn('[slack-api] users.info failed', { error: r.error });
+      return null;
+    }
+    const u = r.user as { is_bot?: boolean; is_app_user?: boolean } | undefined;
+    if (!u) return null;
+    return Boolean(u.is_bot || u.is_app_user);
+  } catch (err) {
+    console.warn('[slack-api] users.info error', err);
+    return null;
   }
 }
 

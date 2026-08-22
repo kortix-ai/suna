@@ -12,6 +12,7 @@ import {
   applyAgentScope,
   extractAgents,
   GRANTABLE_KORTIX_CLI,
+  sandboxFromLoadedAgents,
   type AgentSpec,
 } from '../projects/agents';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
@@ -41,8 +42,8 @@ describe('[[agents]] — grantable enum drift guard', () => {
   // either side is caught even if it happens to keep the two sides equal to
   // EACH OTHER but wrong in absolute terms (both sides sourced from the same
   // stale copy-paste, say).
-  test('41 grantable project actions (all of PROJECT_ACTIONS)', () => {
-    expect(GRANTABLE_KORTIX_CLI.size).toBe(41);
+  test('45 grantable project actions (all of PROJECT_ACTIONS)', () => {
+    expect(GRANTABLE_KORTIX_CLI.size).toBe(45);
   });
 
   // The three manager-tier project leaves are reachable via a project's
@@ -463,6 +464,19 @@ describe('kortix_version 2 — `agents:` map', () => {
     expect(specs[0].connectors).toEqual(['github', 'slack']);
     expect(specs[0].kortixCli).toEqual(['project.trigger.create', 'project.cr.open']);
     expect(specs[0].env).toEqual(['STRIPE_KEY', 'GH_TOKEN']);
+  });
+
+  test('sandbox is parsed and resolved for concrete and default agent names', () => {
+    const loaded = parseV2(`
+  support:
+    sandbox: ml
+  fallback: {}
+`, { defaultAgent: 'support' });
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.specs.find((spec) => spec.name === 'support')?.sandbox).toBe('ml');
+    expect(sandboxFromLoadedAgents('support', loaded)).toBe('ml');
+    expect(sandboxFromLoadedAgents('default', loaded)).toBe('ml');
+    expect(sandboxFromLoadedAgents('fallback', loaded)).toBeNull();
   });
 
   test('"all" / "none" string forms resolve the same as v1', () => {

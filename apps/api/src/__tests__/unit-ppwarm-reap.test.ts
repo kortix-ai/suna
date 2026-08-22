@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ppwarmReapTargets, perProjectWarmImageName } from '../snapshots/ppwarm-names';
+import { excludePinnedTargets, ppwarmReapTargets, perProjectWarmImageName } from '../snapshots/ppwarm-names';
 
 // proj8 = first 8 hex chars of the projectId with dashes stripped.
 const PROJ_A = '9ee8bc9c-5108-437f-a01f-6c5e26f2062c'; // proj8 = 9ee8bc9c
@@ -62,5 +62,31 @@ describe('ppwarmReapTargets — on-bake reap selector', () => {
       'kortix-ppwarm-9ee8bc9c-cccccccccccc__deleted__deleted', // double-tombstone (the observed regression)
     ];
     expect(ppwarmReapTargets(PROJ_A, CURRENT, names)).toEqual([]);
+  });
+});
+
+describe('excludePinnedTargets — FIX-K-lite proj8-collision guard', () => {
+  test("a colliding project B's LIVE pinned image sharing proj8 is NEVER reaped", () => {
+    // Project A and project B collide on proj8 (both 9ee8bc9c). A bakes and its
+    // raw prefix-scoped selection sweeps up B's live pinned tip as a "superseded"
+    // one — the exact org-wide-collision bug. The pinned guard keeps B's image.
+    const bPinned = 'kortix-ppwarm-9ee8bc9c-bbbbbbbbbbbb'; // B's LIVE pinned image
+    const names = [
+      CURRENT, // A's current tip
+      'kortix-ppwarm-9ee8bc9c-aaaa00000000', // A's genuinely superseded tip
+      bPinned, // B's live pinned image (same proj8 by collision)
+    ];
+    const raw = ppwarmReapTargets(PROJ_A, CURRENT, names);
+    expect(raw.sort()).toEqual(['kortix-ppwarm-9ee8bc9c-aaaa00000000', bPinned]); // bug: B included
+
+    const pinned = new Set([bPinned]); // any project's active pin
+    const guarded = excludePinnedTargets(raw, pinned);
+    expect(guarded).toEqual(['kortix-ppwarm-9ee8bc9c-aaaa00000000']); // A's superseded reaped
+    expect(guarded).not.toContain(bPinned); // B's LIVE pinned image survives
+  });
+
+  test('with no pins the targets are unchanged', () => {
+    const raw = ['kortix-ppwarm-9ee8bc9c-aaaa00000000'];
+    expect(excludePinnedTargets(raw, new Set())).toEqual(raw);
   });
 });

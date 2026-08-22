@@ -10,9 +10,15 @@ export interface TargetContext {
   memoryDir?: string;
 }
 
+export function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
+}
+
 export function expandTarget(target: string, ctx: TargetContext): string {
-  const cd = ctx.configDir.replace(/\/+$/, '');
-  const mem = (ctx.memoryDir ?? '.kortix/memory').replace(/\/+$/, '');
+  const cd = trimTrailingSlashes(ctx.configDir);
+  const mem = trimTrailingSlashes(ctx.memoryDir ?? '.kortix/memory');
   let out: string;
 
   if (target === '~' || target === '~/') {

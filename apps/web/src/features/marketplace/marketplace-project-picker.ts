@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
-import { listProjectsForAccount } from '@kortix/sdk/projects-client';
+import { listProjectsForAccount } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 
 /**
  * Shared "pick a project to add this item to" query + auto-select state, used
@@ -12,6 +13,12 @@ import { listProjectsForAccount } from '@kortix/sdk/projects-client';
  * project" sentinel alongside whatever this returns). Lists the caller's
  * projects under one query key and auto-picks a sensible default the first
  * time the list loads.
+ *
+ * Fetches with no account_id, so this is the ONE real reader of
+ * `qk.projects.list()` — the API resolves that to the caller's primary
+ * (earliest-joined) account. Every mutation that invalidates the shared
+ * `['kx', 'projects']` prefix reaches this entry too, keeping it out of the
+ * stale trap a private key would fall into.
  */
 export function useProjectPicker({
   open,
@@ -33,10 +40,10 @@ export function useProjectPicker({
   const [pickedProjectId, setPickedProjectId] = useState('');
 
   const projectsQuery = useQuery({
-    queryKey: ['projects', 'all-for-marketplace'],
+    queryKey: qk.projects.list(),
     queryFn: () => listProjectsForAccount(),
     enabled: !!user && open && enabled,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   const projects = projectsQuery.data ?? [];
 

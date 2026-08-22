@@ -32,9 +32,9 @@ const execFileAsync = promisify(execFile);
 // transitive imports (db, github, …) out of the unit test entirely.
 const resolverCalls: string[] = [];
 mock.module('../projects/lib/git', () => ({
-  resolveProjectGitAuthTokenById: async (projectId: string) => {
+  resolveProjectGitAccessById: async (projectId: string) => {
     resolverCalls.push(projectId);
-    return 'resolved-sentinel-token';
+    return { repoUrl: upstream, token: 'resolved-sentinel-token', headers: {} };
   },
 }));
 

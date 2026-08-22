@@ -11,6 +11,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts } from '@kortix/db';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForAccount } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, readBody } from './helpers';
@@ -31,7 +32,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
   const [row] = await db
     .select({ mfaRequired: accounts.mfaRequired })
@@ -64,7 +65,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
   // Pull all members and the count of their verified MFA factors in one
   // round-trip. LEFT JOIN so members with zero factors still appear.
@@ -139,7 +140,7 @@ iamRouter.openapi(
     tags: ['iam'],
     summary: 'Enable or disable account MFA requirement',
     ...auth,
-    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean().optional() }) } } } },
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
     responses: {
       200: json(z.object({ enabled: z.boolean(), unchanged: z.boolean().optional() }), 'Updated MFA-required status'),
       ...errors(401, 403, 404, 409),
@@ -150,10 +151,17 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   // Gate on account.write — same level as renaming the account or
   // flipping strict mode. Avoids inventing a new role action.
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const body = await readBody(c);
-  const enabled = body.enabled === true;
+  // `enabled` is REQUIRED (not optional): the old `z.boolean().optional()` +
+  // `body.enabled === true` meant `{}` or `{"enabled":null}` silently DISABLED
+  // account MFA — a footgun on a security toggle. Mirror the super-admin
+  // hardening (iam/members.ts). See MFA-1 (weekly pentest run #4).
+  if (typeof body.enabled !== 'boolean') {
+    return c.json({ error: 'enabled (boolean) is required' }, 400);
+  }
+  const enabled = body.enabled;
 
   const [before] = await db
     .select({ mfaRequired: accounts.mfaRequired })

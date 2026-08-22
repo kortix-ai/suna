@@ -24,6 +24,16 @@ const BoolFlag = z.preprocess((v) => {
 const Schema = z.object({
   KORTIX_SERVICE_PORT: z.coerce.number().int().positive().default(8000),
   KORTIX_OPENCODE_INTERNAL_PORT: z.coerce.number().int().positive().default(4096),
+  // The other half of the opencode port PAIR. A verified reload boots the new
+  // opencode on whichever of the two is idle, proves it serves, and only then
+  // swaps to it and kills the old one — so a config that cannot boot never
+  // takes the session down with it.
+  //
+  // Fixed rather than picked at reload time on purpose: both ports must be in
+  // the web proxy's blocked-self-ports set, and that set is built once at
+  // startup. An ephemeral port would be unguarded the moment it went live,
+  // handing the sandbox an unproxied route to its own opencode.
+  KORTIX_OPENCODE_STANDBY_PORT: z.coerce.number().int().positive().default(4097),
   // Static web server port. Default 3211 is a hard contract: apps/web
   // (platform-client STATIC_FILE_SERVER, url.ts) and the starter `show` tool
   // build preview URLs against this exact port via /proxy/3211 and p3211-* .
@@ -45,25 +55,61 @@ const Schema = z.object({
   KORTIX_REPO_URL: z.string().optional(),
   KORTIX_BRANCH_NAME: z.string().optional(),
   KORTIX_SESSION_FRESH: z.string().optional(),
+  KORTIX_SESSION_BRANCH_RESTORE: z.string().optional(),
   KORTIX_BASE_SHA: z.string().optional(),
+  KORTIX_GIT_DELTA_BUNDLE_BASE64: z.string().optional(),
+  KORTIX_GIT_DELTA_PARENT_SHA: z.string().optional(),
+  KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: z.string().optional(),
   // The sandbox credential. KORTIX_SANDBOX_TOKEN is canonical; KORTIX_TOKEN is
   // the legacy alias (resolved with a fallback below).
   KORTIX_SANDBOX_TOKEN: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
-  // Partial-clone filter for the boot-time `git clone`. `blob:none` (the
-  // default) is a blobless clone: it transfers the full commit/tree history
-  // but fetches file blobs lazily, so the initial clone is a fraction of a
-  // full clone's size while `git log`/`blame`/`diff` still work. Set to an
-  // empty string to force a full clone. Remotes that don't advertise
-  // partial-clone fall back to a full clone automatically (see git.ts).
-  KORTIX_CLONE_FILTER: z.string().default('blob:none'),
+  // Depth of the boot-time `git clone`. 1 (the default) is a SHALLOW clone:
+  // one commit, no history — the only thing a fresh session's working tree
+  // actually needs at boot. History is restored right after boot by a
+  // background `fetch --unshallow` (see scheduleHistoryBackfill in git.ts), so
+  // `git log`/`blame`/`diff` work by the time an agent could ask for them.
+  // 0 clones full history inline (the old behaviour).
+  //
+  // Measured 2026-07-25 on kortix-ai/company, direct to GitHub: full 5462ms
+  // (27MB / 758 commits) vs --depth 1 3516ms (25MB / 1 commit). A real but
+  // MODEST win — history is only ~2MB of that repo, so shallow buys ~1.5x, not
+  // an order of magnitude. The bulk of a clone is the working tree, which no
+  // depth setting avoids; only baking the repo into the image does (warm
+  // images). Do not expect this flag alone to fix boot latency.
+  //
+  // --filter=blob:none measured 6161ms — SLOWER than a full clone — on top of
+  // stalling on lazy blob fetches through the git proxy, which is why the API
+  // forces no filter. Shallow has neither problem: one pack, no on-demand
+  // fetches.
+  KORTIX_CLONE_DEPTH: z.coerce.number().int().min(0).default(1),
+  // Partial-clone filter for the boot-time `git clone`. Empty (the default)
+  // means no filter. Prefer KORTIX_CLONE_DEPTH — a blobless clone measured
+  // slower than a full one and defers cost into unpredictable mid-session
+  // stalls. Kept for remotes where shallow is unavailable.
+  KORTIX_CLONE_FILTER: z.string().default(''),
+  // ── Monitor box (docs/specs/2026-08-12-monitors.md) ──────────────────────
+  // `monitor` selects the daemon's monitor mode: it clones the repo, skips
+  // opencode entirely, and supervises the project's monitor processes instead.
+  // Anything else (including unset) is the normal session daemon.
+  KORTIX_WORKLOAD: z.string().default(''),
+  // The enabled monitors, resolved from kortix.yaml BY apps/api and injected as
+  // JSON. The daemon deliberately does not parse the manifest: one parser means
+  // the box can never disagree with the platform about what a monitor is.
+  KORTIX_MONITORS: z.string().default(''),
+  // This boot's epoch, minted by the reconciler and stored on the box row. The
+  // ingest route rejects any batch stamped with another value, so events from a
+  // superseded boot can never fire.
+  KORTIX_MONITOR_BOX_EPOCH: z.string().default(''),
 })
 
 export type Config = {
   servicePort: number
   opencodeInternalPort: number
+  /** Idle half of the opencode port pair; see KORTIX_OPENCODE_STANDBY_PORT. */
+  opencodeStandbyPort: number
   staticPort: number
   workspace: string
   projectTarget: string
@@ -77,19 +123,31 @@ export type Config = {
   repoUrl: string | undefined
   branchName: string | undefined
   sessionFresh: boolean
+  sessionBranchRestore?: boolean
   baseSha: string | undefined
+  gitDeltaBundleBase64?: string
+  gitDeltaParentSha?: string
+  gitDeltaParentCommitBase64?: string
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
   gitUserName: string
   gitUserEmail: string
   cloneFilter: string
+  cloneDepth: number
+  /** `'monitor'` selects monitor mode; '' (the default) is the session daemon. */
+  workload: string
+  /** Raw `KORTIX_MONITORS` JSON; parsed by monitor-runner.parseMonitorSpecs. */
+  monitorsJson: string
+  /** The box epoch this boot must stamp on every ingest batch. */
+  monitorBoxEpoch: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = Schema.parse({
     KORTIX_SERVICE_PORT: env.KORTIX_SERVICE_PORT,
     KORTIX_OPENCODE_INTERNAL_PORT: env.KORTIX_OPENCODE_INTERNAL_PORT,
+    KORTIX_OPENCODE_STANDBY_PORT: env.KORTIX_OPENCODE_STANDBY_PORT,
     KORTIX_STATIC_PORT: env.KORTIX_STATIC_PORT,
     KORTIX_WORKSPACE: env.KORTIX_WORKSPACE,
     KORTIX_PROJECT_TARGET: env.KORTIX_PROJECT_TARGET,
@@ -103,17 +161,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_REPO_URL: env.KORTIX_REPO_URL,
     KORTIX_BRANCH_NAME: env.KORTIX_BRANCH_NAME,
     KORTIX_SESSION_FRESH: env.KORTIX_SESSION_FRESH,
+    KORTIX_SESSION_BRANCH_RESTORE: env.KORTIX_SESSION_BRANCH_RESTORE,
     KORTIX_BASE_SHA: env.KORTIX_BASE_SHA,
+    KORTIX_GIT_DELTA_BUNDLE_BASE64: env.KORTIX_GIT_DELTA_BUNDLE_BASE64,
+    KORTIX_GIT_DELTA_PARENT_SHA: env.KORTIX_GIT_DELTA_PARENT_SHA,
+    KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
     KORTIX_SANDBOX_TOKEN: env.KORTIX_SANDBOX_TOKEN,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
     KORTIX_CLONE_FILTER: env.KORTIX_CLONE_FILTER,
+    KORTIX_CLONE_DEPTH: env.KORTIX_CLONE_DEPTH,
+    KORTIX_WORKLOAD: env.KORTIX_WORKLOAD,
+    KORTIX_MONITORS: env.KORTIX_MONITORS,
+    KORTIX_MONITOR_BOX_EPOCH: env.KORTIX_MONITOR_BOX_EPOCH,
   })
 
   return {
     servicePort: parsed.KORTIX_SERVICE_PORT,
     opencodeInternalPort: parsed.KORTIX_OPENCODE_INTERNAL_PORT,
+    opencodeStandbyPort: parsed.KORTIX_OPENCODE_STANDBY_PORT,
     staticPort: parsed.KORTIX_STATIC_PORT,
     workspace: parsed.KORTIX_WORKSPACE,
     projectTarget: parsed.KORTIX_PROJECT_TARGET,
@@ -127,13 +194,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     repoUrl: parsed.KORTIX_REPO_URL,
     branchName: parsed.KORTIX_BRANCH_NAME,
     sessionFresh: parsed.KORTIX_SESSION_FRESH === '1',
+    sessionBranchRestore: parsed.KORTIX_SESSION_BRANCH_RESTORE === '1',
     baseSha: parsed.KORTIX_BASE_SHA,
+    gitDeltaBundleBase64: parsed.KORTIX_GIT_DELTA_BUNDLE_BASE64,
+    gitDeltaParentSha: parsed.KORTIX_GIT_DELTA_PARENT_SHA,
+    gitDeltaParentCommitBase64: parsed.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
     // Canonical name wins; fall back to the legacy alias so daemons running in
     // older-API sandboxes (which only inject KORTIX_TOKEN) still resolve it.
     sandboxToken: parsed.KORTIX_SANDBOX_TOKEN ?? parsed.KORTIX_TOKEN,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
     cloneFilter: parsed.KORTIX_CLONE_FILTER,
+    cloneDepth: parsed.KORTIX_CLONE_DEPTH,
+    workload: parsed.KORTIX_WORKLOAD.trim(),
+    monitorsJson: parsed.KORTIX_MONITORS,
+    monitorBoxEpoch: parsed.KORTIX_MONITOR_BOX_EPOCH.trim(),
   }
 }
 
@@ -222,6 +297,47 @@ export async function resolveSandboxOnBoot(cfg: Config): Promise<string | null> 
  * opencode.jsonc — that's what keeps a freshly provisioned sandbox bootable
  * before a project has been cloned.
  */
+/**
+ * The same directory, but REPO-RELATIVE — the form git pathspecs need.
+ *
+ * `resolveOpencodeConfigDir` answers "where does opencode read from" (absolute,
+ * with a fallback outside the repo when the project has no opencode.jsonc). A
+ * git operation needs the other half: the path inside the working tree, or
+ * nothing at all when the effective dir is the out-of-repo default and there is
+ * therefore nothing in git to sync.
+ */
+export async function resolveOpencodeConfigDirRelative(cfg: Config): Promise<string | null> {
+  const fs = await import('node:fs/promises')
+  const rel = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
+  if (!isPlainRelativePath(rel)) return null
+  const absolute = await resolveOpencodeConfigDir(cfg)
+  // Fell back to the out-of-repo default: the project ships no opencode config,
+  // so there is no tracked directory to update.
+  return absolute === `${cfg.projectTarget}/${rel}` ? rel : null
+}
+
+/**
+ * Is this a literal directory path, and nothing cleverer?
+ *
+ * `opencode.config_dir` comes from a repo-controlled manifest and this value
+ * becomes a git PATHSPEC. The manifest reader only rejects absolute paths and
+ * `..`, so `:(top)*` survives it — and git honours pathspec magic even after
+ * `--`, which would let a manifest turn a config-dir sync into a rewrite of the
+ * whole working tree. The git calls also run with `GIT_LITERAL_PATHSPECS=1`, so
+ * this is the second of two independent guards rather than the only one; it
+ * exists so a magic-looking value is SKIPPED loudly instead of silently
+ * resolving to some other directory.
+ *
+ * Deliberately narrow: only the boot path may keep interpreting whatever the
+ * manifest says. This governs the sync alone.
+ */
+function isPlainRelativePath(value: string): boolean {
+  if (!value || value.startsWith('/') || value.startsWith('-')) return false
+  return value
+    .split('/')
+    .every((segment) => segment.length > 0 && segment !== '.' && segment !== '..' && /^[\w .-]+$/.test(segment))
+}
+
 export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
   const fs = await import('node:fs/promises')
   const relConfigDir = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)

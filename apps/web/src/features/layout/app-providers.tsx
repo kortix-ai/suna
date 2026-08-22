@@ -3,16 +3,14 @@
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
-import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
-import { NewInstanceModal } from '@/features/billing/pricing/new-instance-modal';
+import { SIDEBAR_MAX_WIDTH_PX } from '@/components/ui/sidebar-width';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
+import { ConnectorConnectionGateDialog } from '@/features/connectors/connector-connection-gate-dialog';
 import { isBillingEnabled } from '@/lib/config';
 import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
 import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { SubscriptionStoreSync } from '@/stores/subscription-store';
-import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import React from 'react';
 
 /**
@@ -58,12 +56,17 @@ function SidebarLeftSlot({ sidebarContent }: { sidebarContent?: React.ReactNode 
           : 'overflow-hidden'
       }
       style={{
-        // Normal mode: use a max-width larger than any real sidebar width
-        // so it never constrains the inner <Sidebar> (which manages its
-        // own 280px / 3.25rem widths via `collapsible="icon"`).
+        // Normal mode: the sidebar's absolute width ceiling, so this slot
+        // never constrains it. It used to be a flat 320px, which silently
+        // capped the resizable panel the moment a user dragged past that —
+        // the panel kept rendering at its real width while the in-flow gap
+        // stopped growing, so the content pane overlapped it. A constant, not
+        // `var(--sidebar-width)`: this box transitions its max-width for the
+        // onboarding morph, and tracking the live variable would make that
+        // transition lag every frame of a rail drag.
         // Onboarding-hide: clamp to 0 so the sidebar slides out with an
         // animation — CSS needs a concrete start value to transition from.
-        maxWidth: hideSidebar ? 0 : 320,
+        maxWidth: hideSidebar ? 0 : SIDEBAR_MAX_WIDTH_PX,
         opacity: hideSidebar ? 0 : 1,
       }}
     >
@@ -77,30 +80,14 @@ function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode
   return <>{children}</>;
 }
 
-/** Store-driven NewInstanceModal — mounted by legacy dashboard surfaces only. */
-function GlobalNewInstanceModal() {
-  const { isOpen, title, closeNewInstanceModal } = useNewInstanceModalStore();
-  return (
-    <NewInstanceModal
-      open={isOpen}
-      onOpenChange={(o) => !o && closeNewInstanceModal()}
-      title={title}
-    />
-  );
-}
-
-/** Store-driven UserSettingsModal — mounted once globally so the error handler
- *  can route billing errors to the Billing tab with a highlight. */
-function GlobalUserSettingsModal() {
-  const { isOpen, defaultTab, closeUserSettings } = useUserSettingsModalStore();
-  return (
-    <SidePanelUserSettings
-      open={isOpen}
-      onOpenChange={(o) => !o && closeUserSettings()}
-      defaultTab={defaultTab}
-    />
-  );
-}
+// `GlobalUserSettingsModal` (the store-driven modal that
+// `showGlobalUserSettingsModal` used to conditionally mount, wrapping the
+// deleted legacy user-settings modal) was removed in Task 10. Both call
+// sites already passed `showGlobalUserSettingsModal={false}` and nothing
+// ever called `useUserSettingsModalStore.getState().openUserSettings(...)`,
+// so it never rendered — dead since before this task. `useUserSettingsModalStore`
+// itself stays: `features/accounts/settings/billing-tab.tsx` still reads its
+// `highlight` field.
 
 // Account-level settings (Overview, Billing, Transactions, Members, etc.)
 // now live at /accounts/[id]. The legacy modal mount + GlobalAccountSettingsModal
@@ -120,7 +107,9 @@ interface AppProvidersProps {
   defaultSidebarOpen?: boolean;
   sidebarContent?: React.ReactNode;
   sidebarSiblings?: React.ReactNode;
-  showGlobalNewInstanceModal?: boolean;
+  /** Vestigial — see the comment above `AppProviders` on `GlobalUserSettingsModal`'s
+   *  removal (Task 10). Kept only so its two current call sites don't need
+   *  editing; it renders nothing. */
   showGlobalUserSettingsModal?: boolean;
 }
 
@@ -131,7 +120,6 @@ export function AppProviders({
   defaultSidebarOpen,
   sidebarContent,
   sidebarSiblings,
-  showGlobalNewInstanceModal = false,
   showGlobalUserSettingsModal = false,
 }: AppProvidersProps) {
   // The default model is hydrated server-side now (useModelDefaults inside the
@@ -149,9 +137,8 @@ export function AppProviders({
     <DeleteOperationEffectsWrapper>
       <SubscriptionStoreSync>
         {children}
-        {showGlobalNewInstanceModal && <GlobalNewInstanceModal />}
-        {showGlobalUserSettingsModal && <GlobalUserSettingsModal />}
         {isBillingEnabled() && <GlobalUpgradeModal />}
+        <ConnectorConnectionGateDialog />
       </SubscriptionStoreSync>
     </DeleteOperationEffectsWrapper>
   );

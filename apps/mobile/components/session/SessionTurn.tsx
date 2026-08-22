@@ -12,7 +12,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/session/SandboxPreviewCard';
-import { ReasoningSection } from '@/components/session/ReasoningSection';
 import { GroupedReasoningCard } from '@/components/session/GroupedReasoningCard';
 import { SessionErrorBanner } from './SessionErrorBanner';
 import ReAnimated, {
@@ -89,7 +88,6 @@ import {
   getRetryInfo,
   getRetryMessage,
   splitUserParts,
-  isFilePart,
 } from '@kortix/sdk/turns';
 
 // Enable LayoutAnimation on Android

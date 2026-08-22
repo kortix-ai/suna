@@ -1,20 +1,5 @@
 /**
- * Platform backlog — three spec IDs whose handlers don't match their stale spec
- * text. Each maps 1:1 to a spec ID; behavior is derived from the real handlers
- * in apps/api/src, not the spec prose.
- *
- *  - PLT-2: platform API keys. NOTE the drift: the spec frames these as plain
- *    account-level keys, but the handler (apps/api/src/platform/routes/api-keys.ts)
- *    is SANDBOX-SCOPED — every route hinges on a `sandbox_id` (query/body) and
- *    `requireSandboxAccess` (sandbox must exist + caller must be owner/admin of
- *    the sandbox's account). A full create→use→mutate→delete chain needs a real
- *    booted sandbox (Daytona), which the boundary surface below does not require.
- *    We cover the auth gate (supabaseAuth → 401), the sandbox_id validation
- *    (missing → 400, non-UUID → 400, unknown UUID → 404), and the key-id
- *    boundaries (unknown keyId → 404 on revoke/delete/regenerate). These all run
- *    locally without provisioning a sandbox or minting a usable secret.
- *
- *  - RTR-4: billed router passthrough. DRIFT: the per-service proxy routes are
+ * Router backlog. RTR-4's per-service proxy routes are
  *    registered via `proxy.all(...)` (method ALL), which the route dumper skips,
  *    so neither `ALL /v1/router/:service` nor the concrete `/tavily/*` mounts
  *    appear in the manifest. We exercise the router's auth/disallowed boundary
@@ -23,117 +8,88 @@
  *    `GET /v1/router/health`. We deliberately never send a valid Kortix token to
  *    a billed endpoint (that would make a real upstream call).
  */
-import { flow } from "../core/flow";
+import { flow } from '../core/flow';
 
-const ZERO_UUID = "00000000-0000-4000-a000-000000000000";
-
-// ─── PLT-2 — platform (sandbox-scoped) API keys ──────────────────────────
+// ─── PLT-1 — platform mount-point + sandbox version/changelog reads ───────
+// apps/api/src/platform/index.ts mounts `platformApp` at /v1/platform with NO
+// auth middleware of its own (app.route('/v1/platform', platformApp) in
+// apps/api/src/index.ts:695) — the mount-point info handler and every
+// versionRouter read (apps/api/src/platform/routes/version.ts) are public.
+// version.ts falls back to `{version:'unknown'|'dev-unknown', ...}` when the
+// upstream GitHub Releases / Docker Hub calls fail or SANDBOX_VERSION isn't
+// set, so these always return 200 with a stable shape rather than erroring.
 flow(
-  "PLT-2",
+  'PLT-1',
   {
-    domain: "accounts",
+    domain: 'platform',
     routes: [
-      "GET /v1/platform/api-keys",
-      "POST /v1/platform/api-keys",
-      "PATCH /v1/platform/api-keys/:keyId/revoke",
-      "DELETE /v1/platform/api-keys/:keyId",
-      "POST /v1/platform/api-keys/:keyId/regenerate",
+      'GET /v1/platform',
+      'GET /v1/platform/sandbox/version',
+      'GET /v1/platform/sandbox/version/all',
+      'GET /v1/platform/sandbox/version/changelog',
+      'GET /v1/platform/sandbox/version/latest',
     ],
   },
   async (ctx) => {
-    // ── auth gate (supabaseAuth) ──
-    await ctx.step("ANON cannot list → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/platform/api-keys");
-      r.status(401);
+    await ctx.step('platform mount-point info is public', async () => {
+      const r = await ctx.client.get('/v1/platform');
+      r.status(200).body().has('$.ok', true).has('$.message', 'platform');
     });
-    await ctx.step("ANON cannot create → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .post("/v1/platform/api-keys", { sandbox_id: ZERO_UUID, title: "x" });
-      r.status(401);
+    await ctx.step('running sandbox version + channel', async () => {
+      const r = await ctx.client.get('/v1/platform/sandbox/version');
+      r.status(200).body().exists('$.version').exists('$.channel');
     });
-
-    // ── list: sandbox_id is required + validated ──
-    await ctx.step("OWNER list without sandbox_id → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/platform/api-keys");
-      r.status(400);
+    await ctx.step('all known sandbox versions plus the current running one', async () => {
+      const r = await ctx.client.get('/v1/platform/sandbox/version/all');
+      r.status(200).body().exists('$.versions').exists('$.current.version').exists('$.current.channel');
+      const versions = r.json<{ versions?: unknown[] }>().versions;
+      if (!Array.isArray(versions)) throw new Error('expected versions to be an array');
     });
-    await ctx.step("OWNER list with a non-UUID sandbox_id → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/platform/api-keys", { query: { sandbox_id: "not-a-uuid" } });
-      r.status(400);
+    await ctx.step('sandbox changelog (default: all channels)', async () => {
+      const r = await ctx.client.get('/v1/platform/sandbox/version/changelog');
+      r.status(200).body().exists('$.changelog');
+      const changelog = r.json<{ changelog?: unknown[] }>().changelog;
+      if (!Array.isArray(changelog)) throw new Error('expected changelog to be an array');
     });
-    await ctx.step("OWNER list with an unknown sandbox UUID → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/platform/api-keys", { query: { sandbox_id: ZERO_UUID } });
-      r.status(404);
+    await ctx.step('latest sandbox version defaults to the stable channel', async () => {
+      const r = await ctx.client.get('/v1/platform/sandbox/version/latest');
+      r.status(200).body().exists('$.version').has('$.channel', 'stable');
     });
-
-    // ── create: sandbox_id (body) is required + validated ──
-    await ctx.step("OWNER create without sandbox_id → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/platform/api-keys", { title: "x" });
-      r.status(400);
-    });
-    await ctx.step("OWNER create with an unknown sandbox UUID → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/platform/api-keys", { sandbox_id: ZERO_UUID, title: "x" });
-      r.status(404);
-    });
-
-    // ── key-id boundaries (requireKeyAccess → unknown key → 404) ──
-    await ctx.step("OWNER revoke an unknown keyId → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch("/v1/platform/api-keys/:keyId/revoke", {}, { params: { keyId: ZERO_UUID } });
-      r.status(404);
-    });
-    await ctx.step("OWNER regenerate an unknown keyId → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/platform/api-keys/:keyId/regenerate", {}, { params: { keyId: ZERO_UUID } });
-      r.status(404);
-    });
-    await ctx.step("OWNER delete an unknown keyId → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .del("/v1/platform/api-keys/:keyId", { params: { keyId: ZERO_UUID } });
-      r.status(404);
-    });
-    await ctx.step("ANON cannot revoke → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .patch("/v1/platform/api-keys/:keyId/revoke", {}, { params: { keyId: ZERO_UUID } });
-      r.status(401);
+    await ctx.step('latest sandbox version accepts an explicit dev channel', async () => {
+      const r = await ctx.client.get('/v1/platform/sandbox/version/latest', {
+        query: { channel: 'dev' },
+      });
+      r.status(200).body().exists('$.version').has('$.channel', 'dev');
     });
   },
 );
 
 // ─── RTR-4 — billed router passthrough (auth / disallowed boundary) ───────
 flow(
-  "RTR-4",
+  'RTR-4',
   {
-    domain: "accounts",
-    routes: ["GET /v1/router/health", "POST /v1/router/web-search"],
+    domain: 'accounts',
+    routes: ['GET /v1/router/health', 'POST /v1/router/web-search'],
   },
   async (ctx) => {
-    await ctx.step("router is mounted: GET /router/health is public → 200", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/router/health");
-      r.status(200).body().has("$.status", "ok").has("$.service", "kortix-router");
+    await ctx.step('router is mounted: GET /router/health is public → 200', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/router/health');
+      r.status(200).body().has('$.status', 'ok').has('$.service', 'kortix-router');
     });
-    await ctx.step("billed endpoint without any token → 401 (apiKeyAuth)", async () => {
+    await ctx.step('billed endpoint without any token → 401 (apiKeyAuth)', async () => {
       // No Authorization header at all — apiKeyAuth rejects before any upstream call.
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/router/web-search", { query: "noop" });
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/router/web-search', { query: 'noop' });
       r.status(401);
     });
-    await ctx.step("billed endpoint with a non-kortix bearer → 401 (bad token format)", async () => {
-      // A garbage bearer that isn't a kortix_ token — rejected on format, never billed.
-      const r = await ctx.client
-        .withBearer("definitely-not-a-kortix-token", "BOGUS")
-        .post("/v1/router/web-search", { query: "noop" });
-      r.status([401, 403]);
-    });
+    await ctx.step(
+      'billed endpoint with a non-kortix bearer → 401 (bad token format)',
+      async () => {
+        // A garbage bearer that isn't a kortix_ token — rejected on format, never billed.
+        const r = await ctx.client
+          .withBearer('definitely-not-a-kortix-token', 'BOGUS')
+          .post('/v1/router/web-search', { query: 'noop' });
+        r.status([401, 403]);
+      },
+    );
   },
 );

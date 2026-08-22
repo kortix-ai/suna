@@ -19,6 +19,14 @@ export interface AuthedPrincipal {
   // configured default (→ the platform default applies). Travels with the principal
   // across the RPC boundary so the standalone pod resolves `auto` identically.
   defaultModel?: string;
+  // Set only when the pre-dispatch billing gate took an ATOMIC admission hold
+  // against the account's wallet (the pure-credits path — see billing-gate.ts
+  // checkBillingActive) rather than a stale read-only balance check. Carries
+  // the reserved dollar amount so settle() can reconcile it to the real cost
+  // (top up the remainder or refund the unused portion) instead of a flat
+  // post-hoc deduct — closing the check-then-act race where concurrent
+  // requests could all be admitted against the same unspent balance.
+  billingHold?: { amountUsd: number };
 }
 
 export type BillingMode = 'credits' | 'platform-fee' | 'none';

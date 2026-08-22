@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, test } from 'bun:test';
 import type { ToolPart } from '@/ui';
 import {
   type StepFamily,
+  contextLabelForTool,
   familyForTool,
   humanizeToolName,
   narrateFailedStep,
@@ -10,12 +11,12 @@ import {
 import { ToolRegistry } from '../../tool/tool-renderers';
 import '../../tool/tools/register';
 
-function part(tool: string, input: Record<string, unknown> = {}): ToolPart {
+function part(tool: string, input: Record<string, unknown> = {}, output?: string): ToolPart {
   return {
     type: 'tool',
     tool,
     callID: `c-${tool}-${Math.random()}`,
-    state: { status: 'completed', input },
+    state: { status: 'completed', input, output },
   } as unknown as ToolPart;
 }
 
@@ -72,6 +73,15 @@ describe('narrateStep', () => {
     ).toBe('Updated 2 files');
   });
 
+  it('an all-write edit group says Wrote, not Updated', () => {
+    const parts = [part('write'), part('write'), part('write')];
+    expect(narrateStep('edit', parts)).toBe('Wrote 3 files');
+  });
+
+  it('a mixed write+edit group stays Updated', () => {
+    expect(narrateStep('edit', [part('write'), part('edit')])).toBe('Updated 2 files');
+  });
+
   it('counts reads', () => {
     expect(narrateStep('explore', [part('read'), part('read'), part('read')])).toBe('Read 3 files');
   });
@@ -80,6 +90,27 @@ describe('narrateStep', () => {
     expect(narrateStep('web', [part('web_search'), part('web_search')])).toBe(
       'Searched the web · 2 queries',
     );
+  });
+
+  it('mixed search+fetch step counts distinct source urls, not calls', () => {
+    const search = part(
+      'web_search',
+      { query: 'marko' },
+      JSON.stringify({
+        results: [
+          { title: 'A', url: 'https://a.com' },
+          { title: 'B', url: 'https://b.com' },
+        ],
+      }),
+    );
+    const fetch = part('web_fetch', { url: 'https://c.com' }, '');
+    expect(narrateStep('web', [search, fetch])).toBe('Searched and read 3 sources');
+  });
+
+  test('mixed step with unparseable outputs falls back to call count', () => {
+    const search = part('web_search', { query: 'x' }, 'not json at all');
+    const fetch = part('web_fetch', {}); // no url input
+    expect(narrateStep('web', [search, fetch])).toBe('Searched and read 2 sources');
   });
 
   it('never emits a raw tool name for unknown tools', () => {
@@ -104,6 +135,31 @@ describe('humanizeToolName', () => {
   it('strips the MCP server prefix and title-cases', () => {
     expect(humanizeToolName('linear/create_issue')).toBe('Create Issue');
     expect(humanizeToolName('oc-session_read')).toBe('Session Read');
+  });
+});
+
+describe('contextLabelForTool - plain-language Context row labels, keyed on family', () => {
+  it('calls a shell a Terminal, whatever spelling the model used', () => {
+    expect(contextLabelForTool('bash')).toBe('Terminal');
+    expect(contextLabelForTool('oc-bash')).toBe('Terminal');
+    expect(contextLabelForTool('pty_spawn')).toBe('Terminal');
+  });
+
+  it('gives every memory spelling the one label, so they fold into one row', () => {
+    for (const tool of ['memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']) {
+      expect(contextLabelForTool(tool)).toBe('Memory');
+    }
+  });
+
+  it('leaves every other family on humanizeToolName', () => {
+    expect(contextLabelForTool('linear/create_issue')).toBe(humanizeToolName('linear/create_issue'));
+    expect(contextLabelForTool('trigger_create')).toBe('Trigger Create');
+  });
+
+  it('never returns a raw identifier for a hidden tool either', () => {
+    // 'hidden' is not a StepFamily key, so the override lookup must not be
+    // consulted for it — the humanized name is what falls out.
+    expect(contextLabelForTool('prune')).toBe('Prune');
   });
 });
 
@@ -258,9 +314,9 @@ describe('narrateStep - create family counts every media type in a mixed group',
 describe('narrateStep - apps distinguishes discovery from connection', () => {
   it('never says "Connected to" for read-only discovery/description tools', () => {
     for (const t of [
-      'kortix_executor_discover',
-      'kortix_executor_describe',
-      'kortix_executor_connectors',
+      'kortix_connector_discover',
+      'kortix_connector_describe',
+      'kortix_connectors',
       'connector_get',
       'connector_list',
     ]) {
@@ -273,7 +329,7 @@ describe('narrateStep - apps distinguishes discovery from connection', () => {
   });
 
   it('distinguishes running a connected tool from connecting to it', () => {
-    expect(narrateStep('apps', [part('kortix_executor_call')])).not.toContain('Connected to');
+    expect(narrateStep('apps', [part('kortix_connector_call')])).not.toContain('Connected to');
   });
 });
 

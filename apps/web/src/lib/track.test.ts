@@ -9,12 +9,13 @@ describe('track event registry (W5)', () => {
       'ready_chip_clicked',
       'deliverable_opened',
       'deliverable_downloaded',
-      'ask_for_changes_clicked',
+      'deliverable_link_copied',
+      'app_send_to_agent_clicked',
       'present_opened',
       'app_opened_new_tab',
-      'app_link_copied',
       'image_copied',
       'panel_mode_switched',
+      'conversation_density_switched',
     ];
     expect([...PANEL_EVENTS].sort()).toEqual([...expected].sort());
   });

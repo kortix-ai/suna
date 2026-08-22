@@ -2,10 +2,11 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useMemo, useRef } from 'react';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import { ImagePreview } from '@/features/session/image-preview';
 import { cn } from '@/lib/utils';
+import { useEffect, useMemo, useState } from 'react';
 
 /**
  * Detect whether a URL string is a local sandbox filesystem path
@@ -13,18 +14,77 @@ import { cn } from '@/lib/utils';
  * Matches the pattern used in tool-renderers.tsx.
  */
 function isLocalSandboxFilePath(value: string): boolean {
-	if (!value) return false;
-	if (/^(https?:|data:|blob:)/i.test(value)) return false;
-	return value.startsWith('/');
+  if (!value) return false;
+  if (/^(https?:|data:|blob:)/i.test(value)) return false;
+  return value.startsWith('/');
+}
+
+/**
+ * Resolve a raw `src` — sandbox path OR ready-made URL — to something an
+ * `<img>` can load.
+ *
+ * Extracted from `SandboxImage` so callers that need the resolved URL for
+ * something else (a lightbox, a download) can get it without also inheriting
+ * SandboxImage's markup, which hardcodes an 80px minimum on its loading and
+ * error states and so cannot be used at thumbnail size.
+ */
+export function useSandboxImageSrc(src: string): {
+  resolvedSrc: string | null;
+  isLoading: boolean;
+} {
+  const isLocalPath = isLocalSandboxFilePath(src);
+
+  // Strip /workspace/ prefix since the SDK expects paths relative to project root
+  const fileContentPath = useMemo(() => {
+    if (!isLocalPath) return null;
+    return src.replace(/^\/workspace\//, '');
+  }, [isLocalPath, src]);
+
+  const {
+    data: fileContentData,
+    isLoading,
+    error,
+  } = useFileContent(fileContentPath, {
+    enabled: !!fileContentPath,
+  });
+
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const hasBase64 = fileContentData?.encoding === 'base64' && !!fileContentData?.content;
+
+  useEffect(() => {
+    if (!(fileContentData?.encoding === 'base64' && fileContentData.content)) {
+      setBlobUrl(null);
+      return;
+    }
+    const binary = atob(fileContentData.content);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: fileContentData.mimeType || 'image/png' });
+    const url = URL.createObjectURL(blob);
+    setBlobUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [fileContentData]);
+
+  return {
+    resolvedSrc: isLocalPath ? blobUrl : src,
+    // A readiness 503 (parked/booting sandbox) counts as loading, not failure:
+    // useFileContent keeps polling while it lasts, so the image resolves on
+    // its own once the box is up — meanwhile show the skeleton, never the
+    // "Image unavailable" box.
+    isLoading:
+      isLocalPath && (isLoading || (hasBase64 && !blobUrl) || isSandboxNotReadyError(error)),
+  };
 }
 
 interface SandboxImageProps {
-	/** Raw src — may be a sandbox filesystem path or a valid URL */
-	src: string;
-	alt?: string;
-	className?: string;
-	/** When true, wraps the image in an ImagePreview dialog for full-size viewing */
-	preview?: boolean;
+  /** Raw src — may be a sandbox filesystem path or a valid URL */
+  src: string;
+  alt?: string;
+  className?: string;
+  /** When true, wraps the image in an ImagePreview dialog for full-size viewing */
+  preview?: boolean;
 }
 
 /**
@@ -39,84 +99,48 @@ interface SandboxImageProps {
  */
 export function SandboxImage({ src, alt = 'Image', className, preview }: SandboxImageProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-	const isLocalPath = isLocalSandboxFilePath(src);
+  const isLocalPath = isLocalSandboxFilePath(src);
+  const { resolvedSrc, isLoading } = useSandboxImageSrc(src);
 
-	// Strip /workspace/ prefix since the SDK expects paths relative to project root
-	const fileContentPath = useMemo(() => {
-		if (!isLocalPath) return null;
-		return src.replace(/^\/workspace\//, '');
-	}, [isLocalPath, src]);
+  // Loading state — show skeleton while fetching from sandbox
+  if (isLoading) {
+    return (
+      <div
+        className={cn('bg-muted/40 animate-pulse rounded', className)}
+        style={{ minHeight: 80, minWidth: 80 }}
+      />
+    );
+  }
 
-	const { data: fileContentData, isLoading } = useFileContent(
-		fileContentPath,
-		{ enabled: !!fileContentPath },
-	);
+  // Error state — fetch completed but no blob URL (file not found, etc.)
+  if (isLocalPath && !isLoading && !resolvedSrc) {
+    return (
+      <div
+        className={cn(
+          'bg-muted/20 text-muted-foreground flex items-center justify-center rounded text-xs',
+          className,
+        )}
+        style={{ minHeight: 80, minWidth: 80 }}
+      >
+        {tHardcodedUi.raw('componentsSessionSandboxImage.line96JsxTextImageUnavailable')}
+      </div>
+    );
+  }
 
-	// Convert base64 to blob URL (same pattern as tool-renderers.tsx)
-	const blobUrlRef = useRef<string | null>(null);
-	const blobUrl = useMemo(() => {
-		// Revoke previous blob URL when data changes
-		if (blobUrlRef.current) {
-			URL.revokeObjectURL(blobUrlRef.current);
-			blobUrlRef.current = null;
-		}
-		if (fileContentData?.encoding === 'base64' && fileContentData?.content) {
-			const binary = atob(fileContentData.content);
-			const bytes = new Uint8Array(binary.length);
-			for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-			const blob = new Blob([bytes], { type: fileContentData.mimeType || 'image/png' });
-			const url = URL.createObjectURL(blob);
-			blobUrlRef.current = url;
-			return url;
-		}
-		return null;
-	}, [fileContentData]);
+  if (!resolvedSrc) return null;
 
-	// Cleanup blob URL on unmount
-	useEffect(() => {
-		return () => {
-			if (blobUrlRef.current) {
-				URL.revokeObjectURL(blobUrlRef.current);
-				blobUrlRef.current = null;
-			}
-		};
-	}, []);
+  const img = (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img src={resolvedSrc} alt={alt} className={className} />
+  );
 
-	// Priority: blob URL from sandbox fetch > original src (if already a valid URL)
-	const resolvedSrc = isLocalPath ? blobUrl : src;
+  if (preview) {
+    return (
+      <ImagePreview src={resolvedSrc} alt={alt}>
+        {img}
+      </ImagePreview>
+    );
+  }
 
-	// Loading state — show skeleton while fetching from sandbox
-	if (isLocalPath && isLoading) {
-		return (
-			<div className={cn('animate-pulse bg-muted/40 rounded', className)} style={{ minHeight: 80, minWidth: 80 }} />
-		);
-	}
-
-	// Error state — fetch completed but no blob URL (file not found, etc.)
-	if (isLocalPath && !isLoading && !resolvedSrc) {
-		return (
-			<div className={cn('flex items-center justify-center bg-muted/20 rounded text-muted-foreground text-xs', className)} style={{ minHeight: 80, minWidth: 80 }}>{tHardcodedUi.raw('componentsSessionSandboxImage.line96JsxTextImageUnavailable')}</div>
-		);
-	}
-
-	if (!resolvedSrc) return null;
-
-	const img = (
-		/* eslint-disable-next-line @next/next/no-img-element */
-		<img
-			src={resolvedSrc}
-			alt={alt}
-			className={className}
-		/>
-	);
-
-	if (preview) {
-		return (
-			<ImagePreview src={resolvedSrc} alt={alt}>
-				{img}
-			</ImagePreview>
-		);
-	}
-
-	return img;
+  return img;
 }

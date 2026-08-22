@@ -1,13 +1,16 @@
 'use client';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Icon } from '@/features/icon/icon';
+import { Claude } from '@/features/icon/icons/claude';
 import { cn } from '@/lib/utils';
-import { ArrowUp, Paperclip } from 'lucide-react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import {
+  ArrowUpIcon as ArrowUp,
+  PaperclipIcon as Paperclip,
+  MicrophoneIcon as RiMicAiFill,
+} from '@phosphor-icons/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
-import { RiMicAiFill } from 'react-icons/ri';
 import { SCENARIOS } from './scenarios';
 
 /** Clickable demo prompts — each maps to a scripted scenario. */
@@ -62,7 +65,7 @@ export function CyclingPromptText({ className }: { className?: string }) {
   return (
     <div aria-hidden className={cn('relative overflow-hidden', className)}>
       <AnimatePresence mode="wait" initial={false}>
-        <motion.span
+        <m.span
           key={index}
           className="absolute inset-x-0 top-0 block"
           initial={{ opacity: 0, y: 8 }}
@@ -70,7 +73,7 @@ export function CyclingPromptText({ className }: { className?: string }) {
           exit={{ opacity: 0, y: -8, transition: { duration: 0.48, ease: [0.2, 0, 0.1, 1] } }}
         >
           {HOME_PROMPT_MESSAGES[index]}
-        </motion.span>
+        </m.span>
       </AnimatePresence>
     </div>
   );
@@ -123,6 +126,7 @@ export function Composer({
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 submit();
@@ -145,7 +149,7 @@ export function Composer({
                   <KortixLogo size={12} /> kortix
                 </span>
                 <span className="text-muted-foreground hidden h-7 items-center gap-1.5 rounded-full px-2.5 text-xs sm:inline-flex">
-                  <Icon.Claude className="size-3.5" />
+                  <Claude className="size-3.5" />
                   {tI18nHardcoded.raw(
                     'autoComponentsHomeInteractiveDemoChatComposerJsxTextClaudeOpusf5c492d2',
                   )}
@@ -155,7 +159,7 @@ export function Composer({
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-muted-foreground inline-flex size-7 items-center justify-center">
-              <RiMicAiFill className="size-3.5" />
+              <RiMicAiFill weight="fill" className="size-3.5" />
             </span>
             <button
               type="button"

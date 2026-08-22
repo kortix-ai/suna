@@ -1,4 +1,5 @@
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
+import type { PromptOverridesWire, PromptPartWire } from './store';
 import type { SessionCreateError } from '../lib/sessions';
 import type { SessionStartResult } from '../routes/shared';
 
@@ -10,12 +11,15 @@ export type SessionInvocationSource =
   | 'email'
   | 'telegram'
   | 'teams'
-  | 'meet'
+  | 'voice'
   | 'trigger:webhook'
   | 'trigger:cron'
   | 'trigger:manual'
+  | 'trigger:monitor'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
+  | 'system:secret-submitted'
+  | 'system:connector-connected'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';
@@ -32,6 +36,11 @@ export type SessionLifecyclePostCreateAction =
       source: SessionInvocationSource;
       text: string;
       userId?: string | null;
+    }
+  | {
+      /** Resolve at execution time so queued creates never capture stale access. */
+      type: 'apply_trigger_session_access';
+      triggerSlug: string;
     };
 
 export type SessionLifecycleStatus =
@@ -48,8 +57,10 @@ export interface CreateSessionCommand {
   source: SessionInvocationSource;
   project: ProjectRow;
   userId: string;
+  requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   visibility?: 'private' | 'project' | 'restricted';
+  mayManageSystemConnections?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   enforceAccountCap?: boolean;
@@ -57,22 +68,58 @@ export interface CreateSessionCommand {
   idempotencyKey?: string | null;
   queuePolicy?: QueuePolicy;
   postCreate?: SessionLifecyclePostCreateAction[];
+  // Caller's token kind (auth.ts `authType`) + apiKeyType + whether the token
+  // operates from inside a running session (`inSession`: session-bound or
+  // agent-scoped); used only to derive the session origin (a not-in-session
+  // service_account / pat / 'user' apiKey → backend). Never trusted from the
+  // request body. See session-origin.ts.
+  authType?: string | null;
+  apiKeyType?: string | null;
+  inSession?: boolean | null;
+  callerSessionId?: string | null;
 }
 
 export interface QueuedCreateSessionPayload {
   body: Record<string, unknown>;
+  /** Absent on commands persisted before principal type was added. */
+  requestingPrincipalType?: 'human' | 'service_account';
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
+  mayManageSystemConnections?: boolean;
   enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
+  // Origin-derivation signals captured at ENQUEUE time. Without them a queued
+  // backend create would replay as origin 'user'. Absent on rows queued before
+  // this field existed means 'user', matching their pre-origin behavior.
+  authType?: string | null;
+  apiKeyType?: string | null;
+  inSession?: boolean | null;
+  callerSessionId?: string | null;
 }
 
 export interface ContinueSessionCommand {
   source: SessionInvocationSource;
   sessionId: string;
+  /** Legacy plain-text form. Ignored when `parts` is present. */
   text: string;
   userId?: string | null;
+  /** Allow-listed env applied to OpenCode before server-side prompt delivery. */
+  opencodeEnv?: Record<string, string | null>;
+  /** The full prompt body, when the producer has one (the prompt inbox). Text-only
+   *  producers keep sending `text` and get the same single-part body as before. */
+  parts?: PromptPartWire[];
+  /** Agent/model/variant/directory captured at submit time — see PromptOverridesWire. */
+  overrides?: PromptOverridesWire;
+  /**
+   * Sent verbatim as the body's `messageID`.
+   *
+   * It binds the turn record (`extractTurnIdentity` reads it off the POST body,
+   * so the turn becomes message-scoped instead of root-scoped) and it outranks
+   * the content hash in the proxy's dedupe precedence. Omitted by producers
+   * that hold no transcript and therefore cannot place an id correctly.
+   */
+  wireMessageId?: string;
 }
 
 export interface StartSessionCommand {

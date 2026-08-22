@@ -3,23 +3,24 @@
 
 import { describe, test, expect } from 'bun:test';
 import {
+  CREDITS_PER_DOLLAR,
   PER_SEAT_PRICE_USD,
   TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
   TYPICAL_LLM_BUDGET_PER_SEAT_USD,
   COMPUTE_CPU_PRICE_PER_CORE_SECOND,
   COMPUTE_MEMORY_PRICE_PER_GB_SECOND,
   COMPUTE_DISK_PRICE_PER_GB_SECOND,
-  COMPUTE_PRICE_MARKUP,
-  DAYTONA_DISCOUNT,
   AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT,
   AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT,
   DEFAULT_LLM_PRICE_MARKUP,
   defaultAutoTopupForSeats,
   grantForSeats,
+  INCLUDED_CREDITS_RATIO,
   isPerSeatAccount,
   isLegacyAccount,
   canClaimPerSeat,
   llmPriceMarkup,
+  resolveRenewalGrant,
 } from '../../billing/services/tiers';
 
 import { calculateComputeCost } from '../../billing/services/compute-metering';
@@ -121,6 +122,59 @@ describe('canClaimPerSeat — the "Claim seat-based pricing" card gate', () => {
   });
 });
 
+describe('resolveRenewalGrant — the ONE renewal-grant rule', () => {
+  test('the included-usage ratio is $25 of every $40', () => {
+    expect(INCLUDED_CREDITS_RATIO).toBe(0.625);
+  });
+
+  test('per-seat: seats × $25, authoritative over the invoice amount', () => {
+    expect(
+      resolveRenewalGrant({ tierName: 'per_seat', billingModel: 'per_seat', seatCount: 3, amountPaidUsd: 120 }),
+    ).toEqual({ credits: 75, description: 'Monthly renewal: 75 credits (3 seats)' });
+    // Discounted invoice: the seat count still decides the grant.
+    expect(
+      resolveRenewalGrant({ tierName: 'per_seat', billingModel: 'per_seat', seatCount: 1, amountPaidUsd: 20 }).credits,
+    ).toBe(25);
+    // per-seat billing_model wins even when the tier column lags.
+    expect(
+      resolveRenewalGrant({ tierName: 'pro', billingModel: 'per_seat', seatCount: 2, amountPaidUsd: 80 }).credits,
+    ).toBe(50);
+  });
+
+  test('a tier with a configured monthly grant keeps it unchanged', () => {
+    expect(
+      resolveRenewalGrant({ tierName: 'free', billingModel: 'legacy', seatCount: null, amountPaidUsd: 0 }),
+    ).toEqual({ credits: 2, description: 'Monthly renewal: 2 credits' });
+  });
+
+  test('legacy zero-grant tiers resolve by the money that moved (stranded-payer regression)', () => {
+    // The $40/mo "Kortix Computer · Pro" machine sub on legacy tier `pro`
+    // (monthlyCredits 0) used to grant NOTHING on every paid renewal.
+    expect(
+      resolveRenewalGrant({ tierName: 'pro', billingModel: 'legacy', seatCount: null, amountPaidUsd: 40 }),
+    ).toEqual({ credits: 25, description: 'Monthly renewal: 25 credits (legacy subscription, $40 paid)' });
+    expect(
+      resolveRenewalGrant({ tierName: 'pro', billingModel: null, seatCount: null, amountPaidUsd: 60 }).credits,
+    ).toBe(37.5);
+    expect(
+      resolveRenewalGrant({ tierName: 'pro', billingModel: null, seatCount: null, amountPaidUsd: 80 }).credits,
+    ).toBe(50);
+  });
+
+  test('per-seat and the amount rule agree at the standard seat price', () => {
+    const seats = 4;
+    const bySeats = resolveRenewalGrant({
+      tierName: 'per_seat', billingModel: 'per_seat', seatCount: seats, amountPaidUsd: PER_SEAT_PRICE_USD * seats,
+    }).credits;
+    expect(bySeats).toBe(PER_SEAT_PRICE_USD * seats * INCLUDED_CREDITS_RATIO);
+  });
+
+  test('nothing paid → nothing granted; negative amounts clamp to 0', () => {
+    expect(resolveRenewalGrant({ tierName: 'pro', billingModel: null, seatCount: null, amountPaidUsd: 0 }).credits).toBe(0);
+    expect(resolveRenewalGrant({ tierName: 'pro', billingModel: null, seatCount: null, amountPaidUsd: -5 }).credits).toBe(0);
+  });
+});
+
 describe('Compute cost calculation', () => {
   const spec = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
@@ -129,23 +183,32 @@ describe('Compute cost calculation', () => {
     expect(calculateComputeCost(spec, -5)).toBe(0);
   });
 
-  test('cost matches reserved-spec × time × markup formula', () => {
+  test('cost matches 1.2× the published Daytona resource rates', () => {
     const seconds = 3600; // one hour
     const expected =
       (spec.cpuCores * COMPUTE_CPU_PRICE_PER_CORE_SECOND * seconds +
         spec.memoryGb * COMPUTE_MEMORY_PRICE_PER_GB_SECOND * seconds +
-        spec.diskGb * COMPUTE_DISK_PRICE_PER_GB_SECOND * seconds) *
-      DAYTONA_DISCOUNT *
-      COMPUTE_PRICE_MARKUP;
+        spec.diskGb * COMPUTE_DISK_PRICE_PER_GB_SECOND * seconds);
 
     const actual = calculateComputeCost(spec, seconds);
     expect(Math.abs(actual - expected)).toBeLessThan(1e-9);
   });
 
-  test('hourly cost for a 2vCPU/4GB/20GB sandbox is roughly $0.10–0.15', () => {
+  test('hourly cost for a 2vCPU/4GB/20GB sandbox is exactly $0.201312', () => {
     const hourCost = calculateComputeCost(spec, 3600);
-    expect(hourCost).toBeGreaterThan(0.10);
-    expect(hourCost).toBeLessThan(0.15);
+    expect(hourCost).toBeCloseTo(0.201312, 8);
+  });
+
+  test('2,500 credits covers about 125 hours of default compute', () => {
+    const creditValueUsd = 2500 / CREDITS_PER_DOLLAR;
+    const computeHours = creditValueUsd / calculateComputeCost(spec, 3600);
+    expect(computeHours).toBeCloseTo(124.1853, 4);
+  });
+
+  test('all hosted providers use the same customer compute price', () => {
+    const daytona = calculateComputeCost(spec, 3600, 'daytona');
+    expect(calculateComputeCost(spec, 3600, 'platinum')).toBeCloseTo(daytona, 8);
+    expect(calculateComputeCost(spec, 3600, 'e2b')).toBeCloseTo(daytona, 8);
   });
 
   test('cost scales linearly with both spec and time', () => {
@@ -160,13 +223,14 @@ describe('Compute cost calculation', () => {
     expect(doubleSpec / baseline).toBeCloseTo(2, 5);
   });
 
-  test('monthly heavy usage exceeds typical compute budget (overage funded via topup)', () => {
+  test('monthly heavy usage exceeds the typical compute budget', () => {
     // 8h × 22 days of compute exceeds the $15 typical compute budget per seat,
     // funded from the fungible seat wallet.
     const monthlySeconds = 8 * 3600 * 22;
     const monthlyCost = calculateComputeCost(spec, monthlySeconds);
     expect(monthlyCost).toBeGreaterThan(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD);
     expect(monthlyCost).toBeLessThan(PER_SEAT_PRICE_USD);
+    expect(monthlyCost).toBeCloseTo(35.430912, 5);
   });
 });
 

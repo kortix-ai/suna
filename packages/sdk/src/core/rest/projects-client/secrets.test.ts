@@ -1,12 +1,15 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import type { SecretDeliveryBlockedReason, SecretEgressPolicy } from './secrets';
 import {
   deletePersonalProjectSecret,
+  deleteProjectProviderOAuth,
   deleteProjectSecret,
   listProjectSecrets,
   pollProjectProviderOAuth,
-  promoteProjectSecretToShared,
   setPersonalProjectSecret,
+  setProjectSecretStrategy,
+  brokerProjectSecretRequest,
   startProjectProviderOAuth,
   upsertProjectGitCredential,
   upsertProjectSecret,
@@ -48,7 +51,7 @@ test('listProjectSecrets throws when the response is unsuccessful', async () => 
 });
 
 test('listProjectSecrets is a silent background read — a 403 never hits the global error sink', async () => {
-  // project.secret.read is editor-tier: plain members legitimately 403 from
+  // project.secret.read is manager-tier: plain members legitimately 403 from
   // member-visible surfaces (model picker, LLM providers). No global toast.
   const onError = mock(() => {});
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
@@ -75,10 +78,102 @@ test('upsertProjectSecret includes an explicit identifier when given', async () 
   expect(last().body).toEqual({ name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
 });
 
+test('upsertProjectSecret sends an explicit server consumer without a plaintext transition', async () => {
+  nextResponse = { status: 200, body: { name: 'OPENAI_API_KEY' } };
+  await upsertProjectSecret('P1', {
+    name: 'OPENAI_API_KEY',
+    value: 'key',
+    strategy: 'broker',
+    consumer: 'llm_gateway',
+  });
+  expect(last().body).toEqual({
+    name: 'OPENAI_API_KEY',
+    value: 'key',
+    strategy: 'broker',
+    consumer: 'llm_gateway',
+  });
+});
+
+test('setProjectSecretStrategy PUTs the strategy to the encoded identifier route', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      identifier: 'API/key',
+      name: 'API_KEY',
+      strategy: 'denied',
+      delivery_status: 'disabled',
+    },
+  };
+
+  const result = await setProjectSecretStrategy('P1', 'API/key', 'denied');
+
+  expect(last().url).toContain('/projects/P1/secrets/API%2Fkey/strategy');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ strategy: 'denied' });
+  expect(result.strategy).toBe('denied');
+});
+
+test('setProjectSecretStrategy sends broker policy options', async () => {
+  nextResponse = { status: 200, body: { identifier: 'API_KEY', strategy: 'broker' } };
+
+  await setProjectSecretStrategy('P1', 'API_KEY', 'broker', {
+    consumer: 'http_broker',
+    egress_policy: {
+      backend: 'kortix_fetch',
+      rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+    },
+    handle_prefix: 'example_',
+  });
+
+  expect(last().body).toEqual({
+    strategy: 'broker',
+    consumer: 'http_broker',
+    egress_policy: {
+      backend: 'kortix_fetch',
+      rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+    },
+    handle_prefix: 'example_',
+  });
+});
+
+test('brokerProjectSecretRequest POSTs a policy-bound HTTPS request', async () => {
+  nextResponse = {
+    status: 200,
+    body: { status: 201, headers: { 'content-type': 'application/json' }, body_base64: 'e30=' },
+  };
+
+  const result = await brokerProjectSecretRequest('P1', 'primary/key', {
+    url: 'https://api.example.com/v1/messages',
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body_base64: 'e30=',
+  });
+
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: expect.stringContaining('/projects/P1/secrets/primary%2Fkey/broker'),
+    body: {
+      url: 'https://api.example.com/v1/messages',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body_base64: 'e30=',
+    },
+  });
+  expect(result.status).toBe(201);
+});
+
 test('startProjectProviderOAuth posts to the provider start endpoint with the sharing intent', async () => {
   nextResponse = {
     status: 200,
-    body: { flow_id: 'f1', verification_url: 'https://x', user_code: '123', expires_at: 1, interval_ms: 500 },
+    body: {
+      flow_id: 'f1',
+      verification_url: 'https://x',
+      user_code: '123',
+      expires_at: 1,
+      interval_ms: 500,
+    },
   };
   const result = await startProjectProviderOAuth('P1', 'chatgpt', { sharing: { mode: 'project' } });
   expect(last().url).toContain('/projects/P1/oauth/chatgpt/start');
@@ -88,7 +183,10 @@ test('startProjectProviderOAuth posts to the provider start endpoint with the sh
 });
 
 test('startProjectProviderOAuth sends sharing: undefined when no input is given', async () => {
-  nextResponse = { status: 200, body: { flow_id: 'f1', verification_url: 'x', user_code: null, expires_at: 1, interval_ms: 1 } };
+  nextResponse = {
+    status: 200,
+    body: { flow_id: 'f1', verification_url: 'x', user_code: null, expires_at: 1, interval_ms: 1 },
+  };
   await startProjectProviderOAuth('P1', 'chatgpt');
   expect(last().body).toEqual({ sharing: undefined });
 });
@@ -121,8 +219,18 @@ test('deleteProjectSecret DELETEs the encoded secret name', async () => {
   expect(last().method).toBe('DELETE');
 });
 
+test('deleteProjectProviderOAuth DELETEs the encoded provider', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await deleteProjectProviderOAuth('P1', 'openai/codex');
+  expect(last().url).toContain('/projects/P1/oauth/openai%2Fcodex');
+  expect(last().method).toBe('DELETE');
+});
+
 test('setPersonalProjectSecret PUTs to the /personal sub-route', async () => {
-  nextResponse = { status: 200, body: { name: 'FOO', mine: { active: true, updated_at: '2026-01-01' } } };
+  nextResponse = {
+    status: 200,
+    body: { name: 'FOO', mine: { active: true, updated_at: '2026-01-01' } },
+  };
   await setPersonalProjectSecret('P1', 'FOO', { value: 'mine-value', active: true });
   expect(last().url).toContain('/projects/P1/secrets/FOO/personal');
   expect(last().method).toBe('PUT');
@@ -142,11 +250,124 @@ test('deletePersonalProjectSecret encodes special characters in the secret name'
   expect(last().url).toContain('/projects/P1/secrets/FOO%2FBAR/personal');
 });
 
-test('promoteProjectSecretToShared POSTs to the /promote-to-shared sub-route with no body', async () => {
-  nextResponse = { status: 200, body: { name: 'FOO', configured: true } };
-  const result = await promoteProjectSecretToShared('P1', 'FOO');
-  expect(last().url).toContain('/projects/P1/secrets/FOO/promote-to-shared');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({});
-  expect(result.configured).toBe(true);
+// The server answers "can this secret actually be delivered?" on two separate
+// axes and an SDK consumer needs both: `delivery_status` is the deployment's
+// verdict on the chosen path, `delivery_blocked_reason` is the agent-grant
+// verdict, and `network_boundary_available` is why an `egress` path is dead.
+// Both of the latter two were declared on the wire and absent from this type
+// for long enough that no host could explain an undeliverable secret.
+test('listProjectSecrets surfaces both delivery axes an egress secret depends on', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [
+        {
+          identifier: 'STRIPE_KEY',
+          name: 'STRIPE_KEY',
+          strategy: 'egress',
+          consumer: 'network',
+          delivery_status: 'unavailable',
+          delivery_blocked_reason: 'no_agent_grant',
+          network_boundary_available: false,
+        },
+      ],
+      required: [],
+      optional: [],
+    },
+  };
+
+  const [secret] = (await listProjectSecrets('P1')).items;
+
+  const blockedReason: SecretDeliveryBlockedReason | null | undefined =
+    secret?.delivery_blocked_reason;
+  const boundaryAvailable: boolean | undefined = secret?.network_boundary_available;
+  expect(blockedReason).toBe('no_agent_grant');
+  expect(boundaryAvailable).toBe(false);
+});
+
+test('a deliverable boundary secret reports the boundary present and no grant block', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [
+        {
+          identifier: 'STRIPE_KEY',
+          name: 'STRIPE_KEY',
+          strategy: 'egress',
+          consumer: 'network',
+          delivery_status: 'available',
+          delivery_blocked_reason: null,
+          network_boundary_available: true,
+        },
+      ],
+      required: [],
+      optional: [],
+    },
+  };
+
+  const [secret] = (await listProjectSecrets('P1')).items;
+
+  expect(secret?.delivery_blocked_reason).toBeNull();
+  expect(secret?.network_boundary_available).toBe(true);
+});
+
+test('an older server that omits both fields still parses', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [{ identifier: 'API_KEY', name: 'API_KEY', strategy: 'runtime', consumer: 'sandbox' }],
+      required: [],
+      optional: [],
+    },
+  };
+
+  const [secret] = (await listProjectSecrets('P1')).items;
+
+  expect(secret?.delivery_blocked_reason).toBeUndefined();
+  expect(secret?.network_boundary_available).toBeUndefined();
+});
+
+// An egress-enforced secret is served by HANDLE SUBSTITUTION: the sandbox env
+// carries a handle, the relay swaps it for the real value on an approved host,
+// and the policy is nothing but a host list. `inject` names a slot only for
+// legacy rows, so a host-list-only policy has to typecheck and has to reach the
+// wire unchanged — see docs/specs/2026-08-19-secrets-exposure-usage-model.md §6.
+test('setProjectSecretStrategy sends a host-list-only egress policy (no inject slot)', async () => {
+  const egress_policy: SecretEgressPolicy = {
+    rules: [{ host: 'api.stripe.com' }],
+    on_no_match: 'deny',
+  };
+  expect(egress_policy.inject).toBeUndefined();
+
+  await setProjectSecretStrategy('P1', 'STRIPE_KEY', 'egress', {
+    consumer: 'network',
+    egress_policy,
+  });
+
+  expect(last().method).toBe('PUT');
+  expect(last().url).toContain('/projects/P1/secrets/STRIPE_KEY/strategy');
+  expect(last().body).toEqual({
+    strategy: 'egress',
+    consumer: 'network',
+    egress_policy: { rules: [{ host: 'api.stripe.com' }], on_no_match: 'deny' },
+  });
+});
+
+test('setProjectSecretStrategy still sends a legacy policy that carries an inject slot', async () => {
+  const egress_policy: SecretEgressPolicy = {
+    rules: [{ host: 'api.stripe.com' }],
+    inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+    on_no_match: 'deny',
+  };
+
+  await setProjectSecretStrategy('P1', 'STRIPE_KEY', 'egress', {
+    consumer: 'network',
+    egress_policy,
+  });
+
+  expect((last().body as { egress_policy: SecretEgressPolicy }).egress_policy.inject).toEqual({
+    kind: 'header',
+    name: 'authorization',
+    template: 'Bearer {{secret}}',
+  });
 });

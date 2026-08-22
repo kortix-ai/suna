@@ -1,0 +1,1050 @@
+/**
+ * Execution layer — the gateway's "run the call" step. Given a connector's
+ * binding + resolved secret + args, build and perform the outbound request to
+ * the third party. Credentials are attached HERE (server-side); the sandbox
+ * never sees them. Pure builders + an injectable `fetchImpl` keep it unit-tested.
+ *
+ * Covers openapi / http / mcp execution. (GraphQL execution — building a query
+ * string from the field + selection — is a follow-up; normalization already
+ * works.) See docs/specs/connector.md §7.
+ */
+import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
+import type { ActionBinding } from './types';
+
+export interface ConnectorAuth {
+  type:
+    | 'bearer'
+    | 'basic'
+    | 'custom'
+    | 'api_key'
+    | 'oauth1'
+    | 'hmac'
+    | 'aws_sigv4'
+    | 'mtls'
+    | 'none';
+  in: 'header' | 'query' | 'cookie';
+  name: string | null;
+  prefix: string | null;
+}
+
+export type ParamLoc = 'path' | 'query' | 'header';
+
+interface BuiltRequest {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: string;
+  tls?: { cert: string; key: string; ca?: string };
+}
+
+export interface ExecResult {
+  status: number;
+  ok: boolean;
+  data: unknown;
+}
+
+const NO_AUTH: ConnectorAuth = { type: 'none', in: 'header', name: null, prefix: null };
+
+/**
+ * Attach a credential to a request per the connector's auth method.
+ * `oauth1` is not handled here — it needs the method + final URL + query to
+ * sign, so buildHttpRequest applies it (manifest validation restricts oauth1
+ * to openapi/http connectors, the only bindings that route through there).
+ */
+function applyAuth(
+  headers: Record<string, string>,
+  query: URLSearchParams,
+  auth: ConnectorAuth,
+  secret: string | null,
+): void {
+  if (
+    auth.type === 'none' ||
+    auth.type === 'oauth1' ||
+    auth.type === 'hmac' ||
+    auth.type === 'aws_sigv4' ||
+    auth.type === 'mtls' ||
+    !secret
+  ) {
+    return;
+  }
+  if (auth.type === 'bearer') {
+    const prefix = auth.prefix ?? 'Bearer';
+    headers['Authorization'] = `${prefix} ${secret}`.trim();
+    return;
+  }
+  if (auth.type === 'basic') {
+    // secret is either "user:pass" or a token; base64 as-is.
+    headers['Authorization'] = `Basic ${Buffer.from(secret).toString('base64')}`;
+    return;
+  }
+  // custom / api_key
+  const value = auth.prefix ? `${auth.prefix}${secret}` : secret;
+  const name = auth.name ?? 'Authorization';
+  if (auth.in === 'query') query.set(name, value);
+  else if (auth.in === 'cookie') {
+    const cookie = `${name}=${encodeURIComponent(value)}`;
+    headers.Cookie = headers.Cookie ? `${headers.Cookie}; ${cookie}` : cookie;
+  }
+  else headers[name] = value;
+}
+
+/**
+ * The header name the connector's credential OWNS, or null when the credential
+ * doesn't land in a header (query placement, or no auth at all).
+ *
+ * Deliberately independent of whether a secret is actually resolved: the slot
+ * belongs to the credential either way, so a connector's outbound headers don't
+ * silently change shape depending on whether the credential happens to be set.
+ */
+function reservedAuthHeader(auth: ConnectorAuth): string | null {
+  if (auth.type === 'none') return null;
+  if (auth.type === 'custom' || auth.type === 'api_key') {
+    return auth.in === 'header' ? (auth.name ?? 'Authorization') : auth.in === 'cookie' ? 'Cookie' : null;
+  }
+  if (auth.type === 'hmac') return auth.name ?? 'X-Signature';
+  if (auth.type === 'mtls') return null;
+  // bearer / basic / oauth1 all sign into Authorization.
+  return 'Authorization';
+}
+
+function parseObjectCredential(secret: string | null, kind: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(secret ?? '') as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') throw new Error();
+    const values = Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    );
+    return values;
+  } catch {
+    throw new Error(`${kind} credential must be a JSON object`);
+  }
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function hmacSha256(key: string | Buffer, value: string, encoding?: 'hex'): Buffer | string {
+  const digest = createHmac('sha256', key).update(value);
+  return encoding === 'hex' ? digest.digest('hex') : digest.digest();
+}
+
+function canonicalQuery(url: URL): string {
+  return [...url.searchParams.entries()]
+    .map(([key, value]) => [rfc3986(key), rfc3986(value)] as const)
+    .sort(([ak, av], [bk, bv]) => (ak === bk ? av.localeCompare(bv) : ak.localeCompare(bk)))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+}
+
+function applyAdvancedAuth(
+  request: BuiltRequest,
+  auth: ConnectorAuth,
+  secret: string | null,
+  now: () => Date,
+): void {
+  if (!secret) return;
+  if (auth.type === 'hmac') {
+    const credential = parseObjectCredential(secret, 'hmac');
+    if (!credential.secret) throw new Error('hmac credential requires secret');
+    const timestamp = now().toISOString();
+    const url = new URL(request.url);
+    const canonical = [
+      request.method,
+      `${url.pathname}${url.search}`,
+      timestamp,
+      sha256(request.body ?? ''),
+    ].join('\n');
+    const header = auth.name ?? 'X-Signature';
+    request.headers[header] = String(hmacSha256(credential.secret, canonical, 'hex'));
+    request.headers[`${header}-Timestamp`] = timestamp;
+    if (credential.key_id) request.headers[`${header}-Key-Id`] = credential.key_id;
+    return;
+  }
+  if (auth.type === 'aws_sigv4') {
+    const credential = parseObjectCredential(secret, 'aws_sigv4');
+    const { access_key_id, secret_access_key, region, service, session_token } = credential;
+    if (!access_key_id || !secret_access_key || !region || !service) {
+      throw new Error(
+        'aws_sigv4 credential requires access_key_id, secret_access_key, region, and service',
+      );
+    }
+    const date = now();
+    const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const dateStamp = amzDate.slice(0, 8);
+    const url = new URL(request.url);
+    const payloadHash = sha256(request.body ?? '');
+    request.headers.Host = url.host;
+    request.headers['X-Amz-Date'] = amzDate;
+    request.headers['X-Amz-Content-Sha256'] = payloadHash;
+    if (session_token) request.headers['X-Amz-Security-Token'] = session_token;
+    const signedHeaderNames = Object.keys(request.headers)
+      .map((name) => name.toLowerCase())
+      .sort();
+    const canonicalHeaders = signedHeaderNames
+      .map((name) => {
+        const source = Object.keys(request.headers).find((key) => key.toLowerCase() === name)!;
+        return `${name}:${request.headers[source]!.trim().replace(/\s+/g, ' ')}\n`;
+      })
+      .join('');
+    const signedHeaders = signedHeaderNames.join(';');
+    const canonicalRequest = [
+      request.method,
+      url.pathname || '/',
+      canonicalQuery(url),
+      canonicalHeaders,
+      signedHeaders,
+      payloadHash,
+    ].join('\n');
+    const scope = `${dateStamp}/${region}/${service}/aws4_request`;
+    const stringToSign = [
+      'AWS4-HMAC-SHA256',
+      amzDate,
+      scope,
+      sha256(canonicalRequest),
+    ].join('\n');
+    const dateKey = hmacSha256(`AWS4${secret_access_key}`, dateStamp) as Buffer;
+    const regionKey = hmacSha256(dateKey, region) as Buffer;
+    const serviceKey = hmacSha256(regionKey, service) as Buffer;
+    const signingKey = hmacSha256(serviceKey, 'aws4_request') as Buffer;
+    const signature = hmacSha256(signingKey, stringToSign, 'hex');
+    request.headers.Authorization =
+      `AWS4-HMAC-SHA256 Credential=${access_key_id}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    return;
+  }
+  if (auth.type === 'mtls') {
+    const credential = parseObjectCredential(secret, 'mtls');
+    if (!credential.certificate || !credential.private_key) {
+      throw new Error('mtls credential requires certificate and private_key');
+    }
+    request.tls = {
+      cert: credential.certificate,
+      key: credential.private_key,
+      ...(credential.ca ? { ca: credential.ca } : {}),
+    };
+  }
+}
+
+/**
+ * Merge a connector's static `headers` (kortix.yaml) into the outbound request.
+ *
+ * Call this BEFORE the credential is attached — the credential must win:
+ *   - any static header whose name matches the auth header (case-INsensitively,
+ *     since HTTP header names are case-insensitive) is DROPPED, so a static
+ *     header can neither spoof nor clobber the credential;
+ *   - anything that fails the shared validation (illegal name, CR/LF or other
+ *     control chars in the value, over-long, transport-owned) is dropped too —
+ *     the parser/CRUD layer already rejects those loudly, this is the
+ *     fail-safe backstop for a row that predates that validation.
+ * A static header REPLACES a same-named default/arg-derived header (matching
+ * case-insensitively, so the request can never carry two spellings of one
+ * header): what the author typed is what goes on the wire, Postman-style.
+ */
+export function applyConnectorHeaders(
+  headers: Record<string, string>,
+  staticHeaders: Record<string, string> | null | undefined,
+  auth: ConnectorAuth,
+): void {
+  const clean = sanitizeConnectorHeaders(staticHeaders);
+  const reserved = reservedAuthHeader(auth)?.toLowerCase() ?? null;
+  for (const [name, value] of Object.entries(clean)) {
+    const lower = name.toLowerCase();
+    if (reserved && lower === reserved) continue;
+    for (const existing of Object.keys(headers)) {
+      if (existing.toLowerCase() === lower) delete headers[existing];
+    }
+    headers[name] = value;
+  }
+}
+
+/* ─── OAuth 1.0a (RFC 5849) — HMAC-SHA1 request signing ─────────────────── */
+
+/**
+ * The oauth1 credential is ONE stored secret whose value is a JSON object with
+ * all four values (same pack-into-one convention as basic's "user:pass"):
+ * `{"consumer_key":"…","consumer_secret":"…","token":"…","token_secret":"…"}`.
+ */
+interface Oauth1Creds {
+  consumer_key: string;
+  consumer_secret: string;
+  token: string;
+  token_secret: string;
+}
+
+function parseOauth1Secret(secret: string | null): Oauth1Creds | null {
+  if (!secret) return null;
+  try {
+    const o = JSON.parse(secret) as Record<string, unknown>;
+    if (
+      typeof o?.consumer_key === 'string' &&
+      typeof o?.consumer_secret === 'string' &&
+      typeof o?.token === 'string' &&
+      typeof o?.token_secret === 'string'
+    ) {
+      return o as unknown as Oauth1Creds;
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
+
+/** RFC 3986 percent-encoding — stricter than encodeURIComponent. */
+function rfc3986(s: string): string {
+  return encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/**
+ * Compute the OAuth 1.0a HMAC-SHA1 signature (RFC 5849 §3.4). Pure — exported
+ * for unit tests against the spec's published test vector. `params` are the
+ * decoded oauth_* + query pairs; JSON bodies are excluded per §3.4.1.3.1.
+ */
+export function oauth1Signature(opts: {
+  method: string;
+  /** Base string URI — scheme://host/path, no query. */
+  url: string;
+  params: Array<[string, string]>;
+  consumerSecret: string;
+  tokenSecret: string;
+}): string {
+  const normalized = opts.params
+    .map(([k, v]) => [rfc3986(k), rfc3986(v)] as const)
+    .sort(([ak, av], [bk, bv]) => (ak === bk ? (av < bv ? -1 : av > bv ? 1 : 0) : ak < bk ? -1 : 1))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
+  const base = `${opts.method.toUpperCase()}&${rfc3986(opts.url)}&${rfc3986(normalized)}`;
+  const key = `${rfc3986(opts.consumerSecret)}&${rfc3986(opts.tokenSecret)}`;
+  return createHmac('sha1', key).update(base).digest('base64');
+}
+
+/** Build the `Authorization: OAuth …` header for a request. */
+export function oauth1Header(opts: {
+  method: string;
+  /** Request URL without the query string. */
+  url: string;
+  query: URLSearchParams;
+  creds: Oauth1Creds;
+  /** Test seams — real calls omit these. */
+  nonce?: string;
+  timestamp?: string;
+}): string {
+  const oauth: Record<string, string> = {
+    oauth_consumer_key: opts.creds.consumer_key,
+    oauth_nonce: opts.nonce ?? randomBytes(16).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: opts.timestamp ?? Math.floor(Date.now() / 1000).toString(),
+    oauth_token: opts.creds.token,
+    oauth_version: '1.0',
+  };
+  const params: Array<[string, string]> = [
+    ...Object.entries(oauth),
+    ...[...opts.query.entries()],
+  ];
+  oauth.oauth_signature = oauth1Signature({
+    method: opts.method,
+    url: opts.url,
+    params,
+    consumerSecret: opts.creds.consumer_secret,
+    tokenSecret: opts.creds.token_secret,
+  });
+  return `OAuth ${Object.keys(oauth)
+    .sort()
+    .map((k) => `${rfc3986(k)}="${rfc3986(oauth[k]!)}"`)
+    .join(', ')}`;
+}
+
+/** Derive where each input property goes from its `x-in` hint (from normalization). */
+export function paramHintsFromSchema(
+  inputSchema: Record<string, unknown> | null | undefined,
+): Record<string, ParamLoc> {
+  const out: Record<string, ParamLoc> = {};
+  const props = (inputSchema as any)?.properties;
+  if (props && typeof props === 'object') {
+    for (const [key, val] of Object.entries(props)) {
+      const loc = (val as any)?.['x-in'];
+      if (loc === 'path' || loc === 'query' || loc === 'header') out[key] = loc;
+    }
+  }
+  return out;
+}
+
+function methodAllowsBody(method: string): boolean {
+  const m = method.toUpperCase();
+  return m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE';
+}
+
+function joinUrl(base: string, path: string): string {
+  return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+}
+
+/**
+ * Build an HTTP request for openapi/http bindings. Path params are substituted
+ * into the template; the rest are routed by hint (query/header) or, lacking a
+ * hint, into the body for body-methods else the query string. `args.body`
+ * is sent as the JSON body verbatim.
+ */
+function buildHttpRequest(opts: {
+  baseUrl: string;
+  method: string;
+  pathTemplate: string;
+  auth?: ConnectorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
+  secret?: string | null;
+  args?: Record<string, unknown>;
+  paramHints?: Record<string, ParamLoc>;
+}): BuiltRequest {
+  const args = opts.args ?? {};
+  const hints = opts.paramHints ?? {};
+  const headers: Record<string, string> = {};
+  const query = new URLSearchParams();
+  const consumed = new Set<string>();
+
+  // Path params: {name} → value.
+  let path = opts.pathTemplate.replace(/\{([^}]+)\}/g, (_m, name: string) => {
+    consumed.add(name);
+    const v = args[name];
+    return encodeURIComponent(v == null ? '' : String(v));
+  });
+
+  const bodyObj: Record<string, unknown> = {};
+  let explicitBody: unknown;
+  let hasExplicitBody = false;
+
+  for (const [key, value] of Object.entries(args)) {
+    if (consumed.has(key)) continue;
+    if (key === 'body') {
+      explicitBody = value;
+      hasExplicitBody = true;
+      continue;
+    }
+    const hint = hints[key];
+    if (hint === 'path') continue; // already templated (or absent)
+    if (hint === 'query') { appendQuery(query, key, value); continue; }
+    if (hint === 'header') { headers[key] = String(value); continue; }
+    // no hint
+    if (methodAllowsBody(opts.method)) bodyObj[key] = value;
+    else appendQuery(query, key, value);
+  }
+
+  const auth = opts.auth ?? NO_AUTH;
+  // Static headers first — the credential is attached after and always wins.
+  applyConnectorHeaders(headers, opts.headers, auth);
+  if (auth.type === 'oauth1') {
+    // Signed over method + URL + query (JSON bodies are excluded per RFC 5849
+    // §3.4.1.3.1) — must run after the query is final, so not in applyAuth.
+    const creds = parseOauth1Secret(opts.secret ?? null);
+    if (!creds) {
+      throw new Error(
+        'oauth1 credential must be a JSON object {"consumer_key","consumer_secret","token","token_secret"}',
+      );
+    }
+    headers['Authorization'] = oauth1Header({
+      method: opts.method,
+      url: joinUrl(opts.baseUrl, path),
+      query,
+      creds,
+    });
+  } else {
+    applyAuth(headers, query, auth, opts.secret ?? null);
+  }
+
+  let url = joinUrl(opts.baseUrl, path);
+  const qs = query.toString();
+  if (qs) url += (url.includes('?') ? '&' : '?') + qs;
+
+  let body: string | undefined;
+  const finalBody = hasExplicitBody ? explicitBody : (Object.keys(bodyObj).length ? bodyObj : undefined);
+  if (finalBody !== undefined) {
+    headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
+    body = JSON.stringify(finalBody);
+  }
+
+  return { url, method: opts.method.toUpperCase(), headers, body };
+}
+
+function appendQuery(query: URLSearchParams, key: string, value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const v of value) query.append(key, String(v));
+  } else if (value != null) {
+    query.set(key, String(value));
+  }
+}
+
+function renderPostmanTemplate(
+  template: string,
+  args: Record<string, unknown>,
+  encode: boolean,
+): string {
+  return template.replace(/{{\s*([^{}]+?)\s*}}/g, (_whole, rawName: string) => {
+    const name = rawName.trim();
+    const value = args[name];
+    if (value === undefined || value === null) throw new Error(`missing Postman variable "${name}"`);
+    const rendered = String(value);
+    return encode ? encodeURIComponent(rendered) : rendered;
+  });
+}
+
+function setDefaultHeader(headers: Record<string, string>, name: string, value: string): void {
+  if (!Object.keys(headers).some((key) => key.toLowerCase() === name.toLowerCase())) headers[name] = value;
+}
+
+function buildPostmanRequest(opts: {
+  binding: Extract<ActionBinding, { kind: 'postman' }>;
+  auth?: ConnectorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
+  secret?: string | null;
+  args?: Record<string, unknown>;
+}): BuiltRequest {
+  const args = opts.args ?? {};
+  const url = new URL(renderPostmanTemplate(opts.binding.url, args, true));
+  const headers = Object.fromEntries(
+    Object.entries(opts.binding.headers).map(([key, value]) => [key, renderPostmanTemplate(value, args, false)]),
+  );
+  const auth = opts.auth ?? NO_AUTH;
+  // Static headers override the collection's own headers, but never the auth one.
+  applyConnectorHeaders(headers, opts.headers, auth);
+  if (auth.type === 'oauth1') {
+    const creds = parseOauth1Secret(opts.secret ?? null);
+    if (!creds) {
+      throw new Error(
+        'oauth1 credential must be a JSON object {"consumer_key","consumer_secret","token","token_secret"}',
+      );
+    }
+    headers.Authorization = oauth1Header({
+      method: opts.binding.method,
+      url: `${url.protocol}//${url.host}${url.pathname}`,
+      query: url.searchParams,
+      creds,
+    });
+  } else {
+    applyAuth(headers, url.searchParams, auth, opts.secret ?? null);
+  }
+
+  let body: string | undefined;
+  if (opts.binding.bodyMode === 'json' && args.body !== undefined) {
+    setDefaultHeader(headers, 'Content-Type', 'application/json');
+    body = JSON.stringify(args.body);
+  } else if (opts.binding.bodyMode === 'raw' && args.body !== undefined) {
+    body = typeof args.body === 'string' ? args.body : JSON.stringify(args.body);
+  } else if (opts.binding.bodyMode === 'urlencoded' && args.body && typeof args.body === 'object') {
+    setDefaultHeader(headers, 'Content-Type', 'application/x-www-form-urlencoded');
+    const encoded = new URLSearchParams();
+    for (const [key, value] of Object.entries(args.body as Record<string, unknown>)) appendQuery(encoded, key, value);
+    body = encoded.toString();
+  }
+  return { url: url.href, method: opts.binding.method.toUpperCase(), headers, body };
+}
+
+/** Serialize a JS value to a GraphQL literal (strings/numbers/bools/arrays/objects). */
+function gqlLiteral(v: unknown): string {
+  if (v === null || v === undefined) return 'null';
+  if (typeof v === 'string') return JSON.stringify(v);
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (Array.isArray(v)) return `[${v.map(gqlLiteral).join(',')}]`;
+  if (typeof v === 'object') {
+    return `{${Object.entries(v as Record<string, unknown>).map(([k, val]) => `${k}:${gqlLiteral(val)}`).join(',')}}`;
+  }
+  return 'null';
+}
+
+/**
+ * Build a GraphQL request. Args become inline field arguments; a `__select`
+ * arg (string) supplies the selection set for object-returning fields (scalar
+ * fields need none). e.g. call("…","query.user",{ id:"1", __select:"id name" }).
+ */
+function buildGraphqlRequest(opts: {
+  endpoint: string;
+  operation: 'query' | 'mutation';
+  field: string;
+  auth?: ConnectorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
+  secret?: string | null;
+  args?: Record<string, unknown>;
+}): BuiltRequest {
+  const { __select, ...rest } = (opts.args ?? {}) as Record<string, unknown>;
+  const argStr = Object.keys(rest).length
+    ? `(${Object.entries(rest).map(([k, v]) => `${k}:${gqlLiteral(v)}`).join(',')})`
+    : '';
+  const sel = typeof __select === 'string' && __select.trim() ? ` { ${__select.trim()} }` : '';
+  const query = `${opts.operation} { ${opts.field}${argStr}${sel} }`;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const search = new URLSearchParams();
+  const auth = opts.auth ?? NO_AUTH;
+  applyConnectorHeaders(headers, opts.headers, auth);
+  applyAuth(headers, search, auth, opts.secret ?? null);
+  let url = opts.endpoint;
+  const qs = search.toString();
+  if (qs) url += (url.includes('?') ? '&' : '?') + qs;
+  return { url, method: 'POST', headers, body: JSON.stringify({ query }) };
+}
+
+/**
+ * MCP streamable-HTTP session handshake.
+ *
+ * A stateful MCP server (the default for servers built on the official SDKs)
+ * rejects any request that arrives without `Mcp-Session-Id` — HTTP 400, JSON-RPC
+ * "Server not initialized" / "Bad Request: Mcp-Session-Id header is required".
+ * The protocol's answer is `initialize` → `notifications/initialized`, keep the
+ * session id the server issues, and send it on every later request. Kortix has
+ * no long-lived MCP client process, so the session is established lazily on the
+ * first request that needs it and cached in-process.
+ *
+ * The cache key includes the credential: two principals with different tokens
+ * must never share one server session.
+ */
+const MCP_PROTOCOL_VERSION = '2025-06-18';
+const MCP_SESSION_HEADER = 'Mcp-Session-Id';
+const MCP_PROTOCOL_HEADER = 'MCP-Protocol-Version';
+const MCP_SESSION_TTL_MS = 10 * 60_000;
+const MCP_SESSION_CACHE_MAX = 500;
+
+interface McpSession {
+  sessionId: string;
+  protocolVersion: string;
+  expiresAt: number;
+}
+
+const mcpSessions = new Map<string, McpSession>();
+
+/** Test seam: drop every cached MCP session. */
+export function resetMcpSessionCache(): void {
+  mcpSessions.clear();
+}
+
+function mcpSessionKey(url: string, secret: string | null): string {
+  return `${url}\u0000${secret ? createHash('sha256').update(secret).digest('hex') : ''}`;
+}
+
+function readMcpSession(key: string, now: number): McpSession | null {
+  const session = mcpSessions.get(key);
+  if (!session) return null;
+  if (session.expiresAt <= now) {
+    mcpSessions.delete(key);
+    return null;
+  }
+  return session;
+}
+
+function writeMcpSession(key: string, session: McpSession): void {
+  if (mcpSessions.size >= MCP_SESSION_CACHE_MAX) {
+    const oldest = mcpSessions.keys().next();
+    if (!oldest.done) mcpSessions.delete(oldest.value);
+  }
+  mcpSessions.set(key, session);
+}
+
+/**
+ * True when the response says "this server wants an initialized session".
+ * 400 covers "not initialized" / "missing session id"; 404 covers a session the
+ * server has since forgotten (restart, eviction). 401/403 are NOT included —
+ * those are credential problems and must reach the caller untouched.
+ */
+function needsMcpSession(result: ExecResult): boolean {
+  if (result.status !== 400 && result.status !== 404) return false;
+  const data = result.data;
+  const message =
+    typeof data === 'string'
+      ? data
+      : data && typeof data === 'object' && 'error' in data
+        ? String((data as { error?: { message?: unknown } }).error?.message ?? '')
+        : '';
+  if (!message) return true;
+  return /session|not initialized|initialize/i.test(message) || result.status === 400;
+}
+
+/** Build one JSON-RPC request for an MCP streamable-HTTP connector. */
+function buildMcpJsonRpcRequest(opts: {
+  url: string;
+  auth?: ConnectorAuth;
+  /** Connector-level static headers (kortix.yaml `headers:`). */
+  headers?: Record<string, string> | null;
+  secret?: string | null;
+  method: string;
+  params: Record<string, unknown>;
+  /** Omitted for a JSON-RPC notification, which carries no id. */
+  notification?: boolean;
+  session?: McpSession | null;
+}): BuiltRequest {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+  };
+  if (opts.session) {
+    headers[MCP_SESSION_HEADER] = opts.session.sessionId;
+    headers[MCP_PROTOCOL_HEADER] = opts.session.protocolVersion;
+  }
+  const query = new URLSearchParams();
+  const auth = opts.auth ?? NO_AUTH;
+  applyConnectorHeaders(headers, opts.headers, auth);
+  applyAuth(headers, query, auth, opts.secret ?? null);
+  let url = opts.url;
+  const qs = query.toString();
+  if (qs) url += (url.includes('?') ? '&' : '?') + qs;
+  const body = JSON.stringify({
+    jsonrpc: '2.0',
+    ...(opts.notification ? {} : { id: 1 }),
+    method: opts.method,
+    params: opts.params,
+  });
+  return { url, method: 'POST', headers, body };
+}
+
+export type FetchImpl = (
+  url: string,
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+    tls?: { cert: string; key: string; ca?: string };
+  },
+) => Promise<{
+  status: number;
+  ok: boolean;
+  text: () => Promise<string>;
+  /**
+   * Response headers. Optional so existing fetch adapters and tests keep
+   * compiling; the MCP session handshake reads `Mcp-Session-Id` from it and
+   * degrades to a stateless call when an adapter does not provide it.
+   */
+  headers?: { get: (name: string) => string | null };
+}>;
+
+/** Parse a response body: JSON, or SSE-framed JSON (MCP streamable-HTTP), else raw text. */
+export function parseResponseBody(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    /* not plain JSON — try SSE */
+  }
+  // SSE: `event: message\ndata: {...}` — take the last data: line that parses as JSON.
+  const dataLines = text
+    .split(/\r?\n/)
+    .filter((l) => l.startsWith('data:'))
+    .map((l) => l.slice(5).trim())
+    .filter(Boolean);
+  for (let i = dataLines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(dataLines[i]!);
+    } catch {
+      /* keep scanning */
+    }
+  }
+  return text;
+}
+
+/** Perform a built request and parse the response (JSON or SSE-framed JSON). */
+async function performRequest(
+  req: BuiltRequest,
+  fetchImpl: FetchImpl,
+  auth: ConnectorAuth,
+  secret: string | null,
+  now: () => Date,
+): Promise<ExecResult> {
+  return (await performRequestWithHeaders(req, fetchImpl, auth, secret, now)).result;
+}
+
+async function performRequestWithHeaders(
+  req: BuiltRequest,
+  fetchImpl: FetchImpl,
+  auth: ConnectorAuth,
+  secret: string | null,
+  now: () => Date,
+): Promise<{ result: ExecResult; header: (name: string) => string | null }> {
+  applyAdvancedAuth(req, auth, secret, now);
+  const res = await fetchImpl(req.url, {
+    method: req.method,
+    headers: req.headers,
+    body: req.body,
+    tls: req.tls,
+  });
+  const text = await res.text();
+  return {
+    result: { status: res.status, ok: res.ok, data: parseResponseBody(text) },
+    header: (name: string) => res.headers?.get(name) ?? null,
+  };
+}
+
+interface McpExchange {
+  url: string;
+  auth: ConnectorAuth;
+  headers?: Record<string, string> | null;
+  secret?: string | null;
+  method: string;
+  params: Record<string, unknown>;
+  fetchImpl: FetchImpl;
+  now: () => Date;
+}
+
+/**
+ * `initialize` + `notifications/initialized`. Returns the negotiated session,
+ * or null when the server refuses to initialize — in which case the caller
+ * surfaces the original failure rather than a confusing handshake error.
+ */
+async function establishMcpSession(exchange: McpExchange): Promise<McpSession | null> {
+  const initialize = await performRequestWithHeaders(
+    buildMcpJsonRpcRequest({
+      url: exchange.url,
+      auth: exchange.auth,
+      headers: exchange.headers,
+      secret: exchange.secret,
+      method: 'initialize',
+      params: {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: 'kortix', version: '1' },
+      },
+    }),
+    exchange.fetchImpl,
+    exchange.auth,
+    exchange.secret ?? null,
+    exchange.now,
+  );
+  if (!initialize.result.ok) return null;
+  const payload = initialize.result.data;
+  const negotiated =
+    payload && typeof payload === 'object'
+      ? (payload as { result?: { protocolVersion?: unknown } }).result?.protocolVersion
+      : undefined;
+  const session: McpSession = {
+    sessionId: initialize.header(MCP_SESSION_HEADER) ?? '',
+    protocolVersion: typeof negotiated === 'string' ? negotiated : MCP_PROTOCOL_VERSION,
+    expiresAt: exchange.now().getTime() + MCP_SESSION_TTL_MS,
+  };
+  await performRequest(
+    buildMcpJsonRpcRequest({
+      url: exchange.url,
+      auth: exchange.auth,
+      headers: exchange.headers,
+      secret: exchange.secret,
+      method: 'notifications/initialized',
+      params: {},
+      notification: true,
+      session: session.sessionId ? session : null,
+    }),
+    exchange.fetchImpl,
+    exchange.auth,
+    exchange.secret ?? null,
+    exchange.now,
+  ).catch(() => undefined);
+  if (session.sessionId) {
+    writeMcpSession(mcpSessionKey(exchange.url, exchange.secret ?? null), session);
+  }
+  return session;
+}
+
+/**
+ * One MCP JSON-RPC exchange, with the streamable-HTTP session handshake folded
+ * in: use the cached session when there is one, and when the server answers
+ * "not initialized" / "session not found", initialize once and replay.
+ */
+async function performMcpExchange(exchange: McpExchange): Promise<ExecResult> {
+  const key = mcpSessionKey(exchange.url, exchange.secret ?? null);
+  const build = (session: McpSession | null) =>
+    buildMcpJsonRpcRequest({
+      url: exchange.url,
+      auth: exchange.auth,
+      headers: exchange.headers,
+      secret: exchange.secret,
+      method: exchange.method,
+      params: exchange.params,
+      session: session?.sessionId ? session : null,
+    });
+  const cached = readMcpSession(key, exchange.now().getTime());
+  const first = await performRequest(
+    build(cached),
+    exchange.fetchImpl,
+    exchange.auth,
+    exchange.secret ?? null,
+    exchange.now,
+  );
+  if (!needsMcpSession(first)) return first;
+  mcpSessions.delete(key);
+  const session = await establishMcpSession(exchange);
+  if (!session) return first;
+  return performRequest(
+    build(session),
+    exchange.fetchImpl,
+    exchange.auth,
+    exchange.secret ?? null,
+    exchange.now,
+  );
+}
+
+function redactExactValue(value: string, secret: string | null | undefined): string {
+  if (!secret) return value;
+  const formEncoded = new URLSearchParams({ value: secret }).toString().slice('value='.length);
+  const representations = new Set([
+    secret,
+    encodeURIComponent(secret),
+    formEncoded,
+    Buffer.from(secret).toString('base64'),
+  ]);
+  let redacted = value;
+  for (const representation of representations) {
+    if (representation) redacted = redacted.split(representation).join('[REDACTED]');
+  }
+  return redacted;
+}
+
+function mcpJsonRpcError(data: unknown, secret?: string | null): string | null {
+  if (!data || typeof data !== 'object' || !('error' in data)) return null;
+  const error = (data as { error?: unknown }).error;
+  if (!error || typeof error !== 'object') return 'unknown error';
+  const record = error as { code?: unknown; message?: unknown };
+  const code =
+    typeof record.code === 'number' || typeof record.code === 'string'
+      ? String(record.code)
+      : 'unknown';
+  const message =
+    typeof record.message === 'string'
+      ? redactExactValue(
+          record.message
+            .replace(/[\r\n\t\0-\x1f\x7f]/g, ' ')
+            .trim()
+            .slice(0, 512),
+          secret,
+        )
+      : 'unknown error';
+  return `${code} ${message}`;
+}
+
+/** List an MCP connector's tools through the same auth path used for tool calls. */
+export async function listMcpTools(opts: {
+  url: string;
+  auth?: ConnectorAuth;
+  headers?: Record<string, string> | null;
+  secret?: string | null;
+  now?: () => Date;
+  fetchImpl: FetchImpl;
+}): Promise<any[]> {
+  const auth = opts.auth ?? NO_AUTH;
+  let result: ExecResult;
+  try {
+    result = await performMcpExchange({
+      url: opts.url,
+      auth,
+      headers: opts.headers,
+      secret: opts.secret,
+      method: 'tools/list',
+      params: {},
+      fetchImpl: opts.fetchImpl,
+      now: opts.now ?? (() => new Date()),
+    });
+  } catch {
+    // Fetch implementations commonly include the full URL in thrown errors.
+    // Query-auth credentials are part of that URL, so never persist or return
+    // the raw transport exception from catalog discovery.
+    throw new Error('MCP tools/list failed: transport error');
+  }
+  if (!result.ok) throw new Error(`MCP tools/list failed: HTTP ${result.status}`);
+  const rpcError = mcpJsonRpcError(result.data, opts.secret);
+  if (rpcError) throw new Error(`MCP tools/list failed: JSON-RPC ${rpcError}`);
+  const tools =
+    result.data && typeof result.data === 'object'
+      ? (result.data as { result?: { tools?: unknown } }).result?.tools
+      : null;
+  if (!Array.isArray(tools)) {
+    throw new Error('MCP tools/list failed: response has no result.tools array');
+  }
+  return tools;
+}
+
+/**
+ * Top-level execute — dispatch by binding kind, build the request, perform it.
+ * `secret` is the resolved plaintext credential (server-side only).
+ */
+export async function executeCall(opts: {
+  binding: ActionBinding;
+  baseUrl?: string | null;
+  auth?: ConnectorAuth;
+  /**
+   * The connector's static `headers:` table (kortix.yaml) — sent on every
+   * request this connector makes. Merged in BEFORE the credential, so the auth
+   * header always wins on a (case-insensitive) name collision.
+   */
+  headers?: Record<string, string> | null;
+  secret?: string | null;
+  args?: Record<string, unknown>;
+  paramHints?: Record<string, ParamLoc>;
+  now?: () => Date;
+  fetchImpl: FetchImpl;
+}): Promise<ExecResult> {
+  const { binding } = opts;
+
+  if (binding.kind === 'postman') {
+    return performRequest(buildPostmanRequest({
+      binding,
+      auth: opts.auth,
+      headers: opts.headers,
+      secret: opts.secret,
+      args: opts.args,
+    }), opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
+  }
+
+  if (binding.kind === 'openapi') {
+    const base = opts.baseUrl ?? binding.server;
+    if (!base) throw new Error('openapi connector has no server/base URL');
+    const req = buildHttpRequest({
+      baseUrl: base,
+      method: binding.method,
+      pathTemplate: binding.path,
+      auth: opts.auth,
+      headers: opts.headers,
+      secret: opts.secret,
+      args: opts.args,
+      paramHints: opts.paramHints,
+    });
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
+  }
+
+  if (binding.kind === 'http') {
+    if (!opts.baseUrl) throw new Error('http connector has no base_url');
+    const req = buildHttpRequest({
+      baseUrl: opts.baseUrl,
+      method: binding.method,
+      pathTemplate: binding.path,
+      auth: opts.auth,
+      headers: opts.headers,
+      secret: opts.secret,
+      args: opts.args,
+      paramHints: opts.paramHints,
+    });
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
+  }
+
+  if (binding.kind === 'mcp') {
+    if (!opts.baseUrl) throw new Error('mcp connector has no url');
+    return performMcpExchange({
+      url: opts.baseUrl,
+      auth: opts.auth ?? NO_AUTH,
+      headers: opts.headers,
+      secret: opts.secret,
+      method: 'tools/call',
+      params: { name: binding.tool, arguments: opts.args ?? {} },
+      fetchImpl: opts.fetchImpl,
+      now: opts.now ?? (() => new Date()),
+    });
+  }
+
+  if (binding.kind === 'graphql') {
+    if (!opts.baseUrl) throw new Error('graphql connector has no endpoint');
+    const req = buildGraphqlRequest({
+      endpoint: opts.baseUrl,
+      operation: binding.operation,
+      field: binding.field,
+      auth: opts.auth,
+      headers: opts.headers,
+      secret: opts.secret,
+      args: opts.args,
+    });
+    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
+  }
+
+  throw new Error(`execution for "${binding.kind}" connectors is not implemented yet`);
+}

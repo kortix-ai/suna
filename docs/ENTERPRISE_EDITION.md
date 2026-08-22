@@ -18,7 +18,7 @@ ever, unprovisioned-safe by default.
 
 ## Community (every self-serve and self-hosted tier)
 
-Everything not listed under Enterprise below — the full agent/skill/connector/
+Everything not listed under Enterprise below — the full agent/skill/connectors/
 session/memory product, hardware-isolated sandboxes, change-request workflow,
 unlimited self-hosted use per the ELv2 terms. Specifically, on the identity/
 governance surface:
@@ -41,7 +41,7 @@ governance surface:
 | `auditAccess` | **Reading, exporting, and streaming** the audit trail — account audit log + export, webhook create/update (`accounts/audit.ts`), webhook **delivery** (`shared/audit-webhooks.ts`, the data plane), and the per-session agent-action **history** (`projects/routes/r7.ts`) | Recording is universal (see above); *who gets to look at it* — and pipe it into a SIEM — is the compliance feature |
 
 **The approval control plane is never paywalled.** Write/destructive connector
-actions default to `require_approval` on every tier (`executor/policy.ts`), so
+actions default to `require_approval` on every tier (`connector/policy.ts`), so
 `GET /sessions/:id/audit` never returns a 402 — for unentitled accounts it
 degrades to *unresolved pending approvals only* (`audit_access: false` in the
 response) so the launcher can always see and resolve what's blocking the run.
@@ -64,8 +64,10 @@ Nothing else in the product is currently entitlement-gated. Categories common
 elsewhere in this space (HA/clustering, dedicated single-tenant infra,
 white-labeling, LDAP, tiered data retention, air-gap-specific code) aren't yet
 built as Kortix features at all, so there's nothing to gate — self-hosting the
-whole product already *is* your air-gapped, dedicated, single-tenant
-deployment. If/when any of those become real product surfaces, they get a new
+whole product already *is* your dedicated, single-tenant deployment in your own
+VPC or your own on-prem network. It is **not** air-gapped: `kortix self-host
+start` pulls images from docker.io and reaches a sandbox provider over egress.
+If/when any of those become real product surfaces, they get a new
 `TierEntitlements` key here, not a separate mechanism.
 
 ## Adding a new gate

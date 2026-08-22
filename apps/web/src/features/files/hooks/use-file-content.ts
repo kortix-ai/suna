@@ -1,16 +1,18 @@
 'use client';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useServerStore } from '@/stores/server-store';
-import { readFile } from '../api/opencode-files';
 import type { FileContent } from '@/features/file-browser/types';
-import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
+import { isSandboxNotReadyError } from '@kortix/sdk';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
+import { readFile } from '../api/runtime-files';
+import { SANDBOX_WAKING_REFETCH_INTERVAL_MS } from './file-read-retry';
 import { isSystemDirectoryPath } from './system-dir';
 
 export const fileContentKeys = {
-  all: ['opencode-files', 'content'] as const,
+  all: ['runtime-files', 'content'] as const,
   file: (serverUrl: string, filePath: string) =>
-    ['opencode-files', 'content', serverUrl, filePath] as const,
+    ['runtime-files', 'content', serverUrl, filePath] as const,
 };
 
 /**
@@ -23,20 +25,22 @@ export function useFileContent(
   filePath: string | null,
   options?: { enabled?: boolean; staleTime?: number },
 ) {
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return useQuery<FileContent>({
     queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
-    queryFn: () => readFile(filePath!),
-    enabled:
-      !!filePath &&
-      !isSystemDirectoryPath(filePath) &&
-      options?.enabled !== false,
+    queryFn: ({ signal }) =>
+      readRuntimeFileWithRetry(filePath!, () => readFile(filePath!), undefined, signal),
+    enabled: !!filePath && !isSystemDirectoryPath(filePath) && options?.enabled !== false,
     staleTime: options?.staleTime ?? 10_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    retry: (failureCount, error) => shouldRetryFileRead(filePath, failureCount, error),
-    retryDelay: (attempt) => fileReadRetryDelayMs(attempt, filePath),
+    retry: false,
+    // A readiness 503 (parked/booting sandbox) is a pending state, not a
+    // failure: keep polling until the box is active so the file loads on its
+    // own once the sandbox wakes.
+    refetchInterval: (query) =>
+      isSandboxNotReadyError(query.state.error) ? SANDBOX_WAKING_REFETCH_INTERVAL_MS : false,
   });
 }
 
@@ -45,7 +49,7 @@ export function useFileContent(
  */
 export function useInvalidateFileContent() {
   const queryClient = useQueryClient();
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   return (filePath?: string) => {
     if (filePath) {

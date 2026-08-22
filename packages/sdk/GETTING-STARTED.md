@@ -123,10 +123,15 @@ that changes is `import { … } from '@kortix/sdk'`.
 | `02-send-and-stream.ts` | `ensureReady()` → `stream()` → `send()`, live SSE via `narrowChatEvent` | PAT + project + session |
 | `03-server-wrapper.ts` | `createScopedKortix` — per-request isolation for a multi-tenant server | PAT |
 | `04-render-transcript.ts` | render a transcript to text with `classifyTurn` | PAT + project + session |
-| `05-cost-passthrough.ts` | gateway usage / cost data | PAT + project |
+| `05-cost-passthrough.ts` | unified session-cost data | PAT + project |
 | `06-files-and-secrets.ts` | session-scoped workspace files + project secrets | PAT + project + session |
 | `07-vanilla.ts` | **the whole flow in one file** — list → ready → stream → send → classify | PAT + project + session |
 | `08-cdn.html` | the same thing from a `<script>` tag, **no build step, no framework** | bundles built + browser |
+| `09-kaab-backend-wrapper.ts` | **Kortix as a Backend, end-to-end** — mint a connector → per-user connection → backend-origin session (`secrets` + `connector_bindings`) → stream; one-shot CLI **and** an SSE service | PAT + project |
+
+See [`examples/README.md`](./examples/README.md) for the full index and per-example
+env vars, and [`docs/KORTIX_AS_A_BACKEND_GUIDE.md`](../../docs/KORTIX_AS_A_BACKEND_GUIDE.md)
+for the backend concepts (`origin`, overrides, connectors, security model).
 
 Start with:
 

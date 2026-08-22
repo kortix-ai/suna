@@ -1,0 +1,129 @@
+---
+title: Accounts & access
+description: An account holds your projects, your teammates, and one access model.
+---
+
+An account holds your [projects](/docs/project) and the people who work in them. When you sign up, Kortix creates a personal account for you. Invite a teammate and it becomes a team account. Personal and team accounts use the same roles, billing, and limits.
+
+## One access model
+
+Kortix has one grant record: an **assignment**. Every assignment binds one principal to one role, at one scope.
+
+| Term | Meaning |
+|---|---|
+| **Principal** | Who holds the access. A `user`, a `group`, a `service_account` (an agent's identity), or a `pending` invitee email. |
+| **Role** | A named set of permissions. Kortix ships the built-in roles below. An account can add custom roles. |
+| **Permission** | One action, for example `project.secret.read` or `member.update`. |
+| **Scope** | Where the role applies: the whole `account`, or one `project`. |
+| **Object** | Optional. Narrows the assignment to one `agent`, `skill`, `secret`, `app`, or `trigger` inside the scope. |
+| **Expiry** | Optional. The assignment stops granting at `expires_at`. |
+
+There is no second grant store. A group's access, a per-resource grant, and a custom-role binding are all assignments. They differ only in the principal, the object, and the role.
+
+## Account roles
+
+Each person in an account holds one account role:
+
+- **Owner** — full control, including members and billing.
+- **Admin** — manages projects, members, groups, roles, and tokens.
+- **Member** — works only in the projects they hold a project assignment on.
+
+Owner and admin hold manager-equivalent access on every project in the account. A project assignment cannot lower that. To limit an owner or an admin on one project, first change their account role to member.
+
+Invite a teammate by email from the account's members page. The invitation is an assignment on a `pending` principal. It becomes a `user` assignment when they accept.
+
+## Project roles
+
+Inside a project, a principal holds one of two roles:
+
+- **Member** — reads the project, starts and stops its sessions, fires its triggers. No editing, no configuration.
+- **Manager** — every project permission: edits the project, manages triggers, connectors, skills, secrets and access, holds the gateway keys, and deletes the project.
+
+There is no third project role.
+
+Manager is the full set of project permissions. A custom role only adds permissions, so no role can withhold one from a manager. [Object assignments](#object-assignments) are the separate mechanism that narrows *which objects* a permission reaches.
+
+Set project access from the project's access settings, or with `kortix access` — see [CLI](/docs/cli#access).
+
+## Groups
+
+A group is a principal, exactly like a person. Assign a role to a group at a scope and every member of that group holds it. A group adds access. It never removes access a person already holds. A group provisioned by SCIM is the same principal type as one you create by hand.
+
+## Object assignments
+
+An assignment can name one object inside a project: an `agent`, a `skill`, a `secret`, an `app`, or a `trigger`. Kortix enforces object assignments on agents and skills today.
+
+- **Agents are closed by default.** A member reaches an agent only when an assignment names them, or names one of their groups.
+- **Every other object type is open by default.** With no assignment on the object, a member reaches it.
+- **An object assignment restricts a project manager too.** That is what makes "scope this agent to the finance group" mean anything. What the manager role buys is the unscoped default, not an exemption.
+- **Account owners and admins are never restricted by an object assignment**, and neither is a service account acting on its own assignments.
+
+An object assignment carries no permissions of its own. It answers "which objects", not "which actions".
+
+## Expiry
+
+Give an assignment an `expires_at` and it stops granting at that instant. The engine ignores an expired assignment. The row stays for the audit trail.
+
+## One vocabulary, two bindings
+
+A person, a group, or an agent gets access from Kortix as **roles** — the assignments described above. An agent carries a **second, separate binding**: the Kortix CLI scopes its manifest declares in `kortix.yaml` under `agents.<name>.kortix_cli`. A session can only do what both allow. The two never widen each other. An agent whose manifest lists `project.secret.read` still reads nothing when the role verdict denies it, and an agent launched by an owner still reads nothing when its manifest does not list the action. Roles are account state; CLI scopes are repository state in the manifest. See [Manifest reference](/docs/project/manifest#agents).
+
+## Custom roles
+
+A custom role is an account-owned role with the permissions you choose. Assigning one writes a single assignment — there is no built-in baseline row beneath it. A custom role can grant project access with no built-in project role at all, which is how a department-style role works.
+
+A custom role only adds permissions. Kortix has no deny rule.
+
+Custom roles need the enterprise `rbac` entitlement. Without it, assigning one answers `402` with `code: "entitlement_required"`.
+
+## Super-admin
+
+Super-admin is not a role. It is a flag on one account membership. It bypasses every permission check, and every bypass is written to the audit log. Roles are the mechanism for ordinary access; super-admin is the audited escape hatch.
+
+## Per-feature access settings
+
+Some features carry their own visibility setting on top of the role model:
+
+| Setting | Decides |
+|---|---|
+| [App access mode](/docs/feature-flags/apps#access-modes) | Who can open one deployed App |
+| [Trigger session access](/docs/connect/triggers#session-access) | Who can open the sessions one trigger creates |
+| [Slack channel policy](/docs/connect/slack) | Who can start a session from one channel |
+| [Computer Tunnel capability grants](/docs/connect/computers#grant-access) | Which filesystem, shell, and desktop calls a machine accepts |
+
+Each one narrows access to one resource. None of them grants a permission the role verdict denies.
+
+## The access API
+
+| Method + path | Does |
+|---|---|
+| `GET /v1/accounts/{accountId}/iam/assignments` | List assignments. Filter by principal, scope, object, or role. |
+| `POST /v1/accounts/{accountId}/iam/assignments` | Create one assignment. |
+| `DELETE /v1/accounts/{accountId}/iam/assignments/{assignmentId}` | Revoke one assignment. |
+| `GET /v1/accounts/{accountId}/iam/permissions` | The permission catalog, as data. |
+| `GET /v1/accounts/{accountId}/iam/roles` | Roles, built-in and custom. |
+| `GET /v1/accounts/{accountId}/iam/roles/{roleId}/permissions` | One role's permissions. |
+
+The catalog is data, not a hardcoded list. Each permission carries its `action`, `scope_type`, `resource_type`, `delegable` flag, `description`, `area`, `level`, and `implies`. Read it instead of hardcoding action strings.
+
+The write routes choose the permission they require from what you are granting: `project.members.manage` for a project role or an object assignment, `member.update` for an account role, `policy.create` for a custom role. You cannot side-step a ceiling by picking a different route.
+
+## Switching accounts
+
+If you belong to more than one account, switch between them from the account switcher. Each account keeps its own projects, members, and settings.
+
+## Tokens
+
+Kortix signs you in with a personal access token (`kortix_pat_...`). It acts as the user who created it and holds exactly that user's assignments. A service account (`kortix_sa_...`) is a separate principal, not a person's credential, and holds no project access until an assignment gives it some.
+
+The two live on two surfaces, because they belong to two different owners. Your own API keys are in your settings, at **Settings → API keys** (`/settings/tokens`) — only you see them, and they stop working when your membership does. Service account tokens are account configuration, at **Account → Tokens**, beside the key rules that govern expiry.
+
+See [SDK authentication](/docs/sdk/auth) for the full token model.
+
+## Billing
+
+Billing applies at the account level and covers every project in the account. Kortix offers a free tier, a pro tier, and a per-seat team tier, each with its own model access and credits. Using your own model key does not make usage free: Kortix still charges a platform fee on top of it, except on the free tier.
+
+<Callout type="info" title="Enterprise">
+Single sign-on (`sso`), SCIM provisioning (`scim`), custom roles (`rbac`), and audit access (`auditAccess`) are entitlements on the enterprise tier. An entitlement is orthogonal to a role: it decides whether the feature exists for the account, and the role still decides who may use it. Contact sales to enable them.
+</Callout>

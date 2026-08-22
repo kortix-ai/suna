@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { loadAuth } from '../api/auth.ts';
 import {
   activeAccount,
@@ -21,8 +22,19 @@ import { selectFromList } from '../tui-select.ts';
 import { emitJson, locateProjectAnywhere, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
+import { openInBrowser } from '../browser.ts';
+import { appendGitExcludeEntries } from '../git-exclude.ts';
+import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import type { Auth } from '../api/auth.ts';
 import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
+import { authHeaderArgs } from './ship.ts';
+
+/** Back-compat alias — the helper moved to ../project-git.ts so `ship` can use
+ *  it without an import cycle through this command module. */
+export {
+  configureProjectGitAuth as configureClonedProjectAuth,
+  currentGitCredentialHelperCommand,
+} from '../project-git.ts';
 
 const HELP = help`Usage: kortix projects <subcommand>
 
@@ -36,6 +48,8 @@ Subcommands:
   link [<id>]          Bind cwd to a remote project (writes .kortix/link.json)
   unlink               Remove .kortix/link.json from cwd
   open [<id>]          Open the dashboard URL for one project
+  clone [<id>] [dir]   Clone through the authenticated Kortix git proxy. Falls
+                       back to your local Git credentials for direct BYO repos.
   rm [<id>]            Archive a project (defaults to the linked one).
                        --purge also deletes its managed git repo (irreversible).
                        -y / --yes skips the confirmation.
@@ -107,6 +121,17 @@ export async function runProjects(argv: string[]): Promise<number> {
       }
       return projectsOpen(restCopy[0], hostArg);
     }
+    case 'clone': {
+      const restCopy = [...rest];
+      let hostArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+      } catch (err) {
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
+        return 2;
+      }
+      return projectsClone(restCopy[0], restCopy[1], hostArg);
+    }
     case 'rm':
     case 'remove':
       return projectsRm(rest);
@@ -114,6 +139,131 @@ export async function runProjects(argv: string[]): Promise<number> {
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
   }
+}
+
+export interface ProjectCloneTarget {
+  repoUrl: string;
+  token: string | null;
+  username: string;
+  needsManagedToken: boolean;
+}
+
+export function saveClonedProjectLink(
+  repoRoot: string,
+  project: ProjectSummary,
+  host: string | undefined,
+  hostUrl: string,
+): void {
+  saveLink(
+    {
+      project_id: project.project_id,
+      account_id: project.account_id,
+      host,
+      host_url: hostUrl,
+      linked_at: new Date().toISOString(),
+    },
+    repoRoot,
+  );
+
+  appendGitExcludeEntries(
+    repoRoot,
+    ['/.kortix/link.json'],
+    'Kortix local project binding',
+  );
+}
+
+/** Resolve clone auth without ever placing a credential in the remote URL.
+ *  Thin adapter over the shared resolver in ../project-git.ts — the same
+ *  decision `kortix ship` and the git credential helper make. */
+export function resolveProjectCloneTarget(
+  project: ProjectSummary,
+  kortixToken: string,
+): ProjectCloneTarget {
+  const target = resolveProjectGitTarget(project);
+  return {
+    repoUrl: target.repoUrl,
+    token: target.credentialMode === "kortix-token" ? kortixToken : null,
+    username: "x-access-token",
+    needsManagedToken: target.credentialMode === "managed-git-token",
+  };
+}
+
+async function projectsClone(
+  arg?: string,
+  destination?: string,
+  hostArg?: string,
+): Promise<number> {
+  const id = arg ?? resolveProjectId();
+  if (!id) {
+    process.stderr.write(
+      `${status.err("No project selected. Run `kortix projects use`, link a directory, or pass an id.")}\n`,
+    );
+    return 1;
+  }
+
+  const located = await locateProjectAnywhere(
+    id,
+    { hostArg },
+    (host) => `kortix projects clone ${id} --host ${host}`,
+  );
+  if (!located) return 1;
+
+  const { client, auth, project } = located.located;
+  const target = resolveProjectCloneTarget(project, auth.token);
+  if (target.needsManagedToken) {
+    try {
+      const credential = await client.post<{
+        push_token: string;
+        git_username?: string;
+      }>(`/projects/${project.project_id}/git-token`);
+      target.token = credential.push_token;
+      target.username = credential.git_username || target.username;
+    } catch (err) {
+      return surface(err);
+    }
+  }
+
+  const args = target.token
+    ? [
+        ...authHeaderArgs(target.repoUrl, target.token, target.username),
+        "clone",
+        target.repoUrl,
+      ]
+    : ["clone", target.repoUrl];
+  if (destination) args.push(destination);
+
+  const cloned = spawnSync("git", args, { stdio: "inherit" });
+  if (cloned.error) {
+    process.stderr.write(
+      `${status.err(`Could not start git: ${cloned.error.message}`)}\n`,
+    );
+    return 1;
+  }
+  if ((cloned.status ?? 1) !== 0) {
+    process.stderr.write(
+      `${status.err(`git clone failed (exit ${cloned.status ?? 1}).`)}\n`,
+    );
+    return cloned.status ?? 1;
+  }
+
+  const defaultDirectory =
+    target.repoUrl
+      .split("/")
+      .pop()
+      ?.replace(/\.git$/i, "") || project.name;
+  const repoRoot = resolve(process.cwd(), destination || defaultDirectory);
+  if (isKortixProject(repoRoot)) {
+    saveClonedProjectLink(
+      repoRoot,
+      project,
+      hostArg ?? located.located.hostName ?? activeHostName() ?? undefined,
+      auth.api_base,
+    );
+    if (target.token) configureProjectGitAuth(repoRoot, target.repoUrl);
+  }
+
+  process.stdout.write(`${status.ok(`Cloned ${project.name}`)}\n`);
+  return 0;
 }
 
 function requireAuth() {
@@ -379,7 +529,7 @@ async function projectsUse(arg?: string): Promise<number> {
     process.stdout.write(`  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active)${C.reset}\n`);
   }
   process.stdout.write(
-    `  ${C.dim}Used by connectors/executor/sessions when a directory isn't linked.${C.reset}\n`,
+    `  ${C.dim}Used by connectors/connections/sessions when a directory isn't linked.${C.reset}\n`,
   );
   return 0;
 }
@@ -598,20 +748,4 @@ function formatRelative(iso: string): string {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
   return new Date(iso).toLocaleDateString();
-}
-
-
-function openInBrowser(url: string): void {
-  // Only hand a real web URL to the OS opener — a value starting with '-' would
-  // be read as a flag by open/xdg-open, and Windows `start` parses its argument,
-  // so an unvalidated URL is a command-injection vector.
-  if (!/^https?:\/\//i.test(url)) return;
-  const cmd =
-    process.platform === 'darwin'
-      ? 'open'
-      : process.platform === 'win32'
-        ? 'cmd'
-        : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-  spawnSync(cmd, args, { stdio: 'ignore' });
 }

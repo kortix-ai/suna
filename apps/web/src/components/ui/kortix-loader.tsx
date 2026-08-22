@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 
 interface KortixLoaderProps {
@@ -96,30 +95,17 @@ export function KortixLoader({
   variant = 'auto',
   forceTheme, // deprecated, but kept for backwards compatibility
 }: KortixLoaderProps) {
-  const { resolvedTheme } = useTheme();
   const loaderSize = customSize || SIZE_MAP[size];
 
-  // Track mounted state to prevent hydration mismatch
-  const [mounted, setMounted] = React.useState(false);
-
-  // Set mounted on client
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Determine which variant to use
-  let effectiveVariant: 'white' | 'black';
-
+  // Explicit variant (or the deprecated forceTheme) pins the colors; otherwise
+  // the theme decides — via the `.dark` CSS class next-themes sets before first
+  // paint, so the loader renders on the server and hydrates without the old
+  // mounted-gate flicker (SSR used to paint an empty box for one frame).
+  let forcedVariant: 'white' | 'black' | null = null;
   if (variant !== 'auto') {
-    // Explicit variant set
-    effectiveVariant = variant;
+    forcedVariant = variant;
   } else if (forceTheme) {
-    // Backwards compatibility with forceTheme
-    effectiveVariant = forceTheme === 'dark' ? 'white' : 'black';
-  } else {
-    // Auto-detect from theme
-    const isDark = (resolvedTheme || 'dark') === 'dark';
-    effectiveVariant = isDark ? 'white' : 'black';
+    forcedVariant = forceTheme === 'dark' ? 'white' : 'black';
   }
 
   // Calculate border width based on size (roughly 1/16 of the size, min 2px)
@@ -128,41 +114,29 @@ export function KortixLoader({
   // Calculate animation duration based on speed (lower = faster)
   const animationDuration = 0.8 / speed;
 
-  // Colors based on variant
-  const borderColor =
-    effectiveVariant === 'white'
-      ? 'rgba(255, 255, 255, 0.15)'
-      : 'rgba(0, 0, 0, 0.1)';
-  const spinnerColor = effectiveVariant === 'white' ? '#ffffff' : '#000000';
-
-  // Don't render during SSR - render a placeholder instead
-  if (!mounted) {
-    return (
-      <div
-        className={cn('flex items-center justify-center', className)}
-        style={style}
-      >
-        <div
-          style={{
-            width: loaderSize,
-            height: loaderSize,
-          }}
-        />
-      </div>
-    );
-  }
-
   return (
     <div
       className={cn('flex items-center justify-center', className)}
       style={style}
     >
       <div
+        className={
+          forcedVariant === null
+            ? 'border-[rgba(0,0,0,0.1)] border-t-[#000000] dark:border-[rgba(255,255,255,0.15)] dark:border-t-[#ffffff]'
+            : undefined
+        }
         style={{
           width: loaderSize,
           height: loaderSize,
-          border: `${borderWidth}px solid ${borderColor}`,
-          borderTopColor: spinnerColor,
+          borderStyle: 'solid',
+          borderWidth,
+          ...(forcedVariant !== null && {
+            borderColor:
+              forcedVariant === 'white'
+                ? 'rgba(255, 255, 255, 0.15)'
+                : 'rgba(0, 0, 0, 0.1)',
+            borderTopColor: forcedVariant === 'white' ? '#ffffff' : '#000000',
+          }),
           borderRadius: '50%',
           animation:
             autoPlay && loop

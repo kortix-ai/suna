@@ -22,23 +22,20 @@
 // probe_error), just as a structured log rather than a Sentry error.
 
 import { resourceTypeForAction } from '../../iam/actions';
-import type { AuthorizeResult, AuthorizeTarget } from '../../iam/engine';
+import type { Actor } from '../../iam/actor';
+import type { Obj, Verdict } from '../../iam/authorize';
 
 /** `authorize` as a structural type — importing the real `typeof authorize`
  *  would drag the engine/db chain into this leaf module (and its unit test).
- *  `AuthorizeResult` / `AuthorizeTarget` come from `../../iam/engine`, a pure
- *  type leaf, so the shapes stay identical to the real `authorize` without a
- *  runtime dependency on the engine. */
-export type AuthorizeFn = (
-  userId: string,
-  accountId: string,
-  action: string,
-  target?: AuthorizeTarget,
-) => Promise<AuthorizeResult>;
+ *  The probe now takes the SAME `Actor` the real gate takes, which is the whole
+ *  point: `/effective` used to answer a question the gate never asks (it dropped
+ *  the acting token, so an agent session's own probe came back allowed for calls
+ *  its grant denies). */
+export type AuthorizeFn = (actor: Actor, action: string, obj?: Obj) => Promise<Verdict>;
 
 export type BatchProbe = {
   action: string;
-  target: AuthorizeTarget | undefined;
+  target: Obj | undefined;
 };
 
 export type BatchProbeResult = {
@@ -77,11 +74,11 @@ export type BatchProbeErrorContext = {
 export async function resolveBatchProbes(
   probes: BatchProbe[],
   authorizeFn: AuthorizeFn,
-  targetUserId: string,
+  actor: Actor,
   accountId: string,
   onProbeError?: (ctx: BatchProbeErrorContext) => void,
 ): Promise<BatchProbeResult[]> {
-  const cache = new Map<string, Promise<AuthorizeResult>>();
+  const cache = new Map<string, Promise<Verdict>>();
   const keyFor = (p: BatchProbe) =>
     p.target?.type === 'account'
       ? `${p.action}|account|*`
@@ -92,7 +89,7 @@ export async function resolveBatchProbes(
       const key = keyFor(p);
       let inflight = cache.get(key);
       if (!inflight) {
-        inflight = authorizeFn(targetUserId, accountId, p.action, p.target);
+        inflight = authorizeFn(actor, p.action, p.target);
         cache.set(key, inflight);
       }
       const r = await inflight;

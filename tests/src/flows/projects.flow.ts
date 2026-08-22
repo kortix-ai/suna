@@ -30,6 +30,55 @@ flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v
   });
 });
 
+flow(
+  "PROJ-14",
+  {
+    domain: "projects",
+    routes: ["POST /v1/projects/provision-stream"],
+  },
+  async (ctx) => {
+    await ctx.step("unsupported provider streams validating, then a terminal 400 error", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/provision-stream", {
+          name: ctx.fixtures.name("stream-invalid-provider"),
+          provider: "unsupported-provider",
+        });
+      r.status(200).headerEquals("content-type", /^text\/event-stream/);
+
+      const events = r
+        .text()
+        .split("\n\n")
+        .filter(Boolean)
+        .map((frame) => {
+          if (!frame.startsWith("data: ")) {
+            throw new Error(`provision stream emitted a non-data frame: ${frame}`);
+          }
+          return JSON.parse(frame.slice("data: ".length)) as Record<string, unknown>;
+        });
+      if (events.length !== 2) {
+        throw new Error(`provision stream emitted ${events.length} events instead of 2`);
+      }
+      if (events[0]?.type !== "phase" || events[0]?.phase !== "validating") {
+        throw new Error(`unexpected provision phase: ${JSON.stringify(events[0])}`);
+      }
+      if (events[1]?.type !== "error" || events[1]?.status !== 400) {
+        throw new Error(`unexpected provision terminal event: ${JSON.stringify(events[1])}`);
+      }
+    });
+
+    await ctx.step("ANON is rejected before an SSE stream opens", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/projects/provision-stream", { name: "anonymous" });
+      r.status(401);
+      if (r.header("content-type")?.includes("text/event-stream")) {
+        throw new Error("anonymous provision opened an SSE stream");
+      }
+    });
+  },
+);
+
 flow("PROJ-5", { domain: "projects", routes: ["GET /v1/projects/:projectId"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
   await ctx.step("OWNER reads project", async () => {
@@ -69,7 +118,7 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
         params: { projectId: p.id },
         headers: { "x-kortix-admin-bypass": "1" },
       });
-      r.status(200).body().has("$.project_id", p.id);
+      r.status(200).body().has("$.project.project_id", p.id);
     });
   }
 });
@@ -106,14 +155,25 @@ flow(
     list.status(200);
     const existing = list.json<any[]>()?.length ?? 0;
 
-    if (existing === 0) {
-      await ctx.step("free account: 1st project allowed (201)", async () => {
-        const r = await ctx.client
+    for (let index = existing; index < 1; index += 1) {
+      await ctx.step(`free account: project ${index + 1} of 1 allowed (201)`, async () => {
+        let r = await ctx.client
           .as(ctx.P.NONMEMBER)
-          .post("/v1/projects/provision", { name: ctx.fixtures.name("free-1") });
-        // 502 = managed git host transiently unavailable (see PROJ-3).
-        r.status([201, 502]);
-        if (r.statusCode === 201) ctx.track("project", r.json<any>().project_id);
+          .post("/v1/projects/provision", {
+            name: ctx.fixtures.name(`free-${index + 1}`),
+          });
+        // The managed Git host can return a transient 502. Retry the same quota
+        // slot before deciding the contract failed; only a real 201 advances it.
+        for (let attempt = 1; r.statusCode === 502 && attempt < 4; attempt += 1) {
+          await Bun.sleep(2_000 * attempt);
+          r = await ctx.client
+            .as(ctx.P.NONMEMBER)
+            .post("/v1/projects/provision", {
+              name: ctx.fixtures.name(`free-${index + 1}-retry-${attempt}`),
+            });
+        }
+        r.status(201).body().exists("$.project_id");
+        ctx.track("project", r.json<any>().project_id);
       });
     }
 
@@ -121,21 +181,27 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post("/v1/projects/provision", { name: ctx.fixtures.name("free-2") });
-      // The quota gate returns 403 BEFORE any repo is provisioned, so the only
-      // non-403 outcome is a 502 from a failed 1st-project create above (no
-      // project exists to count) — tolerated, not a limit regression.
-      r.status([403, 502]);
-      if (r.statusCode === 403) {
-        r.body().has("$.code", "project_limit_reached").exists("$.limit");
-      }
+      // The quota gate runs before any repository is provisioned.
+      r.status(403)
+        .body()
+        .has("$.code", "project_limit_reached")
+        .has("$.limit", 1)
+        .has("$.count", 1);
     });
   },
 );
 
 flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] }, async (ctx) => {
-  // Not tracked: this flow deletes it itself.
-  const r0 = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("del") });
-  const id = r0.json<any>().project_id;
+  // Local uses a database fixture so deletion remains hermetic. Remote targets
+  // provision a managed repository and then archive it through the same route.
+  const id =
+    ctx.env.target === "local"
+      ? (await ctx.fixtures.project({ name: ctx.fixtures.name("del") })).id
+      : (
+          await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", {
+            name: ctx.fixtures.name("del"),
+          })
+        ).json<any>().project_id;
   await ctx.step("OWNER archives project", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId", { params: { projectId: id } });
     r.status(200).body().has("$.ok", true);

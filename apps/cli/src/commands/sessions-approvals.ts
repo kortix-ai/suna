@@ -1,10 +1,8 @@
-import type {
-  OpencodePermissionRequest,
-  OpencodeQuestionRequest,
-} from '../api/sandbox-proxy.ts';
+import type { PermissionRequest, QuestionRequest } from '@kortix/sdk';
+import { unwrapRuntime, withKortixScope } from '../api/sdk.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
-import { loadSessionForChat, type ResolvedSession } from './sessions-chat.ts';
+import { type ResolvedSession, loadSessionForChat } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -76,17 +74,26 @@ function parseTarget(argv: string[], help: string): ParsedTarget | null {
     process.stderr.write(`${status.err('Pass a session id.')}\n\n${help}`);
     return null;
   }
-  return { sessionId: positional[0], requestId: positional[1], opts: { projectArg, hostArg }, rest };
+  return {
+    sessionId: positional[0],
+    requestId: positional[1],
+    opts: { projectArg, hostArg },
+    rest,
+  };
 }
 
 async function pendingFor(resolved: ResolvedSession): Promise<{
-  permissions: OpencodePermissionRequest[];
-  questions: OpencodeQuestionRequest[];
+  permissions: PermissionRequest[];
+  questions: QuestionRequest[];
 } | null> {
   try {
     const [permissions, questions] = await Promise.all([
-      resolved.oc.listPermissions(),
-      resolved.oc.listQuestions(),
+      withKortixScope(resolved.auth, async () =>
+        unwrapRuntime(await resolved.runtime.permission.list()),
+      ),
+      withKortixScope(resolved.auth, async () =>
+        unwrapRuntime(await resolved.runtime.question.list()),
+      ),
     ]);
     return { permissions: permissions ?? [], questions: questions ?? [] };
   } catch (err) {
@@ -137,7 +144,7 @@ export async function runSessionsPending(argv: string[]): Promise<number> {
         process.stdout.write(`  ${C.cyan}${q.id}${C.reset}  ${info.question}\n`);
         for (const o of info.options) {
           process.stdout.write(
-            `    ${C.dim}- ${o.label}${o.hint ? ` (${o.hint})` : ''}${C.reset}\n`,
+            `    ${C.dim}- ${o.label}${o.description ? ` (${o.description})` : ''}${C.reset}\n`,
           );
         }
       }
@@ -195,7 +202,15 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
 
   const reply = reject ? 'reject' : always ? 'always' : 'once';
   try {
-    await resolved.oc.replyPermission(requestId, reply, message);
+    await withKortixScope(resolved.auth, async () =>
+      unwrapRuntime(
+        await resolved.runtime.permission.reply({
+          requestID: requestId,
+          reply,
+          message,
+        }),
+      ),
+    );
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -240,7 +255,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
   const resolved = await loadSessionForChat(target.sessionId, target.opts, 'sessions answer');
   if (!resolved) return 1;
 
-  let request: OpencodeQuestionRequest | undefined;
+  let request: QuestionRequest | undefined;
   if (target.requestId) {
     const pending = await pendingFor(resolved);
     if (!pending) return 1;
@@ -275,7 +290,9 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
 
   try {
     if (reject) {
-      await resolved.oc.rejectQuestion(requestId);
+      await withKortixScope(resolved.auth, async () =>
+        unwrapRuntime(await resolved.runtime.question.reject({ requestID: requestId })),
+      );
       process.stdout.write(`${status.ok(`Dismissed ${C.bold}${requestId}${C.reset}`)}\n`);
       return 0;
     }
@@ -289,17 +306,22 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
         );
         return 2;
       }
-      // Map option labels to canonical values where the question defines them.
+      // OpenCode accepts the displayed option labels as the canonical answers.
       const info = request?.questions[0];
       const mapped = options.map((o) => {
-        const match = info?.options.find(
-          (opt) => opt.label === o || opt.value === o,
-        );
-        return match?.value ?? match?.label ?? o;
+        const match = info?.options.find((opt) => opt.label === o);
+        return match?.label ?? o;
       });
       answers = [[...mapped, ...(text !== undefined ? [text] : [])]];
     }
-    await resolved.oc.replyQuestion(requestId, answers);
+    await withKortixScope(resolved.auth, async () =>
+      unwrapRuntime(
+        await resolved.runtime.question.reply({
+          requestID: requestId,
+          answers,
+        }),
+      ),
+    );
   } catch (err) {
     return surfaceApiError(err);
   }

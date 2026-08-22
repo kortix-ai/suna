@@ -1,5 +1,7 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -22,7 +24,7 @@ import {
 import { kortix } from '@/lib/kortix';
 import type { KortixAccount } from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -118,7 +120,7 @@ function NewAccountDialog({ onCreated }: { onCreated: (accountId: string) => voi
           </div>
           <DialogFooter className="mt-4">
             <Button type="submit" disabled={!name.trim() || create.isPending}>
-              {create.isPending && <Loader2 className="size-4 animate-spin" />}
+              {create.isPending && <Loading className="size-4" />}
               Create account
             </Button>
           </DialogFooter>

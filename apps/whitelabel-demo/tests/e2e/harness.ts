@@ -10,8 +10,11 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { createScopedKortix } from '@kortix/sdk/server';
 
 export const APP_ROOT = join(import.meta.dir, '..', '..');
+/** Includes one cold production build before the first test app starts in CI. */
+export const APP_SETUP_TIMEOUT_MS = 120_000;
 const NEXT_BIN = join(APP_ROOT, 'node_modules', '.bin', 'next');
 
 /**
@@ -56,6 +59,14 @@ export interface AppInstance {
   /** Everything the process has printed so far — useful in failure messages. */
   log(): string;
   stop(): Promise<void>;
+}
+
+/** SDK client for one authenticated black-box wrapper user. */
+export function createTestKortix(app: AppInstance, token: string) {
+  return createScopedKortix({
+    backendUrl: `${app.baseUrl}/api/kortix`,
+    getToken: async () => token,
+  });
 }
 
 /** Remove the suite's per-user ownership JSON store (the temp

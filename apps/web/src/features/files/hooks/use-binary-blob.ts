@@ -1,17 +1,19 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { isSandboxNotReadyError } from '@kortix/sdk';
+import { useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
-import { useServerStore } from '@/stores/server-store';
-import { readFileAsBlob } from '../api/opencode-files';
-import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
+import { useEffect, useMemo, useState } from 'react';
+import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
+import { readFileAsBlob } from '../api/runtime-files';
+import { SANDBOX_WAKING_REFETCH_INTERVAL_MS } from './file-read-retry';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
 export const binaryBlobKeys = {
-  all: ['opencode-files', 'binary-blob'] as const,
+  all: ['runtime-files', 'binary-blob'] as const,
   file: (serverUrl: string, filePath: string) =>
-    ['opencode-files', 'binary-blob', serverUrl, filePath] as const,
+    ['runtime-files', 'binary-blob', serverUrl, filePath] as const,
 };
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -37,26 +39,38 @@ export function useBinaryBlob(filePath: string | null): {
   isLoading: boolean;
   error: string | null;
 } {
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
   // ── Fetch the raw Blob — this is what React Query caches ────────────
   const query = useQuery<Blob>({
     queryKey: filePath
       ? binaryBlobKeys.file(serverUrl, filePath)
-      : ['opencode-files', 'binary-blob', '__disabled__'],
-    queryFn: async () => {
-      const blob = await readFileAsBlob(filePath!);
-      if (blob.size === 0) {
-        throw new Error('File is empty (0 bytes). It may still be generating — try again in a moment.');
-      }
-      return blob;
-    },
+      : ['runtime-files', 'binary-blob', '__disabled__'],
+    queryFn: ({ signal }) =>
+      readRuntimeFileWithRetry(
+        filePath!,
+        async () => {
+          const blob = await readFileAsBlob(filePath!);
+          if (blob.size === 0) {
+            throw new Error(
+              'File is empty (0 bytes). It may still be generating — try again in a moment.',
+            );
+          }
+          return blob;
+        },
+        undefined,
+        signal,
+      ),
     enabled: !!filePath,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    retry: (failureCount, error) => shouldRetryFileRead(filePath, failureCount, error),
-    retryDelay: (attempt) => fileReadRetryDelayMs(attempt, filePath),
+    retry: false,
+    // A readiness 503 (parked/booting sandbox) is a pending state, not a
+    // failure: keep polling until the box is active so the blob loads on its
+    // own once the sandbox wakes.
+    refetchInterval: (query) =>
+      isSandboxNotReadyError(query.state.error) ? SANDBOX_WAKING_REFETCH_INTERVAL_MS : false,
   });
 
   const cachedBlob = query.data ?? null;
@@ -82,10 +96,13 @@ export function useBinaryBlob(filePath: string | null): {
   }, [cachedBlob]);
 
   // ── Stable return value ──────────────────────────────────────────────
-  return useMemo(() => ({
-    blobUrl,
-    blob: cachedBlob,
-    isLoading: query.isLoading,
-    error: query.error?.message ?? null,
-  }), [blobUrl, cachedBlob, query.isLoading, query.error?.message]);
+  return useMemo(
+    () => ({
+      blobUrl,
+      blob: cachedBlob,
+      isLoading: query.isLoading,
+      error: query.error?.message ?? null,
+    }),
+    [blobUrl, cachedBlob, query.isLoading, query.error?.message],
+  );
 }

@@ -14,14 +14,25 @@
  */
 
 import type { ToolPart } from '@/ui';
-import { toWorkspaceRelative } from '@/features/files/api/opencode-files';
+import { toWorkspaceRelative } from '@/features/files/api/runtime-files';
 import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
-import { looksLikeHtml, parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
+import { humanizeSearchQuery } from '../../tool/shared/search-query';
+import {
+  looksLikeHtml,
+  parseWebSearchOutput,
+  wsDomain,
+  type WebSearchSource,
+} from '../../tool/shared/web-helpers';
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
 import { extractReadableHtml } from '../../tool/tool-renderers-sanitization';
-import { createArtifactKind, familyForTool, humanizeToolName } from './narration';
+import {
+  contextLabelForTool,
+  createArtifactKind,
+  familyForTool,
+  humanizeToolName,
+} from './narration';
 
 interface OutputItemBase {
   callID: string;
@@ -31,6 +42,9 @@ interface OutputItemBase {
   description?: string;
   /** Set only for latest-run items: first appearance vs a re-produced path (W11). */
   fresh?: 'new' | 'updated';
+  /** The agent explicitly `show`ed this — a hand-over, so it ranks as a
+   *  deliverable regardless of extension. Set by `showOutputsOf`. */
+  shown?: boolean;
 }
 
 type ArtifactOutputItem = OutputItemBase & {
@@ -70,6 +84,10 @@ export interface ContextItem {
   /** The real URL a `web` item points at — never rendered as the label
    * itself, only as a title attribute / link target for the row. */
   url?: string;
+  /** The real on-disk path a `file` item points at — set only for
+   * `kind: 'file'`. It is what lets the Context card open the file in the
+   * viewer. */
+  path?: string;
   /** Every call behind a `tool` item, so the UI can show what the tool
    * actually did (its real tool views) when the user opens the chip. */
   parts?: ToolPart[];
@@ -300,7 +318,7 @@ interface ShowPayload {
 function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem | null {
   const url = typeof payload.url === 'string' ? payload.url.trim() : '';
   if (url && /^https?:\/\//i.test(url)) {
-    return appOutput(url, payload.title, payload.description, callID);
+    return { ...appOutput(url, payload.title, payload.description, callID), shown: true };
   }
 
   const path = typeof payload.path === 'string' ? payload.path.trim() : '';
@@ -325,7 +343,7 @@ function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem |
         ? 'presentation'
         : 'file';
 
-  return { callID, name, title, description, path, kind };
+  return { callID, name, title, description, path, kind, shown: true };
 }
 
 /**
@@ -446,39 +464,44 @@ function titleFromFetchOutput(part: ToolPart): string | undefined {
 }
 
 /**
- * The one real-world page a `web`-family call is "about", if any — the
- * identity `deriveContext` dedups on and the truthful label it shows.
+ * The real-world pages a `web`-family call is "about" — the identities
+ * `deriveContext` dedups on and the truthful labels it shows.
  *
- * - `web_fetch`/`scrape_webpage`-style calls target a URL directly (`input.url`).
- * - `web_search`-style calls have no URL of their own, but their OUTPUT is a
- *   search-results payload (see `parseWebSearchOutput`) — its first result is
- *   the page the search actually surfaced. Using it (rather than the raw
- *   query text) is what lets a search-then-fetch of the same page collapse
- *   to one entry: if the agent later fetches that exact URL, both calls
- *   resolve to the same normalized key.
- * - A search with no parseable result (or a call with no `url` at all) falls
- *   back to the query text, its own distinct entry — there is nothing more
- *   concrete to show, but it is still a fallback, never a bare identifier.
+ * - `web_fetch`/`scrape_webpage`-style calls target one URL (`input.url`).
+ * - `web_search`-style calls have no URL of their own; their OUTPUT is the
+ *   search-results payload, and EVERY parsed result is a page the search
+ *   surfaced — returning only the first is how "searched 10 sources" used to
+ *   collapse to one context entry. A search whose exact result the agent
+ *   later fetches still dedups: both resolve to the same normalized key.
+ * - A search with no parseable result falls back to its query text.
  */
-function webSourceOf(part: ToolPart): { url: string; label: string } | null {
+function webSourcesOf(part: ToolPart): Array<{ url: string; label: string }> {
   const t = normalizeName(part.tool);
   const input = (part.state?.input ?? {}) as Record<string, unknown>;
 
   if (t === 'web_search' || t === 'websearch' || t === 'image_search') {
-    const firstResult = parseWebSearchOutput(rawOutputOf(part)).flatMap((r) => r.sources)[0];
-    if (firstResult?.url) {
-      return { url: firstResult.url, label: firstResult.title || wsDomain(firstResult.url) };
+    const results: WebSearchSource[] = [];
+    for (const parsed of parseWebSearchOutput(rawOutputOf(part))) {
+      for (const source of parsed.sources) {
+        if (source.url) results.push(source);
+      }
     }
-    const query = typeof input.query === 'string' ? input.query : '';
-    return query ? { url: '', label: query } : null;
+    if (results.length > 0) {
+      return results.map((r) => ({ url: r.url, label: r.title || wsDomain(r.url) }));
+    }
+    // No results to name it with, so the query itself is the label — which
+    // means it has to be readable. Models write engine syntax (`site:x foo`);
+    // see `humanizeSearchQuery`.
+    const query = humanizeSearchQuery(typeof input.query === 'string' ? input.query : '');
+    return query ? [{ url: '', label: query }] : [];
   }
 
   // web_fetch / webfetch / scrape_webpage / scrapewebpage — identified by
   // the page it targeted. The label is the real page title when the fetch's
   // own output is parseable HTML; otherwise the domain — never the raw URL.
   const url = typeof input.url === 'string' ? input.url : '';
-  if (!url) return null;
-  return { url, label: titleFromFetchOutput(part) || wsDomain(url) };
+  if (!url) return [];
+  return [{ url, label: titleFromFetchOutput(part) || wsDomain(url) }];
 }
 
 export function deriveContext(parts: ToolPart[]): {
@@ -508,7 +531,7 @@ export function deriveContext(parts: ToolPart[]): {
       const path = filePathOf(part) ?? getToolPrimaryArg(part);
       if (!path || seenFiles.has(path)) continue;
       seenFiles.add(path);
-      files.push({ callID: part.callID, label: getToolPrimaryArg(part) || path, kind: 'file' });
+      files.push({ callID: part.callID, label: getToolPrimaryArg(part) || path, kind: 'file', path });
       continue;
     }
 
@@ -521,27 +544,33 @@ export function deriveContext(parts: ToolPart[]): {
     if (family === 'edit' || family === 'create') continue;
 
     if (family === 'web') {
-      const source = webSourceOf(part);
-      if (!source) continue;
-      // Dedup by the normalized URL when one is known (a search that
-      // surfaced the exact page a later fetch visited collapses here);
-      // otherwise fall back to the label itself (a bare query has no URL).
-      const key = source.url ? normalizeUrl(source.url) : `q:${source.label}`;
-      if (seenWeb.has(key)) continue;
-      seenWeb.add(key);
-      web.push({
-        callID: part.callID,
-        label: source.label,
-        kind: 'web',
-        url: source.url || undefined,
-      });
+      for (const source of webSourcesOf(part)) {
+        // Dedup by the normalized URL when one is known (a search that
+        // surfaced the exact page a later fetch visited collapses here);
+        // otherwise fall back to the label itself (a bare query has no URL).
+        const key = source.url ? normalizeUrl(source.url) : `q:${source.label}`;
+        if (seenWeb.has(key)) continue;
+        seenWeb.add(key);
+        web.push({
+          callID: part.callID,
+          label: source.label,
+          kind: 'web',
+          url: source.url || undefined,
+        });
+      }
       continue;
     }
 
     // Everything else is recorded once, by name, as "a tool that was used".
     // Every call to that tool rides along on `parts` so the UI can show what
     // the tool actually did when the user asks — one chip, all its calls.
-    const label = humanizeToolName(part.tool);
+    //
+    // The name comes from `contextLabelForTool`, not `humanizeToolName`: a
+    // family whose tools have several spellings (memory / memory_search /
+    // get_mem / mem_search / ltm_search) must fold into ONE row, and the
+    // by-label `seenTools` map below is what folds it — so the fold is only
+    // as good as the label. `narration.ts` owns that mapping, keyed on family.
+    const label = contextLabelForTool(part.tool);
     const seen = seenTools.get(label);
     if (seen) {
       (seen.parts ??= []).push(part);

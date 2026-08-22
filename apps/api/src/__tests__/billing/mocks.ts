@@ -5,6 +5,8 @@
  * the same mock.module() registrations without conflicts.
  */
 import { mock } from 'bun:test';
+import * as realProviders from '../../platform/providers';
+import * as realSandboxReaper from '../../projects/sandbox-reaper';
 
 // ─── Global Mock Registry ─────────────────────────────────────────────────────
 
@@ -28,7 +30,8 @@ export const mockRegistry = {
   upsertCustomer: null as ((data: any) => Promise<void>) | null,
   listAccountStripeCustomerIds: null as ((id: string) => Promise<string[]>) | null,
   deleteCustomerByStripeId: null as ((id: string) => Promise<void>) | null,
-  recordWebhookEvent: null as (() => Promise<boolean>) | null,
+  recordWebhookEvent: null as ((eventId: string, eventType: string) => Promise<boolean>) | null,
+  forgetWebhookEvent: null as ((eventId: string) => Promise<void>) | null,
 
   grantCredits: null as ((...args: any[]) => Promise<void>) | null,
   resetExpiringCredits: null as ((...args: any[]) => Promise<void>) | null,
@@ -133,9 +136,13 @@ export function registerGlobalMocks() {
   // Webhook dedup + per-account advisory lock use the raw db (no DATABASE_URL in
   // tests). Default: every event is new; the lock is a pass-through.
   mock.module('../../billing/services/webhook-concurrency', () => ({
-    recordWebhookEvent: async () =>
-      mockRegistry.recordWebhookEvent ? mockRegistry.recordWebhookEvent() : true,
-    forgetWebhookEvent: async () => undefined,
+    // Forward the real arguments: the dedupe key is what the RevenueCat/Stripe
+    // paths actually vary, so a stub that swallows it makes duplicate-event
+    // tests pass on a constant `undefined` key instead of the real one.
+    recordWebhookEvent: async (eventId: string, eventType: string) =>
+      mockRegistry.recordWebhookEvent ? mockRegistry.recordWebhookEvent(eventId, eventType) : true,
+    forgetWebhookEvent: async (eventId: string) =>
+      mockRegistry.forgetWebhookEvent ? mockRegistry.forgetWebhookEvent(eventId) : undefined,
     withAccountLock: async (_accountId: string, fn: () => Promise<any>) => fn(),
   }));
 
@@ -148,6 +155,52 @@ export function registerGlobalMocks() {
   mock.module('../../platform/services/sandbox-provisioner', () => ({
     provisionSandboxFromCheckout: async (...args: any[]) =>
       mockRegistry.provisionSandboxFromCheckout ? mockRegistry.provisionSandboxFromCheckout(...args) : undefined,
+  }));
+
+  // account-deletion.ts's stopAccountSandboxes reads active sandboxes and stops
+  // them via the provider before tearing down the account. None of the
+  // deletion-flow tests in this directory exercise sandbox-stopping, so the
+  // default here is simply "no active sandboxes" — a harmless no-op for every
+  // existing test, and enough for stopAccountSandboxes' static imports to
+  // resolve without needing a real DB/provider.
+  // A module mock REPLACES the whole module, so every export the code under
+  // test imports has to appear here — a missing one is not a silent undefined,
+  // it is a hard `SyntaxError: Export named 'x' not found` that kills the file.
+  mock.module('../../shared/db', () => ({
+    db: {
+      select: () => ({
+        from: () => ({
+          where: async () => [],
+        }),
+      }),
+    },
+    // Real shape is a boolean const, not a function. FALSE on purpose: these
+    // billing tests drive the no-DB path, and the stub `db` above answers only
+    // `select().from().where()`. Flipping this to true sends the code down real
+    // persistence branches this mock cannot serve (8 createCheckoutSession
+    // tests fail with "Stripe API error" — verified).
+    hasDatabase: false,
+  }));
+
+  // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+  // lists exports by hand deletes every export it omits — the failure surfaces in
+  // whatever unrelated file imports the missing name next, attributed to no test.
+  mock.module('../../platform/providers', () => ({
+    ...realProviders,
+    getProvider: (_name: string) => ({
+      stop: async (_externalId: string) => undefined,
+    }),
+    // Real contract: no args, always a number >= 60.
+    providerAutoStopBackstopMinutes: () => 60,
+  }));
+
+  // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+  // lists exports by hand deletes every export it omits — the failure surfaces in
+  // whatever unrelated file imports the missing name next, attributed to no test.
+  mock.module('../../projects/sandbox-reaper', () => ({
+    ...realSandboxReaper,
+    isAlreadyNotRunning: (_err: unknown) => false,
+    reconcileSandboxStoppedByExternalId: async (_externalId: string) => true,
   }));
 
   mock.module('../../billing/repositories/account-deletion', () => ({
@@ -216,6 +269,11 @@ export function createMockCreditAccount(overrides: Record<string, any> = {}) {
     lastRenewalPeriodStart: null,
     paymentStatus: 'active',
     lastPaymentFailure: null,
+    // Enterprise entitlement overrides — default off so existing per-seat/legacy
+    // tests are unaffected; per-seat webhook tests can override to assert the
+    // no-clobber guard for enterprise-entitled accounts.
+    enterpriseEntitled: false,
+    demoEnterprise: false,
     revenuecatCustomerId: null,
     revenuecatSubscriptionId: null,
     revenuecatCancelledAt: null,
@@ -284,6 +342,12 @@ export function createMockStripeCheckoutSession(overrides: Record<string, any> =
   return {
     id: 'cs_test_123',
     mode: 'subscription',
+    // Real Stripe always sets these two on a completed session. `payment_status`
+    // is the fraud gate in handleSubscriptionCheckout: only 'paid' activates.
+    // Defaulting it to 'paid' keeps this factory a HAPPY-PATH factory; tests for
+    // the unpaid path override it explicitly.
+    status: 'complete',
+    payment_status: 'paid',
     subscription: 'sub_test_123',
     customer: 'cus_test_123',
     customer_email: 'test@example.com',
@@ -340,6 +404,7 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
       })),
       create: overrides.subscriptionsCreate ?? (async (params: any) => defaultSubscription),
       cancel: overrides.subscriptionsCancel ?? (async (id: string) => ({})),
+      list: overrides.subscriptionsList ?? (async (params?: any) => ({ data: [] })),
     },
     customers: {
       create: overrides.customersCreate ?? (async (params: any) => ({

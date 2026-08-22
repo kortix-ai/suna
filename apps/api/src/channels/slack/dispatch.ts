@@ -42,7 +42,7 @@ import {
   clearThreadErrorNotice,
   inboundMessageKey,
 } from './dedup';
-import { escapeMrkdwn, sessionWebUrl, stripMentions } from './util';
+import { escapeMrkdwn, mentionsUser, sessionWebUrl, stripMentions } from './util';
 import { config } from '../../config';
 import type {
   EventClass,
@@ -184,7 +184,7 @@ export async function maybePostPicker(
   const event = envelope.event;
   if (!event || !event.channel || event.bot_id) return;
   const isMention = event.type === 'app_mention';
-  const isDm = event.type === 'message' && event.channel_type === 'im' && !event.subtype;
+  const isDm = event.type === 'message' && event.channel_type === 'im' && (!event.subtype || event.subtype === 'file_share');
   if (!isMention && !isDm) return;
 
   await postProjectPicker({
@@ -428,9 +428,67 @@ export async function classifyEvent(
   event: SlackEvent,
   botUserId: string | null,
 ): Promise<EventClass> {
-  if (event.type === 'app_mention') return 'mention';
+  // AN app_mention MUST ACTUALLY MENTION THIS PROJECT'S BOT.
+  //
+  // PROD 2026-08-20. A user typed `@Kortix hey man` in a channel that also has
+  // the "Incident reporter" bot in it, and Incident reporter answered:
+  //
+  //   mentioned bot   U0B7QL26690  (Kortix)
+  //   bot that replied U0B5W5XN49Y  (Incident reporter)
+  //   session created inside kortix-incident-reporter
+  //
+  // Two Kortix-platform apps in one workspace, each with its own BYO webhook at
+  // /slack/events/{projectId}. Whichever project the callback lands on answers,
+  // because this line accepted EVERY app_mention on the strength of its type
+  // alone. `botUserId` was already loaded and already passed in — it was simply
+  // never consulted, while the plain-`message` branch below has checked it all
+  // along. The asymmetry is the whole bug: the same event, arriving as the other
+  // Slack event type, was routed correctly.
+  //
+  // A cross-wired Events Request URL or a swapped signing-secret/token pair can
+  // deliver the event here, and that may well also be true. It does not matter:
+  // a project that is not the one addressed must decline, so a misconfiguration
+  // is a bot that stays quiet rather than a bot that impersonates another.
+  //
+  // Fails OPEN when we do not know our own bot id, which is a real state for a
+  // BYO app that has never run `link-bot`. Refusing those would take every such
+  // workspace's mentions offline to fix a two-bot workspace's routing, so it is
+  // logged instead — the degradation is visible, and link-bot closes it.
+  if (event.type === 'app_mention') {
+    if (!botUserId) {
+      console.warn(
+        '[slack] app_mention accepted without verifying the mentioned bot: this project has no ' +
+          'recorded bot user id (run `link-bot`). In a workspace with more than one Kortix app ' +
+          'installed, this is how the wrong bot answers.',
+      );
+      return 'mention';
+    }
+    if (mentionsUser(event.text ?? '', botUserId)) return 'mention';
+    console.warn(
+      `[slack] ignoring an app_mention that does not mention this project's bot (${botUserId}) — ` +
+        'it is addressed to another app in this workspace',
+    );
+    return 'ignore';
+  }
   if (event.type !== 'message') return 'ignore';
-  if (event.subtype) return 'ignore';
+  if (event.subtype) {
+    // Allow these user-generated subtypes through:
+    //   file_share   — audio messages, images, documents, etc. (agent sees file info)
+    //   me_message   — /me actions (e.g. "/me waves hello")
+    //   bot_message  — messages from OTHER bots (our own bot is blocked by
+    //                  isOwnBotEvent in dispatchSlackEvent)
+    // All other subtypes (message_changed, message_deleted, thread_broadcast,
+    // channel_join, etc.) remain ignored to avoid loops, redundancy, or system noise.
+    if (event.subtype === 'file_share' && event.files?.length) {
+      // pass through
+    } else if (event.subtype === 'me_message') {
+      // pass through — user-generated /me action
+    } else if (event.subtype === 'bot_message') {
+      // pass through — other bots' messages (isOwnBotEvent prevents self-loops)
+    } else {
+      return 'ignore';
+    }
+  }
   // A `message` that @-mentions the bot IS a mention. Slack does NOT reliably
   // deliver an `app_mention` for a mention made INSIDE an existing thread —
   // notably a thread that predates the bot joining the channel — there it arrives
@@ -441,7 +499,7 @@ export async function classifyEvent(
   // case), the exactly-once `inboundMessageKey` gate — keyed on the shared
   // (team, channel, ts) — collapses them into a single run, so this never
   // double-answers.
-  if (botUserId && (event.text ?? '').includes(`<@${botUserId}>`)) return 'mention';
+  if (botUserId && mentionsUser(event.text ?? '', botUserId)) return 'mention';
   if (event.channel_type === 'im') return 'dm';
   if (event.thread_ts && (await threadIsOwned(teamId, event.thread_ts))) return 'follow_up';
   return 'ignore';
@@ -515,6 +573,42 @@ export async function maybePostChannelIntro(teamId: string, event: SlackEvent): 
   await postChannelIntro(install.projectId, event.channel);
 }
 
+/**
+ * Is this event OUR OWN bot talking? The self-loop guard, and nothing wider.
+ *
+ * The gate here used to be `(botUserId && event.user === botUserId) || event.bot_id`,
+ * which returns on ANY bot — so a message from another app could never reach
+ * classifyEvent. That made classifyEvent's `bot_message` branch dead code: it is
+ * written to pass other bots through, and says so ("our own bot is blocked by the
+ * separate gate in dispatchSlackEvent"), but nothing ever arrived. Three tests in
+ * unit-slack-classify-event.test.ts assert that branch works and pass today,
+ * because they call classifyEvent directly and never cross this gate.
+ *
+ * Only OUR messages can loop, and `event.user` identifies them: every Slack post
+ * this codebase makes goes out with a plain bot token — there is no `username`,
+ * `icon_emoji` or `icon_url` override anywhere under channels/slack — so Slack
+ * always stamps our bot user id on the resulting event. (That absence is pinned
+ * by a test; adding such an override strips `user` and would weaken this.)
+ *
+ * The second clause covers the one hole. `botUserId` comes from a secret read on
+ * every event, and if that read fails we cannot tell our own message from another
+ * app's — so we stay conservative with BOT traffic specifically. Humans are
+ * unaffected in that window, which a blanket fail-closed would not manage.
+ *
+ * Deliberately NOT keyed on a stored bot_id: `oauth.v2.access` does not return
+ * one, so that would mean an extra auth.test at install, a new secret, and a
+ * backfill for every existing install — to defend against a code change a test
+ * already catches. This works for every install that exists today with no
+ * migration, because botUserId is a REQUIRED field on both install paths
+ * (install-store.ts saveSlackInstall + saveSlackOauthInstall) and is written
+ * unconditionally by both.
+ */
+export function isOwnBotEvent(event: SlackEvent, botUserId: string | null): boolean {
+  if (botUserId && event.user === botUserId) return true;
+  if (event.bot_id && !botUserId) return true;
+  return false;
+}
+
 export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvelope): Promise<void> {
   const event = envelope.event;
   if (!event) return;
@@ -535,7 +629,7 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
     return;
   }
 
-  if ((botUserId && event.user === botUserId) || event.bot_id) return;
+  if (isOwnBotEvent(event, botUserId)) return;
 
   const eventClass = await classifyEvent(teamId, event, botUserId);
   if (eventClass === 'ignore') return;
@@ -552,7 +646,10 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
   const msgKey = inboundMessageKey(teamId, event);
   if (msgKey && !(await claimInboundMessage(msgKey))) return;
 
-  if (eventClass === 'mention' && !stripMentions(event.text ?? '')) {
+  // A bare @mention with no text is a "what now?" prompt — post help text.
+  // But if the user attached files (e.g. an audio message), the files are the
+  // content, so don't stop here — send them to the agent.
+  if (eventClass === 'mention' && !stripMentions(event.text ?? '') && !event.files?.length) {
     if (config.SLACK_REQUIRE_USER_IDENTITY) {
       const [project] = await db
         .select({ accountId: projects.accountId })
@@ -563,14 +660,18 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
       const slackUserId = event.user ?? '';
       const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
       if ('reason' in actor) {
-        await postIdentityPrompt({
-          projectId,
-          teamId,
-          channel: event.channel,
-          threadTs: event.thread_ts,
-          slackUserId,
-          reason: actor.reason,
-        });
+        // Same reason as the main path below: a bot cannot read a prompt
+        // addressed to it. See `<cmd> link-bot`.
+        if (!event.bot_id) {
+          await postIdentityPrompt({
+            projectId,
+            teamId,
+            channel: event.channel,
+            threadTs: event.thread_ts,
+            slackUserId,
+            reason: actor.reason,
+          });
+        }
         return;
       }
     }
@@ -615,18 +716,24 @@ export async function spawnAgentTurn(
     const slackUserId = event.user ?? '';
     const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
     if ('reason' in actor) {
-      await postIdentityPrompt({
-        projectId,
-        teamId,
-        channel: event.channel,
-        // Top-level ephemeral prompts should render beside the message. Passing
-        // the message ts as thread_ts hides the auth prompt in a new thread.
-        threadTs: event.thread_ts,
-        slackUserId,
-        reason: actor.reason,
-        envelope,
-        event,
-      });
+      // A BOT cannot act on this. postIdentityPrompt posts an ephemeral AND a DM
+      // to slackUserId, so for a bot sender both land where no human will ever
+      // see them, and the mention reads as "Kortix ignored it" — which is how
+      // this went undiagnosed. Link it with `<cmd> link-bot @TheBot` instead.
+      if (!event.bot_id) {
+        await postIdentityPrompt({
+          projectId,
+          teamId,
+          channel: event.channel,
+          // Top-level ephemeral prompts should render beside the message. Passing
+          // the message ts as thread_ts hides the auth prompt in a new thread.
+          threadTs: event.thread_ts,
+          slackUserId,
+          reason: actor.reason,
+          envelope,
+          event,
+        });
+      }
       return;
     }
     actorUserId = actor.userId;

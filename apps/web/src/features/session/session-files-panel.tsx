@@ -1,17 +1,16 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { FileDiff, Sparkles } from 'lucide-react';
+import { GitDiffIcon as FileDiff, SparkleIcon as Sparkles } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
-import { getProjectSession } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { useProjectSession } from '@kortix/sdk/react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -62,12 +61,9 @@ export function SessionFilesPanel({
   // with nothing yet) instead of flashing the empty state prematurely.
   const isLoadingChanges = !statusQuery.data && (statusQuery.isLoading || statusQuery.isFetching);
 
-  const sessionQuery = useQuery({
-    queryKey: ['project', 'session', projectId, gitSessionId],
-    queryFn: () => getProjectSession(projectId!, gitSessionId!),
-    enabled: !!projectId && !!gitSessionId,
-    staleTime: 60_000,
-  });
+  // `useProjectSession` owns the key, the freshness contract and the fetcher
+  // for this entry — see its doc comment for why all three readers must agree.
+  const sessionQuery = useProjectSession(projectId, gitSessionId);
   const baseRef = sessionQuery.data?.base_ref ?? 'main';
 
   const { openPreview } = useFilePreviewStore();
@@ -109,7 +105,7 @@ export function SessionFilesPanel({
   return (
     <div className="flex h-full flex-col">
       {/* What this is + the one action. */}
-      <div className="border-border/40 flex-shrink-0 space-y-3 border-b p-4">
+      <div className="border-border/40 shrink-0 space-y-3 border-b p-4">
         <div className="space-y-1.5">
           <h3 className="text-foreground text-sm font-medium">
             {tHardcodedUi.raw(
@@ -175,7 +171,7 @@ export function SessionFilesPanel({
                 >
                   <span
                     className={cn(
-                      'w-3 flex-shrink-0 text-center font-mono font-semibold',
+                      'w-3 shrink-0 text-center font-mono font-semibold',
                       badge.cls,
                     )}
                     title={badge.label}

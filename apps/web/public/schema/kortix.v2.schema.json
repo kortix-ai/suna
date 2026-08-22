@@ -35,6 +35,10 @@
           "enabled": {
             "type": "boolean"
           },
+          "sandbox": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+          },
           "connectors": {
             "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
             "oneOf": [
@@ -53,6 +57,23 @@
                 ]
               }
             ]
+          },
+          "connectors_required": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Connector slugs that must resolve before the session starts."
+          },
+          "connectors_personal": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "deprecated": true,
+            "description": "Deprecated input alias for connectors_required."
           },
           "secrets": {
             "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
@@ -136,11 +157,15 @@
                     "project.secret.read",
                     "project.secret.write",
                     "project.connector.read",
-                    "project.connector.profiles.manage",
+                    "project.connector.connections.manage",
                     "project.connector.write",
+                    "project.app.read",
+                    "project.app.write",
+                    "project.app.deploy",
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",
+                    "project.credentials.issue",
                     "*"
                   ]
                 }
@@ -324,7 +349,8 @@
             "type": "string",
             "enum": [
               "cron",
-              "webhook"
+              "webhook",
+              "monitor"
             ]
           },
           "name": {
@@ -357,15 +383,29 @@
             "enum": [
               "fresh",
               "reuse",
-              "pinned"
+              "pinned",
+              "keyed"
             ]
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "filter": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "sessionMode": {
             "type": "string",
             "enum": [
               "fresh",
               "reuse",
-              "pinned"
+              "pinned",
+              "keyed"
             ]
           },
           "session_id": {
@@ -410,6 +450,26 @@
           "secretEnv": {
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "run": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "poll",
+              "stream"
+            ]
+          },
+          "interval": {
+            "type": "string",
+            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+          },
+          "expect_event_within": {
+            "type": "string",
+            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
           }
         },
         "additionalProperties": true,
@@ -483,6 +543,70 @@
                 }
               ]
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "monitor"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "run",
+                "mode"
+              ],
+              "properties": {
+                "cron": false,
+                "schedule": false,
+                "run_at": false,
+                "runAt": false,
+                "timezone": false,
+                "secret_env": false,
+                "secretEnv": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "monitor"
+                },
+                "mode": {
+                  "const": "poll"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            },
+            "then": {
+              "required": [
+                "interval"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "monitor"
+                },
+                "mode": {
+                  "const": "stream"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            },
+            "then": {
+              "properties": {
+                "interval": false
+              }
+            }
           }
         ]
       }
@@ -500,12 +624,17 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
           "provider": {
             "type": "string",
             "enum": [
               "pipedream",
               "mcp",
               "openapi",
+              "postman",
               "graphql",
               "http",
               "channel"
@@ -542,11 +671,19 @@
               "slack",
               "teams",
               "email",
-              "meet"
+              "voice"
             ]
           },
           "credential": {
             "const": "shared"
+          },
+          "authorization_strategy": {
+            "type": "string",
+            "enum": [
+              "project",
+              "user"
+            ],
+            "default": "project"
           },
           "agent_scope": false,
           "auth": {
@@ -561,13 +698,30 @@
                   "bearer",
                   "basic",
                   "custom",
+                  "api_key",
                   "oauth1",
+                  "hmac",
+                  "aws_sigv4",
+                  "mtls",
                   "none"
                 ]
               },
               "secret": false
             },
             "additionalProperties": true
+          },
+          "headers": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$",
+              "maxLength": 128
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^[^\\r\\n]*$"
+            }
           },
           "policies": {
             "type": "array",
@@ -648,7 +802,7 @@
             "if": {
               "properties": {
                 "slug": {
-                  "const": "kortix_meet"
+                  "const": "kortix_voice"
                 }
               }
             },
@@ -781,7 +935,183 @@
         ]
       }
     },
-    "apps": false,
+    "apps": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "pattern": "^/|(^|/)\\.\\.($|/)"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "static",
+              "bundle",
+              "dockerfile",
+              "oci_image"
+            ]
+          },
+          "image": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dockerfile": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "pattern": "^/|(^|/)\\.\\.($|/)"
+            }
+          },
+          "command": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "not": {
+              "enum": [
+                7331,
+                8080
+              ]
+            }
+          },
+          "root": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "pattern": "^/|(^|/)\\.\\.($|/)"
+            }
+          },
+          "output_dir": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "pattern": "^/|(^|/)\\.\\.($|/)"
+            }
+          },
+          "install_command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "build_command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "spa": {
+            "type": "boolean"
+          },
+          "readiness_path": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "idle_timeout_seconds": {
+            "type": "integer",
+            "minimum": 120,
+            "maximum": 86400
+          },
+          "monthly_budget_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "resources": {
+            "type": "object",
+            "properties": {
+              "cpu": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64
+              },
+              "memory_gb": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 512
+              },
+              "disk_gb": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2048
+              }
+            },
+            "additionalProperties": false
+          },
+          "env": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[A-Z_][A-Z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "secrets": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[A-Z_][A-Z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "enum": [
+                    "dockerfile",
+                    "oci_image"
+                  ]
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "required": [
+                "command",
+                "port"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "oci_image"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "required": [
+                "image"
+              ]
+            }
+          }
+        ]
+      }
+    },
     "channels": false
   },
   "additionalProperties": true,

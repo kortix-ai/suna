@@ -29,6 +29,12 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     error: null,
     createdBy: 'user-1',
     visibility: 'project',
+    origin: 'user',
+    originRef: null,
+    secretsAllowlist: null,
+    requiredConnectors: null,
+    connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
     metadata: {},
     createdAt: now,
     updatedAt: now,
@@ -52,7 +58,7 @@ mock.module('../iam', () => ({
   ...realIam,
   authorize: async () => ({ allowed: authorizeAllowed }),
   assertAuthorized: async () => {},
-  filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+  filterAccessibleObjects: async (_actor: unknown, _p: string, _t: string, ids: readonly string[]) => [...ids],
   unscopedResourceIds: async (_p: string, _t: string, ids: readonly string[]) => [...ids],
   hasAnyResourceGrants: async () => false,
 }));
@@ -105,7 +111,9 @@ mock.module('../channels/slack/turn', () => ({
   rowToHandle: () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
 }));
 
+const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
+  ...realInstallStore,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
   SLACK_TEAM_ID: 'SLACK_TEAM_ID',
@@ -120,6 +128,7 @@ mock.module('../channels/install-store', () => ({
   loadSlackSigningSecretForProject: async () => null,
   loadSlackTeamNameForProject: async () => null,
   loadSlackTokenForProject: async () => 'xoxb-test',
+  loadTeamsInstall: async () => null,
   loadTelegramWebhookSecretForProject: async () => null,
   saveSlackInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
   saveSlackOauthInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
@@ -129,6 +138,8 @@ mock.module('../channels/slack-api', () => ({
   appendStream: async () => {},
   deleteMessage: async () => {},
   getChannelName: async () => 'general',
+  isBotUser: async () => true,
+  findBotUserIdByName: async () => null,
   joinChannel: async () => true,
   openDmChannel: async () => 'D1',
   postBlocks: async () => 'ts',
@@ -476,7 +487,7 @@ describe('inboundMessageKey — one message ⇒ one identity', () => {
 
 describe('dispatchSlackEvent — exactly-once per inbound user message', () => {
   const mention = (ts: string) =>
-    ({ team_id: 'T1', event: { type: 'app_mention', channel: 'C1', ts, user: 'U1', thread_ts: '90.0', text: 'hi' } }) as any;
+    ({ team_id: 'T1', event: { type: 'app_mention', channel: 'C1', ts, user: 'U1', thread_ts: '90.0', text: '<@B1> hi' } }) as any;
 
   test('a LOST message claim → the agent does NOT run (duplicate suppressed)', async () => {
     deliverOutcome = 'delivered';
@@ -540,5 +551,46 @@ describe('dispatchSlackEvent — exactly-once per inbound user message', () => {
     await dispatchSlackEvent('proj-1', mention('100.1'));
     expect(deliverCalls).toBe(1); // still ONE — no second answer for the same question
     expect(createSessionCalls).toBe(0);
+  });
+});
+
+// ─── THE 2026-08-20 WRONG-BOT REPLY, at the level the damage happened ─────────
+//
+// `@Kortix hey man` in a channel that also has the "Incident reporter" bot, and
+// Incident reporter answered — a session was created inside the wrong project
+// and a message was posted as the wrong bot. classifyEvent's unit test pins the
+// routing decision; this pins the consequence, which is what the user saw:
+// nothing is created and nothing is said by the project that was not addressed.
+describe('dispatchSlackEvent — a mention addressed to another workspace bot', () => {
+  const forBot = (botId: string, ts: string) =>
+    ({
+      team_id: 'T1',
+      event: { type: 'app_mention', channel: 'C1', ts, user: 'U1', text: `<@${botId}> hey man` },
+    }) as any;
+
+  test('THE FIX: no session, no reply, nothing bound to this project', async () => {
+    // Only the channel-binding query is reached; the claim is never attempted,
+    // because the event is declined before it can be claimed.
+    dbResults = [[]];
+    await dispatchSlackEvent('proj-1', forBot('U0B7QL26690', '300.1'));
+
+    expect(createSessionCalls, 'a session was created inside the project that was NOT mentioned').toBe(0);
+    expect(deliverCalls, 'the turn was routed into a session of the wrong project').toBe(0);
+    expect(messages, 'the wrong bot answered in the channel').toHaveLength(0);
+    expect(ephemerals, 'the wrong bot posted an ephemeral').toHaveLength(0);
+  });
+
+  test('the project that WAS mentioned still answers', async () => {
+    deliverOutcome = 'delivered';
+    dbResults = [
+      [], // ensureProjectChannelBinding
+      [{ eventId: 'slack:msg:T1:C1:301.1' }], // claimInboundMessage → WON
+      [project],
+      [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: {} }], // known thread
+      [], // update lastMessageAt
+    ];
+    await dispatchSlackEvent('proj-1', forBot('B1', '301.1'));
+
+    expect(deliverCalls, 'the correctly-addressed bot went silent — this fix must not cost that').toBe(1);
   });
 });

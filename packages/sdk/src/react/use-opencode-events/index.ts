@@ -2,22 +2,33 @@
 
 import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { clearConfigOverrides } from '../use-opencode-config';
-import { saveSessionToIDB } from '../../browser/cache/idb-sync-cache';
+import {
+  noteSessionSyncEvent,
+  reconcileSessionTail,
+} from '../../browser/session-sync/session-sync-registry';
 import { logger } from '../../core/http/logger';
-import { getClient, resetClient } from '../../core/runtime/client';
+import { dropClientForUrl, getClient } from '../../core/runtime/client';
 import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '../../browser/stores/opencode-pending-store';
 import { useSyncStore } from '../../browser/stores/sync-store';
-import { useSandboxConnectionStore } from '../../browser/stores/sandbox-connection-store';
+import {
+  noteRuntimeEvidence,
+  useSandboxConnectionStore,
+} from '../../browser/stores/sandbox-connection-store';
 import { useServerStore } from '../../browser/stores/server-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { opencodeKeys } from '../use-opencode-sessions';
+import { useKortixRouteProjectId } from '../route-project';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
-import { releaseMessageRehydrate, reserveMessageRehydrate } from './helpers';
+import {
+  releaseMessageRehydrate,
+  reserveMessageRehydrate,
+  resolveClientEvictionUrl,
+} from './helpers';
 import { useEventStreamRefs } from './use-event-stream-refs';
 import { openEventStream } from '../../core/stream/event-stream';
 
@@ -36,8 +47,13 @@ import { openEventStream } from '../../core/stream/event-stream';
  * needs the React Query `QueryClient` (cache reads/writes, which
  * `createEventHandler` and `hydrateCore` below perform).
  */
-export function useOpenCodeEventStream() {
+export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
+  // The project this SSE connection's events are about — threaded into
+  // `refetchKortixSessionMirrors` so a title/tree mirror refetch stays scoped
+  // to the project actually being viewed instead of guessing at "every
+  // project" (see that function's doc comment in `helpers.ts`).
+  const projectId = useKortixRouteProjectId();
   const addPermission = useOpenCodePendingStore((s) => s.addPermission);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
   const addQuestion = useOpenCodePendingStore((s) => s.addQuestion);
@@ -74,15 +90,30 @@ export function useOpenCodeEventStream() {
     // URL/port updates within the same runtime.
     const isServerSwitch = prevRuntimeVersionRef.current !== runtimeVersion;
     prevRuntimeVersionRef.current = runtimeVersion;
-    const didServerUrlChange = prevServerUrlRef.current !== activeServerUrl;
+    const previousServerUrl = prevServerUrlRef.current;
+    const didServerUrlChange = previousServerUrl !== activeServerUrl;
     prevServerUrlRef.current = activeServerUrl;
 
     // Only reset the SDK client on actual server switches — NOT on URL/port
     // updates. Resetting on every urlVersion change tears down the client
     // unnecessarily, causing SSE disconnection → reconnection → cache
     // invalidation cascade that manifests as random loading flashes.
+    //
+    // Evict ONLY the one url actually being replaced (`resolveClientEvictionUrl`)
+    // — never `resetClient()`'s full `clientsByUrl` wipe, which would force
+    // every OTHER concurrently-open session's client to be recreated just
+    // because THIS session's runtime switched (`clientsByUrl` is deliberately
+    // keyed per url so several session sandboxes stay connected at once).
+    const evictUrl = resolveClientEvictionUrl({
+      isFirstMount,
+      isServerSwitch,
+      didServerUrlChange,
+      previousServerUrl,
+      activeServerUrl,
+    });
+    if (evictUrl) dropClientForUrl(evictUrl);
+
     if (isFirstMount || isServerSwitch) {
-      resetClient();
       clearConfigOverrides();
       clearPending();
       // NOTE: we intentionally do NOT wipe the sync store or the opencode
@@ -94,18 +125,19 @@ export function useOpenCodeEventStream() {
       // scope) and would otherwise bleed across sandboxes.
       useDiagnosticsStore.getState().clearAll();
       resetPrefetchState();
-    } else if (didServerUrlChange) {
-      // URL changed on the same logical server (e.g. sandbox/proxy refresh).
-      // Recreate the SDK client so SSE reconnects to the new endpoint, but
-      // keep caches/status intact to avoid loading flashes.
-      resetClient();
     }
 
     // Do not connect SSE or hydrate OpenCode-backed endpoints while the
     // runtime is starting/degraded. Otherwise every mounted dashboard tab
     // fans out into /session/*, /path, /permission, /question, and /lsp/*
     // requests that each sit for 30s and retry.
-    if (!activeServerUrl || sandboxStatus !== 'connected' || runtimeHealthy !== true) return;
+    if (
+      options.enabled === false ||
+      !activeServerUrl ||
+      sandboxStatus !== 'connected' ||
+      runtimeHealthy !== true
+    )
+      return;
 
     // `activeServerUrl` (getActiveServerUrl) and the url getClient() resolves
     // (getActiveOpenCodeUrl → current-runtime) come from DIFFERENT accessors and
@@ -135,6 +167,8 @@ export function useOpenCodeEventStream() {
       normalizeDiagnosticPaths,
       markSessionAbortedLocally,
       fetchLspDiagnosticsDebounced,
+      reconcileSessionTail,
+      projectId,
     });
 
     // ---- CONSOLIDATED hydration function ----
@@ -167,21 +201,26 @@ export function useOpenCodeEventStream() {
       client.session
         .status()
         .then((res) => {
-          if (res.data) {
-            const statuses = res.data;
-            for (const [sessionID, status] of Object.entries(statuses)) {
-              // Locally-synthesized event (this is a REST poll, not an SSE
-              // frame) — omits the `id` field every real `Event` union member
-              // carries, hence the assertion.
-              applySyncEvent({
-                type: 'session.status',
-                properties: { sessionID, status },
-              } as unknown as OpenCodeSdkEvent);
-            }
-            reconcileMissingBusySessions.current(statuses);
-          } else {
-            reconcileMissingBusySessions.current({});
+          // This snapshot is the runtime's COMPLETE set of non-idle sessions,
+          // so it carries two facts: what each listed session is doing, and
+          // that every UNLISTED one is not busy. The second is the only repair
+          // the raw status slot has for a terminal frame this tab never saw,
+          // and the surfaces that still read that slot directly — the session
+          // panel, and the sub-agent banner for CHILD sessions, which have no
+          // Kortix session row for `GET .../turn` to answer about — depend on
+          // it. `useSessionWorking` answers for Kortix sessions; this answers
+          // for the rest.
+          const statuses = res.data ?? {};
+          for (const [sessionID, status] of Object.entries(statuses)) {
+            // Locally-synthesized event (this is a REST poll, not an SSE
+            // frame) — omits the `id` field every real `Event` union member
+            // carries, hence the assertion.
+            applySyncEvent({
+              type: 'session.status',
+              properties: { sessionID, status },
+            } as unknown as OpenCodeSdkEvent);
           }
+          reconcileMissingBusySessions.current(statuses);
         })
         .catch((err) => {
           logger.error('Failed to hydrate session statuses', {
@@ -207,16 +246,7 @@ export function useOpenCodeEventStream() {
           const status = syncState.sessionStatus[sid];
           if (status?.type !== 'busy' && status?.type !== 'retry') continue;
           if (!reserveMessageRehydrate(sid)) continue;
-          client.session
-            .messages({ sessionID: sid })
-            .then((res) => {
-              if (res.data) {
-                useSyncStore.getState().hydrate(sid, res.data);
-                const s = useSyncStore.getState();
-                const msgs = s.messages[sid] ?? [];
-                if (msgs.length > 0) saveSessionToIDB(sid, msgs, s.parts);
-              }
-            })
+          reconcileSessionTail(sid, 'sse-gap')
             .catch(() => {})
             .finally(() => releaseMessageRehydrate(sid));
         }
@@ -232,7 +262,14 @@ export function useOpenCodeEventStream() {
     // the QueryClient-dependent event handler and the gap-rehydrate hook.
     const handle = openEventStream({
       client,
-      onEvent: handleEvent,
+      onEvent: (event) => {
+        // Every delivered frame is live proof the runtime is reachable — it
+        // vetoes concurrent health-probe failures (a loaded box can miss the
+        // probe deadline mid-turn). See shouldIgnoreProbeFailure.
+        noteRuntimeEvidence();
+        noteSessionSyncEvent(event);
+        handleEvent(event);
+      },
       onGapRehydrate: () => hydrateCore({ rehydrateMessages: true }),
     });
 
@@ -254,8 +291,10 @@ export function useOpenCodeEventStream() {
     activeServerUrl,
     sandboxStatus,
     runtimeHealthy,
+    options.enabled,
     applySyncEvent,
     stopCompaction,
+    projectId,
   ]);
 }
 

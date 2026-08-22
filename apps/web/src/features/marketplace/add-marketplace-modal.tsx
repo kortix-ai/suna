@@ -1,6 +1,6 @@
 'use client';
 
-import { Search } from 'lucide-react';
+import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -77,18 +77,16 @@ export function AddMarketplaceModal({
       .split(/[\n,]/)
       .map((s) => s.trim())
       .filter(Boolean);
-    add
-      .mutateAsync({ address: addr, gitRef: gitRef.trim() || undefined, sparsePaths })
-      .then(
-        () => {
-          successToast('Source added', { description: 'Its items now appear in the catalog.' });
-          setAddress('');
-          setGitRef('');
-          setSparse('');
-          setShowAdvanced(false);
-        },
-        (e) => errorToast('Could not add source', { description: (e as Error).message }),
-      );
+    add.mutateAsync({ address: addr, gitRef: gitRef.trim() || undefined, sparsePaths }).then(
+      () => {
+        successToast('Source added', { description: 'Its items now appear in the catalog.' });
+        setAddress('');
+        setGitRef('');
+        setSparse('');
+        setShowAdvanced(false);
+      },
+      (e) => errorToast('Could not add source', { description: (e as Error).message }),
+    );
   };
 
   const onEnable = (addr: string, label: string) => {
@@ -134,6 +132,7 @@ export function AddMarketplaceModal({
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing) return;
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       onAddCustom();
@@ -249,7 +248,11 @@ export function AddMarketplaceModal({
                       disabled={enabling === f.address}
                       onClick={() => onEnable(f.address, f.label)}
                     >
-                      {enabling === f.address ? <Loading className="size-3.5 shrink-0" /> : 'Enable'}
+                      {enabling === f.address ? (
+                        <Loading className="size-3.5 shrink-0" />
+                      ) : (
+                        'Enable'
+                      )}
                     </Button>
                   </div>
                 ))}

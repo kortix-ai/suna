@@ -21,6 +21,8 @@
  *   positive flow opts in.
  */
 import { flow } from "../core/flow";
+import { waitFor } from "../core/poll";
+import { CliSandbox } from "../fixtures/cli";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
 
@@ -132,6 +134,8 @@ flow(
           { params: { projectId: p.id } },
         );
       r.status(403);
+      r.body().has("$.code", "feature_disabled");
+      r.body().has("$.feature", "agentmail_email");
     });
     await ctx.step("NONMEMBER cannot connect → 403/404", async () => {
       const r = await ctx.client
@@ -191,6 +195,75 @@ flow(
         .get("/v1/projects/:projectId/channels/slack/mode", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
+  },
+);
+
+// CHN-1b — the real CLI process selects one-click OAuth when the host exposes it.
+flow(
+  "CHN-1b",
+  {
+    domain: "channels",
+    routes: [
+      "GET /v1/accounts/me",
+      "GET /v1/projects/:projectId/channels/slack/mode",
+      "GET /v1/projects/:projectId/channels/slack/installation",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.sharedProject();
+    const modeResponse = await ctx.client
+      .as(ctx.P.OWNER)
+      .get("/v1/projects/:projectId/channels/slack/mode", {
+        params: { projectId: project.id },
+      });
+    modeResponse.status(200);
+    const mode = modeResponse.json<{ oauth_available: boolean; install_url: string | null }>();
+    const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-channels") });
+    const sandbox = new CliSandbox("channels-one-click");
+    try {
+      const login = await sandbox.login(pat, { noProject: true });
+      if (login.exitCode !== 0) throw new Error(`CLI login failed: ${login.all}`);
+
+      await ctx.step(
+        "kortix channels connect reads the host mode and prints the configured setup path",
+        async () => {
+          const result = await sandbox.run([
+            "channels",
+            "connect",
+            "--project",
+            project.id,
+            "--json",
+          ]);
+          if (mode.oauth_available && mode.install_url) {
+            const output = JSON.parse(result.stdout) as {
+              connected: boolean;
+              install_url: string | null;
+            };
+            if (result.exitCode !== 0) throw new Error(result.all);
+            if (!output.install_url) throw new Error("CLI returned no Slack install URL");
+            const cliUrl = new URL(output.install_url);
+            const apiUrl = new URL(mode.install_url);
+            const cliState = cliUrl.searchParams.get("state");
+            const apiState = apiUrl.searchParams.get("state");
+            if (!cliState || !apiState) throw new Error("Slack install URL omitted signed state");
+            cliUrl.searchParams.delete("state");
+            apiUrl.searchParams.delete("state");
+            if (cliUrl.toString() !== apiUrl.toString()) {
+              throw new Error(`CLI install URL ${cliUrl} != API ${apiUrl}`);
+            }
+          } else {
+            if (result.exitCode !== 2) {
+              throw new Error(`manual setup without credentials must exit 2, got ${result.exitCode}`);
+            }
+            if (!/--bot-token/.test(result.stderr) || !/channels manifest/.test(result.stderr)) {
+              throw new Error(`CLI did not print the manual Slack setup path: ${result.stderr}`);
+            }
+          }
+        },
+      );
+    } finally {
+      sandbox.dispose();
+    }
   },
 );
 
@@ -302,7 +375,8 @@ flow(
 );
 
 // CHN-5 — Slack inbound, BYO per-project (POST /v1/webhooks/slack/:projectId). Public.
-// Not configured for project → 404; configured + bad sig → 401.
+// An unsigned url_verification bootstrap is accepted before installation;
+// real callbacks still require a configured project signing secret.
 flow(
   "CHN-5",
   {
@@ -311,19 +385,133 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("project with no Slack install → 404", async () => {
+    await ctx.step("unsigned url_verification bootstrap → 200 challenge", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post("/v1/webhooks/slack/:projectId", { type: "url_verification", challenge: "abc123" }, {
           params: { projectId: p.id },
         });
-      r.status([404, 401]);
+      r.status(200).body().has("$.challenge", "abc123");
     });
     await ctx.step("unknown project → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post("/v1/webhooks/slack/:projectId", { type: "event_callback" }, { params: { projectId: UNKNOWN } });
       r.status(404);
+    });
+  },
+);
+
+// CHN-8 — configure a Telegram boundary, submit both supported update shapes,
+// and prove the accepted message creates one project-visible session.
+flow(
+  "CHN-8",
+  {
+    domain: "channels",
+    serial: true,
+    timeoutMs: 180_000,
+    requires: ["database", "daytona", "funded"],
+    routes: [
+      "POST /v1/projects/:projectId/secrets",
+      "POST /v1/webhooks/telegram/:projectId",
+      "GET /v1/projects/:projectId/sessions",
+    ],
+  },
+  async (ctx) => {
+    const senderId = 987654321;
+    const project = await ctx.fixtures.project({
+      seed: true,
+      metadata: { telegram: { allowedUserIds: [senderId] } },
+    });
+    const webhookSecret = `ke2e-telegram-${Date.now()}`;
+    const updateId = Date.now();
+    const message = {
+      message_id: 42,
+      chat: { id: 123456789, type: "private" },
+      from: { id: senderId, username: "ke2e" },
+      text: "Summarize the release status",
+    };
+
+    await ctx.step("a project manager stores the Telegram webhook secret for connector-only use", async () => {
+      const response = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/secrets",
+        {
+          name: "TELEGRAM_WEBHOOK_SECRET",
+          value: webhookSecret,
+          strategy: "broker",
+          consumer: "connector",
+        },
+        { params: { projectId: project.id } },
+      );
+      response.status(200).body().has("$.strategy", "broker").has("$.consumer", "connector");
+    });
+
+    await ctx.step("a configured Telegram webhook rejects a missing or mismatched secret token", async () => {
+      const missing = await ctx.client.as(ctx.P.ANON).post(
+        "/v1/webhooks/telegram/:projectId",
+        { update_id: updateId, message },
+        { params: { projectId: project.id } },
+      );
+      missing.status(401);
+
+      const mismatched = await ctx.client.as(ctx.P.ANON).post(
+        "/v1/webhooks/telegram/:projectId",
+        { update_id: updateId, message },
+        {
+          params: { projectId: project.id },
+          headers: { "x-telegram-bot-api-secret-token": `${webhookSecret}-wrong` },
+        },
+      );
+      mismatched.status(401);
+    });
+
+    await ctx.step("a signed Telegram message creates one project-visible owner session", async () => {
+      const response = await ctx.client.as(ctx.P.ANON).post(
+        "/v1/webhooks/telegram/:projectId",
+        { update_id: updateId, message },
+        {
+          params: { projectId: project.id },
+          headers: { "x-telegram-bot-api-secret-token": webhookSecret },
+        },
+      );
+      response.status(200).body().has("$.ok", true);
+
+      const sessions = await waitFor(
+        async () => {
+          const read = await ctx.client
+            .as(ctx.P.OWNER)
+            .get("/v1/projects/:projectId/sessions", { params: { projectId: project.id } });
+          read.status(200);
+          const body = read.json<any>();
+          return Array.isArray(body) ? body : (body.sessions ?? []);
+        },
+        {
+          until: (rows) => rows.some((row: any) => row?.metadata?.source === "telegram"),
+          timeoutMs: 120_000,
+          intervalMs: 1_000,
+          description: `a Telegram session for ${project.id}`,
+        },
+      );
+      const created = sessions.find((row: any) => row?.metadata?.source === "telegram");
+      if (created?.visibility !== "project") {
+        throw new Error(`Telegram session visibility is ${String(created?.visibility)}`);
+      }
+      if (created?.created_by !== ctx.P.OWNER.userId) {
+        throw new Error(`Telegram session actor is ${String(created?.created_by)}`);
+      }
+      if (created?.session_id) ctx.track("session", created.session_id, { projectId: project.id });
+    });
+
+    await ctx.step("a signed edited_message update is accepted through the same boundary", async () => {
+      const response = await ctx.client.as(ctx.P.ANON).post(
+        "/v1/webhooks/telegram/:projectId",
+        { update_id: updateId, edited_message: message },
+        {
+          params: { projectId: project.id },
+          headers: { "x-telegram-bot-api-secret-token": webhookSecret },
+        },
+      );
+      response.status(200).body().has("$.ok", true);
     });
   },
 );
@@ -461,7 +649,7 @@ flow(
         );
       r.status(404);
     });
-    await ctx.step("OWNER, empty body → 400", async () => {
+    await ctx.step("OWNER, unknown binding wins before empty-body validation → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
@@ -469,7 +657,7 @@ flow(
           {},
           { params: { projectId: p.id, bindingId: UNKNOWN_BINDING } },
         );
-      r.status(400);
+      r.status(404);
     });
     await ctx.step("NONMEMBER cannot update → 403/404", async () => {
       const r = await ctx.client
@@ -495,24 +683,26 @@ flow(
 );
 
 // CHN-20 — send-primitive IAM gate (project.connector.write). The Slack file
-// upload proxy and the meet/speak proxy POST to a channel using the project's
-// own bot credentials; the IAM enforcement audit found both were gated by
-// nothing but project-READ, so ANY project-read caller could post arbitrary
-// files to Slack / make the meeting bot speak. They now assert
+// upload proxy POSTs to a channel using the project's own bot credentials; the
+// IAM enforcement audit found it was gated by nothing but project-READ, so ANY
+// project-read caller could post arbitrary files to Slack. It now asserts
 // project.connector.write (the same leaf that gates connect/disconnect and the
 // channel-bindings route). Proven black-box: a floor MEMBER (project.read, no
-// connector.write) is rejected 403 BEFORE any Slack/ElevenLabs call, while an
-// EDITOR (holds connector.write) passes the gate (fails later on missing
-// install/keys, never 403). The scoped-agent-token variant (agent grants are
-// server-minted at session start, not reachable over HTTP here) is proven at
-// the API layer in integration-project-read-leaf-gates-http.test.ts.
+// connector.write) is rejected 403 BEFORE any Slack call, while an EDITOR
+// (holds connector.write) passes the gate (fails later on missing install,
+// never 403). The scoped-agent-token variant (agent grants are server-minted at
+// session start, not reachable over HTTP here) is proven at the API layer in
+// integration-project-read-leaf-gates-http.test.ts.
+//
+// The meet/speak proxy was the other primitive here; it went away with the
+// notetaker (see §VOICE) — the voice channel has no send primitive reachable
+// over user auth at all.
 flow(
   "CHN-20",
   {
     domain: "channels",
     routes: [
       "POST /v1/projects/:projectId/channels/slack/file/upload",
-      "POST /v1/projects/:projectId/channels/meet/speak",
     ],
   },
   async (ctx) => {
@@ -521,18 +711,13 @@ flow(
     const memberOnly = await team.addMember("member");
     const editor = await team.addMember("member");
     await team.grantProjectRole(p.id, memberOnly.userId!, "user");
-    await team.grantProjectRole(p.id, editor.userId!, "editor");
+    await team.grantProjectRole(p.id, editor.userId!, "manager");
 
     const SEND_PRIMITIVES = [
       {
         name: "slack file upload",
         path: "/v1/projects/:projectId/channels/slack/file/upload",
         body: { channel: "C1", filename: "a.txt", content_base64: "eA==" },
-      },
-      {
-        name: "meet speak",
-        path: "/v1/projects/:projectId/channels/meet/speak",
-        body: { bot_id: "bot_x", text: "hi" },
       },
     ] as const;
 
@@ -639,7 +824,10 @@ flow(
   },
 );
 
-// CHN-T3 — Teams connect (manage ACL); a bad tenant id is rejected with 400.
+// CHN-T3 — Teams connect (manage ACL). Teams is a per-project feature flag
+// (#5908): disabled projects get the standard 403 feature_disabled before any
+// validation, and once the `teams` flag is on, a bad tenant id is rejected
+// with 400.
 flow(
   "CHN-T3",
   {
@@ -648,10 +836,23 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER with invalid tenant_id → 400", async () => {
+    await ctx.step("OWNER, teams flag off (default) → 403 feature_disabled", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: p.id } });
+      r.status(403);
+      r.body().has("$.code", "feature_disabled");
+      r.body().has("$.feature", "teams");
+    });
+    const own = await ctx.fixtures.project();
+    await ctx.step("OWNER enables the teams experiment, invalid tenant_id → 400", async () => {
+      const enabled = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: true }, { params: { projectId: own.id } });
+      enabled.status(200);
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: own.id } });
       r.status(400);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
@@ -682,6 +883,175 @@ flow(
         .as(ctx.P.ANON)
         .post("/v1/webhooks/teams/messages", { type: "message", text: "hi" });
       r.status([401, 503]);
+    });
+  },
+);
+
+// CHN-21 — Slack identity "/login/:token" magic-link redirect (public). Mirrors
+// the already-allowlisted teams identity-login twin: login.ts never verifies the
+// token server-side (that happens client-side when the web page POSTs /bind), so
+// it's a deterministic, always-200 HTML redirect for ANY token shape — bogus
+// included. Real coverage: status + content-type + the token round-tripping into
+// the redirect target (proves the handler actually read the param, not a 404
+// route-miss).
+flow(
+  "CHN-21",
+  {
+    domain: "channels",
+    routes: ["GET /v1/channels/slack/identity/login/:token"],
+  },
+  async (ctx) => {
+    await ctx.step("ANON bogus token → 200 HTML redirect (never verified server-side)", async () => {
+      const token = "bogus-login-token-ke2e";
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/channels/slack/identity/login/:token", { params: { token } });
+      r.status(200).headerEquals("content-type", /text\/html/);
+      if (!r.text().includes(encodeURIComponent(token))) {
+        throw new Error("CHN-21: redirect target did not echo the token back");
+      }
+    });
+  },
+);
+
+// CHN-22 — Per-project (BYO app) Slack manifest (public, unauthenticated
+// scaffolding template — no DB lookup, so it renders for ANY projectId,
+// including one that was never created).
+flow(
+  "CHN-22",
+  {
+    domain: "channels",
+    routes: ["GET /v1/webhooks/slack/:projectId/manifest"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("ANON reads the BYO manifest for a real project → 200 shape", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/webhooks/slack/:projectId/manifest", { params: { projectId: p.id } });
+      r.status(200)
+        .body()
+        .exists("$.display_information.name")
+        .exists("$.features.slash_commands")
+        .exists("$.settings.interactivity.request_url");
+      const manifest = r.json<any>();
+      if (!manifest.settings.interactivity.request_url.includes(p.id)) {
+        throw new Error("CHN-22: manifest webhook URLs are not scoped to the requested project");
+      }
+    });
+    await ctx.step("ANON on an unknown projectId → still 200 (scaffolding template, no DB check)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/webhooks/slack/:projectId/manifest", { params: { projectId: UNKNOWN } });
+      r.status(200).body().exists("$.display_information.name");
+    });
+  },
+);
+
+// CHN-23 — Bind a Slack thread to a session (dual-authed: user PAT/JWT with
+// project-read, or an in-sandbox project-scoped sandbox token). No public seam
+// creates a real Slack thread binding without a live Slack workspace, so the
+// live-assertable ceiling is validation + the auth boundary — same shape every
+// other user-authed channels route in this file exercises.
+flow(
+  "CHN-23",
+  {
+    domain: "channels",
+    requires: ["daytona"],
+    routes: ["POST /v1/projects/:projectId/channels/slack/bind-thread"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const session = await ctx.fixtures.session(p);
+
+    await ctx.step("OWNER, missing session_id/channel/thread_ts → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/slack/bind-thread", {}, { params: { projectId: p.id } });
+      r.status(400);
+    });
+
+    await ctx.step("OWNER, well-formed but channel not bound to any Slack workspace → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: session.id, channel: "C_KE2E_UNBOUND", thread_ts: "1700000000.000100" },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
+
+    await ctx.step("NONMEMBER cannot bind → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: session.id, channel: "C_KE2E_UNBOUND", thread_ts: "1700000000.000100" },
+          { params: { projectId: p.id } },
+        );
+      r.status([403, 404]);
+    });
+
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: session.id, channel: "C_KE2E_UNBOUND", thread_ts: "1700000000.000100" },
+          { params: { projectId: p.id } },
+        );
+      r.status(401);
+    });
+  },
+);
+
+// CHN-24 / CHN-25 — Per-project (BYO app) Slack slash-command + interactivity
+// webhooks. This uses the same signed-rejection pattern as the sandbox webhook flow.
+// /v1/webhooks/sandbox/*: POST an unsigned body at a REAL (but Slack-unconnected)
+// project. loadSlackSigningSecretForProject resolves to null before the HMAC
+// check ever runs, so the rejection is a deterministic 404 "Not configured" —
+// real coverage of the reject-unsigned boundary, not a route-miss (a genuinely
+// unknown project hits the exact same code path, so this also proves the route
+// isn't silently accepting anything).
+flow(
+  "CHN-24",
+  {
+    domain: "channels",
+    routes: ["POST /v1/webhooks/slack/:projectId/commands"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("ANON unsigned slash command on an unconnected project → 404 (not configured)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/webhooks/slack/:projectId/commands",
+          "command=%2Fkortix&text=hi&team_id=TKE2E&channel_id=CKE2E&user_id=UKE2E",
+          { params: { projectId: p.id }, raw: true, headers: { "content-type": "application/x-www-form-urlencoded" } },
+        );
+      r.status(404);
+    });
+  },
+);
+
+flow(
+  "CHN-25",
+  {
+    domain: "channels",
+    routes: ["POST /v1/webhooks/slack/:projectId/interactivity"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("ANON unsigned interaction on an unconnected project → 404 (not configured)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/webhooks/slack/:projectId/interactivity",
+          `payload=${encodeURIComponent(JSON.stringify({ type: "block_actions" }))}`,
+          { params: { projectId: p.id }, raw: true, headers: { "content-type": "application/x-www-form-urlencoded" } },
+        );
+      r.status(404);
     });
   },
 );

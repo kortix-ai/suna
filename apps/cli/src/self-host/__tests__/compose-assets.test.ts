@@ -8,6 +8,7 @@ import { parse } from 'yaml';
 import {
   kortixRuntimeAssets,
   officialSupabaseDockerAssets,
+  renderCaddyfile,
   renderFullDockerCompose,
   SUPABASE_IMAGE_DIGESTS,
   SUPABASE_UPSTREAM_COMMIT,
@@ -118,24 +119,37 @@ describe('full self-host Docker distribution', () => {
     });
   });
 
-  test('never mounts the Docker socket into kortix-api unless local-docker is selected', () => {
+  test('never mounts the Docker socket into kortix-api', () => {
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, { volumes?: string[]; environment?: Record<string, string> }>;
     };
     const api = document.services['kortix-api'];
     expect(api?.volumes ?? []).not.toContain('/var/run/docker.sock:/var/run/docker.sock');
-    expect(api?.environment?.LOCAL_DOCKER_NETWORK).toBeUndefined();
   });
 
-  test('mounts the Docker socket + points LOCAL_DOCKER_NETWORK at this Compose project\'s own network when local-docker is selected', () => {
-    const document = parse(renderFullDockerCompose('kortix-default', { localDockerConfigured: true })) as {
-      services: Record<string, { volumes?: string[]; environment?: Record<string, string> }>;
+  test('allows database-backed Supabase services to finish first-boot migrations', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { healthcheck?: { retries?: number; start_period?: string } }>;
     };
-    const api = document.services['kortix-api'];
-    expect(api?.volumes).toContain('/var/run/docker.sock:/var/run/docker.sock');
-    expect(api?.environment?.LOCAL_DOCKER_NETWORK).toBe('kortix-default_default');
-    // Existing env (ALLOWED_SANDBOX_PROVIDERS etc.) must survive the merge.
-    expect(api?.environment?.ALLOWED_SANDBOX_PROVIDERS).toBe('${ALLOWED_SANDBOX_PROVIDERS}');
+    for (const serviceName of [
+      'supabase-auth',
+      'supabase-analytics',
+      'supabase-storage',
+    ]) {
+      expect(document.services[serviceName]?.healthcheck, serviceName).toMatchObject({
+        retries: 24,
+        start_period: '120s',
+      });
+    }
+  });
+
+  test('bounds Kong workers within the self-host memory limit', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+    expect(
+      document.services['supabase-kong']?.environment?.KONG_NGINX_WORKER_PROCESSES,
+    ).toBe('2');
   });
 
   test('omits the cloudflared tunnel service when tunnel mode is not selected', () => {
@@ -321,6 +335,28 @@ describe('full self-host Docker distribution', () => {
     expect(caddyfile).toContain('fail_duration');
   });
 
+  test('supabase-db gets tunable max_connections headroom (injected, not vendored) so the stack scales past ~4 api replicas', () => {
+    const rendered = renderFullDockerCompose('kortix-default', { domainConfigured: true });
+    // Rendered compose carries the override (injected in renderFullDockerCompose,
+    // NOT in the upstream-locked vendored docker-compose.yml — the separate
+    // upstream-lock test above guards that the vendored file stays pristine).
+    expect(rendered).toContain('max_connections=${POSTGRES_MAX_CONNECTIONS:-200}');
+    // It rides the postgres command, right after the config_file arg.
+    expect(rendered).toContain('config_file=/etc/postgresql/postgresql.conf');
+  });
+
+  test('every replicated upstream carries in-request retry so a recreate-window pick failure is retried, not 502ed', () => {
+    const caddyfile = kortixRuntimeAssets.Caddyfile;
+    // One lb_try_duration/lb_try_interval per replicated app upstream
+    // (api, gateway, frontend). Dial-level failures (connection refused / no
+    // upstreams available) are retried against the healthy replica — POST-safe
+    // because the upstream never received the request. See the Bad-Gateway fix.
+    expect((caddyfile.match(/lb_try_duration 5s/g) ?? []).length).toBe(3);
+    expect((caddyfile.match(/lb_try_interval 250ms/g) ?? []).length).toBe(3);
+    // No raw retry_match that would unsafely replay a non-idempotent POST.
+    expect(caddyfile).not.toContain('retry_match');
+  });
+
   test('Caddyfile sends a conservative HSTS header (no preload) on both site blocks', () => {
     const caddyfile = kortixRuntimeAssets.Caddyfile;
     const matches = [...caddyfile.matchAll(/Strict-Transport-Security "([^"]+)"/g)];
@@ -335,6 +371,141 @@ describe('full self-host Docker distribution', () => {
       expect(maxAge).toBeLessThanOrEqual(60 * 60 * 24 * 90);
       expect(maxAge).toBeGreaterThan(0);
     }
+  });
+
+  test('base Caddyfile carries NO Apps-hosting wildcard block or on_demand_tls', () => {
+    // Default (no Apps hosting): byte-for-byte the embedded base file, so a
+    // stack without Apps hosting never emits an empty `*.` site address.
+    const base = renderCaddyfile();
+    expect(base).toBe(kortixRuntimeAssets.Caddyfile);
+    expect(base).toBe(renderCaddyfile({ appsHostingConfigured: false }));
+    expect(base).not.toContain('KORTIX_APPS_BASE_DOMAIN');
+    expect(base).not.toContain('on_demand_tls');
+    expect(base).not.toContain('on_demand');
+    expect(base).not.toContain('tls-check');
+  });
+
+  test('Apps hosting adds a wildcard *.<apps base domain> block with per-App on_demand TLS, only when configured', () => {
+    const caddyfile = renderCaddyfile({ appsHostingConfigured: true });
+
+    // The wildcard site address + per-App on-demand TLS.
+    expect(caddyfile).toContain('*.{$KORTIX_APPS_BASE_DOMAIN} {');
+    expect(caddyfile).toMatch(/tls \{\s*on_demand\s*\}/);
+
+    // The global on_demand_tls `ask` that bounds ACME issuance to real App
+    // hosts, pointing at the internal kortix-api tls-check route.
+    expect(caddyfile).toContain('on_demand_tls {');
+    expect(caddyfile).toContain('ask http://kortix-api:8008/v1/apps/edge/tls-check');
+    // Exactly one global options block (Caddy allows only one) — the `ask` is
+    // injected INTO the existing block, not appended as a second one.
+    expect(caddyfile.match(/on_demand_tls \{/g)?.length).toBe(1);
+
+    // The Apps block reverse-proxies to kortix-api the same way the api block
+    // does (dynamic a upstream + active health check), and preserves the
+    // inbound Host so the API's resolveAppHost(Host) names the right App.
+    const appsBlock = caddyfile.slice(caddyfile.indexOf('*.{$KORTIX_APPS_BASE_DOMAIN} {'));
+    expect(appsBlock).toContain('name kortix-api');
+    expect(appsBlock).toContain('port 8008');
+    expect(appsBlock).toContain('health_uri /v1/health');
+    expect(appsBlock).toContain('dynamic a');
+    expect(appsBlock).toContain('fail_duration');
+    // Caddy passes Host through and sets X-Forwarded-Proto by default; assert
+    // neither is overridden (an explicit header_up X-Forwarded-Proto warns
+    // "Unnecessary" under `caddy validate`, and header_up Host would break
+    // resolveAppHost).
+    expect(appsBlock).not.toContain('header_up');
+    // HSTS on the Apps block too, consistent with the other site blocks.
+    expect(appsBlock).toContain('Strict-Transport-Security "max-age=2592000"');
+  });
+
+  test('writeKortixRuntimeAssets writes the Apps block only when Apps hosting is configured', () => {
+    const withApps = mkdtempSync(join(tmpdir(), 'kortix-caddy-apps-'));
+    const without = mkdtempSync(join(tmpdir(), 'kortix-caddy-noapps-'));
+    try {
+      writeKortixRuntimeAssets(withApps, { appsHostingConfigured: true });
+      writeKortixRuntimeAssets(without);
+      expect(readFileSync(join(withApps, 'Caddyfile'), 'utf8')).toContain('*.{$KORTIX_APPS_BASE_DOMAIN} {');
+      expect(readFileSync(join(without, 'Caddyfile'), 'utf8')).toBe(kortixRuntimeAssets.Caddyfile);
+    } finally {
+      rmSync(withApps, { recursive: true, force: true });
+      rmSync(without, { recursive: true, force: true });
+    }
+  });
+
+  test('preview origins add a wildcard *.<preview base domain> block, only when configured', () => {
+    const caddyfile = renderCaddyfile({ previewHostingConfigured: true });
+
+    expect(caddyfile).toContain('*.{$KORTIX_PREVIEW_BASE_DOMAIN} {');
+    expect(caddyfile).toMatch(/tls \{\s*on_demand\s*\}/);
+    expect(caddyfile).toContain('ask http://kortix-api:8008/v1/apps/edge/tls-check');
+    // Preview-only: the Apps block must not appear.
+    expect(caddyfile).not.toContain('*.{$KORTIX_APPS_BASE_DOMAIN} {');
+
+    const block = caddyfile.slice(caddyfile.indexOf('*.{$KORTIX_PREVIEW_BASE_DOMAIN} {'));
+    expect(block).toContain('name kortix-api');
+    expect(block).toContain('port 8008');
+    expect(block).toContain('health_uri /v1/health');
+    // Host must reach the API untouched — resolvePreviewHost(Host) is what
+    // names the sandbox and the port.
+    expect(block).not.toContain('header_up');
+    expect(block).toContain('Strict-Transport-Security "max-age=2592000"');
+  });
+
+  test('both wildcard families share the one global on_demand_tls ask Caddy allows', () => {
+    const caddyfile = renderCaddyfile({
+      appsHostingConfigured: true,
+      previewHostingConfigured: true,
+    });
+    expect(caddyfile).toContain('*.{$KORTIX_APPS_BASE_DOMAIN} {');
+    expect(caddyfile).toContain('*.{$KORTIX_PREVIEW_BASE_DOMAIN} {');
+    // Caddy allows exactly one global options block, and on_demand_tls is
+    // global-only — two would fail to load and take the whole proxy down.
+    expect(caddyfile.match(/on_demand_tls \{/g)?.length).toBe(1);
+    expect(caddyfile.match(/ask http:/g)?.length).toBe(1);
+  });
+
+  test('neither family configured leaves the base file byte-for-byte', () => {
+    expect(renderCaddyfile({ appsHostingConfigured: false, previewHostingConfigured: false })).toBe(
+      kortixRuntimeAssets.Caddyfile,
+    );
+  });
+
+  test('writeKortixRuntimeAssets writes the preview block only when configured', () => {
+    const withPreview = mkdtempSync(join(tmpdir(), 'kortix-caddy-preview-'));
+    const without = mkdtempSync(join(tmpdir(), 'kortix-caddy-nopreview-'));
+    try {
+      writeKortixRuntimeAssets(withPreview, { previewHostingConfigured: true });
+      writeKortixRuntimeAssets(without);
+      expect(readFileSync(join(withPreview, 'Caddyfile'), 'utf8')).toContain(
+        '*.{$KORTIX_PREVIEW_BASE_DOMAIN} {',
+      );
+      expect(readFileSync(join(without, 'Caddyfile'), 'utf8')).not.toContain(
+        'KORTIX_PREVIEW_BASE_DOMAIN',
+      );
+    } finally {
+      rmSync(withPreview, { recursive: true, force: true });
+      rmSync(without, { recursive: true, force: true });
+    }
+  });
+
+  test('caddy service passes KORTIX_PREVIEW_BASE_DOMAIN into its container env', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+    expect(document.services.caddy?.environment).toMatchObject({
+      KORTIX_PREVIEW_BASE_DOMAIN: '${KORTIX_PREVIEW_BASE_DOMAIN}',
+    });
+  });
+
+  test('caddy service passes KORTIX_APPS_BASE_DOMAIN into its container env', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+    expect(document.services.caddy?.environment).toMatchObject({
+      KORTIX_DOMAIN: '${KORTIX_DOMAIN}',
+      KORTIX_API_DOMAIN: '${KORTIX_API_DOMAIN}',
+      KORTIX_APPS_BASE_DOMAIN: '${KORTIX_APPS_BASE_DOMAIN}',
+    });
   });
 
   test('every service in the rendered stack has bounded, rotated logging', () => {
@@ -354,29 +525,38 @@ describe('full self-host Docker distribution', () => {
     const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true, tunnelConfigured: true })) as {
       services: Record<string, { mem_limit?: string; mem_reservation?: string; oom_score_adj?: number }>;
     };
-    const toMb = (value: string) => Number(value.replace(/m$/, ''));
+    const toMb = (value: string) => {
+      const defaultValue = value.match(/:-([0-9]+m)}$/)?.[1] ?? value;
+      return Number(defaultValue.replace(/m$/, ''));
+    };
     for (const [name, service] of Object.entries(document.services)) {
       expect(service.mem_limit, name).toBeDefined();
       expect(service.mem_reservation, name).toBeDefined();
     }
     const db = document.services['supabase-db'];
     expect(db?.oom_score_adj).toBeLessThan(0);
+    // Matched to the gateway's ceiling on purpose: the API mounts the gateway
+    // in-process, so image-heavy request bodies transit BOTH containers.
+    expect(document.services['kortix-api']?.mem_limit).toBe('${KORTIX_API_MEMORY_LIMIT:-2048m}');
     const analytics = document.services['supabase-analytics'];
     const vector = document.services['supabase-vector'];
     expect(analytics?.oom_score_adj).toBeGreaterThan(0);
     expect(vector?.oom_score_adj).toBeGreaterThan(0);
-    // The full worst-case (every STEADY-STATE service simultaneously at its
-    // own ceiling) must still fit comfortably on an 8GB box — these are
-    // circuit-breaker ceilings, not a steady-state budget, but they must not
-    // be so generous that the documented floor is fiction. kortix-migrate is
-    // excluded: it's a one-shot job that runs to completion and exits before
-    // the app tier is ever rolled, never concurrent with the rest at steady
-    // state (see kortix-compose.yml: `restart: "no"`).
+    // The full worst-case (every STEADY-STATE service simultaneously at its own
+    // ceiling) must still fit a modern self-host box — these are circuit-breaker
+    // ceilings, not a steady-state budget (reservations, which schedule the box,
+    // sum far lower), but they must not be so generous the documented floor is
+    // fiction. The floor is 12GB: the llm-gateway carries a deliberately large
+    // 2GB ceiling so an image-heavy multimodal turn (bodies of tens of MiB, see
+    // DEFAULT_MAX_REQUEST_BYTES) can never OOM it; a small-box operator dials that
+    // back with KORTIX_GATEWAY_MEMORY_LIMIT. kortix-migrate is excluded: it's a
+    // one-shot job that exits before the app tier is ever rolled, never concurrent
+    // with the rest at steady state (see kortix-compose.yml: `restart: "no"`).
     const totalCeilingMb = Object.entries(document.services)
       .filter(([name]) => name !== 'kortix-migrate')
       .map(([, service]) => (service.mem_limit ? toMb(service.mem_limit) : 0))
       .reduce((a, b) => a + b, 0);
-    expect(totalCeilingMb).toBeLessThan(8 * 1024);
+    expect(totalCeilingMb).toBeLessThan(12 * 1024);
   });
 
   test('kortix-updater image is pinned by digest, never :latest or a bare floating :cli tag', () => {
@@ -573,6 +753,45 @@ describe('full self-host Docker distribution', () => {
     const migrateFailureBlock = perform.slice(migrateGuardIdx, perform.indexOf('fi', migrateGuardIdx));
     expect(migrateFailureBlock).toContain('write_status "failed"');
     expect(migrateFailureBlock).toContain('return 1');
+  });
+
+  test('updater.sh self-heals a migration that hit an unlogged-table storage-fork error (58P01), then retries once', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const runMigrate = script.slice(script.indexOf('run_migrate()'), script.indexOf('next_run_epoch()'));
+    // The reactive path fires only on the specific storage-fork error class,
+    // heals, and retries the migration exactly once before giving up.
+    expect(runMigrate).toContain('could not open file|58P01');
+    const detectIdx = runMigrate.indexOf('grep -qE "could not open file|58P01"');
+    const healIdx = runMigrate.indexOf('heal_supabase_unlogged', detectIdx);
+    const retryIdx = runMigrate.indexOf(`$COMPOSE run --rm --no-deps "$MIGRATE_SERVICE"`, healIdx);
+    expect(detectIdx).toBeGreaterThan(-1);
+    expect(healIdx).toBeGreaterThan(detectIdx);
+    expect(retryIdx).toBeGreaterThan(healIdx);
+    // A migration that fails for any OTHER reason must not trigger the heal.
+    expect(runMigrate).toContain('ERROR: migration failed; aborting');
+  });
+
+  test('updater.sh heal only ever resets UNLOGGED tables (never durable app data) and never fails the update', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const heal = script.slice(script.indexOf('heal_supabase_unlogged()'), script.indexOf('run_migrate()'));
+    // Targets are restricted to unlogged ordinary tables — the only relations
+    // safe to reset (no durability guarantee; app data is all LOGGED).
+    expect(heal).toContain("c.relpersistence = 'u'");
+    expect(heal).toContain("c.relkind = 'r'");
+    expect(heal).toContain('TRUNCATE');
+    // A table is reset ONLY when VACUUM fails with the storage-fork error class,
+    // never on a transient error (concurrent DROP, lock) — so a healthy
+    // disposable table (e.g. pg_net's request queue) is never truncated.
+    const truncateIdx = heal.indexOf('TRUNCATE');
+    const forkGateIdx = heal.indexOf('could not open file|58P01');
+    expect(forkGateIdx).toBeGreaterThan(-1);
+    expect(truncateIdx).toBeGreaterThan(forkGateIdx);
+    // Best-effort: it degrades gracefully (missing DB / not ready) and never
+    // returns nonzero, so the heal itself can never fail an update.
+    expect(heal).toContain('skipping unlogged-table heal');
+    expect(heal).not.toContain('return 1');
+    // Superuser + a bounded readiness wait, so it is safe to call mid-update.
+    expect(heal).toContain('pg_isready');
   });
 
   test('updater.sh leaves the old version serving when the new replicas never become healthy', () => {

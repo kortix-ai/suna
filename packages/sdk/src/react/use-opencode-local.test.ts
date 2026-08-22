@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  agentScopedModelSelectionKey,
   formatModelString,
   formatPromptModel,
   modelProviderMode,
   parseModelKey,
   resolveCurrentAgentName,
   resolveHiddenAutoModel,
+  resolvePromptModel,
   scopedModelSelectionKey,
 } from './use-opencode-local';
 
@@ -17,12 +19,32 @@ describe('OpenCode local model selection scoping', () => {
     expect(scopedModelSelectionKey(undefined, 'native')).toBeUndefined();
   });
 
+  test('keeps the per-agent model slot keyed by agent name when an agent is loaded', () => {
+    expect(agentScopedModelSelectionKey('gateway', 'kortix')).toBe('gateway:kortix');
+    expect(agentScopedModelSelectionKey('native', 'kortix')).toBe('native:kortix');
+  });
+
+  // A project `member` is deny-by-default on agents, so the composer's agent
+  // roster is empty until an explicit resource grant names them. The model pick
+  // must still persist: the picker listed every enabled model, but every click
+  // was a no-op because the ONLY durable slot was keyed on the (absent) agent
+  // and the project-home composer has no sessionId either. Selection must not
+  // depend on agent access — the same rule `currentModelKey` already documents
+  // on the READ side.
+  test('still yields a durable slot when no agent is accessible', () => {
+    const key = agentScopedModelSelectionKey('gateway', undefined);
+    expect(key).toBe('gateway:');
+    expect(key).not.toBe(agentScopedModelSelectionKey('native', undefined));
+    // Stable across calls, so a write is readable back by the next render.
+    expect(agentScopedModelSelectionKey('gateway', undefined)).toBe(key);
+  });
+
   test('detects gateway mode from the Kortix provider', () => {
     expect(
       modelProviderMode({
         all: [{ id: 'kortix', name: 'Kortix', models: {} }],
         connected: ['kortix'],
-        default: { kortix: 'auto' },
+        default: { kortix: 'glm-5.2' },
       } as any),
     ).toBe('gateway');
   });
@@ -55,41 +77,40 @@ describe('OpenCode local model selection scoping', () => {
     expect(formatPromptModel(byok)).toEqual(byok);
   });
 
-  test('does not fall back to synthetic AUTO when AUTO is hidden and the explicit default is unavailable', () => {
+  test('sends the concrete current model when no explicit model is selected', () => {
     expect(
-      resolveHiddenAutoModel(
+      resolvePromptModel(undefined, {
+        providerID: 'kortix',
+        modelID: 'claude-opus-4.8',
+      }),
+    ).toEqual({ providerID: 'kortix', modelID: 'claude-opus-4.8' });
+  });
+
+  test('never emits stale auto selections', () => {
+    expect(
+      resolvePromptModel(
         { providerID: 'kortix', modelID: 'auto' },
-        {
-          enableAutoModel: false,
-          isModelValid: () => false,
-        },
+        { providerID: 'kortix', modelID: 'claude-opus-4.8' },
       ),
+    ).toEqual({ providerID: 'kortix', modelID: 'claude-opus-4.8' });
+    expect(
+      resolvePromptModel(undefined, { providerID: 'kortix', modelID: 'auto' }),
     ).toBeUndefined();
   });
 
-  test('substitutes hidden AUTO with the provider-qualified gateway default when available', () => {
+  test('keeps the deprecated Auto resolver ABI while failing stale Auto closed', () => {
     expect(
       resolveHiddenAutoModel(
         { providerID: 'kortix', modelID: 'auto' },
-        {
-          enableAutoModel: false,
-          isModelValid: (model) =>
-            model.providerID === 'kortix' && model.modelID === 'codex/gpt-5.6-sol',
-        },
+        { enableAutoModel: true, isModelValid: () => true },
       ),
-    ).toEqual({ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' });
-  });
-
-  test('keeps AUTO only when the feature is explicitly enabled', () => {
+    ).toBeUndefined();
     expect(
       resolveHiddenAutoModel(
-        { providerID: 'kortix', modelID: 'auto' },
-        {
-          enableAutoModel: true,
-          isModelValid: () => false,
-        },
+        { providerID: 'kortix', modelID: 'glm-5.2' },
+        { enableAutoModel: false, isModelValid: () => false },
       ),
-    ).toEqual({ providerID: 'kortix', modelID: 'auto' });
+    ).toEqual({ providerID: 'kortix', modelID: 'glm-5.2' });
   });
 
   test('project sessions prefer the server-bound agent over global last-used agent', () => {

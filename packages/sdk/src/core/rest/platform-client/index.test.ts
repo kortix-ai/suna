@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test';
 import * as platformClient from './index';
 
+// The nine sandbox-member / sandbox-scope entries this list used to carry were
+// removed with the canonical-RBAC refactor: `sandbox_members` was retired, every
+// one of those functions threw on call, and the snapshot was the only reason
+// they still existed. See `./members.ts`'s header.
 const EXPECTED_FUNCTIONS = [
   'getSandboxUrl',
   'getSandboxPortUrl',
@@ -16,18 +20,9 @@ const EXPECTED_FUNCTIONS = [
   'stopSandbox',
   'cancelSandbox',
   'reactivateSandbox',
-  'listSandboxMembers',
-  'addSandboxMember',
-  'removeSandboxMember',
-  'updateSandboxMemberRole',
-  'updateSandboxMemberSpendCap',
-  'getViewerSandboxScopes',
-  'getSandboxMemberScopes',
-  'updateSandboxMemberScope',
   'listSandboxProjectMembers',
   'grantSandboxProjectAccess',
   'revokeSandboxProjectAccess',
-  'revokeSandboxInvite',
   'getInvite',
   'acceptInvite',
   'declineInvite',

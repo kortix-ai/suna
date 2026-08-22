@@ -1,27 +1,62 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
-import { useCallback, useRef } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef } from 'react';
 
-import { resolveCreateFailure } from '@/hooks/projects/new-session-failure';
+import { errorToast, loadingToast } from '@/components/ui/toast';
+import { createScopedSession } from '@/features/session/scope/create-scoped-session';
+import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
+import {
+  getRequiredConnectorConnections,
+  resolveCreateFailure,
+} from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import {
+  primeTakenWarmSession,
+  takeWarmSessionEntry,
+} from '@/hooks/projects/use-warm-project-session';
+import {
+  reconcileSessionsAfterCreate,
+  seedAdoptedWarmSession,
+} from '@/hooks/projects/warm-session-seed';
+import {
+  NEW_SESSION_GUARD_MAX_MS,
+  hasLandedOnNewSession,
+  useNewSessionGuardStore,
+} from '@/hooks/projects/new-session-guard';
 import { isBillingEnabled } from '@/lib/config';
-import { toast } from '@/lib/toast';
+import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import {
+  createProjectSession,
+  getProjectSessionScope,
+  type PendingSessionPrompt,
+  type ProjectSession,
+  type SessionConnectorBindingsInput,
+  setProjectSessionScope,
+} from '@kortix/sdk';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { createProjectSession } from '@kortix/sdk/projects-client';
-import { prefetchSessionStart } from '@kortix/sdk/react';
+import { prefetchSessionStart, qk } from '@kortix/sdk/react';
 
 /**
- * The ONE "new empty session" path, shared by every entry point (project shell
- * button, ⌘T/⌘J shortcuts, project sidebar, command palette, home composer).
+ * The shared project-session entry path. Calls without options only open the
+ * composer. Calls with options create a session for an explicit task.
  *
- * CREATE-FIRST: mint the session id client-side, persist it, and navigate the
- * moment the server confirms (create is a ~15ms insert, so this is still
- * instant). The route bundle prefetch overlaps the create RTT, and `/start`
- * is prefetched the moment the row exists — so provisioning still begins
- * during the navigation, without ever racing the create POST.
+ * A session is persisted only after an explicit user action. The route bundle
+ * and `/start` are prefetched before navigation.
+ *
+ * The session id comes from one of two places. When the project shell has a warm
+ * session ready that fits this send (`use-warm-project-session.ts`) this takes
+ * it and the SERVER owns the id. Otherwise the id is minted client-side and
+ * created as before. `takeWarmSessionEntry` returns null whenever nothing
+ * suitable is held, so the create path below remains the authority on billing,
+ * the session cap and connector requirements — the user sees the same outcome
+ * either way. When it DOES fit, `onReady` also seeds the sessions-list cache
+ * with the entry's server row (JAY-599/T21, `warm-session-seed.ts`), so the
+ * sidebar shows the session the instant this tab sends — it does not wait for
+ * the server's own marker-drop (`POST .../start`) to round-trip back through
+ * the reconciling `invalidateQueries` below.
  *
  * `onNavigate(sessionId)` runs synchronously right before the push — use it
  * for entry-point-specific side effects (open a tab, close a drawer, timing
@@ -35,26 +70,76 @@ import { prefetchSessionStart } from '@kortix/sdk/react';
  *
  * `create` carries create-time overrides (e.g. a chosen `sandbox_slug`)
  * straight to the persist POST.
+ *
+ * Activation is guarded per project by `new-session-guard.ts` and held until the
+ * navigation lands, so hammering the control creates exactly ONE session. Bind
+ * `useIsCreatingProjectSession(projectId)` to the control's `disabled` so the
+ * guard is visible as well as enforced.
  */
+/**
+ * Options for a new-session start.
+ * `agent_name` chooses the session's boot agent. Later prompts can name another
+ * agent; the API re-scopes its grants before forwarding the prompt.
+ * `connector_bindings` binds specific connections; `inherit_unbound`
+ * keeps the project-default fallback for every OTHER connector so binding one
+ * doesn't null the rest. `require_connectors` names connectors that must resolve
+ * to the acting user's OWN connection — a missing one opens the connect gate.
+ */
+export type NewProjectSessionOpts = {
+  onNavigate?: (sessionId: string) => void;
+  onError?: () => void;
+  scope?: SessionScopeCommit;
+  create?: {
+    sandbox_slug?: string;
+    agent_name?: string;
+    pending_prompt?: PendingSessionPrompt;
+    connector_bindings?: SessionConnectorBindingsInput;
+    inherit_unbound?: boolean;
+    require_connectors?: string[];
+  };
+};
+
 export function useNewProjectSession(projectId: string | undefined) {
   const router = useRouter();
+  const pathname = usePathname();
   const queryClient = useQueryClient();
-  const creatingRef = useRef(false);
   const { canRun, isLoading: billingLoading, accountId } = useProjectCanRun(projectId);
   const openUpgradeDialog = useUpgradeDialogStore((state) => state.openUpgradeDialog);
+  const openConnectorGate = useConnectorGateStore((state) => state.openConnectorGate);
+  // A ref so the connect-to-start gate's `retry` re-invokes the LATEST create fn.
+  const startRef = useRef<(opts?: NewProjectSessionOpts) => void>(() => {});
+  // The guard is module state, not a ref: the project shell mounts this hook
+  // three times (sidebar button, shell shortcuts, command palette) and all of
+  // them must share ONE in-flight claim. See new-session-guard.ts.
+  const releaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const release = useCallback(() => {
+    if (releaseTimerRef.current) {
+      clearTimeout(releaseTimerRef.current);
+      releaseTimerRef.current = null;
+    }
+    if (projectId) useNewSessionGuardStore.getState().settle(projectId);
+  }, [projectId]);
 
-  return useCallback(
-    (opts?: {
-      onNavigate?: (sessionId: string) => void;
-      onError?: () => void;
-      // `agent_name` binds the session's immutable boot agent at birth. It MUST
-      // match the agent the composer sends on the first prompt — the API proxy
-      // rejects any prompt whose `agent` differs from the session's bound agent
-      // with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION (sessions are agent-immutable).
-      create?: { sandbox_slug?: string; agent_name?: string };
-    }) => {
-      if (!projectId || creatingRef.current) {
+  // Hold the claim until the navigation LANDS. Releasing when the create POST
+  // resolves (~130ms) is what let 10 rapid clicks mint 8 sessions.
+  const pendingMap = useNewSessionGuardStore((state) => state.pending);
+  useEffect(() => {
+    if (!projectId) return;
+    if (hasLandedOnNewSession(pendingMap, projectId, pathname)) release();
+  }, [pendingMap, projectId, pathname, release]);
+  useEffect(() => () => {
+    if (releaseTimerRef.current) clearTimeout(releaseTimerRef.current);
+  }, []);
+
+  const startSession = useCallback(
+    (opts?: NewProjectSessionOpts) => {
+      if (!projectId) {
         opts?.onError?.();
+        return;
+      }
+
+      if (!opts) {
+        router.push(`/projects/${projectId}`);
         return;
       }
 
@@ -69,38 +154,150 @@ export function useNewProjectSession(projectId: string | undefined) {
         return;
       }
 
-      creatingRef.current = true;
+      // ONE claim per project. A second activation while the first create is
+      // still settling is a no-op, not a second session.
+      if (!useNewSessionGuardStore.getState().begin(projectId)) {
+        opts?.onError?.();
+        return;
+      }
+      releaseTimerRef.current = setTimeout(release, NEW_SESSION_GUARD_MAX_MS);
 
-      // The API requires a UUIDv4; crypto.randomUUID is available in every
-      // context this app runs (secure context: https + localhost).
-      const sessionId = crypto.randomUUID();
-      markSessionFresh(sessionId); // → instant shell, not the resume loader
-      // Warm the route bundle while the create POST is in flight.
-      router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
+      // The taken warm session's server row, so `onReady` below can seed the
+      // sessions-list cache with it (JAY-599/T21). Set only when a warm
+      // session was actually adopted THIS call — a closure local, not a ref,
+      // so back-to-back activations of this same hook instance never leak one
+      // call's row into another's `onReady`.
+      let adoptedWarmSession: ProjectSession | null = null;
 
-      createProjectSession(projectId, { session_id: sessionId, ...opts?.create })
-        .then(() => {
+      // Use the project's warm session when there is one that fits, else create
+      // one exactly as before. The warm session already exists — it is an
+      // ordinary session created a few seconds ago — so this is a synchronous,
+      // network-free hand-off that skips the sandbox boot the user would
+      // otherwise watch after pressing Enter. `takeWarmSessionEntry` returns
+      // null whenever there is nothing suitable, so the create path below stays
+      // the authority on billing, the session cap and connector requirements.
+      const takeOrCreateSession = async () => {
+        const warm = takeWarmSessionEntry(projectId, { create: opts?.create });
+        if (warm) {
+          // The first prompt is a DURABLE inbox row, never a client-side
+          // replay (the start stash carries picks only — see the producers).
+          // The ordinary path gets that row from `create.pending_prompt` in
+          // the create transaction; an adopted warm session was created
+          // seconds ago with an EMPTY body, so its prompt has to land now,
+          // through the server's claim (`primeTakenWarmSession`): one
+          // transaction that inserts the row, drops the warm marker, and kicks
+          // the drain. Without this the local take navigated into a session
+          // that had never heard the prompt — the "my first message
+          // disappears" bug, on the warm path.
+          //
+          // A refused claim (another tab took it, marker already gone) is not
+          // an error the user should see: fall through to the ordinary create,
+          // which carries the same prompt.
+          const pending = opts?.create?.pending_prompt;
+          const primed = pending
+            ? await primeTakenWarmSession(projectId, warm, {
+                pending_prompt: pending,
+                ...(opts?.create?.agent_name ? { agent_name: opts.create.agent_name } : {}),
+                ...(opts?.create?.sandbox_slug ? { sandbox_slug: opts.create.sandbox_slug } : {}),
+              })
+            : true;
+          if (primed) {
+            adoptedWarmSession = warm.session;
+            router.prefetch(`/projects/${projectId}/sessions/${warm.sessionId}`);
+            return warm.sessionId;
+          }
+        }
+
+        const sessionId = crypto.randomUUID();
+        markSessionFresh(sessionId);
+        router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
+        await createProjectSession(projectId, {
+          session_id: sessionId,
+          ...opts?.create,
+        });
+        return sessionId;
+      };
+
+      const createSession = () =>
+        loadingToast('Starting session…', takeOrCreateSession(), { success: 'Session started' });
+
+      createScopedSession({
+        create: createSession,
+        draft: opts?.scope?.draft,
+        availability: opts?.scope?.availability,
+        readScope: (sessionId) => getProjectSessionScope(projectId, sessionId),
+        replaceScope: (sessionId, replacement) =>
+          setProjectSessionScope(projectId, sessionId, replacement),
+        onReady: (sessionId) => {
+          // Keep the claim engaged through the navigation: the effect above
+          // releases it once the browser is actually showing this session.
+          useNewSessionGuardStore.getState().target(projectId, sessionId);
+          // Adoption: this only ever runs once create (+ any scope
+          // replacement) has already SUCCEEDED, so a warm session that got
+          // taken but never made it this far (a scope-replacement failure,
+          // say) never seeds a phantom row here — see warm-session-seed.ts.
+          if (adoptedWarmSession) {
+            queryClient.setQueryData<ProjectSession[]>(qk.project.sessions(projectId), (current) =>
+              seedAdoptedWarmSession(current, adoptedWarmSession!, new Date().toISOString()),
+            );
+          }
           // The row exists — kick provisioning so it overlaps the navigation.
-          prefetchSessionStart(queryClient, projectId, sessionId);
-          queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+          // For an adopted warm session this is also the call that drops the
+          // server's `metadata.warm` marker (apps/api/.../routes/r8.ts).
+          const started = prefetchSessionStart(queryClient, projectId, sessionId);
+          // Warm adoption defers the list reconcile until that /start settles,
+          // so the refetch cannot observe the row still marker-hidden and wipe
+          // the seed above — see reconcileSessionsAfterCreate.
+          reconcileSessionsAfterCreate({
+            adoptedWarm: adoptedWarmSession !== null,
+            started,
+            invalidate: () =>
+              queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) }),
+          });
           opts?.onNavigate?.(sessionId);
           router.push(`/projects/${projectId}/sessions/${sessionId}`);
-        })
+        },
+      })
         .catch((err) => {
           const code = (err as { code?: string })?.code;
           const action = resolveCreateFailure(code);
           if (action === 'upgrade') {
             openUpgradeDialog({ reason: 'subscription_required', accountId });
+          } else if (action === 'connect') {
+            const connectorConnections = getRequiredConnectorConnections(err);
+            if (projectId && connectorConnections) {
+              openConnectorGate({
+                projectId,
+                connectorConnections,
+                retry: () => startRef.current(opts),
+              });
+            } else {
+              errorToast(err instanceof Error ? err.message : 'Failed to start session');
+            }
           } else if (action === 'toast') {
-            toast.error(err instanceof Error ? err.message : 'Failed to start session');
+            errorToast(err instanceof Error ? err.message : 'Failed to start session');
           }
           // 'silent': the global 429 handler already surfaced the session cap.
+          // No navigation happened, so release the claim now — the user stays
+          // where they are and must be able to try again immediately.
+          release();
           opts?.onError?.();
-        })
-        .finally(() => {
-          creatingRef.current = false;
         });
     },
-    [projectId, router, queryClient, billingLoading, canRun, accountId, openUpgradeDialog],
+    [
+      projectId,
+      router,
+      queryClient,
+      billingLoading,
+      canRun,
+      accountId,
+      openUpgradeDialog,
+      openConnectorGate,
+      release,
+    ],
   );
+  useEffect(() => {
+    startRef.current = startSession;
+  }, [startSession]);
+  return startSession;
 }

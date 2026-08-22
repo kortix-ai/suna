@@ -105,11 +105,14 @@ export function loadLocalManifest(cwd: string = process.cwd()): LocalManifest | 
  * Static-validate a parsed manifest the way the backend would. Thin shim
  * over `@kortix/manifest-schema/validateManifest` — kept as the legacy entry
  * point for callers that already had a parsed object handy. The canonical
- * schema covers every section (project, env, opencode, sandboxes, triggers,
- * connectors, channels, apps).
+ * schema covers every versioned section, including v2 OpenCode config, plus
+ * project, env, sandboxes, triggers, connectors, channels, and apps.
  */
-export function lintManifest(data: Record<string, unknown>): ManifestIssues {
-  const { issues } = validateManifest(data);
+export function lintManifest(
+  data: Record<string, unknown>,
+  format: ManifestFormat = 'toml',
+): ManifestIssues {
+  const { issues } = validateManifest(data, format);
   return classifyIssues(issues);
 }
 

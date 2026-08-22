@@ -1,5 +1,4 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { timingSafeEqual } from 'node:crypto';
 import type { Context } from 'hono';
 import { config } from '../config';
@@ -13,6 +12,7 @@ import { creditsRouter } from './routes/credits';
 import { paymentsRouter } from './routes/payments';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { webhooksRouter } from './routes/webhooks';
+import { billingRotationIntervalsEnabled } from './rotation-schedule';
 
 const billingApp = makeOpenApiApp<AppEnv>();
 const accountDeletionApp = makeOpenApiApp<AppEnv>();
@@ -137,7 +137,45 @@ billingApp.openapi(
   },
 );
 
-if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
+// Trial-expiry sweep cron endpoint. Pure status hygiene: the trial overlay
+// stops granting lazily at trial_ends_at (effective-tier.ts trialIsActive);
+// this flips trial_status to 'expired' so rows read honestly.
+billingApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/cron/trial-expiry',
+    tags: ['billing'],
+    summary: 'Sweep expired trials (cron)',
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Sweep result'),
+      ...errors(401),
+    },
+  }),
+  async (c: Context<AppEnv>) => {
+    const authError = requireInternalCronAuth(c);
+    if (authError) return authError as any;
+    if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+      return c.json({ skipped: true, reason: 'billing disabled' });
+    }
+    const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('./services/trial-admin');
+    const expired = await sweepExpiredTrials();
+    const monthlyRegrants = await sweepTrialMonthlyGrants();
+    return c.json({ expired, monthly_regrants: monthlyRegrants });
+  },
+);
+
+if (billingRotationIntervalsEnabled(config)) {
+  const TRIAL_EXPIRY_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+  setInterval(async () => {
+    try {
+      const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('./services/trial-admin');
+      await sweepExpiredTrials();
+      await sweepTrialMonthlyGrants();
+    } catch (err) {
+      console.error('[BillingApp] Trial-expiry sweep interval error:', err);
+    }
+  }, TRIAL_EXPIRY_SWEEP_INTERVAL_MS);
+
   const YEARLY_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
   setInterval(async () => {
     try {

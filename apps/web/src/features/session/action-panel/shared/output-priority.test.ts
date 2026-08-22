@@ -1,6 +1,12 @@
 import { describe, expect, it, test } from 'bun:test';
 import type { OutputItem } from './derive-panels';
-import { deliverableKindLabel, selectPrimaryDeliverable, sortOutputs } from './output-priority';
+import {
+  deliverableKindLabel,
+  isScaffoldingOutput,
+  outputRank,
+  selectPrimaryDeliverable,
+  sortOutputs,
+} from './output-priority';
 
 /** A file output — never an app, which lives in its own card and is never sorted here. */
 type FileKind = Exclude<OutputItem['kind'], 'app'>;
@@ -147,6 +153,19 @@ describe('selectPrimaryDeliverable (W2)', () => {
   test('chip path: stale-only input still resolves (payoff must pre-filter to fresh before calling in)', () => {
     const stalePdf = { ...pdf, fresh: undefined };
     expect(selectPrimaryDeliverable([], [stalePdf])).toBe(stalePdf);
+  });
+});
+
+describe('isScaffoldingOutput (W16)', () => {
+  test('scaffolding = RANK_OTHER files — data/config/source, not deliverables', () => {
+    expect(isScaffoldingOutput({ name: 'data.json', kind: 'file' })).toBe(true);
+    expect(isScaffoldingOutput({ name: 'report.pdf', kind: 'file' })).toBe(false);
+    expect(isScaffoldingOutput({ name: 'chart.png', kind: 'image' })).toBe(false);
+  });
+
+  test('a shown artifact is a deliverable whatever its extension', () => {
+    expect(isScaffoldingOutput({ name: 'data.json', kind: 'file', shown: true })).toBe(false);
+    expect(outputRank({ name: 'data.json', kind: 'file', shown: true })).toBe(0);
   });
 });
 

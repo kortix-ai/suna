@@ -1,11 +1,11 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { BookOpen, Check } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { BookOpenIcon as BookOpen, CheckIcon as Check } from '@phosphor-icons/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useEffect, useState } from 'react';
-import type { DemoPhase } from './use-demo-conversation';
 import { skillDescription } from './match-skills';
+import type { DemoPhase } from './use-demo-conversation';
 
 const READ_STAGGER_MS = 380;
 
@@ -52,7 +52,7 @@ export function SkillsRead({
           const desc = skillDescription(name);
 
           return (
-            <motion.div
+            <m.div
               key={name}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
@@ -63,7 +63,7 @@ export function SkillsRead({
                 onClick={() => onSkillClick?.(name)}
                 disabled={!onSkillClick}
                 className={cn(
-                  ' w-full overflow-hidden rounded-2xl border text-left transition-colors',
+                  'w-full overflow-hidden rounded-2xl border text-left transition-colors',
                   // onSkillClick && 'hover:bg-muted/30 active:scale-[0.99]',
                 )}
               >
@@ -77,9 +77,8 @@ export function SkillsRead({
                     <span className="border-muted-foreground/40 border-t-foreground ml-auto size-3.5 shrink-0 animate-spin rounded-full border-[1.5px]" />
                   )}
                 </div>
-
               </button>
-            </motion.div>
+            </m.div>
           );
         })}
       </AnimatePresence>

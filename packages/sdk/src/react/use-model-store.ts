@@ -13,28 +13,41 @@
  * zustand-like pattern via useState + useCallback.
  */
 
-import type { FlatModel } from './model-flatten';
-import { safeSetItem } from '../platform/storage/managed-storage';
 import {
-  AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
+  defaultEnabledModelIds,
 } from '@kortix/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { safeSetItem } from '../platform/storage/managed-storage';
+import type { FlatModel } from './model-flatten';
 import { createModelLookup } from './model-lookup';
+import { shouldSetSessionAgentName } from './session-agent-name-guard';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type ModelKey = { providerID: string; modelID: string };
+export type ModelKey = {
+  providerID: string;
+  modelID: string;
+  /**
+   * The REAL upstream provider a `kortix`-gateway model resolves against
+   * ('anthropic', 'openai', 'codex', 'kortix', ...) — see `FlatModel.provider`
+   * (model-flatten.ts). When present, `subProviderOf` uses it directly instead
+   * of parsing `modelID`, so connection-gating never depends on the wire id
+   * happening to be namespaced `<provider>/<model>`. Optional so every
+   * existing caller (which only ever had `providerID`/`modelID`) keeps
+   * compiling unchanged.
+   */
+  provider?: string;
+};
 
 // ── Gateway wire-model ⟷ ModelKey conversion ───────────────────────────────
 // The LLM gateway identifies a model by its "wire model" — what opencode sends
 // as `body.model`. Under the kortix gateway provider that is just the modelID
 // (a bare managed id like 'glm-5.2', or a BYOK 'provider/model'). A direct
-// provider model uses 'provider/model'. The synthetic `auto` has no concrete
-// wire form and is never stored as a default.
+// provider model uses 'provider/model'.
 export function modelKeyToWire(model: ModelKey): string {
   if (model.providerID === 'kortix' || model.providerID === 'opencode') return model.modelID;
   return `${model.providerID}/${model.modelID}`;
@@ -200,10 +213,15 @@ const SUBSCRIPTION_PROVIDER_ID = 'codex';
 // or its underlying provider is connected (live, from project secrets). The
 // rest stay one search away. Single source for the managed set lives in
 // @kortix/llm-catalog (mirrors the gateway's managed-ids).
-// Includes the synthetic `auto` entry so it's always offered in the picker.
-const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
+const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 
-function subProviderOf(modelID: string): string {
+// `explicitProvider` (a model's `FlatModel.provider` / `ModelKey.provider`) is
+// the robust path — the gateway now serves it directly, so grouping/gating
+// never has to guess the real provider from string-splitting `modelID`.
+// String-splitting on "/" remains only a fallback for a stale/older baked
+// catalog that predates the field.
+function subProviderOf(modelID: string, explicitProvider?: string): string {
+  if (explicitProvider) return explicitProvider;
   const slash = modelID.indexOf('/');
   return slash === -1 ? modelID : modelID.slice(0, slash);
 }
@@ -234,7 +252,7 @@ export function hasUsableModel(
       return true;
     }
     if (MANAGED_MODEL_IDS.has(m.modelID)) return !freeTier;
-    const sub = subProviderOf(m.modelID);
+    const sub = subProviderOf(m.modelID, m.provider);
     return sub === SUBSCRIPTION_PROVIDER_ID
       ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
       : (connectedProviderIds?.has(sub) ?? false);
@@ -245,62 +263,27 @@ export function isDefaultVisible(model: ModelKey): boolean {
   return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
 }
 
-function isWithinMonths(dateStr: string | undefined, months: number): boolean {
-  if (!dateStr) return false;
-  try {
-    const date = new Date(dateStr);
-    if (Number.isNaN(date.getTime())) return false;
-    const now = new Date();
-    const diffMs = Math.abs(now.getTime() - date.getTime());
-    const diffMonths = diffMs / (1000 * 60 * 60 * 24 * 30.44);
-    return diffMonths < months;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Compute "latest" models: models released within 6 months,
- * grouped by provider then family, newest per family wins.
+ * "Latest" models, keyed `providerID:modelID` for the store's lookup maps.
+ *
+ * The RULE itself lives in `@kortix/llm-catalog` — the gateway enforces the
+ * same default set server-side, and two copies of "newest per family within
+ * the window" is exactly how the picker and "Manage models" drifted apart.
+ * This is only the key-shape adapter.
  */
 export function computeLatestSet(models: FlatModel[]): Set<string> {
-  // Filter to recent models (within 6 months)
-  const recent = models.filter((m) => isWithinMonths(m.releaseDate, 6));
-
-  // Group by provider
-  const byProvider = new Map<string, FlatModel[]>();
-  for (const m of recent) {
-    const list = byProvider.get(m.providerID) || [];
-    list.push(m);
-    byProvider.set(m.providerID, list);
-  }
-
-  const latestKeys = new Set<string>();
-
-  for (const [, providerModels] of byProvider) {
-    // Group by family
-    const byFamily = new Map<string, FlatModel[]>();
-    for (const m of providerModels) {
-      const family = m.family || m.modelID;
-      const list = byFamily.get(family) || [];
-      list.push(m);
-      byFamily.set(family, list);
-    }
-
-    // Pick newest per family
-    for (const [, familyModels] of byFamily) {
-      familyModels.sort((a, b) => {
-        const da = a.releaseDate ? new Date(a.releaseDate).getTime() : 0;
-        const db = b.releaseDate ? new Date(b.releaseDate).getTime() : 0;
-        return db - da; // newest first
-      });
-      if (familyModels[0]) {
-        latestKeys.add(`${familyModels[0].providerID}:${familyModels[0].modelID}`);
-      }
-    }
-  }
-
-  return latestKeys;
+  return defaultEnabledModelIds(
+    models.map((m) => ({
+      // Feed the store's own composite key through as the candidate id so the
+      // result needs no lossy id → model lookup on the way back out.
+      id: `${m.providerID}:${m.modelID}`,
+      released: m.releaseDate,
+      family: m.family,
+      // `provider` is the real upstream under the gateway (every model is
+      // served as `kortix`); for a native provider it IS the providerID.
+      provider: m.provider ?? m.providerID,
+    })),
+  );
 }
 
 // ============================================================================
@@ -313,15 +296,32 @@ export function useModelStore(
     connectedProviderIds?: Set<string>;
     // Free tier (no active paid sub): hides every Kortix managed model.
     freeTier?: boolean;
+    /**
+     * Canonical universe used to resolve default/heuristic visibility (the
+     * "latest per family" set and each model's `releaseDate` lookup).
+     * Defaults to `allModels`.
+     *
+     * `isVisible` must NOT be a function of which (possibly narrowed) array
+     * a given call site happens to pass as `allModels` — different surfaces
+     * (session picker vs. Settings > Models vs. command palette) otherwise
+     * compute a different `latestSet`/`modelByKey` for the SAME model key,
+     * so the same model can silently resolve to a different default
+     * visibility (and therefore a different persisted 'show' write) on one
+     * surface vs. another. Pass the full gateway catalog here from every
+     * call site so default resolution is identical everywhere; `allModels`
+     * keeps its existing meaning (what's actually rendered/iterated).
+     */
+    catalogModels?: FlatModel[];
   },
 ) {
   const store = useSyncExternalStore(subscribe, getStore, getStore);
   const connectedProviderIds = opts?.connectedProviderIds;
   const freeTier = opts?.freeTier ?? false;
+  const catalogModels = opts?.catalogModels ?? allModels;
 
   // Compute latest set
-  const latestSet = useMemo(() => computeLatestSet(allModels), [allModels]);
-  const modelByKey = useMemo(() => createModelLookup(allModels), [allModels]);
+  const latestSet = useMemo(() => computeLatestSet(catalogModels), [catalogModels]);
+  const modelByKey = useMemo(() => createModelLookup(catalogModels), [catalogModels]);
 
   // Visibility map from user preferences
   const visibilityMap = useMemo(() => {
@@ -346,7 +346,7 @@ export function useModelStore(
       // connected), a platform-managed default, or the BYOK provider is
       // connected. Everything else is search-only so the catalog can't flood.
       if (model.providerID === MANAGED_GATEWAY_PROVIDER_ID) {
-        const sub = subProviderOf(model.modelID);
+        const sub = subProviderOf(model.modelID, model.provider);
         // Codex (ChatGPT subscription) is now baked unconditionally like BYOK, so
         // gate its display on the subscription being connected.
         const connected =
@@ -472,6 +472,15 @@ export function useModelStore(
 
   const setSessionAgentName = useCallback((sessionId: string, name: string | undefined) => {
     const s = getStore();
+    // Read-then-write idempotency guard: `setSessionAgentName` writes to a
+    // `useSyncExternalStore`-backed store whose snapshot identity changes on
+    // every write. Without this guard, any render/effect path that re-fires the
+    // setter with the SAME value drives an infinite render loop (React #185,
+    // "Maximum update depth exceeded"). The loop was reported by Better Stack
+    // as `Object.setSessionAgentName` on the co-worker session page (pattern
+    // 351da943…). See `shouldSetSessionAgentName` for the rationale.
+    const current = s.sessionAgentName?.[sessionId];
+    if (!shouldSetSessionAgentName(current, name)) return;
     const next = { ...s.sessionAgentName };
     if (name) {
       next[sessionId] = name;

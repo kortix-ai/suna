@@ -1,21 +1,21 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 /**
- * The live-preview + sharing surface for a session. Polls the ports the agent
- * has exposed (`previews()`), renders the selected one in an <iframe> built from
- * the SYNC `previewUrl(port, path)`, lets the operator set the session sharing
- * intent (`setSharing`), and mint/manage public links over the preview
- * (`publicShares.list/create/revoke`). Everything flows through the `@kortix/sdk`
- * session facade — no raw HTTP.
+ * The live-preview and sharing surface for a session.
+ *
+ * Session data uses the shared SDK client. The same-origin preview BFF resolves
+ * readiness, the final URL, and scoped authentication on the server.
  */
 
+import { useWrapperMode } from '@/app/providers';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Copy,
   ExternalLink,
   Globe,
   Link2,
-  Loader2,
   MonitorPlay,
   Plus,
   RefreshCw,
@@ -47,12 +47,10 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { kortix } from '@/lib/kortix';
-import { buildDirectPreviewUrl, parseProxiedPreviewUrl } from '@/lib/preview';
+import { getApiKey, kortix } from '@/lib/kortix';
 import { getSessionToken } from '@/lib/session';
 import { cn } from '@/lib/utils';
-import { SessionNotReadyError, type SessionPublicShare } from '@kortix/sdk';
-import { useWrapperMode } from '@/app/providers';
+import type { SessionPublicShare } from '@kortix/sdk';
 
 // Session sharing intent — a subset of the SDK's ConnectorSharing union that
 // needs no extra ids (private requires an ownerId, so it's omitted here).
@@ -69,7 +67,11 @@ function statusVariant(status?: string) {
 
 /** Best-effort copyable URL for a public share, defensively reading its shape. */
 function shareUrl(share: SessionPublicShare): string {
-  const raw: string = share.public_path ?? share.proxy_path ?? share.public_token ?? '';
+  // `public_url` first: it is the share's own origin, already absolute. The
+  // others are paths on the API origin and only work where no preview domain is
+  // configured.
+  const raw: string =
+    share.public_url ?? share.public_path ?? share.proxy_path ?? share.public_token ?? '';
   if (!raw) return '';
   if (/^https?:\/\//.test(raw)) return raw;
   if (typeof window !== 'undefined') {
@@ -89,6 +91,49 @@ async function copy(text: string) {
   } catch {
     toast.error('Could not copy');
   }
+}
+
+interface PreviewUrlResponse {
+  url: string;
+  tokenId: string;
+}
+
+async function resolvePreviewUrl({
+  wrapperMode,
+  projectId,
+  sessionId,
+  preview,
+  targetUrl,
+}: {
+  wrapperMode: boolean;
+  projectId: string;
+  sessionId: string;
+  preview?: { port: number; path: string };
+  targetUrl?: string;
+}): Promise<PreviewUrlResponse> {
+  const token = wrapperMode ? getSessionToken() : getApiKey();
+  const response = await fetch('/api/preview-url', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      projectId,
+      sessionId,
+      ...(preview ? { preview } : {}),
+      ...(targetUrl ? { targetUrl } : {}),
+    }),
+  });
+  const body = (await response.json().catch(() => ({}))) as {
+    url?: string;
+    tokenId?: string;
+    error?: string;
+  };
+  if (!response.ok || !body.url || !body.tokenId) {
+    throw new Error(body.error || 'Could not resolve preview URL');
+  }
+  return { url: body.url, tokenId: body.tokenId };
 }
 
 export function PreviewPanel({
@@ -117,18 +162,6 @@ export function PreviewPanel({
   // "Open a localhost link" state — paste a URL the agent printed.
   const [localhostUrl, setLocalhostUrl] = useState('');
 
-  function openProxied() {
-    const raw = localhostUrl.trim();
-    if (!raw) return;
-    // SYNC — rewrites localhost → the session's runtime proxy, returns a string.
-    const url = session.proxyUrl(raw);
-    if (!url) {
-      toast.error('Could not build a proxy URL for that link');
-      return;
-    }
-    window.open(url, '_blank', 'noopener,noreferrer');
-  }
-
   const previewsQuery = useQuery({
     queryKey: previewsKey,
     queryFn: () => session.previews(),
@@ -154,53 +187,61 @@ export function PreviewPanel({
 
   const selected = candidates.find((c) => c.id === selectedId) ?? null;
 
-  // Wrapper mode only: mint (and cache) a short-lived project-scoped Kortix
-  // token so the preview iframe can open the sandbox DIRECTLY instead of
-  // through our same-origin proxy — a Next.js route handler can't proxy a
-  // WebSocket upgrade (dev-server HMR sockets, etc.), so the iframe needs a
-  // real upstream URL + scoped credential instead. See
-  // `src/app/api/preview-token/route.ts`.
-  const previewTokenQuery = useQuery({
-    queryKey: ['preview-token', projectId],
-    queryFn: async () => {
-      const sessionToken = getSessionToken();
-      const res = await fetch(`/api/preview-token?projectId=${encodeURIComponent(projectId)}`, {
-        headers: sessionToken ? { authorization: `Bearer ${sessionToken}` } : undefined,
+  const previewUrlQuery = useQuery({
+    queryKey: [
+      'preview-url',
+      projectId,
+      sessionId,
+      selected?.id,
+      selected?.port,
+      selected?.path,
+      reloadNonce,
+    ],
+    queryFn: () => {
+      if (!selected) throw new Error('No preview selected');
+      return resolvePreviewUrl({
+        wrapperMode,
+        projectId,
+        sessionId,
+        preview: { port: selected.port, path: selected.path || '/' },
       });
-      if (!res.ok) throw new Error('Could not mint a preview token');
-      return res.json() as Promise<{ token: string; upstream: string }>;
     },
-    enabled: wrapperMode,
+    enabled: !!selected,
     staleTime: 5 * 60_000,
     retry: false,
   });
 
-  // SYNC — call directly in render, never awaited. This handle never itself
-  // calls ensureReady() (the chat surface elsewhere on the page does, via the
-  // shared session-runtime registry) — before that resolves, previewUrl()
-  // throws SessionNotReadyError; render the "no preview yet" state instead of
-  // crashing the page.
-  const previewSrc = selected
-    ? (() => {
-        try {
-          const proxiedUrl = session.previewUrl(selected.port, selected.path);
-          if (wrapperMode && previewTokenQuery.data) {
-            const parsed = parseProxiedPreviewUrl(proxiedUrl);
-            if (parsed) {
-              return buildDirectPreviewUrl(
-                previewTokenQuery.data.upstream,
-                parsed,
-                previewTokenQuery.data.token,
-              );
-            }
-          }
-          return proxiedUrl;
-        } catch (err) {
-          if (err instanceof SessionNotReadyError) return null;
-          throw err;
-        }
-      })()
-    : null;
+  const previewSrc = previewUrlQuery.data?.url ?? null;
+
+  const openLocalhostMut = useMutation({
+    mutationFn: async ({ targetUrl, popup }: { targetUrl: string; popup: Window }) => {
+      const resolved = await resolvePreviewUrl({
+        wrapperMode,
+        projectId,
+        sessionId,
+        targetUrl,
+      });
+      return { ...resolved, popup };
+    },
+    onSuccess: ({ url, popup }) => {
+      popup.location.replace(url);
+    },
+    onError: (error, { popup }) => {
+      popup.close();
+      toast.error(error instanceof Error ? error.message : 'Could not resolve preview URL');
+    },
+  });
+
+  function openLocalhost() {
+    const targetUrl = localhostUrl.trim();
+    if (!targetUrl) return;
+    const popup = window.open('about:blank', '_blank', 'noopener,noreferrer');
+    if (!popup) {
+      toast.error('Allow pop-ups to open this preview');
+      return;
+    }
+    openLocalhostMut.mutate({ targetUrl, popup });
+  }
 
   const setSharingMut = useMutation({
     mutationFn: (value: string) => {
@@ -247,7 +288,7 @@ export function PreviewPanel({
     onError: (err: any) => toast.error(err?.message ?? 'Failed to revoke share'),
   });
 
-  const loadingPreviews = previewsQuery.isLoading;
+  const loadingPreviews = previewsQuery.isLoading || (!!selected && previewUrlQuery.isLoading);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -287,7 +328,11 @@ export function PreviewPanel({
             }}
             disabled={previewsQuery.isFetching}
           >
-            <RefreshCw className={cn('size-3.5', previewsQuery.isFetching && 'animate-spin')} />
+            {previewsQuery.isFetching ? (
+              <Loading className="size-3.5" />
+            ) : (
+              <RefreshCw className="size-3.5" />
+            )}
             Refresh
           </Button>
 
@@ -322,9 +367,7 @@ export function PreviewPanel({
             ))}
           </SelectContent>
         </Select>
-        {setSharingMut.isPending && (
-          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-        )}
+        {setSharingMut.isPending && <Loading className="size-3.5 text-muted-foreground" />}
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
@@ -392,7 +435,7 @@ export function PreviewPanel({
                 disabled={createMut.isPending || !selected}
               >
                 {createMut.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <Loading className="size-3.5" />
                 ) : (
                   <Share2 className="size-3.5" />
                 )}
@@ -409,6 +452,16 @@ export function PreviewPanel({
           <div className="flex h-full flex-col gap-3 p-4">
             <Skeleton className="h-6 w-40" />
             <Skeleton className="min-h-0 flex-1" />
+          </div>
+        ) : previewUrlQuery.isError ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
+            <Globe className="size-8 text-destructive/60" />
+            <p className="text-sm font-medium text-foreground">Preview unavailable</p>
+            <p className="max-w-md text-xs text-muted-foreground">
+              {previewUrlQuery.error instanceof Error
+                ? previewUrlQuery.error.message
+                : 'Could not resolve preview URL'}
+            </p>
           </div>
         ) : previewSrc ? (
           <iframe
@@ -437,9 +490,7 @@ export function PreviewPanel({
           <Badge variant="outline" className="px-1.5 py-0 text-[0.65rem]">
             {shares.length}
           </Badge>
-          {sharesQuery.isFetching && (
-            <Loader2 className="size-3 animate-spin text-muted-foreground" />
-          )}
+          {sharesQuery.isFetching && <Loading className="size-3 text-muted-foreground" />}
         </div>
         <Separator />
         {shares.length === 0 ? (
@@ -513,7 +564,7 @@ export function PreviewPanel({
           className="flex items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            openProxied();
+            openLocalhost();
           }}
         >
           <Input
@@ -527,9 +578,13 @@ export function PreviewPanel({
             variant="outline"
             size="sm"
             className="h-8 shrink-0 gap-1.5"
-            disabled={!localhostUrl.trim()}
+            disabled={!localhostUrl.trim() || openLocalhostMut.isPending}
           >
-            <ExternalLink className="size-3.5" />
+            {openLocalhostMut.isPending ? (
+              <Loading className="size-3.5" />
+            ) : (
+              <ExternalLink className="size-3.5" />
+            )}
             Open
           </Button>
         </form>

@@ -9,7 +9,13 @@
 
 import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
-import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import {
+  emitJson,
+  resolveProjectContext,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+} from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 
 interface CatalogItem {
@@ -40,6 +46,7 @@ interface CatalogResponse {
 
 interface MarketplaceFlags {
   host?: string;
+  project?: string;
   query?: string;
   type?: string;
   source?: string;
@@ -54,28 +61,59 @@ Subcommands:
   search [query]       Search marketplace items.
   list                 List marketplace items.
   show <id|name>       Show one marketplace item.
+  install <id|name>    Start an agent session that imports the item.
 
 Options:
   --query <text>       Search text (same as search [query]).
   --type <type>        Filter by item type, e.g. skill.
   --source <source>    Filter by marketplace/source, e.g. kortix.
   --host <name>        Use a configured Kortix host.
+  --project <id>       Install into this project id (default: linked).
   --json               Machine-readable output.
   -h, --help           Show this help.
 
-Adding an item to your project is an agent import, not a CLI install: start
-or continue a session and ask it to bring the item in (it clones, reads,
-merges what fits, and opens a CR).
+Install is agent-driven. It starts a project session that clones, reads, merges
+what fits, and opens a change request.
 `;
 
 function parseFlags(argv: string[]): MarketplaceFlags {
   return {
     host: takeFlagValue(argv, ['--host']),
+    project: takeFlagValue(argv, ['--project']),
     query: takeFlagValue(argv, ['--query', '-q']),
     type: takeFlagValue(argv, ['--type']),
     source: takeFlagValue(argv, ['--source']),
     json: takeFlagBool(argv, ['--json']),
   };
+}
+
+async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Promise<number> {
+  const itemId = argv[0];
+  if (!itemId || itemId.startsWith('-')) {
+    process.stderr.write(
+      `${status.err('pass an item id or name: kortix marketplace install kortix-starter:pdf')}\n`,
+    );
+    return 2;
+  }
+  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  if (!ctx) return 1;
+  try {
+    const result = await ctx.client.post<{ session_id: string }>(
+      `/projects/${ctx.projectId}/marketplace/install-session`,
+      { id: itemId },
+    );
+    const output = { ...result, project_id: ctx.projectId, item_id: itemId };
+    if (flags.json) emitJson(output);
+    else {
+      process.stdout.write(
+        `${status.ok(`Started install session ${C.bold}${result.session_id}${C.reset}`)}\n` +
+          `  ${C.dim}Item:${C.reset} ${itemId}\n`,
+      );
+    }
+    return 0;
+  } catch (error) {
+    return surfaceApiError(error);
+  }
 }
 
 function resolveMarketplaceClient(host?: string): { client: ApiClient; auth: Auth } | null {
@@ -215,6 +253,8 @@ export async function runMarketplace(argv: string[]): Promise<number> {
     case 'show':
     case 'view':
       return marketplaceShow(rest, flags);
+    case 'install':
+      return marketplaceInstall(rest, flags);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;

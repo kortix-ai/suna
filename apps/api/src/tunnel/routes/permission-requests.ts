@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { tunnelPermissionRequests, tunnelPermissions, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
 import { tunnelRelay } from '../core/relay';
@@ -24,8 +24,7 @@ export function notifyTunnelEvent(accountId: string, event: string, data: unknow
   for (const writer of subscribers) {
     try {
       writer(event, data);
-    } catch {
-    }
+    } catch {}
   }
 }
 
@@ -48,14 +47,14 @@ export function createPermissionRequestsRouter() {
       },
     }),
     async (c: any) => {
-      const { accountId } = await getTunnelOwnerContext(c);
+      const { authorizedAccountIds } = await getTunnelOwnerContext(c);
 
       const requests = await db
         .select()
         .from(tunnelPermissionRequests)
         .where(
           and(
-            eq(tunnelPermissionRequests.accountId, accountId),
+            inArray(tunnelPermissionRequests.accountId, authorizedAccountIds),
             eq(tunnelPermissionRequests.status, 'pending'),
           ),
         )
@@ -84,7 +83,7 @@ export function createPermissionRequestsRouter() {
       },
     }),
     async (c: any) => {
-      const { accountId } = await getTunnelOwnerContext(c);
+      const { authorizedAccountIds } = await getTunnelOwnerContext(c);
 
       return new Response(
         new ReadableStream({
@@ -96,10 +95,12 @@ export function createPermissionRequestsRouter() {
               controller.enqueue(encoder.encode(payload));
             };
 
-            if (!sseSubscribers.has(accountId)) {
-              sseSubscribers.set(accountId, new Set());
+            for (const accountId of authorizedAccountIds) {
+              if (!sseSubscribers.has(accountId)) {
+                sseSubscribers.set(accountId, new Set());
+              }
+              sseSubscribers.get(accountId)!.add(writer);
             }
-            sseSubscribers.get(accountId)!.add(writer);
 
             writer('connected', { timestamp: Date.now() });
 
@@ -113,11 +114,15 @@ export function createPermissionRequestsRouter() {
 
             c.req.raw.signal.addEventListener('abort', () => {
               clearInterval(keepAlive);
-              sseSubscribers.get(accountId)?.delete(writer);
-              if (sseSubscribers.get(accountId)?.size === 0) {
-                sseSubscribers.delete(accountId);
+              for (const accountId of authorizedAccountIds) {
+                sseSubscribers.get(accountId)?.delete(writer);
+                if (sseSubscribers.get(accountId)?.size === 0) {
+                  sseSubscribers.delete(accountId);
+                }
               }
-              try { controller.close(); } catch {}
+              try {
+                controller.close();
+              } catch {}
             });
           },
         }),
@@ -125,7 +130,7 @@ export function createPermissionRequestsRouter() {
           headers: {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
+            Connection: 'keep-alive',
           },
         },
       ) as any;
@@ -154,23 +159,29 @@ export function createPermissionRequestsRouter() {
       },
       responses: {
         200: json(
-          z.object({ success: z.boolean(), permission: PermissionRequestSchema }),
+          z.object({
+            success: z.boolean(),
+            permission: PermissionRequestSchema,
+          }),
           'The granted permission',
         ),
         ...errors(400, 401, 403, 404, 409, 429),
       },
     }),
     async (c: any) => {
-      const { accountId } = await getTunnelOwnerContext(c);
+      const { accountId, authorizedAccountIds, ownerClause } = await getTunnelOwnerContext(c);
       const requestId = c.req.param('requestId');
       const body = await c.req.json().catch(() => ({}));
       const rateCheck = tunnelRateLimiter.check('permGrant', accountId);
       if (!rateCheck.allowed) {
-        return c.json({
-          error: 'Rate limit exceeded',
-          code: TunnelErrorCode.RATE_LIMITED,
-          retryAfterMs: rateCheck.retryAfterMs,
-        }, 429);
+        return c.json(
+          {
+            error: 'Rate limit exceeded',
+            code: TunnelErrorCode.RATE_LIMITED,
+            retryAfterMs: rateCheck.retryAfterMs,
+          },
+          429,
+        );
       }
 
       const [request] = await db
@@ -179,7 +190,7 @@ export function createPermissionRequestsRouter() {
         .where(
           and(
             eq(tunnelPermissionRequests.requestId, requestId),
-            eq(tunnelPermissionRequests.accountId, accountId),
+            inArray(tunnelPermissionRequests.accountId, authorizedAccountIds),
           ),
         );
 
@@ -195,31 +206,68 @@ export function createPermissionRequestsRouter() {
         return c.json({ error: `Invalid capability: ${request.capability}` }, 400);
       }
 
-      await db
-        .update(tunnelPermissionRequests)
-        .set({ status: 'approved', updatedAt: new Date() })
-        .where(eq(tunnelPermissionRequests.requestId, requestId));
+      const [tunnel] = await db
+        .select({ capabilities: tunnelConnections.capabilities })
+        .from(tunnelConnections)
+        .where(and(eq(tunnelConnections.tunnelId, request.tunnelId), ownerClause));
+      if (!tunnel) {
+        return c.json({ error: 'Tunnel connection not found' }, 404);
+      }
+      if (
+        !Array.isArray(tunnel.capabilities) ||
+        !tunnel.capabilities.includes(request.capability)
+      ) {
+        return c.json({ error: `Capability is not enabled: ${request.capability}` }, 409);
+      }
 
       const scope = body.scope || request.requestedScope || {};
+      let sanitizedScope: Record<string, unknown> = {};
       if (scope && Object.keys(scope).length > 0) {
         const scopeResult = validateScopeInput(request.capability, scope);
         if (!scopeResult.valid) {
           return c.json({ error: `Invalid scope: ${scopeResult.error}` }, 400);
         }
+        sanitizedScope = scopeResult.sanitized ?? {};
       }
 
-      const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+      let expiresAt: Date | null = null;
+      if (body.expiresAt !== undefined) {
+        expiresAt = new Date(body.expiresAt);
+        if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date()) {
+          return c.json({ error: 'expiresAt must be a valid future timestamp' }, 400);
+        }
+      }
 
-      const [permission] = await db
-        .insert(tunnelPermissions)
-        .values({
-          tunnelId: request.tunnelId,
-          accountId,
-          capability: request.capability as TunnelCapability,
-          scope,
-          expiresAt,
-        })
-        .returning();
+      const permission = await db.transaction(async (tx) => {
+        const [claimed] = await tx
+          .update(tunnelPermissionRequests)
+          .set({ status: 'approved', updatedAt: new Date() })
+          .where(
+            and(
+              eq(tunnelPermissionRequests.requestId, requestId),
+              eq(tunnelPermissionRequests.accountId, request.accountId),
+              eq(tunnelPermissionRequests.status, 'pending'),
+            ),
+          )
+          .returning({ requestId: tunnelPermissionRequests.requestId });
+        if (!claimed) return null;
+
+        const [created] = await tx
+          .insert(tunnelPermissions)
+          .values({
+            tunnelId: request.tunnelId,
+            accountId: request.accountId,
+            capability: request.capability as TunnelCapability,
+            scope: scope && Object.keys(scope).length > 0 ? sanitizedScope : {},
+            expiresAt,
+          })
+          .returning();
+        return created ?? null;
+      });
+
+      if (!permission) {
+        return c.json({ error: 'Permission request was already resolved' }, 409);
+      }
 
       tunnelRelay.sendNotification(request.tunnelId, 'tunnel.permission.granted', {
         permissionId: permission.permissionId,
@@ -246,7 +294,7 @@ export function createPermissionRequestsRouter() {
       },
     }),
     async (c: any) => {
-      const { accountId } = await getTunnelOwnerContext(c);
+      const { authorizedAccountIds, ownerClause } = await getTunnelOwnerContext(c);
       const requestId = c.req.param('requestId');
 
       const [request] = await db
@@ -255,7 +303,7 @@ export function createPermissionRequestsRouter() {
         .where(
           and(
             eq(tunnelPermissionRequests.requestId, requestId),
-            eq(tunnelPermissionRequests.accountId, accountId),
+            inArray(tunnelPermissionRequests.accountId, authorizedAccountIds),
           ),
         );
 
@@ -265,6 +313,13 @@ export function createPermissionRequestsRouter() {
 
       if (request.status !== 'pending') {
         return c.json({ error: `Request already ${request.status}` }, 409);
+      }
+      const [tunnel] = await db
+        .select({ tunnelId: tunnelConnections.tunnelId })
+        .from(tunnelConnections)
+        .where(and(eq(tunnelConnections.tunnelId, request.tunnelId), ownerClause));
+      if (!tunnel) {
+        return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
       await db

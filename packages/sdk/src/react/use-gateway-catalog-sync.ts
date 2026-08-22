@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listProjectSecrets } from '../core/rest/projects-client';
 import { refreshProjectProviderState } from './provider-refresh';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
+import { contract } from './query-contracts';
+import { qk } from './query-keys';
 
 const REFETCH_DELAYS_MS = [0, 1200, 3000, 6000];
 
@@ -13,10 +15,11 @@ export function useGatewayCatalogSync(projectId: string | null | undefined): voi
   const runtimeReady = useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
 
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    // Same entry every other `listProjectSecrets` reader shares.
+    queryKey: qk.project.secrets(projectId ?? ''),
     queryFn: () => listProjectSecrets(projectId as string),
     enabled: !!projectId && runtimeReady,
-    staleTime: 10_000,
+    ...contract('config'),
   });
 
   const signature = (() => {

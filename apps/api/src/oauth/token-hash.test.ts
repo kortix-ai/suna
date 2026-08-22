@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 
 mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 

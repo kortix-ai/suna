@@ -2,11 +2,11 @@ import {
   type accountGithubInstallations,
   projectGitConnections,
   projectGitCredentials,
-  projectMembers,
   projects,
 } from '@kortix/db';
 
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { grantProjectRole } from './access';
 import { db } from '../../shared/db';
 import type { GitHubRepo } from '../github';
 import { encryptProjectSecret } from '../secrets';
@@ -25,6 +25,10 @@ type RegistrationInput = {
   name?: string | null;
   defaultBranch: string;
   manifestPath: string;
+  /** True only when Kortix created the upstream repository for this project. */
+  managed?: boolean;
+  /** Trusted server-owned metadata added at project creation. */
+  projectMetadata?: Record<string, unknown>;
   auth: RegistrationAuth;
 };
 
@@ -35,6 +39,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
   const githubApp = input.auth.kind === 'github_app' ? input.auth.installation : null;
   const authMethod = githubApp ? 'github_app' : 'project_credential';
   const metadata = {
+    ...input.projectMetadata,
     git: {
       url: input.repo.clone_url,
       default_branch: input.defaultBranch,
@@ -42,6 +47,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       owner,
       name: input.repo.name,
       external_repo_id: String(input.repo.id),
+      managed: input.managed ?? false,
       auth: githubApp
         ? { method: authMethod, installation_id: githubApp.installationId }
         : { method: authMethod },
@@ -105,6 +111,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       repoOwner: owner,
       repoName: input.repo.name,
       externalRepoId: String(input.repo.id),
+      managed: input.managed ?? false,
       defaultBranch: input.defaultBranch,
       authMethod,
       installationId: githubApp?.installationId ?? null,
@@ -135,27 +142,25 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       })
       .returning();
 
-    await tx
-      .insert(projectMembers)
-      .values({
-        accountId: input.accountId,
-        projectId: project.projectId,
-        userId: input.userId,
-        projectRole: 'manager',
-        grantedBy: input.userId,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [projectMembers.projectId, projectMembers.userId],
-        set: {
-          projectRole: 'manager',
-          grantedBy: input.userId,
-          updatedAt: now,
-        },
-      })
-      .returning();
-
     return project;
+  });
+
+  // The creator's Manager role, through the ONE write path.
+  //
+  // OUTSIDE the transaction, deliberately. `assignRole` is bound to the pooled
+  // `db` handle, not to `tx`, so it cannot join the transaction above; running
+  // it inside would silently open a SECOND connection and deadlock against the
+  // row this transaction still holds. The failure mode of doing it after is
+  // benign and self-healing: the project exists with no explicit member row, and
+  // the creator — who must already be an account owner/admin to have reached
+  // this route — still holds implicit Manager on every project in the account.
+  // A thrown error propagates to the caller either way.
+  await grantProjectRole({
+    accountId: input.accountId,
+    projectId: row.projectId,
+    userId: input.userId,
+    role: 'manager',
+    grantedBy: input.userId,
   });
 
   invalidateIamCacheForUser(input.userId);

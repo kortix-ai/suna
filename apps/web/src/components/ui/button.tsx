@@ -5,7 +5,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  "flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50  [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none  aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-center cursor-pointer shadow-none data-[state=open]:ring-0 focus-visible:outline-none focus-visible:ring-kortix-base focus-visible:ring-[0.6px]",
+  "flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,opacity,scale,translate] disabled:pointer-events-none disabled:opacity-50  [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none  aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-center cursor-pointer shadow-none data-[state=open]:ring-0 focus-visible:outline-none focus-visible:ring-kortix-base focus-visible:ring-[0.6px]",
 
   {
     variants: {
@@ -63,7 +63,9 @@ const buttonVariants = cva(
         icon: 'size-7 ',
         'icon-xs': 'size-6 rounded-sm',
         'icon-sm': 'size-7',
-        'icon-lg': 'size-10',
+        'icon-base': 'size-8 rounded-md',
+        'icon-md': 'size-9',
+        'icon-lg': 'size-10 rounded-md',
         'magic-sm': 'h-9 px-4 py-2 has-[>svg]:px-3  sm:h-8 sm:gap-1.5 sm:px-3 sm:has-[>svg]:px-2.5',
 
         toolbar: "h-7 gap-1.5 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",

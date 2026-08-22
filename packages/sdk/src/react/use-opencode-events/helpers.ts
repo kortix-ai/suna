@@ -1,5 +1,6 @@
 import { type QueryClient } from '@tanstack/react-query';
 import { opencodeKeys, type Session } from '../use-opencode-sessions';
+import { qk } from '../query-keys';
 import type { OpenCodeEvent } from './types';
 
 const MESSAGE_REHYDRATE_COOLDOWN_MS = 30_000;
@@ -18,6 +19,42 @@ let projectMetadataRefetchTimer: ReturnType<typeof setTimeout> | null = null;
  * or created another session). Read both shapes — same fix the mobile client
  * shipped (apps/mobile commit 7f31102fe "fix: session title updates").
  */
+export interface ClientEvictionInput {
+  isFirstMount: boolean;
+  isServerSwitch: boolean;
+  didServerUrlChange: boolean;
+  previousServerUrl: string | null;
+  activeServerUrl: string | null;
+}
+
+/**
+ * T8 defect 2 — which single cached opencode client (if any)
+ * `useOpenCodeEventStream`'s runtime-tracking effect should drop, given this
+ * tick's outcome. Scoped to the ONE url actually being replaced — never the
+ * whole `clientsByUrl` cache (`resetClient()`, `core/runtime/client.ts`),
+ * which would force every OTHER concurrently-open session's client to be
+ * recreated just because THIS session's runtime switched. `clientsByUrl` is
+ * deliberately keyed per url so several session sandboxes can stay connected
+ * at once.
+ *
+ * Pure so the eviction decision is unit-testable without rendering the hook
+ * — this package has no hook-render harness.
+ */
+export function resolveClientEvictionUrl(input: ClientEvictionInput): string | null {
+  if (input.isFirstMount) {
+    // No "previous" url exists for a fresh mount — but a stale/broken client
+    // for the CURRENT url may still be cached from a provider that unmounted
+    // without cleanly closing (navigate away, then back to the same
+    // session). Force a fresh client for the url about to be used; a
+    // first-ever mount with nothing cached for it is a harmless no-op.
+    return input.activeServerUrl;
+  }
+  if (input.isServerSwitch || input.didServerUrlChange) {
+    return input.previousServerUrl;
+  }
+  return null;
+}
+
 export function readSessionInfo(event: OpenCodeEvent): Session | undefined {
   const props: unknown = event.properties;
   if (!props || typeof props !== 'object') return undefined;
@@ -31,25 +68,6 @@ export function readSessionInfo(event: OpenCodeEvent): Session | undefined {
  *  which request shape produced them. */
 export function asStringOrUndefined(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
-}
-
-/**
- * Some servers emit an "AbortError"-shaped `session.error` whose `name`/message
- * live wherever the server put them — not part of the SDK's typed error union
- * (`ProviderAuthError | UnknownError | ... | ApiError`). Duck-type via
- * `unknown` rather than assuming a shape; checks `.name`, `.data.message`, and
- * a top-level `.message` for a case-insensitive "abort" substring.
- */
-export function looksLikeAbortError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const rec = error as Record<string, unknown>;
-  if (rec.name === 'AbortError') return true;
-  const data = rec.data;
-  const dataMessage =
-    data && typeof data === 'object' ? (data as Record<string, unknown>).message : undefined;
-  return String(dataMessage ?? rec.message ?? '')
-    .toLowerCase()
-    .includes('abort');
 }
 
 export function reserveMessageRehydrate(sessionID: string): boolean {
@@ -89,10 +107,94 @@ export function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
   }
 }
 
-export function refetchKortixSessionMirrors(queryClient: QueryClient): void {
-  // OpenCode title/tree mirroring is owned by API session reads. When OpenCode
-  // emits a title/tree change, refetch the active Kortix session reads so tabs
-  // and sidebars pick up the server-side mirror without browser-side writes.
-  void queryClient.refetchQueries({ queryKey: ['project-sessions'], type: 'active' });
-  void queryClient.refetchQueries({ queryKey: ['project-session'], type: 'active' });
+/**
+ * OpenCode title/tree mirroring is owned by API session reads. When OpenCode
+ * emits a title/tree change, refetch the active Kortix session reads so tabs
+ * and sidebars pick up the server-side mirror without browser-side writes.
+ *
+ * `projectId` is the route-scoped project the connected SSE stream belongs to
+ * (`useKortixRouteProjectId()` at the `useOpenCodeEventStream` call site) —
+ * required, not optional-and-ignored. Pre-migration this used a BARE,
+ * id-less flat `project-sessions` array prefix, which TanStack's default
+ * partial-key match treats as "any project's sessions list currently
+ * mounted". Under `qk` a
+ * project id is not a suffix that can be omitted — `qk.project.scope(id)`
+ * requires it up front — so there is no key that means "the sessions family,
+ * for every project, whichever happens to be mounted" without ALSO matching
+ * every other project-scoped family (secrets, connectors, gateway, …) for
+ * every project, via the bare `['kx', 'project']` prefix. That reach would be
+ * strictly wrong here: an SSE connection is per-runtime, so at most one
+ * project's session queries are ever the ones this event is actually about,
+ * and firing a broader refetch would refresh unrelated data (a different
+ * project's secrets/gateway state) on every title/tree change for no reason.
+ * `qk.project.sessionsScope(projectId)` — the current route's project — is
+ * the correct reach: the list (every scope) and every session/messages entry
+ * beneath it, and nothing outside the sessions family, and nothing for a
+ * project this event was never about. Outside a project route (`projectId`
+ * null) there is nothing to mirror, so this is a no-op.
+ */
+export function refetchKortixSessionMirrors(
+  queryClient: QueryClient,
+  projectId: string | null,
+): void {
+  if (!projectId) return;
+  void queryClient.refetchQueries({
+    queryKey: qk.project.sessionsScope(projectId),
+    type: 'active',
+  });
+}
+
+// Same placeholder predicate the API serializer applies (`lib/opencode-title.ts`)
+// and `session-title-sync.ts`'s `readRealTitle`: OpenCode stamps
+// "New session - <date>" before its summarizer runs, and that is not a title.
+const PLACEHOLDER_RUNTIME_TITLE_RE = /^new (?:session|agent)\b/i;
+
+export function realRuntimeTitle(value: unknown): string | null {
+  const title = typeof value === 'string' ? value.trim() : '';
+  if (!title || PLACEHOLDER_RUNTIME_TITLE_RE.test(title)) return null;
+  return title;
+}
+
+/**
+ * Mirror a runtime title change straight into the cached Kortix session reads
+ * (`name` on the row whose `opencode_session_id` matches), so the sidebar and
+ * tab converge with the header the moment the title event arrives.
+ *
+ * The durable owner is the API read (`serializeSession` prefers the
+ * `opencode_sessions` snapshot root title) — but that snapshot is written
+ * ~20s after the prompt, so the refetch `refetchKortixSessionMirrors` fires
+ * alongside this can beat it and come back with the pre-title name. This
+ * write closes that gap; the next server read reconciles.
+ *
+ * A user rename (`custom_name`) always wins and is never overwritten. Rows
+ * for other conversations, and cache entries that are not session rows
+ * (messages, sandbox slots under the same prefix), pass through untouched.
+ */
+export function patchKortixSessionTitleMirrors(
+  queryClient: QueryClient,
+  projectId: string | null,
+  nativeSessionId: string,
+  title: string | null,
+): void {
+  if (!projectId || !title) return;
+  const patchRow = (row: unknown): unknown => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+    const rec = row as Record<string, unknown>;
+    if (rec.opencode_session_id !== nativeSessionId) return row;
+    if (typeof rec.custom_name === 'string' && rec.custom_name.trim()) return row;
+    if (rec.name === title) return row;
+    return { ...rec, name: title };
+  };
+  queryClient.setQueriesData({ queryKey: qk.project.sessionsScope(projectId) }, (data: unknown) => {
+    if (Array.isArray(data)) {
+      let changed = false;
+      const next = data.map((row) => {
+        const patched = patchRow(row);
+        if (patched !== row) changed = true;
+        return patched;
+      });
+      return changed ? next : data;
+    }
+    return patchRow(data);
+  });
 }

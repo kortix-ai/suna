@@ -1,106 +1,164 @@
 /**
- * Scroll-synced "How it works" section.
+ * Copy for the platform-stack section — the pinned card stack whose every card
+ * carries a real product panel.
  *
- *   01 Connect → wire company tools once
- *   02 Ask     → anyone requests an outcome in plain language
- *   03 Work    → each task runs in its own secure sandbox
- *   04 Review  → finished work returns for human approval
- *   05 Skills  → good workflows become reusable skill files
- *   06 Memory  → the company learns and compounds on its own
+ * Six layers, in the order a reader needs them, as a loop rather than a list:
+ * the repo that IS the company, the tools it reaches, the model, the harness
+ * that drives it, the machine it runs on, and the plane it is operated from —
+ * which commits the work back into layer 01. A seventh entry closes the stack;
+ * it is a full stop, not a layer, and carries no product panel.
+ *
+ * Security and governance is deliberately not a layer here. The home page runs
+ * a dedicated trust section, and adding it made the sequence read as a feature
+ * list again.
+ *
+ * Deliberately local rather than in `translations/*.json`: this section used to
+ * be a request-to-finished-work walkthrough, and the seven non-English locales
+ * still hold that older translated heading. Local copy avoids shipping a
+ * heading that contradicts the section in every other language.
+ *
+ * ACCURACY GATE — every line below is checked against shipped code, not against
+ * the manifesto. The rules that keep getting broken:
+ *   - A granted runtime secret IS a real env value inside the session and any
+ *     command the agent runs can read it (docs/ENV_SECRET_EXPOSURE_BASELINE.md).
+ *     Never write "the model never sees them". "Brokered server-side and never
+ *     enters the machine" is true for CONNECTOR credentials only.
+ *   - Egress is not controlled at the network. Nothing implements it.
+ *   - microVM is the Platinum provider only; the default is containers. The
+ *     sanctioned phrasing is "its own isolated machine".
+ *   - Channels are a closed enum: slack | teams | email | voice. Telegram,
+ *     WhatsApp, SMS and Discord are not channels. And `channels:` is REJECTED
+ *     by the v2 manifest validator (`rejectChannelsV2`), so `kortix.yaml` never
+ *     "declares channels" — channel routing is live project state, not repo
+ *     config. The manifest declares the machine image, connectors and triggers.
+ *   - "Open source", never a licence name. SOC 2 Type II is in progress, never
+ *     "certified" or "compliant".
+ *   - OpenCode is the only harness that may be named.
+ *
+ * Three claims that read fine but do not survive the code, so they are not here:
+ *   - "the Cursor subscription you already pay for" — there is no Cursor auth,
+ *     credential or provider anywhere in the codebase. ChatGPT is real
+ *     (`apps/api/src/projects/codex-device-auth.ts`).
+ *   - "air-gapped" — nothing implements it, and the enterprise VPC spec says in
+ *     as many words that it is "not full air-gap".
+ *   - "work reaches main only through a change request a human approves" — the
+ *     dashboard commits config straight to the default branch, and the merge
+ *     grant is a named grant, not a human-only gate. Scoped to session work and
+ *     phrased as a grant below.
  */
 
-export type Step = {
-  id: string;
-  step: string;
+export const SECTION = {
+  eyebrow: 'The Kortix stack',
+  title: 'Every layer an AI workforce needs — in one platform you own.',
+  // Short on purpose: the section pins to the viewport, so every line here is
+  // height taken away from the card that has to fit under it — and the stack
+  // itself now names every layer, which is what the long enumeration did.
+  description:
+    'Most tools hand you one layer and rent you the rest. Kortix is all six — they read in order, and the sixth commits the work back into the first.',
+} as const;
+
+export type Layer = {
+  /** Stable id, also the DOM test hook and the key `LayerShowcase` switches on. */
+  id: 'source' | 'context' | 'models' | 'harness' | 'computer' | 'control-plane' | 'kortix';
+  /** Two-digit ordinal shown in the left gutter. */
+  ordinal: string;
+  /** The layer's name. Same noun as the card's own product panel header. */
   label: string;
+  /** The claim the layer makes, as a sentence. */
   title: string;
   description: string;
+  /**
+   * Three facts. Each one has to be checkable in the product, not a promise.
+   * Empty on the closing card, which is a full stop rather than a layer.
+   */
   bullets: string[];
 };
 
-export const STEPS: Step[] = [
+/**
+ * The order is the argument: it starts at the repo, walks outward through the
+ * things a session needs, and the last layer commits the work back into the
+ * first one. Each `description` picks up the noun the layer before it left.
+ */
+export const LAYERS: Layer[] = [
   {
-    id: 'connect',
-    step: '01',
-    label: 'Connect',
-    title: 'Connect your tools once.',
+    id: 'source',
+    ordinal: '01',
+    label: 'Source of truth',
+    title: 'One git repo that is the company.',
     description:
-      'Wire up Slack, docs, tickets, CRM, databases, and code with scoped access — once, for the whole company.',
+      'Agents, skills, memory, connector config and triggers are all text in one repo. Not settings in someone else’s database — files you own.',
     bullets: [
-      '3,000+ apps, plus MCP, OpenAPI, GraphQL, and HTTP',
-      'Credentials stay brokered by Kortix, never copied into a session',
-      'Scope each tool per project, per agent, per person',
-      'Admins set what can run, what asks first, and what stays blocked',
+      'kortix.yaml declares the machine image, the connectors and the triggers',
+      'Agents and skills are markdown; memory is files that accumulate',
+      'grep the whole company, diff any change, roll any part of it back',
     ],
   },
   {
-    id: 'ask',
-    step: '02',
-    label: 'Ask',
-    title: 'Ask for the outcome.',
+    id: 'context',
+    ordinal: '02',
+    label: 'Context & connections',
+    title: 'Every tool your company already runs on.',
     description:
-      'Anyone on the team describes what they need in plain language — from Slack, Teams, the web, or their phone.',
+      'The repo also holds the connectors. Wire up Slack, docs, tickets, CRM, billing and code once, then scope which agent may touch which one.',
     bullets: [
-      'No prompt-engineering course before the first useful task',
-      'Ask for a report, brief, dashboard, reply, app, or change',
-      'Every surface starts the same underlying kind of work',
-      'Follow-up messages keep the context instead of starting over',
+      '3,000+ apps in a click, plus MCP, OpenAPI, Postman, GraphQL and raw HTTP',
+      'Connector credentials are brokered server-side and never enter the machine',
+      'Rule each tool call allow, ask or block — down to the arguments it was given',
     ],
   },
   {
-    id: 'work',
-    step: '03',
-    label: 'Work',
-    title: 'It works in a safe sandbox.',
+    id: 'models',
+    ordinal: '03',
+    label: 'Large language models',
+    title: 'Run any model. Keep your keys.',
     description:
-      'Each task runs in its own isolated machine with scoped permissions, its own files, and a full audit trail.',
+      'Kortix is model-agnostic. Pick the model per agent, per session or per message, and switch the day a better one lands.',
     bullets: [
-      'Every session gets its own isolated sandbox and branch',
-      'Agents use connected tools without ever holding raw keys',
-      'Long-running work keeps going after you close the tab',
-      'Every important action stays logged, reviewable, or approval-gated',
+      'Bring your own API key from any major provider, or use ours',
+      'Or sign in with the ChatGPT subscription you already pay for',
+      'Or your own models, behind your own URL — anything OpenAI-compatible',
     ],
   },
   {
-    id: 'review',
-    step: '04',
-    label: 'Review',
-    title: 'Review what comes back.',
+    id: 'harness',
+    ordinal: '04',
+    label: 'Agentic harness',
+    title: 'The part that turns a model into an agent.',
     description:
-      'Kortix returns finished work — a report, deck, dashboard, app, reply, or a change request you approve.',
+      'A model on its own answers. The harness gives it planning, tool use and multi-step runs it actually finishes — powered by OpenCode, configured by a file in the repo.',
     bullets: [
-      'People stay in control before anything important ships',
-      'Files, diffs, and results open right in the workspace',
-      'Change requests make every edit auditable before it reaches main',
-      'Approved work becomes part of the company',
+      // ACCURACY: markdown is the baseline, not the ceiling. An agent is an
+      // OpenCode agent — tools, plugins and model config sit beside it in the
+      // same repo. Do not shorten this back to "an agent is markdown".
+      'An OpenCode agent: markdown, plus the tools and plugins beside it',
+      'Say allow, ask or deny per tool — down to a single shell command',
+      'Open source, so the harness is never the thing you are locked into',
     ],
   },
   {
-    id: 'skills',
-    step: '05',
-    label: 'Skills',
-    title: 'Save the workflow as a skill.',
+    id: 'computer',
+    ordinal: '05',
+    label: 'Agent computer',
+    title: 'Every session gets its own computer.',
     description:
-      'The best way to do a job becomes a reusable skill file — so the next person, and every agent, starts from a stronger place.',
+      'The harness needs somewhere to run. Each session boots its own isolated Linux machine with your repo and your tools already on it — nothing to install, no laptop involved.',
     bullets: [
-      'Capture repeatable know-how in simple files',
-      'Attach skills to the agents that need them',
-      'Improve them through the same reviewable change flow',
-      'One person levels up the whole company overnight',
+      'Session id, sandbox id and branch name are one and the same string',
+      'The agent can install, run and break anything — only commits survive',
+      'Thousands run in parallel with no crossover between them',
     ],
   },
   {
-    id: 'memory',
-    step: '06',
-    label: 'Memory',
-    title: 'It learns by itself.',
+    id: 'control-plane',
+    ordinal: '06',
+    label: 'Control plane',
+    title: 'One place to start it, one gate to land it.',
     description:
-      'Every session adds to a shared memory — people, docs, decisions, context — so the next one starts smarter. The company gets sharper on its own.',
+      'Start, watch and steer every agent in the organization — from the web app, from Slack, from your terminal, or from nobody at all. Then the work commits back into the repo you started from.',
     bullets: [
-      'Relevant projects, people, and decisions carry forward',
-      'Agents stop asking the same setup questions twice',
-      'Memory is shared by everyone and inspectable as files',
-      'Your company compounds what it learns, every run',
+      'Web, Slack, mobile, CLI and API all start the same session',
+      'Cron schedules and signed webhooks start sessions with no one asking',
+      'Session work lands on main as a change request you read as a diff first',
     ],
   },
 ];

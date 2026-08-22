@@ -24,6 +24,7 @@ import {
   type GitProxyAuth,
 } from '../projects';
 import type { GitScope } from '../projects/git-backends';
+import { deriveRequestContext } from '../iam/cache';
 import {
   FORWARD_REQUEST_HEADERS,
   STRIP_RESPONSE_HEADERS,
@@ -84,7 +85,10 @@ function validProjectIdOrResponse(c: any, raw: string): string | Response {
 async function authorize(c: any, projectId: string, scope: GitScope): Promise<GitProxyAuth> {
   const token = extractToken(c.req.header('authorization'));
   if (!token) return { ok: false, status: 401, message: 'authentication required' };
-  return authorizeGitProxy(token, projectId, scope);
+  // Pass the request context so IP-allowlist / require-MFA policy conditions
+  // evaluate on the per-project capability path the same way they do on every
+  // other project route.
+  return authorizeGitProxy(token, projectId, scope, deriveRequestContext(c));
 }
 
 /**

@@ -55,16 +55,16 @@ function scoreByOverlap(text: string): string[] {
   const lower = text.toLowerCase();
   const tokens = lower.split(/[^a-z0-9]+/).filter((t) => t.length > 2);
 
-  const scored = ALL_SKILLS.map(([name, desc]) => {
+  const scored: { name: string; score: number }[] = [];
+  for (const [name, desc] of ALL_SKILLS) {
     const hay = `${name} ${desc}`.toLowerCase();
     let score = 0;
     for (const t of tokens) {
       if (hay.includes(t)) score += t.length > 4 ? 3 : 1;
     }
-    return { name, score };
-  })
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score);
+    if (score > 0) scored.push({ name, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
 
   return scored.slice(0, 3).map((s) => s.name);
 }
@@ -85,7 +85,7 @@ export function matchSkillsFromPrompt(text: string, explicit?: string[]): string
   const scored = scoreByOverlap(trimmed);
   if (scored.length > 0) return scored;
 
-  return ['kortix-executor'];
+  return ['kortix-connectors'];
 }
 
 export function skillDescription(name: string): string | undefined {

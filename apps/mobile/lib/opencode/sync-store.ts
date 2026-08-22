@@ -103,6 +103,31 @@ export function markBridgedParts(messageId: string) {
   bridgedPartIds.add(messageId);
 }
 
+/**
+ * Where `message` belongs in a transcript already ordered by `time.created` —
+ * the first position whose message is strictly newer, or the end.
+ *
+ * `time.created` with the id as the ONLY tie-break: the same order the
+ * server's `MessageV2.latest()` uses, and the key `MessageV2.page()` pages by.
+ * Never an id-first comparison — ids stopped ascending with time in OpenCode
+ * 1.18.15. A message with no readable `time` cannot be dated and goes last,
+ * which is where the newest thing we know about belongs.
+ */
+function insertIndexByTime(
+  list: readonly MessageWithParts[],
+  message: MessageWithParts,
+): number {
+  const created = message.info.time?.created;
+  if (created === undefined) return list.length;
+  for (let index = 0; index < list.length; index++) {
+    const other = list[index].info.time?.created;
+    if (other === undefined) continue;
+    if (other > created) return index;
+    if (other === created && list[index].info.id > message.info.id) return index;
+  }
+  return list.length;
+}
+
 // ---------------------------------------------------------------------------
 // Store implementation
 // ---------------------------------------------------------------------------
@@ -121,11 +146,34 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         return { messages: { ...state.messages, [sessionId]: messages } };
       }
 
+      const incomingHasRealUserMessage = messages.some(
+        (message) => message.info.role === 'user' && !optimisticIds.has(message.info.id),
+      );
+      const messagesById = new Map(messages.map((message) => [message.info.id, message]));
+      // The incoming page IS the order — `MessageV2.page()` orders by
+      // `time_created` server-side, and always has. This used to re-sort the
+      // union by `info.id.localeCompare(...)`: ids do not ascend with time
+      // (OpenCode 1.18.15 retired that invariant), and `localeCompare` is not
+      // byte order, so mobile and web produced DIFFERENT transcripts from
+      // identical data. Locally-known messages the page lacks are placed by
+      // `time.created`, the same key the server ordered by; one that cannot be
+      // dated goes last, where the newest message belongs.
+      const mergedMessages = [...messages];
+      for (const message of existing) {
+        const isSupersededOptimisticUser =
+          incomingHasRealUserMessage &&
+          message.info.role === 'user' &&
+          optimisticIds.has(message.info.id);
+        if (messagesById.has(message.info.id) || isSupersededOptimisticUser) continue;
+        messagesById.set(message.info.id, message);
+        mergedMessages.splice(insertIndexByTime(mergedMessages, message), 0, message);
+      }
+
       // Reconcile: for text/reasoning parts that are currently being
       // streamed, the SSE-accumulated version may have MORE content
       // than the REST snapshot. Prefer the longer version to avoid
       // clobbering in-progress streaming text.
-      const reconciled = messages.map((incomingMsg) => {
+      const reconciled = mergedMessages.map((incomingMsg) => {
         const existingMsg = existing.find(
           (m) => m.info.id === incomingMsg.info.id,
         );

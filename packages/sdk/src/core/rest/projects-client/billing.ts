@@ -9,6 +9,26 @@
 import { backendApi } from '../../http/api-client';
 import { serverTokenGet, unwrap, type ServerTokenOptions } from './shared';
 
+/**
+ * The unambiguous billing situation for an account — the SAME state the API's
+ * billing gate admits on (apps/api/src/billing/services/billing-state.ts).
+ *
+ * Branch on this, never on `tier_key` (which stays `free` for per-seat Team
+ * accounts) and never on `can_run` alone (`false` means BLOCKED, not "no plan").
+ */
+export type BillingState =
+  | 'active'
+  | 'out_of_credits'
+  | 'no_subscription'
+  | 'payment_failed'
+  | 'no_account';
+
+/**
+ * The public plan ladder. Exactly three rungs — every plan key an account can
+ * carry, current or grandfathered, belongs to one of them.
+ */
+export type PlanFamily = 'free' | 'team' | 'enterprise';
+
 export interface AccountState {
   credits: {
     total: number;
@@ -16,6 +36,11 @@ export interface AccountState {
     monthly: number;
     extra: number;
     can_run: boolean;
+    /** Lifetime rollups derived from credit_ledger, server-side. Present once
+     *  the API is updated; absent on older responses. */
+    lifetime_granted?: number;
+    lifetime_purchased?: number;
+    lifetime_used?: number;
     daily_refresh: {
       enabled: boolean;
       daily_amount: number;
@@ -24,6 +49,46 @@ export interface AccountState {
       next_refresh_at?: string;
       seconds_until_refresh?: number;
     } | null;
+  };
+  /** Present once the API is updated; absent → derive client-side. */
+  billing_state?: BillingState;
+  /** True when a Stripe subscription is currently providing service (distinct
+   *  from `subscription.subscription_id`, which survives cancellation). */
+  has_active_subscription?: boolean;
+  /**
+   * The plan the account BEHAVES as, named the way the product names plans.
+   *
+   * Distinct from `subscription` on purpose. `subscription.tier_key` is the
+   * STORED plan — the one Stripe sold. This block is the RESOLVED plan: an
+   * active admin-issued trial and the per-seat self-heal overlay it, so it
+   * reports the plan the server's gates actually enforce. Read it through
+   * {@link resolvedPlan}, which also covers responses from an API too old to
+   * send it.
+   *
+   * Optional: additive on the wire. The API sends it as of the plan-resolver
+   * rollout; older deployments omit it entirely.
+   */
+  plan?: {
+    /** Plan key — e.g. 'free', 'per_seat', 'tier_25_200', 'enterprise'. */
+    key: string;
+    /** Public ladder position: there are exactly three families. */
+    family: PlanFamily;
+    /** Customer-facing family name — 'Free' | 'Team' | 'Enterprise'. */
+    label: string;
+    /** Qualifier under the label, e.g. '$200/mo · grandfathered'. Null when
+     *  the plan needs no qualifier. */
+    sublabel: string | null;
+    /** Lifecycle: sellable today, sold-once-and-honored, defined-but-never-sold,
+     *  or the absence of a plan. */
+    status: 'current' | 'grandfathered' | 'retired' | 'non_plan';
+    /** How the recurring charge is computed. */
+    shape: 'none' | 'flat' | 'seat' | 'contract';
+    /** Strictly ordered ladder position (0 = no plan). Compare, don't display. */
+    rank: number;
+    /** `status === 'grandfathered'` — sold once, still honored exactly as sold.
+     *  Render the plan as it was sold instead of mapping it onto a current plan
+     *  it is not. */
+    is_grandfathered: boolean;
   };
   subscription: {
     tier_key: string;
@@ -114,6 +179,13 @@ export interface AccountState {
    *  hides the self-serve "Enterprise features — Demo" toggle and any
    *  "Request enterprise access" upsell when this is true. */
   enterprise_license_available?: boolean;
+  /** True when an operator flagged this account as a contracted cloud
+   *  Enterprise customer (`credit_accounts.enterprise_entitled`). The account
+   *  then resolves all enterprise entitlements regardless of billing tier, so
+   *  a deal that is BOTH Enterprise AND per-seat can hold both at once. The
+   *  frontend uses this to hide the self-serve demo toggle (a real contract
+   *  supersedes the demo). */
+  enterprise_entitled?: boolean;
   auto_topup?: {
     enabled: boolean;
     threshold: number;
@@ -231,6 +303,72 @@ export function getDefaultAccountState(): AccountState {
       monthly_credits: 0,
       can_purchase_credits: false,
     },
+  };
+}
+
+// ── Plan selectors ──────────────────────────────────────────────────────────
+
+/** What a UI needs to name an account's plan. */
+export interface ResolvedPlanView {
+  /** Which rung of the public ladder — the only value worth branching on. */
+  family: PlanFamily;
+  /** Customer-facing plan name, e.g. 'Team'. Never empty. */
+  label: string;
+  /** Qualifier to render muted after the label, e.g.
+   *  '$40/seat/mo · grandfathered'. Null when the plan needs none. */
+  sublabel: string | null;
+  /** Sold once, still honored exactly as sold, no longer offered. */
+  isGrandfathered: boolean;
+}
+
+/**
+ * Fallback family for an API that predates the `plan` block. `free` and `none`
+ * are the only two keys in the free family and `enterprise` is the only key in
+ * the enterprise family, so everything else is a Team-family plan — current or
+ * grandfathered.
+ */
+function planFamilyForTierKey(tierKey: string): PlanFamily {
+  const key = tierKey.trim().toLowerCase();
+  if (key === '' || key === 'free' || key === 'none') return 'free';
+  if (key === 'enterprise') return 'enterprise';
+  return 'team';
+}
+
+/**
+ * The plan an account BEHAVES as, as a UI should name it.
+ *
+ * Prefer this over `state.subscription.tier_key` for anything a person reads or
+ * any "is this account on a paid plan?" branch. `tier_key` is the STORED plan,
+ * which stays `free` for an account on an admin trial and for a paying per-seat
+ * team whose row is stale — branch on it and the UI contradicts the server.
+ *
+ * Degrades safely: an API too old to send `plan` still yields a family and a
+ * label, derived from `tier` / `subscription.tier_key`.
+ */
+export function resolvedPlan(state: AccountState | null | undefined): ResolvedPlanView {
+  const plan = state?.plan;
+  if (plan) {
+    return {
+      family: plan.family,
+      label: plan.label,
+      sublabel: plan.sublabel ?? null,
+      isGrandfathered: plan.is_grandfathered === true,
+    };
+  }
+
+  // No state at all reads as the default state — 'No Plan', the same name the
+  // rest of this module gives the absence of a plan.
+  const s = state ?? getDefaultAccountState();
+  const tierKey = (s.subscription?.tier_key || s.tier?.name || 'none').toString();
+  const label = (s.tier?.display_name || '').trim() || tierKey;
+  return {
+    family: planFamilyForTierKey(tierKey),
+    label,
+    // The old shape carries no qualifier and no lifecycle, so there is nothing
+    // honest to put here. Guessing "grandfathered" from a `tier_*` key would
+    // print a billing claim the response never made.
+    sublabel: null,
+    isGrandfathered: false,
   };
 }
 
@@ -393,16 +531,21 @@ export async function getBillingUsageHistory(days?: number): Promise<BillingTran
 }
 
 export interface BillingTierConfiguration {
+  tier_key?: string;
   name: string;
   display_name: string;
   monthly_price: number;
   yearly_price: number;
   monthly_credits: number;
   can_purchase_credits: boolean;
+  project_limit?: number;
+  price_ids?: string[];
 }
 
 export interface BillingTierConfigurationsResponse {
+  success?: boolean;
   tiers: BillingTierConfiguration[];
+  timestamp?: string;
 }
 
 /** Publicly visible pricing tiers (for a plans/pricing page). */
@@ -421,6 +564,10 @@ export async function getBillingTierConfigurations(): Promise<BillingTierConfigu
  * slice before redirecting a freshly-authenticated user.
  */
 export interface AccountStateAppAccessView {
+  /** The RESOLVED plan key — authoritative over `subscription.tier_key`, which
+   *  is the STORED plan and stays `free` for an account on an admin trial.
+   *  Optional: an API older than the plan resolver omits the block. */
+  plan?: { key?: string | null } | null;
   subscription?: { tier_key?: string | null } | null;
   tier?: { name?: string | null } | null;
   credits?: { can_run?: boolean | null } | null;
@@ -466,7 +613,10 @@ export interface CreateCheckoutSessionInput {
 
 export interface CheckoutSessionResult {
   url?: string | null;
+  checkout_url?: string;
   session_id?: string;
+  status?: string;
+  message?: string;
   [key: string]: unknown;
 }
 
@@ -529,6 +679,8 @@ export async function createPortalSession(
 
 export interface SubscriptionMutationResult {
   ok?: boolean;
+  success: boolean;
+  message: string;
   [key: string]: unknown;
 }
 
@@ -646,15 +798,165 @@ export interface ConfigureAutoTopupInput {
   amount: number;
 }
 
-/** Configure (enable/disable, threshold, amount) auto-topup — recurring credit purchases. */
+/**
+ * Configure (enable/disable, threshold, amount) auto-topup — recurring credit
+ * purchases.
+ *
+ * `showErrors: false` — the single caller (`AutoTopupCard.handleSave`) already
+ * shows its own `errorToast` from the thrown error in its `catch` block. Without
+ * this, the SDK's global `onError` (wired to `handleApiError` in
+ * `apps/web/src/lib/kortix-config.ts`) ALSO toasted the same message, so one
+ * failed Save produced two stacked identical toasts.
+ */
 export async function configureAutoTopup(input: ConfigureAutoTopupInput): Promise<AutoTopupSettings> {
   return unwrap(
-    await backendApi.post<AutoTopupSettings>('/billing/auto-topup/configure', {
-      account_id: input.accountId,
-      enabled: input.enabled,
-      threshold: input.threshold,
-      amount: input.amount,
-    }),
+    await backendApi.post<AutoTopupSettings>(
+      '/billing/auto-topup/configure',
+      {
+        account_id: input.accountId,
+        enabled: input.enabled,
+        threshold: input.threshold,
+        amount: input.amount,
+      },
+      { showErrors: false },
+    ),
     'Failed to configure auto-topup',
   );
+}
+
+export interface AutoTopupSetupStatus {
+  /** A chargeable saved payment method exists — of ANY type (card, Link, SEPA…).
+   *  This is the field that gates enabling auto top-up. */
+  has_payment_method: boolean;
+  /** Informational: a method is designated default at the customer or
+   *  subscription level. Never gate the UI on this — a Stripe Link checkout
+   *  leaves the customer-level invoice default null while still having a
+   *  perfectly chargeable method. */
+  has_default_payment_method: boolean;
+  payment_method_source?: 'customer_default' | 'subscription_default' | 'attached' | null;
+}
+
+export async function getAutoTopupSetupStatus(accountId?: string): Promise<AutoTopupSetupStatus> {
+  const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+  return unwrap(
+    await backendApi.get<AutoTopupSetupStatus>(`/billing/auto-topup/setup-status${query}`, {
+      timeout: 8000,
+      showErrors: false,
+    }),
+    'Failed to load auto-topup setup status',
+  );
+}
+
+export interface CreatePerSeatCheckoutInput {
+  accountId?: string;
+  successUrl: string;
+  cancelUrl: string;
+  locale?: string;
+}
+
+export interface CreatePerSeatCheckoutResult {
+  status: 'subscription_created' | 'checkout_created';
+  checkout_url?: string;
+  subscription_id?: string;
+  seat_count: number;
+}
+
+export async function createPerSeatCheckout(
+  input: CreatePerSeatCheckoutInput,
+): Promise<CreatePerSeatCheckoutResult> {
+  return unwrap(
+    await backendApi.post<CreatePerSeatCheckoutResult>('/billing/create-per-seat-checkout', {
+      account_id: input.accountId,
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+      locale: input.locale,
+    }),
+    'Failed to create per-seat checkout',
+  );
+}
+
+export interface ClaimPerSeatResult {
+  ok: boolean;
+  status: string;
+  credited_usd: number;
+  first_seat_covered_usd: number;
+  cancelled_subscriptions: number;
+  reason?: string | null;
+}
+
+export async function claimPerSeatBilling(accountId?: string): Promise<ClaimPerSeatResult> {
+  return unwrap(
+    await backendApi.post<ClaimPerSeatResult>('/billing/claim-per-seat', {
+      account_id: accountId,
+    }),
+    'Failed to switch to per-seat billing',
+  );
+}
+
+export async function syncSubscription(accountId?: string): Promise<SubscriptionMutationResult> {
+  return unwrap(
+    await backendApi.post<SubscriptionMutationResult>('/billing/sync-subscription', {
+      account_id: accountId,
+    }),
+    'Failed to sync subscription',
+  );
+}
+
+// ── Usage rollup (/v1/usage) ──────────────────────────────────────────────────
+
+export interface UsageTotals {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cached_tokens: number;
+  total_cache_write_tokens: number;
+  total_cost: number;
+  count: number;
+}
+
+export interface UsageBreakdownItem {
+  day?: string;
+  provider?: string | null;
+  model?: string;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_write_tokens: number;
+  cost: number;
+  count: number;
+}
+
+export interface UsageRollup {
+  data: UsageTotals;
+  breakdown?: UsageBreakdownItem[];
+}
+
+export interface UsageQueryOptions {
+  start?: string;
+  end?: string;
+  groupBy?: 'model' | 'provider' | 'day';
+  /**
+   * Which account to report on. REQUIRED whenever the caller could be looking at
+   * an account other than their default: for a browser session the server reads
+   * this from the query string, so omitting it silently reports the caller's own
+   * account instead of the one on screen. (Account-scoped tokens ignore it and
+   * always report their own account.)
+   */
+  accountId?: string;
+}
+
+/** Usage rollup for the authenticated account, optionally grouped and narrowed. */
+export async function getUsageRollup(options: UsageQueryOptions = {}): Promise<UsageRollup> {
+  const qs = new URLSearchParams();
+  if (options.start) qs.set('start', options.start);
+  if (options.end) qs.set('end', options.end);
+  if (
+    options.groupBy === 'model' ||
+    options.groupBy === 'provider' ||
+    options.groupBy === 'day'
+  ) {
+    qs.set('group_by', options.groupBy);
+  }
+  if (options.accountId) qs.set('account_id', options.accountId);
+  const query = qs.toString();
+  return unwrap(await backendApi.get<UsageRollup>(`/usage${query ? `?${query}` : ''}`));
 }

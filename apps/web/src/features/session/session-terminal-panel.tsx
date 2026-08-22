@@ -1,12 +1,19 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
-import { useCreatePty, useOpenCodePtyList, type Pty } from '@/hooks/opencode/use-opencode-pty';
-import { useOpenCodeRuntimeReady } from '@/hooks/opencode/use-opencode-sessions';
-import { useServerStore } from '@/stores/server-store';
+import {
+  deriveTerminalPanelState,
+  shouldAutoReplaceTerminal,
+} from '@/features/session/pty-connection';
+import { isSandboxNotReadyError } from '@kortix/sdk';
+import { useCreatePty, useRuntimePtyList, type Pty } from '@kortix/sdk/react';
+import { useRuntimeStore } from '@kortix/sdk/react';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { CircleDashed, Plus, Terminal } from 'lucide-react';
+import { requestRuntimeReconnect } from '@kortix/sdk/react';
+import { PlusIcon as Plus, TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import React, { useCallback, useEffect, useRef } from 'react';
@@ -18,6 +25,11 @@ const PtyTerminal = dynamic(
 );
 
 const PTY_ENV = { TERM: 'xterm-256color', COLORTERM: 'truecolor' } as const;
+const SERVER_URL_WAIT_MS = 15_000;
+// How often to retry PTY list/create while the sandbox reports a readiness
+// 503 (parked or booting box). The control plane answers without dialling
+// the box, so the poll is cheap.
+const SANDBOX_WAKING_RETRY_INTERVAL_MS = 3_000;
 
 /**
  * Live terminal for the session side panel — a {@link PtyTerminal} bound to
@@ -38,21 +50,25 @@ export function SessionTerminalPanel({
   hidden?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
 
-  // The opencode runtime (in-sandbox daemon + opencode server) must be booted
-  // and healthy before any /pty REST call will resolve — otherwise the proxy
-  // 404s against a sandbox whose daemon isn't up yet. Every opencode hook gates
-  // on this same signal; the PTY list query does too (so it stays disabled, and
-  // `isLoading` reads false, until ready). We mirror it here so the lazy create
-  // effect below doesn't fire a doomed POST during boot.
-  const runtimeReady = useOpenCodeRuntimeReady();
-
-  const { data: ptys, isLoading } = useOpenCodePtyList();
-  const createPty = useCreatePty();
+  // The terminal belongs to the sandbox daemon. It does not depend on OpenCode
+  // health. Bind every PTY operation to this session's explicit runtime URL.
+  const {
+    data: ptys,
+    isLoading,
+    isError: isListError,
+    error: listError,
+    refetch: refetchPtys,
+  } = useRuntimePtyList({ serverUrl, enabled: !!serverUrl });
+  // Failures surface in the pane (retry button / reconnect flow) — keep them
+  // out of the app-global "Failed to perform action" toast.
+  const createPty = useCreatePty({ serverUrl, onError: () => {} });
   const terminalPtyId = useSessionBrowserStore((s) => s.terminalPtyBySession[sessionId] ?? null);
   const setTerminalPty = useSessionBrowserStore((s) => s.setTerminalPty);
   const [optimisticPty, setOptimisticPty] = React.useState<Pty | null>(null);
+  const [serverWaitExpired, setServerWaitExpired] = React.useState(false);
+  const [serverRetryAttempt, setServerRetryAttempt] = React.useState(0);
 
   const listedPty =
     terminalPtyId && ptys ? (ptys.find((item) => item.id === terminalPtyId) ?? null) : null;
@@ -63,7 +79,7 @@ export function SessionTerminalPanel({
   // multiple shells.
   const ensuringRef = useRef(false);
   const ensurePty = useCallback(() => {
-    if (ensuringRef.current) return;
+    if (!serverUrl || ensuringRef.current) return;
     ensuringRef.current = true;
     createPty
       .mutateAsync({
@@ -77,7 +93,30 @@ export function SessionTerminalPanel({
       .catch(() => {
         ensuringRef.current = false;
       });
-  }, [createPty, sessionId, setTerminalPty]);
+  }, [createPty, serverUrl, sessionId, setTerminalPty]);
+
+  useEffect(() => {
+    if (serverUrl) {
+      setServerWaitExpired(false);
+      return;
+    }
+    setServerWaitExpired(false);
+    const timeout = window.setTimeout(() => setServerWaitExpired(true), SERVER_URL_WAIT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [serverRetryAttempt, serverUrl]);
+
+  // 'pty not found' → PtyTerminal classifies the close as 'replace' and calls
+  // this. The registry is process-local: after a daemon restart the remembered
+  // id can never reconnect — drop it so the lazy-create effect below mints a
+  // fresh shell. Capped so a broken runtime can't spawn terminals forever.
+  const replacementAttemptRef = useRef(0);
+  const handleUnavailable = useCallback(() => {
+    if (!shouldAutoReplaceTerminal(replacementAttemptRef.current)) return;
+    replacementAttemptRef.current += 1;
+    ensuringRef.current = false;
+    setOptimisticPty(null);
+    setTerminalPty(sessionId, null);
+  }, [sessionId, setTerminalPty]);
 
   useEffect(() => {
     if (listedPty && optimisticPty?.id === listedPty.id) {
@@ -91,7 +130,7 @@ export function SessionTerminalPanel({
   }, [isLoading, optimisticPty?.id, pty, ptys, sessionId, setTerminalPty, terminalPtyId]);
 
   useEffect(() => {
-    if (!runtimeReady) return; // wait for the sandbox runtime — a create now would 404
+    if (!serverUrl || isListError || createPty.isError) return;
     if (isLoading) return;
     if (pty) {
       ensuringRef.current = false;
@@ -99,43 +138,109 @@ export function SessionTerminalPanel({
     }
     if (terminalPtyId) return; // Wait for the missing-id cleanup effect above.
     ensurePty();
-  }, [runtimeReady, isLoading, pty, terminalPtyId, ensurePty]);
+  }, [createPty.isError, ensurePty, isListError, isLoading, pty, serverUrl, terminalPtyId]);
+
+  const retryTerminal = useCallback(() => {
+    ensuringRef.current = false;
+    createPty.reset();
+    if (!serverUrl) {
+      requestRuntimeReconnect();
+      setServerRetryAttempt((attempt) => attempt + 1);
+      return;
+    }
+    if (isListError) {
+      void refetchPtys();
+      return;
+    }
+    ensurePty();
+  }, [createPty, ensurePty, isListError, refetchPtys, serverUrl]);
+
+  // A parked/booting sandbox answers PTY list/create with a readiness 503 —
+  // a pending state, never a terminal error. Keep the connecting spinner and
+  // retry on an interval until the box is up.
+  const sandboxWaking =
+    (isListError && isSandboxNotReadyError(listError)) ||
+    (createPty.isError && isSandboxNotReadyError(createPty.error));
+
+  const retryTerminalRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    retryTerminalRef.current = retryTerminal;
+  }, [retryTerminal]);
+  useEffect(() => {
+    if (!sandboxWaking) return;
+    const interval = window.setInterval(
+      () => retryTerminalRef.current(),
+      SANDBOX_WAKING_RETRY_INTERVAL_MS,
+    );
+    return () => window.clearInterval(interval);
+  }, [sandboxWaking]);
+
+  const panelState = deriveTerminalPanelState({
+    hasServerUrl: !!serverUrl,
+    serverWaitExpired,
+    hasPty: !!pty,
+    isListLoading: isLoading,
+    isListError,
+    isCreatePending: createPty.isPending,
+    isCreateError: createPty.isError,
+    isEnsuring: ensuringRef.current,
+    isSandboxWaking: sandboxWaking,
+  });
 
   let content: React.ReactNode;
-  if (!runtimeReady || isLoading || (!pty && (createPty.isPending || ensuringRef.current))) {
-    // Waiting for the sandbox runtime, or spinning up / loading the PTY list.
+  if (panelState === 'connecting') {
     content = (
       <div className="flex h-full w-full flex-col items-center justify-center">
-        <CircleDashed className="text-muted-foreground h-4 w-4 animate-spin" />
+        <Loading className="text-muted-foreground size-4" />
         <span className="text-muted-foreground mt-2 text-xs">
-          {tI18nHardcoded.raw('autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70')}
+          {sandboxWaking
+            ? 'Waking up the workspace…'
+            : tI18nHardcoded.raw(
+                'autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70',
+              )}
         </span>
       </div>
     );
-  } else if (!pty) {
-    // No PTY and not (re)spawning — offer to start one.
+  } else if (panelState === 'error') {
+    content = (
+      <ErrorState
+        size="sm"
+        title="Terminal connection failed"
+        description="The terminal service did not respond. Retry the connection."
+        action={
+          <Button variant="outline" size="sm" onClick={retryTerminal}>
+            Retry
+          </Button>
+        }
+        className="h-full"
+      />
+    );
+  } else if (panelState === 'empty') {
     content = (
       <div className="flex h-full w-full flex-col items-center justify-center gap-3">
-        <Terminal className="text-muted-foreground/30 h-8 w-8" />
+        <Terminal className="text-muted-foreground/30 size-8" />
         <Button variant="outline" size="sm" onClick={ensurePty} className="gap-1.5">
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="size-3.5" />
           {tI18nHardcoded.raw('autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9')}
         </Button>
       </div>
     );
-  } else {
+  } else if (pty) {
     content = (
       <PtyTerminal
         pty={pty}
         serverUrl={serverUrl}
         hidden={hidden}
+        onUnavailable={handleUnavailable}
         className="absolute inset-0 h-full w-full"
       />
     );
+  } else {
+    content = null;
   }
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#0f0f14]">
+    <div className="bg-terminal-surface flex h-full w-full flex-col">
       {projectSessionId && <SessionTerminalConnectBar projectSessionId={projectSessionId} />}
       <div className="relative min-h-0 flex-1">{content}</div>
     </div>

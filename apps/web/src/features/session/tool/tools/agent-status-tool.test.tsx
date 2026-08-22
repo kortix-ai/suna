@@ -42,27 +42,53 @@ describe('AgentStatusTool joins the shared BasicTool shell', () => {
     // Title comes from the shared trigger, not a hand-rolled <Layers> header.
     expect(html).toContain('Agent status');
 
-    // The task count renders as a Badge chip (variant="muted"), not a
-    // hand-rolled `bg-muted rounded px-1.5 py-0.5` span.
-    expect(html).toContain('2 tasks');
-    expect(html).toContain('bg-muted/50');
+    // The inline row is the label alone. The trailing metadata cluster
+    // (duration, badge, accessory) was removed from the inline surface: in a
+    // chain of activity steps it read as chrome hanging off the right edge
+    // rather than information. The badge still renders on the panel surface —
+    // asserted in the panel test below, so the "Badge chip, not hand-rolled
+    // span" guarantee is still covered.
+    expect(html).not.toContain('2 tasks');
   });
 
-  test('panel surface renders the standard sticky large header', () => {
+  // Task 16 REWRITE: the panel surface is no longer a sticky `px-4 pt-4 pb-3`
+  // header over an always-open body — it is a `bg-popover rounded-md border`
+  // disclosure row, closed unless the caller seeds it open. The grammar pinned
+  // below is the row's: one line, title + badge + chevron, body behind the
+  // disclosure. (A detail holding three calls used to stack three page headers.)
+  test('panel surface renders a closed disclosure row, badge on the row', () => {
     const html = renderToStaticMarkup(
       <ToolSurfaceContext.Provider value="panel">
         <AgentStatusTool part={makePart(OUTPUT)} />
       </ToolSurfaceContext.Provider>,
     );
 
-    // Grammar: panel header = sticky px-4 pt-4 pb-3, <h3> title text-sm font-medium.
-    expect(html).toContain('sticky');
-    expect(html).toContain('pt-4');
-    expect(html).toContain('pb-3');
+    // Grammar: panel row = bg-popover rounded-md border, px-3 py-2.5, min-h-11.
+    expect(html).not.toContain('sticky');
+    expect(html).toContain('bg-popover border-border overflow-hidden rounded-md border');
+    expect(html).toContain('min-h-11 w-full items-center gap-2.5 px-3 py-2.5');
     expect(html).toContain('text-sm font-medium');
     expect(html).toContain('Agent status');
 
-    // Body content (the task rows) is preserved, not dropped by the shell.
+    // The task count still renders as a Badge chip (variant="muted"), not a
+    // hand-rolled `bg-muted rounded px-1.5 py-0.5` span — it just sits in the
+    // row's trailing slot now instead of a header's top-right corner.
+    expect(html).toContain('2 tasks');
+    expect(html).toContain('bg-muted/50');
+
+    // Closed: the task rows are behind the disclosure, not on screen.
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('Write the report');
+  });
+
+  test('panel surface opened: the task rows are the body, nothing is dropped', () => {
+    const html = renderToStaticMarkup(
+      <ToolSurfaceContext.Provider value="panel">
+        <AgentStatusTool part={makePart(OUTPUT)} defaultOpen />
+      </ToolSurfaceContext.Provider>,
+    );
+
+    expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('Write the report');
     expect(html).toContain('Fix the failing test');
   });

@@ -7,7 +7,12 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { getCrById, serializeChangeRequest } from '../change-requests';
-import { invalidateProjectMirror, mergeBranches, readManifestFromRepo } from '../git';
+import {
+  invalidateProjectMirror,
+  MergeConflictError,
+  mergeBranches,
+  readManifestFromRepo,
+} from '../git';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
@@ -36,8 +41,8 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-    // Human-side capability gate: merging lands code on the base branch. Editors/
-    // editors hold project.gitops.merge today; a custom role can OMIT it to take
+    // Human-side capability gate: merging lands code on the base branch.
+    // Managers hold project.gitops.merge today; a custom role can OMIT it to take
     // Git-Ops merge away from a department without touching the rest of write.
     await assertProjectCapability(
       c,
@@ -48,9 +53,13 @@ projectsApp.openapi(
     );
 
     // Per-agent gate: merging a CR lands code on the base branch — the canonical
-    // destructive action. An agent-session token must be granted project.cr.merge
-    // (default-deny). Non-agent tokens (human dashboard / laptop CLI) pass through.
-    assertAgentScope(c, 'project.cr.merge');
+    // destructive action. An agent-session token must be granted
+    // `project.gitops.merge` (default-deny). `project.cr.merge` was the same
+    // capability under a second name and is gone from the catalog (spec §2.4); a
+    // manifest still spelling it that way is rewritten on input by
+    // `canonicalizeGrantActions`. Non-agent tokens (human dashboard / laptop
+    // CLI) pass through.
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_MERGE);
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);
@@ -106,6 +115,16 @@ projectsApp.openapi(
         authorEmail: 'noreply@kortix.ai',
       });
     } catch (error) {
+      if (error instanceof MergeConflictError) {
+        return c.json(
+          {
+            error: error.message,
+            code: error.code,
+            conflicts: error.conflicts,
+          },
+          409,
+        );
+      }
       return c.json(
         {
           error: error instanceof Error ? error.message : 'Merge failed',
@@ -150,7 +169,7 @@ projectsApp.openapi(
     // reconcile it from the new tip — best-effort, never blocks the merge
     // response. The manifest in git stays the source of truth either way; the
     // periodic sweep is the backstop if this best-effort call fails.
-    void import('../../executor/sync')
+    void import('../../connectors/sync')
       .then(({ syncProjectConnectors }) => syncProjectConnectors(projectId, loaded.row.accountId))
       .then((res) => {
         if (res.errors.length) {
@@ -195,9 +214,8 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Per-agent gate: managing a CR's lifecycle is part of the change-request
-    // capability. A scoped agent token must hold project.cr.open (no-op for
-    // human/PAT tokens).
-    assertAgentScope(c, 'project.cr.open');
+    // capability, which is `project.gitops.push` (no-op for human/PAT tokens).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);
@@ -242,9 +260,8 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Per-agent gate: managing a CR's lifecycle is part of the change-request
-    // capability. A scoped agent token must hold project.cr.open (no-op for
-    // human/PAT tokens).
-    assertAgentScope(c, 'project.cr.open');
+    // capability, which is `project.gitops.push` (no-op for human/PAT tokens).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);

@@ -1,30 +1,39 @@
+import {
+  CATALOG,
+  type ProviderAuthRequirement,
+  isProviderAuthSatisfied,
+  providerAuthRequirement,
+} from '@kortix/llm-catalog';
 import type { ProviderListResponse as SdkProviderListResponse } from '@opencode-ai/sdk/v2/client';
-import { CATALOG } from '@kortix/llm-catalog';
 
 import type { ProjectLlmCatalogResponse } from '../core/rest/projects-client';
 
 export type ProviderListResponse = SdkProviderListResponse;
 
 /**
- * Provider → credential env-var mapping, derived from the shared models.dev
- * catalog. Mirrors the `{ id, envVars }` projection of the web's `LLM_PROVIDERS`
- * (which is itself built from the same catalog), so connection inference is
- * identical without depending on the web-only provider-modal catalog module.
+ * Provider → Kortix-owned auth requirement, derived from the shared
+ * models.dev catalog via `providerAuthRequirement` (NOT the raw catalog
+ * `env` list — see that function's doc comment for why: models.dev lists
+ * every auth method the upstream SDK supports, not what Kortix actually
+ * reads). Mirrors the `{ id, authRequirement }` projection of the web's
+ * `LLM_PROVIDERS` (built from the same catalog + the same override table),
+ * so connection inference is identical without depending on the web-only
+ * provider-modal catalog module.
  */
-export const LLM_PROVIDER_CREDENTIALS: Array<{ id: string; envVars: string[] }> =
-  CATALOG.providers.map((provider) => ({
-    id: provider.id,
-    envVars: provider.env ?? [],
-  }));
+export const LLM_PROVIDER_CREDENTIALS: Array<{
+  id: string;
+  authRequirement: ProviderAuthRequirement;
+}> = CATALOG.providers.map((provider) => ({
+  id: provider.id,
+  authRequirement: providerAuthRequirement(provider),
+}));
 
 // In gateway mode OpenCode must see Kortix as the single LLM provider. Native
 // providers, including OpenCode Zen, belong only to native mode.
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
 const NATIVE_EXCLUDED_PROVIDER_IDS = new Set(['kortix']);
 
-export function normalizeProviderList(
-  providers: ProviderListResponse,
-): ProviderListResponse {
+export function normalizeProviderList(providers: ProviderListResponse): ProviderListResponse {
   const modernAll = Array.isArray(providers.all) ? providers.all : [];
   const modernConnected = Array.isArray(providers.connected) ? providers.connected : [];
   if (modernAll.length > 0 || modernConnected.length > 0) {
@@ -70,12 +79,7 @@ export function providerListHasModels(providers: ProviderListResponse | undefine
   const all = Array.isArray(normalized.all) ? normalized.all : [];
   const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
   if (connected.length === 0) return false;
-  return all.some(
-    (p) =>
-      connected.includes(p.id) &&
-      p.models &&
-      Object.keys(p.models).length > 0,
-  );
+  return all.some((p) => connected.includes(p.id) && p.models && Object.keys(p.models).length > 0);
 }
 
 export function providerListHasGateway(providers: ProviderListResponse | undefined): boolean {
@@ -97,6 +101,30 @@ export function filterToGatewayProviders(providers: ProviderListResponse): Provi
   };
 }
 
+export function mergeProviderLists(
+  primary: ProviderListResponse,
+  secondary: ProviderListResponse,
+): ProviderListResponse {
+  const first = normalizeProviderList(primary);
+  const second = normalizeProviderList(secondary);
+  const all = new Map<string, NonNullable<ProviderListResponse['all']>[number]>();
+  for (const provider of Array.isArray(first.all) ? first.all : []) {
+    all.set(provider.id, provider);
+  }
+  for (const provider of Array.isArray(second.all) ? second.all : []) {
+    all.set(provider.id, provider);
+  }
+  const connected = new Set<string>();
+  for (const id of Array.isArray(first.connected) ? first.connected : []) connected.add(id);
+  for (const id of Array.isArray(second.connected) ? second.connected : []) connected.add(id);
+  return {
+    ...first,
+    all: [...all.values()],
+    connected: [...connected],
+    default: { ...(first.default ?? {}), ...(second.default ?? {}) },
+  };
+}
+
 export function filterToNativeProviders(providers: ProviderListResponse): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
   const all = Array.isArray(normalized.all) ? normalized.all : [];
@@ -111,7 +139,7 @@ export function filterToNativeProviders(providers: ProviderListResponse): Provid
 export function mergeProjectSecretConnectedProviders(
   providers: ProviderListResponse,
   secretNames: Set<string>,
-  providerCredentials: Array<{ id: string; envVars: string[] }>,
+  providerCredentials: Array<{ id: string; authRequirement: ProviderAuthRequirement }>,
 ): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
   const all = Array.isArray(normalized.all) ? normalized.all : [];
@@ -121,8 +149,7 @@ export function mergeProjectSecretConnectedProviders(
   for (const provider of providerCredentials) {
     if (
       allIds.has(provider.id) &&
-      provider.envVars.length > 0 &&
-      provider.envVars.every((envVar) => secretNames.has(envVar))
+      isProviderAuthSatisfied(provider.authRequirement, (envVar) => secretNames.has(envVar))
     ) {
       connected.add(provider.id);
     }
@@ -138,15 +165,10 @@ export function mergeProjectSecretConnectedProviders(
   return { ...normalized, connected: [...connected] };
 }
 
-export function connectedGatewayProviderIdsFromSecretNames(
-  secretNames: Set<string>,
-): Set<string> {
+export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<string>): Set<string> {
   const ids = new Set<string>();
   for (const provider of LLM_PROVIDER_CREDENTIALS) {
-    if (
-      provider.envVars.length > 0 &&
-      provider.envVars.every((envVar) => secretNames.has(envVar))
-    ) {
+    if (isProviderAuthSatisfied(provider.authRequirement, (envVar) => secretNames.has(envVar))) {
       ids.add(provider.id);
     }
   }
@@ -156,18 +178,54 @@ export function connectedGatewayProviderIdsFromSecretNames(
   return ids;
 }
 
+/**
+ * Restamp `enabled` on a gateway ProviderListResponse from an overrides map
+ * (`wireModelId -> enabled`), touching only the models the map names. Pure —
+ * returns a new list. Used to optimistically update the cached
+ * `['project-providers', :id, 'gateway']` query when "Manage models" writes an
+ * override, so the session picker (which renders from THAT cache, staleTime
+ * Infinity) reflects the toggle without waiting for the refetch.
+ */
+export function applyEnablementToProviderList(
+  providers: ProviderListResponse,
+  overrides: Record<string, boolean>,
+): ProviderListResponse {
+  const all = Array.isArray(providers.all) ? providers.all : [];
+  return {
+    ...providers,
+    all: all.map((provider) => ({
+      ...provider,
+      models: Object.fromEntries(
+        Object.entries(provider.models ?? {}).map(([id, model]) => [
+          id,
+          overrides[id] === undefined
+            ? model
+            : { ...(model as Record<string, unknown>), enabled: overrides[id] },
+        ]),
+      ),
+    })),
+  } as unknown as ProviderListResponse;
+}
+
 export function projectLlmCatalogToProviderList(
   catalog: ProjectLlmCatalogResponse,
 ): ProviderListResponse {
-  const models = catalog.models ?? {};
+  const models = Object.fromEntries(
+    Object.entries(catalog.models ?? {}).filter(
+      ([modelId]) => modelId !== 'auto' && modelId !== 'kortix/auto',
+    ),
+  );
+  const firstModelId = Object.keys(models)[0];
   return {
-    default: { kortix: models.auto ? 'auto' : (Object.keys(models)[0] ?? 'auto') },
+    default: firstModelId ? { kortix: firstModelId } : {},
     connected: ['kortix'],
-    all: [{
-      id: 'kortix',
-      name: 'Kortix',
-      source: 'gateway',
-      models,
-    }],
+    all: [
+      {
+        id: 'kortix',
+        name: 'Kortix',
+        source: 'gateway',
+        models,
+      },
+    ],
   } as unknown as ProviderListResponse;
 }

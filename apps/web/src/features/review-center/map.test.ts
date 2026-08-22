@@ -1,5 +1,5 @@
+import type { ApiReviewItem } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import type { ApiReviewItem } from '@kortix/sdk/projects-client';
 import {
   PRIMARY_ACTION,
   agentInitials,
@@ -91,6 +91,7 @@ describe('mapApiReviewItem', () => {
     // The opaque head branch is dropped from the row summary (kept in Advanced).
     expect(item.summary).toBe('#7 → main');
     const d = changeDetailOf(item);
+    expect(d.number).toBe(7);
     expect(d.whatChanged).toEqual(['Updated the copy', 'Tightened the CTA']);
     expect(Array.isArray(d.verification)).toBe(true);
     expect(d.advanced.baseRef).toBe('main');
@@ -106,7 +107,7 @@ describe('mapApiReviewItem', () => {
     expect(d.advanced.files).toEqual([]);
   });
 
-  test('normalizes a thin executor-approval detail into a single humanized action', () => {
+  test('normalizes a thin connector-approval detail into a single humanized action', () => {
     const item = mapApiReviewItem(
       {
         ...row,
@@ -114,7 +115,17 @@ describe('mapApiReviewItem', () => {
         title: 'Approve: gmail.messages.send',
         risk: 'high',
         // connector_id is an opaque UUID — the connector NAME comes from the path.
-        detail: { execution_id: 'ex-1', action_path: 'gmail.messages.send', connector_id: 'uuid-x' },
+        detail: {
+          execution_id: 'ex-1',
+          action_path: 'gmail.messages.send',
+          connector_id: 'uuid-x',
+          args_preview: {
+            to: ['approver@example.com'],
+            subject: 'Review this exact email',
+            body: 'Complete email content',
+          },
+          args_preview_complete: true,
+        },
       },
       'P',
     );
@@ -128,6 +139,12 @@ describe('mapApiReviewItem', () => {
       action: 'messages.send',
       connector: 'gmail',
       risk: 'high',
+      rawArgsPreview: {
+        to: ['approver@example.com'],
+        subject: 'Review this exact email',
+        body: 'Complete email content',
+      },
+      reviewComplete: true,
     });
   });
 

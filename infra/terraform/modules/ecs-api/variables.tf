@@ -43,7 +43,7 @@ variable "container_port" {
 }
 
 variable "container_name" {
-  description = "Name of the single container in the task (also the awslogs stream prefix). 'api' for the API service, 'gateway' for the gateway."
+  description = "Name of the single container in the task and awslogs stream prefix."
   type        = string
   default     = "api"
 }
@@ -63,7 +63,7 @@ variable "secrets" {
 variable "health_check_path" {
   description = "HTTP path for ALB + container health checks."
   type        = string
-  default     = "/v1/health"
+  default     = "/health/ready"
 }
 
 # ── Sizing ────────────────────────────────────────────────────────────────────
@@ -124,15 +124,13 @@ variable "requests_per_target_target" {
 
 # ── Options ───────────────────────────────────────────────────────────────────
 variable "certificate_arn" {
-  description = "ACM cert ARN for the HTTPS listener (used when enable_https = true)."
+  description = "ACM cert ARN for the required HTTPS listener."
   type        = string
-  default     = ""
-}
 
-variable "enable_https" {
-  description = "Create the HTTPS :443 listener (certificate_arn) and make :80 redirect to it. false = HTTP-only :80 forward. Must be a static value (gates count)."
-  type        = bool
-  default     = false
+  validation {
+    condition     = length(trimspace(var.certificate_arn)) > 0
+    error_message = "certificate_arn is required; the ecs-api module is HTTPS-only."
+  }
 }
 
 variable "use_fargate_spot" {
@@ -141,16 +139,44 @@ variable "use_fargate_spot" {
   default     = false
 }
 
+variable "fargate_base_on_demand" {
+  description = <<-EOT
+    Number of tasks pinned to on-demand FARGATE when use_fargate_spot = true.
+    Ignored when use_fargate_spot = false (that service is already all
+    on-demand). 0 keeps the historic Spot-only strategy, so setting nothing
+    changes nothing. Use >= 1 on any Spot environment whose total unavailability
+    is a real cost: with base 0 a single Spot reclaim drops the service to zero
+    tasks, and deployment_minimum_healthy_percent = 100 blocks the replacement
+    until Spot capacity returns.
+  EOT
+  type        = number
+  default     = 0
+
+  # Must also be <= min_capacity. That is a cross-variable rule, which
+  # `validation` only supports from Terraform 1.9 while this module declares
+  # >= 1.5 — it is enforced as a precondition on aws_appautoscaling_target
+  # instead.
+  validation {
+    condition     = var.fargate_base_on_demand >= 0 && floor(var.fargate_base_on_demand) == var.fargate_base_on_demand
+    error_message = "fargate_base_on_demand must be a non-negative whole number."
+  }
+}
+
 variable "container_insights" {
   description = "Enable CloudWatch Container Insights."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "log_retention_days" {
-  description = "CloudWatch log retention."
+  description = "CloudWatch log retention. The security baseline requires at least 365 days."
   type        = number
-  default     = 30
+  default     = 365
+
+  validation {
+    condition     = var.log_retention_days >= 365
+    error_message = "log_retention_days must be at least 365."
+  }
 }
 
 variable "alb_idle_timeout" {
@@ -165,7 +191,47 @@ variable "alb_ingress_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "enable_postgres_egress" {
+  description = "Permit direct PostgreSQL egress on port 5432. Disable for services such as the web frontend."
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   type    = map(string)
   default = {}
+}
+
+variable "secrets_blob_arn" {
+  description = <<-EOT
+    ARN of the environment's Secrets Manager blob (kortix-<env>-env). The
+    execution role is granted GetSecretValue on it. ECS injects the complete
+    JSON document through KORTIX_ENV_JSON. This stable selector survives
+    optional key additions and removals.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "ses_send_identity_names" {
+  description = "Verified SES identity names from which this ECS task may send email. Empty disables SES task-role access."
+  type        = list(string)
+  default     = []
+}
+
+variable "ses_send_configuration_set_names" {
+  description = "SES configuration sets the task may send through. SESv2 SendEmail authorizes against the configuration-set ARN in addition to the identity; the API's transport always sends with kortix-transactional."
+  type        = list(string)
+  default     = ["kortix-transactional"]
+}
+
+variable "ses_send_region" {
+  description = "Region containing ses_send_identity_names. Required when SES task-role access is enabled."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = length(var.ses_send_identity_names) == 0 || length(trimspace(var.ses_send_region)) > 0
+    error_message = "ses_send_region is required when ses_send_identity_names is not empty."
+  }
 }

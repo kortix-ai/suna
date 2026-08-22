@@ -3,9 +3,11 @@
  *
  * Built for the request-path authorization lookups (actor resolve, account
  * membership, project roles): the frontend fires 10+ parallel requests per
- * page that each repeat the exact same principal queries, and prod pays a
- * cross-region roundtrip (~150ms) for every one of them. Collapsing the
- * burst to one lookup per (key, TTL window) removes most of that cost.
+ * page that each repeat the exact same principal queries. Each is a fast,
+ * same-region indexed lookup (~3ms measured, DB and API both in eu-west-2 —
+ * not the cross-region roundtrip this comment used to claim), but they still
+ * add up across a burst of duplicate queries. Collapsing the burst to one
+ * lookup per (key, TTL window) removes most of that redundant query volume.
  *
  * Semantics:
  *  - Concurrent callers with the same key share one in-flight promise.
@@ -36,8 +38,10 @@ export function ttlMemo<A extends unknown[], T>(opts: {
   ttlMs: number;
   keyFn: (...args: A) => string;
   loader: (...args: A) => Promise<T>;
-  /** Return false to skip caching this resolved value. Default: cache all. */
-  shouldCache?: (value: T) => boolean;
+  /** Return false to skip caching this resolved value. Receives the loader
+   *  args too, so a memo can decide per key (e.g. "never cache an empty
+   *  result for this resource type"). Default: cache all. */
+  shouldCache?: (value: T, ...args: A) => boolean;
   /** Hard cap on entries; oldest-inserted are evicted past it. Default 10k. */
   maxEntries?: number;
   /** Caching is bypassed under `bun test` (NODE_ENV=test) so unit tests
@@ -62,7 +66,7 @@ export function ttlMemo<A extends unknown[], T>(opts: {
 
     const value = loader(...args).then(
       (resolved) => {
-        if (shouldCache && !shouldCache(resolved)) cache.delete(key);
+        if (shouldCache && !shouldCache(resolved, ...args)) cache.delete(key);
         return resolved;
       },
       (err) => {

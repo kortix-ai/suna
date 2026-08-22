@@ -35,9 +35,24 @@ export interface GatewayHooks {
     input: ModelRouteInput,
   ) => Promise<ModelRoutePlan | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
-  assertBillingActive: (accountId: string) => Promise<void>;
+  // Resolves (or throws) once the account's billing state is checked. May
+  // return a `holdUsd` when it took an atomic admission hold against the
+  // wallet — the handler attaches it to the principal so settle() can
+  // reconcile it to the real cost (see AuthedPrincipal.billingHold).
+  assertBillingActive: (accountId: string) => Promise<{ holdUsd?: number } | void>;
   assertBudget?: (principal: AuthedPrincipal) => Promise<void>;
   recordUsage: (event: UsageEvent) => Promise<void>;
   recordTrace?: (trace: GatewayTrace) => Promise<void>;
-  listModels?: (principal: AuthedPrincipal) => Promise<ModelCatalog>;
+  listModels?: (principal: AuthedPrincipal, opts?: ListModelsOptions) => Promise<ModelCatalog>;
+}
+
+/** Options for the model-catalog listing.
+ *
+ * `managedOnly` serves ONLY the platform-managed lineup (~3KB) instead of the
+ * project's full catalog (~3.3MB). A sandbox fetches it on every boot to learn
+ * the current managed set, because the catalog baked into its image goes stale
+ * the moment the managed lineup changes. Free-tier semantics are unchanged: an
+ * account with no managed access still gets an empty managed set. */
+export interface ListModelsOptions {
+  managedOnly?: boolean;
 }

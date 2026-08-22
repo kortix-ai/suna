@@ -1,8 +1,9 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { runSessions } from '../commands/sessions';
 
 const PROJECT_ID = '00000000-0000-4000-a000-000000000111';
@@ -13,7 +14,6 @@ const PROXY_ID = 'external-approvals';
 const ENV_KEYS = [
   'KORTIX_CONFIG_FILE',
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -69,24 +69,39 @@ describe('sessions pending/approve/answer', () => {
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url);
-        if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`) {
+        if (
+          req.method === 'GET' &&
+          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`
+        ) {
           return Response.json(sessionRow());
         }
-        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/4096/permission`) {
+        if (
+          req.method === 'POST' &&
+          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`
+        ) {
+          return Response.json({
+            stage: 'ready',
+            agent_name: 'default',
+            retriable: false,
+            sandbox: { external_id: PROXY_ID },
+            opencode_session_id: 'ses_oc',
+          });
+        }
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/permission`) {
           return Response.json(pendingPermissions);
         }
-        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/4096/question`) {
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/question`) {
           return Response.json(pendingQuestions);
         }
         const permReply = url.pathname.match(
-          new RegExp(`^/v1/p/${PROXY_ID}/4096/permission/([^/]+)/reply$`),
+          new RegExp(`^/v1/p/${PROXY_ID}/8000/permission/([^/]+)/reply$`),
         );
         if (req.method === 'POST' && permReply) {
           permissionReplies.push({ id: permReply[1], body: await req.json() });
           return Response.json(true);
         }
         const qReply = url.pathname.match(
-          new RegExp(`^/v1/p/${PROXY_ID}/4096/question/([^/]+)/(reply|reject)$`),
+          new RegExp(`^/v1/p/${PROXY_ID}/8000/question/([^/]+)/(reply|reject)$`),
         );
         if (req.method === 'POST' && qReply) {
           questionReplies.push({
@@ -129,9 +144,22 @@ describe('sessions pending/approve/answer', () => {
     }) as typeof process.stderr.write;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     process.stdout.write = realStdoutWrite;
     process.stderr.write = realStderrWrite;
+    if (server) {
+      const auth = {
+        api_base: `http://127.0.0.1:${server.port}`,
+        token: 'kortix_pat_test',
+        user_id: 'user-1',
+        user_email: 'user@example.test',
+        account_id: ACCOUNT_ID,
+        logged_in_at: '2026-01-01T00:00:00.000Z',
+      };
+      await withKortixScope(auth, () =>
+        kortixFromAuth(auth).session(PROJECT_ID, SESSION_ID).stop(),
+      ).catch(() => {});
+    }
     server?.stop(true);
     server = null;
     for (const k of ENV_KEYS) {
@@ -162,8 +190,8 @@ describe('sessions pending/approve/answer', () => {
           question: 'Which environment should I deploy to?',
           header: 'Environment',
           options: [
-            { label: 'Staging', value: 'staging' },
-            { label: 'Production', value: 'production' },
+            { label: 'Staging', description: 'Deploy to staging.' },
+            { label: 'Production', description: 'Deploy to production.' },
           ],
         },
       ],
@@ -206,7 +234,13 @@ describe('sessions pending/approve/answer', () => {
     pendingPermissions = [permission('perm_solo')];
 
     const code = await runSessions([
-      'approve', SESSION_ID, '--always', '--message', 'go ahead', '--project', PROJECT_ID,
+      'approve',
+      SESSION_ID,
+      '--always',
+      '--message',
+      'go ahead',
+      '--project',
+      PROJECT_ID,
     ]);
 
     expect(code).toBe(0);
@@ -216,7 +250,14 @@ describe('sessions pending/approve/answer', () => {
   });
 
   test('approve --reject sends a rejection', async () => {
-    const code = await runSessions(['approve', SESSION_ID, 'perm_x', '--reject', '--project', PROJECT_ID]);
+    const code = await runSessions([
+      'approve',
+      SESSION_ID,
+      'perm_x',
+      '--reject',
+      '--project',
+      PROJECT_ID,
+    ]);
 
     expect(code).toBe(0);
     expect(permissionReplies).toEqual([{ id: 'perm_x', body: { reply: 'reject' } }]);
@@ -234,16 +275,22 @@ describe('sessions pending/approve/answer', () => {
     expect(err).toContain('perm_b');
   });
 
-  test('answer maps option labels to canonical values', async () => {
+  test('answer sends the selected OpenCode option label', async () => {
     pendingQuestions = [question('q_1')];
 
     const code = await runSessions([
-      'answer', SESSION_ID, 'q_1', '--option', 'Staging', '--project', PROJECT_ID,
+      'answer',
+      SESSION_ID,
+      'q_1',
+      '--option',
+      'Staging',
+      '--project',
+      PROJECT_ID,
     ]);
 
     expect(code).toBe(0);
     expect(questionReplies).toEqual([
-      { id: 'q_1', body: { answers: [['staging']] }, kind: 'reply' },
+      { id: 'q_1', body: { answers: [['Staging']] }, kind: 'reply' },
     ]);
   });
 
@@ -251,7 +298,13 @@ describe('sessions pending/approve/answer', () => {
     pendingQuestions = [question('q_1')];
 
     let code = await runSessions([
-      'answer', SESSION_ID, 'q_1', '--text', 'use the blue one', '--project', PROJECT_ID,
+      'answer',
+      SESSION_ID,
+      'q_1',
+      '--text',
+      'use the blue one',
+      '--project',
+      PROJECT_ID,
     ]);
     expect(code).toBe(0);
 
@@ -261,7 +314,7 @@ describe('sessions pending/approve/answer', () => {
 
     expect(questionReplies).toEqual([
       { id: 'q_1', body: { answers: [['use the blue one']] }, kind: 'reply' },
-      { id: 'q_2', body: {}, kind: 'reject' },
+      { id: 'q_2', body: null, kind: 'reject' },
     ]);
   });
 

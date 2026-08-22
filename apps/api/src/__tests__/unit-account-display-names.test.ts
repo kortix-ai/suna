@@ -8,27 +8,26 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let dbResults: unknown[][] = [];
 function makeChain(): any {
   const chain: any = {};
-  for (const m of ['from', 'where', 'limit', 'orderBy', 'set', 'values', 'returning']) {
+  // `innerJoin` joined the list when the owner lookup moved to
+  // `role_assignments`: the role comes from the canonical store now, the
+  // `joined_at` ordering still from `account_members`.
+  for (const m of ['from', 'innerJoin', 'where', 'limit', 'orderBy', 'set', 'values', 'returning']) {
     chain[m] = () => chain;
   }
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return chain;
 }
+// Owner emails now come from a single `auth.users` lookup via `db.execute`
+// (they used to be one Supabase admin HTTP call per owner).
+let emailsById: Record<string, string> = {};
 mock.module('../shared/db', () => ({
-  db: { select: () => makeChain(), update: () => makeChain(), insert: () => makeChain(), execute: async () => [] },
+  db: { select: () => makeChain(), update: () => makeChain(), insert: () => makeChain(), execute: async () => Object.entries(emailsById).map(([id, email]) => ({ id, email })) },
   hasDatabase: () => true,
 }));
 
-// Emails looked up via the Supabase admin API (owner ids → emails).
-let emailsById: Record<string, string> = {};
+// Retained because other modules in this import graph still construct a client.
 mock.module('../shared/supabase', () => ({
-  getSupabase: () => ({
-    auth: {
-      admin: {
-        getUserById: async (uid: string) => ({ data: { user: emailsById[uid] ? { email: emailsById[uid] } : null } }),
-      },
-    },
-  }),
+  getSupabase: () => ({ auth: { admin: {} } }),
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -37,6 +36,7 @@ mock.module('../shared/resolve-account', () => ({
 
 const {
   accountDisplayName,
+  clearOwnerEmailCache,
   properAccountName,
   resolveAccountDisplayNames,
 } = await import('../accounts/core/app');
@@ -46,6 +46,9 @@ const CALLER = { userId: 'u-caller', email: 'marko@kortix.ai' };
 beforeEach(() => {
   dbResults = [];
   emailsById = {};
+  // The owner-email lookup memoizes for 5 minutes; drop it so each test
+  // observes its own fixture rather than the previous test's.
+  clearOwnerEmailCache();
 });
 
 describe('properAccountName / accountDisplayName', () => {

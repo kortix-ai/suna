@@ -139,7 +139,28 @@ export const useDeleteOperationStore = create<DeleteOperationStore>()(
 
 // Hook for backward compatibility
 export function useDeleteOperation() {
-  const store = useDeleteOperationStore();
+  const isDeleting = useDeleteOperationStore((s) => s.isDeleting);
+  const targetId = useDeleteOperationStore((s) => s.targetId);
+  const isActive = useDeleteOperationStore((s) => s.isActive);
+  const operation = useDeleteOperationStore((s) => s.operation);
+  const startDelete = useDeleteOperationStore((s) => s.startDelete);
+  const setDeleteSuccess = useDeleteOperationStore((s) => s.setDeleteSuccess);
+  const setDeleteError = useDeleteOperationStore((s) => s.setDeleteError);
+  const resetStore = useDeleteOperationStore((s) => s.reset);
+  const performDelete = useDeleteOperationStore((s) => s.performDelete);
+  const isOperationInProgress = useDeleteOperationStore((s) => s.isOperationInProgress);
+  const store = {
+    isDeleting,
+    targetId,
+    isActive,
+    operation,
+    startDelete,
+    setDeleteSuccess,
+    setDeleteError,
+    reset: resetStore,
+    performDelete,
+    isOperationInProgress,
+  };
 
   return {
     state: {
@@ -173,7 +194,9 @@ export function useDeleteOperation() {
 
 // Hook to handle side effects (navigation, auto-reset)
 export function useDeleteOperationEffects() {
-  const { operation, isActive, reset } = useDeleteOperationStore();
+  const operation = useDeleteOperationStore((s) => s.operation);
+  const isActive = useDeleteOperationStore((s) => s.isActive);
+  const reset = useDeleteOperationStore((s) => s.reset);
 
   useEffect(() => {
     if (operation === 'success' && isActive) {

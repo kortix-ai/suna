@@ -20,6 +20,10 @@ import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
+// One shared identity for "this question has no answer yet", so the row prop
+// does not change on every render of an unanswered question.
+const NO_ANSWERS: string[] = [];
+
 function AnswerText({
   answers,
   options,
@@ -114,7 +118,7 @@ export function QuestionTool({
   }, [metadata.answers, output, questions.length]);
 
   const total = questions.length;
-  const answeredCount = answers.filter((a) => a && a.length > 0).length;
+  const answeredCount = useMemo(() => answers.filter((a) => a && a.length > 0).length, [answers]);
   const single = total === 1;
 
   const triggerBadge =
@@ -161,8 +165,8 @@ export function QuestionTool({
       {total > 0 ? (
         <div data-scrollable className="max-h-96 space-y-3 overflow-auto">
           {questions.map((q, i) => (
-            <div key={i} className={cn(i > 0 && 'border-border border-t pt-3')}>
-              <QuestionAnswerBlock question={q} index={i} answers={answers[i] ?? []} />
+            <div key={q.question} className={cn(i > 0 && 'border-border border-t pt-3')}>
+              <QuestionAnswerBlock question={q} index={i} answers={answers[i] ?? NO_ANSWERS} />
             </div>
           ))}
         </div>

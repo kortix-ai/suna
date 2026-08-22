@@ -1,68 +1,52 @@
 /**
- * IAM V2 per-RESOURCE scoping — engine + repository for iam_resource_grants.
+ * Per-OBJECT scoping — the repository for object grants.
  *
- * Scopes a member or group (Department) to a SPECIFIC agent or skill within a
- * project. This is the layer that answers "Marketing may use agent
- * `outreach-bot` and skill `lead-research`, nothing else." It sits as an
- * INTERSECTION on top of the project-role / custom-policy verdict in
- * authorizeV2.
+ * An object grant scopes a member or a group (a Department) to ONE agent inside
+ * a project: "Marketing may use agent `outreach-bot`, nothing else." It is one
+ * row in `kortix.role_assignments` with `object_type`/`object_id` set and the
+ * system `agent-user` role, which carries no permissions of its own — an object
+ * grant NARROWS a verdict, it can never add one.
  *
- * Semantics — RESOURCE-ID-LEVEL activation (deliberately opt-in, no lockouts):
- *   - A resource (agent name / skill slug) becomes "scoped" once >=1 grant row
- *     exists for (project, resource_type, resource_id).
- *   - UNSCOPED resources (no grant rows) stay project-wide — scoping agent A
- *     restricts only agent A; agents B/C with no grant stay open to anyone who
- *     holds the capability. So creating the first grant never silently locks a
- *     department out of everything else.
- *   - SCOPED resources are accessible ONLY to principals with a matching grant:
- *     a member grant for the user, or a group grant for any group the user is
- *     in. Account owners/admins keep implicit Manager and bypass scoping; the
- *     fold runs for human members only (service accounts are governed by their
- *     own policies + agentGrant).
+ * WHAT THIS MODULE IS NOT, ANY MORE
+ * Until the cutover it also held a second copy of the object rule
+ * (`isResourceAccessible`, `isResourceExplicitlyGranted`,
+ * `isProjectResourceUsableByMember`, `CLOSED_BY_DEFAULT_RESOURCE_TYPES`) and its
+ * own memo over the legacy `iam_resource_grants` table. Both are gone:
+ *   * THE object rule is `objectUsable()` inside `iam/authorize.ts`, driven by
+ *     `kortix.object_policies` (agent `closed`, skill/secret/app/trigger `open`)
+ *     rather than by a hard-coded Set;
+ *   * THE grant map is `loadObjectGrants` in the same module, memoized over
+ *     `kortix.role_assignments` with the same "never cache an empty map for a
+ *     closed-by-default type" rule.
+ * What is left here is storage: create, list, delete, and the two cheap
+ * project-wide questions the Slack and file-picker read paths ask.
  *
- * Cache: a project+type keyed memo (~15s TTL) holds the grant map; mutations
- * bust it synchronously on the writing replica (invalidateIamCacheForProject-
- * Resources), with the same <=TTL cross-replica lag the rest of the IAM cache
- * already accepts. The empty (unscoped) map IS cached — that's the common,
- * hot-path case — and every mutation busts it.
- *
- * AGENT-ONLY member-scoped resource (Marko, resource-model simplification):
- * only `agent` is a member/department-scopable resource going forward. Skills
- * and secrets are governed by the EDITOR role (edit) + agent inheritance (use)
- * instead — assigning an agent to a member lets them USE what that agent
- * declares (its skills/connectors/secrets), never edit it. `skill` and
- * `secret` stay in RESOURCE_GRANT_TYPES / ResourceType purely for back-compat:
- * pre-existing grant rows of those types must keep reading, listing, and
- * revoking correctly. NEW grants of those types are rejected at the API layer
- * (see CREATABLE_RESOURCE_GRANT_TYPES + the r7.ts POST /resource-grants gate)
- * — this module stays permissive so it never has to know which caller is
- * enforcing that; it's a write-time policy, not a storage-model change.
- *
- * Import direction: this module imports cache-invalidation (register/bust) but
- * NOT engine-v2; engine-v2 imports this. No cycle.
+ * AGENT-ONLY, going forward. `skill` and `secret` stay in RESOURCE_GRANT_TYPES
+ * purely for back-compat — pre-existing grant rows of those types must keep
+ * reading, listing and revoking correctly. NEW grants of those types are
+ * rejected at the API layer (CREATABLE_RESOURCE_GRANT_TYPES + the POST gate in
+ * projects/routes/resource-grants.ts); this module stays permissive so it never
+ * has to know which caller is enforcing that.
  */
-import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { iamResourceGrants } from '@kortix/db';
-import { db } from '../shared/db';
-import { ttlMemo } from '../shared/ttl-memo';
-import {
-  invalidateIamCacheForProjectResources,
-  registerProjectScopedMemo,
-} from './cache-invalidation';
+import type { ObjectType as ObjectGrantType } from './catalog';
+import { assignRole, listAssignments, revokeAssignment, SYSTEM_ACTOR } from './assignments';
+import { loadObjectGrants } from './authorize';
+import { objectGrantRows } from './read-models';
+import { invalidateIamCacheForProjectResources } from './cache-invalidation';
 
-/** The resource kinds that support per-resource scoping today. `skill` and
- *  `secret` are READ/REVOKE-only back-compat holdovers — see the module
- *  doc comment above and CREATABLE_RESOURCE_GRANT_TYPES below. agent/skill ids
- *  come from the git config; secret ids are the secret NAME (uppercased key)
- *  from the project_secrets table. */
+/** The resource kinds that support per-object scoping today. `skill` and
+ *  `secret` are READ/REVOKE-only back-compat holdovers — see the module doc
+ *  comment above and CREATABLE_RESOURCE_GRANT_TYPES below. agent/skill ids come
+ *  from the git config; secret ids are the secret NAME (uppercased key) from the
+ *  project_secrets table. */
 export const RESOURCE_GRANT_TYPES = ['agent', 'skill', 'secret'] as const;
 export type ResourceType = (typeof RESOURCE_GRANT_TYPES)[number];
 
-/** The resource kinds a NEW member/department-scoped grant may be created
- *  for. Only `agent` — skills and secrets are governed by the editor role
- *  (edit) + agent inheritance (use), not a direct member-scoped grant. Existing
- *  skill/secret grant rows (created before this restriction) still read,
- *  list, and revoke normally; this only gates the CREATE path. */
+/** The resource kinds a NEW member/department-scoped grant may be created for.
+ *  Only `agent` — skills and secrets are governed by the manager role (edit) +
+ *  agent inheritance (use), not a direct member-scoped grant. Existing
+ *  skill/secret grant rows still read, list and revoke normally; this only gates
+ *  the CREATE path. */
 export const CREATABLE_RESOURCE_GRANT_TYPES = ['agent'] as const;
 export type CreatableResourceType = (typeof CREATABLE_RESOURCE_GRANT_TYPES)[number];
 export function isCreatableResourceType(v: string): v is CreatableResourceType {
@@ -74,123 +58,16 @@ export function isResourceType(v: string): v is ResourceType {
 
 export type PrincipalType = 'member' | 'group';
 
-interface ResourceGrantPrincipal {
-  principalType: PrincipalType;
-  principalId: string;
-}
-
-// Mirror engine-v2's IAM_CACHE_TTL_MS read locally (can't import it without an
-// engine-v2 → resource-grants → engine-v2 cycle).
-const TTL_MS = (() => {
-  const raw = Number(process.env.IAM_CACHE_TTL_MS);
-  return Number.isFinite(raw) && raw >= 0 ? raw : 15_000;
-})();
-
 /**
- * PURE. Is THIS resource accessible to a principal (userId + their group ids),
- * given the grant rows for that one (project, type, resourceId)?
- * - undefined/empty grants → accessible (unscoped resource = project-wide).
- * - has grants → accessible iff one matches the user or one of their groups.
- * Unit-tested directly (no DB) like the other pure engine helpers.
- */
-export function isResourceAccessible(
-  grantsForResource: ResourceGrantPrincipal[] | undefined,
-  userId: string,
-  groupIds: readonly string[],
-): boolean {
-  if (!grantsForResource || grantsForResource.length === 0) return true;
-  const groups = new Set(groupIds);
-  for (const g of grantsForResource) {
-    if (g.principalType === 'member' && g.principalId === userId) return true;
-    if (g.principalType === 'group' && groups.has(g.principalId)) return true;
-  }
-  return false;
-}
-
-/**
- * PURE. Is this principal EXPLICITLY assigned to the resource? Unlike
- * `isResourceAccessible`, an UNSCOPED resource (no grants) means "NOT assigned"
- * (false), not "open to everyone". Gates agent-resource inheritance: inheriting
- * an agent's secrets requires a deliberate assignment, never the default-open
- * state — so declaring `inherit` on an unscoped agent grants nobody anything.
- */
-export function isResourceExplicitlyGranted(
-  grantsForResource: ResourceGrantPrincipal[] | undefined,
-  userId: string,
-  groupIds: readonly string[],
-): boolean {
-  if (!grantsForResource || grantsForResource.length === 0) return false;
-  const groups = new Set(groupIds);
-  for (const g of grantsForResource) {
-    if (g.principalType === 'member' && g.principalId === userId) return true;
-    if (g.principalType === 'group' && groups.has(g.principalId)) return true;
-  }
-  return false;
-}
-
-export async function isProjectResourceExplicitlyGranted(
-  projectId: string,
-  resourceType: ResourceType,
-  resourceId: string,
-  userId: string,
-  groupIds: readonly string[],
-): Promise<boolean> {
-  const map = await loadProjectResourceGrants(projectId, resourceType);
-  return isResourceExplicitlyGranted(map.get(resourceId), userId, groupIds);
-}
-
-/**
- * project+type keyed map: resourceId → granted principals (non-expired allows).
- * Memoized; the empty map is cached too (the common unscoped case) and busted on
- * mutation. Registered as a project-scoped memo so a grant change drops it.
- */
-const loadProjectResourceGrants = ttlMemo({
-  ttlMs: TTL_MS,
-  keyFn: (projectId: string, resourceType: string) => `${projectId}|${resourceType}`,
-  loader: async (projectId: string, resourceType: string) => {
-    const rows = await db
-      .select({
-        resourceId: iamResourceGrants.resourceId,
-        principalType: iamResourceGrants.principalType,
-        principalId: iamResourceGrants.principalId,
-      })
-      .from(iamResourceGrants)
-      .where(
-        and(
-          eq(iamResourceGrants.projectId, projectId),
-          eq(iamResourceGrants.resourceType, resourceType),
-          eq(iamResourceGrants.effect, 'allow'),
-          or(isNull(iamResourceGrants.expiresAt), gt(iamResourceGrants.expiresAt, sql`now()`)),
-        ),
-      );
-    const map = new Map<string, ResourceGrantPrincipal[]>();
-    for (const r of rows) {
-      const entry: ResourceGrantPrincipal = {
-        principalType: r.principalType as PrincipalType,
-        principalId: r.principalId,
-      };
-      const list = map.get(r.resourceId);
-      if (list) list.push(entry);
-      else map.set(r.resourceId, [entry]);
-    }
-    return map;
-  },
-  shouldCache: () => true,
-});
-registerProjectScopedMemo(loadProjectResourceGrants);
-
-export { loadProjectResourceGrants };
-
-/**
- * Cheap memoized gate: does this project scope ANY agent or skill? Lets read
- * paths (file routes, pickers) skip the whole denied-path computation — and the
- * config load it needs — in the common case where nothing is scoped. Two memo
- * hits, no DB round-trip on the hot path once warm.
+ * Does this project scope ANY agent or skill? Lets read paths (file routes,
+ * pickers) skip the whole denied-path computation — and the config load it
+ * needs — in the common case where nothing is scoped. Two memo hits, no DB
+ * round-trip on the hot path once warm.
  */
 export async function hasAnyResourceGrants(projectId: string): Promise<boolean> {
   const [agents, skills] = await Promise.all([
-    loadProjectResourceGrants(projectId, 'agent'),
-    loadProjectResourceGrants(projectId, 'skill'),
+    loadObjectGrants(projectId, 'agent'),
+    loadObjectGrants(projectId, 'skill'),
   ]);
   return agents.size > 0 || skills.size > 0;
 }
@@ -205,36 +82,8 @@ export async function unscopedResourceIds(
   resourceType: ResourceType,
   resourceIds: readonly string[],
 ): Promise<string[]> {
-  const map = await loadProjectResourceGrants(projectId, resourceType);
+  const map = await loadObjectGrants(projectId, resourceType);
   return resourceIds.filter((id) => !map.has(id));
-}
-
-/** Engine entry point: is (project, type, resourceId) accessible to this member? */
-export async function isProjectResourceAccessible(
-  projectId: string,
-  resourceType: ResourceType,
-  resourceId: string,
-  userId: string,
-  groupIds: readonly string[],
-): Promise<boolean> {
-  const map = await loadProjectResourceGrants(projectId, resourceType);
-  return isResourceAccessible(map.get(resourceId), userId, groupIds);
-}
-
-/**
- * Filter a list of resource ids to the ones this member can access — used to
- * hide ungranted agents/skills from the project config the UI renders. Returns
- * the input order. One memo hit for the whole list.
- */
-export async function filterAccessibleResourceIds(
-  projectId: string,
-  resourceType: ResourceType,
-  resourceIds: readonly string[],
-  userId: string,
-  groupIds: readonly string[],
-): Promise<string[]> {
-  const map = await loadProjectResourceGrants(projectId, resourceType);
-  return resourceIds.filter((id) => isResourceAccessible(map.get(id), userId, groupIds));
 }
 
 // ─── Repository (CRUD) ──────────────────────────────────────────────────────
@@ -250,24 +99,34 @@ interface ResourceGrantRow {
   createdAt: Date;
 }
 
-/** Every grant for a project (for the Members UI). */
+/**
+ * Every grant for a project (for the Members UI). `grant_id` is the ASSIGNMENT
+ * id — the same id `upsertResourceGrant` returns and `deleteResourceGrant`
+ * takes.
+ */
 export async function listResourceGrants(projectId: string): Promise<ResourceGrantRow[]> {
-  return db
-    .select({
-      grantId: iamResourceGrants.grantId,
-      resourceType: iamResourceGrants.resourceType,
-      resourceId: iamResourceGrants.resourceId,
-      principalType: iamResourceGrants.principalType,
-      principalId: iamResourceGrants.principalId,
-      expiresAt: iamResourceGrants.expiresAt,
-      grantedBy: iamResourceGrants.grantedBy,
-      createdAt: iamResourceGrants.createdAt,
-    })
-    .from(iamResourceGrants)
-    .where(eq(iamResourceGrants.projectId, projectId));
+  const rows = await objectGrantRows({ projectId });
+  return rows.map((r) => ({
+    grantId: r.grantId,
+    resourceType: r.resourceType,
+    resourceId: r.resourceId,
+    principalType: r.principalType,
+    principalId: r.principalId,
+    expiresAt: r.expiresAt,
+    grantedBy: r.grantedBy,
+    createdAt: r.createdAt,
+  }));
 }
 
-/** Create or update a grant (idempotent on the unique principal+resource key). */
+/**
+ * Create or update a grant. Idempotent on the assignment identity
+ * (principal, role, scope, object), so re-granting updates the expiry instead of
+ * creating a duplicate.
+ *
+ * `SYSTEM_ACTOR`: the route already asserted `project.members.manage` before
+ * calling. Re-deriving the grant-side action here would ask for it again under a
+ * different name. `grantedBy` still records the human.
+ */
 export async function upsertResourceGrant(input: {
   accountId: string;
   projectId: string;
@@ -276,49 +135,50 @@ export async function upsertResourceGrant(input: {
   principalType: PrincipalType;
   principalId: string;
   grantedBy: string;
-  /** undefined = leave as-is on update / NULL on insert; null = clear; Date = set. */
+  /** null = no expiry; Date = set. `undefined` is treated as null: an object
+   *  grant has no "leave the expiry alone" caller. */
   expiresAt?: Date | null | undefined;
 }): Promise<{ grantId: string }> {
-  const now = new Date();
-  const [row] = await db
-    .insert(iamResourceGrants)
-    .values({
-      accountId: input.accountId,
-      projectId: input.projectId,
-      resourceType: input.resourceType,
-      resourceId: input.resourceId,
-      principalType: input.principalType,
-      principalId: input.principalId,
-      effect: 'allow',
-      expiresAt: input.expiresAt ?? null,
-      grantedBy: input.grantedBy,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [
-        iamResourceGrants.projectId,
-        iamResourceGrants.resourceType,
-        iamResourceGrants.resourceId,
-        iamResourceGrants.principalType,
-        iamResourceGrants.principalId,
-      ],
-      set: {
-        grantedBy: input.grantedBy,
-        updatedAt: now,
-        ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
-      },
-    })
-    .returning({ grantId: iamResourceGrants.grantId });
+  const assignment = await assignRole(SYSTEM_ACTOR, input.accountId, {
+    principal: {
+      type: input.principalType === 'group' ? 'group' : 'user',
+      id: input.principalId,
+    },
+    roleKey: 'agent-user',
+    scope: { type: 'project', id: input.projectId },
+    object: { type: input.resourceType as ObjectGrantType, id: input.resourceId },
+    expiresAt: input.expiresAt ?? null,
+    source: 'manual',
+    grantedBy: input.grantedBy,
+  });
   invalidateIamCacheForProjectResources(input.projectId);
-  return { grantId: row.grantId };
+  return { grantId: assignment.assignmentId };
 }
 
-/** Delete a grant by id (scoped to the project so a stray id can't cross over). */
-export async function deleteResourceGrant(grantId: string, projectId: string): Promise<boolean> {
-  const deleted = await db
-    .delete(iamResourceGrants)
-    .where(and(eq(iamResourceGrants.grantId, grantId), eq(iamResourceGrants.projectId, projectId)))
-    .returning({ grantId: iamResourceGrants.grantId });
+/**
+ * Delete a grant by id, scoped to the project so a stray id cannot cross over.
+ *
+ * The route asserted `project.members.manage` before calling, so
+ * `skipWriterAuthz` carries that through instead of re-deriving a different
+ * action. Returns false when the id names no object assignment in this project —
+ * which is also what a genuinely pre-cutover `iam_resource_grants.grant_id`
+ * now does, because that id space no longer exists.
+ */
+export async function deleteResourceGrant(
+  grantId: string,
+  projectId: string,
+  accountId: string,
+): Promise<boolean> {
+  const [assignment] = (
+    await listAssignments({
+      accountId,
+      scopeType: 'project',
+      scopeId: projectId,
+      liveOnly: false,
+    })
+  ).filter((r) => r.assignmentId === grantId && r.objectType !== null);
+  if (!assignment) return false;
+  await revokeAssignment(SYSTEM_ACTOR, accountId, grantId, { skipWriterAuthz: true });
   invalidateIamCacheForProjectResources(projectId);
-  return deleted.length > 0;
+  return true;
 }

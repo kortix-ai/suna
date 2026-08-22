@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamAssignments, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -41,6 +41,9 @@ let commitCalls: any[];
 let listRepoFileCalls: any[];
 let readRepoFileCalls: any[];
 let archiveCalls: any[];
+let deleteManagedRepoCalls: any[];
+let deleteManagedRepoError: Error | null;
+let deleteManagedRepoResult: boolean;
 let rejectedBranch: string | null;
 
 function setCurrentUser(userId: string, userEmail: string) {
@@ -92,15 +95,59 @@ function resetState() {
   listRepoFileCalls = [];
   readRepoFileCalls = [];
   archiveCalls = [];
+  deleteManagedRepoCalls = [];
+  deleteManagedRepoError = null;
+  deleteManagedRepoResult = false;
   rejectedBranch = null;
 }
 
-// `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
-// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
-// gate must be mocked on the dispatcher. Mirror the legacy role gate against
-// the test's mocked membership rows so viewer/non-member denial is still
-// exercised after the IAM-engine switch.
-mock.module('../iam/dispatcher', () => {
+// The engine module itself is the seam now — `../iam` re-exports it, and every
+// route calls it with the structured `Actor`. Mirror the role gate against the
+// test's mocked membership rows so viewer/non-member denial is still exercised.
+// The read models project from THIS suite's own row state — `account_members`
+// and `project_members` are what its db shim models, and the mirror trigger is
+// what would have derived the assignments from them on a real database.
+mockIamReadModels({
+  members: () =>
+    dbState.accountMemberRows.map((r) => ({
+      userId: r.userId,
+      accountId: r.accountId,
+      accountRole: r.accountRole,
+    })),
+  projectMembers: () =>
+    dbState.projectMemberRows.map((r) => ({
+      userId: r.userId,
+      accountId: ACCOUNT_ID,
+      projectId: r.projectId,
+      projectRole: r.projectRole,
+    })),
+});
+
+// A project role is one `assignRole` call now, not an INSERT into
+// `project_members`. Project the grant back into this suite's own rows so the
+// read models and the engine mock below keep seeing one consistent picture.
+mockIamAssignments({
+  onRevokeProjectRole: (_accountId, projectId, principal) => {
+    dbState.projectMemberRows = dbState.projectMemberRows.filter(
+      (r) => !(r.userId === principal.id && r.projectId === projectId),
+    );
+  },
+  onGrant: ({ principal, roleKey, scope }) => {
+    if (scope.type !== 'project' || principal.type !== 'user' || !roleKey || !scope.id) return;
+    const existing = dbState.projectMemberRows.find(
+      (r) => r.userId === principal.id && r.projectId === scope.id,
+    );
+    if (existing) existing.projectRole = roleKey as typeof existing.projectRole;
+    else
+      dbState.projectMemberRows.push({
+        userId: principal.id,
+        projectId: scope.id,
+        projectRole: roleKey,
+      } as (typeof dbState.projectMemberRows)[number]);
+  },
+});
+
+mock.module('../iam/authorize', () => {
   const isManager = (userId: string): boolean => {
     const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     return am?.accountRole === 'owner' || am?.accountRole === 'admin';
@@ -111,20 +158,24 @@ mock.module('../iam/dispatcher', () => {
     if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
     const pm = dbState.projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
     const pr = pm?.projectRole ?? null;
-    if (action === 'project.read') return pr === 'member' || pr === 'editor' || pr === 'manager';
+    if (action === 'project.read') return pr === 'member' || pr === 'manager';
     // Session lifecycle: any project member (a plain `member` included) may run sessions.
-    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'editor' || pr === 'manager';
-    if (action === 'project.write') return pr === 'editor' || pr === 'manager';
+    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'manager';
+    if (action === 'project.write') return pr === 'manager';
     return pr === 'manager';
   };
   return {
-    authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
-    assertAuthorized: async (userId: string, _a: unknown, action: string) => {
-      if (!decide(userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
+    authorize: async (actor: { userId: string }, action: string) => ({
+      allowed: decide(actor.userId, action),
+      reason: 'role',
+    }),
+    assertAuthorized: async (actor: { userId: string }, action: string) => {
+      if (!decide(actor.userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
     },
     // Account managers see every project ('all'); members see only the projects
     // they hold an explicit grant on ('allow_only'); outsiders see none.
-    listAccessibleResources: async (userId: string) => {
+    listAccessible: async (actor: { userId: string }) => {
+      const userId = actor.userId;
       const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
       if (!am) return { mode: 'none', allowed: new Set<string>() };
       if (isManager(userId)) return { mode: 'all', allowed: new Set<string>() };
@@ -135,11 +186,21 @@ mock.module('../iam/dispatcher', () => {
         ? { mode: 'none', allowed }
         : { mode: 'allow_only', allowed };
     },
-    filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+    filterAccessibleObjects: async (
+      _actor: unknown,
+      _p: string,
+      _t: string,
+      ids: readonly string[],
+    ) => [...ids],
+    // `mock.module` replaces the module wholesale: agent-access imports this
+    // memo for its candidate list, so a stub that omits it is a SyntaxError
+    // in every other importer. Empty = this project scopes no agent.
+    loadObjectGrants: Object.assign(async () => new Map(), { clear: () => {} }),
+    clearAuthorizeCaches: () => {},
+    isImplicitManager: (key: string | null) => key === 'owner' || key === 'admin',
   };
 });
 
-mockIamMembershipSyncNoop();
 
 const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
@@ -152,7 +213,9 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
@@ -168,7 +231,18 @@ mock.module('../projects/git', () => ({
   readRepoFile: async (project: ProjectRow, path: string, ref: string) => {
     readRepoFileCalls.push({ projectId: project.projectId, path, ref });
     if (path === 'missing.txt') {
+      // The legacy `GitOperationError` shape: a raw `fatal: path … does not
+      // exist in …` message. `isMissingGitPathError` matches this → 404.
       throw new Error("fatal: path 'missing.txt' does not exist in 'feature'");
+    }
+    if (path === 'not-found.txt') {
+      // The typed shape `readRepoFile` actually throws in prod (files.ts:127) —
+      // a `RepoFileNotFoundError` whose message does NOT match the
+      // `isMissingGitPathError` regex. Without the route branching on
+      // `isRepoFileNotFoundError`, this leaked as an uncaught 500 (Better Stack
+      // pattern `5b40ec1a…`). Throw the REAL class so the regression test
+      // exercises the exact prod code path, not a string lookalike.
+      throw new actualGit.RepoFileNotFoundError(path, ref);
     }
     return `content:${path}@${ref}`;
   },
@@ -186,12 +260,14 @@ mock.module('../projects/git', () => ({
     });
   },
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   invalidateProjectMirror: () => {},
   resolveCommitSha: async () => 'a'.repeat(40),
+  resolveFastBootGitHint: async () => ({ baseSha: 'a'.repeat(40) }),
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
   getDiffBetweenShas: async () => ({ files: [], diff: '' }),
@@ -207,8 +283,19 @@ mock.module('../projects/git', () => ({
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
+mock.module('../projects/lib/project-deletion', () => ({
+  deleteManagedProjectRepo: async (project: ProjectRow) => {
+    deleteManagedRepoCalls.push(project);
+    if (deleteManagedRepoError) throw deleteManagedRepoError;
+    return deleteManagedRepoResult;
+  },
+}));
+
 mock.module("../snapshots/builder", () => ({
+  routedPerProjectWarmImageName: () => "kpp2-test",
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  ensureFastSandboxImage: async () => ({ snapshotName: "kortix-fast-test", slug: "default", contentHash: "f".repeat(64), built: false, isDefault: true, runtimeProfile: "fast" }),
+  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
@@ -222,10 +309,18 @@ mock.module("../snapshots/builder", () => ({
   reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
   kickProjectTemplatePrebuilds: () => {},
   resolveCommitSha: async () => "a".repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: "kortix-ppwarm-test",
+    tip: "a".repeat(40),
+    built: false,
+    provider: "daytona",
+  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   parseGitHubRepoUrl: () => null,
   isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
@@ -510,6 +605,38 @@ describe('projects API contract', () => {
     expect(await missingFile.json()).toEqual({ error: 'File not found' });
     expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'missing.txt', ref: 'feature' });
 
+    // Regression (Better Stack pattern `5b40ec1a…`): `readRepoFile` now throws a
+    // typed `RepoFileNotFoundError` (message `file not found in repository at
+    // '<ref>:<path>'`) instead of the raw `fatal: path … does not exist in …`
+    // `GitOperationError`. The route's catch block only matched the OLD regex
+    // (`isMissingGitPathError`), so the typed error leaked uncaught to
+    // `app.onError` → 500 → captureException → Sentry. The mock above throws
+    // the REAL `RepoFileNotFoundError` class for `not-found.txt`, so this
+    // exercises the exact prod code path. The fix makes the route branch on
+    // `isRepoFileNotFoundError` and return 404 — a 404 here proves the typed
+    // error no longer reaches the 500/Sentry path.
+    const typedMissingFile = await app.request(
+      `/v1/projects/${PROJECT_ID}/files/content?path=not-found.txt&ref=feature`,
+    );
+    expect(typedMissingFile.status).toBe(404);
+    expect(await typedMissingFile.json()).toEqual({ error: 'File not found' });
+    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'not-found.txt', ref: 'feature' });
+
+    // Absolute and traversal paths can never resolve inside the repo tree —
+    // the meta agent's /workspace/AGENTS.md source lives in the sandbox image.
+    // The route answers 404 without reaching git instead of letting the path
+    // guard throw a 500.
+    const absolutePath = await app.request(
+      `/v1/projects/${PROJECT_ID}/files/content?path=${encodeURIComponent('/workspace/AGENTS.md')}`,
+    );
+    expect(absolutePath.status).toBe(404);
+    expect(await absolutePath.json()).toEqual({ error: 'File not found' });
+    const traversalPath = await app.request(
+      `/v1/projects/${PROJECT_ID}/files/content?path=${encodeURIComponent('../etc/passwd')}`,
+    );
+    expect(traversalPath.status).toBe(404);
+    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'not-found.txt', ref: 'feature' });
+
     const read = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(read.status).toBe(200);
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.lastOpenedAt).toBeInstanceOf(Date);
@@ -559,6 +686,7 @@ describe('projects API contract', () => {
         });
       },
       listBranches: async () => [],
+      remoteBranchExists: async () => true,
       listCommits: async () => ({ entries: [], nextCursor: null }),
       getCommit: async () => null,
       getCommitDiff: async () => null,
@@ -602,11 +730,40 @@ describe('projects API contract', () => {
 
     const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
     expect(del.status).toBe(200);
-    expect(await del.json()).toEqual({ ok: true });
+    expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: false });
+    expect(deleteManagedRepoCalls).toEqual([]);
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('archived');
 
     const after = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(after.status).toBe(404);
+  });
+
+  test('purges a managed repository only when explicitly requested', async () => {
+    const app = createApp();
+    deleteManagedRepoResult = true;
+
+    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, {
+      method: 'DELETE',
+    });
+
+    expect(del.status).toBe(200);
+    expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: true });
+    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
+    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe(
+      'archived',
+    );
+  });
+
+  test('does not archive a project when managed repository deletion fails', async () => {
+    const app = createApp();
+    deleteManagedRepoError = new Error('provider unavailable');
+
+    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, { method: 'DELETE' });
+
+    expect(del.status).toBe(502);
+    expect(await del.json()).toEqual({ error: 'Failed to delete managed project repository' });
+    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
+    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('active');
   });
 
   test('lists and manages explicit project access grants without overriding account managers', async () => {
@@ -647,30 +804,60 @@ describe('projects API contract', () => {
     const grant = await app.request(`/v1/projects/${PROJECT_ID}/access/${MEMBER_ID}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'editor' }),
+      body: JSON.stringify({ role: 'manager' }),
     });
     expect(grant.status).toBe(200);
     expect(await grant.json()).toMatchObject({
       user_id: MEMBER_ID,
       account_role: 'member',
-      project_role: 'editor',
-      effective_project_role: 'editor',
+      project_role: 'manager',
+      effective_project_role: 'manager',
       has_implicit_access: false,
     });
     expect(dbState.projectMemberRows).toContainEqual(expect.objectContaining({
       projectId: PROJECT_ID,
       userId: MEMBER_ID,
-      projectRole: 'editor',
+      projectRole: 'manager',
     }));
 
     access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
     body = await access.json();
     const memberRow = body.members.find((member: any) => member.user_id === MEMBER_ID);
     expect(memberRow).toMatchObject({
-      project_role: 'editor',
-      effective_project_role: 'editor',
+      project_role: 'manager',
+      effective_project_role: 'manager',
       has_implicit_access: false,
     });
+
+    // The removed `editor` role is rejected on write, never folded to manager.
+    const rejected = await app.request(`/v1/projects/${PROJECT_ID}/access/${MEMBER_ID}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'editor' }),
+    });
+    expect(rejected.status).toBe(400);
+    expect((await rejected.json()).error).toContain('manager|member');
+
+    // …and a row that ALREADY says `editor` — what a pre-removal replica can
+    // still write mid-rollout, and what every un-migrated environment holds —
+    // is FOLDED to manager on read. The access list must never emit a role the
+    // API would reject on write.
+    const stored = dbState.projectMemberRows.find(
+      (r: any) => r.projectId === PROJECT_ID && r.userId === MEMBER_ID,
+    );
+    expect(stored).toBeDefined();
+    // Cast: the type no longer admits `editor`; the DB enum still can.
+    (stored as { projectRole: string }).projectRole = 'editor';
+
+    access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
+    body = await access.json();
+    const foldedRow = body.members.find((member: any) => member.user_id === MEMBER_ID);
+    expect(foldedRow).toMatchObject({
+      project_role: 'manager',
+      effective_project_role: 'manager',
+    });
+
+    stored!.projectRole = 'manager';
 
     const ownerGrant = await app.request(`/v1/projects/${PROJECT_ID}/access/${OWNER_ID}`, {
       method: 'PUT',

@@ -1,7 +1,58 @@
 // Secrets — project/shared + personal secret overrides, provider OAuth, git creds.
 
 import { backendApi } from '../../http/api-client';
-import { unwrap, type ConnectorSharing, type ProjectGitConnection } from './shared';
+import { type ConnectorSharing, type ProjectGitConnection, unwrap } from './shared';
+
+export type SecretDeliveryStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
+export type SecretConsumer =
+  | 'sandbox'
+  | 'llm_gateway'
+  | 'connector'
+  | 'git_proxy'
+  | 'http_broker'
+  | 'network';
+export type SecretDeliveryStatus = 'available' | 'unavailable' | 'disabled';
+export type SecretDeliveryBlockedReason = 'no_agent_grant';
+export type SecretInjectionSlot =
+  | { kind: 'header'; name: string; template?: string }
+  | { kind: 'query'; name: string }
+  | { kind: 'json_body_field'; path: string };
+export interface SecretEgressRule {
+  host: string;
+  methods?: string[];
+  path?: string;
+  inject?: SecretInjectionSlot;
+}
+export interface SecretEgressPolicy {
+  backend?: 'llm_gateway' | 'connector' | 'git_proxy' | 'kortix_fetch';
+  base_url_env?: string;
+  rules: SecretEgressRule[];
+  /**
+   * LEGACY injection slot. Optional: an egress-enforced secret is delivered to
+   * the sandbox as a HANDLE and the relay substitutes the real value on an
+   * approved host, so the policy is a host list with no slot to name. Rows
+   * stored with a slot keep injecting exactly as before.
+   */
+  inject?: SecretInjectionSlot;
+  on_no_match?: 'deny' | 'observe';
+  tls?: 'terminate' | 'tunnel';
+}
+export interface UpdateSecretStrategyOptions {
+  consumer?: SecretConsumer | null;
+  egress_policy?: SecretEgressPolicy;
+  handle_prefix?: string;
+}
+export interface SecretBrokerRequest {
+  url: string;
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
+  headers?: Record<string, string>;
+  body_base64?: string;
+}
+export interface SecretBrokerResponse {
+  status: number;
+  headers: Record<string, string>;
+  body_base64: string;
+}
 
 /**
  * One project secret: `{ identifier, name (the env var KEY), value }`.
@@ -37,6 +88,29 @@ export interface ProjectSecret {
   effective_source: 'mine' | 'shared' | 'none';
   /** I'm allowed to edit the shared row (project manager). */
   can_manage_shared: boolean;
+  /** Stored delivery policy. Optional for compatibility with older servers. */
+  strategy?: SecretDeliveryStrategy;
+  /** Service that consumes the value. Null when no consumer is configured. */
+  consumer?: SecretConsumer | null;
+  /** Whether the selected delivery path is usable in this deployment. */
+  delivery_status?: SecretDeliveryStatus;
+  /** The agent-grant axis of delivery, orthogonal to `delivery_status`. A
+   *  secret whose path this deployment fully supports still reaches nothing
+   *  when the manifest's agent roster admits no agent for it. Null when some
+   *  agent admits it, or when the project has published no roster at all. */
+  delivery_blocked_reason?: SecretDeliveryBlockedReason | null;
+  /** Whether this project can enforce a secret at the network boundary at all.
+   *  Current servers always report true — one mechanism serves every sandbox
+   *  provider. Older servers could report false, which made every `egress`
+   *  secret undeliverable however well-formed its policy is, so a caller
+   *  rendering `strategy: 'egress'` still reads it to explain that state. */
+  network_boundary_available?: boolean;
+  /** Network policy metadata. The secret value is never present. */
+  egress_policy?: SecretEgressPolicy | null;
+  strategy_locked?: boolean;
+  last_rotated_at?: string | null;
+  /** The stored value may have entered an earlier sandbox and must be replaced. */
+  requires_rotation?: boolean;
 }
 
 export interface ProjectSecretsResponse {
@@ -64,7 +138,7 @@ export async function listProjectSecrets(projectId: string) {
     await backendApi.get<ProjectSecretsResponse>(
       `/projects/${projectId}/secrets`,
       // Background read fired from member-visible surfaces (model picker, LLM
-      // providers, agent editor) — project.secret.read is editor-tier, so a
+      // providers, agent editor) — project.secret.read is manager-tier, so a
       // plain member legitimately 403s here. Callers render their own state.
       { showErrors: false },
     ),
@@ -79,12 +153,44 @@ export async function upsertProjectSecret(
      *  one identifier per key). Set explicitly to create a SECOND secret under
      *  the same key (e.g. "GMAPS-backup" also GOOGLE_MAPS_API_KEY). */
     identifier?: string;
+    /** The only service allowed to receive plaintext. */
+    consumer?: SecretConsumer | null;
+    /** Use `broker` for every server-side consumer. */
+    strategy?: SecretDeliveryStrategy;
+    /** Required when `consumer` is `http_broker`. */
+    egress_policy?: SecretEgressPolicy;
+    handle_prefix?: string;
     /** Omit to leave an existing secret's value untouched (e.g. a no-op touch). */
     value?: string;
   },
 ) {
+  return unwrap(await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input));
+}
+
+export async function setProjectSecretStrategy(
+  projectId: string,
+  identifier: string,
+  strategy: SecretDeliveryStrategy,
+  options: UpdateSecretStrategyOptions = {},
+) {
   return unwrap(
-    await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input),
+    await backendApi.put<ProjectSecret>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/strategy`,
+      { strategy, ...options },
+    ),
+  );
+}
+
+export async function brokerProjectSecretRequest(
+  projectId: string,
+  identifier: string,
+  input: SecretBrokerRequest,
+): Promise<SecretBrokerResponse> {
+  return unwrap(
+    await backendApi.post<SecretBrokerResponse>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/broker`,
+      input,
+    ),
   );
 }
 
@@ -121,10 +227,9 @@ export async function startProjectProviderOAuth(
   input?: { sharing?: ConnectorSharing },
 ): Promise<ProviderOAuthStart> {
   return unwrap(
-    await backendApi.post<ProviderOAuthStart>(
-      `/projects/${projectId}/oauth/${provider}/start`,
-      { sharing: input?.sharing },
-    ),
+    await backendApi.post<ProviderOAuthStart>(`/projects/${projectId}/oauth/${provider}/start`, {
+      sharing: input?.sharing,
+    }),
   );
 }
 
@@ -134,17 +239,21 @@ export async function pollProjectProviderOAuth(
   flowId: string,
 ): Promise<ProviderOAuthPoll> {
   return unwrap(
-    await backendApi.post<ProviderOAuthPoll>(
-      `/projects/${projectId}/oauth/${provider}/poll`,
-      { flow_id: flowId },
+    await backendApi.post<ProviderOAuthPoll>(`/projects/${projectId}/oauth/${provider}/poll`, {
+      flow_id: flowId,
+    }),
+  );
+}
+
+export async function deleteProjectProviderOAuth(projectId: string, provider: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/oauth/${encodeURIComponent(provider)}`,
     ),
   );
 }
 
-export async function upsertProjectGitCredential(
-  projectId: string,
-  input: { token: string },
-) {
+export async function upsertProjectGitCredential(projectId: string, input: { token: string }) {
   return unwrap(
     await backendApi.put<{
       configured: boolean;
@@ -185,20 +294,6 @@ export async function deletePersonalProjectSecret(projectId: string, name: strin
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
       `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
-    ),
-  );
-}
-
-/**
- * Copy the caller's own private override to the SHARED project row so every
- * member's sessions can use it, not just theirs. The one-click fix for a
- * provider that's only configured as someone's personal key.
- */
-export async function promoteProjectSecretToShared(projectId: string, name: string) {
-  return unwrap(
-    await backendApi.post<ProjectSecret>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/promote-to-shared`,
-      {},
     ),
   );
 }

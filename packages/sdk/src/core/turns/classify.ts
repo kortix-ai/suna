@@ -20,6 +20,7 @@
  * closed union.
  */
 
+import type { MessageWithParts } from '../../transcript';
 import type {
   AgentPart,
   CompactionPart,
@@ -36,8 +37,7 @@ import type {
   ToolPart,
   ToolState,
 } from '../runtime/client';
-import type { MessageWithParts } from '../../transcript';
-import { unwrapError } from './errors';
+import { type GatewayAttemptFailure, extractGatewayErrorDetails, unwrapError } from './errors';
 import { toolInfo } from './tool-registry';
 import type { TokenUsageLike } from './types';
 
@@ -106,7 +106,7 @@ function parseToolOutput(rawOutput: string | undefined): {
 }
 
 /**
- * Detect the "completed but actually failed" shape router/executor tools
+ * Detect the "completed but actually failed" shape router/connector tools
  * (web_search, image_search, connector calls) commonly return: the wire's
  * `state.status` says `completed`, but the JSON output body itself carries
  * `success: false` or a top-level `error`. Without this, a real prod failure
@@ -410,10 +410,23 @@ export function classifyPart(part: Part): ClassifiedPart {
 // ============================================================================
 
 /** Normalized turn-level error — the "failed turn renders as silence" bug
- *  class, solved once here instead of in every host's renderer. */
+ *  class, solved once here instead of in every host's renderer.
+ *
+ *  `provider`/`code`/`suggestion`/`upstreamStatus`/`requestId`/`attemptFailures`
+ *  are populated
+ *  when the failure carries the LLM gateway's structured error envelope (see
+ *  `extractGatewayErrorDetails`) — e.g. a BYOK auth failure, a rate limit, or
+ *  an unroutable model — so a renderer can show WHICH provider failed and
+ *  WHAT to do about it instead of just the provider's raw error text. */
 export interface TurnError {
   name: string;
   message: string;
+  provider?: string;
+  code?: string;
+  suggestion?: string;
+  upstreamStatus?: number;
+  requestId?: string;
+  attemptFailures?: GatewayAttemptFailure[];
 }
 
 function normalizeTurnError(error: unknown): TurnError | undefined {
@@ -425,7 +438,17 @@ function normalizeTurnError(error: unknown): TurnError | undefined {
     typeof (error as { name?: unknown }).name === 'string'
       ? (error as { name: string }).name
       : 'Error';
-  return { name, message: unwrapError(error) };
+  const gateway = extractGatewayErrorDetails(error);
+  return {
+    name,
+    message: gateway?.message || unwrapError(error),
+    provider: gateway?.provider,
+    code: gateway?.code,
+    suggestion: gateway?.suggestion,
+    upstreamStatus: gateway?.upstreamStatus,
+    requestId: gateway?.requestId,
+    attemptFailures: gateway?.attemptFailures,
+  };
 }
 
 /** Whether a classified part renders any visible content on its own — used

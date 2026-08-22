@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 
 import { projectSessions } from '@kortix/db';
+import * as realPreviewOwnership from '../shared/preview-ownership';
 
 const dbUpdates: Array<Record<string, unknown>> = [];
 mock.module('../shared/db', () => ({
@@ -25,8 +26,15 @@ mock.module('../sandbox-proxy/backend', () => ({
   }),
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/preview-ownership', () => ({
+  ...realPreviewOwnership,
   resolvePreviewUserContext: async () => null,
+  // Not exercised by this suite — stub so the real module's shape stays
+  // satisfied for anything else that imports it in the same test run.
+  resolveSandboxProjectId: async () => null,
 }));
 
 const { ensureOpencodeSessionPin } = await import('../projects/opencode-mapping');

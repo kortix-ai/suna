@@ -2,7 +2,7 @@
  * Agent-run + session happy-path backlog.
  *
  * Maps 1:1 to spec IDs: RUN-1..8, SESS-2, SESS-3, SESS-9, SESS-12, FILE-8, FILE-9,
- * GOLD-1, CHN-6.
+ * GOLD-1, CHN-6, SESS-10.
  *
  * REALITY: every flow here needs a REAL booted Daytona sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
@@ -26,55 +26,217 @@
  * `/v1/p/<sbx>/8000/...` path WITHOUT declaring it as a coverage route. The
  * proxy's auth boundary is additionally covered transitively by PRX-1/PRX-2.
  */
-import { flow } from "../core/flow";
-import { waitFor, sleep } from "../core/poll";
-import type { FlowContext } from "../core/types";
+import { flow } from '../core/flow';
+import { isKe2eRetryableError } from '../core/client';
+import { waitFor, sleep } from '../core/poll';
+import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
+import type { FlowContext } from '../core/types';
+import { subscribe } from '../fixtures/billing';
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
+/** Poll the canonical unified session-open endpoint until the runtime is ready. */
+async function waitForSessionReady(
+  ctx: FlowContext,
+  projectId: string,
+  sessionId: string,
+  timeoutMs = 300_000,
+): Promise<any> {
+  try {
+    return await waitFor(
+      async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/sessions/:sessionId/start',
+          {},
+          {
+            params: { projectId, sessionId },
+            query: { wait_ms: '8000' },
+            // The server may hold the request for the full 8s wait window, and
+            // Cloudflare/ECS transit can add several more seconds under load.
+            timeoutMs: 25_000,
+          },
+        );
+        if (r.statusCode >= 500 && r.statusCode <= 599) return null;
+        r.status(200);
+        return r.json<any>();
+      },
+      {
+        until: (s) =>
+          s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
+        timeoutMs,
+        intervalMs: 3_000,
+        description: `session runtime ready for ${sessionId}`,
+        retryOnError: isKe2eRetryableError,
+      },
+    );
+  } catch (error) {
+    throw markSessionReadinessTimeoutRetryable(error, sessionId);
+  }
+}
+
+flow(
+  'SESS-10',
+  {
+    domain: 'sessions',
+    requires: ['funded', 'daytona'],
+    serial: true,
+    // Raised from 360_000 because THIS change adds a real proxy turn (conversation
+    // list/boot + prompt + assistant output) ahead of the mirror wait. Sum of the
+    // bounded waits below now exceeds 360s. Forced arithmetic, not timeout tuning.
+    timeoutMs: 900_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.sharedSeededProject();
+    const session = await ctx.fixtures.session(project, {
+      prompt: 'Summarize why deterministic end-to-end tests reduce release risk in one sentence.',
+    });
+
+    let sandboxId = '';
+    await ctx.step('the real sandbox reaches OpenCode readiness after the initial prompt', async () => {
+      const started = await waitForSessionReady(ctx, project.id, session.id);
+      sandboxId = String(started?.sandbox?.external_id ?? started?.sandbox?.externalId ?? '');
+      if (!sandboxId) throw new Error(`session ${session.id} became ready without a sandbox id`);
+    });
+
+    // The mirror is populated by the PRE-PROMPT hooks on the preview proxy —
+    // `generateSessionTitleFromFirstPrompt` + `scheduleOpencodeSnapshotSync`
+    // (apps/api/src/sandbox-proxy/routes/preview.ts REAL_PRE_PROMPT_DEPS). A
+    // session whose ONLY prompt was baked into the guest as KORTIX_INITIAL_PROMPT
+    // never crosses that proxy, so it "never crosses a titling hook again" —
+    // apps/api/src/projects/routes/r4.ts says exactly that in its own comment.
+    // Waiting for the mirror straight after an initial_prompt boot is therefore
+    // unsatisfiable by construction. Drive ONE real turn through the proxy, the
+    // way every client does, and then assert the mirror the flow is about.
+    const MIRROR_PROMPT =
+      'Summarize why deterministic end-to-end tests reduce release risk in one sentence.';
+    /** Prompt the pinned root through the proxy — this is what arms the snapshot. */
+    const promptPinnedRoot = async (ocId: string) => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
+          parts: [{ type: 'text', text: MIRROR_PROMPT }],
+        });
+      r.status([200, 202, 204]);
+    };
+
+    let ocSessionId = '';
+    await ctx.step('a real prompt through the preview proxy produces assistant output', async () => {
+      ocSessionId = await pinnedOcRoot(ctx, project.id, session.id, sandboxId);
+      await promptPinnedRoot(ocSessionId);
+      await waitForAssistantOutput(ctx, sandboxId, ocSessionId);
+    });
+
+    let mirrored: any = null;
+    await ctx.step('the session read exposes a non-placeholder root OpenCode title and tree', async () => {
+      // `metadata.opencode_sessions` has exactly ONE writer:
+      // `scheduleOpencodeSnapshotSync`, armed by the proxy's pre-prompt hook.
+      // It fires at prompt+20s and prompt+60s and then STOPS
+      // (apps/api/src/projects/opencode-session-snapshot.ts). The session read
+      // itself is a pure DB read — a source-level guard test enforces that. So
+      // a poll that merely waits is reading a value whose writer has already
+      // retired: run 32306385663 spent 120 of its 180 s that way. Re-arm the
+      // writer by re-prompting the pinned root, instead of waiting on a dead one.
+      const REARM_AFTER_MS = 75_000;
+      let lastPromptAt = Date.now();
+      mirrored = await waitFor(
+        async () => {
+          if (Date.now() - lastPromptAt > REARM_AFTER_MS) {
+            lastPromptAt = Date.now();
+            await promptPinnedRoot(ocSessionId);
+          }
+          const response = await ctx.client
+            .as(ctx.P.OWNER)
+            .get('/v1/projects/:projectId/sessions/:sessionId', {
+              params: { projectId: project.id, sessionId: session.id },
+            });
+          response.status(200);
+          return response.json<any>();
+        },
+        {
+          until: (row) => {
+            const root = Array.isArray(row?.opencode_sessions)
+              ? row.opencode_sessions.find(
+                  (entry: any) => entry?.id === row?.opencode_session_id && !entry?.parent_id,
+                )
+              : null;
+            const title = typeof root?.title === 'string' ? root.title.trim() : '';
+            return Boolean(title) && !/^new (session|agent)\b/i.test(title) && row?.name === title;
+          },
+          timeoutMs: 180_000,
+          intervalMs: 3_000,
+          description: `the OpenCode title/tree mirror for ${session.id}`,
+          retryOnError: isKe2eRetryableError,
+        },
+      );
+    });
+
+    await ctx.step('the project session list returns the same mirrored title and tree', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } });
+      response.status(200);
+      const body = response.json<any>();
+      const rows = Array.isArray(body) ? body : (body.sessions ?? []);
+      const listed = rows.find((row: any) => row?.session_id === session.id);
+      if (!listed) throw new Error(`session list omitted ${session.id}`);
+      if (listed.name !== mirrored.name) {
+        throw new Error(`list title ${String(listed.name)} != detail title ${String(mirrored.name)}`);
+      }
+      if (JSON.stringify(listed.opencode_sessions) !== JSON.stringify(mirrored.opencode_sessions)) {
+        throw new Error('list and detail returned different OpenCode session trees');
+      }
+    });
+  },
+);
+
 /**
- * Boot a fresh session and wait for its sandbox to reach `active`, returning the
- * proxy id (`external_id`, the value `:sandboxId` in the preview proxy path) and
- * its base url. Throws (retryable) on provisioning timeout, with last-seen state.
+ * Boot a fresh session and wait for its runtime to reach `ready`, returning the
+ * proxy id (`external_id`, the value `:sandboxId` in the preview proxy path).
+ *
+ * The body runs INSIDE a `ctx.step`, and that is the whole point of the wrapper.
+ * Request capture is `AsyncLocalStorage`-scoped to a step (core/context.ts
+ * `withRecorder`, entered only by `ctx.step` in core/runner.ts), so every
+ * `POST /start` poll made outside one is recorded NOWHERE. RUN-4 failed in run
+ * 32330628092 with `Timed out waiting for session runtime ready` and produced a
+ * flow record with `"steps": []` — no request, no body, no `provisioningStage`,
+ * no `lastInitError`, on the single failure mode these flows actually fail with.
+ * Boot is the most expensive and most failure-prone part of every flow here; it
+ * must leave evidence behind.
  */
 async function bootSandbox(
   ctx: FlowContext,
-  opts?: { prompt?: string },
+  opts?: { prompt?: string; readinessTimeoutMs?: number },
 ): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
-  const project = await ctx.fixtures.project({ seed: true });
-  const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? "say hello" });
+  return ctx.step('a fresh session boots to a ready runtime', async () => {
+    const project = await ctx.fixtures.sharedSeededProject();
+    const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
+    const started = await waitForSessionReady(
+      ctx,
+      project.id,
+      session.id,
+      opts?.readinessTimeoutMs,
+    );
 
-  const sandbox = await waitFor(
-    async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/sessions/:sessionId/sandbox", {
-          params: { projectId: project.id, sessionId: session.id },
-        });
-      // 404 while the session_sandboxes row is not yet inserted (frontend polls).
-      if (r.statusCode === 404) return { status: "pending" } as any;
-      return r.json<any>();
-    },
-    {
-      until: (s) => s?.status === "active" && Boolean(s?.external_id ?? s?.externalId),
-      timeoutMs: 300_000,
-      intervalMs: 3_000,
-      description: `sandbox active for session ${session.id}`,
-    },
-  );
-
-  const sandboxId = String(sandbox.external_id ?? sandbox.externalId);
-  return { projectId: project.id, sessionId: session.id, sandboxId, sandbox };
+    const sandbox = started.sandbox;
+    const sandboxId = String(sandbox.external_id ?? sandbox.externalId);
+    return { projectId: project.id, sessionId: session.id, sandboxId, sandbox };
+  });
 }
 
 /** The workspace directory the session's OpenCode root lives under (see
  * apps/api/src/projects/opencode-mapping.ts WORKSPACE). Session create/list must
  * carry `?directory=` or the daemon can't locate the repo root → persistent 503. */
-const WORKSPACE = "/workspace";
+const WORKSPACE = '/workspace';
 
 /** Build the live (non-manifest) preview-proxy path for an OpenCode call. */
 function ocPath(sandboxId: string, suffix: string): string {
-  const tail = suffix.startsWith("/") ? suffix : `/${suffix}`;
+  const tail = suffix.startsWith('/') ? suffix : `/${suffix}`;
   return `/v1/p/${sandboxId}/8000${tail}`;
 }
 
@@ -107,50 +269,147 @@ async function createOcConversation(ctx: FlowContext, sandboxId: string): Promis
   return id;
 }
 
+/**
+ * The OpenCode conversation the server will treat as this session's canonical
+ * root. The snapshot pass scopes `metadata.opencode_sessions` to exactly that
+ * root (apps/api/src/projects/opencode-session-snapshot.ts), so a prompt sent to
+ * any OTHER root is filtered straight back out of the mirror. Mirror the
+ * server's own rule — most-recently-active parentless root, per
+ * `pickCanonicalRoot` in apps/api/src/projects/opencode-session-resolver.ts —
+ * and only create a conversation when the guest has none at all.
+ */
+async function canonicalOcConversation(ctx: FlowContext, sandboxId: string): Promise<string> {
+  const listed = await waitFor(
+    async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, '/session'));
+      if (r.statusCode === 502 || r.statusCode === 503 || r.statusCode === 504) return null;
+      return r.statusCode === 200 ? r.json<any[]>() : null;
+    },
+    {
+      until: (rows) => Array.isArray(rows),
+      timeoutMs: 120_000,
+      intervalMs: 3_000,
+      description: `OpenCode conversation list on sandbox ${sandboxId}`,
+    },
+  );
+
+  const roots = (listed ?? []).filter((s: any) => !(s?.parentID ?? s?.parent_id));
+  if (roots.length === 0) return createOcConversation(ctx, sandboxId);
+  const activity = (s: any) => s?.time?.updated ?? s?.time?.created ?? 0;
+  roots.sort(
+    (a: any, b: any) =>
+      activity(b) - activity(a) ||
+      (b?.time?.created ?? 0) - (a?.time?.created ?? 0) ||
+      String(a?.id).localeCompare(String(b?.id)),
+  );
+  const id = roots[0]?.id;
+  if (!id) throw new Error(`no canonical OpenCode root on sandbox ${sandboxId}`);
+  return String(id);
+}
+
+/**
+ * The root the SERVER has pinned for this session, preferred over re-deriving it.
+ *
+ * `resolveRootSessionId` (apps/api/src/projects/opencode-session-resolver.ts)
+ * returns an EXISTING pin unconditionally — "most recently active parentless
+ * root" is the server's rule only for the FIRST resolution. Once a pin exists
+ * the two rules can disagree (a daemon restart or a warm-fork seed rotation
+ * leaves a second root), and then the flow prompts root B while the snapshot
+ * mirrors pinned root A. Root A is never prompted, so its title never changes,
+ * and the mirror wait can never be satisfied at any budget — SESS-10's 410 s
+ * failure in run 32306385663. Ask the server which root it pinned.
+ */
+async function pinnedOcRoot(
+  ctx: FlowContext,
+  projectId: string,
+  sessionId: string,
+  sandboxId: string,
+): Promise<string> {
+  const r = await ctx.client
+    .as(ctx.P.OWNER)
+    .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
+  const pinned = r.statusCode === 200 ? r.json<any>()?.opencode_session_id : null;
+  if (typeof pinned === 'string' && pinned.length > 0) return pinned;
+  // Nothing pinned yet — the server's first resolution will adopt whatever
+  // root is most recently active, which is exactly what this derives.
+  return canonicalOcConversation(ctx, sandboxId);
+}
+
+function hasAssistantOutput(messages: unknown): boolean {
+  return (
+    Array.isArray(messages) &&
+    messages.some((message: any) => {
+      if (message?.info?.role !== 'assistant') return false;
+      if (message?.info?.error) return true;
+      return Array.isArray(message?.parts) && message.parts.length > 0;
+    })
+  );
+}
+
+async function waitForAssistantOutput(
+  ctx: FlowContext,
+  sandboxId: string,
+  ocId: string,
+  timeoutMs = 240_000,
+): Promise<any[]> {
+  return waitFor(
+    async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${ocId}/message`));
+      return r.statusCode === 200 ? r.json<any[]>() : [];
+    },
+    {
+      until: hasAssistantOutput,
+      timeoutMs,
+      intervalMs: 4_000,
+      description: `observable assistant output in OpenCode session ${ocId}`,
+    },
+  );
+}
+
 // ─── RUN-1: create an OpenCode conversation through the proxy ─────────────────
 // POST /p/<sbx>/8000/session → { id }.  (proxy path is not a manifest route)
 flow(
-  "RUN-1",
+  'RUN-1',
   {
-    domain: "agent-run",
-    requires: ["funded", "daytona"],
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
     timeoutMs: 360_000,
     // Only manifest-real routes are declared; the /p/<sbx>/8000/* proxy
     // catch-all is exercised at runtime but is not a coverage target.
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
   async (ctx) => {
     const { sandboxId } = await bootSandbox(ctx);
-    await ctx.step("POST /p/<sbx>/8000/session → 200 {id}", async () => {
+    await ctx.step('POST /p/<sbx>/8000/session → 200 {id}', async () => {
       const ocId = await createOcConversation(ctx, sandboxId);
-      ctx.track("opencode-session", ocId, { sandboxId });
+      ctx.track('opencode-session', ocId, { sandboxId });
     });
   },
 );
 
 // ─── RUN-2: async prompt → 204 (agent runs in background) ─────────────────────
 flow(
-  "RUN-2",
+  'RUN-2',
   {
-    domain: "agent-run",
-    requires: ["funded", "daytona"],
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
     timeoutMs: 360_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
   async (ctx) => {
     const { sandboxId } = await bootSandbox(ctx);
     const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step("POST .../session/<ocId>/prompt_async → 204", async () => {
+    await ctx.step('POST .../session/<ocId>/prompt_async → 204', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: "text", text: "Reply with the single word: pong" }],
+          parts: [{ type: 'text', text: 'Reply with the single word: pong' }],
         });
       r.status([200, 202, 204]);
     });
@@ -162,44 +421,32 @@ flow(
 // assert structural progress instead via RUN-6 message listing in RUN-3 too:
 // after prompting, a message/part must appear within N seconds.
 flow(
-  "RUN-3",
+  'RUN-3',
   {
-    domain: "agent-run",
-    requires: ["funded", "daytona"],
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
     timeoutMs: 420_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
   async (ctx) => {
     const { sandboxId } = await bootSandbox(ctx);
     const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step("prompt the agent", async () => {
+    await ctx.step('prompt the agent', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: "text", text: "Reply with a short greeting." }],
+          parts: [{ type: 'text', text: 'Reply with a short greeting.' }],
         });
       r.status([200, 202, 204]);
     });
-    await ctx.step("a message/part appears in the conversation within ~3min", async () => {
-      // Structural, NOT content: assert that the agent produced at least one
-      // message (the SSE deltas are mirrored into the message list).
-      await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get(ocPath(sandboxId, `/session/${ocId}/message`));
-          return r.statusCode === 200 ? r.json<any>() : null;
-        },
-        {
-          until: (msgs) => Array.isArray(msgs) && msgs.length > 0,
-          timeoutMs: 180_000,
-          intervalMs: 4_000,
-          description: `at least one message in OpenCode session ${ocId}`,
-        },
-      );
+    await ctx.step('a message/part appears in the conversation within ~3min', async () => {
+      // A user message and empty assistant placeholder appear immediately.
+      // Require an assistant part (or an explicit assistant error) so this
+      // proves execution progressed beyond request acceptance.
+      await waitForAssistantOutput(ctx, sandboxId, ocId, 180_000);
     });
   },
 );
@@ -207,25 +454,23 @@ flow(
 // ─── RUN-4: busy/idle status read ────────────────────────────────────────────
 // GET .../session/<ocId> → status.type ∈ busy|retry ⇒ busy (idle otherwise).
 flow(
-  "RUN-4",
+  'RUN-4',
   {
-    domain: "agent-run",
-    requires: ["funded", "daytona"],
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
     timeoutMs: 420_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
   async (ctx) => {
     const { sandboxId } = await bootSandbox(ctx);
     const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step("kick off a run, then observe busy state", async () => {
-      await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: "text", text: "Count slowly to ten in words." }],
-        });
+    await ctx.step('kick off a run, then observe busy state', async () => {
+      await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
+        parts: [{ type: 'text', text: 'Count slowly to ten in words.' }],
+      });
       // Race the model: the session should report busy/retry at some point soon
       // after a prompt. If we miss the window (fast model) it's idle — both are
       // valid structural states, so we assert the field is present + readable.
@@ -242,7 +487,7 @@ flow(
         },
       );
       if (observed?.status?.type) {
-        const busy = observed.status.type === "busy" || observed.status.type === "retry";
+        const busy = observed.status.type === 'busy' || observed.status.type === 'retry';
         // Either busy (still running) or a terminal/idle state — both legal.
         void busy;
       }
@@ -252,31 +497,33 @@ flow(
 
 // ─── RUN-5: abort a running agent ─────────────────────────────────────────────
 flow(
-  "RUN-5",
+  'RUN-5',
   {
-    domain: "agent-run",
-    requires: ["funded", "daytona"],
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
     timeoutMs: 420_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
   async (ctx) => {
     const { sandboxId } = await bootSandbox(ctx);
     const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step("start a long run", async () => {
+    await ctx.step('start a long run', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: "text", text: "Write a very long essay about the sea." }],
+          parts: [{ type: 'text', text: 'Write a very long essay about the sea.' }],
         });
       r.status([200, 202, 204]);
     });
-    await ctx.step("abort → 200/204", async () => {
+    await ctx.step('abort → 200/204', async () => {
       // Give the run a moment to actually start before aborting.
       await sleep(2_000);
-      const r = await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/abort`), {});
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(ocPath(sandboxId, `/session/${ocId}/abort`), {});
       r.status([200, 204]);
     });
   },
@@ -284,27 +531,25 @@ flow(
 
 // ─── RUN-6: list / get messages (results) ────────────────────────────────────
 flow(
-  "RUN-6",
+  'RUN-6',
   {
-    domain: "agent-run",
-    requires: ["funded", "daytona"],
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
     timeoutMs: 420_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
   async (ctx) => {
     const { sandboxId } = await bootSandbox(ctx);
     const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.client
-      .as(ctx.P.OWNER)
-      .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-        parts: [{ type: "text", text: "Reply with one short sentence." }],
-      });
+    await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
+      parts: [{ type: 'text', text: 'Reply with one short sentence.' }],
+    });
 
-    let firstMessageId = "";
-    await ctx.step("list messages → 200 array (eventually non-empty)", async () => {
+    let firstMessageId = '';
+    await ctx.step('list messages → 200 array (eventually non-empty)', async () => {
       const msgs = await waitFor(
         async () => {
           const r = await ctx.client
@@ -320,10 +565,10 @@ flow(
         },
       );
       const first = msgs[0];
-      firstMessageId = first?.info?.id ?? first?.id ?? "";
+      firstMessageId = first?.info?.id ?? first?.id ?? '';
     });
-    await ctx.step("get a single message by id → 200", async () => {
-      if (!firstMessageId) ctx.skip("no message id surfaced to fetch individually");
+    await ctx.step('get a single message by id → 200', async () => {
+      if (!firstMessageId) ctx.skip('no message id surfaced to fetch individually');
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get(ocPath(sandboxId, `/session/${ocId}/message/${firstMessageId}`));
@@ -334,50 +579,54 @@ flow(
 
 // ─── RUN-7: working-tree diff; agent commits land on branch <sessionId> ───────
 flow(
-  "RUN-7",
+  'RUN-7',
   {
-    domain: "agent-run",
-    requires: ["funded", "daytona"],
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
     timeoutMs: 480_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
       // The durable truth (commits on branch <sessionId>) is observed via the
       // project git API — a manifest-real route.
-      "GET /v1/projects/:projectId/commits",
+      'GET /v1/projects/:projectId/commits',
     ],
   },
   async (ctx) => {
     const { projectId, sessionId, sandboxId } = await bootSandbox(ctx);
-    await ctx.step("ask the agent to create + commit a file", async () => {
+    await ctx.step('ask the agent to create + commit a file', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${await createOcConversation(ctx, sandboxId)}/prompt_async`), {
-          parts: [
-            {
-              type: "text",
-              text: "Create a file named KE2E.md with the text 'hello' and commit it.",
-            },
-          ],
-        });
+        .post(
+          ocPath(sandboxId, `/session/${await createOcConversation(ctx, sandboxId)}/prompt_async`),
+          {
+            parts: [
+              {
+                type: 'text',
+                text: "Create a file named KE2E.md with the text 'hello' and commit it.",
+              },
+            ],
+          },
+        );
       r.status([200, 202, 204]);
     });
-    await ctx.step("working-tree diff endpoint is reachable → 200", async () => {
+    await ctx.step('working-tree diff endpoint is reachable → 200', async () => {
       // We don't assert specific diff content (LLM-driven); only that the
       // OpenCode diff endpoint responds structurally.
       const conv = await createOcConversation(ctx, sandboxId);
       const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${conv}/diff`));
       r.status([200, 204]);
     });
-    await ctx.step("commits eventually land on branch <sessionId>", async () => {
+    await ctx.step('commits eventually land on branch <sessionId>', async () => {
       // Structural: poll the git commit log for the session branch and assert it
       // is readable (the branch exists once the session pushed). We don't require
       // a specific commit count since timing of the agent commit is LLM-bound.
       await waitFor(
         async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get("/v1/projects/:projectId/commits", { params: { projectId }, query: { ref: sessionId } });
+          const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/commits', {
+            params: { projectId },
+            query: { ref: sessionId },
+          });
           return r.statusCode;
         },
         {
@@ -395,24 +644,25 @@ flow(
 // The 401 boundary is on the proxy catch-all (not a manifest route). The
 // /v1/p/share mount IS manifest-real and is what mints a scoped preview token.
 flow(
-  "RUN-8",
+  'RUN-8',
   {
-    domain: "agent-run",
-    requires: ["funded", "daytona"],
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
     timeoutMs: 360_000,
+    retry: { attempts: 2 },
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
-      "POST /v1/p/share",
-      "DELETE /v1/p/share/:token",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/p/share',
+      'DELETE /v1/p/share/:token',
     ],
   },
   async (ctx) => {
     const { sandboxId } = await bootSandbox(ctx);
-    await ctx.step("proxy request with NO token/cookie → 401", async () => {
+    await ctx.step('proxy request with NO token/cookie → 401', async () => {
       // Auth is enforced at the proxy before forwarding, so this is 401
       // regardless of OpenCode readiness.
-      const r = await ctx.client.as(ctx.P.ANON).get(ocPath(sandboxId, "/app"));
+      const r = await ctx.client.as(ctx.P.ANON).get(ocPath(sandboxId, '/app'));
       r.status(401);
     });
 
@@ -426,63 +676,106 @@ flow(
     // extract a token if present, without failing the auth-boundary flow when the
     // daemon doesn't implement share. (Core coverage here is the 401 boundary +
     // the /v1/p/share mount.)
-    let shareToken = "";
-    await ctx.step("mint a scoped preview share token (endpoint responds)", async () => {
+    let shareToken = '';
+    await ctx.step('mint a scoped preview share token (endpoint responds)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/p/share", { sandbox_id: sandboxId, port: 8000 });
+        .post('/v1/p/share', { sandbox_id: sandboxId, port: 8000 });
       r.status([200, 201, 502]); // 502 = daemon share not implemented on this template
-      shareToken = r.json<any>()?.token ?? r.json<any>()?.share?.token ?? "";
+      shareToken = r.json<any>()?.token ?? r.json<any>()?.share?.token ?? '';
     });
     if (shareToken) {
-      await ctx.step("the share token grants scoped proxy access → 200", async () => {
+      await ctx.step('the share token grants scoped proxy access → 200', async () => {
         const r = await ctx.client
-          .as({ label: "share", auth: { mode: "query-token", token: shareToken } })
-          .get(ocPath(sandboxId, "/app"));
+          .as({ label: 'share', auth: { mode: 'query-token', token: shareToken } })
+          .get(ocPath(sandboxId, '/app'));
         r.status([200, 204, 404]); // 404 = path-not-served-by-OpenCode but auth passed
       });
-      await ctx.step("revoke the share token → 200", async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .del("/v1/p/share/:token", { params: { token: shareToken }, query: { sandbox_id: sandboxId } });
+      await ctx.step('revoke the share token → 200', async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).del('/v1/p/share/:token', {
+          params: { token: shareToken },
+          query: { sandbox_id: sandboxId },
+        });
         r.status([200, 204, 404]);
       });
     }
   },
 );
 
-// ─── SESS-2: concurrency cap — Nth session over tier cap → 429 + RateLimit hdrs
+// ─── SESS-2: concurrency cap — second session at limit 1 → 429 + headers ────
 flow(
-  "SESS-2",
+  'SESS-2',
   {
-    domain: "sessions",
-    requires: ["funded", "daytona"],
+    domain: 'sessions',
+    requires: ['admin', 'funded', 'daytona'],
     serial: true,
     timeoutMs: 300_000,
-    routes: ["POST /v1/projects/:projectId/sessions"],
+    routes: [
+      'POST /v1/admin/api/accounts/:id/session-limit',
+      'POST /v1/projects/:projectId/sessions',
+    ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project({ seed: true });
-    await ctx.step("creating sessions past the tier cap → 429 + X-RateLimit headers", async () => {
-      // Fire sessions until one is rejected with 429 (the concurrency cap). The
-      // cap is tier-bound and modest; we bound the loop so a misconfigured (very
-      // high) cap doesn't run away.
-      let capped: any = null;
-      for (let i = 0; i < 25 && !capped; i++) {
+    if (!ctx.env.adminToken) {
+      throw new Error('SESS-2 requires the run-scoped platform-admin token');
+    }
+    const admin = ctx.client.withBearer(ctx.env.adminToken, 'ADMIN_TOKEN');
+    let previousLimit: number | null | undefined;
+    const team = await ctx.fixtures.team();
+
+    await ctx.step('fund the isolated session-limit account', async () => {
+      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id);
+    });
+
+    await ctx.step('set the run account concurrent-session override to 1', async () => {
+      const r = await admin.post(
+        '/v1/admin/api/accounts/:id/session-limit',
+        { max_concurrent_sessions: 1 },
+        { params: { id: team.id } },
+      );
+      r.status(200);
+      previousLimit = r.json<{ previous: number | null }>().previous;
+    });
+
+    try {
+      const project = await team.project({ seed: true });
+      await ctx.step('first session at limit 1 → 201', async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post("/v1/projects/:projectId/sessions", { initial_prompt: "noop" }, { params: { projectId: project.id } });
-        if (r.statusCode === 201) {
-          const id = r.json<any>()?.session_id ?? r.json<any>()?.id;
-          if (id) ctx.track("session", id, { projectId: project.id });
-          continue;
-        }
-        if (r.statusCode === 429) capped = r;
-        else break; // any other status (402/403/…) ends the probe
+          .post(
+            '/v1/projects/:projectId/sessions',
+            { initial_prompt: 'noop' },
+            { params: { projectId: project.id } },
+          );
+        r.status(201);
+        const body = r.json<{ session_id?: string; id?: string }>();
+        const id = body.session_id ?? body.id;
+        if (!id) throw new Error(`session create returned no id: ${r.text()}`);
+        ctx.track('session', id, { projectId: project.id });
+      });
+
+      await ctx.step('second session over limit 1 → 429 + X-RateLimit headers', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/projects/:projectId/sessions',
+            { initial_prompt: 'noop' },
+            { params: { projectId: project.id } },
+          );
+        r.status(429).headerExists('x-ratelimit-limit').headerExists('x-ratelimit-remaining');
+      });
+    } finally {
+      if (previousLimit !== undefined) {
+        await ctx.step('restore the previous concurrent-session override', async () => {
+          const r = await admin.post(
+            '/v1/admin/api/accounts/:id/session-limit',
+            { max_concurrent_sessions: previousLimit },
+            { params: { id: team.id } },
+          );
+          r.status(200);
+        });
       }
-      if (!capped) ctx.skip("concurrency cap not reached within probe budget on this tier");
-      capped.status(429).headerExists("x-ratelimit-limit").headerExists("x-ratelimit-remaining");
-    });
+    }
   },
 );
 
@@ -492,157 +785,123 @@ flow(
 // server-side contract: it accepts a caller-provided session_id and the
 // branch_already_created flag and returns 201 with that id.
 flow(
-  "SESS-3",
+  'SESS-3',
   {
-    domain: "sessions",
-    requires: ["funded", "daytona"],
+    domain: 'sessions',
+    requires: ['funded', 'daytona'],
     timeoutMs: 240_000,
-    routes: ["POST /v1/projects/:projectId/sessions"],
+    routes: ['POST /v1/projects/:projectId/sessions'],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project({ seed: true });
+    const project = await ctx.fixtures.sharedSeededProject();
     const clientSessionId = crypto.randomUUID();
-    await ctx.step("create session with client-minted id + branch_already_created → 201", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post(
-        "/v1/projects/:projectId/sessions",
-        {
-          session_id: clientSessionId,
-          branch_already_created: true,
-          base_ref: "main",
-          initial_prompt: "noop",
-        },
-        { params: { projectId: project.id } },
-      );
-      r.status(201);
-      const id = r.json<any>()?.session_id ?? r.json<any>()?.id;
-      if (id) ctx.track("session", id, { projectId: project.id });
-      // The server should honor the client-supplied id (branch name = session id).
-      if (id) r.body().has("$.session_id", clientSessionId);
-    });
+    await ctx.step(
+      'create session with client-minted id + branch_already_created → 201',
+      async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/sessions',
+          {
+            session_id: clientSessionId,
+            branch_already_created: true,
+            base_ref: 'main',
+            initial_prompt: 'noop',
+          },
+          { params: { projectId: project.id } },
+        );
+        r.status(201);
+        const id = r.json<any>()?.session_id ?? r.json<any>()?.id;
+        if (id) ctx.track('session', id, { projectId: project.id });
+        // The server should honor the client-supplied id (branch name = session id).
+        if (id) r.body().has('$.session_id', clientSessionId);
+      },
+    );
   },
 );
 
 // ─── SESS-9: restart → 202; re-provisions with rotated tokens; branch preserved
 flow(
-  "SESS-9",
+  'SESS-9',
   {
-    domain: "sessions",
-    requires: ["funded", "daytona"],
+    domain: 'sessions',
+    requires: ['funded', 'daytona'],
     timeoutMs: 360_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
-      "POST /v1/projects/:projectId/sessions/:sessionId/restart",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/restart',
     ],
   },
   async (ctx) => {
     const { projectId, sessionId } = await bootSandbox(ctx);
-    await ctx.step("restart → 202 status provisioning", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/sessions/:sessionId/restart", {}, {
-          params: { projectId, sessionId },
-        });
-      r.status(202).body().has("$.status", "provisioning");
-    });
-    await ctx.step("sandbox re-provisions back to active (branch preserved)", async () => {
-      await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get("/v1/projects/:projectId/sessions/:sessionId/sandbox", {
-              params: { projectId, sessionId },
-            });
-          return r.statusCode === 200 ? r.json<any>() : null;
-        },
+    await ctx.step('restart → 202 status provisioning', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/sessions/:sessionId/restart',
+        {},
         {
-          until: (s) => s?.status === "active",
-          timeoutMs: 300_000,
-          intervalMs: 4_000,
-          description: `sandbox active again after restart for ${sessionId}`,
+          params: { projectId, sessionId },
         },
       );
+      r.status(202).body().has('$.status', 'provisioning');
+    });
+    await ctx.step('sandbox re-provisions back to active (branch preserved)', async () => {
+      await waitForSessionReady(ctx, projectId, sessionId);
     });
   },
 );
 
 // ─── SESS-12: manual stop → 200 status stopped; resumable via /start ──────────
 flow(
-  "SESS-12",
+  'SESS-12',
   {
-    domain: "sessions",
-    requires: ["funded", "daytona"],
+    domain: 'sessions',
+    requires: ['funded', 'daytona'],
     timeoutMs: 360_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
-      "POST /v1/projects/:projectId/sessions/:sessionId/stop",
-      "POST /v1/projects/:projectId/sessions/:sessionId/start",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/stop',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
   async (ctx) => {
     const { projectId, sessionId } = await bootSandbox(ctx);
-    await ctx.step("stop → 200 status stopped", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/sessions/:sessionId/stop", {}, {
-          params: { projectId, sessionId },
-        });
-      r.status(200).body().has("$.status", "stopped");
-    });
-    await ctx.step("sandbox row reflects stopped", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/sessions/:sessionId/sandbox", {
-          params: { projectId, sessionId },
-        });
-      r.status(200).body().has("$.status", "stopped");
-    });
-    await ctx.step("stopping an already-stopped session → 409", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/sessions/:sessionId/stop", {}, {
-          params: { projectId, sessionId },
-        });
-      r.status(409);
-    });
-    await ctx.step("start resumes the stopped sandbox (disk preserved)", async () => {
-      await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/sessions/:sessionId/start", {}, {
-          params: { projectId, sessionId },
-        });
-      await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get("/v1/projects/:projectId/sessions/:sessionId/sandbox", {
-              params: { projectId, sessionId },
-            });
-          return r.statusCode === 200 ? r.json<any>() : null;
-        },
+    await ctx.step('stop → 200 status stopped', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/sessions/:sessionId/stop',
+        {},
         {
-          until: (s) => s?.status === "active",
-          timeoutMs: 300_000,
-          intervalMs: 4_000,
-          description: `sandbox active again after manual stop+start for ${sessionId}`,
+          params: { projectId, sessionId },
         },
       );
+      r.status(200).body().has('$.status', 'stopped');
+    });
+    await ctx.step('stopping an already-stopped session → 409', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries().post(
+        '/v1/projects/:projectId/sessions/:sessionId/stop',
+        {},
+        {
+          params: { projectId, sessionId },
+        },
+      );
+      r.status(409);
+    });
+    await ctx.step('start resumes the stopped sandbox (disk preserved)', async () => {
+      await waitForSessionReady(ctx, projectId, sessionId);
     });
   },
 );
 
 // ─── FILE-8: version-diff between two refs (params from/head + into/base) ─────
 flow(
-  "FILE-8",
+  'FILE-8',
   {
-    domain: "files",
-    requires: ["funded", "daytona"],
+    domain: 'files',
+    requires: ['funded', 'daytona'],
     timeoutMs: 360_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
-      "GET /v1/projects/:projectId/version-diff",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/version-diff',
     ],
   },
   async (ctx) => {
@@ -650,28 +909,25 @@ flow(
     // exercises a REAL two-ref diff. (version-diff itself only needs `read`, but
     // we gate the whole flow so it runs where a session branch actually exists.)
     const { projectId, sessionId } = await bootSandbox(ctx);
-    await ctx.step("version-diff main → <sessionId> → 200 summary", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/version-diff", {
-          params: { projectId },
-          query: { from: sessionId, into: "main" },
-        });
-      r.status(200).body().exists("$.files_changed").has("$.from", sessionId).has("$.into", "main");
+    await ctx.step('version-diff main → <sessionId> → 200 summary', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/version-diff', {
+        params: { projectId },
+        query: { from: sessionId, into: 'main' },
+      });
+      r.status(200).body().exists('$.files_changed').has('$.from', sessionId).has('$.into', 'main');
     });
-    await ctx.step("the `head`/`base` aliases work identically", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/version-diff", {
-          params: { projectId },
-          query: { head: sessionId, base: "main" },
-        });
-      r.status(200).body().exists("$.files_changed");
+    await ctx.step('the `head`/`base` aliases work identically', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/version-diff', {
+        params: { projectId },
+        query: { head: sessionId, base: 'main' },
+      });
+      r.status(200).body().exists('$.files_changed');
     });
-    await ctx.step("missing into/base → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/version-diff", { params: { projectId }, query: { from: sessionId } });
+    await ctx.step('missing into/base → 400', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/version-diff', {
+        params: { projectId },
+        query: { from: sessionId },
+      });
       r.status(400);
     });
   },
@@ -682,55 +938,55 @@ flow(
 // tree is ephemeral. The OpenCode file endpoints live under the proxy catch-all,
 // so they are driven at runtime but not declared as coverage routes.
 flow(
-  "FILE-9",
+  'FILE-9',
   {
-    domain: "files",
-    requires: ["funded", "daytona"],
-    timeoutMs: 360_000,
+    domain: 'files',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 600_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
   async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
+    const { sandboxId } = await bootSandbox(ctx, { readinessTimeoutMs: 420_000 });
     // The daemon file routes 503 ("opencode not ready") until OpenCode is up;
     // block on readiness first.
     await createOcConversation(ctx, sandboxId);
     const path = `ke2e-file-${Date.now()}.txt`;
-    const content = "ke2e live file crud";
+    const content = 'ke2e live file crud';
 
-    await ctx.step("create/write a file in the sandbox → 200", async () => {
-      // The daemon file routes are mounted under the proxy; the create/write
-      // verb is a PUT/POST to the file endpoint. We accept the family of success
-      // codes the daemon returns.
+    await ctx.step('upload a file into the sandbox workspace → 200', async () => {
+      // The daemon owns writes through multipart POST /file/upload. A raw PUT
+      // /file is not a write contract and falls through to the OpenCode SPA.
+      const form = new FormData();
+      form.append('path', '.');
+      form.append('file', new File([content], path, { type: 'text/plain' }));
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .request("PUT", ocPath(sandboxId, `/file?path=${encodeURIComponent(path)}`), {
-          body: content,
-          raw: true,
-        });
-      r.status([200, 201, 204]);
+        .request('POST', ocPath(sandboxId, '/file/upload'), { body: form });
+      r.status(200).body().has('$[0].size', content.length);
     });
-    await ctx.step("read it back → 200 with the content", async () => {
+    await ctx.step('read it back → 200 with the content', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
-      r.status([200, 204]);
-      if (r.statusCode === 200 && r.text()) {
-        // Structural: the written bytes round-trip (not an LLM assertion).
-        const seen = r.text().includes(content);
-        void seen;
-      }
+      r.status(200)
+        .body()
+        .has('$.type', 'text')
+        .has('$.content', content)
+        .has('$.size', content.length);
     });
-    await ctx.step("list the directory → 200", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, "/file?path=."));
+    await ctx.step('list the directory → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, '/file?path=.'));
       r.status([200, 204]);
     });
-    await ctx.step("delete it → 200", async () => {
+    await ctx.step('delete it → 200', async () => {
       // The daemon's DELETE /file takes the path in a JSON body { path }, not a
       // query param (routes/files.ts: `app.delete('/', … req.json().path`).
-      const r = await ctx.client.as(ctx.P.OWNER).del(ocPath(sandboxId, "/file"), { body: { path } });
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del(ocPath(sandboxId, '/file'), { body: { path } });
       r.status([200, 204, 404]);
     });
   },
@@ -742,41 +998,53 @@ flow(
 // the CLI suite; here we provision the project + session via fixtures, run the
 // agent, open a CR, preview, and merge).
 flow(
-  "GOLD-1",
+  'GOLD-1',
   {
-    domain: "golden",
-    requires: ["funded", "daytona"],
+    domain: 'golden',
+    requires: ['funded', 'daytona'],
     serial: true,
     timeoutMs: 600_000,
     routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
-      "GET /v1/projects/:projectId/snapshots",
-      "POST /v1/projects/:projectId/change-requests",
-      "GET /v1/projects/:projectId/change-requests/:crId/merge-preview",
-      "POST /v1/projects/:projectId/change-requests/:crId/merge",
-      "DELETE /v1/projects/:projectId/sessions/:sessionId",
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
+      'GET /v1/projects/:projectId/snapshots',
+      'POST /v1/projects/:projectId/change-requests',
+      'GET /v1/projects/:projectId/change-requests/:crId/merge-preview',
+      'POST /v1/projects/:projectId/change-requests/:crId/merge',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project({ seed: true });
 
-    await ctx.step("a ready snapshot exists for the base ref", async () => {
+    await ctx.step('a ready snapshot exists for the base ref', async () => {
       await waitFor(
         async () => {
           const r = await ctx.client
             .as(ctx.P.OWNER)
-            .get("/v1/projects/:projectId/snapshots", { params: { projectId: project.id } });
+            .get('/v1/projects/:projectId/snapshots', { params: { projectId: project.id } });
           return r.statusCode === 200 ? r.json<any>() : null;
         },
         {
           until: (body) => {
             // GET /snapshots returns { templates: [{ ready, daytona_state, … }], builds: [] }.
             // A template is usable when ready===true (or its provider state is active).
-            const templates = body?.templates ?? (Array.isArray(body) ? body : body?.snapshots ?? []);
+            const templates =
+              body?.templates ?? (Array.isArray(body) ? body : (body?.snapshots ?? []));
             return (
               Array.isArray(templates) &&
-              templates.some((t: any) => t?.ready === true || t?.status === "ready" || t?.provider_state === "active")
+              templates.some(
+                (t: any) =>
+                  t?.ready === true ||
+                  t?.status === 'ready' ||
+                  t?.provider_state === 'active' ||
+                  (Array.isArray(t?.provider_coverage) &&
+                    t.provider_coverage.some(
+                      (provider: any) =>
+                        provider?.launch_ready === true || provider?.status === 'ready',
+                    )),
+              )
             );
           },
           timeoutMs: 480_000,
@@ -786,65 +1054,65 @@ flow(
       );
     });
 
-    const session = await ctx.fixtures.session(project, { prompt: "add a README.md describing this project" });
-    let sandboxId = "";
-    await ctx.step("session sandbox boots to active", async () => {
-      const sandbox = await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get("/v1/projects/:projectId/sessions/:sessionId/sandbox", {
-              params: { projectId: project.id, sessionId: session.id },
-            });
-          if (r.statusCode === 404) return { status: "pending" } as any;
-          return r.json<any>();
-        },
-        {
-          until: (s) => s?.status === "active" && Boolean(s?.external_id ?? s?.externalId),
-          timeoutMs: 360_000,
-          intervalMs: 4_000,
-          description: `sandbox active for golden session ${session.id}`,
-        },
-      );
+    const session = await ctx.fixtures.session(project, {
+      prompt: 'add a README.md describing this project',
+    });
+    let sandboxId = '';
+    await ctx.step('session sandbox boots to active', async () => {
+      const sandbox = (await waitForSessionReady(ctx, project.id, session.id)).sandbox;
       sandboxId = String(sandbox.external_id ?? sandbox.externalId);
     });
 
-    await ctx.step("agent produces output (a message appears)", async () => {
+    const goldenPath = `golden-e2e-${Date.now()}.md`;
+    const goldenMarker = `golden-e2e-${crypto.randomUUID()}`;
+    await ctx.step('agent writes the requested file and produces output', async () => {
       const ocId = await createOcConversation(ctx, sandboxId);
-      await ctx.client
+      await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
+        parts: [
+          {
+            type: 'text',
+            text: `Create the file ${goldenPath} containing exactly this single line: ${goldenMarker}. Use the file-writing tool; do not merely describe the change.`,
+          },
+        ],
+      });
+      await waitForAssistantOutput(ctx, sandboxId, ocId);
+      const file = await ctx.client
         .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: "text", text: "Create README.md with a one-line description and commit it." }],
-        });
-      await waitFor(
-        async () => {
-          const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${ocId}/message`));
-          return r.statusCode === 200 ? r.json<any>() : null;
-        },
-        {
-          until: (m) => Array.isArray(m) && m.length > 0,
-          timeoutMs: 240_000,
-          intervalMs: 5_000,
-          description: "agent produced at least one message",
-        },
-      );
+        .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(goldenPath)}`));
+      file
+        .status(200)
+        .body()
+        .matches('$.content', new RegExp(`^${goldenMarker}\\n?$`));
     });
 
-    let crId = "";
-    await ctx.step("open a change request from the session branch → 201", async () => {
-      // The agent commit is async + LLM-bound: a message appearing doesn't mean
-      // it has committed yet. A CR can only open once the branch has a diff vs
-      // base, so poll the open until it succeeds (the agent committed) — retrying
-      // the 400 "no diff" for a few minutes — then skip if it never commits.
+    await ctx.step("commit and push the agent's workspace change", async () => {
+      const committed = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/sessions/:sessionId/commit-push',
+          { message: 'Add golden end-to-end fixture' },
+          { params: { projectId: project.id, sessionId: session.id } },
+        );
+      committed.status(200).body().has('$.pushed', true);
+    });
+
+    let crId = '';
+    await ctx.step('open a change request from the session branch → 201', async () => {
+      // The host commit-push invalidates the mirror immediately, but tolerate
+      // a brief provider-ref propagation window before asserting the CR.
       const r = await waitFor(
         async () => {
-          const resp = await ctx.client.as(ctx.P.OWNER).post(
-            "/v1/projects/:projectId/change-requests",
-            { head_ref: session.id, title: ctx.fixtures.name("golden-cr") },
-            { params: { projectId: project.id } },
-          );
-          // 400 = branch has no committable diff yet; keep waiting.
-          return resp.statusCode === 400 ? null : resp;
+          const resp = await ctx.client
+            .as(ctx.P.OWNER)
+            .post(
+              '/v1/projects/:projectId/change-requests',
+              { head_ref: session.id, title: ctx.fixtures.name('golden-cr') },
+              { params: { projectId: project.id } },
+            );
+          // The branch can be unknown briefly (400), or exist without being
+          // ahead of base yet (422 CR_HEAD_NOT_AHEAD). Both mean the async
+          // agent commit is not observable yet, so keep polling.
+          return resp.statusCode === 400 || resp.statusCode === 422 ? null : resp;
         },
         {
           until: (resp) => Boolean(resp),
@@ -852,36 +1120,38 @@ flow(
           intervalMs: 6_000,
           description: `session branch ${session.id} has a committable diff (agent committed)`,
         },
-      ).catch(() => null);
+      );
 
-      if (!r) ctx.skip("agent produced no committable diff within 4min — nothing to merge");
-      r!.status(201);
-      crId = r!.json<any>()?.change_request?.id ?? r!.json<any>()?.id ?? "";
-      if (crId) ctx.track("change-request", crId, { projectId: project.id });
+      if (!r) throw new Error('change request did not become observable');
+      r.status(201);
+      crId = r.json<any>()?.change_request?.id ?? r.json<any>()?.cr_id ?? r.json<any>()?.id ?? '';
+      if (crId) ctx.track('change-request', crId, { projectId: project.id });
     });
 
-    await ctx.step("merge-preview reports mergeable", async () => {
+    await ctx.step('merge-preview reports mergeable', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/change-requests/:crId/merge-preview", {
+        .get('/v1/projects/:projectId/change-requests/:crId/merge-preview', {
           params: { projectId: project.id, crId },
         });
       r.status(200);
     });
 
-    await ctx.step("merge the CR → 200 merged", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/change-requests/:crId/merge", {}, {
+    await ctx.step('merge the CR → 200 merged', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/change-requests/:crId/merge',
+        {},
+        {
           params: { projectId: project.id, crId },
-        });
-      r.status(200).body().has("$.change_request.status", "merged");
+        },
+      );
+      r.status(200).body().has('$.change_request.status', 'merged');
     });
 
-    await ctx.step("delete the session → 200 stopped (branch preserved)", async () => {
+    await ctx.step('delete the session → 200 stopped (branch preserved)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/sessions/:sessionId", {
+        .del('/v1/projects/:projectId/sessions/:sessionId', {
           params: { projectId: project.id, sessionId: session.id },
         });
       r.status(200);
@@ -908,63 +1178,60 @@ flow(
 // install gate (404) is asserted. This flow is gated on funded+daytona because a
 // successful dispatch spins a real sandbox.
 flow(
-  "CHN-6",
+  'CHN-6',
   {
-    domain: "channels",
-    requires: ["funded", "daytona"],
+    domain: 'channels',
+    requires: ['funded', 'daytona'],
     serial: true,
     timeoutMs: 240_000,
-    routes: [
-      "POST /v1/webhooks/slack/:projectId",
-      "GET /v1/projects/:projectId/sessions",
-    ],
+    routes: ['POST /v1/webhooks/slack/:projectId', 'GET /v1/projects/:projectId/sessions'],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
     const event = {
-      type: "event_callback",
+      type: 'event_callback',
       event_id: `Ev${Date.now()}`,
-      team_id: "T_KE2E",
+      team_id: 'T_KE2E',
       event: {
-        type: "app_mention",
-        user: "U_KE2E",
-        text: "<@U_BOT> please add a changelog entry",
-        channel: "C_KE2E",
+        type: 'app_mention',
+        user: 'U_KE2E',
+        text: '<@U_BOT> please add a changelog entry',
+        channel: 'C_KE2E',
         ts: `${Date.now() / 1000}`,
       },
     };
 
-    await ctx.step("app_mention to the BYO webhook reaches the dispatch boundary", async () => {
+    await ctx.step('app_mention to the BYO webhook reaches the dispatch boundary', async () => {
       // No valid per-project signing secret is stored (connect needs real Slack),
       // so the documented boundary is: 404 (no install) is the deterministic
       // outcome here; 200 {ok:true} only if a real install+signature exist on the
       // target. Either proves we hit the real BYO dispatch route.
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/webhooks/slack/:projectId", event, { params: { projectId: project.id } });
+        .post('/v1/webhooks/slack/:projectId', event, { params: { projectId: project.id } });
       r.status([200, 401, 404]);
       if (r.statusCode !== 200) {
         ctx.skip(
-          "no real Slack install on this target — dispatch (createProjectSession) " +
-            "requires a connected workspace; asserted the BYO webhook install gate instead",
+          'no real Slack install on this target — dispatch (createProjectSession) ' +
+            'requires a connected workspace; asserted the BYO webhook install gate instead',
         );
       }
-      r.body().has("$.ok", true);
+      r.body().has('$.ok', true);
     });
 
-    await ctx.step("a slack-sourced session is created for the project", async () => {
+    await ctx.step('a slack-sourced session is created for the project', async () => {
       // Only reached when the webhook returned 200 (a real install dispatched).
       await waitFor(
         async () => {
           const r = await ctx.client
             .as(ctx.P.OWNER)
-            .get("/v1/projects/:projectId/sessions", { params: { projectId: project.id } });
+            .get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } });
           return r.statusCode === 200 ? r.json<any>() : null;
         },
         {
           until: (body) => {
             const list = Array.isArray(body) ? body : (body?.sessions ?? []);
-            return Array.isArray(list) && list.some((s: any) => s?.metadata?.source === "slack");
+            return Array.isArray(list) && list.some((s: any) => s?.metadata?.source === 'slack');
           },
           timeoutMs: 120_000,
           intervalMs: 4_000,

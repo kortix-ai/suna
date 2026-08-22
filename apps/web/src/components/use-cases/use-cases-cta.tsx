@@ -1,5 +1,5 @@
+import { ArrowRightIcon as HiArrowRight } from '@/lib/icons/ssr';
 import Link from 'next/link';
-import { HiArrowRight } from 'react-icons/hi2';
 
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,7 @@ import KortixGrid from '@/components/ui/marketing/gridder';
  */
 export function UseCasesCta() {
   return (
-    <section className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
+    <section className="relative mx-auto max-w-6xl px-6 py-24 md:py-30 lg:px-0">
       <Reveal>
         <div className="border-border bg-card relative overflow-hidden rounded-sm border">
           <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
@@ -38,7 +38,7 @@ export function UseCasesCta() {
                     <HiArrowRight className="size-4" />
                   </Link>
                 </Button>
-                <Button asChild size="lg" variant="accent" className="w-full">
+                <Button asChild size="lg" variant="secondary" className="w-full">
                   <Link href="/enterprise">Talk to sales</Link>
                 </Button>
               </div>

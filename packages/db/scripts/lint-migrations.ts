@@ -4,6 +4,12 @@ import { join } from 'node:path';
 
 const DIR = join(import.meta.dir, '..', 'migrations');
 const GRANDFATHER_FILE = join(import.meta.dir, '..', 'grandfathered-migrations.json');
+const BACKFILL_GRANDFATHER_FILE = join(import.meta.dir, '..', 'backfill-grandfathered-migrations.json');
+const CONCURRENT_LOCK_TIMEOUT_GRANDFATHER_FILE = join(
+  import.meta.dir,
+  '..',
+  'concurrent-lock-timeout-grandfathered-migrations.json',
+);
 // Two valid migration file shapes:
 //  - <ts>_<slug>.sql            hand-written or drizzle-generated, runs inside
 //                                the batch transaction (see MIGRATIONS.md).
@@ -44,6 +50,67 @@ const MIXED_VERSION_ANNOTATION_RE = /(?:--|\/\/)\s*mixed-version-safe\s*:\s*\S/i
 // acknowledgement comment rather than relying on memory.
 const ENUM_ADD_VALUE_RE = /\balter\s+type\b[\s\S]*?\badd\s+value\b/i;
 const ENUM_ANNOTATION_RE = /(?:--|\/\/)\s*enum-value-checked\s*:\s*\S/i;
+
+// `pgm.noTransaction()` exists for TWO reasons, not one. The first is
+// CONCURRENTLY, which cannot run inside a transaction. The second is the
+// remedy MIGRATIONS.md prescribes for the 2026-08-10 centralized_audit_v2
+// outage: "write data moves as batched, incrementally-committed .concurrent.ts
+// passes" — a batch only commits, and only releases its row locks, because the
+// file opted out of the wrapping transaction. Such a file legitimately contains
+// no CONCURRENTLY statement, so it declares itself with
+// `// batched-dml: <what is batched, batch size, bound on row count>` instead.
+const BATCHED_DML_ANNOTATION_RE = /(?:--|\/\/)\s*batched-dml\s*:\s*\S/i;
+
+// CREATE INDEX CONCURRENTLY cannot land on a live database under the 2-5s
+// `lock_timeout` a plain .sql migration uses. CIC has to wait for EVERY
+// transaction that began before it (a ShareLock on each one's virtual
+// transaction id), both before it starts and before it finishes, and
+// `lock_timeout` governs that wait — table size is irrelevant. On prod, where
+// audit_events takes a write on nearly every request and session turns run for
+// seconds, some transaction outlives a 5s budget almost every time: the build
+// is cancelled with 55P03 and leaves an INVALID index that makes a plain re-run
+// fail with "already exists".
+//
+// The house 2-5s value exists to stop DDL blocking prod. It does not apply
+// here: the only lock a CIC holds (ShareUpdateExclusive on the table) excludes
+// other DDL and VACUUM, never queries or writes, so a long wait blocks no user.
+//
+// Incident: v0.13.0 deploy-prod run 32248002434 failed its migration job TWICE
+// on `.concurrent` migrations that set `lock_timeout = '5s'` — once on a
+// 6-row/80 kB table, which is what proved size was not the variable.
+const MIN_CONCURRENT_LOCK_TIMEOUT_MS = 120_000;
+const LOCK_TIMEOUT_RE = /\bset\s+lock_timeout\s*(?:=|\s+to\s+)\s*(?:'([^']*)'|([A-Za-z0-9]+))/gi;
+
+/**
+ * Postgres duration -> milliseconds. A bare number is milliseconds; `0` (in any
+ * unit) disables the timeout entirely, which is the SAFEST setting for a CIC.
+ * Returns null for anything unrecognized, which the caller reports rather than
+ * silently passing.
+ */
+export function parseLockTimeoutMs(raw: string): number | null {
+  const match = /^(\d+)\s*(us|ms|s|min|h|d)?$/.exec(raw.trim().toLowerCase());
+  if (!match) return null;
+  const value = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(value)) return null;
+  if (value === 0) return Number.POSITIVE_INFINITY;
+  switch (match[2]) {
+    case 'us':
+      return value / 1000;
+    case undefined:
+    case 'ms':
+      return value;
+    case 's':
+      return value * 1000;
+    case 'min':
+      return value * 60_000;
+    case 'h':
+      return value * 3_600_000;
+    case 'd':
+      return value * 86_400_000;
+    default:
+      return null;
+  }
+}
 
 export interface LintResult {
   errors: string[];
@@ -118,10 +185,50 @@ function checkMixedVersionAndEnum(
   return errors;
 }
 
+/**
+ * The CIC lock_timeout floor.
+ *
+ * Applies ONLY to files that actually run a CONCURRENTLY operation. A
+ * .concurrent.ts that exists for a batched DML pass (`// batched-dml:`) holds
+ * ROW locks, so a long lock_timeout there really would queue writers behind it
+ * — the short house value is correct for that file, and the CIC rationale is
+ * exactly inverted.
+ */
+function checkConcurrentLockTimeout(
+  filename: string,
+  scanText: string,
+  grandfathered: boolean,
+): string[] {
+  if (grandfathered) return [];
+  if (!/\bconcurrently\b/i.test(scanText)) return [];
+
+  const errors: string[] = [];
+  for (const match of scanText.matchAll(LOCK_TIMEOUT_RE)) {
+    const literal = (match[1] ?? match[2] ?? '').trim();
+    const ms = parseLockTimeoutMs(literal);
+
+    if (ms === null) {
+      errors.push(
+        `${filename}: sets lock_timeout to an unrecognized value ('${literal}'). Use a plain Postgres duration (e.g. '180s' or '3min') so the CONCURRENTLY floor can be checked.`,
+      );
+      continue;
+    }
+    if (ms < MIN_CONCURRENT_LOCK_TIMEOUT_MS) {
+      errors.push(
+        `${filename}: sets lock_timeout = '${literal}' in a CONCURRENTLY migration, below the ${MIN_CONCURRENT_LOCK_TIMEOUT_MS / 1000}s floor. ` +
+          'CREATE/DROP INDEX CONCURRENTLY must wait for every transaction that began before it, and lock_timeout governs that wait — on live prod some transaction outlives a short budget almost every time, whatever the table size, so the build is cancelled with 55P03 and leaves an INVALID index behind (v0.13.0 deploy-prod run 32248002434, which failed this way on a 6-row table). ' +
+          "The short house value guards DDL that blocks queries; a CONCURRENTLY build holds only ShareUpdateExclusive and blocks no user. Use `set lock_timeout = '180s'` (what `pnpm migrate:create <slug> --concurrent` now scaffolds), or '0' to wait indefinitely.",
+      );
+    }
+  }
+  return errors;
+}
+
 function lintConcurrentMigration(
   filename: string,
   raw: string,
   grandfathered: boolean,
+  lockTimeoutGrandfathered: boolean,
 ): LintResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -140,9 +247,9 @@ function lintConcurrentMigration(
       `${filename}: a .concurrent.ts migration must call \`pgm.noTransaction()\` — that's the entire reason this file isn't plain SQL. If this migration doesn't need CONCURRENTLY, write it as a normal .sql migration instead.`,
     );
   }
-  if (!/\bconcurrently\b/i.test(raw)) {
+  if (!/\bconcurrently\b/i.test(raw) && !BATCHED_DML_ANNOTATION_RE.test(raw)) {
     errors.push(
-      `${filename}: a .concurrent.ts migration should contain a CONCURRENTLY operation (CREATE/DROP INDEX CONCURRENTLY, REINDEX CONCURRENTLY, ALTER TABLE ... DETACH PARTITION CONCURRENTLY). Opting out of the wrapping transaction loses the all-or-nothing guarantee — don't use this escape hatch for anything else.`,
+      `${filename}: a .concurrent.ts migration must either contain a CONCURRENTLY operation (CREATE/DROP INDEX CONCURRENTLY, REINDEX CONCURRENTLY, ALTER TABLE ... DETACH PARTITION CONCURRENTLY) or declare a batched data pass with \`// batched-dml: <what is batched, batch size, bound on row count>\`. Opting out of the wrapping transaction loses the all-or-nothing guarantee — don't use this escape hatch for anything else.`,
     );
   }
   if (!/\bexport\s+const\s+up\b|\bexport\s+function\s+up\b/.test(raw)) {
@@ -174,6 +281,9 @@ function lintConcurrentMigration(
   }
 
   errors.push(...checkMixedVersionAndEnum(filename, stripComments(raw), raw, grandfathered));
+  errors.push(
+    ...checkConcurrentLockTimeout(filename, stripComments(raw), lockTimeoutGrandfathered),
+  );
 
   return { errors, warnings };
 }
@@ -186,11 +296,30 @@ export interface LintOptions {
    * new migration (anything not in the list) gets full enforcement.
    */
   grandfathered?: boolean;
+  /**
+   * Same contract, separate cutoff: migrations that existed before the
+   * backfill-DML guard landed (2026-08-10, centralized_audit_v2 outage) —
+   * see backfill-grandfathered-migrations.json.
+   */
+  backfillGrandfathered?: boolean;
+  /**
+   * Same contract, separate cutoff: .concurrent.ts migrations that existed
+   * before the CONCURRENTLY lock_timeout floor landed (2026-08-19, v0.13.0
+   * deploy-prod run 32248002434) — see
+   * concurrent-lock-timeout-grandfathered-migrations.json. They are immutable
+   * and already applied; the floor governs every new one.
+   */
+  concurrentLockTimeoutGrandfathered?: boolean;
 }
 
 export function lintMigration(filename: string, raw: string, options: LintOptions = {}): LintResult {
   if (CONCURRENT_NAME_RE.test(filename)) {
-    return lintConcurrentMigration(filename, raw, options.grandfathered ?? false);
+    return lintConcurrentMigration(
+      filename,
+      raw,
+      options.grandfathered ?? false,
+      options.concurrentLockTimeoutGrandfathered ?? false,
+    );
   }
 
   const errors: string[] = [];
@@ -252,6 +381,31 @@ export function lintMigration(filename: string, raw: string, options: LintOption
     );
   }
 
+  // Backfill guard (2026-08-10 v0.12.7 prod outage). A plain .sql migration
+  // runs in ONE transaction, so its ALTER TABLE statements hold ACCESS
+  // EXCLUSIVE on the target table until COMMIT — and any top-level DML in the
+  // same file turns those milliseconds of lock into the full backfill
+  // duration. centralized_audit_v2 updated all 30.5M rows of the hottest
+  // table this way and every audit-writing request hung for ~15 minutes.
+  // Data moves belong in batched, incrementally-committed passes (a
+  // .concurrent.ts noTransaction migration or an out-of-band runbook), or
+  // must be explicitly signed off as bounded.
+  if (!(options.grandfathered ?? false) && !(options.backfillGrandfathered ?? false)) {
+    // Dollar-quoted function bodies may legitimately contain DML (triggers);
+    // drizzle appends `--> statement-breakpoint` on the statement line itself,
+    // so it survives the line-based comment strip and must go too.
+    const upNoBodies = upStripped
+      .replace(/\$[a-zA-Z_]*\$[\s\S]*?\$[a-zA-Z_]*\$/g, "'body'")
+      .replace(/-->\s*statement-breakpoint/g, '');
+    const dml = upNoBodies.match(/(?:^|;)\s*(UPDATE\s|DELETE\s+FROM\s|INSERT\s+INTO\s|MERGE\s+INTO\s|WITH\s)/i);
+    if (dml && !/(?:--|\/\/)\s*backfill-safe\s*:\s*\S/i.test(up)) {
+      errors.push(
+        `${filename}: top-level DML (${dml[1].trim().toUpperCase()}…) in a single-transaction .sql migration. The file's DDL holds ACCESS EXCLUSIVE until COMMIT, so this backfill blocks every writer on the table for its whole duration — this is exactly the 2026-08-10 centralized_audit_v2 prod outage. ` +
+          'Move the data pass into a batched .concurrent.ts migration or an out-of-band runbook, or add a `-- backfill-safe: <table + bounded row count + why writers cannot queue behind it>` sign-off.',
+      );
+    }
+  }
+
   // Mixed-version guard + enum-value guard (shared with .concurrent.ts — see
   // checkMixedVersionAndEnum). Exempt for pre-existing (grandfathered)
   // migrations — see grandfathered-migrations.json.
@@ -271,10 +425,32 @@ function loadGrandfatherSet(): Set<string> {
   }
 }
 
+function loadBackfillGrandfatherSet(): Set<string> {
+  try {
+    const data = JSON.parse(readFileSync(BACKFILL_GRANDFATHER_FILE, 'utf8')) as { files: string[] };
+    return new Set(data.files);
+  } catch {
+    return new Set();
+  }
+}
+
+function loadConcurrentLockTimeoutGrandfatherSet(): Set<string> {
+  try {
+    const data = JSON.parse(readFileSync(CONCURRENT_LOCK_TIMEOUT_GRANDFATHER_FILE, 'utf8')) as {
+      files: string[];
+    };
+    return new Set(data.files);
+  } catch {
+    return new Set();
+  }
+}
+
 function main(): void {
   const errors: string[] = [];
   const warnings: string[] = [];
   const grandfathered = loadGrandfatherSet();
+  const backfillGrandfathered = loadBackfillGrandfatherSet();
+  const lockTimeoutGrandfathered = loadConcurrentLockTimeoutGrandfatherSet();
   const files = readdirSync(DIR)
     .filter((f) => f.endsWith('.sql') || f.endsWith('.concurrent.ts'))
     .sort();
@@ -283,6 +459,8 @@ function main(): void {
   for (const f of files) {
     const { errors: e, warnings: w } = lintMigration(f, readFileSync(join(DIR, f), 'utf8'), {
       grandfathered: grandfathered.has(f),
+      backfillGrandfathered: backfillGrandfathered.has(f),
+      concurrentLockTimeoutGrandfathered: lockTimeoutGrandfathered.has(f),
     });
     errors.push(...e);
     warnings.push(...w);

@@ -20,19 +20,27 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useOpenCodeConfig, useUpdateOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
+import { useRuntimeConfig, useUpdateRuntimeConfig } from '@kortix/sdk/react';
 import {
   allowAllPermissionsForSession,
   resetSessionPermissions,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
-import { ShieldCheck } from 'lucide-react';
+import {
+  CaretDownIcon,
+  ShieldCheckIcon as ShieldCheck,
+  ShieldWarningIcon as ShieldAlert,
+} from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+
+/** Full-text review is only worth an extra click for a detail that won't fit
+ * on one line — short commands stay flat, no chevron. */
+const EXPANDABLE_DETAIL_LENGTH = 64;
 
 interface SessionPermissionPromptProps {
   /** The OPENCODE session id (what `PermissionRequest.sessionID` carries). */
@@ -54,6 +62,57 @@ function permissionDetail(p: PermissionRequest): string | null {
   return typeof title === 'string' ? title : null;
 }
 
+/** Wraps a permission detail: a real toggle when there is more to reveal,
+ *  inert markup when the detail already fits on one line. */
+function DetailShell({
+  expandable,
+  expanded,
+  onToggle,
+  children,
+}: {
+  expandable: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  if (!expandable) {
+    return <div className="mt-0.5 flex w-full items-start gap-1 text-left">{children}</div>;
+  }
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      onClick={onToggle}
+      className="mt-0.5 flex w-full cursor-pointer items-start gap-1 text-left"
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * A button label that swaps to a spinner IN PLACE.
+ *
+ * Inserting a spinner alongside the label widens the button mid-press. On this
+ * card the three decision buttons sit shoulder to shoulder, so a widening
+ * "Deny" slides "Allow once" under a cursor that is still on its way down — a
+ * mis-click here grants access. Keeping the label in flow (`invisible`, not
+ * unmounted) holds the button at exactly its resting width while the reply is
+ * in flight.
+ */
+function PendingLabel({ pending, children }: { pending: boolean; children: ReactNode }) {
+  return (
+    <span className="relative inline-flex items-center justify-center">
+      <span className={cn('inline-flex items-center', pending && 'invisible')}>{children}</span>
+      {pending ? (
+        <span className="absolute inset-0 inline-flex items-center justify-center">
+          <Loading className="size-3 shrink-0" />
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 export function SessionPermissionPrompt({
   sessionId,
   permissions,
@@ -65,15 +124,25 @@ export function SessionPermissionPrompt({
   const projectId = params?.sessionId ? params.id : undefined;
   const canWriteConfig = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
-  const autoApprove = useOpenCodePendingStore((s) => !!s.autoApproveAllSessions[sessionId]);
-  const setAutoApproveAll = useOpenCodePendingStore((s) => s.setAutoApproveAll);
+  const autoApprove = useRuntimePendingStore((s) => !!s.autoApproveAllSessions[sessionId]);
+  const setAutoApproveAll = useRuntimePendingStore((s) => s.setAutoApproveAll);
 
-  const { data: config } = useOpenCodeConfig();
-  const updateConfig = useUpdateOpenCodeConfig();
+  const { data: config } = useRuntimeConfig();
+  const updateConfig = useUpdateRuntimeConfig();
 
   // Which button is loading: `${requestId}:once|always|reject`, 'session-all',
   // or `config:${type}` / 'config:*'.
   const [busy, setBusy] = useState<string | null>(null);
+  // Request ids currently showing their full (untruncated) detail text.
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const toggleExpanded = useCallback((requestId: string) => {
+    setExpandedRows((current) => {
+      const next = new Set(current);
+      if (next.has(requestId)) next.delete(requestId);
+      else next.add(requestId);
+      return next;
+    });
+  }, []);
 
   const reply = useCallback(
     async (requestId: string, kind: 'once' | 'always' | 'reject') => {
@@ -181,9 +250,9 @@ export function SessionPermissionPrompt({
 
   if (autoApprove) {
     return (
-      <div className="border-border/60 bg-muted/40 mb-2 flex items-center gap-2 rounded-xl border px-3 py-1.5">
-        <ShieldCheck className="text-muted-foreground size-3.5" />
-        <span className="text-muted-foreground flex-1 text-[11px]">
+      <div className="border-border bg-popover mb-2 flex items-center gap-2 rounded-md border px-3 py-2">
+        <ShieldCheck className="text-kortix-green size-4" />
+        <span className="text-muted-foreground flex-1 text-xs">
           Auto-allowing all permission requests for this session
         </span>
         <Button size="xs" variant="ghost" onClick={() => void turnOffAutoApprove()}>
@@ -196,54 +265,75 @@ export function SessionPermissionPrompt({
   if (permissions.length === 0) return null;
 
   return (
-    <div className="mb-2 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20">
-      <div className="flex items-center gap-2 border-amber-500/20 border-b px-3 py-1.5">
-        <ShieldCheck className="size-3.5 text-amber-600 dark:text-amber-400" />
-        <span className="text-foreground text-xs font-semibold tracking-tight">
+    <div className="bg-popover border-kortix-orange/25 mb-2 overflow-hidden rounded-md border">
+      <div className="border-kortix-orange/20 flex items-center gap-2 border-b px-3 py-2">
+        <ShieldAlert className="text-kortix-orange size-4" />
+        <span className="text-foreground text-xs font-medium">
           {permissions.length === 1
             ? 'The agent needs your permission'
             : `${permissions.length} actions need your permission`}
         </span>
-        <span className="text-muted-foreground text-[11px]">— it's paused until you decide</span>
+        <span className="text-muted-foreground text-xs">— it's paused until you decide</span>
       </div>
-      <ul className="divide-amber-500/15 divide-y">
+      <ul className="divide-border divide-y">
         {permissions.map((p) => {
           const detail = permissionDetail(p);
+          const expandable = !!detail && detail.length > EXPANDABLE_DETAIL_LENGTH;
+          const expanded = expandedRows.has(p.id);
           return (
-            <li key={p.id} className="flex items-center gap-2 px-3 py-2">
+            <li key={p.id} className="flex items-start gap-2 px-3 py-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-foreground text-xs font-medium">{permissionLabel(p)}</span>
                 </div>
                 {detail ? (
-                  <code
-                    title={detail}
-                    className="text-muted-foreground mt-0.5 block truncate font-mono text-[11px]"
+                  // Only a detail that actually expands is a control. Rendering
+                  // the flat case as a `<button>` too put a dead stop in the tab
+                  // order of every permission row.
+                  <DetailShell
+                    expandable={expandable}
+                    expanded={expanded}
+                    onToggle={() => toggleExpanded(p.id)}
                   >
-                    {detail}
-                  </code>
+                    <code
+                      title={expandable ? undefined : detail}
+                      className={cn(
+                        'text-muted-foreground font-mono text-xs',
+                        expanded ? 'wrap-break-word whitespace-pre-wrap' : 'truncate',
+                      )}
+                    >
+                      {detail}
+                    </code>
+                    {expandable ? (
+                      <CaretDownIcon
+                        className={cn(
+                          'text-muted-foreground mt-0.5 size-3 shrink-0 transition-transform duration-150',
+                          expanded && 'rotate-180',
+                        )}
+                      />
+                    ) : null}
+                  </DetailShell>
                 ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 <Button
                   size="xs"
-                  variant="muted"
-                  className={cn('hover:bg-destructive/10 hover:text-destructive')}
+                  variant="outline"
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'reject')}
                 >
-                  {busy === `${p.id}:reject` ? <Loading className="size-3 animate-spin" /> : null}
-                  Deny
+                  <PendingLabel pending={busy === `${p.id}:reject`}>Deny</PendingLabel>
                 </Button>
                 <Button
                   size="xs"
-                  variant="outline"
+                  variant="muted"
                   title="Allow this action for the rest of this session — the agent won't ask again for it"
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'always')}
                 >
-                  {busy === `${p.id}:always` ? <Loading className="size-3 animate-spin" /> : null}
-                  Allow for session
+                  <PendingLabel pending={busy === `${p.id}:always`}>
+                    Allow for session
+                  </PendingLabel>
                 </Button>
                 <Button
                   size="xs"
@@ -251,32 +341,31 @@ export function SessionPermissionPrompt({
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'once')}
                 >
-                  {busy === `${p.id}:once` ? <Loading className="size-3 animate-spin" /> : null}
-                  Allow once
+                  <PendingLabel pending={busy === `${p.id}:once`}>Allow once</PendingLabel>
                 </Button>
               </div>
             </li>
           );
         })}
       </ul>
-      <div className="flex items-center gap-2 border-amber-500/15 border-t px-3 py-1.5">
-        <span className="text-muted-foreground text-[11px]">This session:</span>
+      <div className="border-border flex items-center gap-2 border-t px-3 py-2">
+        <span className="text-muted-foreground text-xs">This session:</span>
         <Button
           size="xs"
           variant="ghost"
+          className="text-muted-foreground hover:text-foreground"
           title="Allow every permission request for the rest of this session"
           disabled={!!busy}
           onClick={() => void allowAllForSession()}
         >
-          {busy === 'session-all' ? <Loading className="size-3 animate-spin" /> : null}
-          Allow everything
+          <PendingLabel pending={busy === 'session-all'}>Allow everything</PendingLabel>
         </Button>
       </div>
       {canWriteConfig.allowed ? (
         // Deliberately set apart from the one-off buttons above: these WRITE the
         // project's permission config — every future session stops asking.
-        <div className="bg-muted/40 border-border/40 flex flex-wrap items-center gap-2 border-t px-3 py-1.5">
-          <span className="text-muted-foreground text-[11px]">
+        <div className="bg-muted/40 border-border flex flex-wrap items-center gap-2 border-t px-3 py-2">
+          <span className="text-muted-foreground text-xs">
             Project config <span className="opacity-70">(applies to future sessions)</span>:
           </span>
           {uniqueTypes.map((type) => (
@@ -288,8 +377,9 @@ export function SessionPermissionPrompt({
               disabled={!!busy}
               onClick={() => void allowInConfig(type)}
             >
-              {busy === `config:${type}` ? <Loading className="size-3 animate-spin" /> : null}
-              Always allow "{PERMISSION_LABELS[type] || type}"
+              <PendingLabel pending={busy === `config:${type}`}>
+                Always allow "{PERMISSION_LABELS[type] || type}"
+              </PendingLabel>
             </Button>
           ))}
           <Button
@@ -299,8 +389,7 @@ export function SessionPermissionPrompt({
             disabled={!!busy}
             onClick={() => void allowInConfig('*')}
           >
-            {busy === 'config:*' ? <Loading className="size-3 animate-spin" /> : null}
-            Always allow everything
+            <PendingLabel pending={busy === 'config:*'}>Always allow everything</PendingLabel>
           </Button>
         </div>
       ) : null}

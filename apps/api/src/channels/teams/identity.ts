@@ -2,6 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { accountMembers, chatUserIdentities, projectAccessRequests, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { authorize } from '../../iam';
+import { actorForUser } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
@@ -54,7 +55,11 @@ export async function resolveTeamsActor(
   if (!link) return { reason: 'unlinked' };
 
   if (!(await isAccountMember(link.userId, accountId))) return { reason: 'not_member' };
-  const verdict = await authorize(link.userId, accountId, PROJECT_ACTIONS.PROJECT_WRITE, {
+  // A channel webhook carries no Kortix credential: it acts AS the Kortix user
+  // the Slack/Teams identity is linked to. Role-only is the honest classification
+  // and is exactly the authority this call had when the trailing `actingTokenId`
+  // was omitted.
+  const verdict = await authorize(actorForUser(link.userId, accountId), PROJECT_ACTIONS.PROJECT_WRITE, {
     type: 'project',
     id: projectId,
   });
@@ -179,10 +184,11 @@ export async function createTeamsAccessRequest(input: {
 
   const base = { requesterUserId: identity.userId, accountId: project.accountId };
   if (await isAccountMember(identity.userId, project.accountId)) {
-    const verdict = await authorize(identity.userId, project.accountId, PROJECT_ACTIONS.PROJECT_WRITE, {
-      type: 'project',
-      id: input.projectId,
-    });
+    const verdict = await authorize(
+      actorForUser(identity.userId, project.accountId),
+      PROJECT_ACTIONS.PROJECT_WRITE,
+      { type: 'project', id: input.projectId },
+    );
     if (verdict.allowed) return { status: 'already-member', ...base };
   }
 
@@ -205,7 +211,7 @@ export async function createTeamsAccessRequest(input: {
     projectId: input.projectId,
     requesterUserId: identity.userId,
     requesterEmail: email || identity.userId,
-    message: 'Requested from Microsoft Teams. Approve as Editor so they can run Kortix from Teams.',
+    message: 'Requested from Microsoft Teams. Approve so they can run Kortix from Teams.',
   });
   return { status: 'created', ...base };
 }

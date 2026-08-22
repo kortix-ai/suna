@@ -1,11 +1,19 @@
 import { spawn } from 'node:child_process';
 
-import { OPENCODE_PORT } from '../api/sandbox-proxy.ts';
+import {
+  type RunningOpenCodeProxy,
+  startOpenCodeProxy,
+  unwrapRuntime,
+  withKortixScope,
+} from '../api/sdk.ts';
 import { takeFlagValue } from '../command-helpers.ts';
+import { ensureOpencodeBin, isValidOpencodeVersion } from '../opencode-bin.ts';
 import { C, help, status } from '../style.ts';
+import { pickConnectSessionId } from './home.ts';
 import {
   ensureOpencodeSession,
   loadSessionForChat,
+  type ResolvedSession,
   resolveRunningSessionId,
 } from './sessions-chat.ts';
 
@@ -16,6 +24,14 @@ const CONNECT_HELP = help`Usage: kortix sessions connect [<session-id>] [options
 Attach your local OpenCode TUI to the OpenCode server already running inside a
 Kortix session sandbox. The CLI opens a local loopback proxy, injects your
 Kortix auth token, then runs \`opencode attach\` against it.
+
+With no session id on an interactive terminal, opens a picker: running
+sessions attach immediately, stopped ones are restarted and awaited, and
+"+ New session" provisions a fresh sandbox first.
+
+The \`opencode\` binary is managed for you: the CLI downloads the exact version
+the session's server runs (cached under ~/.kortix/opencode/<version>/) so the
+TUI and server never skew. Set KORTIX_OPENCODE_BIN to force your own binary.
 
 Given a session id, resolves the right host/project on its own: tries the
 active/linked project first, then — unless you pin --host/--project — scans
@@ -64,7 +80,15 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   if (proxyPort === null) return 2;
 
   const opts: CtxOpts = { projectArg, hostArg };
-  const sessionId = await resolveRunningSessionId(positional[0], opts, 'Pick a session to connect to');
+  // No id + a real terminal → the full picker (running, dormant-with-restart,
+  // or a fresh session). Non-TTY keeps the deterministic most-recent-running
+  // resolution so agents / pipes / CI never block on a prompt.
+  const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
+  const sessionId = positional[0]
+    ? positional[0]
+    : tty
+      ? await pickConnectSessionId(opts)
+      : await resolveRunningSessionId(undefined, opts, 'Pick a session to connect to');
   if (!sessionId) return 1;
 
   // A session id may belong to a different project (or host) than the one
@@ -75,12 +99,21 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   const ocSessionId = await ensureOpencodeSession(resolved);
   if (!ocSessionId) return 1;
 
+  // Resolve (and, first time, download) the version-matched binary BEFORE the
+  // proxy exists — a multi-minute download must not sit on an open proxy.
+  let bin: string;
+  try {
+    bin = (await ensureOpencodeBin({ version: await runtimeOpencodeVersion(resolved) })).bin;
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 1;
+  }
+
   let proxy: RunningOpenCodeProxy;
   try {
     proxy = startOpenCodeProxy({
-      apiBase: resolved.auth.api_base,
+      runtimeUrl: resolved.runtimeUrl,
       token: resolved.auth.token,
-      sandboxId: resolved.proxyId,
       port: proxyPort,
     });
   } catch (err) {
@@ -96,9 +129,31 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   );
 
   try {
-    return await spawnOpenCodeAttach(attachCommand);
+    return await spawnOpenCodeAttach(bin, attachCommand);
   } finally {
     proxy.close();
+  }
+}
+
+/**
+ * The version the session's OpenCode server actually runs, from its own
+ * `/global/health` — the sandbox image may be newer or older than this CLI's
+ * baked pin, and the TUI must match the server, not the pin. Falls back to
+ * undefined (→ the runtime-versions pin) when the probe fails.
+ *
+ * The value crosses a trust boundary: it comes from inside the sandbox and
+ * ends up in a download URL and an executable path, so anything that is not
+ * strictly `X.Y.Z(-tag)` is discarded, not truncated.
+ */
+async function runtimeOpencodeVersion(resolved: ResolvedSession): Promise<string | undefined> {
+  try {
+    const health = unwrapRuntime(
+      await withKortixScope(resolved.auth, () => resolved.runtime.global.health()),
+    );
+    const version = (health as { version?: unknown }).version;
+    return typeof version === 'string' && isValidOpencodeVersion(version) ? version : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -112,151 +167,14 @@ function parseConnectPort(raw: string | undefined): number | null {
   return port;
 }
 
-interface RunningOpenCodeProxy {
-  url: string;
-  close(): void;
-}
-
-interface StartOpenCodeProxyOpts {
-  apiBase: string;
-  token: string;
-  sandboxId: string;
-  port?: number;
-}
-
-interface ProxyWsData {
-  upstreamUrl: string;
-  upstream?: WebSocket;
-  ready?: boolean;
-  queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>;
-}
-
-/**
- * Expose the sandbox OpenCode API on localhost so `opencode attach` can use its
- * normal SDK client. The remote API requires Kortix Bearer auth and lives behind
- * `/v1/p/{sandbox}/{4096}`; this proxy hides both details from OpenCode.
- */
-export function startOpenCodeProxy(opts: StartOpenCodeProxyOpts): RunningOpenCodeProxy {
-  const baseHttp = buildProxyBase(opts.apiBase, opts.sandboxId);
-  const baseWs = baseHttp.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
-
-  const server = Bun.serve<ProxyWsData>({
-    hostname: '127.0.0.1',
-    port: opts.port ?? 0,
-    fetch: async (req, bunServer) => {
-      const incoming = new URL(req.url);
-      if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
-        const upstream = new URL(`${baseWs}${incoming.pathname}${incoming.search}`);
-        upstream.searchParams.set('token', opts.token);
-        const upgraded = bunServer.upgrade(req, {
-          data: { upstreamUrl: upstream.toString() },
-        });
-        return upgraded
-          ? undefined
-          : new Response('WebSocket upgrade failed', { status: 500 });
-      }
-
-      const upstream = `${baseHttp}${incoming.pathname}${incoming.search}`;
-      return forwardOpenCodeHttp(req, upstream, opts.token);
-    },
-    websocket: {
-      open(ws) {
-        ws.data.queue = [];
-        ws.data.ready = false;
-        let upstream: WebSocket;
-        try {
-          upstream = new WebSocket(ws.data.upstreamUrl);
-        } catch {
-          try { ws.close(1011, 'upstream connect failed'); } catch {}
-          return;
-        }
-        upstream.binaryType = 'arraybuffer';
-        ws.data.upstream = upstream;
-
-        upstream.onopen = () => {
-          ws.data.ready = true;
-          const queued = ws.data.queue ?? [];
-          ws.data.queue = [];
-          for (const msg of queued) {
-            try { upstream.send(msg as any); } catch {}
-          }
-        };
-        upstream.onmessage = (event: MessageEvent) => {
-          try { ws.send(event.data as any); } catch {}
-        };
-        upstream.onclose = (event: CloseEvent) => {
-          try { ws.close(sanitizeCloseCode(event.code), (event.reason || '').slice(0, 120)); } catch {}
-        };
-        upstream.onerror = () => {
-          try { ws.close(1011, 'upstream error'); } catch {}
-        };
-      },
-      message(ws, message) {
-        const upstream = ws.data.upstream;
-        if (ws.data.ready && upstream?.readyState === WebSocket.OPEN) {
-          try { upstream.send(message as any); } catch {}
-        } else {
-          (ws.data.queue ??= []).push(message);
-        }
-      },
-      close(ws) {
-        try { ws.data.upstream?.close(); } catch {}
-      },
-    },
-  });
-
-  return {
-    url: `http://127.0.0.1:${server.port}`,
-    close: () => server.stop(true),
-  };
-}
-
-async function forwardOpenCodeHttp(
-  req: Request,
-  upstream: string,
-  token: string,
-): Promise<Response> {
-  const headers = new Headers(req.headers);
-  headers.set('Authorization', `Bearer ${token}`);
-  headers.delete('host');
-  headers.delete('connection');
-  headers.delete('content-length');
-
-  let res: Response;
-  try {
-    res = await fetch(upstream, {
-      method: req.method,
-      headers,
-      body: req.method === 'GET' || req.method === 'HEAD' ? undefined : req.body,
-    });
-  } catch (err) {
-    return new Response(`OpenCode proxy upstream error: ${(err as Error).message}`, {
-      status: 502,
-    });
-  }
-
-  const responseHeaders = new Headers(res.headers);
-  responseHeaders.delete('content-encoding');
-  responseHeaders.delete('content-length');
-  return new Response(res.body, {
-    status: res.status,
-    statusText: res.statusText,
-    headers: responseHeaders,
-  });
-}
-
-function buildProxyBase(apiBase: string, sandboxId: string): string {
-  const base = apiBase.replace(/\/+$/, '').replace(/\/v1$/, '');
-  return `${base}/v1/p/${encodeURIComponent(sandboxId)}/${OPENCODE_PORT}`;
-}
-
-function buildAttachArgs(
-  url: string,
-  opencodeSessionId: string,
-  extraArgs: string[],
-): string[] {
+function buildAttachArgs(url: string, opencodeSessionId: string, extraArgs: string[]): string[] {
   const hasContinuation = extraArgs.some(
-    (arg) => arg === '--session' || arg === '-s' || arg.startsWith('--session=') || arg === '--continue' || arg === '-c',
+    (arg) =>
+      arg === '--session' ||
+      arg === '-s' ||
+      arg.startsWith('--session=') ||
+      arg === '--continue' ||
+      arg === '-c',
   );
   return [
     'attach',
@@ -266,8 +184,7 @@ function buildAttachArgs(
   ];
 }
 
-function spawnOpenCodeAttach(args: string[]): Promise<number> {
-  const bin = process.env.KORTIX_OPENCODE_BIN || 'opencode';
+function spawnOpenCodeAttach(bin: string, args: string[]): Promise<number> {
   const child = spawn(bin, args, { stdio: 'inherit' });
   return new Promise((resolve) => {
     child.on('error', (err) => {
@@ -282,11 +199,4 @@ function spawnOpenCodeAttach(args: string[]): Promise<number> {
       else resolve(signal ? 130 : 1);
     });
   });
-}
-
-function sanitizeCloseCode(code: number | undefined): number {
-  if (typeof code !== 'number') return 1000;
-  if (code === 1000) return 1000;
-  if (code >= 3000 && code <= 4999) return code;
-  return 1000;
 }

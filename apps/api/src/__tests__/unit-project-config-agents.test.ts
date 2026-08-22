@@ -77,6 +77,7 @@ describe('project config agent discovery', () => {
         mode: 'primary',
         source: 'kortix.yaml',
         enabled: true,
+        sandbox: null,
         scope: { env: 'all', connectors: 'all', kortix_cli: 'all' },
       },
       {
@@ -86,6 +87,7 @@ describe('project config agent discovery', () => {
         mode: 'subagent',
         source: 'kortix.yaml',
         enabled: true,
+        sandbox: null,
         scope: { env: 'all', connectors: [], kortix_cli: [] },
       },
     ]);

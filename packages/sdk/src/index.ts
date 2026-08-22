@@ -45,7 +45,30 @@ export {
 } from './core/client/kortix';
 
 /** Workspace file operations (daemon `/file` + `/find`), owned by the SDK. */
-export { files } from './core/files/client';
+export {
+  SANDBOX_FS_ROOTS,
+  copyFile,
+  createFile,
+  deleteFile,
+  files,
+  findFiles,
+  findText,
+  getCurrentProject,
+  getFileStatus,
+  getServerHealth,
+  isServerReachable,
+  isUnderSandboxRoot,
+  listFiles,
+  mkdir,
+  readBlob,
+  readFile,
+  renameFile,
+  toDaemonPath,
+  toSandboxAbsolutePath,
+  toWorkspaceRelative,
+  uploadFile,
+  writeFile,
+} from './core/files/client';
 export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
@@ -116,8 +139,12 @@ export {
   parseBillingError,
   isBillingError,
   formatBillingErrorForUI,
+  FEATURE_DISABLED_CODE,
+  isFeatureDisabledError,
+  featureDisabledKey,
   type ApiErrorFields,
   type BillingErrorUI,
+  type FeatureDisabledError,
 } from './core/http/api/errors';
 
 /**
@@ -201,6 +228,7 @@ export type {
   KortixProject,
   ProjectConfigSummary,
   ProjectDetail,
+  GatewayCatalogModel,
   ProjectLlmCatalogResponse,
   // Accounts / IAM
   KortixAccount,
@@ -220,6 +248,11 @@ export type {
   ConnectorSharing,
   AdminConnector,
   ConnectorConfig,
+  ConnectorDraftInput,
+  ConnectorAuthDiscovery,
+  ConnectorAuthCandidate,
+  ExecutableConnectorAuth,
+  DiscoveredAuthScheme,
   // Sessions
   ProjectSession,
   ProjectOpenCodeSession,
@@ -260,6 +293,17 @@ export type {
   BillingTransactionsSummary,
   BillingCreditBreakdown,
   BillingTierConfiguration,
+  SessionCostOwnerType,
+  SessionCostSummary,
+  SessionCostModelUsage,
+  SessionCostLlmLedgerEntry,
+  SessionCostComputeLedgerEntry,
+  SessionCostLedgerEntry,
+  SessionCostDetail,
+  SessionCostReconciliation,
+  SessionCostsPage,
+  ListSessionCostsOptions,
+  GetSessionCostRecordOptions,
   // Account audit
   AuditEvent,
   AuditEventList,
@@ -300,7 +344,7 @@ export { stripTrailingSlashes } from './platform/strings';
  * `ToolView`'s new `outputParsed`/`outputText` fields and its embedded-
  * failure detection (a `state.status: "completed"` tool part whose JSON
  * output body carries `success: false` or a top-level `error` — the shape
- * router/executor tools like `web_search` commonly return on failure — now
+ * router/connector tools like `web_search` commonly return on failure — now
  * classifies as `status: 'error'` instead of rendering as a success with raw
  * JSON inside). Also available from `@kortix/sdk/turns`.
  */
@@ -313,6 +357,7 @@ export {
   type TodoItem,
   type ToolViewModel,
   type WebSearchResultItem,
+  shellExitCode,
   toolViewModel,
 } from './core/turns/view-model';
 
@@ -334,18 +379,36 @@ export {
 } from './core/rest/projects-client/agent-config';
 
 export * from './core/client/kortix';
+export * from './core/http/abort-error';
 export * from './core/http/api-client';
 export * from './core/http/auth';
 export * from './core/http/config';
 export * from './core/http/feature-flags';
 export * from './core/http/fresh-sessions';
+export * from './core/http/impersonation';
 export * from './core/http/instance-routes';
 export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/runtime/client';
 export * from './core/session';
+export {
+  createHttpSessionSyncController,
+  loadHttpSessionHistory,
+  type SessionSyncMessage,
+} from './core/session-sync/session-sync-controller';
 export * from './core/session/url';
 export * from './core/stream/event-stream';
+export * from './core/stream/fetch-sse';
 export * from './core/turns';
 export * from './transcript';
+
+// Runtime-neutral compatibility names for host applications. The original
+// OpenCode-named exports remain public for backward compatibility.
+export { formatOpenCodeRuntimeError as formatRuntimeError } from './core/http/opencode-errors';
+export type {
+  ProjectOpenCodeSession as ProjectRuntimeSession,
+} from './core/rest/projects-client/sessions';
+export type {
+  OpencodeAgentConfig as RuntimeAgentConfig,
+} from './core/rest/projects-client/agent-config';

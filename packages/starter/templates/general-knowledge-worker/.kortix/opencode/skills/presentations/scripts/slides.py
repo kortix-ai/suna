@@ -6,9 +6,9 @@ Subcommands:
     thumbnail   Create a visual grid of slide thumbnails
 
 Usage:
-    python slides.py clean <unpacked_dir>
-    python slides.py add <unpacked_dir> <source>
-    python slides.py thumbnail <input.pptx> [output_prefix] [--cols N]
+    python3 slides.py clean <unpacked_dir>
+    python3 slides.py add <unpacked_dir> <source>
+    python3 slides.py thumbnail <input.pptx> [output_prefix] [--cols N]
 """
 
 import argparse

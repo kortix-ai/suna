@@ -8,6 +8,34 @@ import type { PanelMode } from '@/stores/user-preferences-store';
 import { AdvancedPanel } from './advanced/advanced-panel';
 import { EasyPanel } from './easy/easy-panel';
 import { ActionPanel, shouldDiscardPendingPrimaryOpen } from './index';
+import { SessionPanelContext, type SessionPanelValue } from './session-panel-provider';
+
+// The cards read everything from `SessionPanelProvider`. Standing the real one
+// up here would drag in the sandbox proxy, react-query and four stores for
+// behavior these tests are not about, so they inject a stub value straight
+// into the context instead — the seam the provider split exists to give.
+function withPanel(node: ReactNode, over: Partial<SessionPanelValue> = {}) {
+  const value = {
+    sessionId: 's1',
+    files: [],
+    context: { files: [], web: [], tools: [] },
+    apps: [],
+    outputsDefaultOpen: false,
+    detail: null,
+    terminalOpen: false,
+    terminalSwap: false,
+    openDetail: () => {},
+    handleOpenOutput: () => {},
+    closeDetail: () => {},
+    openTerminal: () => {},
+    closeTerminal: () => {},
+    openBrowser: () => {},
+    openFiles: () => {},
+    openAudit: () => {},
+    ...over,
+  } as SessionPanelValue;
+  return <SessionPanelContext.Provider value={value}>{node}</SessionPanelContext.Provider>;
+}
 
 // `EasyPanel` calls `useSessionAudit` (react-query) unconditionally for its
 // Terminal/Audit footer row's pending-count pill — `enabled: false` when no
@@ -65,7 +93,7 @@ describe('panel mode gate', () => {
   test('missing panelMode (pre-panelMode persisted state) falls back to Easy', () => {
     mockPanelMode = undefined;
     const html = renderToStaticMarkup(
-      withQueryClient(<ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />),
+      withQueryClient(withPanel(<ActionPanel />)),
     );
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
@@ -74,26 +102,29 @@ describe('panel mode gate', () => {
   test("panelMode: 'easy' renders the Easy card home", () => {
     mockPanelMode = 'easy';
     const html = renderToStaticMarkup(
-      withQueryClient(<ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />),
+      withQueryClient(withPanel(<ActionPanel />)),
     );
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
   });
 
-  test("panelMode: 'advanced' renders the stepper through ActionPanel, not the Easy card home", () => {
+  test("panelMode: 'advanced' renders the Easy card home too (Advanced panel disabled)", () => {
     mockPanelMode = 'advanced';
     const html = renderToStaticMarkup(
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-        {withQueryClient(<ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />)}
+        {withQueryClient(withPanel(<ActionPanel />))}
       </NextIntlClientProvider>,
     );
-    expect(html).not.toContain('Outputs');
-    expect(html).not.toContain('Context');
+    // ADVANCED PANEL TEMPORARILY DISABLED (Easy Panel v2): ActionPanel renders
+    // EasyPanel for every mode. Restore the old assertion when the advanced
+    // branch in index.tsx is uncommented.
+    expect(html).toContain('Outputs');
+    expect(html).toContain('Context');
   });
 
-  test('EasyPanel renders the card home — Progress/Outputs/Context promises, no stepper', () => {
+  test('EasyPanel renders the card home — Outputs/Context promises, no stepper', () => {
     const html = renderToStaticMarkup(
-      withQueryClient(<EasyPanel sessionId="s1" messages={[]} isSessionBusy={false} />),
+      withQueryClient(withPanel(<EasyPanel />)),
     );
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
@@ -117,15 +148,7 @@ describe('panel mode gate', () => {
 describe('EasyPanel home has no Terminal/Audit footer row', () => {
   test('neither label renders in the card column', () => {
     const html = renderToStaticMarkup(
-      withQueryClient(
-        <EasyPanel
-          sessionId="s1"
-          messages={[]}
-          isSessionBusy={false}
-          projectId="p1"
-          projectSessionId="ps1"
-        />,
-      ),
+      withQueryClient(withPanel(<EasyPanel />, { projectSessionId: 'ps1' })),
     );
     expect(html).not.toContain('>Terminal<');
     expect(html).not.toContain('>Audit<');

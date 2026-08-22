@@ -76,6 +76,25 @@ test('platinumJson respects an explicit caller-provided signal instead of the de
   expect(elapsed).toBeLessThan(2_000);
 });
 
+test('platinumJsonResponse preserves successful HTTP status without changing the body', async () => {
+  fetchScenario = {
+    status: 202,
+    body: JSON.stringify({ status: 'in_progress', template_id: 'tpl_exact' }),
+  };
+  mockFetchScenario();
+
+  const { platinumJsonResponse } = await import('./platinum');
+
+  await expect(platinumJsonResponse('/v1/templates/tpl_exact/materialize', {
+    method: 'POST',
+  })).resolves.toEqual({
+    status: 202,
+    body: { status: 'in_progress', template_id: 'tpl_exact' },
+  });
+
+  globalThis.fetch = originalFetch;
+});
+
 // Platinum auto-stops idle microVMs natively; while a box is stopped, POST
 // /:id/expose answers `409 {"code":"sandbox_not_running"}`. That is an EXPECTED
 // state — the caller wakes+retries or surfaces a retryable 503 — and must NOT

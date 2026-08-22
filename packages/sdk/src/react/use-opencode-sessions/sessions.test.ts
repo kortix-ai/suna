@@ -18,7 +18,8 @@ function makeFakeQueryClient() {
   return {
     setQueryData: (k: readonly unknown[], updater: unknown) => {
       const existing = cache.get(cacheKey(k));
-      const value = typeof updater === 'function' ? (updater as (old: unknown) => unknown)(existing) : updater;
+      const value =
+        typeof updater === 'function' ? (updater as (old: unknown) => unknown)(existing) : updater;
       cache.set(cacheKey(k), value);
       return value;
     },
@@ -56,12 +57,16 @@ mock.module('../../browser/stores/opencode-compaction-store', () => ({
   useOpenCodeCompactionStore: Object.assign(
     (selector: (s: ReturnType<typeof realCompactionStore.getState>) => unknown) =>
       selector(realCompactionStore.getState()),
-    { getState: realCompactionStore.getState, setState: realCompactionStore.setState },
+    {
+      getState: realCompactionStore.getState,
+      setState: realCompactionStore.setState,
+    },
   ),
 }));
 
 const { useSummarizeOpenCodeSession, useInitSession } = await import('./sessions');
 const { opencodeKeys } = await import('./keys');
+const { NoCompactionModelError } = await import('./no-compaction-model-error');
 
 beforeEach(() => {
   fakeQueryClient = makeFakeQueryClient();
@@ -77,7 +82,11 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
   test('tier 1: uses the config default model when neither providerID nor modelID is given', async () => {
     let summarizeArgs: unknown;
     clientImpl = {
-      global: { config: { get: async () => ({ data: { model: 'anthropic/claude-opus' } }) } },
+      global: {
+        config: {
+          get: async () => ({ data: { model: 'anthropic/claude-opus' } }),
+        },
+      },
       session: {
         summarize: async (args: unknown) => {
           summarizeArgs = args;
@@ -91,23 +100,40 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
     const result = await mutationFn({ sessionId: 'ses_1' });
 
     expect(result).toBe('ses_1');
-    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'anthropic', modelID: 'claude-opus' });
+    expect(summarizeArgs).toEqual({
+      sessionID: 'ses_1',
+      providerID: 'anthropic',
+      modelID: 'claude-opus',
+    });
   });
 
   test('tier 1 splits a multi-segment model id: provider is the first segment, model is the rest', async () => {
     let summarizeArgs: unknown;
     clientImpl = {
-      global: { config: { get: async () => ({ data: { model: 'openrouter/z-ai/glm-5.2' } }) } },
-      session: { summarize: async (args: unknown) => { summarizeArgs = args; return { data: {} }; } },
+      global: {
+        config: {
+          get: async () => ({ data: { model: 'openrouter/z-ai/glm-5.2' } }),
+        },
+      },
+      session: {
+        summarize: async (args: unknown) => {
+          summarizeArgs = args;
+          return { data: {} };
+        },
+      },
     };
     const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
-    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'openrouter', modelID: 'z-ai/glm-5.2' });
+    expect(summarizeArgs).toEqual({
+      sessionID: 'ses_1',
+      providerID: 'openrouter',
+      modelID: 'z-ai/glm-5.2',
+    });
   });
 
-  test('tier 2: falls back to the session\'s last assistant message model when config has none', async () => {
+  test("tier 2: falls back to the session's last assistant message model when config has none", async () => {
     let summarizeArgs: unknown;
     clientImpl = {
       global: { config: { get: async () => ({ data: {} }) } },
@@ -115,7 +141,13 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         messages: async () => ({
           data: [
             { info: { role: 'user' } },
-            { info: { role: 'assistant', providerID: 'anthropic', modelID: 'claude-sonnet' } },
+            {
+              info: {
+                role: 'assistant',
+                providerID: 'anthropic',
+                modelID: 'claude-sonnet',
+              },
+            },
           ],
         }),
         summarize: async (args: unknown) => {
@@ -128,7 +160,11 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
-    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'anthropic', modelID: 'claude-sonnet' });
+    expect(summarizeArgs).toEqual({
+      sessionID: 'ses_1',
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+    });
   });
 
   test('tier 3: falls back to the first connected provider/model when config and history have none', async () => {
@@ -152,23 +188,51 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
-    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'kortix', modelID: 'claude-opus-4.8' });
+    expect(summarizeArgs).toEqual({
+      sessionID: 'ses_1',
+      providerID: 'kortix',
+      modelID: 'claude-opus-4.8',
+    });
   });
 
   test('an explicitly-passed providerID/modelID short-circuits every fallback tier', async () => {
     let summarizeArgs: unknown;
     let configFetched = false;
     clientImpl = {
-      global: { config: { get: async () => { configFetched = true; return { data: {} }; } } },
-      session: { summarize: async (args: unknown) => { summarizeArgs = args; return { data: {} }; } },
+      global: {
+        config: {
+          get: async () => {
+            configFetched = true;
+            return { data: {} };
+          },
+        },
+      },
+      session: {
+        summarize: async (args: unknown) => {
+          summarizeArgs = args;
+          return { data: {} };
+        },
+      },
     };
     const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
-      mutationFn: (args: { sessionId: string; providerID?: string; modelID?: string }) => Promise<string>;
+      mutationFn: (args: {
+        sessionId: string;
+        providerID?: string;
+        modelID?: string;
+      }) => Promise<string>;
     };
-    await mutationFn({ sessionId: 'ses_1', providerID: 'anthropic', modelID: 'claude-haiku' });
+    await mutationFn({
+      sessionId: 'ses_1',
+      providerID: 'anthropic',
+      modelID: 'claude-haiku',
+    });
 
     expect(configFetched).toBe(false);
-    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'anthropic', modelID: 'claude-haiku' });
+    expect(summarizeArgs).toEqual({
+      sessionID: 'ses_1',
+      providerID: 'anthropic',
+      modelID: 'claude-haiku',
+    });
   });
 
   test('throws when every tier fails to resolve a model', async () => {
@@ -180,25 +244,53 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
     const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
+    // The expected "no model configured" state throws the sentinel-marked
+    // `NoCompactionModelError` (not a plain `Error`) so the Sentry telemetry
+    // gate can `instanceof`-match it and drop the expected config state
+    // instead of paging Better Stack. The user-facing message is unchanged.
     await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow(
       'No model available for compaction. Please configure a model in settings.',
     );
+    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toBeInstanceOf(NoCompactionModelError);
   });
 
   test('a thrown/rejected config.get() is swallowed — falls through to the next tier', async () => {
     let summarizeArgs: unknown;
     clientImpl = {
-      global: { config: { get: async () => { throw new Error('network down'); } } },
+      global: {
+        config: {
+          get: async () => {
+            throw new Error('network down');
+          },
+        },
+      },
       session: {
-        messages: async () => ({ data: [{ info: { role: 'assistant', providerID: 'anthropic', modelID: 'x' } }] }),
-        summarize: async (args: unknown) => { summarizeArgs = args; return { data: {} }; },
+        messages: async () => ({
+          data: [
+            {
+              info: {
+                role: 'assistant',
+                providerID: 'anthropic',
+                modelID: 'x',
+              },
+            },
+          ],
+        }),
+        summarize: async (args: unknown) => {
+          summarizeArgs = args;
+          return { data: {} };
+        },
       },
     };
     const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
-    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'anthropic', modelID: 'x' });
+    expect(summarizeArgs).toEqual({
+      sessionID: 'ses_1',
+      providerID: 'anthropic',
+      modelID: 'x',
+    });
   });
 
   test('onMutate/onError toggle the compaction store around the send', () => {
@@ -211,8 +303,14 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
       onMutate: (args: { sessionId: string }) => void;
       onError: (err: unknown, args: { sessionId: string }) => void;
     };
+    // The store holds the ms epoch this tab issued `/compact`, not a boolean:
+    // `projectCompacting` bounds the stamp, so a lost `session.compacted`
+    // frame can no longer pin the composer for the lifetime of the tab.
+    const before = Date.now();
     hook.onMutate({ sessionId: 'ses_compact' });
-    expect(realCompactionStore.getState().compactingBySession.ses_compact).toBe(true);
+    const stamp = realCompactionStore.getState().compactingBySession.ses_compact;
+    expect(stamp).toBeNumber();
+    expect(stamp).toBeGreaterThanOrEqual(before);
     hook.onError(new Error('boom'), { sessionId: 'ses_compact' });
     expect(realCompactionStore.getState().compactingBySession.ses_compact).toBeUndefined();
   });
@@ -233,12 +331,21 @@ describe('useInitSession', () => {
     expect(result).toBe('ses_1');
 
     hook.onSuccess('ses_1');
-    expect(fakeQueryClient.refetchCalls).toEqual([{ queryKey: opencodeKeys.messages('ses_1') }]);
+    expect(fakeQueryClient.refetchCalls).toEqual([
+      { queryKey: opencodeKeys.runtimeMessages('ses_1') },
+    ]);
   });
 
   test('extracts a NotFoundError-shaped error message (`.data.message`)', async () => {
     clientImpl = {
-      session: { command: async () => ({ error: { name: 'NotFoundError', data: { message: 'no such session' } } }) },
+      session: {
+        command: async () => ({
+          error: {
+            name: 'NotFoundError',
+            data: { message: 'no such session' },
+          },
+        }),
+      },
     };
     const { mutationFn } = useInitSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
@@ -253,6 +360,8 @@ describe('useInitSession', () => {
     const { mutationFn } = useInitSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
-    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow('Failed to initialize project');
+    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow(
+      'Failed to initialize project',
+    );
   });
 });

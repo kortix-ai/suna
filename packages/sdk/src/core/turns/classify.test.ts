@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Message, Part } from '../runtime/client';
 import type { MessageWithParts } from '../../transcript';
+import type { Message, Part } from '../runtime/client';
 import {
   type ClassifiedPart,
   classifyPart,
@@ -521,6 +521,59 @@ describe('classifyTurn — error normalization + isEmpty', () => {
     expect(result.error).toEqual({ name: 'ProviderAuthError', message: 'auth failed' });
     // Not "isEmpty" in the sense hosts should skip rendering — there's an error to show.
     expect(result.isEmpty).toBe(false);
+  });
+
+  // ERROR-TAXONOMY fix: the gateway's structured error fields (provider/code/
+  // suggestion/request_id from gatewayErrorBody()) must survive all the way
+  // into TurnError, not just the bare message — opencode's turn-level ApiError
+  // carries the gateway's raw JSON response text as `data.responseBody`.
+  test("surfaces the gateway's structured fields (provider/code/suggestion/requestId) when the turn error carries them", () => {
+    const message: MessageWithParts = {
+      info: assistantMessage('a1', {
+        error: {
+          name: 'APIError',
+          data: {
+            message: 'No upstream configured for model "openai/gpt-4.1"',
+            statusCode: 400,
+            isRetryable: false,
+            responseBody: JSON.stringify({
+              message: 'No upstream configured for model "openai/gpt-4.1"',
+              code: 'provider_not_connected',
+              provider: 'openai',
+              request_id: 'req_xyz',
+              suggestion: 'Add an openai API key in project settings, then retry.',
+              attempt_failures: [
+                {
+                  attempt: 1,
+                  provider: 'openai-codex',
+                  route_model: 'codex/gpt-5.6-sol',
+                  resolved_model: 'gpt-5.6-sol',
+                  stage: 'stream_error',
+                  status: 400,
+                  code: 'context_length_exceeded',
+                  message: 'Your input exceeds the context window of this model.',
+                },
+              ],
+            }),
+          },
+        },
+      }),
+      parts: [],
+    };
+    const result = classifyTurn(message);
+    expect(result.error?.name).toBe('APIError');
+    expect(result.error?.message).toBe('No upstream configured for model "openai/gpt-4.1"');
+    expect(result.error?.provider).toBe('openai');
+    expect(result.error?.code).toBe('provider_not_connected');
+    expect(result.error?.suggestion).toBe('Add an openai API key in project settings, then retry.');
+    expect(result.error?.requestId).toBe('req_xyz');
+    expect(result.error?.attemptFailures).toEqual([
+      expect.objectContaining({
+        provider: 'openai-codex',
+        code: 'context_length_exceeded',
+        status: 400,
+      }),
+    ]);
   });
 
   test('a turn with only step markers and no error is empty', () => {

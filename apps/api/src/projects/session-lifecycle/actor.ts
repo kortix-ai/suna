@@ -1,20 +1,14 @@
 import { accountMembers } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { accountRoleMap } from '../../iam/read-models';
 import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 
 export async function resolveProjectAutomationActor(accountId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(
-        eq(accountMembers.accountId, accountId),
-        eq(accountMembers.accountRole, 'owner'),
-      ),
-    )
-    .limit(1);
-  return row?.userId ?? null;
+  for (const [userId, role] of await accountRoleMap(accountId)) {
+    if (role === 'owner') return userId;
+  }
+  return null;
 }
 
 /**
@@ -25,8 +19,8 @@ export async function resolveProjectAutomationActor(accountId: string): Promise<
  * .created_by` — audit/identity, "who owns this run") only, resolved
  * AFTER the session already exists so it never touches the session's
  * provisioning/authorization actor — "attribution and authorization stop
- * sharing one field" (spec §2.2). The session's own executor token already
- * carries this SAME service account independently (`mintExecutorToken` in
+ * sharing one field" (spec §2.2). The session's own connector token already
+ * carries this SAME service account independently (`mintConnectorToken` in
  * platform/services/session-sandbox.ts calls `ensureAgentServiceAccount`
  * itself) and the standing-role fallback that keeps an unactivated agent's
  * session usable (`resolveActingActor` in iam/engine-v2.ts) is untouched by

@@ -46,18 +46,19 @@ export function OtpVerification({
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     setCanResend(false);
     setCountdown(30);
+    let remaining = 30;
     countdownTimerRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          setCanResend(true);
-          if (countdownTimerRef.current) {
-            clearInterval(countdownTimerRef.current);
-            countdownTimerRef.current = null;
-          }
-          return 0;
+      remaining -= 1;
+      if (remaining <= 0) {
+        setCountdown(0);
+        setCanResend(true);
+        if (countdownTimerRef.current) {
+          clearInterval(countdownTimerRef.current);
+          countdownTimerRef.current = null;
         }
-        return prev - 1;
-      });
+      } else {
+        setCountdown(remaining);
+      }
     }, 1000);
   }, []);
 
@@ -109,7 +110,7 @@ export function OtpVerification({
     <div>
       {phoneNumber && (
         <p className="text-foreground text-sm">
-          {t('codeSentTo')} <span className="font-semibold break-words">{phoneNumber}</span>
+          {t('codeSentTo')} <span className="font-semibold wrap-break-word">{phoneNumber}</span>
         </p>
       )}
 

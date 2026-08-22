@@ -1,19 +1,22 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
 import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
-import { Button } from '@/components/ui/marketing/button';
-import KortixGrid from '@/components/ui/marketing/gridder';
-import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
+import { EnterpriseHeroVisual } from '@/features/marketing/enterprise/hero-visual';
+import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import { cn } from '@/lib/utils';
-import { Box, Building2, GitBranch, KeyRound, Server } from 'lucide-react';
+import {
+  PackageIcon as Box,
+  BuildingsIcon as Building2,
+  UsersIcon as FaUsers,
+  GitBranchIcon as GitBranch,
+  KeyIcon as KeyRound,
+  ShieldIcon as MdShield,
+  HardDrivesIcon as Server,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 import { useState } from 'react';
-import { FaUsers } from 'react-icons/fa';
-import { MdShield } from 'react-icons/md';
 
 const DIFFERENTIATORS = [
   {
@@ -24,9 +27,9 @@ const DIFFERENTIATORS = [
   },
   {
     icon: MdShield,
-    eyebrowKey: 'differentiatorExecutorEyebrow',
-    titleKey: 'differentiatorExecutorTitle',
-    descriptionKey: 'differentiatorExecutorDescription',
+    eyebrowKey: 'differentiatorConnectorEyebrow',
+    titleKey: 'differentiatorConnectorTitle',
+    descriptionKey: 'differentiatorConnectorDescription',
   },
   {
     icon: GitBranch,
@@ -36,6 +39,24 @@ const DIFFERENTIATORS = [
   },
 ] as const;
 
+/**
+ * Copy for these keys lives in `translations/*.json` under
+ * `hardcodedUi.appHomeEnterprisePage`.
+ *
+ * ACCURACY GATE on `checklistSecretsDescription`: do NOT restore "never visible
+ * to the model". A granted runtime secret is a real env value inside the
+ * session, readable by any command the agent runs — see
+ * `docs/ENV_SECRET_EXPOSURE_BASELINE.md`. The two true, narrower claims are the
+ * ones in the string today: CONNECTOR credentials are brokered server-side and
+ * never enter the machine, and delivery of a runtime secret is gated by the
+ * role of the person who started the session intersected with the agent grant.
+ * Do NOT restore "scoped per person / per group" either — retired by migration
+ * `20260706_secrets_v2_identifier_model.sql`.
+ *
+ * Same rule for isolation copy on this page: the default sandbox provider runs
+ * containers, not microVMs, so write "its own isolated machine". "microVM" is
+ * only accurate where the provider is Platinum.
+ */
 const CHECKLIST = [
   {
     titleKey: 'checklistSamlTitle',
@@ -99,16 +120,7 @@ const DEPLOYMENT = [
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-enterprise-demo';
 
-function Eyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-      {children}
-    </span>
-  );
-}
-
 const EnterprisePage = () => {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = (key: string) => tHardcodedUi.raw(`appHomeEnterprisePage.${key}`);
   const [calOpen, setCalOpen] = useState(false);
@@ -116,37 +128,18 @@ const EnterprisePage = () => {
   return (
     <>
       <div className="bg-background relative">
-        <section className="relative overflow-hidden px-6 pt-32 pb-12 sm:pt-36">
-          <div className="absolute inset-0 z-0 mask-y-to-95%">
-            <KortixLetterField seed={3382} />
-          </div>
-          <div className="mx-auto max-w-6xl">
-            <Reveal>
-              <Badge variant="kortix" className="rounded">
-                {t('heroEyebrow')}
-              </Badge>
-              <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-                {t('heroTitle')}
-              </h1>
-              <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
-                {t('heroDescription')}
-              </p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Button size="xl" onClick={() => setCalOpen(true)}>
-                  {t('talkToSalesCta')}
-                </Button>
-                <Button size="xl" variant="secondary" asChild>
-                  <Link href="/pricing">{t('comparePlansCta')}</Link>
-                </Button>
-              </div>
-              <p className="text-muted-foreground mt-6 font-mono text-xs tracking-wider uppercase">
-                {t('heroMicroline')}
-              </p>
-            </Reveal>
-          </div>
-        </section>
+        <CapabilityHero
+          eyebrow={t('heroEyebrow')}
+          title={t('heroTitle')}
+          sub={t('heroDescription')}
+          ctaPrimary={t('talkToSalesCta')}
+          onCtaPrimaryClick={() => setCalOpen(true)}
+          ctaSecondary={t('comparePlansCta')}
+          ctaSecondaryHref="/pricing"
+          visual={<EnterpriseHeroVisual />}
+        />
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
@@ -161,7 +154,7 @@ const EnterprisePage = () => {
             <div className="border-border bg-card grid overflow-hidden rounded-sm border lg:grid-cols-12">
               <article className="border-border group border-b p-8 transition-colors duration-200 lg:col-span-7 lg:border-r">
                 <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                  <MdShield className="size-4" />
+                  <MdShield weight="fill" className="size-4" />
                   {t('moatEyebrow')}
                 </div>
                 <p className="text-foreground mt-5 max-w-2xl text-2xl leading-tight font-medium tracking-tight text-balance">
@@ -205,7 +198,7 @@ const EnterprisePage = () => {
           </Reveal>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
@@ -236,7 +229,7 @@ const EnterprisePage = () => {
           </Reveal>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
@@ -251,7 +244,7 @@ const EnterprisePage = () => {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
                 <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                  <FaUsers className="size-4" />
+                  <FaUsers weight="fill" className="size-4" />
                   {t('identityAccessEyebrow')}
                 </div>
                 <h3 className="text-foreground mt-5 text-2xl leading-tight font-medium tracking-tight">
@@ -300,7 +293,7 @@ const EnterprisePage = () => {
           </Reveal>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
@@ -329,45 +322,6 @@ const EnterprisePage = () => {
             </div>
           </Reveal>
         </section>
-
-        <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
-          <Reveal>
-            <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
-              <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
-                <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
-                  <div className="space-y-2">
-                    <Badge variant="kortix" className="rounded">
-                      {tI18nHardcoded.raw(
-                        'autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9',
-                      )}
-                    </Badge>
-                    <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                      {t('closingTitle')}
-                    </h2>
-
-                    <span className="text-muted-foreground text-sm leading-relaxed">
-                      {t('closingDescription')}
-                    </span>
-                  </div>
-
-                  <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                    <Button size="lg" className="w-full" onClick={() => setCalOpen(true)}>
-                      {t('talkToSalesCta')}
-                    </Button>
-                    <Button asChild size="lg" className="w-full" variant="accent">
-                      <Link href="/pricing">{t('comparePlansCta')}</Link>
-                    </Button>
-                  </div>
-                </div>
-                <div className="col-span-8 mask-y-from-90% mask-x-from-90%">
-                  <KortixGrid count={58} seed={4228} />
-                </div>
-              </div>
-            </div>
-          </Reveal>
-        </section>
-
-        <div className="h-24 sm:h-28" />
       </div>
 
       <DemoQualifierModal

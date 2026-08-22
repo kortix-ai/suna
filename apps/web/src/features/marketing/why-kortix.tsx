@@ -25,8 +25,8 @@ export function WhyKortix() {
         <KortixLetterField seed={3382} className="invert" />
       </div>
 
-      <div className="px-6 py-16 sm:py-24 lg:px-0">
-        <div className="z-20 mx-auto max-w-6xl">
+      <div className="py-24 sm:py-30">
+        <div className="z-20 mx-auto max-w-7xl px-6">
           <div className="mx-auto mb-16 max-w-2xl space-y-3 text-center">
             <h2 className="text-background text-3xl font-medium tracking-tight sm:text-4xl">
               {tHome('openTitle')}

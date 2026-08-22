@@ -1,6 +1,70 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isAdminBypassEligible, shouldApplyAdminBypass } from './access';
+import {
+  callerHasManagerStanding,
+  isAdminBypassEligible,
+  shouldApplyAdminBypass,
+  viewerManagerStanding,
+} from './access';
+
+describe('callerHasManagerStanding', () => {
+  // `canManageSharing` is `isOwner || canManageProject`, so this predicate also
+  // decides the 403 on stop, restart, delete, change-sharing and change-model.
+
+  test('an unbound human manager keeps manager standing', () => {
+    expect(callerHasManagerStanding('manager', null)).toBe(true);
+  });
+
+  test('a session-bound agent token never carries its user manager standing', () => {
+    // The hole: with standing it also gets the trigger-session override in
+    // isProjectSessionVisibleTo, reaching sibling private sessions.
+    expect(callerHasManagerStanding('manager', 'agent-session-a')).toBe(false);
+  });
+
+  test('a non-manager role gains nothing from being unbound', () => {
+    expect(callerHasManagerStanding('member', null)).toBe(false);
+  });
+
+  test('the Supabase login session id is NOT a binding — it must never reach here', () => {
+    // Pinned as documentation of the regression this signature exists to stop:
+    // `callerSessionId` is non-null for every signed-in human, so passing THAT
+    // value would return false and 403 every dashboard manager. Callers must
+    // pass `callerKortixSessionId(c)`, which is null for authType 'supabase'.
+    expect(callerHasManagerStanding('manager', null)).toBe(true);
+  });
+});
+
+describe('viewerManagerStanding', () => {
+  // The list/serialization path derives `can_manage_lifecycle` from this, and
+  // DELETE derives its 403 from loadVisibleSession's stripped standing — this
+  // predicate exists so the two can never disagree again (the 2026-08-20
+  // "can_manage_lifecycle:true but deletion denied" incident evidence).
+
+  const probeNever = () => {
+    throw new Error('capability probe must not run');
+  };
+
+  test('a bound credential is denied before any I/O, whatever the role', async () => {
+    expect(await viewerManagerStanding('manager', 'agent-session-a', probeNever as any)).toBe(
+      false,
+    );
+  });
+
+  test('the capability probe cannot resurrect standing for a bound credential', async () => {
+    expect(
+      await viewerManagerStanding('member', 'agent-session-a', async () => true),
+    ).toBe(false);
+  });
+
+  test('an unbound manager passes on role alone — no probe', async () => {
+    expect(await viewerManagerStanding('manager', null, probeNever as any)).toBe(true);
+  });
+
+  test('an unbound non-manager falls through to the capability probe', async () => {
+    expect(await viewerManagerStanding('member', null, async () => true)).toBe(true);
+    expect(await viewerManagerStanding('member', null, async () => false)).toBe(false);
+  });
+});
 
 describe('shouldApplyAdminBypass', () => {
   const base = { action: 'read' as const, isServiceAccount: false, bypassHeaderPresent: true };

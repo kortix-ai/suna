@@ -1,48 +1,52 @@
-"use client";
+'use client';
 
-import { useTranslations } from 'next-intl';
 
-import { useState, useEffect } from "react";
-import { Settings, Clock } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { KortixHyperLogo } from "@/components/ui/marketing/kortix-hyper-logo";
-import { toast } from "@/lib/toast";
+import { Badge } from '@/components/ui/badge';
+import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import {
   useMaintenanceAdmin,
   useUpdateMaintenanceConfig,
-} from "@/hooks/admin/use-maintenance-admin";
-import {
-  MaintenanceLevelCard,
-  MaintenanceConfigDialog,
-  MAINTENANCE_LEVELS,
-} from "./_components";
-import type { MaintenanceLevel } from "@/lib/maintenance-store";
+} from '@/hooks/admin/use-maintenance-admin';
+import type { MaintenanceLevel } from '@/lib/maintenance-store';
+import { toast } from '@/lib/toast';
+import { ClockIcon as Clock, GearSixIcon as Settings } from '@phosphor-icons/react';
+import { useEffect, useState } from 'react';
+import { MAINTENANCE_LEVELS, MaintenanceConfigDialog, MaintenanceLevelCard } from './_components';
+
+// Same output as `toLocaleString()` with no options: date + time, numeric fields.
+const updatedAtFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
 
 export default function AdminUtilsPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: config, isLoading } = useMaintenanceAdmin();
   const updateConfig = useUpdateMaintenanceConfig();
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedLevel, setSelectedLevel] = useState<MaintenanceLevel>("none");
+  const [selectedLevel, setSelectedLevel] = useState<MaintenanceLevel>('none');
 
   // Form state
-  const [title, setTitle] = useState("");
-  const [message, setMessage] = useState("");
+  const [title, setTitle] = useState('');
+  const [message, setMessage] = useState('');
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
-  const [statusUrl, setStatusUrl] = useState("");
+  const [statusUrl, setStatusUrl] = useState('');
   const [services, setServices] = useState<string[]>([]);
 
   // Sync form state when config loads or changes
   useEffect(() => {
     if (config) {
       setSelectedLevel(config.level);
-      setTitle(config.title || "");
-      setMessage(config.message || "");
+      setTitle(config.title || '');
+      setMessage(config.message || '');
       setStartDate(config.startTime ? new Date(config.startTime) : undefined);
       setEndDate(config.endTime ? new Date(config.endTime) : undefined);
-      setStatusUrl(config.statusUrl || "");
+      setStatusUrl(config.statusUrl || '');
       setServices(config.affectedServices || []);
     }
   }, [config]);
@@ -53,7 +57,7 @@ export default function AdminUtilsPage() {
     // Pre-fill title from level config if empty
     if (!title || title === MAINTENANCE_LEVELS.find((l) => l.value === config?.level)?.label) {
       const levelDef = MAINTENANCE_LEVELS.find((l) => l.value === level);
-      if (levelDef && level !== "none") {
+      if (levelDef && level !== 'none') {
         setTitle(levelDef.label);
       }
     }
@@ -63,17 +67,17 @@ export default function AdminUtilsPage() {
 
   const handleSave = async () => {
     try {
-      if (selectedLevel === "none") {
+      if (selectedLevel === 'none') {
         await updateConfig.mutateAsync({
-          level: "none",
-          title: "",
-          message: "",
+          level: 'none',
+          title: '',
+          message: '',
           startTime: null,
           endTime: null,
           statusUrl: null,
           affectedServices: [],
         });
-        toast.success("Maintenance notifications cleared");
+        toast.success('Maintenance notifications cleared');
       } else {
         await updateConfig.mutateAsync({
           level: selectedLevel,
@@ -86,14 +90,12 @@ export default function AdminUtilsPage() {
         });
 
         const levelDef = MAINTENANCE_LEVELS.find((l) => l.value === selectedLevel);
-        toast.success(`${levelDef?.label || "Maintenance"} activated`);
+        toast.success(`${levelDef?.label || 'Maintenance'} activated`);
       }
 
       setDialogOpen(false);
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to update maintenance config"
-      );
+      toast.error(err instanceof Error ? err.message : 'Failed to update maintenance config');
     }
   };
 
@@ -101,34 +103,38 @@ export default function AdminUtilsPage() {
     setServices((prev) =>
       prev.includes(serviceLabel)
         ? prev.filter((s) => s !== serviceLabel)
-        : [...prev, serviceLabel]
+        : [...prev, serviceLabel],
     );
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex h-screen items-center justify-center">
         <KortixHyperLogo size={72} startOnView={false} loop className="text-foreground" />
       </div>
     );
   }
 
-  const currentLevel = config?.level || "none";
+  const currentLevel = config?.level || 'none';
   const currentLevelDef = MAINTENANCE_LEVELS.find((l) => l.value === currentLevel);
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex h-screen flex-col">
       <div className="flex-none">
-        <div className="max-w-4xl mx-auto px-6 py-6">
+        <div className="mx-auto max-w-4xl px-6 py-6">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-primary/10">
-              <Settings className="w-5 h-5 text-primary" />
+            <div className="bg-primary/10 flex h-10 w-10 items-center justify-center rounded-2xl">
+              <Settings className="text-primary h-5 w-5" />
             </div>
             <div className="flex-1">
-              <h1 className="text-2xl font-semibold tracking-tight">{tHardcodedUi.raw('appAdminUtilsPage.line126JsxTextMaintenanceNotifications')}</h1>
-              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAdminUtilsPage.line129JsxTextControlSystemWideMaintenanceBannersAndAccessRestrictions')}</p>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {'Maintenance Notifications'}
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                {'Control system-wide maintenance banners and access restrictions'}
+              </p>
             </div>
-            {currentLevel !== "none" && currentLevelDef && (
+            {currentLevel !== 'none' && currentLevelDef && (
               <Badge
                 className={`${currentLevelDef.bgColor} ${currentLevelDef.color} ${currentLevelDef.borderColor} border`}
               >
@@ -140,25 +146,23 @@ export default function AdminUtilsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-6 pb-6">
+        <div className="mx-auto max-w-4xl px-6 pb-6">
           {/* Current status summary */}
-          {currentLevel !== "none" && config && (
-            <div className="mb-6 rounded-2xl border bg-muted/30 p-4">
-              <div className="flex items-center gap-2 text-sm font-medium mb-2">
+          {currentLevel !== 'none' && config && (
+            <div className="bg-muted/30 mb-6 rounded-2xl border p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium">
                 {currentLevelDef && (
-                  <currentLevelDef.icon className={`w-4 h-4 ${currentLevelDef.color}`} />
-                )}{tHardcodedUi.raw('appAdminUtilsPage.line152JsxTextCurrentlyActive')}{currentLevelDef?.label}
+                  <currentLevelDef.icon className={`h-4 w-4 ${currentLevelDef.color}`} />
+                )}
+                {'Currently active:'}
+                {currentLevelDef?.label}
               </div>
-              {config.title && (
-                <p className="text-sm font-medium">{config.title}</p>
-              )}
+              {config.title && <p className="text-sm font-medium">{config.title}</p>}
               {config.message && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {config.message}
-                </p>
+                <p className="text-muted-foreground mt-1 text-xs">{config.message}</p>
               )}
               {config.affectedServices && config.affectedServices.length > 0 && (
-                <div className="flex gap-1.5 mt-2">
+                <div className="mt-2 flex gap-1.5">
                   {config.affectedServices.map((s) => (
                     <Badge key={s} variant="secondary" className="text-xs">
                       {s}
@@ -171,7 +175,9 @@ export default function AdminUtilsPage() {
 
           {/* Level selection grid */}
           <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground mb-3">{tHardcodedUi.raw('appAdminUtilsPage.line177JsxTextSelectANotificationLevelToConfigure')}</p>
+            <p className="text-muted-foreground mb-3 text-sm font-medium">
+              {'Select a notification level to configure'}
+            </p>
             {MAINTENANCE_LEVELS.map((level) => (
               <MaintenanceLevelCard
                 key={level.value}
@@ -183,8 +189,10 @@ export default function AdminUtilsPage() {
           </div>
 
           {config?.updatedAt && (
-            <p className="text-xs text-muted-foreground mt-6 flex items-center gap-1">
-              <Clock className="w-3 h-3" />{tHardcodedUi.raw('appAdminUtilsPage.line192JsxTextLastUpdated')}{new Date(config.updatedAt).toLocaleString()}
+            <p className="text-muted-foreground mt-6 flex items-center gap-1 text-xs">
+              <Clock className="h-3 w-3" />
+              {'Last updated:'}
+              {updatedAtFormatter.format(new Date(config.updatedAt))}
             </p>
           )}
         </div>

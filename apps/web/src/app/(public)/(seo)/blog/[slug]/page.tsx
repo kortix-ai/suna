@@ -1,14 +1,59 @@
-import { ArrowLeft } from 'lucide-react';
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 
-import { BlogContent, PostTags } from '@/components/blog/blog-content';
+import { BlogContent } from '@/components/blog/blog-content';
 import { BlogCover } from '@/components/blog/blog-cover';
 import { PostByline } from '@/components/blog/post-byline';
 import { PostCard } from '@/components/blog/post-card';
 import { getAllPosts, getPostEntry, resolveAuthor } from '@/lib/blog';
+import type { BlogPostEntry } from '@/lib/blog-posts';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
+import { cn } from '@/lib/utils';
+
+/**
+ * A post's lead visual when it has real product footage to lead with, in place
+ * of the generated `BlogCover` lockup. Same treatment as the landing hero:
+ * muted, looping, inline, poster-first — and under `prefers-reduced-motion` the
+ * video is hidden and the poster renders as a still instead.
+ */
+function PostLeadMedia({
+  media,
+  className,
+}: {
+  media: NonNullable<BlogPostEntry['leadMedia']>;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn('relative overflow-hidden', className)}
+      style={{ aspectRatio: media.aspectRatio }}
+    >
+      <video
+        className="h-full w-full object-cover motion-reduce:hidden"
+        poster={media.poster}
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        aria-label={media.alt}
+      >
+        {media.sources.map((source) => (
+          <source key={source.src} src={source.src} type={source.type} />
+        ))}
+      </video>
+      <Image
+        src={media.poster}
+        alt={media.alt}
+        fill
+        sizes="(max-width: 768px) 100vw, 768px"
+        className="hidden object-cover motion-reduce:block"
+      />
+    </div>
+  );
+}
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -66,6 +111,9 @@ export default async function BlogPostPage(props: PageProps) {
   if (entry.draft && process.env.NODE_ENV === 'production') notFound();
 
   const author = resolveAuthor(entry.author);
+  // The first tag is the post's topic and leads the header as an eyebrow; the
+  // rest are navigation and render at the foot of the article.
+  const topic = entry.tags[0];
   const more = getAllPosts()
     .filter((p) => p.slug !== slug)
     .slice(0, 2);
@@ -107,50 +155,57 @@ export default async function BlogPostPage(props: PageProps) {
       <script
         type="application/ld+json"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD structured data we generate, not user content
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
 
-      <article className="mx-auto max-w-3xl px-6 pt-24 pb-24 sm:pt-32 sm:pb-32">
-        <Link
-          href="/blog"
-          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
-        >
-          <ArrowLeft className="size-3.5" />
-          Blog
-        </Link>
-
+      {/* 42rem ≈ 78 characters per line — the same measure the use-case
+          articles pin to, so the two long-form templates read identically. */}
+      <article className="mx-auto max-w-[42rem] px-6 pt-28 pb-24 sm:pt-32 sm:pb-32">
         <header className="mt-8">
-          <PostTags tags={entry.tags} />
-          <h1 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
+          {topic && (
+            <span className="text-muted-foreground/70 font-mono text-xs tracking-wider uppercase">
+              {topic}
+            </span>
+          )}
+          <h1 className="text-foreground mt-4 text-3xl font-medium tracking-tight text-balance sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
             {entry.title}
           </h1>
           {entry.description && (
-            <p className="text-muted-foreground mt-4 text-lg leading-relaxed">
+            <p className="text-muted-foreground mt-5 text-lg leading-relaxed">
               {entry.description}
             </p>
           )}
+          {/* The rule turns the byline into the boundary between the deck and
+              the article, so the lead media does not need its own separator. */}
           <PostByline
             author={author}
             date={entry.date}
             readingTime={entry.readingTime}
-            className="mt-8"
+            className="border-border/60 mt-8 border-t pt-8"
           />
         </header>
 
-        <BlogCover
-          logos={entry.coverLogos ?? []}
-          withKortix={entry.coverKortix ?? true}
-          className="border-border/60 mt-10 aspect-[16/9] w-full rounded-2xl border"
-        />
+        {entry.leadMedia ? (
+          <PostLeadMedia
+            media={entry.leadMedia}
+            className="border-border/60 mt-10 w-full rounded-md border"
+          />
+        ) : (
+          <BlogCover
+            logos={entry.coverLogos ?? []}
+            withKortix={entry.coverKortix ?? true}
+            className="border-border/60 mt-10 aspect-[16/9] w-full rounded-md border"
+          />
+        )}
 
         <BlogContent blocks={entry.blocks} />
 
         {more.length > 0 && (
-          <div className="border-border/60 mt-20 border-t pt-14">
-            <h2 className="text-muted-foreground mb-8 text-sm font-medium tracking-[0.15em] uppercase">
+          <div className="border-border/60 mt-16 border-t pt-14">
+            <h2 className="text-muted-foreground mb-10 font-mono text-xs tracking-wider uppercase">
               More from the blog
             </h2>
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2">
               {more.map((post) => (
                 <PostCard key={post.slug} post={post} />
               ))}
