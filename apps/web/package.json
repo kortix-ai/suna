@@ -16,7 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "postinstall": "cp node_modules/@embedpdf/pdfium/dist/pdfium.wasm public/pdfium.wasm 2>/dev/null || true",
-    "test": "bun test"
+    "test": "bun test",
+    "bench:transcript": "bun run src/features/session/__bench__/transcript-render.bench.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -198,6 +199,7 @@
   },
   "devDependencies": {
     "@embedpdf/pdfium": "2.14.4",
+    "@happy-dom/global-registrator": "20.11.2",
     "@kortix/manifest-schema": "workspace:*",
     "@playwright/test": "^1.57.0",
     "@tailwindcss/postcss": "^4.1.4",

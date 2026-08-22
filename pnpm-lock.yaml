@@ -1285,6 +1285,9 @@ importers:
       '@embedpdf/pdfium':
         specifier: 2.14.4
         version: 2.14.4
+      '@happy-dom/global-registrator':
+        specifier: 20.11.2
+        version: 20.11.2
       '@kortix/manifest-schema':
         specifier: workspace:*
         version: link:../../packages/manifest-schema
@@ -5117,6 +5120,17 @@ packages:
       protobufjs: 7.6.5
       yargs: 17.7.3
     dev: false
+
+  /@happy-dom/global-registrator@20.11.2:
+    resolution: {integrity: sha512-7fkpoXZWzyxaBkzRtlD0wRU5ckxbNT4j6BywzpSYh+SFPsGxEVmNR9KHaMwM2xkHB0pADQLl4Z8DSrztECJ7Ww==}
+    engines: {node: '>=20.0.0'}
+    dependencies:
+      '@types/node': 20.19.43
+      happy-dom: 20.11.6
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+    dev: true
 
   /@hono/zod-openapi@0.19.10(hono@4.12.34)(zod@3.25.76):
     resolution: {integrity: sha512-dpoS6DenvoJyvxtQ7Kd633FRZ/Qf74+4+o9s+zZI8pEqnbjdF/DtxIib08WDpCaWabMEJOL5TXpMgNEZvb7hpA==}
