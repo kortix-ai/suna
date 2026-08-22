@@ -287,6 +287,11 @@ const INTENDED_DIVERGENCES: { fixture: string; rationale: string }[] = [
       'An assistant-only head followed by a second orphan renders the head text as the first text step of the steps block; legacy put it in a user bubble above the steps.',
   },
   {
+    fixture: 'assistant-only-head-tool-abort',
+    rationale:
+      'An assistant-only head holding only TOOL parts contributes them to the steps burst (two tools, one burst); legacy put the head in the user bubble, which renders nothing for a tool part, so the head tool vanished and the remaining single step rendered as an open one-step burst.',
+  },
+  {
     fixture: 'working-whitespace-text',
     rationale:
       'A streaming text part that is still all whitespace has no row, so no response block mounts until its first non-blank character; legacy mounted an empty streaming markdown container (an empty div inside the space-y stack).',

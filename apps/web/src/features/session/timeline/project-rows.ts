@@ -940,8 +940,11 @@ function resolveParts(
     // A kept question rides as the ANSWERED part — possibly synthetic with
     // optimistically-cached or output-parsed answers the raw store part does
     // not carry yet. Without this substitution the burst row would show
-    // "0 answered" until the server confirms.
-    out.push(substitute.get(found.id) ?? found);
+    // "0 answered" until the server confirms. ONLY a question part takes the
+    // substitute: a tool or text part that merely shares the answered
+    // question's id (duplicate ids, see above) is itself, as the legacy
+    // `segments` memo had it (`part.tool === 'question'` gated the swap).
+    out.push(isQuestionPart(found) ? (substitute.get(found.id) ?? found) : found);
   }
   return out;
 }

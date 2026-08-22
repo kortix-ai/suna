@@ -451,6 +451,17 @@ describe('an assistant-only turn renders its head message as assistant content',
     expect(placements.body).toEqual([]);
   });
 
+  test('head holding only a tool, second orphan aborted: both tools are ONE burst', () => {
+    const { placements, view } = project([
+      orphan('o', [tool('o', 'p0', 'read')]),
+      orphan('o2', [tool('o2', 'p1', 'read')], { error: USER_ABORT }),
+    ]);
+    expect(view.hasSteps).toBe(true);
+    expect(placements.steps.map((p) => p.role)).toEqual(['burst']);
+    expect(ids(placements.steps[0])).toEqual(['p0', 'p1']);
+    expect(placements.body).toEqual([]);
+  });
+
   test('head plus a second orphan with tools: the head text is the first text step', () => {
     const { placements, view } = project([
       orphan('o', [text('o', 'p1', 'first orphan')]),
@@ -522,5 +533,95 @@ describe('resolving refs without a usable part id', () => {
     ]);
     expect(placements.steps.map((p) => p.role)).toEqual(['burst']);
     expect((placements.steps[0].parts[0] as { type: string }).type).toBe('tool');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// a part that SHARES its id with an answered question
+// ---------------------------------------------------------------------------
+
+describe('only a question part takes the answered substitute', () => {
+  const answers = (p: Part) =>
+    (p as unknown as { state: { metadata?: { answers?: string[][] } } }).state.metadata?.answers;
+  const toolName = (p: Part) => (p as unknown as { tool?: string }).tool;
+  const bashRunning = (m: string, id: string) =>
+    tool(m, id, 'bash', { status: 'running', time: { start: 1 }, input: { command: 'ls' } });
+
+  test('W7c: question then a read sharing its id, working — the read stays a read', () => {
+    const { placements, view } = project(
+      [
+        user('u'),
+        streaming('a', 'u', [
+          question('a', 'QDUPW'),
+          tool('a', 'QDUPW', 'read'),
+          bashRunning('a', 'b'),
+        ]),
+      ],
+      { working: true },
+    );
+    expect(view.shouldUseInlineContent).toBe(false);
+    expect(placements.steps.map((p) => p.role)).toEqual(['burst']);
+    const parts = placements.steps[0].parts;
+    expect(parts.map(toolName)).toEqual(['question', 'read', 'bash']);
+    // The question is the ANSWERED substitute; the read is the store part itself.
+    expect(answers(parts[0])).toEqual([['Blue']]);
+    expect(parts[1]).toBe(view.allParts[1].part);
+  });
+
+  test('W30: a read then a question sharing its id, working — the read stays a read', () => {
+    const { placements, view } = project(
+      [
+        user('u'),
+        streaming('a', 'u', [
+          tool('a', 'QDUPY', 'read'),
+          question('a', 'QDUPY'),
+          bashRunning('a', 'b'),
+        ]),
+      ],
+      { working: true },
+    );
+    expect(placements.steps.map((p) => p.role)).toEqual(['burst']);
+    const parts = placements.steps[0].parts;
+    expect(parts.map(toolName)).toEqual(['read', 'question', 'bash']);
+    expect(parts[0]).toBe(view.allParts[0].part);
+    expect(answers(parts[1])).toEqual([['Blue']]);
+  });
+
+  test('W7b: the question and the read share an id ACROSS messages — the read stays a read', () => {
+    const { placements, view } = project(
+      [
+        user('u'),
+        assistant('a', 'u', [question('a', 'QDUPX')]),
+        streaming('b', 'u', [tool('b', 'QDUPX', 'read'), bashRunning('b', 'bb')]),
+      ],
+      { working: true },
+    );
+    expect(placements.steps.map((p) => p.role)).toEqual(['burst']);
+    const parts = placements.steps[0].parts;
+    expect(parts.map(toolName)).toEqual(['question', 'read', 'bash']);
+    expect(answers(parts[0])).toEqual([['Blue']]);
+    expect(parts[1]).toBe(view.allParts[1].part);
+  });
+
+  test('V24: inline — a text sharing the answered question id still renders as text', () => {
+    const { placements, view } = project([
+      user('u'),
+      assistant('a', 'u', [
+        text('a', 'p1', 'Q time'),
+        question('a', 'IDUP'),
+        text('a', 'IDUP', 'after the answer'),
+      ]),
+    ]);
+    expect(view.shouldUseInlineContent).toBe(true);
+    expect(placements.body.map((p) => p.role)).toEqual([
+      'inline-text',
+      'inline-questions',
+      'inline-text',
+    ]);
+    expect(placements.body[0].text).toBe('Q time');
+    expect(ids(placements.body[1])).toEqual(['IDUP']);
+    expect(answers(placements.body[1].parts[0])).toEqual([['Blue']]);
+    expect(placements.body[2].text).toBe('after the answer');
+    expect(placements.body[2].parts[0]).toBe(view.allParts[2].part);
   });
 });

@@ -537,7 +537,6 @@ export const edgeScenarios: TimelineScenario[] = [
     orphanAssistant('oe8', (m) => [text(m, 'oe8t', 'first orphan')]),
     orphanAssistant('oe8b', (m) => [readTool(m, 'oe8br'), text(m, 'oe8bt', 'second orphan prose')]),
   ]),
-
   // WORKING, the active message holds only a whitespace text part: legacy
   // mounted an empty streaming markdown container; a blank text part has no
   // row, so the response block waits for the first non-blank character.
@@ -547,6 +546,118 @@ export const edgeScenarios: TimelineScenario[] = [
       bookkeeping(m, 'ae9s', 'step-start'),
       text(m, 'ae9t', '  '),
     ]),
+  ]),
+
+  // ── WORKING-state variants ───────────────────────────────────────────────
+  // An IDLE multi-step burst collapses to its "Completed N steps" summary, so
+  // a golden of it never asserts the step CONTENT. Each scenario below holds
+  // the active assistant message BUSY with a trailing running tool: the burst
+  // stays OPEN and every step renders in full. A content regression inside a
+  // burst (a step swapped, dropped or re-typed) shows up here.
+
+  // Step 2 (aborted by Stop, runtime still busy) opens with reasoning then a
+  // running tool: the merged burst, open, every step visible.
+  busy('abort-step2-reasoning-head-WORKING', [
+    user('ue10', (m) => [text(m, 'ue10t', 'Find all TODOs and fix them')]),
+    assistant('ae10s1', 'ue10', (m) => [
+      bookkeeping(m, 'ae10s1ss', 'step-start'),
+      text(m, 'ae10s1t', 'Let me look.'),
+      readTool(m, 'ae10s1r'),
+      tool(m, 'ae10s1g', 'grep', {
+        ...done(4),
+        input: { pattern: 'TODO', path: '/workspace' },
+        output: 'a.ts:1:TODO',
+        title: 'TODO',
+      }),
+      bookkeeping(m, 'ae10s1sf', 'step-finish'),
+    ]),
+    streamingAssistant(
+      'ae10s2',
+      'ue10',
+      (m) => [
+        bookkeeping(m, 'ae10s2ss', 'step-start'),
+        reasoning(m, 'ae10s2r', 'I should edit a.ts'),
+        bashTool(m, 'ae10s2b', true),
+      ],
+      { error: USER_ABORT },
+    ),
+  ]),
+
+  // The failed orphan preamble's tool leads the open burst of the streaming
+  // reply: the error row between them still splits nothing.
+  busy('preamble-error-tools-WORKING', [
+    orphanAssistant('pe11', (m) => [readTool(m, 'pe11r')], {
+      error: { name: 'APIError', data: { message: 'init failed' } },
+    }),
+    user('ue11', (m) => [text(m, 'ue11t', 'hello')]),
+    streamingAssistant('ae11', 'ue11', (m) => [readTool(m, 'ae11r'), bashTool(m, 'ae11b', true)]),
+  ]),
+
+  // An answered question FOLLOWED by a read that shares its id: the question
+  // step shows "1 answered", the read step stays a read — the answered
+  // substitute replaces the question part only, never its id-twin.
+  busy('duplicate-part-ids-WORKING', [
+    user('ue12', (m) => [text(m, 'ue12t', 'ask')]),
+    streamingAssistant('ae12', 'ue12', (m) => [
+      answeredQuestion(m, 'QDUPW'),
+      readTool(m, 'QDUPW'),
+      bashTool(m, 'ae12b', true),
+    ]),
+  ]),
+
+  // A read with an EMPTY id leads the open burst; the prose after it is a text
+  // step, the running tool the open tail.
+  busy('empty-part-ids-WORKING', [
+    user('ue13', (m) => [text(m, 'ue13t', 'go')]),
+    streamingAssistant('ae13', 'ue13', (m) => [
+      part(m, '', {
+        type: 'tool',
+        tool: 'read',
+        callID: 'call_noid_w',
+        state: {
+          ...done(1),
+          input: { filePath: '/workspace/a.ts' },
+          output: 'export {}',
+          title: 'a.ts',
+        },
+      }),
+      text(m, 'ae13t', 'done'),
+      bashTool(m, 'ae13b', true),
+    ]),
+  ]),
+
+  // The mirror: a read FOLLOWED by an answered question that shares its id.
+  busy('dup-id-question-tool-WORKING', [
+    user('ue14', (m) => [text(m, 'ue14t', 'ask')]),
+    streamingAssistant('ae14', 'ue14', (m) => [
+      readTool(m, 'QDUPY'),
+      answeredQuestion(m, 'QDUPY'),
+      bashTool(m, 'ae14b', true),
+    ]),
+  ]),
+
+  // Inline mode (no steps): a trailing text part that shares the answered
+  // question's id renders as prose after the answered card.
+  idle('inline-dup-id-question-text', [
+    user('ue15', (m) => [text(m, 'ue15t', 'ask')]),
+    assistant('ae15', 'ue15', (m) => [
+      text(m, 'ae15t1', 'Q time'),
+      answeredQuestion(m, 'IDUP'),
+      text(m, 'IDUP', 'after the answer'),
+    ]),
+  ]),
+
+  // ── intended divergences, continued (golden = the new render) ────────────
+  // Appended AFTER the goldens above: the fixture clock ticks per message, so
+  // a scenario inserted earlier would re-stamp every golden captured after it.
+
+  // Same, a head holding only a TOOL part, then a second orphan aborted by
+  // Stop: legacy put the head in the user bubble, which renders nothing for a
+  // tool part, so the head's tool vanished and the one remaining step rendered
+  // as an open single-step burst; now both tools are the steps of one burst.
+  idle('assistant-only-head-tool-abort', [
+    orphanAssistant('oe16', (m) => [readTool(m, 'oe16r')]),
+    orphanAssistant('oe16b', (m) => [readTool(m, 'oe16br')], { error: USER_ABORT }),
   ]),
 ];
 
