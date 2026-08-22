@@ -154,16 +154,58 @@ export interface TurnRowGroup {
   rows: TimelineRow[];
 }
 
+/**
+ * One list's group identity across frames: the rows array it last grouped and
+ * the groups it handed back. Owned by the list for its lifetime (one
+ * `useState(createTurnGroupCache)` per `SessionTimelineList`) and passed to
+ * `groupRowsByTurn` on every render.
+ */
+export interface TurnGroupCache {
+  rows: readonly TimelineRow[] | null;
+  groups: TurnRowGroup[];
+}
+
+export function createTurnGroupCache(): TurnGroupCache {
+  return { rows: null, groups: [] };
+}
+
 const groupsByRows = new WeakMap<readonly TimelineRow[], TurnRowGroup[]>();
 
 /**
- * The rows cut per turn, in order. Cached on the rows ARRAY: `buildChatRows`
- * hands back the previous array when nothing changed, so an unchanged frame
- * gets the previous groups array too, and every `TurnFrame` memo holds.
+ * The rows cut per turn, in order, IDENTITY-STABLE across frames.
+ *
+ * With a `cache` (the list's): the same rows array returns the same groups
+ * array (`buildChatRows` hands back the previous array when nothing changed;
+ * React StrictMode renders twice). A new rows array is cut and then every
+ * group whose turn had a group last frame with the SAME rows — same length,
+ * same row objects, which `reuseTimelineRows` guarantees for an untouched
+ * turn — is the previous group OBJECT; when every group is the previous one,
+ * the previous ARRAY is returned too. So one appended part yields one new row
+ * object (`reuseTimelineRows`), one new group object (here) and, with
+ * `TurnFrame` memo'd on `group`, one frame body. Same idea, one level up.
+ *
+ * Without a cache (tests, one-off callers): cached on the rows array identity
+ * only.
  */
-export function groupRowsByTurn(rows: readonly TimelineRow[]): TurnRowGroup[] {
-  const cached = groupsByRows.get(rows);
-  if (cached) return cached;
+export function groupRowsByTurn(
+  rows: readonly TimelineRow[],
+  cache?: TurnGroupCache,
+): TurnRowGroup[] {
+  if (!cache) {
+    const cached = groupsByRows.get(rows);
+    if (cached) return cached;
+    const groups = cutRowsByTurn(rows);
+    groupsByRows.set(rows, groups);
+    return groups;
+  }
+  if (cache.rows === rows) return cache.groups;
+  const groups = reuseTurnGroups(cache.groups, cutRowsByTurn(rows));
+  cache.rows = rows;
+  cache.groups = groups;
+  return groups;
+}
+
+function cutRowsByTurn(rows: readonly TimelineRow[]): TurnRowGroup[] {
   const groups: TurnRowGroup[] = [];
   let current: TurnRowGroup | null = null;
   for (const row of rows) {
@@ -173,8 +215,37 @@ export function groupRowsByTurn(rows: readonly TimelineRow[]): TurnRowGroup[] {
     }
     current.rows.push(row);
   }
-  groupsByRows.set(rows, groups);
   return groups;
+}
+
+/**
+ * `next` with every group whose turn is unchanged (same rows by identity)
+ * replaced by the PREVIOUS group object; `prev` itself when nothing changed.
+ * `next` is freshly cut by the caller, so it is rewritten in place.
+ */
+function reuseTurnGroups(prev: TurnRowGroup[], next: TurnRowGroup[]): TurnRowGroup[] {
+  if (prev.length === 0) return next;
+  const byId = new Map<string, TurnRowGroup>();
+  for (const group of prev)
+    if (!byId.has(group.userMessageID)) byId.set(group.userMessageID, group);
+  let allPrevious = prev.length === next.length;
+  for (let i = 0; i < next.length; i++) {
+    const group = next[i];
+    const before = byId.get(group.userMessageID);
+    if (before && sameRows(before.rows, group.rows)) {
+      next[i] = before;
+      if (allPrevious && prev[i] !== before) allPrevious = false;
+    } else {
+      allPrevious = false;
+    }
+  }
+  return allPrevious ? prev : next;
+}
+
+function sameRows(a: readonly TimelineRow[], b: readonly TimelineRow[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 // ============================================================================

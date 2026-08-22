@@ -435,6 +435,27 @@ describe('prepend / append', () => {
     expect(parts[0]).toContain('t39a');
     expect(byPrefix(rendered, 'user:')).toEqual([]);
     expect(byPrefix(rendered, 'tail:').filter((k) => k !== 'tail:t39')).toEqual([]);
+    expect(byPrefix(rendered, 'frame:')).toEqual(['frame:t39']);
+  });
+
+  test('an appended part runs exactly ONE TurnFrame body (the working turn); the other mounted frames hold', async () => {
+    const messages = turns(40);
+    await harness.render(messages, true);
+    await flush();
+    expect(harness.mountedIds().length).toBeGreaterThan(1);
+    const last = messages[messages.length - 1];
+    const appended = [
+      ...messages.slice(0, -1),
+      {
+        info: last.info,
+        parts: [...last.parts, text(last.info.id, `${last.info.id}t2`, 'second paragraph')],
+      } as unknown as MessageWithParts,
+    ];
+    const rendered = await harness.render(appended, true);
+    // One new row object (the appended part) → one new group object (t39) →
+    // one TurnFrame body. Every other mounted turn keeps its group + turn.
+    expect(byPrefix(rendered, 'frame:')).toEqual(['frame:t39']);
+    expect(byPrefix(rendered, 'part:')).toHaveLength(1);
   });
 });
 

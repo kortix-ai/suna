@@ -233,7 +233,25 @@ describe('one part delta re-renders one row', () => {
       expect(byPrefix(rendered, 'user:')).toEqual([]);
       // The tail of any OTHER turn never runs.
       expect(byPrefix(rendered, 'tail:').filter((k) => k !== 'tail:u2')).toEqual([]);
+      // Nor the FRAME of any other turn: its group and turn objects are the
+      // previous frame's, so the TurnFrame memo holds.
+      expect(byPrefix(rendered, 'frame:')).toEqual(['frame:u2']);
     }
+  });
+
+  test('appending a part runs exactly ONE TurnFrame body — the working turn', async () => {
+    const done = text('a2', 'a2t', 'Done.');
+    await harness.render([...settled, streaming([readTool, done])], true);
+    const bash = tool('a2', 'a2bash', 'bash', {
+      status: 'running',
+      time: { start: 3 },
+      input: { command: 'ls' },
+    });
+    const rendered = await harness.render([...settled, streaming([readTool, done, bash])], true);
+    // `groupRowsByTurn` hands every untouched turn its PREVIOUS group object
+    // (same rows by identity) and `TurnFrame` is memo'd on it — so the 1 new
+    // row object of this step reaches exactly one frame body.
+    expect(byPrefix(rendered, 'frame:')).toEqual(['frame:u2']);
   });
 
   test('appending a part renders only the new row', async () => {
@@ -259,6 +277,9 @@ describe('one part delta re-renders one row', () => {
     const rendered = await harness.render([...settled, streaming(parts, 2500)], false);
     // Every re-render belongs to u2: its rows take `working`, its tail takes the footer.
     expect(rendered.filter((k) => !(k.endsWith(':u2') || k.includes(':a2')))).toEqual([]);
+    // The session-wide `sessionWorking` flip reaches only the frame whose own
+    // `working` / `pending` changed — u1's did not.
+    expect(byPrefix(rendered, 'frame:')).toEqual(['frame:u2']);
     expect(byPrefix(rendered, 'user:')).toEqual([]);
     expect(rendered).toContain('tail:u2');
     expect(rendered.some((k) => k.startsWith('part:') && k.includes('a1'))).toBe(false);

@@ -34,11 +34,17 @@
  * WHO RE-RENDERS ON A DELTA. `AssistantPartRow` / `UserMessageRow` /
  * `TurnTailRow` are `memo`'d on props that are reference-stable for an
  * unchanged row (`projectTurnPlacements`, `stabilizeTurns`, `useCallback`
- * handlers). `TurnFrame` owns the per-turn hooks (the 2.5s status throttle,
- * the 1s elapsed and retry tickers, `copied`, the dialog state) and exposes
- * them through `TurnFrameContext`, which ONLY `TurnTailRow` consumes — so a
- * tick re-renders the tail and nothing else. The render-counter test
- * (`session-timeline-list.render-count.test.tsx`) holds this.
+ * handlers). `TurnFrame` is `memo`'d too (`turn-frame-memo.ts`): its `group`
+ * is identity-stable for an untouched turn (`groupRowsByTurn` with the list's
+ * `TurnGroupCache` hands the previous group object back when the turn's rows
+ * did not change), its `turn` is (`stabilizeTurns`), and the list-wide facts
+ * it reads are compared per turn — so one appended part runs ONE frame body,
+ * the working turn's. `TurnFrame` owns the per-turn hooks (the 2.5s status
+ * throttle, the 1s elapsed and retry tickers, `copied`, the dialog state) and
+ * exposes them through `TurnFrameContext`, which ONLY `TurnTailRow` consumes —
+ * so a tick re-renders the tail and nothing else. The render-counter test
+ * (`session-timeline-list.render-count.test.tsx`) holds this on the flat path,
+ * `session-timeline-list.virtual.test.tsx` on the virtual one.
  */
 import { Button } from '@/components/ui/button';
 import { Copy } from '@/features/icon/icons/copy';
@@ -108,7 +114,12 @@ import { samePartsList } from '../turn/same-parts';
 import { ThrottledMarkdown } from '../turn/throttled-markdown';
 import { TurnViewport } from '../turn/turn-viewport';
 import { UserMessage } from '../turn/user-message';
-import { type TurnRowGroup, aliasRowKey, groupRowsByTurn } from './build-chat-rows';
+import {
+  type TurnRowGroup,
+  aliasRowKey,
+  createTurnGroupCache,
+  groupRowsByTurn,
+} from './build-chat-rows';
 import {
   type AssistantPartRowProps,
   type CommandInfo,
@@ -139,6 +150,7 @@ import {
   SessionReportCard,
   SystemMessageIndicator,
 } from './turn-cards';
+import { sameTurnFrameProps } from './turn-frame-memo';
 import { turnGapClass } from './turn-gap';
 
 /** After this long on one status the working label shows elapsed time. */
@@ -223,7 +235,10 @@ export function SessionTimelineList(props: SessionTimelineListProps) {
     scrollElement = null,
     virtualize = true,
   } = props;
-  const groups = groupRowsByTurn(rows);
+  // Group identity across frames, for the life of this list (see
+  // `groupRowsByTurn`): the `TurnFrame` memo keys on it.
+  const [groupCache] = useState(createTurnGroupCache);
+  const groups = groupRowsByTurn(rows, groupCache);
   const pricingLookup = useModelPricingLookup(props.providers);
   // `?? 'normal'` — legacy persisted preferences predate this key (same rule
   // as every `panelMode` read site).
@@ -653,15 +668,7 @@ const TurnFrameContext = createContext<TurnFrameContextValue | null>(null);
 // TurnFrame
 // ============================================================================
 
-function TurnFrame({
-  group,
-  turn,
-  className,
-  contain = true,
-  pricingLookup,
-  density,
-  list,
-}: {
+interface TurnFrameProps {
   group: TurnRowGroup;
   turn: Turn;
   className: string;
@@ -670,7 +677,22 @@ function TurnFrame({
   pricingLookup: ReturnType<typeof useModelPricingLookup>;
   density: ConversationDensity;
   list: SessionTimelineListProps;
-}) {
+}
+
+/**
+ * `memo`'d on `sameTurnFrameProps` (turn-frame-memo.ts): `group` and `turn`
+ * by identity, the list facts by what THIS turn reads. Every `list.*` read in
+ * the body below must have a line in that comparator.
+ */
+function TurnFrameImpl({
+  group,
+  turn,
+  className,
+  contain = true,
+  pricingLookup,
+  density,
+  list,
+}: TurnFrameProps) {
   const { userMessageID } = group;
   const {
     sessionId,
@@ -686,6 +708,9 @@ function TurnFrame({
     providers,
     onRowRender,
   } = list;
+
+  // Test seam: one `frame:<turn>` per body run, beside the rows' own keys.
+  onRowRender?.(`frame:${userMessageID}`);
 
   const isWorkingTurn = userMessageID === workingTurnId;
   // The WORKING turn's working state is the session's, and the parent resolved
@@ -1039,6 +1064,8 @@ function TurnFrame({
     </TurnFrameContext.Provider>
   );
 }
+
+const TurnFrame = memo(TurnFrameImpl, sameTurnFrameProps);
 
 // ============================================================================
 // UserMessageRow

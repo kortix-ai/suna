@@ -10,6 +10,7 @@ import { scenarios } from './__fixtures__/transcript';
 import {
   aliasRowKey,
   buildChatRows,
+  createTurnGroupCache,
   groupRowsByTurn,
   makeWebGroupPart,
   toTimelineInput,
@@ -423,6 +424,51 @@ describe('buildChatRows reuses rows', () => {
     ]);
     // The second turn's gap row belongs to the second group.
     expect(a[1].rows[0].kind).toBe('turn-gap');
+  });
+
+  test('groupRowsByTurn with a cache: an untouched turn keeps its PREVIOUS group object across frames', () => {
+    const cache = createTurnGroupCache();
+    const first = base();
+    const prev = build(first);
+    const g1 = groupRowsByTurn(prev, cache);
+    // Same rows array → same groups array (StrictMode's double render).
+    expect(Object.is(groupRowsByTurn(prev, cache), g1)).toBe(true);
+
+    // One appended part on u2: u1's group is the previous object, u2's is new.
+    const next = first.map((m, i) =>
+      i === 3 ? ({ ...m, parts: [...m.parts, tool('a2', 'p4', 'bash')] } as MessageWithParts) : m,
+    );
+    const rows = build(next, { prev });
+    const g2 = groupRowsByTurn(rows, cache);
+    expect(Object.is(g2, g1)).toBe(false);
+    expect(Object.is(g2[0], g1[0])).toBe(true);
+    expect(Object.is(g2[1], g1[1])).toBe(false);
+    expect(g2[1].rows.length).toBe(g1[1].rows.length + 1);
+
+    // A new rows ARRAY whose every row is the same object (nothing changed)
+    // → the cached groups array itself.
+    expect(Object.is(groupRowsByTurn([...rows], cache), g2)).toBe(true);
+
+    // A third turn appended: the first two groups are the previous objects.
+    const more = [...next, user('u3'), assistant('a3', 'u3', [text('a3', 'p5', 'three')])];
+    const rows3 = build(more, { prev: rows });
+    const g3 = groupRowsByTurn(rows3, cache);
+    expect(g3.map((g) => g.userMessageID)).toEqual(['u1', 'u2', 'u3']);
+    expect(Object.is(g3[0], g2[0])).toBe(true);
+    expect(Object.is(g3[1], g2[1])).toBe(true);
+
+    // A turn removed from the front (a rewind): u3 keeps its object, the
+    // array is new.
+    const rows4 = build(more.slice(2), { prev: rows3 });
+    const g4 = groupRowsByTurn(rows4, cache);
+    expect(g4.map((g) => g.userMessageID)).toEqual(['u2', 'u3']);
+    expect(Object.is(g4[1], g3[2])).toBe(true);
+    expect(Object.is(g4, g3)).toBe(false);
+  });
+
+  test('groupRowsByTurn without a cache still caches on the rows array identity', () => {
+    const rows = build(base());
+    expect(Object.is(groupRowsByTurn(rows), groupRowsByTurn(rows))).toBe(true);
   });
 });
 
