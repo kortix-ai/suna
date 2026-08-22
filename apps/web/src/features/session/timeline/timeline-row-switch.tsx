@@ -37,7 +37,9 @@ export function timelineRowSlot(row: TimelineRow): TimelineRowSlot {
       // is unverified against a real compaction transcript. `interrupted`: the
       // SDK places it BEFORE the aborted message's parts; today "Interrupted"
       // sits at the END of the turn (`TurnErrorDisplay isAbort` in
-      // `TurnTailRow`). Stage 3 moves both.
+      // `TurnTailRow`). Stage 3 moves both. Because this row renders nothing,
+      // `partUnits` (project-rows.ts) merges the context rows on either side
+      // of it back into one burst — delete that merge when this renders.
       return 'none';
     case 'thinking':
       // Pre-first-part placeholder only; today the busy footer persists UNDER
@@ -55,6 +57,8 @@ export function timelineRowSlot(row: TimelineRow): TimelineRowSlot {
     case 'error':
       // `TurnTailRow` renders `TurnErrorDisplay` with `errorDetails` and the
       // dismissed-question fallback, neither of which is on the row. Stage 3.
+      // The orphan preamble's error row sits BETWEEN part rows; `partUnits`
+      // merges the context rows around it — see `turn-divider` above.
       return 'none';
     default: {
       const _never: never = row;

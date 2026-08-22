@@ -60,14 +60,15 @@ import {
   isToolPart,
   shouldShowToolPart,
 } from '@/ui';
-import type { TimelineAssistantPartRow, TimelinePartRef } from '@kortix/sdk';
+import type { TimelinePartRef } from '@kortix/sdk';
 import { abortErrorReason, isAbortError } from '@kortix/sdk';
 
 import { stripSystemPtyText } from '../message-parsing';
 import { sessionTurnDurationMs, sessionTurnEndedAt } from '../session-turn-meta-rows';
 import { isPlanWriteTool } from '../turn/plan-anchor';
 import { samePartsList } from '../turn/same-parts';
-import type { TurnRowGroup } from './build-chat-rows';
+import { type TurnRowGroup, webIsRenderablePart } from './build-chat-rows';
+import { timelineRowSlot } from './timeline-row-switch';
 
 // ============================================================================
 // Optimistic answers cache
@@ -154,6 +155,50 @@ export function deriveTurnErrorAbortState(turn: {
   }
   return { isAbort: false, abortReason: undefined };
 }
+
+// ============================================================================
+// The assistant run
+// ============================================================================
+
+const runByTurn = new WeakMap<Turn, Turn>();
+
+/**
+ * The turn whose `assistantMessages` is the WHOLE assistant run.
+ *
+ * `groupMessagesIntoTurns` synthesizes an ASSISTANT-ONLY turn when the
+ * session's first message is an orphan assistant message (a session-init
+ * failure with no `parentID`, ahead of every prompt) and no user message
+ * exists to attach it to: `turn.userMessage` IS that assistant message and
+ * `turn.assistantMessages` holds the orphans after it. The SDK's rows treat
+ * the head as the first message of the run (`assistantRunOf` in
+ * `timeline.ts`); the host's facts read the same run, so the head's parts,
+ * error and timestamps are the turn's — not a prompt's. Legacy rendered the
+ * head as a USER bubble; this is the intended divergence documented in
+ * `build-chat-rows.test.ts` and fixtured as `assistant-only-*`.
+ *
+ * A normal turn is returned as is. The run object is cached on the turn, so
+ * an unchanged turn keeps an identity-stable run.
+ */
+export function assistantRunTurn(turn: Turn): Turn {
+  if (turn.userMessage.info.role !== 'assistant') return turn;
+  let run = runByTurn.get(turn);
+  if (!run) {
+    run = {
+      userMessage: turn.userMessage,
+      assistantMessages: [turn.userMessage, ...turn.assistantMessages],
+    };
+    runByTurn.set(turn, run);
+  }
+  return run;
+}
+
+/** An assistant-only turn has no prompt: no bubble, no command, no report. */
+const NO_USER_MESSAGE_FACTS: UserMessageFacts = {
+  sessionReport: null,
+  systemMessages: [],
+  hasVisibleUserContent: false,
+  userMessageText: '',
+};
 
 // ============================================================================
 // Layer 1 — facts that depend on the turn alone
@@ -277,7 +322,12 @@ export function deriveTurnFacts(turn: Turn): TurnFacts {
   const cached = factsByTurn.get(turn);
   if (cached) return cached;
 
-  const allParts = collectTurnParts(turn);
+  // Every assistant-side fact reads the RUN — for an assistant-only turn the
+  // head message leads it (see `assistantRunTurn`).
+  const run = assistantRunTurn(turn);
+  const assistantOnly = run !== turn;
+
+  const allParts = collectTurnParts(run);
   // Check if there are visible steps that actually render inside the
   // collapsible steps section. Tool parts that are rendered elsewhere
   // (todowrite, task, question) don't count as "steps".
@@ -295,19 +345,19 @@ export function deriveTurnFacts(turn: Turn): TurnFacts {
   });
   const hasReasoning = allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim());
   const hasCompaction =
-    turn.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
-    turn.assistantMessages.some((msg) => msg.parts.some((p) => p.type === 'compaction'));
+    run.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
+    run.assistantMessages.some((msg) => msg.parts.some((p) => p.type === 'compaction'));
 
   let activeAssistantMessage: MessageWithParts | undefined;
-  if (turn.assistantMessages.length > 0) {
-    for (let i = turn.assistantMessages.length - 1; i >= 0; i--) {
-      const msg = turn.assistantMessages[i];
+  if (run.assistantMessages.length > 0) {
+    for (let i = run.assistantMessages.length - 1; i >= 0; i--) {
+      const msg = run.assistantMessages[i];
       if (!(msg.info as any)?.time?.completed) {
         activeAssistantMessage = msg;
         break;
       }
     }
-    activeAssistantMessage ??= turn.assistantMessages[turn.assistantMessages.length - 1];
+    activeAssistantMessage ??= run.assistantMessages[run.assistantMessages.length - 1];
   }
   let streamingResponseRaw = '';
   if (activeAssistantMessage) {
@@ -324,7 +374,7 @@ export function deriveTurnFacts(turn: Turn): TurnFacts {
   let abortedTextFallback = '';
   if (!responseRaw) {
     // Only activate for aborted/errored turns
-    const hasError = turn.assistantMessages.some((m) => (m.info as any).error);
+    const hasError = run.assistantMessages.some((m) => (m.info as any).error);
     if (hasError) {
       const texts: string[] = [];
       for (const { part } of allParts) {
@@ -341,10 +391,10 @@ export function deriveTurnFacts(turn: Turn): TurnFacts {
 
   // Turn error — derived directly from message data (same approach as SolidJS reference).
   // Falls back to checking for dismissed question tool errors when no message-level error exists.
-  let turnError = getTurnError(turn);
+  let turnError = getTurnError(run);
   if (!turnError) {
     // Check for dismissed question tool errors
-    outer: for (const msg of turn.assistantMessages) {
+    outer: for (const msg of run.assistantMessages) {
       for (const part of msg.parts) {
         if (part.type !== 'tool') continue;
         const tool = part as ToolPart;
@@ -356,12 +406,13 @@ export function deriveTurnFacts(turn: Turn): TurnFacts {
     }
   }
   const { isAbort: turnErrorIsAbort, abortReason: turnErrorAbortReason } =
-    deriveTurnErrorAbortState(turn);
-  const turnErrorDetails = getTurnErrorDetails(turn);
+    deriveTurnErrorAbortState(run);
+  const turnErrorDetails = getTurnErrorDetails(run);
 
-  const shellModePart = getShellModePart(turn) as ToolPart | undefined;
-  const { sessionReport, systemMessages, hasVisibleUserContent, userMessageText } =
-    deriveUserMessageFacts(turn.userMessage);
+  const shellModePart = getShellModePart(run) as ToolPart | undefined;
+  const { sessionReport, systemMessages, hasVisibleUserContent, userMessageText } = assistantOnly
+    ? NO_USER_MESSAGE_FACTS
+    : deriveUserMessageFacts(turn.userMessage);
 
   const facts: TurnFacts = {
     allParts,
@@ -382,8 +433,8 @@ export function deriveTurnFacts(turn: Turn): TurnFacts {
     systemMessages,
     hasVisibleUserContent,
     userMessageText,
-    turnEndedAt: sessionTurnEndedAt(turn),
-    turnDurationMs: sessionTurnDurationMs(turn),
+    turnEndedAt: sessionTurnEndedAt(run),
+    turnDurationMs: sessionTurnDurationMs(run),
   };
   factsByTurn.set(turn, facts);
   return facts;
@@ -427,6 +478,8 @@ export function deriveAnsweredQuestions(
     questions.flatMap((q) => (q.sessionID === sessionId && q.tool?.callID ? [q.tool.callID] : [])),
   );
 
+  const { assistantMessages } = assistantRunTurn(turn);
+
   // Collect ALL question tool parts first so we can determine which ones
   // were implicitly answered (i.e. the assistant continued past them).
   const questionInfos: {
@@ -435,8 +488,8 @@ export function deriveAnsweredQuestions(
     msgIndex: number;
     partIndex: number;
   }[] = [];
-  for (let mi = 0; mi < turn.assistantMessages.length; mi++) {
-    const msg = turn.assistantMessages[mi];
+  for (let mi = 0; mi < assistantMessages.length; mi++) {
+    const msg = assistantMessages[mi];
     for (let pi = 0; pi < msg.parts.length; pi++) {
       const part = msg.parts[pi];
       if (part.type !== 'tool') continue;
@@ -459,14 +512,14 @@ export function deriveAnsweredQuestions(
     // in the turn. If the assistant continued, this question was answered.
     const hasSubsequentContent = (() => {
       // Check for later parts in the same message
-      const msg = turn.assistantMessages[msgIndex];
+      const msg = assistantMessages[msgIndex];
       for (let pi = partIndex + 1; pi < msg.parts.length; pi++) {
         const p = msg.parts[pi];
         if (p.type === 'step-finish' || p.type === 'step-start') continue;
         return true;
       }
       // Check for later messages in the turn
-      return msgIndex < turn.assistantMessages.length - 1;
+      return msgIndex < assistantMessages.length - 1;
     })();
 
     const isPending = pendingCallIds.has(tool.callID);
@@ -701,7 +754,8 @@ export function deriveTurnView(turn: Turn, ctx: TurnViewContext): TurnView {
     response,
     isCompactionCard: facts.hasCompaction && !working && !!response,
     showStepsBlock:
-      (working || facts.hasSteps || facts.hasReasoning) && turn.assistantMessages.length > 0,
+      (working || facts.hasSteps || facts.hasReasoning) &&
+      assistantRunTurn(turn).assistantMessages.length > 0,
     costInfo,
     commandForTurn,
   };
@@ -770,41 +824,117 @@ export interface ProjectionOptions {
 
 export interface ProjectionCache {
   props: Map<string, AssistantPartRowProps>;
-  /** Per message object: its parts by id. A message keeps its identity while
-   *  unchanged, so only the changed bucket is re-indexed. */
-  partsByMessage: WeakMap<MessageWithParts, Map<string, Part>>;
+  /** Per message object: its parts by id, in part order — a list, because a
+   *  wire message CAN carry two parts with one id (see `resolveParts`). A
+   *  message keeps its identity while unchanged, so only the changed bucket
+   *  is re-indexed. */
+  partsByMessage: WeakMap<MessageWithParts, Map<string, Part[]>>;
 }
 
 export function createProjectionCache(): ProjectionCache {
   return { props: new Map(), partsByMessage: new WeakMap() };
 }
 
-function indexParts(message: MessageWithParts, cache: ProjectionCache): Map<string, Part> {
+function indexParts(message: MessageWithParts, cache: ProjectionCache): Map<string, Part[]> {
   let index = cache.partsByMessage.get(message);
   if (!index) {
-    index = new Map(message.parts.map((p) => [p.id, p]));
+    index = new Map();
+    for (const part of message.parts) {
+      if (typeof part.id !== 'string' || part.id.length === 0) continue;
+      const holders = index.get(part.id);
+      if (holders) holders.push(part);
+      else index.set(part.id, [part]);
+    }
     cache.partsByMessage.set(message, index);
   }
   return index;
 }
 
-/** Resolve a row's refs to the live part objects of `turn`. */
+/**
+ * The part a POSITIONAL ref names, or `undefined`.
+ *
+ * The SDK refs a part whose wire `id` is empty by its SLOT, `<messageID>:#<index>`
+ * (`defaultGetPartId` in `timeline.ts`). Resolve it by index — and only while
+ * that slot still holds an id-less part: once the part gains an id the SDK
+ * refs it by that id on the next frame, and a stale positional ref must not
+ * alias whatever now sits in the slot.
+ */
+function positionalPart(message: MessageWithParts, ref: TimelinePartRef): Part | undefined {
+  const { messageID, partID } = ref;
+  const prefix = messageID.length;
+  if (
+    partID.length < prefix + 3 ||
+    partID.charCodeAt(prefix) !== 58 /* ':' */ ||
+    partID.charCodeAt(prefix + 1) !== 35 /* '#' */ ||
+    !partID.startsWith(messageID)
+  ) {
+    return undefined;
+  }
+  const index = Number(partID.slice(prefix + 2));
+  if (!Number.isInteger(index) || index < 0) return undefined;
+  const part = message.parts[index];
+  if (!part || (typeof part.id === 'string' && part.id.length > 0)) return undefined;
+  return part;
+}
+
+/**
+ * Resolution state for ONE projection pass: how many refs of each
+ * `(messageID, partID)` have been resolved so far. Only consulted when a
+ * message carries DUPLICATE part ids; allocated lazily, so the normal path
+ * costs nothing.
+ */
+interface ResolveState {
+  seen: Map<string, number> | null;
+  /** The SDK's renderable predicate, so a ref never lands on a part the SDK
+   *  gave no row (a bookkeeping part sharing an id with the tool after it). */
+  isCandidate: (part: Part) => boolean;
+}
+
+/**
+ * Resolve a row's refs to the live part objects of `turn`.
+ *
+ * A ref names a part by `(messageID, partID)`. Two wire shapes break the plain
+ * id lookup, and both are handled here so a part is never silently DROPPED or
+ * swapped for its neighbour:
+ *
+ *   - an EMPTY `id` → the SDK's positional ref (`positionalPart`);
+ *   - DUPLICATE ids inside one message → the SDK de-dupes the row KEY but every
+ *     ref carries the shared id, in part order. The k-th ref of an id resolves
+ *     to the k-th renderable part holding it: first ref → first part.
+ */
 function resolveParts(
   refs: readonly TimelinePartRef[],
   turn: Turn,
   cache: ProjectionCache,
   substitute: ReadonlyMap<string, ToolPart>,
+  state: ResolveState,
 ): Part[] {
   const out: Part[] = [];
+  const run = assistantRunTurn(turn);
   for (const ref of refs) {
-    let found: Part | undefined;
-    for (const message of turn.assistantMessages) {
-      if (message.info.id !== ref.messageID) continue;
-      found = indexParts(message, cache).get(ref.partID);
-      break;
+    let message: MessageWithParts | undefined;
+    for (const candidate of run.assistantMessages) {
+      if (candidate.info.id === ref.messageID) {
+        message = candidate;
+        break;
+      }
     }
-    if (!found && turn.userMessage.info.id === ref.messageID) {
-      found = indexParts(turn.userMessage, cache).get(ref.partID);
+    if (!message && turn.userMessage.info.id === ref.messageID) message = turn.userMessage;
+    if (!message) continue;
+
+    let found: Part | undefined;
+    const holders = indexParts(message, cache).get(ref.partID);
+    if (!holders) {
+      found = positionalPart(message, ref);
+    } else if (holders.length === 1) {
+      found = holders[0];
+    } else {
+      const key = `${ref.messageID} ${ref.partID}`;
+      const seen = (state.seen ??= new Map());
+      const occurrence = seen.get(key) ?? 0;
+      seen.set(key, occurrence + 1);
+      const candidates = holders.filter(state.isCandidate);
+      found = candidates[occurrence] ?? candidates[candidates.length - 1];
     }
     if (!found) continue;
     // A kept question rides as the ANSWERED part — possibly synthetic with
@@ -817,6 +947,61 @@ function resolveParts(
 }
 
 const isQuestionPart = (part: Part): boolean => isToolPart(part) && part.tool === 'question';
+
+/**
+ * One unit of a turn's part rows: a `part` row as is, or a run of `context`
+ * rows MERGED into one — the refs concatenated, keyed by the first row.
+ */
+interface PartUnit {
+  key: string;
+  kind: 'part' | 'context';
+  refs: TimelinePartRef[];
+}
+
+/**
+ * The turn's part rows, with adjacent context rows merged across the rows the
+ * host renders NOTHING for.
+ *
+ * The SDK flushes an open group at `turn-divider:interrupted` (the aborted
+ * message's head) and at the orphan preamble's `error` row, so a burst that
+ * straddles either arrives as TWO context rows. Those are upstream semantics
+ * (a group must not span a rendered divider). In Stage 2 neither row renders
+ * — `timelineRowSlot` is `'none'` — while the legacy `segmentTurn` never split
+ * there: a burst is a maximal run of non-text, non-standalone parts across
+ * the whole turn. OpenCode writes one assistant message PER STEP and lands a
+ * Stop's abort on the LAST one, so "step N ends in tool calls, step N+1 opens
+ * with reasoning or a tool, then Stop" is the common case — and it must read
+ * "Completed 4 steps", not "2 steps" twice.
+ *
+ * So: two context rows with only `'none'`-slot rows between them are one unit.
+ * A `part` row or a `bubble` row between them keeps them apart. When Stage 3
+ * renders the interrupted divider in place, the burst must split there as the
+ * SDK has it — delete this merge then, and the golden `abort-step*` fixtures
+ * with it.
+ */
+function partUnits(group: TurnRowGroup): PartUnit[] {
+  const units: PartUnit[] = [];
+  // The open context unit, while only non-rendering rows have followed it.
+  let open: PartUnit | null = null;
+  for (const row of group.rows) {
+    if (row.kind !== 'assistant-part') {
+      if (timelineRowSlot(row) !== 'none') open = null;
+      continue;
+    }
+    if (row.group.type === 'part') {
+      units.push({ key: row.key, kind: 'part', refs: [row.group.ref] });
+      open = null;
+      continue;
+    }
+    if (open) {
+      open.refs.push(...row.group.refs);
+      continue;
+    }
+    open = { key: row.key, kind: 'context', refs: [...row.group.refs] };
+    units.push(open);
+  }
+  return units;
+}
 
 /**
  * Hand back the previous props object when every input is unchanged, so the
@@ -881,18 +1066,12 @@ export function projectTurnPlacements(
     isTrailing: false,
   };
 
-  const partRows = group.rows.filter(
-    (r): r is TimelineAssistantPartRow => r.kind === 'assistant-part',
-  );
+  const units = partUnits(group);
 
   // ---- Shell mode — short-circuit ----
   if (view.shellModePart) {
     const shellPart = view.shellModePart;
-    const host = partRows.find((r) =>
-      r.group.type === 'part'
-        ? r.group.ref.partID === shellPart.id
-        : r.group.refs.some((ref) => ref.partID === shellPart.id),
-    );
+    const host = units.find((u) => u.refs.some((ref) => ref.partID === shellPart.id));
     // Permission matching for this session (used for tool-level permission overlays)
     const nextPermission = opts.permissions.filter((p) => p.sessionID === opts.sessionId)[0];
     const shell = stableProps(cache, {
@@ -910,39 +1089,48 @@ export function projectTurnPlacements(
     return { shell: null, steps: [], body: [] };
   }
 
-  // ---- Resolve every row once ----
-  const resolved = partRows.map((row) => {
-    const refs = row.group.type === 'part' ? [row.group.ref] : row.group.refs;
-    const parts = resolveParts(refs, turn, cache, view.answeredQuestionPartsById);
-    return { row, parts };
-  });
+  // ---- Resolve every unit once ----
+  // The renderable predicate for duplicate-id resolution is the one the rows
+  // were built with; its answered set is this turn's. Built lazily — only a
+  // message with duplicate part ids ever asks.
+  let answeredIds: ReadonlySet<string> | null = null;
+  const resolveState: ResolveState = {
+    seen: null,
+    isCandidate: (part) =>
+      webIsRenderablePart(part, (answeredIds ??= new Set(view.answeredQuestionPartsById.keys()))),
+  };
+  const resolved = units.map((unit) => ({
+    unit,
+    parts: resolveParts(unit.refs, turn, cache, view.answeredQuestionPartsById, resolveState),
+  }));
 
   // The legacy segment list: text → text, standalone part → standalone,
   // context → burst of its non-question parts in inline mode (dropped when
   // empty) / all parts otherwise.
   type Segment =
-    | { kind: 'text'; row: TimelineAssistantPartRow; part: TextPart }
-    | { kind: 'standalone'; row: TimelineAssistantPartRow; part: ToolPart }
-    | { kind: 'burst'; row: TimelineAssistantPartRow; parts: Part[] };
+    | { kind: 'text'; key: string; part: TextPart }
+    | { kind: 'standalone'; key: string; part: ToolPart }
+    | { kind: 'burst'; key: string; parts: Part[] };
   const segments: Segment[] = [];
-  /** Context rows' answered questions, for the inline body (row key → parts). */
+  /** Context units' answered questions, for the inline body (unit key → parts). */
   const inlineQuestionsByRow = new Map<string, Part[]>();
-  for (const { row, parts } of resolved) {
+  for (const { unit, parts } of resolved) {
     if (parts.length === 0) continue;
-    if (row.group.type === 'part') {
+    const { key } = unit;
+    if (unit.kind === 'part') {
       const part = parts[0];
-      if (isTextPart(part)) segments.push({ kind: 'text', row, part });
-      else if (isToolPart(part)) segments.push({ kind: 'standalone', row, part });
+      if (isTextPart(part)) segments.push({ kind: 'text', key, part });
+      else if (isToolPart(part)) segments.push({ kind: 'standalone', key, part });
       continue;
     }
     if (view.shouldUseInlineContent) {
       const burstParts = parts.filter((p) => !isQuestionPart(p));
       const questionParts = parts.filter(isQuestionPart);
-      if (questionParts.length > 0) inlineQuestionsByRow.set(row.key, questionParts);
-      if (burstParts.length > 0) segments.push({ kind: 'burst', row, parts: burstParts });
+      if (questionParts.length > 0) inlineQuestionsByRow.set(key, questionParts);
+      if (burstParts.length > 0) segments.push({ kind: 'burst', key, parts: burstParts });
       continue;
     }
-    segments.push({ kind: 'burst', row, parts });
+    segments.push({ kind: 'burst', key, parts });
   }
 
   // ---- Steps section ----
@@ -954,7 +1142,7 @@ export function projectTurnPlacements(
         steps.push(
           stableProps(cache, {
             ...base,
-            key: segment.row.key,
+            key: segment.key,
             role: 'burst',
             parts: segment.parts,
             isTrailing: isLast,
@@ -966,7 +1154,7 @@ export function projectTurnPlacements(
         steps.push(
           stableProps(cache, {
             ...base,
-            key: segment.row.key,
+            key: segment.key,
             role: 'standalone',
             parts: [segment.part],
             permission: getPermissionForTool(opts.permissions, segment.part.callID),
@@ -983,7 +1171,7 @@ export function projectTurnPlacements(
       steps.push(
         stableProps(cache, {
           ...base,
-          key: segment.row.key,
+          key: segment.key,
           role: 'text-step',
           parts: [segment.part],
           text,
@@ -1000,24 +1188,24 @@ export function projectTurnPlacements(
     let lastTextRowKey: string | null = null;
     if (view.working) {
       for (let i = resolved.length - 1; i >= 0; i--) {
-        const { row, parts } = resolved[i];
-        if (row.group.type === 'part' && parts[0] && isTextPart(parts[0])) {
-          lastTextRowKey = row.key;
+        const { unit, parts } = resolved[i];
+        if (unit.kind === 'part' && parts[0] && isTextPart(parts[0])) {
+          lastTextRowKey = unit.key;
           break;
         }
       }
     }
-    for (const { row, parts } of resolved) {
+    for (const { unit, parts } of resolved) {
       if (parts.length === 0) continue;
-      if (row.group.type === 'part') {
+      if (unit.kind === 'part') {
         const part = parts[0];
         if (!isTextPart(part)) continue;
-        const isStreaming = row.key === lastTextRowKey;
+        const isStreaming = unit.key === lastTextRowKey;
         const text = isStreaming ? part.text! : part.text!.trim();
         body.push(
           stableProps(cache, {
             ...base,
-            key: `${row.key}:body`,
+            key: `${unit.key}:body`,
             role: 'inline-text',
             parts: [part],
             text,
@@ -1026,12 +1214,12 @@ export function projectTurnPlacements(
         );
         continue;
       }
-      const questionParts = inlineQuestionsByRow.get(row.key);
+      const questionParts = inlineQuestionsByRow.get(unit.key);
       if (!questionParts) continue;
       body.push(
         stableProps(cache, {
           ...base,
-          key: `${row.key}:body`,
+          key: `${unit.key}:body`,
           role: 'inline-questions',
           parts: questionParts,
         }),
@@ -1040,14 +1228,15 @@ export function projectTurnPlacements(
   } else if (!view.hasSteps && view.response) {
     // The single response block — on the LAST text row of the turn. (A
     // whitespace-only streaming text part has no row; the block waits for
-    // its first non-blank character.)
+    // its first non-blank character — the intended divergence fixtured as
+    // `working-whitespace-text`: legacy mounted an empty streaming container.)
     for (let i = resolved.length - 1; i >= 0; i--) {
-      const { row, parts } = resolved[i];
-      if (row.group.type !== 'part' || !parts[0] || !isTextPart(parts[0])) continue;
+      const { unit, parts } = resolved[i];
+      if (unit.kind !== 'part' || !parts[0] || !isTextPart(parts[0])) continue;
       body.push(
         stableProps(cache, {
           ...base,
-          key: `${row.key}:body`,
+          key: `${unit.key}:body`,
           role: 'response',
           parts: [parts[0]],
           text: view.response,

@@ -56,6 +56,25 @@ const assistant = (
     parts,
   }) as unknown as MessageWithParts;
 
+const orphan = (id: string, parts: Part[], info: AnyPart = {}): MessageWithParts =>
+  ({
+    info: { id, role: 'assistant', time: { created: (t += 10), completed: t + 5 }, ...info },
+    parts,
+  }) as unknown as MessageWithParts;
+/** An assistant message still streaming: no `time.completed`. (`time.created`
+ *  stays on the fixture clock — a stamp below the prompt's would sort the
+ *  message AHEAD of its prompt in display order.) */
+const streaming = (
+  id: string,
+  parentID: string,
+  parts: Part[],
+  info: AnyPart = {},
+): MessageWithParts => assistant(id, parentID, parts, { time: { created: (t += 10) }, ...info });
+const USER_ABORT = {
+  name: 'AbortError',
+  data: { message: 'The operation was aborted.', reason: 'user' },
+};
+
 const noopReply = async () => {};
 const ctx = (overrides: Partial<TurnViewContext> = {}): TurnViewContext => ({
   sessionId: 'ses',
@@ -339,5 +358,169 @@ describe('projection identity', () => {
     expect(Object.is(deriveTurnView(turn, c), deriveTurnView(turn, { ...c, working: true }))).toBe(
       false,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bursts across non-rendering rows (F1 / F2)
+// ---------------------------------------------------------------------------
+
+describe('a burst spans the rows the host does not render', () => {
+  test('F1: the interrupted divider does not split a burst (abort on step 2, reasoning head)', () => {
+    // OpenCode: one assistant message per step, the abort on the last one.
+    const { placements, view } = project([
+      user('u'),
+      assistant('s1', 'u', [tool('s1', 'p1', 'read'), tool('s1', 'p2', 'grep')]),
+      streaming('s2', 'u', [reasoning('s2', 'p3', 'edit it'), tool('s2', 'p4', 'bash')], {
+        error: USER_ABORT,
+      }),
+    ]);
+    expect(view.turnErrorIsAbort).toBe(true);
+    // `segmentTurn` over the turn's parts: ONE burst of four.
+    expect(placements.steps.map((p) => p.role)).toEqual(['burst']);
+    expect(ids(placements.steps[0])).toEqual(['p1', 'p2', 'p3', 'p4']);
+    expect(placements.steps[0].isTrailing).toBe(true);
+    // The merged placement keeps the FIRST row's key.
+    expect(placements.steps[0].key).toBe('assistant-part:u:context:s1:p1');
+  });
+
+  test('F1: three steps, abort on the third — one closed burst of three', () => {
+    const { placements } = project([
+      user('u'),
+      assistant('s1', 'u', [tool('s1', 'p1', 'read')]),
+      assistant('s2', 'u', [tool('s2', 'p2', 'read')]),
+      streaming('s3', 'u', [tool('s3', 'p3', 'read')], { error: USER_ABORT }),
+    ]);
+    expect(placements.steps.map((p) => p.role)).toEqual(['burst']);
+    expect(ids(placements.steps[0])).toEqual(['p1', 'p2', 'p3']);
+  });
+
+  test('F1: a text head on the aborted step still closes the burst (as segmentTurn does)', () => {
+    const { placements } = project([
+      user('u'),
+      assistant('s1', 'u', [tool('s1', 'p1', 'read')]),
+      streaming('s2', 'u', [text('s2', 'p2', 'Now I will'), tool('s2', 'p3', 'bash')], {
+        error: USER_ABORT,
+      }),
+    ]);
+    expect(placements.steps.map((p) => p.role)).toEqual(['burst', 'text-step', 'burst']);
+    expect(placements.steps.map(ids)).toEqual([['p1'], ['p2'], ['p3']]);
+  });
+
+  test('F2: the orphan preamble error does not split a burst', () => {
+    const { placements } = project([
+      orphan('pre', [tool('pre', 'p0', 'read')], {
+        error: { name: 'APIError', data: { message: 'init failed' } },
+      }),
+      user('u'),
+      assistant('a', 'u', [
+        tool('a', 'p1', 'read'),
+        tool('a', 'p2', 'bash'),
+        text('a', 'p3', 'done'),
+      ]),
+    ]);
+    expect(placements.steps.map((p) => p.role)).toEqual(['burst', 'text-step']);
+    expect(ids(placements.steps[0])).toEqual(['p0', 'p1', 'p2']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assistant-only turn (F3)
+// ---------------------------------------------------------------------------
+
+describe('an assistant-only turn renders its head message as assistant content', () => {
+  test('text only: the response block on the head text', () => {
+    const { placements, view } = project([
+      orphan('o', [text('o', 'p', 'Session init: I am here.')]),
+    ]);
+    expect(view.hasVisibleUserContent).toBe(false);
+    expect(view.response).toBe('Session init: I am here.');
+    expect(placements.steps).toEqual([]);
+    expect(placements.body.map((p) => p.role)).toEqual(['response']);
+    expect(ids(placements.body[0])).toEqual(['p']);
+    expect(placements.body[0].text).toBe('Session init: I am here.');
+  });
+
+  test('error, no parts: the error text is the turn error', () => {
+    const { placements, view } = project([
+      orphan('o', [], { error: { name: 'APIError', data: { message: 'init exploded' } } }),
+    ]);
+    expect(view.turnError).toBe('init exploded');
+    expect(view.turnErrorIsAbort).toBe(false);
+    expect(placements.steps).toEqual([]);
+    expect(placements.body).toEqual([]);
+  });
+
+  test('head plus a second orphan with tools: the head text is the first text step', () => {
+    const { placements, view } = project([
+      orphan('o', [text('o', 'p1', 'first orphan')]),
+      orphan('o2', [tool('o2', 'p2', 'read'), text('o2', 'p3', 'second orphan prose')]),
+    ]);
+    expect(view.hasSteps).toBe(true);
+    expect(placements.steps.map((p) => p.role)).toEqual(['text-step', 'burst', 'text-step']);
+    expect(placements.steps.map(ids)).toEqual([['p1'], ['p2'], ['p3']]);
+    expect(placements.body).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// part refs without a usable id (F5 / F6)
+// ---------------------------------------------------------------------------
+
+describe('resolving refs without a usable part id', () => {
+  test('F5: an EMPTY part id resolves by position — the tool and the text render', () => {
+    const { placements, view } = project([
+      user('u'),
+      assistant('a', 'u', [
+        part('a', '', {
+          type: 'tool',
+          tool: 'read',
+          callID: 'call_x',
+          state: { status: 'completed' },
+        }),
+        part('a', '', { type: 'text', text: 'no id text' }),
+      ]),
+    ]);
+    expect(view.hasSteps).toBe(true);
+    expect(placements.steps.map((p) => p.role)).toEqual(['burst', 'text-step']);
+    expect(placements.steps[0].parts[0]).toBe(view.allParts[0].part);
+    expect(placements.steps[1].parts[0]).toBe(view.allParts[1].part);
+    expect(placements.steps[1].text).toBe('no id text');
+  });
+
+  test('F5: an EMPTY text id resolves by position in response mode', () => {
+    const { placements } = project([
+      user('u'),
+      assistant('a', 'u', [part('a', '', { type: 'text', text: 'no id text' })]),
+    ]);
+    expect(placements.body.map((p) => p.role)).toEqual(['response']);
+    expect(placements.body[0].text).toBe('no id text');
+  });
+
+  test('F6: DUPLICATE part ids — the first ref is the first part, the second the second', () => {
+    const { placements, view } = project([
+      user('u'),
+      assistant('a', 'u', [
+        text('a', 'DUP', 'first text'),
+        tool('a', 'DUP', 'read'),
+        text('a', 'p3', 'final'),
+      ]),
+    ]);
+    expect(view.hasSteps).toBe(true);
+    expect(placements.steps.map((p) => p.role)).toEqual(['text-step', 'burst', 'text-step']);
+    expect(placements.steps[0].text).toBe('first text');
+    expect(placements.steps[0].parts[0]).toBe(view.allParts[0].part);
+    expect(placements.steps[1].parts[0]).toBe(view.allParts[1].part);
+    expect(placements.steps[2].text).toBe('final');
+  });
+
+  test('F6: a duplicate id whose first holder is NOT renderable skips to the renderable one', () => {
+    // A `step-start` bookkeeping part sharing its id with the tool after it.
+    const { placements } = project([
+      user('u'),
+      assistant('a', 'u', [part('a', 'DUP', { type: 'step-start' }), tool('a', 'DUP', 'read')]),
+    ]);
+    expect(placements.steps.map((p) => p.role)).toEqual(['burst']);
+    expect((placements.steps[0].parts[0] as { type: string }).type).toBe('tool');
   });
 });

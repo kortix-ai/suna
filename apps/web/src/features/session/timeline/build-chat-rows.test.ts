@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { groupMessagesIntoTurns, type MessageWithParts, type Part } from '@/ui';
 import type { TimelineAssistantPartRow, TimelineRow } from '@kortix/sdk';
 
 import { segmentTurn } from '../turn/segment-turn';
+import { scenarios } from './__fixtures__/transcript';
 import {
   aliasRowKey,
   buildChatRows,
@@ -201,8 +204,13 @@ describe('buildChatRows reproduces segmentTurn for every turn', () => {
     expect(rows[0].group.type).toBe('context');
   });
 
-  test('DOCUMENTED DIVERGENCE: the SDK flushes a group at the interrupted divider', () => {
-    // `segmentTurn` never splits there; the rows win (see the spec's risks).
+  test('the SDK flushes a group at the interrupted divider; the projection merges it back', () => {
+    // Upstream semantics: a group must not span a rendered divider. The host
+    // renders no divider in Stage 2, and `segmentTurn` never split there, so
+    // `projectTurnPlacements` merges the two context rows into ONE burst
+    // (`partUnits` in project-rows.ts; asserted in project-rows.test.ts and by
+    // the `abort-step2-reasoning-head` / `abort-step3-of-three` goldens). The
+    // ROWS keep the split — this test pins the row-level fact.
     const messages = [
       user('u'),
       assistant('a1', 'u', [tool('a1', 'p1', 'read')]),
@@ -213,10 +221,112 @@ describe('buildChatRows reproduces segmentTurn for every turn', () => {
     const rows = build(messages);
     expect(rowIds(assistantRows(rows, 'u'))).toEqual([['p1'], ['p2']]);
     expect(rows.some((r) => r.kind === 'turn-divider' && r.label === 'interrupted')).toBe(true);
-    // And the reference would have kept them together:
+    // The reference keeps them together — and so does the projection:
     expect(segmentIds([tool('a1', 'p1', 'read'), tool('a2', 'p2', 'bash')])).toEqual([
       ['p1', 'p2'],
     ]);
+  });
+
+  test('the SDK flushes a group at the orphan preamble error; the projection merges it back', () => {
+    const messages = [
+      {
+        info: {
+          id: 'pre',
+          role: 'assistant',
+          time: { created: 1 },
+          error: { name: 'APIError', data: { message: 'init failed' } },
+        },
+        parts: [tool('pre', 'p0', 'read')],
+      } as unknown as MessageWithParts,
+      user('u'),
+      assistant('a', 'u', [tool('a', 'p1', 'read'), text('a', 'p2', 'done')]),
+    ];
+    const rows = build(messages);
+    expect(rowIds(assistantRows(rows, 'u'))).toEqual([['p0'], ['p1'], ['p2']]);
+    const kinds = rows.filter((r) => r.userMessageID === 'u').map((r) => r.kind);
+    expect(kinds).toEqual([
+      'user-message',
+      'assistant-part',
+      'error',
+      'assistant-part',
+      'assistant-part',
+    ]);
+    // `segmentTurn` over the turn's parts: one burst of two.
+    expect(
+      segmentIds([tool('pre', 'p0', 'read'), tool('a', 'p1', 'read'), text('a', 'p2', 'done')]),
+    ).toEqual([['p0', 'p1'], ['p2']]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Intended divergences from the legacy turn list
+// ---------------------------------------------------------------------------
+
+/**
+ * Every way `SessionTimelineList` renders DIFFERENTLY from the legacy
+ * `turns.map(SessionTurn)` list, on purpose. Each has a golden fixture whose
+ * expected markup is the NEW render (`__fixtures__/golden.<name>.html`); an
+ * entry here without its golden, or a golden not listed here, fails below.
+ * Everything else is byte-identical (the `idle` / `working` goldens plus the
+ * other edge scenarios in `__fixtures__/transcript.ts`).
+ */
+const INTENDED_DIVERGENCES: { fixture: string; rationale: string }[] = [
+  {
+    fixture: 'assistant-only-text',
+    rationale:
+      'An assistant-only turn (orphan assistant message, no prompt at all) renders its head message as ASSISTANT content — the response block; legacy painted it as a USER bubble.',
+  },
+  {
+    fixture: 'assistant-only-error',
+    rationale:
+      'An assistant-only turn whose head failed with no parts renders the error text; legacy drew an empty user bubble and no error (getTurnError read only assistantMessages).',
+  },
+  {
+    fixture: 'assistant-only-head-orphan',
+    rationale:
+      'An assistant-only head followed by a second orphan renders the head text as the first text step of the steps block; legacy put it in a user bubble above the steps.',
+  },
+  {
+    fixture: 'working-whitespace-text',
+    rationale:
+      'A streaming text part that is still all whitespace has no row, so no response block mounts until its first non-blank character; legacy mounted an empty streaming markdown container (an empty div inside the space-y stack).',
+  },
+];
+
+describe('intended divergences', () => {
+  test('each has a golden fixture and a fixtured scenario', () => {
+    const names = new Set(scenarios.map((s) => s.name));
+    for (const { fixture, rationale } of INTENDED_DIVERGENCES) {
+      expect(rationale.length).toBeGreaterThan(40);
+      expect(names.has(fixture)).toBe(true);
+      const golden = fileURLToPath(
+        new URL(`./__fixtures__/golden.${fixture}.html`, import.meta.url),
+      );
+      expect(existsSync(golden)).toBe(true);
+    }
+  });
+
+  test('an assistant-only turn emits NO user-message row and keeps the head message parts', () => {
+    const messages = [
+      {
+        info: { id: 'o', role: 'assistant', time: { created: 1 } },
+        parts: [text('o', 'p', 'init')],
+      },
+    ] as unknown as MessageWithParts[];
+    const rows = build(messages);
+    expect(rows.map((r) => r.kind)).toEqual(['assistant-part']);
+    expect(rowIds(assistantRows(rows, 'o'))).toEqual([['p']]);
+  });
+
+  test('a whitespace-only text part has no row', () => {
+    const rows = build(
+      [user('u'), assistant('a', 'u', [text('a', 'p', '  ')], { time: { created: (t += 10) } })],
+      {
+        activeUserMessageID: 'u',
+        status: 'busy',
+      },
+    );
+    expect(assistantRows(rows, 'u')).toEqual([]);
   });
 });
 
