@@ -58,6 +58,7 @@ import { startComputeSession } from '../../billing/services/compute-metering';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
+import { ConnectorTokenUnavailableError } from '../../projects/connector-token-error';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
@@ -503,15 +504,40 @@ export async function provisionSessionSandbox(opts: {
   // path was a single row per member, re-minted on every provision, so concurrent
   // boots clobbered each other and left older sandboxes with a stale token the
   // gateway rejects (401). The PAT is per-session and stable.
-  const gatewayLlmKey: string | null = connectorToken;
-  if (!gatewayLlmKey) {
-    // mintConnectorToken is best-effort (createAccountToken failure → null).
-    // This is the ONLY way a session boots without KORTIX_LLM_*; make it loud.
-    console.error(
-      '[session-sandbox] connector token missing — session will have no model access',
-      { sessionId: sandboxId, projectId, accountId },
-    );
+  if (!connectorToken) {
+    // mintConnectorToken swallows createAccountToken failure into null. That
+    // was the ONE way a session could boot without KORTIX_LLM_*: no model
+    // access, and every later env push rejected by the daemon — a dead box
+    // that looks provisioned. Gateway mode is the only mode, so the token is
+    // a hard prerequisite: mark the row failed with a user-visible reason and
+    // throw. Nothing has reached the provider yet; there is nothing to clean
+    // up. The caller marks the project session `failed` with the message.
+    const err = new ConnectorTokenUnavailableError(sandboxId);
+    console.error('[session-sandbox] connector token missing — failing provisioning closed', {
+      sessionId: sandboxId,
+      projectId,
+      accountId,
+    });
+    await db
+      .update(sessionSandboxes)
+      .set({
+        status: 'error',
+        metadata: {
+          ...buildSandboxInitFailureMetadata(
+            sandbox.metadata as Record<string, unknown> | null,
+            err,
+            1,
+            false,
+            1,
+          ),
+          errorMessage: err.message,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+    throw err;
   }
+  const gatewayLlmKey: string = connectorToken;
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,

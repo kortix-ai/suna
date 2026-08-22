@@ -356,9 +356,13 @@ mock.module('../../repositories/api-keys', () => ({
   createApiKey: async (_opts: unknown) => ({ secretKey: 'sbx-key-1' }),
 }));
 
+// Flip to make the connector-token mint fail — the ONE way a session could
+// boot without KORTIX_LLM_* (see the gateway-mode-only test below).
+let accountTokenFails = false;
 mock.module('../../repositories/account-tokens', () => ({
   createAccountToken: async (opts: Record<string, unknown>) => {
     accountTokenCreateCalls.push(opts);
+    if (accountTokenFails) throw new Error('account_tokens insert failed (simulated)');
     return { secretKey: 'exec-tok-1' };
   },
 }));
@@ -407,6 +411,7 @@ function waitFor(setResolver: (resolve: () => void) => void, timeoutMs = 2000): 
 }
 
 beforeEach(() => {
+  accountTokenFails = false;
   updateCalls = [];
   scenario = {
     archiveBeforeFinish: false,
@@ -539,6 +544,27 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     );
     expect(finishCall).toBeTruthy();
     expect(finishCall?.updates.config).toEqual({ serviceKey: 'sbx-key-1' });
+  });
+
+  test('no connector token → provisioning FAILS CLOSED: row marked error, caller gets a typed throw, no provider create', async () => {
+    // Gateway mode is the only mode. A box without KORTIX_LLM_* has no model
+    // access and rejects every later env push (daemon: 'KORTIX_CLI_TOKEN is
+    // unavailable') — a dead session that LOOKS provisioned. The connector
+    // token is therefore a hard prerequisite, not best-effort.
+    accountTokenFails = true;
+    await expect(provisionSessionSandbox(baseOpts())).rejects.toThrow(/connector token/i);
+
+    const errorRow = updateCalls.find(
+      (c) => c.table === sessionSandboxes && c.updates.status === 'error',
+    );
+    expect(errorRow).toBeDefined();
+    expect(errorRow?.updates.metadata).toMatchObject({
+      initStatus: 'failed',
+      errorMessage: expect.stringMatching(/session credential/i),
+    });
+    // Never reached the provider: no sandbox was created for a session that
+    // could not have worked.
+    expect(providerCreateCalls).toBe(0);
   });
 
   test('the fast flag keeps the standard image so the edge optimization stays isolated', async () => {
