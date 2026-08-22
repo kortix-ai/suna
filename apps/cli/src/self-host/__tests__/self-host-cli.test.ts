@@ -568,7 +568,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
       .find((c) => c.name === 'preview-origins');
     expect(setCheck?.ok).toBe(true);
     expect(setCheck?.detail).toBe('p.kortix.example.com');
-  });
+  }, 60_000);
 
   test('doctor does NOT raise preview-origins on a domain-less (laptop) instance — the path form is correct there', async () => {
     await run(['init', '--yes']);
@@ -577,16 +577,29 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(checks.find((c) => c.name === 'preview-origins')).toBeUndefined();
   });
 
+  // Sets the preview domain by editing .env directly rather than via `env set`.
+  // `env set` restarts the services the key touches (caddy + kortix-api), and
+  // two `status` renders on top of that docker work blew the 15s default in CI.
+  // The `env set` path is already covered black-box by the doctor test above;
+  // what this one asserts is the STATUS WORDING, which only needs the file.
   test('status shows preview origins as NOT configured on a domain instance, and names the domain once set', async () => {
     await run(['init', '--yes', '--domain', 'kortix.example.com']);
     const missing = await run(['status']);
     expect(missing.stdout).toContain('preview origins NOT configured');
 
-    await run(['env', 'set', 'KORTIX_PREVIEW_BASE_DOMAIN=p.kortix.example.com']);
+    const envFile = join(configRoot, instance, '.env');
+    writeFileSync(
+      envFile,
+      readFileSync(envFile, 'utf8').replace(
+        /^KORTIX_PREVIEW_BASE_DOMAIN=.*$/m,
+        'KORTIX_PREVIEW_BASE_DOMAIN=p.kortix.example.com',
+      ),
+    );
+
     const set = await run(['status']);
     expect(set.stdout).toContain('*.p.kortix.example.com');
     expect(set.stdout).not.toContain('NOT configured');
-  });
+  }, 60_000);
 
   // `connect-github` is deprecated: managed git is now configured in the web
   // dashboard (Settings → Git), not by this CLI — the App-manifest flow it
