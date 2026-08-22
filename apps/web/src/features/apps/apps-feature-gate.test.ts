@@ -134,10 +134,35 @@ test('an App card shows the App, not a stock glyph standing in for it', () => {
   // filled because that is what a media control looks like — an unrelated
   // control failing a card assertion is the assertion being wrong, not the UI.
   expect(view).not.toContain('size-9');
-  // Status is the house dot, and the host loses the scheme every App shares.
+  // Status is the house dot.
   expect(view).toContain("dot: live ? 'bg-kortix-green'");
-  expect(view).toContain('{appHost(app.url)}');
-  expect(view).not.toContain('{app.url}</p>');
+});
+
+test('a card caption is the App\'s name and its state — not its hostname', () => {
+  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const card = view.slice(view.indexOf('function AppCard('), view.indexOf('function AppDetailModal('));
+
+  // Every App's URL is the same `<key>.apps.<domain>` shape, so a column of
+  // them differs only in a random token nobody reads or types — a third of the
+  // caption's height spent on noise, on the surface whose job is to show the
+  // App. Neither the derived host nor the raw URL belongs on a tile.
+  expect(card).not.toContain('appHost(');
+  expect(card).not.toContain('{app.url}');
+  expect(card).not.toContain('font-mono');
+
+  // The caption is ONE row now, not a stack — a leftover `space-y` wrapper
+  // would keep reserving the line the host used to occupy.
+  expect(card).toContain('className="mt-3 flex items-center gap-2"');
+  expect(card).not.toContain('mt-3 space-y-1');
+
+  // …and the skeleton loses its second bar with it, or the grid shifts the
+  // moment real data lands.
+  const skeleton = view.slice(view.indexOf('function AppGridSkeleton('));
+  expect(skeleton.slice(0, skeleton.indexOf('\n}'))).not.toContain('space-y-1');
+
+  // The URL is not gone from the product — the detail layer still names it on
+  // the control that opens the App.
+  expect(view).toContain('appHost(app.url)');
 });
 
 test('the Apps row matches the row contract of the group it sits in', () => {
@@ -285,7 +310,7 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   expect(card).toContain('relative overflow-hidden rounded-lg border');
   expect(card).not.toContain('bg-popover');
   expect(card).not.toContain('border-b');
-  expect(card).toContain('className="mt-3 space-y-1"');
+  expect(card).toContain('className="mt-3 flex items-center gap-2"');
 
   // Still exactly one control per card — a hover overflow button inside the
   // card button would be invalid HTML and a nested hit area.

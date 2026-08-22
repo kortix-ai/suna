@@ -873,9 +873,13 @@ export function AppsView({ projectId }: { projectId: string }) {
 }
 
 /**
- * Shape-matched placeholder: same grid, same 16:9 tile, same two-line caption
+ * Shape-matched placeholder: same grid, same 16:9 tile, same ONE-line caption
  * hanging below it as `AppCard`. Four tiles, because four is the widest row any
  * density reaches — fewer would reflow the grid the moment real data lands.
+ *
+ * The second caption bar went when the card's hostname line did. A skeleton
+ * taller than the thing it stands in for is a layout shift dressed as a
+ * loading state.
  */
 function AppGridSkeleton({ columns }: { columns: string }) {
   return (
@@ -883,10 +887,7 @@ function AppGridSkeleton({ columns }: { columns: string }) {
       {Array.from({ length: 4 }).map((_, index) => (
         <li key={index}>
           <Skeleton className={cn(PREVIEW_TILE_ASPECT, 'w-full rounded-lg')} />
-          <div className="mt-3 space-y-1">
-            <Skeleton className="h-3.5 w-1/2 rounded-sm" />
-            <Skeleton className="h-3 w-3/4 rounded-sm" />
-          </div>
+          <Skeleton className="mt-3 h-3.5 w-1/2 rounded-sm" />
         </li>
       ))}
     </ul>
@@ -953,19 +954,24 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
           />
         </div>
 
-        {/* The caption. Title and status share a baseline row; the host sits
-            under it, quieter. No padding of its own — it is page text now, not
-            the inside of a panel. */}
-        <div className="mt-3 space-y-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-              {app.name}
-            </h3>
-            <Badge size="xs" variant={status.live ? 'success' : 'muted'} className="shrink-0">
-              {status.label}
-            </Badge>
-          </div>
-          <p className="text-muted-foreground truncate font-mono text-xs">{appHost(app.url)}</p>
+        {/* The caption: the App's name and whether it is up. One line.
+            No padding of its own — it is page text, not the inside of a panel.
+
+            The hostname used to sit under the name in monospace. It is the
+            same `<generated-key>.apps.<domain>` shape on every card, so a
+            column of them is a column of near-identical strings that differ in
+            a random token nobody reads or types — noise measured in a third of
+            the caption's height, on the surface whose whole job is to show the
+            App. The full URL is still one click away in the detail layer,
+            beside the control that opens it, which is where someone who wants
+            to copy it is already going. */}
+        <div className="mt-3 flex items-center gap-2">
+          <h3 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
+            {app.name}
+          </h3>
+          <Badge size="xs" variant={status.live ? 'success' : 'muted'} className="shrink-0">
+            {status.label}
+          </Badge>
         </div>
       </button>
     </li>
