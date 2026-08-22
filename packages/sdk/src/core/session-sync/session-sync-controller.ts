@@ -51,7 +51,18 @@ export interface SessionSyncScheduler {
 }
 
 export type SessionSyncReason =
-  'initial' | 'poll' | 'sse-gap' | 'compaction' | 'session-error' | 'send-recovery' | 'manual';
+  | 'initial'
+  | 'poll'
+  | 'sse-gap'
+  // A turn just ended. The stream can stay CONNECTED and still lose a message
+  // event, so a gap-triggered resync never fires and the transcript is left
+  // short — cured only by a remount. Turn end is the one moment the tail is
+  // both final and cheap to verify, so it is reconciled there.
+  | 'turn-end'
+  | 'compaction'
+  | 'session-error'
+  | 'send-recovery'
+  | 'manual';
 
 export interface SessionSyncTelemetryEvent {
   operation: 'tail' | 'older';
