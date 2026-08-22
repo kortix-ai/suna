@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### A browser retry must wait for the result it is retrying (2026-08-22)
+
+**When:** retrying a client-rendered page after an eventually consistent write.
+`domcontentloaded` does not mean that React consumed the API response. Wait for
+the exact response and the final DOM state before the next navigation. A poll
+that reloads immediately can abort every successful render itself.
+*Near-miss:* PR #6724 failed browser-1 twice while every repeated account read
+returned `200`. *Enforcer:* `08-accounts-project-access.spec.ts` waits for the
+exact account response and the visible `Members` heading on each attempt.
+
 ### Mint every OpenCode message id with the native sortable codec (2026-08-22)
 
 **When:** delivering an initial, queued, retried, or imported OpenCode prompt.
