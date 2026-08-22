@@ -1284,3 +1284,145 @@ describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)'
     expect(calls).toEqual([]);
   });
 });
+
+// ── the transcript is reconciled when a turn ENDS ───────────────────────────
+// Reported live 2026-08-22: the agent finished, the terminal showed the whole
+// answer, and the web transcript stopped mid-sentence. A hard refresh rendered
+// it correctly — which is the tell. The data was on the server the whole time;
+// only the browser was short.
+//
+// The turn-end branches already refreshed git status, diffs and the file list.
+// They never re-read the MESSAGES, on the assumption that every message event
+// arrives. They do not, and `onGapRehydrate` cannot save it: that fires on a
+// stream GAP > 5s, and the stream here stayed connected. So nothing reconciled
+// until the component remounted.
+describe('a turn ending reconciles the transcript tail', () => {
+  const busyThenIdle = (sessionID: string, kind: 'session.status' | 'session.idle') => {
+    useSyncStore.getState().setStatus(sessionID, { type: 'busy' });
+    return kind === 'session.status'
+      ? ({
+          id: `evt_${sessionID}`,
+          type: 'session.status',
+          properties: { sessionID, status: { type: 'idle' } },
+        } as never)
+      : ({ id: `evt_${sessionID}`, type: 'session.idle', properties: { sessionID } } as never);
+  };
+
+  test('session.status busy → idle re-reads the tail', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    handleEvent(busyThenIdle('ses_te1', 'session.status'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([['ses_te1', 'turn-end']]);
+  });
+
+  test('session.idle re-reads the tail', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    handleEvent(busyThenIdle('ses_te2', 'session.idle'));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([['ses_te2', 'turn-end']]);
+  });
+
+  test('an idle→idle event does NOT re-read — only a real transition does', async () => {
+    // Otherwise every idle heartbeat costs a transcript fetch.
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    useSyncStore.getState().setStatus('ses_te3', { type: 'idle' });
+    handleEvent({
+      id: 'evt_te3',
+      type: 'session.idle',
+      properties: { sessionID: 'ses_te3' },
+    } as never);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([]);
+  });
+});
+
+// ── the transcript is reconciled when the stream RECONNECTS ─────────────────
+// The OpenCode desktop app re-bootstraps every active directory on each
+// `server.connected` frame (packages/app/src/context/server-sync.tsx: the
+// event pushes every active directory onto the sync queue, guarded only by a
+// 1.5s "just booted" window). Ours re-read busy sessions after a > 5s gap and
+// nothing else. A turn that ENDS inside a short disconnect leaves the session
+// idle by the time the stream is back — the gap path skips it, the turn-end
+// path never saw the transition, and the tail stays short until a remount.
+describe('a reconnect (server.connected) reconciles every loaded session', () => {
+  const connected = (n: number) =>
+    ({ id: `evt_conn_${n}`, type: 'server.connected', properties: {} }) as never;
+  const load = (sessionID: string) =>
+    useSyncStore
+      .getState()
+      .hydrate(sessionID, [
+        {
+          info: {
+            id: `msg_${sessionID}`,
+            sessionID,
+            role: 'user',
+            time: { created: 1 },
+            agent: 'build',
+            model: { providerID: 'kortix', modelID: 'm' },
+          } as never,
+          parts: [],
+        },
+      ]);
+
+  test('the FIRST server.connected is the initial connect — nothing to reconcile', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    load('ses_rc1');
+    handleEvent(connected(1));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([]);
+  });
+
+  test('a LATER server.connected re-reads every loaded session, busy or idle', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    load('ses_rc2_idle');
+    load('ses_rc2_busy');
+    useSyncStore.getState().setStatus('ses_rc2_idle', { type: 'idle' });
+    useSyncStore.getState().setStatus('ses_rc2_busy', { type: 'busy' });
+    handleEvent(connected(1));
+    handleEvent(connected(2));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls.sort()).toEqual([
+      ['ses_rc2_busy', 'reconnect'],
+      ['ses_rc2_idle', 'reconnect'],
+    ]);
+  });
+
+  test('a session that was never loaded is not fetched on reconnect', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    useSyncStore.getState().setStatus('ses_rc3_status_only', { type: 'busy' });
+    handleEvent(connected(1));
+    handleEvent(connected(2));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([]);
+  });
+});

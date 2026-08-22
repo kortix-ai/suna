@@ -4,8 +4,8 @@ import { runtimeModelCatalog } from './models/runtime-catalog';
 // present in opencode's process env, opencode auto-connects a NATIVE provider and
 // talks to it DIRECTLY, bypassing the gateway. These must be withheld from the
 // opencode process (the daemon enforces this) so the gateway is the only LLM path.
-// CODEX_AUTH_JSON is gateway-only. OPENCODE_AUTH_JSON remains a legacy managed
-// name until its native OpenCode path is removed.
+// CODEX_AUTH_JSON is gateway-only. OPENCODE_AUTH_JSON is a legacy managed name;
+// still stripped.
 let cachedRevision = -1;
 let cachedProviderEnv = new Set<string>();
 

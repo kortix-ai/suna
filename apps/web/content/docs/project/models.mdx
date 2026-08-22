@@ -9,9 +9,11 @@ Kortix runs each [session](/docs/work/sessions) on a model. This page
 explains managed models vs. your own provider key (BYOK), how Kortix picks a
 model automatically, and two billing gotchas to know.
 
-This page applies to projects with the LLM Gateway on. LLM Gateway is an
-experimental [feature flag](/docs/feature-flags), and it is on by default for
-cloud projects. Check or toggle it in Settings → Experimental.
+Every session routes its model calls through the Kortix LLM gateway. There is
+no per-project switch: the sandbox runtime sees one provider, `kortix`, and
+the gateway resolves the upstream — a managed model or your own provider key.
+Your key is a project secret the gateway spends server-side; it never enters
+the sandbox.
 
 ## Managed models and BYOK
 

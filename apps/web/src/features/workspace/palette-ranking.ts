@@ -85,7 +85,7 @@ const WEIGHT = {
 
 /**
  * Split into comparable words. Punctuation becomes a gap, so the `·` in
- * "Account · Members" and the `_` in `llm_gateway` both stop being part of a
+ * "Account · Members" and the `_` in `warm_sessions` both stop being part of a
  * word — a person typing "members" or "gateway" means the word, not the
  * separator that happens to sit beside it.
  */

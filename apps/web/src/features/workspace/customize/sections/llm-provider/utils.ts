@@ -90,7 +90,6 @@ export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmPr
  */
 export function pickInitialTab(defaultTab: ActiveTab | undefined): ActiveTab {
   if (defaultTab === 'models') return 'models';
-  if (defaultTab === 'custom') return 'custom';
   return 'providers';
 }
 
@@ -112,37 +111,6 @@ export function releasedAgo(iso: string): string {
   if (days < 30) return `${Math.floor(days / 7)}w`;
   if (days < 365) return `${Math.floor(days / 30)}mo`;
   return `${Math.floor(days / 365)}y`;
-}
-
-export function buildCustomProviderSnippet(input: {
-  providerId: string;
-  name: string;
-  baseURL: string;
-  secretName: string | null;
-  modelId: string;
-  modelName: string;
-}): string {
-  const options: Record<string, string> = { baseURL: input.baseURL };
-  if (input.secretName) options.apiKey = `{env:${input.secretName}}`;
-
-  const snippet = {
-    provider: {
-      [input.providerId]: {
-        npm: '@ai-sdk/openai-compatible',
-        name: input.name,
-        options,
-        models: {
-          [input.modelId]: {
-            id: input.modelId,
-            name: input.modelName,
-            family: input.providerId,
-          },
-        },
-      },
-    },
-  };
-
-  return JSON.stringify(snippet, null, 2);
 }
 
 export function prettyFieldLabel(envVar: string): string {

@@ -2371,8 +2371,13 @@ async function relayQuestionToApi(
   // `question` tool" — the tool park-and-restore exists to make reliable.
   //
   // If the box is parked while the question is still open, the control plane
-  // has it (persisted above) and POST /sessions/:id/question delivers the answer
-  // as a follow-up turn. Nothing is lost by leaving this one blocked.
+  // has it (persisted above). There is no longer a control-plane answer route:
+  // GET/POST /v1/projects/:projectId/sessions/:sessionId/question was removed
+  // from apps/api (routes/r4.ts), so the persisted row is a record of the ask,
+  // not a delivery channel. The user answers by sending a new prompt to the
+  // resumed session. Leaving this one blocked is still correct: the box is
+  // parked on schedule and the UI keeps answering over opencode's own SSE while
+  // it is alive.
   if (!slackRelayContext()) {
     logger.info('[opencode-events] question persisted; left open for the UI', {
       requestId: req.id,

@@ -24,7 +24,6 @@ import {
   getSessionPreviewCandidates,
   getSessionTranscript,
   getSessionTurn,
-  getVoiceTranscript,
   listProjectSessions,
   listSessionPrompts,
   listSessionPublicShares,
@@ -471,19 +470,6 @@ test('getSessionTurn distinguishes a session that never ran a turn', async () =>
 test('getSessionTurn throws on a failed request', async () => {
   nextResponse = { status: 404, body: { error: 'Not found' } };
   expect(getSessionTurn('P1', 'S1')).rejects.toThrow();
-});
-
-test('getVoiceTranscript hits GET .../voice-transcript and builds the query string from cursor/limit', async () => {
-  nextResponse = {
-    status: 200,
-    body: { session_id: 'S1', call_id: 'S1', live: true, cursor: 3, count: 0, turns: [] },
-  };
-  await getVoiceTranscript('P1', 'S1', { cursor: 12, limit: 50 });
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/voice-transcript?cursor=12&limit=50');
-  expect(last().method).toBe('GET');
-
-  await getVoiceTranscript('P1', 'S1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/voice-transcript');
 });
 
 test('updateProjectSession PATCHes the name/metadata input', async () => {

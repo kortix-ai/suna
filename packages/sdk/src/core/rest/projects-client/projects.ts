@@ -29,7 +29,6 @@ export type FeatureFlagKey =
   | 'agentmail_email'
   | 'teams'
   | 'voice'
-  | 'llm_gateway'
   | 'review_center'
   | 'meta_agent'
   | 'apps'
@@ -49,7 +48,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'agentmail_email',
   'teams',
   'voice',
-  'llm_gateway',
   'review_center',
   'meta_agent',
   'apps',
@@ -901,19 +899,6 @@ export async function getProjectSandboxProviderTransition(
       { showErrors: false, ...options },
     ),
   );
-}
-
-/**
- * Configure the warm sandbox pool for one sandbox template (Customize → Sandbox).
- * Warm pool is per-template + opt-in; `slug` selects which template (defaults to
- * the platform default). Live ready/warming counts come back on each template via
- * `listProjectSnapshots`.
- */
-export async function updateTemplateWarmPool(
-  projectId: string,
-  input: { slug: string; enabled?: boolean; size?: number },
-) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input));
 }
 
 export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {

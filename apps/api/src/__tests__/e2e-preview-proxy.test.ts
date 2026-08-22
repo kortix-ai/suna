@@ -20,6 +20,7 @@ import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import * as realProviders from '../platform/providers';
 import * as realPreviewOwnership from '../shared/preview-ownership';
 import { __resetPromptModelSignatureCacheForTests } from '../projects/lib/sandbox-env-sync';
+import { nativeProviderEnvNames } from '../llm-gateway/sandbox-credentials';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -340,6 +341,9 @@ mock.module('../config', () => ({
   SANDBOX_VERSION: 'test-version',
   config: {
     isDaytonaEnabled: () => true,
+    // The per-prompt env push always carries the gateway base URL, derived
+    // from this origin (llm-gateway/sandbox-base-url.ts).
+    KORTIX_URL: 'http://localhost:8008',
     // The preview CORS allowlist reads this. Set to the SAME value as the real
     // config default, because this file's collaborators resolve a mix of the
     // mocked and the real module — a disagreement here reads as a CORS bug.
@@ -904,8 +908,11 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
-      llmGatewayDenyEnv: '',
-      llmGatewayEnabled: false,
+      // Gateway mode is the only mode: every push carries mode ON, the base
+      // URL, and the full native-provider deny list.
+      llmGatewayBaseUrl: 'http://localhost:8008/v1/llm',
+      llmGatewayDenyEnv: nativeProviderEnvNames().join(','),
+      llmGatewayEnabled: true,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
       opencodeEnv: {},
       refreshModels: true,

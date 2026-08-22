@@ -1065,8 +1065,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         hold: (held: boolean) => P.holdSessionPrompts(projectId, sessionId, held),
       },
       /** This session's live voice-call transcript (spoken turns + ask_kortix/run_command calls). */
-      voiceTranscript: (options?: Parameters<typeof P.getVoiceTranscript>[2]) =>
-        P.getVoiceTranscript(projectId, sessionId, options),
 
       /**
        * Resolve THIS handle's own runtime (idempotent): provisions/resumes the

@@ -13,8 +13,6 @@
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors, reconcileComputerConnectors } from '../connectors/sync';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
-import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
 
 export interface FeatureFlagToggleContext {
   key: FeatureFlagKey;
@@ -45,9 +43,6 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   voice: reconcileProjectChannels,
   teams: reconcileProjectChannels,
   agentmail_email: reconcileProjectChannels,
-  llm_gateway: async ({ projectId, metadata }) => {
-    await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));
-  },
 };
 
 /**

@@ -850,9 +850,8 @@ flow(
 // PROJ-32 — the BYOK-provider-connect-modal catalog. Serves the SAME live,
 // 24h-refreshed `runtimeModelCatalog.snapshot()` every other gateway/model
 // endpoint reads (apps/api/src/projects/routes/r4.ts) — provider-level rows
-// (id, name, auth env vars, docs URL), NOT gated by projectLlmGatewayEnabled
-// since it's meaningful for every project including native (non-gateway)
-// ones. Project-read-scoped (403/404 boundary), not actually secret data.
+// (id, name, auth env vars, docs URL). Same project-read auth as /llm-catalog
+// (403/404 boundary); non-secret model metadata.
 flow(
   'PROJ-32',
   { domain: 'projects', routes: ['GET /v1/projects/:projectId/llm-catalog/providers'] },

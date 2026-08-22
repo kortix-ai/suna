@@ -1,6 +1,5 @@
 {
-  "generatedAt": "static",
-  "count": 599,
+  "count": 596,
   "routes": [
     {
       "method": "GET",
@@ -1939,14 +1938,6 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/question"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/question"
-    },
-    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/reload"
     },
@@ -1985,10 +1976,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/voice-transcript"
     },
     {
       "method": "POST",

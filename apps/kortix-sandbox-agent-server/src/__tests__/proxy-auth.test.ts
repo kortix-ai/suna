@@ -1664,7 +1664,7 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
-  it('flips the provider-key deny-list with llm gateway mode (BYOK works when off)', async () => {
+  it('sets the gateway key + provider-key deny-list, and refuses to leave gateway mode on llmGatewayEnabled=false', async () => {
     const saved = {
       key: process.env.KORTIX_LLM_API_KEY,
       base: process.env.KORTIX_LLM_BASE_URL,
@@ -1707,7 +1707,10 @@ describe('daemon proxy auth gate', () => {
       expect(process.env.KORTIX_LLM_API_KEY as string | undefined).toBe('kortix_pat_exec')
       expect(process.env.KORTIX_OPENCODE_DENY_ENV as string | undefined).toBe('ANTHROPIC_API_KEY,OPENAI_API_KEY')
 
-      // DIRECT off: deny-list cleared so opencode sees native BYOK keys again.
+      // Gateway mode is the ONLY mode. `llmGatewayEnabled: false` is what an
+      // OLDER API could still send for a moment during a mixed-version rollout;
+      // the daemon answers 200 (no 4xx storm) but REFUSES to leave gateway mode:
+      // the gateway key and the native-key deny list stay exactly as they were.
       const off = await app.request('/kortix/env', {
         method: 'POST',
         headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
@@ -1721,8 +1724,8 @@ describe('daemon proxy auth gate', () => {
         }),
       })
       expect(off.status).toBe(200)
-      expect(process.env.KORTIX_LLM_API_KEY).toBeUndefined()
-      expect(process.env.KORTIX_OPENCODE_DENY_ENV).toBeUndefined()
+      expect(process.env.KORTIX_LLM_API_KEY as string | undefined).toBe('kortix_pat_exec')
+      expect(process.env.KORTIX_OPENCODE_DENY_ENV as string | undefined).toBe('ANTHROPIC_API_KEY,OPENAI_API_KEY')
     } finally {
       for (const [k, v] of Object.entries({
         KORTIX_LLM_API_KEY: saved.key,

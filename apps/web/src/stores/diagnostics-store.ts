@@ -26,28 +26,11 @@ export interface DiagnosticsState {
 
   // ---- Actions ----
 
-  /** Set all diagnostics for a given file (replaces existing) */
-  setFileDiagnostics: (file: string, diagnostics: LspDiagnostic[]) => void;
-
   /** Bulk-set diagnostics from an lsp.updated event payload (Record<string, RawDiag[]>) */
   setFromLspEvent: (diagnosticsByFile: Record<string, RawDiagnostic[]>) => void;
 
-  /** Clear diagnostics for a file */
-  clearFile: (file: string) => void;
-
   /** Clear all diagnostics */
   clearAll: () => void;
-
-  // ---- Derived ----
-
-  /** Total error count (severity 1) */
-  getErrorCount: () => number;
-
-  /** Total warning count (severity 2) */
-  getWarningCount: () => number;
-
-  /** Get all diagnostics across all files, sorted by severity then file */
-  getAllDiagnostics: () => LspDiagnostic[];
 }
 
 /**
@@ -167,48 +150,6 @@ export function buildDiagnosticCountsMap(
   return map;
 }
 
-/** Common project-root directory names, checked left-to-right in a path. */
-const PROJECT_ROOT_MARKERS = new Set([
-  'src',
-  'lib',
-  'app',
-  'pages',
-  'components',
-  'public',
-  'test',
-  'tests',
-  'pkg',
-  'cmd',
-  'internal',
-]);
-
-/**
- * Extract the relative filename from a diagnostic's file path.
- * Used by the diagnostics panel to show short names.
- */
-export function getRelativePath(absPath: string): string {
-  const clean = absPath.replace(/^file:\/\//, '');
-  // If it looks absolute, try common sandbox prefixes
-  if (clean.startsWith('/')) {
-    // Strip /workspace/desktop/.../ or /home/user/project/.../ patterns
-    // Strategy: find the deepest "project root" heuristic and strip it
-    // Common patterns: /workspace/X/Y/ where Y is the project
-    const parts = clean.split('/').filter(Boolean);
-    // Look for common project markers going from right to left
-    for (let i = 0; i < parts.length; i++) {
-      if (PROJECT_ROOT_MARKERS.has(parts[i])) {
-        return parts.slice(i).join('/');
-      }
-    }
-    // If no marker found, take the last 3 segments max
-    if (parts.length > 3) {
-      return parts.slice(-3).join('/');
-    }
-    return parts.join('/');
-  }
-  return clean;
-}
-
 // ============================================================================
 // Parse diagnostics from tool output text
 // ============================================================================
@@ -324,16 +265,8 @@ function normalizeRawDiagnostic(file: string, raw: RawDiagnostic): LspDiagnostic
 
 export const useDiagnosticsStore = create<DiagnosticsState>()(
   persist(
-  (set, get) => ({
+  (set) => ({
   byFile: {},
-
-  setFileDiagnostics: (file, diagnostics) =>
-    set((state) => ({
-      byFile: {
-        ...state.byFile,
-        [file]: diagnostics,
-      },
-    })),
 
   setFromLspEvent: (diagnosticsByFile) =>
     set((state) => {
@@ -350,50 +283,7 @@ export const useDiagnosticsStore = create<DiagnosticsState>()(
       return { byFile: next };
     }),
 
-  clearFile: (file) =>
-    set((state) => {
-      const { [file]: _, ...rest } = state.byFile;
-      return { byFile: rest };
-    }),
-
   clearAll: () => set({ byFile: {} }),
-
-  getErrorCount: () => {
-    const { byFile } = get();
-    let count = 0;
-    for (const diags of Object.values(byFile)) {
-      for (const d of diags) {
-        if (d.severity === 1) count++;
-      }
-    }
-    return count;
-  },
-
-  getWarningCount: () => {
-    const { byFile } = get();
-    let count = 0;
-    for (const diags of Object.values(byFile)) {
-      for (const d of diags) {
-        if (d.severity === 2) count++;
-      }
-    }
-    return count;
-  },
-
-  getAllDiagnostics: () => {
-    const { byFile } = get();
-    const all: LspDiagnostic[] = [];
-    for (const diags of Object.values(byFile)) {
-      all.push(...diags);
-    }
-    // Sort: errors first, then warnings, then by file, then by line
-    all.sort((a, b) => {
-      if (a.severity !== b.severity) return a.severity - b.severity;
-      if (a.file !== b.file) return a.file.localeCompare(b.file);
-      return a.line - b.line;
-    });
-    return all;
-  },
 }),
   {
     name: 'kortix-diagnostics',

@@ -42,9 +42,9 @@
  * regardless of the window, and a provider with a stored key is always inside
  * it. See `PROVIDER_PAGE_SIZE` and `lastConnectedIndex`.
  *
- * Custom providers moved out entirely, to their own tab
- * (`custom-provider-panel.tsx`) — a job almost nobody does should not be the
- * last thing on the screen everybody uses.
+ * There is no custom-provider form. It generated an OpenCode-native provider
+ * config, which no session can use: OpenCode sees exactly one provider,
+ * `kortix`, and every key here is spent by the gateway, never by the sandbox.
  *
  * **Anthropic's subscription half has no control — deliberate, disclosed.**
  * `PROVIDER_NOTES.anthropic` reads "Claude Pro/Max subscription or your own API
@@ -674,7 +674,7 @@ export function ProviderConnectView({
           was lost. */}
       <p className="text-muted-foreground px-0.5 text-xs text-pretty">
         {canWrite
-          ? 'Paste a key — it saves when you click away. Everyone on this project can use it.'
+          ? 'Paste a key — it saves when you click away. The Kortix gateway uses it for everyone on this project; it never enters the sandbox.'
           : 'Ask an owner of this project to add a key — you have read-only access.'}
       </p>
 

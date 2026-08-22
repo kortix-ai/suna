@@ -1,18 +1,18 @@
 /**
- * Three tabs, each answering one question and owning one list:
+ * Two tabs, each answering one question and owning one list:
  *
  *  - `providers` — "where do my models come from" (`ProviderConnect`): ONE
- *     flat list of providers, one key field each.
+ *     flat list of providers, one key field each. A key is stored as a project
+ *     secret and spent by the Kortix gateway; it never enters the sandbox.
  *  - `models`    — "which of them can this project use" (`ModelsTab`).
- *  - `custom`    — "connect something that isn't in the list"
- *     (`CustomProviderForm`).
  *
- * Custom used to be a fourth section stacked under the provider list. It is a
- * different job done maybe once, by one person in a hundred, and every reader
- * who was not that person had to scroll past it — so it became a tab, which is
- * exactly what a tab is for.
+ * There is no `custom` tab. It generated an OpenCode `provider:{...}` block for
+ * `.opencode/opencode.jsonc` — an OpenCode-native provider, which no session
+ * can use: OpenCode sees exactly one provider, `kortix`, and the daemon strips
+ * provider keys from its env. Custom OpenAI-compatible endpoints are a
+ * gateway-side upstream feature, not an OpenCode config.
  */
-export type ActiveTab = 'providers' | 'models' | 'custom';
+export type ActiveTab = 'providers' | 'models';
 
 export interface ProjectProviderModalProps {
   projectId: string;
@@ -25,15 +25,6 @@ export interface ProjectProviderModalProps {
    * missing value is treated as read-only.
    */
   canWrite?: boolean;
-}
-
-export interface CustomFormState {
-  providerId: string;
-  name: string;
-  baseURL: string;
-  apiKey: string;
-  modelId: string;
-  modelName: string;
 }
 
 export type ChatGptPhase = 'idle' | 'waiting' | 'done';

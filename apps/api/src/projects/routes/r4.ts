@@ -80,7 +80,6 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
@@ -107,19 +106,12 @@ import { isUniqueViolation } from '../../shared/postgres-errors';
 import { continueSession, drainSessionLifecycleQueue } from '../session-lifecycle';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
-import {
-  getOpenQuestion,
-  recordPendingQuestion,
-  renderAnswerPrompt,
-  resolvePendingQuestion,
-} from '../lib/pending-questions';
+import { recordPendingQuestion } from '../lib/pending-questions';
 import { loadProjectAgents } from '../agents';
-import { getAgentGrant } from '../../iam/agent-scope';
 import {
   assertProjectCapability,
   loadProjectForUser,
   projectCapabilityAllowed,
-  loadVisibleSession,
 } from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
@@ -2931,7 +2923,6 @@ projectsApp.openapi(
     const apiKeyType = c.get('apiKeyType') as string | undefined;
     const accountId = c.get('accountId') as string | undefined;
     const sandboxId = c.get('sandboxId') as string | undefined;
-    let projectMetadata: unknown;
     let ownerAccountId: string | undefined;
     if (authType === 'apiKey' && apiKeyType === 'sandbox' && accountId && sandboxId) {
       const [sandbox] = await db
@@ -2950,24 +2941,16 @@ projectsApp.openapi(
         return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
       }
       const [project] = await db
-        .select({ metadata: projects.metadata })
+        .select({ projectId: projects.projectId })
         .from(projects)
         .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
         .limit(1);
       if (!project) return c.json({ error: 'Not found' }, 404);
-      projectMetadata = project.metadata;
       ownerAccountId = accountId;
     } else {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      projectMetadata = loaded.row.metadata;
       ownerAccountId = loaded.row.accountId as string | undefined;
-    }
-    if (!projectLlmGatewayEnabled(projectMetadata)) {
-      return c.json(
-        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
-        404,
-      );
     }
     // Free-tier accounts see only managed models explicitly marked free plus
     // their own BYOK/Codex-connected catalog entries. Paid managed models and
@@ -3001,12 +2984,6 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
-      return c.json(
-        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
-        404,
-      );
-    }
 
     const accountId = loaded.row.accountId as string;
     const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
@@ -3151,13 +3128,9 @@ projectsApp.openapi(
 // client can feed it through the exact same toEntry()/order() it already
 // has, no reshaping.
 //
-// Deliberately NOT gated by projectLlmGatewayEnabled unlike /llm-catalog and
-// /model-picker above: the BYOK provider connect modal (which env vars to
-// collect, which providers show "connected") is meaningful for EVERY
-// project, including native (non-gateway) ones — that's the majority of
-// projects and exactly the surface the connect modal serves. Non-secret
-// model metadata; scoped to project auth only for consistency with the
-// other catalog routes, not because it needs to be secret.
+// Same auth as /llm-catalog; non-secret model metadata. Serves the BYOK
+// provider connect modal (which env vars to collect, which providers show
+// "connected").
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -3566,121 +3539,6 @@ projectsApp.openapi(
       return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error });
     }
     return c.json({ ok: true, persisted: true, answers: result.answers });
-  },
-);
-
-// GET  /v1/projects/:projectId/sessions/:sessionId/question
-// POST /v1/projects/:projectId/sessions/:sessionId/question
-//
-// The restore half of park-and-restore. The ask survives its sandbox (see
-// lib/pending-questions.ts); these two close the loop.
-//
-// GET returns the open question so a resumed session can render what it is
-// waiting on, instead of showing a conversation that mysteriously stopped.
-//
-// POST answers it. The answer CANNOT go back to the call that blocked — that
-// opencode process was parked and restarted cold, so its request id no longer
-// exists and nothing is waiting on it. It is delivered as a FOLLOW-UP TURN,
-// which is exactly how the channel path has always worked ("the user's
-// in-thread reply arrives as a follow-up turn", above), and continueSession
-// already owns waking a parked box and queueing until it is ready.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/sessions/{sessionId}/question',
-    tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/question',
-    ...auth,
-    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
-    responses: { 200: json(AnyObject, 'Open question, or null'), ...errors(404) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const sessionId = c.req.param('sessionId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // The question text is session CONTENT, so it sits behind the same leaf the
-    // other session-content reads use (projects/routes/project-sessions.ts). `loadProjectForUser(…, 'read')`
-    // is only the coarse project floor: a caller whose custom role or scoped
-    // token has `project.session.read` revoked still clears it.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_SESSION_READ,
-    );
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    return c.json({ question: await getOpenQuestion(sessionId) });
-  },
-);
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/sessions/{sessionId}/question',
-    tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/question',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: { 200: json(AnyObject, 'Answer delivered'), ...errors(400, 404, 409) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const sessionId = c.req.param('sessionId');
-    // The `question` tool exists so the agent YIELDS TO A HUMAN. An
-    // agent-session token is scoped to its own session, which is precisely the
-    // session holding the question it just asked — so if it could POST here it
-    // would answer itself and resume, and the tool would be decorative.
-    //
-    // Denied outright rather than scope-gated: `assertAgentScope(…
-    // PROJECT_SESSION_START)` is the usual bar for starting a turn, but that
-    // leaf ships in the default agent preset (accounts/iam/role-presets.ts), so
-    // it would admit the self-answer on a stock grant. Answering is a human
-    // operation. Same shape as the token-minting guard in r3.ts.
-    if (getAgentGrant(c)) {
-      return c.json({ error: 'Agent-session tokens cannot answer their own question' }, 403);
-    }
-    // Answering resumes a parked box and starts a turn, so this is a mutation
-    // of the session — the same bar the question relay itself uses.
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-
-    const body = await readBody(c);
-    const answers = (body as { answers?: unknown }).answers;
-    if (!Array.isArray(answers) || answers.length === 0) {
-      return c.json({ error: 'answers must be a non-empty array' }, 400);
-    }
-
-    const open = await getOpenQuestion(sessionId);
-    if (!open) return c.json({ error: 'no open question for this session' }, 409);
-
-    const requestId = (body as { request_id?: string }).request_id?.trim() || open.request_id;
-    // CAS: closing the question is what claims the right to deliver it. Two
-    // clients answering at once must produce ONE follow-up turn, not two.
-    const claimed = await resolvePendingQuestion({ sessionId, requestId, answers });
-    if (!claimed) {
-      return c.json({ error: 'question was already answered', code: 'ALREADY_ANSWERED' }, 409);
-    }
-
-    const outcome = await continueSession({
-      source: 'ui',
-      sessionId,
-      text: renderAnswerPrompt(open.questions, answers),
-      userId: loaded.userId,
-    });
-
-    // 'pending' is success: the box is parked and continueSession has queued the
-    // turn for when it is back. Reporting that as failure would invite a retry
-    // that the CAS above would refuse, stranding the answer.
-    return c.json({ ok: outcome === 'delivered' || outcome === 'pending', delivery: outcome });
   },
 );
 

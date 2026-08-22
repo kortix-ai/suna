@@ -75,7 +75,6 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       },
       initialTurn: input.initialTurn,
       extraEnvVars,
-      projectMetadata: input.project.metadata,
       gitProject: {
         projectId: input.projectId,
         repoUrl: input.project.repoUrl,

@@ -4,16 +4,6 @@ export function normalizeActivityToolName(toolName: string | undefined): string 
   return (toolName ?? '').replace(/^oc-/, '').replace(/-/g, '_');
 }
 
-export function isShellActivityTool(toolName: string | undefined): boolean {
-  return normalizeActivityToolName(toolName) === 'bash';
-}
-
-export function shellActivityGroupLabel(count: number, running: boolean): string {
-  const safeCount = Math.max(0, count);
-  const prefix = running ? 'Running' : 'Ran';
-  return `${prefix} ${safeCount} command${safeCount === 1 ? '' : 's'}`;
-}
-
 /**
  * Tools that must never fold into a "Tool · Nx" group:
  *   - show / show-user: rendered output (preview, image, viewer) the user has
@@ -26,12 +16,6 @@ export const NO_GROUP_ACTIVITY_TOOLS = new Set(['show', 'show_user']);
 
 export function isNoGroupActivityTool(toolName: string | undefined): boolean {
   return NO_GROUP_ACTIVITY_TOOLS.has(normalizeActivityToolName(toolName));
-}
-
-export function writeActivityGroupLabel(count: number, running: boolean): string {
-  const safeCount = Math.max(0, count);
-  const prefix = running ? 'Writing' : 'Wrote';
-  return `${prefix} ${safeCount} file${safeCount === 1 ? '' : 's'}`;
 }
 
 /**

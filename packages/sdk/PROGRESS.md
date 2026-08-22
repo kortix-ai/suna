@@ -12,6 +12,46 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-22 — session `gateway-mode-only` — `useRuntimeProviders` is gateway-only (hook half) — DONE
+
+**Files:** `react/use-opencode-sessions/providers.ts` (one query per source:
+gateway model-picker inside a project route, runtime `provider.list` outside;
+no project-detail read, no `llm_gateway` fork) · `provider-load-plan.ts`
+(`shouldLoadProjectModelPicker` → `providerQueryPlan`, internal) + test (4 cases)
+· `provider-selection.ts` (`filterToNativeProviders`,
+`mergeProjectSecretConnectedProviders` marked `@deprecated`; exports kept, both
+surface snapshots unchanged) · `use-opencode-sessions/shared.ts` (comment on the
+legacy `:native` cache scope) · `CHANGELOG.md` (`### Breaking` behaviour note +
+`### Deprecated`).
+
+**What.** With the API no longer emitting `experimental.llm_gateway`, the old
+hook read `undefined === true` → false for every project → the native branch →
+`provider.list` with `kortix` filtered out → zero models → retry forever. Dead
+picker on every project. Now a project route always renders the gateway
+catalog. `ModelProviderMode` (`'native' | 'gateway'`, `use-opencode-local.ts`)
+is untouched: it is a localStorage selection-key prefix derived from the list,
+and narrowing it would orphan every stored pick.
+
+---
+
+### 2026-08-22 — session `gateway-mode-only` — `llm_gateway` is not a feature flag (key list half) — DONE
+
+**Files:** `core/rest/projects-client/projects.ts` (`FeatureFlagKey` union and
+`FEATURE_FLAG_KEYS` drop `'llm_gateway'`) + `projects.test.ts` (key list) ·
+`CHANGELOG.md` (`### Breaking`). Type-surface snapshot unchanged (it records
+names; `FeatureFlagKey` keeps its name). Lands in the same commit as the API
+registry + contract removal so `apps/api/src/__tests__/unit-feature-flag-drift.test.ts`
+(contract ↔ SDK ↔ registry) stays green at every commit.
+
+**What.** Gateway mode is the only session mode. A flag that selected a
+provider/runtime MODE (`llm_gateway` off → native OpenCode providers the web
+has no UI for → empty picker, dead session) is a broken branch, not a flag.
+The rest of the SDK half (`useRuntimeProviders` gateway-only, native helpers
+deprecated, `ModelProviderMode` narrowed) is the follow-up session entry above
+this one.
+
+---
+
 ### 2026-08-21 — session `session-busy-flicker` — display order was not an order — DONE
 
 **Files:** `core/turns/grouping.ts` (`compareMessagesForDisplay` rewritten as two
@@ -4736,6 +4776,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B48 | **Canonical feature-flag naming + one gating primitive.** The platform renamed the system to "Feature flags" (`FeatureFlag*` in `@kortix/api-contract`, `FeatureFlagStabilitySchema` = experimental\|beta\|stable, gated routes returning `403 {code:'feature_disabled', feature}`, canonical `PATCH /projects/:id/features`). The SDK still exposed only `Experimental*` names, had no runtime key list for cross-package drift tests, no typed narrowing for the 403, and no shared React gate hook — so every host hand-rolled `project?.experimental?.<key> === true`. | Additive only: `FeatureFlagKey`, `FeatureFlagView` (stability widened to `'experimental'\|'beta'\|'stable'`), `FEATURE_FLAG_KEYS`, `updateFeatureFlag` (canonical `/features` route), `isFeatureDisabledError`, `FeatureDisabledError`, `useFeatureFlag`, and `project(id).updateFeatureFlag` on the facade. Every `Experimental*` name kept as a `@deprecated` alias; `updateExperimentalFeature` keeps its `/experimental` wire path for older deployed APIs. | **DONE 2026-08-08** — session `feature-flags-web`; TDD RED first on all four (`Export named 'FEATURE_FLAG_KEYS' not found`, `Export named 'isFeatureDisabledError' not found`, `Cannot find module './use-feature-flag'`); GREEN at `1777 pass, 0 fail, 6965 expect()` across `139` files; `typecheck` exit 0 (package + examples); `smoke:install` packed + installed + imported OK. Both surface snapshots re-recorded and reviewed: **11 + 20 insertions, 0 removals — purely additive** |
 | B49 | **`applyOptimisticAbort` marks a turn errored but never ends it.** It sets `error: AbortError` and flips the session idle, but leaves `time.completed` unset — and an aborted turn may never receive a `message.updated` that sets it. Any host predicate written as `!lastAssistant.time?.completed` therefore stays true for the life of the tab after every stop. It wedged `apps/web`'s message-queue drain gate permanently: every message typed after an interrupt queued behind one that could never be released. | `src/react/use-session-send.ts:271-296` — sets `error`, no `time.completed`. Worked around host-side in `apps/web/src/features/session/assistant-turn-open.ts` (errored ⇒ ended), which is a patch on the symptom; the SDK should end the turn it aborts. | OPEN |
 | B50 | **`applyPostCreateActions`'s `deliver_prompt` action shares `postPrompt`/`continueSession` with `executeQueuedContinue` but has no equivalent no-blind-repost protection at the call-site level for its OWN retry path.** A `create_session` command whose post-create actions fail (`postCreate.ok === false`) is re-queued `retryable: true` (`engine.ts` `drainSessionLifecycleQueue`, the `create_session` branch); the NEXT drain sees `row.sessionId` already set, returns the existing session immediately, then re-runs `applyPostCreateActions` — including `deliver_prompt` — from scratch. The re-post is protected by the SAME prompt-dedupe TTL fix landed in T13 (identical `sessionId`+`text` on retry → identical content-hash key → collides), so it is NOT currently broken, but nothing documents or pins that shared guarantee at this second call site the way `executeQueuedContinue`'s doc comment now does. | `engine.ts` `drainSessionLifecycleQueue` create-session branch (~lines 513-535 pre-edit) → `applyPostCreateActions` → `continueSession` with `action.source`/`action.text`, same `postPrompt` as the continue_session path. Out of scope for T13 (task named `engine.ts`'s "delivery-retry region" as `executeQueuedContinue`/`postPrompt`, not the create-session post-actions branch). | OPEN — same fix already covers it in practice; needs its own doc comment + pinning test if this path is ever revisited. |
+| B51 | **No row model for the transcript.** Every host re-derives "what does this turn render as" from `groupMessagesIntoTurns` output on every frame, and re-allocates the whole render list even when nothing changed. There is no shared, pure, virtualizer-ready row union and no identity-preserving reuse pass. | `packages/sdk/src/core/turns/` has grouping (`grouping.ts`), part helpers (`parts.ts`) and turn state (`state.ts`), but nothing that flattens a turn into ordered rows. `apps/web/src/features/session/turn/stable-turns.ts` proves the reuse pattern host-side only. | **DONE 2026-08-22 (`f4d872cfe3`)** — session `sdk-timeline-rows`; Stage 1 = `core/turns/timeline.ts` (`constructTimelineRows`, `reuseTimelineRows`, `Timeline*` types) + `timeline.test.ts` (61 tests), additive only, no host consumer yet. |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -4744,6 +4785,7 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 
 | Date       | Session                  | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Where                                                                                                             |
 | ---------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 2026-08-22 | `sdk-timeline-rows`      | **`core/http/api-client.ts` still carries its own abort classifier.** `isAbortError` at `:147` matches `name === 'AbortError'`, `name === 'AbortSignal'`, or `message.includes('aborted')` — the loose substring sniff the canonical detector (`core/http/abort-error.ts`) exists to kill: it mislabels a transport failure whose prose reads "upstream unreachable … The operation was aborted" as a user Stop, and it also shadows the canonical export by name. It gates retry (`:268`) and the `ABORTED` code (`:452`), so switching it changes retry behaviour and needs its own tests. Found while deleting the same shape from `core/turns/timeline.ts`. | `packages/sdk/src/core/http/api-client.ts:147,268,452` |
 | 2026-08-08 | `feature-flags-web`      | **`apps/mobile` and `apps/whitelabel-demo` still say "Experimental" for the whole feature-flag system.** Both render the catalog off the deprecated `ExperimentalFeatureView` alias, call `updateExperimentalFeature` (the legacy `/experimental` route), and label the section "Experimental" — the platform now calls the system "Feature flags" and treats experimental/beta/stable as a per-flag stability badge. They compile unchanged (alias + widened union are both backwards-compatible) so nothing is broken, but the copy and the route are now behind the web app. Neither was redesigned in this session by instruction. | `apps/mobile/components/pages/SettingsNavPage.tsx:268,314-318`, `apps/mobile/lib/projects/hooks.ts:216-225`, `apps/whitelabel-demo/src/app/projects/[id]/settings/page.tsx:223-278` |
 | 2026-07-30 | `bugbash-model-resilience` | **Any ACP send failure replaces the whole chat surface with the page-level "OpenCode failed to load" card.** `executeSend`'s catch patches `error` onto the controller snapshot, `useSession` republishes it as `runtimeError`, and `apps/web`'s session page renders `InlineSessionError` + Restart INSTEAD of `SessionLayout`/`SessionChat` for it. Model-not-found is now recovered before it can reach that path, but a gateway 500 or a provider error on a send still nukes a healthy session's transcript and composer. The send failure is ALREADY surfaced inline as `sendError`; the controller should not also mark the runtime dead | `packages/sdk/src/core/acp/session-controller.ts:575-589` (patch `error`), `packages/sdk/src/react/use-session.ts:884` (`runtimeSessionError`), `apps/web/src/app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:775-800` (full-page card) |
 | 2026-07-30 | `bugbash-model-picker`   | **An explicit model pick has nowhere to persist on a composer with no `sessionId` and no loaded agent** (project home). `setModel` writes the per-agent slot only `if (currentAgent)` and the per-session slot only `if (scopedSessionModelKey)`; with neither it writes `visibility` + `recent` only, both of which lose to `serverDefaultKey` in the read chain — so the picker trigger never moves. Verified in a real browser: after clicking "Claude Sonnet 4.6" on `/projects/<id>`, `localStorage['opencode-model-store-v1']` held only `user` + `recent`, no `selectedModel`/`sessionModel`, and the trigger stayed on the platform default. The read chain's own comment (`:470`) claims selection "must NOT depend on a loaded agent", which the write side does not honour | `packages/sdk/src/react/use-opencode-local.ts:512-545` (write), `:443-459` (read) |
@@ -4797,6 +4839,270 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 ---
 
 ## Session log
+
+### 2026-08-22 — session `sdk-timeline-rows` — B51 follow-up 2: round-2 adversarial-review findings A–F — DONE
+
+**Files:** `core/turns/grouping.ts` · `core/turns/timeline.ts` ·
+`core/turns/turns.test.ts` (+3) · `core/turns/timeline.test.ts` (72 → 90) ·
+`README.md`. No public surface change — no export added, renamed or removed.
+Every fix landed RED first (14 new tests failed on the stated cause), then GREEN.
+
+- **A (MEDIUM regression) — runtime-disposed aborts scarred the transcript.**
+  `timeline.ts` classified with `isAbortError` only, never `abortErrorReason`,
+  so the `{name:'AbortError', data:{reason:'runtime-disposed'}}`
+  `markSessionAbortedLocally` stamps on EVERY non-idle session at an OpenCode
+  respawn rendered the interrupted divider. New `isInterruptingAbort`: divider
+  only when the reason is absent or `'user'` (the `session-error-banner.tsx:235`
+  gate). Tests: `'user'` → divider; reason-less wire abort → divider;
+  `'runtime-disposed'` → no divider, no error row (incl. assistant-only turn);
+  unknown reason string → divider (fails open).
+- **B (F2 at its root) — orphans reversed + orphan error dropped.**
+  `grouping.ts` `unshift`ed each orphan into `turns[0].assistantMessages`
+  (three init failures 1,2,3 rendered 3,2,1) and `timeline.ts` read only
+  `run.at(-1)`'s error, so one clean reply deleted the init failure. Grouping
+  now `splice`s orphans at `orphanCount` (display order, ahead of any
+  parentID-linked reply) and dedupes assistant ids like user ids. Timeline
+  splits the run into the orphan PREAMBLE (`preambleLength`: leading members
+  that sort before the prompt and are not its replies) and the REPLIES; each
+  segment's LAST member carries its error; the preamble error renders as a
+  second row `error:<userMessageID>:orphan` right after the preamble parts.
+  Rule: a clean reply clears an earlier failed reply (retry); it never clears a
+  pre-prompt failure. NOTE — the review's literal phrasing ("an error carried
+  by ANY run member not followed by a later non-error assistant message")
+  contradicts its own required test `[orphan(error), user, assistant(clean)]
+  → error row` (the orphan IS followed by a clean message); the segment rule is
+  what satisfies all required tests and keeps the retry semantics. All 5
+  pre-existing orphan/grouping tests pass unchanged.
+- **C (LOW) — "Interrupted" above a live spinner.** `thinking` is now also
+  gated on `interruptedMessageId === undefined` (computed BEFORE the compaction
+  suppression, so a compacted aborted turn is not thinking either). A
+  `'runtime-disposed'` abort does NOT suppress it — it renders as if it never
+  happened.
+- **D (F6) — allocation docs lied.** `stabilizeContextKeys` allocated
+  `contextByPart` above its early return. It is now lazy (`??=` on the first
+  context row), so the no-context frame allocates nothing there, and both
+  docs state exactly what is allocated. Pinned by swapping `globalThis.Map`
+  for a counting subclass: no-change frame, no context group → exactly 1 Map
+  (`byKey`; was 2); with a context group → exactly 3 (`byKey`, `contextByPart`,
+  `reserved`).
+- **E (F3) — perf claim pinned.** Already pinned: `timeline.test.ts` "4000
+  colliding part ids still key uniquely, and do it in linear time" asserts
+  `elapsedMs < 50` at k=4000, not skipped (`bun test -t "4000 colliding"` →
+  1 pass, 0 fail). No change.
+- **F (nit) — `isPositionalPartRef`** no longer allocates a template string
+  per ref per compare: length + `charCodeAt` (`:` = 58, `#` = 35) +
+  `startsWith(messageID)`. Pure refactor; boundary tests added
+  (`<id>:#n` positional; `<id>:n`, `<id>#n`, other-message prefix, `prt_…` not).
+
+**Gates** (from `packages/sdk`): `pnpm --filter @kortix/sdk typecheck` →
+clean, both projects · `bun test --isolate src` → **2519 pass / 0 fail**, 163
+files (baseline this session 2498) · `pnpm --filter @kortix/sdk run
+smoke:install` → "✔ install smoke test passed" · `bun run
+examples/timeline-rows.ts` → unchanged output, array identity preserved.
+
+---
+
+### 2026-08-22 — session `sdk-timeline-rows` — B51 follow-up: six adversarial-review defects in `timeline.ts` — DONE
+
+**Files:** `core/turns/timeline.ts` · `core/turns/timeline.test.ts` (61 → 72
+tests) · `README.md` (timeline-rows section). No public surface change — no
+export added, renamed or removed.
+
+Six findings from an adversarial review of the B51 row model. Every fix landed
+RED first (test written, run, watched fail for the stated reason), then GREEN.
+
+1. **A FIFTH abort classifier (HIGH).** `timeline.ts` defined a local
+   `isAbortError` matching only `name === 'MessageAbortedError'` — and it
+   SHADOWED the canonical `isAbortError` (`core/http/abort-error.ts`), whose own
+   header records the four divergent detectors it exists to replace. A user Stop
+   is patched as `name: 'AbortError'` (`applyOptimisticAbort`), so every
+   user-initiated stop rendered `['user-message','assistant-part','error']` with
+   the text "The operation was aborted." instead of the interrupted divider.
+   Local helper deleted; the canonical one imported.
+   `MESSAGE_ABORTED_ERROR_NAME` stays exported and is now documented as
+   informational only.
+2. **Assistant-only turns dropped their content (MEDIUM).**
+   `groupMessagesIntoTurns` synthesizes a turn whose `userMessage` IS an
+   assistant message (an orphan session-init failure, no `parentID`, ahead of
+   every prompt). The row builder emitted an unconditional `user-message` row,
+   never walked `turn.userMessage.parts`, and `turnErrorText` read
+   `assistantMessages.at(-1) === undefined`. An orphan with 2 parts and
+   `{message:'session init failed'}` rendered `['user-message']` — 0 part rows,
+   0 error rows. Now the head message leads the assistant run: no
+   `user-message` row, no compaction check, parts + abort divider + error all
+   render. **`timeline.test.ts` had CODIFIED the drop as expected**; that test
+   was wrong and is rewritten.
+3. **`uniqueKey` was O(n²) on the render path (MEDIUM).** The suffix search
+   restarted at `:1` on every collision. Measured per call: 9.1ms @ k=500,
+   35.0ms @ k=1000, 155.6ms @ k=2000, 745.5ms @ k=4000 — and
+   `constructTimelineRows` runs every frame while streaming. Added
+   `nextSuffix: Map<candidate, number>`; the `usedKeys` probe stays, so a suffix
+   that is also another part's natural key is still skipped. After: 1.4ms @
+   k=4000.
+4. **The positional part-id fallback was reused across a prepend (MEDIUM).**
+   `defaultGetPartId` mints `${messageID}:#${index}`, which names a SLOT. Insert
+   a part at the head and `:#0` refs a different part while key and ref stay
+   byte-identical, so `reuseTimelineRows` handed back the PREVIOUS row object —
+   a memoized subtree pinned to stale content. `timelineRowsEqual` now refuses
+   to call any `assistant-part` row built on positional ids equal, so such a row
+   is re-taken every frame. Rows with real wire ids are untouched. The README's
+   "appending or removing a row never renames its neighbours" carries the
+   caveat now.
+5. **The `thinking` placeholder rendered below streamed parts (LOW).** The emit
+   condition was `showReasoning ? partRowCount === 0 : true`, so with the
+   DEFAULT `showReasoning: false` the documented "pre-first-token placeholder"
+   appeared under content that had already arrived. Now `partRowCount === 0`
+   unconditionally. A hidden reasoning part produces no part row, so the
+   reasoning case that motivated the branch is covered by the count itself.
+6. **Three doc/behaviour mismatches in `reuseTimelineRows` (LOW).** The
+   "skipped entirely when no prior row is a context group" claim was false (the
+   `prev` scan always runs) — the doc now says what the code does. Both
+   `stabilizeContextKeys` and the identity swap allocated an array per call,
+   even on a frame that changed nothing; both are lazy now, so a no-change frame
+   allocates nothing beyond the `prev` key index.
+
+**Gates** (from `packages/sdk`):
+`pnpm --filter @kortix/sdk typecheck` → clean, both projects ·
+`pnpm --filter @kortix/sdk test` → **2498 pass / 0 fail**, 163 files ·
+`bun test src/index.isomorphic.test.ts` → 70 pass / 0 fail (the new
+`../http/abort-error` import is isomorphic — that file imports nothing) ·
+`bun run examples/timeline-rows.ts` → unchanged output, array identity still
+preserved on an unchanged frame.
+
+**Still open (NOT this task's scope).** `core/http/api-client.ts:147` defines
+its own `isAbortError` (`name === 'AbortError' || name === 'AbortSignal' ||
+message.includes('aborted')` — the loose substring sniff the canonical detector
+exists to kill). Appended to *Discovered this session*.
+
+---
+
+### 2026-08-22 — session `sdk-timeline-rows` — B51: the transcript has a row model — DONE
+
+**Files:** `core/turns/timeline.ts` (NEW) + `core/turns/timeline.test.ts` (NEW,
+61 tests) · `core/turns/index.ts` (+`export * from './timeline'`) ·
+`examples/timeline-rows.ts` (NEW) · `README.md` (new "Timeline rows" section) ·
+both surface snapshots. **Additive only** — `groupMessagesIntoTurns`,
+`compareMessagesForDisplay`, `TurnLike`, `MessageWithPartsLike`, `PartLike` and
+`PartWithMessage` are untouched.
+
+**What.** Every host re-derived "what does this turn render as" from
+`groupMessagesIntoTurns` output on every frame, and re-allocated the whole
+render list even when nothing changed. There was no shared, pure,
+virtualizer-ready row union and no identity-preserving reuse pass.
+`apps/web/src/features/session/turn/stable-turns.ts` proved the reuse pattern
+host-side only.
+
+**Now.** `constructTimelineRows(messages, options?)` flattens a transcript into
+one ordered, uniquely keyed `TimelineRow[]`. Eight kinds discriminated on
+`kind` (never `type` — that is the part discriminant): `turn-gap`,
+`user-message`, `turn-divider` (`compaction` | `interrupted`),
+`assistant-part`, `thinking`, `retry`, `diff-summary`, `error`. Emitted per
+turn in that exact order, with the interrupted divider INSIDE the assistant run
+at the aborted message's position. `reuseTimelineRows(prev, next)` returns the
+PREVIOUS object for every unchanged row and the PREVIOUS ARRAY when no row
+changed at all.
+
+**The three properties that make it work.**
+
+1. **Rows hold ids and refs, never part content.** The only value-bearing
+   fields in the union are `error.text` and `diff-summary.diffs` — and `diffs`
+   is a projection (`file`/`additions`/`deletions`/`status`) that drops the
+   wire's `before`/`after` (v1 `FileDiff`) and `patch` (v2 `SnapshotFileDiff`).
+   A streaming text part keeps its `(messageID, partID)`, so its row is
+   correctly reused while the body grows. Pinned by a test.
+2. **Keys are precomputed and stable.** A function of `kind` + `userMessageID`
+   (+ the divider's `label`, + the part group's key). No index, no timestamp,
+   no content hash — appending a turn leaves every earlier key byte-identical.
+   `kind` is encoded in the key, so a row's kind cannot change under a stable
+   key. A `Set` suffixes a duplicate rather than throwing: this is a render
+   path, and a duplicate `part.id` inside one message would otherwise crash a
+   list renderer. Covered by a test, so nobody assumes it is unreachable.
+3. **Grouping and renderability are injected.** `options.groupPart` /
+   `options.isRenderablePart`. The SDK ships NO hardcoded
+   `CONTEXT_GROUP_TOOLS = {read, glob, grep, list}` table, because `apps/web`
+   already owns a richer model (`segment-turn.ts`, `merge-steps.ts`,
+   `group-steps.ts`) and two grouping implementations that must agree forever
+   is exactly the trap `merge-steps.ts` documents. When `apps/web` adopts this,
+   it must feed its EXISTING grouping through the hook, not re-derive it.
+
+**`reuseTimelineRows`, five phases.** Cold path → `byKey` index → context-key
+stabilization → per-row identity swap → array collapse. The stabilizer is the
+subtle part: a context group's key is pinned to its FIRST member, so a run that
+loses its head silently RENAMES itself and destroys the row key, dropping
+measured height, expand state and the mounted component. Ported from OpenCode's
+`stabilizeContextKey`, keyed by `userMessageID` (never `messageID`) so one
+turn's context identity can never be adopted by another turn's row. The array
+collapse compares against the POST-SWAP `out`, not `next` — comparing `next`
+still typechecks, still returns correct data, still passes every content test,
+and delivers none of the benefit. The `toBe` assertion on "returns the PREVIOUS
+ARRAY itself" is the only thing that catches it.
+
+Equality is an exhaustive `switch (a.kind)` with a `never` guard: a ninth row
+kind without a comparison arm is a COMPILE error. It cannot force a comparison
+for a new FIELD on an existing kind — which is the other half of why rows must
+stay content-free.
+
+**Two spec expectations corrected while deriving the fixtures.** (a) A turn that
+is active AND `status === 'retry'` cannot emit `diff-summary`, whose condition
+is `status === 'idle' || !isActive` — so the ordering test's retry variant
+asserts five kinds, not six, and `diff-summary` coverage moves to the idle
+variant. (b) The eight canonical kinds cannot co-occur in one call at all
+(`thinking` needs `busy`, `retry` needs `retry`, `thinking` needs no error), so
+the ordering test asserts three variants that together cover all eight and each
+is a strict SUBSEQUENCE of the canonical order.
+
+**RED → GREEN.** Stub module first: `60 fail / 1 pass` (the 12 rows that passed
+vacuously against an empty result were strengthened with length and kind
+assertions until only the genuinely-correct `constructTimelineRows([]) === []`
+remained). Implementation: `61 pass / 0 fail`.
+
+**Gates (real output).**
+
+- `npx tsc --noEmit` → exit `0`; `npx tsc --noEmit -p examples/tsconfig.json` →
+  exit `0`.
+- `bun test --isolate src` → **2485 pass / 2 skip / 0 fail**, 2487 tests across
+  163 files. Session baseline on `origin/main` (`fff09446e2`) was 2424 pass / 2
+  skip / 0 fail across 162 files, so `+61` tests and `+1` file, no regression.
+- `bun test src` (non-isolated) → 2005 pass / 480 fail, identical 480-fail
+  baseline to `origin/main`. The cross-file failures are pre-existing global
+  pollution; `--isolate` is the real gate.
+- `bun test src/core/turns/` → 210 pass / 0 fail across 8 files (149 baseline
+  + 61 new).
+- `bun test src/index.isomorphic.test.ts` → 70 pass / 0 fail; the 48
+  `isomorphic-core` "no forbidden framework imports" arms are green.
+- `bun test src/public-surface.test.ts src/public-type-surface.test.ts` →
+  2 pass / 0 fail. Snapshot diff is **purely additive**: 44 insertions, 0
+  removals, landing under BOTH `'.'` and `'./turns'`.
+- `node scripts/smoke-install.mjs` → `✔ install smoke test passed`.
+- Untouched suites green with zero edits: `core/turns/turns.test.ts`,
+  `core/turns/display-order.test.ts`, `browser/stores/sync-store.test.ts`
+  (225 pass / 0 fail together) and `apps/web`'s
+  `features/session/turn/stable-turns.test.ts` (8 pass / 0 fail).
+- `examples/timeline-rows.ts` runs: reuses 2 of 2 prior rows across a streaming
+  frame, allocates 1 new row, and preserves array identity on an unchanged
+  frame.
+
+**Open / not done.**
+
+- **No host consumes this yet.** `apps/web` still renders through
+  `stabilizeTurns` + `segmentTurn` + `mergeBurstSteps`. The performance claim is
+  structural, not measured — do not claim a measured win.
+- **The context-key stabilizer is DEAD under the default options** (`groupPart`
+  returns `undefined`, so no context group is ever built). The six
+  stabilization tests build groups through a test-local `groupPart` so the path
+  is exercised anyway.
+- **The positional part-id fallback is unstable under prepend.**
+  `${message.info.id}:#${index}` renames every following row when a part is
+  inserted ahead of it. Mitigated by `options.getPartId` and pinned by a test;
+  promote `id` into `PartLike` if hosts hit it in practice.
+- **`apps/web/content/docs/sdk/*` was NOT updated** — this session was scoped to
+  `packages/sdk` and instructed not to touch `apps/web`. `packages/sdk/README.md`
+  carries the row model.
+- Not pushed, no PR opened, per the session's instructions.
+
+**Shippable to production: YES** (as an additive, unconsumed public surface).
+
+---
 
 Append only. Newest at the bottom. One entry per session, even a short one.
 
@@ -11850,3 +12156,62 @@ assistant-turn-open 10 pass / 0 fail; `tsc --noEmit` 15 lines, all the known
 on both touched web files.
 
 **Shippable to production: YES.**
+
+### 2026-08-22 — `server.connected` reconnect resync (branch `feat/sse-reconnect-resync`, stacks on `timeline-parity`)
+Parity gap vs the OpenCode desktop app: `packages/app/src/context/server-sync.tsx`
+re-bootstraps every active directory on each `server.connected`; ours only
+re-read BUSY sessions after a `> 5s` gap. A turn that ended inside the
+disconnect is idle by reconnect time → never reconciled → short transcript
+until remount.
+
+Change: `handle-event.ts` `case 'server.connected'` — first frame per handler
+is the initial connect (skipped; mount `hydrateCore()` covers it); every later
+one reconciles every session in `useSyncStore.messages` with the new reason
+`'reconnect'` (additive member of `SessionSyncReason`).
+
+TDD: test written first, run RED for the right reason (`Expected
+[[busy,'reconnect'],[idle,'reconnect']], Received []`), then GREEN 58/58 in
+`handle-event.test.ts`.
+
+**Evidence** — `pnpm -s typecheck` clean; `bun test --isolate src` → 2510 tests,
+0 fail, 162 files (baseline on `timeline-parity`: 2505/0); smoke:install in the
+commit body.
+
+**Shippable to production: YES** (SDK-only, additive, behind an event the
+runtime already emits on every connection).
+
+### 2026-08-22 (same session, follow-up) — parked stream hands over to the probe loop
+`onParked` was never subscribed. The stream is opened from an effect keyed on
+`runtimeHealthy`; the probe behind that flag addresses the DAEMON port, so an
+OpenCode crash/restart (the "opencode is borderline crashing" session) parks
+the stream while every probe passes — dead until hard refresh.
+
+Change: `react/use-opencode-events/parked.ts` `handleEventStreamParked(info)`
+→ `setOpenCodeHealth(false, undefined, 'event stream parked after N …')`;
+wired as `onParked` in `index.ts`. Cadence if `/event` stays dead behind a
+healthy daemon: 8 failed connects with 1s→30s backoff (~2 min) → unhealthy →
+probe at 150ms → healthy → fresh stream; i.e. 8 attempts per ~2 min, UI
+truthfully "reconnecting" meanwhile.
+
+TDD: `parked.test.ts` written first, RED (`Cannot find module './parked'`),
+then GREEN 3/3. **Evidence** — typecheck clean; `bun test --isolate src` →
+2513 tests, 0 fail, 163 files; smoke:install passed on the previous commit of
+this branch (no export/entry change since).
+
+**Shippable to production: YES.**
+
+### 2026-08-22 (same session, follow-up 2) — gateway-only residue (branch `chore/gateway-only-residue`)
+Adversarial lens on #6744 flagged inert-but-real remnants of native mode.
+Removed: `hasUsableModel` non-kortix → `true` branch (now `false`),
+`modelKeyToWire` `'opencode'` special case; web `pickerGroupId` non-kortix early
+return (redundant); daemon `applyLlmGatewayMode(false)` no longer clears
+`KORTIX_LLM_*`/deny list (200 + warn, refuses to leave gateway mode — mixed-
+version tolerant). Tests rewritten where they encoded the old mode (stated in
+the commit), new gateway-only tests RED → GREEN.
+
+**Evidence** — SDK `use-model-store.test.ts` 9/0, full suite + typecheck in the
+commit body; daemon `proxy-auth.test.ts` 49/0 + tsc clean; web
+`model-grouping.test.ts` 25/0 + eslint clean.
+
+**Shippable to production: YES.**
+

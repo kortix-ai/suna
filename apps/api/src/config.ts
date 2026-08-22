@@ -181,8 +181,6 @@ const envSchema = z.object({
   // alternative (a capability header on every request) costs a round trip per
   // relayed request and still cannot un-consume a body already streamed.
   KORTIX_SECRET_RELAY_STREAM_ENABLED: optBoolTrue,
-  /** Websocket relay, gated separately so it can roll out behind the HTTP leg. */
-  KORTIX_RELAY_WS_ENABLED: optBoolTrue,
   // Byte budgets. These are a RESOURCE guard, not a product limit: 1 GiB is
   // 1024x the legacy request cap and 205x the response cap — effectively
   // uncapped for any real API call — but it stops one runaway sandbox.
@@ -399,8 +397,10 @@ const envSchema = z.object({
   // channel was the only consumer before this flag, so turning this off
   // restores the previous behaviour rather than regressing email sessions.
   CONNECTORS_MCP_ENABLED: optBoolTrue,
-  // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
-  // sandbox model call here. Off by default.
+  // Operator kill switch for /v1/llm (wire.ts returns 503 when off). It does
+  // NOT change how sessions are configured: every sandbox always receives
+  // KORTIX_LLM_* (gateway mode is the only mode); with the switch off those
+  // calls fail visibly with 503. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
   // CLOUD-ONLY. Whether KORTIX's own managed model lineup exists on this
   // deployment. The lineup routes through Kortix's shared Bedrock, AsterLab,
@@ -416,14 +416,6 @@ const envSchema = z.object({
   // (descriptors.ts) — both are gated on this and read no managed credentials
   // when off.
   KORTIX_MANAGED_PROVIDER_ENABLED: optBoolUnset,
-  // Fleet default for projects with no explicit per-project override. Defaults
-  // ON: wherever the gateway is available (master switch above), the managed
-  // gateway is the default routing mechanism and every project inherits it
-  // unless it explicitly opts out. The master switch still wins —
-  // LLM_GATEWAY_ENABLED=false forces native OpenCode for everyone regardless of
-  // this value — and an operator can set LLM_GATEWAY_DEFAULT_ENABLED=false to
-  // opt a whole environment back to native-by-default.
-  LLM_GATEWAY_DEFAULT_ENABLED: optBoolTrue,
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL: optStr,
@@ -590,7 +582,6 @@ const envSchema = z.object({
   //                explicitly deletes the session — auto-stop + cold archive
   //                make an idle box nearly free, so we never destroy disk.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: optInt(15),
-  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: optInt(5),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(720), // 12 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES: optInt(-1), // never auto-delete
   // The PROVIDER-NATIVE idle timer (Daytona autoStopInterval / Platinum
@@ -725,10 +716,10 @@ const envSchema = z.object({
   BETTERSTACK_API_SENTRY_DSN: optStr, // Sentry DSN for error tracking (Better Stack compatible)
 
   // ── Stray env vars used directly in other files (centralized here) ───────
+  // Exactly two survive: CORS_ALLOWED_ORIGINS (read in src/index.ts) and
+  // KORTIX_MASTER_URL (read in src/setup/index.ts). Add a key only with a reader.
   CORS_ALLOWED_ORIGINS: optStr,
   KORTIX_MASTER_URL: optStr,
-  OPENCODE_URL: optStr,
-  KORTIX_DATA_DIR: optStr,
 });
 
 // ─── Validation + Conditional Checks ────────────────────────────────────────
@@ -1003,7 +994,6 @@ export const config = {
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
-  KORTIX_RELAY_WS_ENABLED: env.KORTIX_RELAY_WS_ENABLED,
   KORTIX_RELAY_MAX_REQUEST_BYTES: env.KORTIX_RELAY_MAX_REQUEST_BYTES,
   KORTIX_RELAY_MAX_RESPONSE_BYTES: env.KORTIX_RELAY_MAX_RESPONSE_BYTES,
   KORTIX_RELAY_HEADERS_TIMEOUT_MS: env.KORTIX_RELAY_HEADERS_TIMEOUT_MS,
@@ -1099,7 +1089,6 @@ export const config = {
   // blob misses the var; self-host stays off). Explicit value always wins.
   KORTIX_MANAGED_PROVIDER_ENABLED:
     env.KORTIX_MANAGED_PROVIDER_ENABLED ?? env.KORTIX_BILLING_INTERNAL_ENABLED,
-  LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
   LLM_GATEWAY_VISION_MODEL: env.LLM_GATEWAY_VISION_MODEL,
@@ -1143,7 +1132,6 @@ export const config = {
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
-  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
@@ -1274,11 +1262,9 @@ export const config = {
   MAILTRAP_SIGNUPS_LIST_ID: env.MAILTRAP_SIGNUPS_LIST_ID,
   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: env.MAILTRAP_BUSINESS_SIGNUPS_LIST_ID,
 
-  // ─── Stray env vars (centralized from other files) ────────────────────────
+  // ─── Stray env vars (centralized from other files; see schema comment) ────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,
   KORTIX_MASTER_URL: env.KORTIX_MASTER_URL,
-  OPENCODE_URL: env.OPENCODE_URL,
-  KORTIX_DATA_DIR: env.KORTIX_DATA_DIR,
 
   // ─── Helper Methods ────────────────────────────────────────────────────────
 

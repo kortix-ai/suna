@@ -64,9 +64,7 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-const { recordPendingQuestion, resolvePendingQuestion, clearOpenQuestions, renderAnswerPrompt } = await import(
-  './pending-questions'
-);
+const { recordPendingQuestion } = await import('./pending-questions');
 
 const base = {
   accountId: 'acct-1',
@@ -119,80 +117,5 @@ describe('recordPendingQuestion', () => {
     ]) {
       expect(code).not.toContain(forbidden);
     }
-  });
-});
-
-describe('resolvePendingQuestion', () => {
-  test('answering an open question succeeds', async () => {
-    returnRows = [{ id: 'q1' }];
-    expect(await resolvePendingQuestion({ ...base, answers: [['yes']] })).toBe(true);
-  });
-
-  test('a second answer to the same question is refused', async () => {
-    // CAS on answered_at IS NULL — same discipline as the compute settle. A late
-    // duplicate must not overwrite the first answer's payload.
-    returnRows = [];
-    expect(await resolvePendingQuestion({ ...base, answers: [['no']] })).toBe(false);
-  });
-});
-
-describe('clearOpenQuestions', () => {
-  test('supersedes an open question when the turn ends another way', async () => {
-    // A stale prompt rendered on resume is worse than none: it invites an answer
-    // that nothing is waiting for.
-    returnRows = [{ id: 'q1' }, { id: 'q2' }];
-    expect(await clearOpenQuestions('sess-1')).toBe(2);
-  });
-
-  test('a session with nothing open clears nothing', async () => {
-    returnRows = [];
-    expect(await clearOpenQuestions('sess-1')).toBe(0);
-  });
-});
-
-/**
- * The answer arrives as a FOLLOW-UP TURN, so it has to carry its own context.
- *
- * It cannot go back to the call that blocked: that opencode process was parked
- * and restarted cold, its request id no longer exists, and nothing is waiting
- * on it. A fresh opencode has no memory of asking — so a bare "yes" would land
- * with nothing to attach it to. Quoting the question is what makes the reply
- * legible.
- */
-describe('renderAnswerPrompt', () => {
-  test('quotes the question above the answer', () => {
-    const out = renderAnswerPrompt([{ text: 'Deploy to prod?' }], [['yes']]);
-    expect(out).toContain('> Deploy to prod?');
-    expect(out).toContain('yes');
-    expect(out.indexOf('Deploy to prod?')).toBeLessThan(out.indexOf('yes'));
-  });
-
-  test('handles several questions and several answers', () => {
-    const out = renderAnswerPrompt(
-      [{ text: 'Region?' }, { text: 'Confirm?' }],
-      [['eu-west'], ['yes']],
-    );
-    expect(out).toContain('> Region?');
-    expect(out).toContain('> Confirm?');
-    expect(out).toContain('eu-west');
-  });
-
-  test('accepts the alternate `question` field name', () => {
-    // opencode's QuestionInfo has shifted shape before; tolerate both rather
-    // than silently rendering an empty prompt.
-    expect(renderAnswerPrompt([{ question: 'Proceed?' }], [['no']])).toContain('> Proceed?');
-  });
-
-  test('an empty answer is stated, never sent as a blank turn', () => {
-    // A blank prompt would read as the user saying nothing and the agent would
-    // have to guess. Say so explicitly.
-    expect(renderAnswerPrompt([{ text: 'Proceed?' }], [])).toContain('(no answer given)');
-  });
-
-  test('survives a malformed question payload without throwing', () => {
-    // This renders whatever the sandbox relayed; a bad payload must not 500 the
-    // answer endpoint and strand the turn.
-    expect(() => renderAnswerPrompt(null, [['yes']])).not.toThrow();
-    expect(renderAnswerPrompt(null, [['yes']])).toContain('yes');
   });
 });

@@ -1,6 +1,6 @@
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import type { GatewayCatalogModel } from '@kortix/sdk';
-import { normalizeProviderList } from '@kortix/sdk/react';
+import { GATEWAY_PROVIDER_IDS, normalizeProviderList } from '@kortix/sdk/react';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 
 // ============================================================================
@@ -89,12 +89,13 @@ interface OpencodeCatalogModel {
 
 /**
  * A provider's `models` map holds either opencode's canonical model shape
- * (native providers) or the flatter, models.dev-ish `GatewayCatalogModel`
- * served by the synthetic `kortix` gateway provider. The two are structurally
- * overlapping and every field is optional on the wire, so this is modelled as
- * an intersection of both shapes rather than a discriminated union — a union
- * cannot be narrowed by a `capabilities` check (both members have only
- * optional properties, so TypeScript can't subtract one from the other).
+ * (the runtime's own `provider.list` payload) or the flatter, models.dev-ish
+ * `GatewayCatalogModel` served by the synthetic `kortix` gateway provider. The
+ * two are structurally overlapping and every field is optional on the wire, so
+ * this is modelled as an intersection of both shapes rather than a
+ * discriminated union — a union cannot be narrowed by a `capabilities` check
+ * (both members have only optional properties, so TypeScript can't subtract
+ * one from the other).
  *
  * The point of naming the shape at all is that it keeps `provider` and the
  * models.dev passthrough fields type-checked end to end: this file used to
@@ -134,6 +135,10 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
   const result: FlatModel[] = [];
   for (const p of all) {
     if (!connectedSet.has(p.id)) continue;
+    // Gateway mode is the only mode: the list is already source-filtered to
+    // the `kortix` provider, but never render any other provider even if one
+    // slips in off a stale sandbox payload (same guard as the SDK copy).
+    if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
       const catalogModel = catalogModelFor(p.id, modelID);
       let capabilities: FlatModel['capabilities'];

@@ -10,5 +10,6 @@ export * from './open-turn';
 export * from './parts';
 export * from './shell';
 export * from './state';
+export * from './timeline';
 export * from './tool-registry';
 export * from './view-model';

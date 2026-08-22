@@ -7,13 +7,10 @@ import {
   createSandbox,
   getSandbox,
   getSandboxById,
-  renameSandbox,
   listSandboxes,
   discoverLocalSandbox,
   restartSandbox,
   stopSandbox,
-  cancelSandbox,
-  reactivateSandbox,
 } from './lifecycle';
 
 // This module composes `../projects-client` functions on top of `backendApi`,
@@ -286,20 +283,6 @@ test('getSandboxById resolves through findProjectSessionSandbox for a real id', 
   expect(result?.external_id).toBe('ext-1');
 });
 
-// ─── renameSandbox ───────────────────────────────────────────────────────────
-
-test('renameSandbox throws "not exposed" when the sandbox exists', async () => {
-  wireExistingSandbox();
-  await expect(renameSandbox('sbx-1', 'new name')).rejects.toThrow(
-    'Renaming project-session sandboxes is not exposed by the current API',
-  );
-});
-
-test('renameSandbox throws "not found" when the sandbox does not resolve', async () => {
-  wireExistingSandbox();
-  await expect(renameSandbox('no-such-sandbox', 'new name')).rejects.toThrow('Project session sandbox not found');
-});
-
 // ─── listSandboxes ───────────────────────────────────────────────────────────
 
 function wireTwoProjectsTwoSessions() {
@@ -394,20 +377,4 @@ test('stopSandbox POSTs to the stop endpoint for the resolved project/session', 
   const stopCall = calls.find((c) => /\/stop$/.test(c.url));
   expect(stopCall?.method).toBe('POST');
   expect(stopCall?.url).toContain('/projects/proj-1/sessions/sess-1/stop');
-});
-
-// ─── cancelSandbox / reactivateSandbox ───────────────────────────────────────
-
-test('cancelSandbox always throws — cancellation is not exposed, regardless of args', async () => {
-  await expect(cancelSandbox()).rejects.toThrow('Cancellation is not exposed for project-session sandboxes');
-  await expect(cancelSandbox('sbx-1')).rejects.toThrow('Cancellation is not exposed for project-session sandboxes');
-  expect(calls.length).toBe(0);
-});
-
-test('reactivateSandbox always throws — reactivation is not exposed, regardless of args', async () => {
-  await expect(reactivateSandbox()).rejects.toThrow('Reactivation is not exposed for project-session sandboxes');
-  await expect(reactivateSandbox('sbx-1')).rejects.toThrow(
-    'Reactivation is not exposed for project-session sandboxes',
-  );
-  expect(calls.length).toBe(0);
 });

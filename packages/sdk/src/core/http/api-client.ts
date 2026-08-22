@@ -513,51 +513,6 @@ async function makeRequest<T = any>(
   }
 }
 
-export const supabaseClient = {
-  async execute<T = any>(
-    queryFn: () => Promise<{ data: T | null; error: any }>,
-    errorContext?: ErrorContext,
-  ): Promise<ApiResponse<T>> {
-    try {
-      const { data, error } = await queryFn();
-
-      if (error) {
-        const apiError: ApiError = new ApiError(error.message || 'Database error', {
-          code: error.code,
-          details: error,
-        });
-
-        platformConfig().onError?.(apiError, errorContext);
-
-        return {
-          error: apiError,
-          success: false,
-        };
-      }
-
-      return {
-        data: data as T,
-        success: true,
-      };
-    } catch (error: any) {
-      const apiError: ApiError =
-        error instanceof Error
-          ? new ApiError(error.message, {
-              name: error.name || 'ApiError',
-              stack: error.stack,
-            })
-          : new ApiError(String(error));
-
-      platformConfig().onError?.(apiError, errorContext);
-
-      return {
-        error: apiError,
-        success: false,
-      };
-    }
-  },
-};
-
 /**
  * Streaming POST — bypasses `makeRequest`'s single-shot body consumption
  * (`.json()`/`.text()`/`.blob()`, which can only run once) and hands back

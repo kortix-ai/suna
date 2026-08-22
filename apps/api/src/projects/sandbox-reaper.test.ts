@@ -193,7 +193,6 @@ const visitStamps = () => updateCalls.filter(isVisitStamp);
 mock.module('../config', () =>
   mockConfigModule({
     KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
-    KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
     ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
   }),
 );

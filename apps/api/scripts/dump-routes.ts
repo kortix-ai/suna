@@ -17,6 +17,9 @@
  * and moves the coverage gate:
  *   KORTIX_BILLING_INTERNAL_ENABLED=true  hides /v1/setup/* (self-host only)
  *   LLM_GATEWAY_ENABLED=true              mounts the in-API /v1/llm/* surface
+ *                                         (the operator kill switch for /v1/llm;
+ *                                         it does not gate any project route —
+ *                                         gateway mode is the only session mode)
  * Both must be `true` — that is the managed/cloud deployment the manifest
  * describes. A local .env with billing off adds nine /v1/setup routes and
  * drops seven /v1/llm ones. Regenerate with:

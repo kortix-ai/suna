@@ -6,6 +6,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `SessionSyncReason` gains `'reconnect'`: on every `server.connected` frame
+  after the initial connect, the event handler re-reads the tail of EVERY
+  loaded session (busy or idle) — the OpenCode desktop app's re-bootstrap on
+  reconnect. Closes the "turn ended inside a short disconnect, transcript
+  short until hard refresh" hole the `> 5s`/busy-only gap path and the
+  turn-end path both miss.
+- A parked event stream (gave up after 8 consecutive hard failures on
+  `/event`) now marks the runtime unhealthy (`handleEventStreamParked`) so the
+  health-probe loop re-arms it: the first healthy probe re-runs the stream
+  effect and opens a fresh stream. Before, OpenCode could restart behind a
+  daemon that kept passing every probe and the stream stayed dead until a
+  hard refresh.
 - Typed unified session-cost reads through
   `billing.sessionCosts.{list,get}` and `session(pid,sid).cost()`. The response
   combines finalized LLM and compute costs, model usage, and ledger entries.
@@ -24,12 +36,24 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `KortixMasterProject` — the kortix-master daemon's board project.
 - `@kortix/sdk/internal/*` for the zustand stores. Not covered by semver.
 
+### Changed
+- Gateway mode is the only mode, and two helpers now say so: `hasUsableModel`
+  returns `false` for a model under any provider other than `kortix` (the
+  old "native/direct provider → usable" branch described a mode that no
+  longer exists), and `modelKeyToWire` has no `opencode` special case — only
+  `kortix` is bare, everything else is `provider/model`. Both branches were
+  unreachable from live data (inputs are source-filtered to `kortix`).
+
 ### Deprecated
 - The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
   `/event-stream`, the stores, …). They still work. Import from the root.
 - `KortixProject` **as exported from `@kortix/sdk/opencode-client`** — renamed to
   `KortixMasterProject`. The platform's `KortixProject` (from the root) is
   unchanged and keeps its name.
+- `filterToNativeProviders` and `mergeProjectSecretConnectedProviders`
+  (`@kortix/sdk/react`). Gateway mode is the only mode, so
+  `useRuntimeProviders` no longer has a native-provider branch that calls
+  them. Still exported; removed in the next major.
 
 ### Fixed
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
@@ -44,6 +68,41 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The retired local sandbox value was removed from `AppHostingProvider`. This
   is an intentional breaking type-contract change and requires a breaking SDK
   release. The API no longer accepts or emits that value.
+- **BREAKING — 31 dead exports dropped from the root entry and the deprecated
+  `./projects-client`, `./platform-client` and `./api-client` subpaths.** Every
+  one targeted an HTTP route that no longer exists, or threw / returned
+  unconditionally, so an external caller was already broken at runtime; this
+  makes it a compile-time error instead. Ships with the next major. None were
+  `@deprecated`-aliased first — the alias-then-remove rule exists to keep a
+  *working* name working, and these never worked.
+  - templates: `getTemplate`, `installTemplate`, `TemplateInput`,
+    `TemplateRequirement`, `TemplateDetail`, `TemplateInstallResult`
+    (`/v1/templates/*` is gone; use `/v1/marketplace/items/:id` +
+    `/v1/projects/:projectId/marketplace/install-session`).
+  - projects: `updateTemplateWarmPool` (no handler).
+  - instance admin: `deleteInstance`, `markInstanceError`, `claimComputer`,
+    `getSandboxProvisionStatus`, `getSandboxProvisionStreamUrl`,
+    `SandboxProvisionStageInfo`, `SandboxProvisionStatus` (`/v1/platform/sandbox/*` is gone).
+  - stubs that could never succeed: `listBackups`, `createBackup`,
+    `restoreBackup`, `deleteBackup`, `BackupInfo`, `BackupListResponse`,
+    `renameSandbox`, `cancelSandbox`, `reactivateSandbox`, `cancelSandboxUpdate`.
+  - invites: `getInvite`, `acceptInvite`, `declineInvite`, `InviteDetails`,
+    `InviteDetailsVisible`, `InviteDetailsRedacted` (`/platform/invites/*` is gone).
+  - `supabaseClient` (the `./api-client` alias) and the `@internal`
+    `__getConfigResolver` (zero readers; its sibling `__setConfigResolver` stays).
+
+### Breaking
+
+- `llm_gateway` is no longer a feature flag; gateway mode is the only mode.
+  `FeatureFlagKey` loses the `'llm_gateway'` member and `FEATURE_FLAG_KEYS` no
+  longer lists it. `useFeatureFlag(id, 'llm_gateway')` stops compiling on
+  purpose: the API registry retired the key (`PATCH /features` returns 400 for
+  it) and every session is configured for the Kortix gateway.
+- `useRuntimeProviders` (alias `useOpenCodeProviders`) is gateway-only inside a
+  project route: it always reads `project(id).modelPicker()` and never the
+  runtime's own `provider.list`. It no longer reads project detail, no longer
+  waits for the runtime to be ready, and the `kortix` provider is never
+  filtered out. Outside a project route it still reads the runtime list.
 
 ### Internal
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
