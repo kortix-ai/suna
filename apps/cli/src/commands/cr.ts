@@ -43,7 +43,7 @@ Subcommands:
   request-changes <cr> --message "<t>"   Ask the agent that opened it to revise.
   close <cr>                             Close an open CR without merging.
   reopen <cr>                            Reopen a closed CR.
-  version-diff --from <ver> --into <ver> Summarize one version against another
+  version-diff --from <head> --into <base> Summarize what merging <head> into <base>
                 [--json]                 before opening a CR.
 
 <cr> can be a CR number (e.g. 3) or a CR uuid.
