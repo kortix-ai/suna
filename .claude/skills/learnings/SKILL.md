@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Assert an asynchronous timestamp write on its own row (2026-08-22)
+
+**When:** proving that one request advances a row timestamp while asynchronous
+lifecycle work can update sibling rows. Compare the target row before and after,
+or compare two fields written by the same statement. Do not infer the write from
+relative list order. *Near-miss:* release gate run 32588846407 failed `SESS-18`
+twice after a later sandbox transition advanced the older session's `updated_at`.
+*Enforcer:* `SESS-18` requires adoption `updated_at == last_activity_at` and
+`updated_at > created_at` on the adopted row.
+
 ### Bind public Vercel runtime metadata to the deployment, not the project environment (2026-08-22)
 
 **When:** passing public release metadata to a Vercel Production deployment.
