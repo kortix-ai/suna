@@ -267,7 +267,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 
 /**
  * Formats with a real renderer of their own — a spreadsheet is a grid, a PDF is
- * pages, a deck is slides. `FileViewer` only knows how to show text (markdown,
+ * pages, a deck is slides, an archive is a file list. `FileViewer` only knows how to show text (markdown,
  * HTML, source), so without this a CSV or an .xlsx or a PDF — exactly what a
  * non-technical user asks for — would hit "this file can't be previewed here"
  * despite the app already shipping a renderer for every one of them.
@@ -282,6 +282,10 @@ const RICH_CATEGORIES = new Set<FileCategory>([
   'video',
   'audio',
   'image',
+  // An archive is a folder the viewer declined to open, not a document that
+  // failed to render. `ZipRenderer` browses it; the text path could only ever
+  // show its bytes as mojibake.
+  'zip',
 ]);
 
 /**
@@ -316,6 +320,8 @@ export function isRich(fileName: string): boolean {
  * reports; if you remove `usePreviewFit` from a renderer, remove it here.
  */
 const MEASURING_CATEGORIES = new Set<FileCategory>(['pdf', 'image', 'video']);
+// `zip` is rich and deliberately absent: a file list has no intrinsic shape to
+// honor, the same reason `audio` is excluded below.
 
 /**
  * Whether opening this file will produce a measurement — what lets

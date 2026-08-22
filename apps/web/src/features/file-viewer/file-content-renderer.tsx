@@ -72,13 +72,16 @@ const SqliteRenderer = lazy(() =>
     default: m.SqliteRenderer,
   })),
 );
+const ZipRenderer = lazy(() =>
+  import('@/features/file-renderers/zip/zip-renderer').then((m) => ({ default: m.ZipRenderer })),
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /** Categories that need a blob fetched via readFileAsBlob */
-const BLOB_CATEGORIES = ['docx', 'video', 'audio', 'pptx'] as const;
+const BLOB_CATEGORIES = ['docx', 'video', 'audio', 'pptx', 'zip'] as const;
 type BlobCategory = (typeof BLOB_CATEGORIES)[number];
 
 export type FileCategory =
@@ -92,6 +95,7 @@ export type FileCategory =
   | 'video'
   | 'audio'
   | 'html'
+  | 'zip'
   | 'code'
   | 'text'
   | 'binary';
@@ -126,6 +130,11 @@ export function getFileCategory(filename: string, mimeType?: string): FileCatego
   if (['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v'].includes(ext)) return 'video';
   if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma'].includes(ext)) return 'audio';
   if (['html', 'htm'].includes(ext)) return 'html';
+  // Zip CONTAINERS only. `.docx`/`.xlsx`/`.pptx` are zips too and are matched
+  // above, because their contents are an implementation detail rather than
+  // something anyone wants to browse. `.tar.gz`/`.tgz` are deliberately absent
+  // — they are not zip, and jszip cannot read them.
+  if (['zip', 'jar', 'war', 'whl', 'vsix', 'nupkg', 'xpi', 'apk'].includes(ext)) return 'zip';
 
   // Code/text files
   if (getLanguageFromExt(filename) !== 'plaintext') return 'code';
@@ -342,12 +351,19 @@ export function FileContentRenderer({
   // Text content (for code/text files, CSV, non-HEIC images).
   // HEIC files are loaded exclusively via the blob pipeline — the text/base64
   // endpoint often returns 500 for HEIC because the server can't encode them.
+  // A zip is fetched ONCE, as bytes. Left on the text path as well it would
+  // also be pulled as base64 through /file/content — a second full download of
+  // an archive that is often the largest thing in the workspace, for a string
+  // no branch below reads (`isContentReady` resolves off the blob for every
+  // BLOB_CATEGORY). Keyed off the filename alone, so it cannot depend on the
+  // response it is disabling.
+  const isZipArchive = getFileCategory(fileName) === 'zip';
   const {
     data: fileContent,
     isLoading,
     error,
     refetch,
-  } = useFileContent(isHeicImage ? null : filePath);
+  } = useFileContent(isHeicImage || isZipArchive ? null : filePath);
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -973,6 +989,23 @@ export function FileContentRenderer({
           {isContentReady && fileCategory === 'docx' && rawBlob && (
             <Suspense fallback={<RendererFallback />}>
               <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
+            </Suspense>
+          )}
+
+          {/* Zip archive — browse the entries, drill into one, extract it */}
+          {isContentReady && fileCategory === 'zip' && rawBlob && (
+            <Suspense fallback={<RendererFallback />}>
+              {/* `key`: the renderer holds per-archive state (which folders
+                  are open, which entry is drilled into), and switching files
+                  must not carry one archive's expansion onto another's paths.
+                  Remounting is React's own reset, and it costs nothing — the
+                  blob is already cached by the source. */}
+              <ZipRenderer
+                key={filePath}
+                blob={rawBlob}
+                fileName={fileName}
+                className="h-full"
+              />
             </Suspense>
           )}
 
