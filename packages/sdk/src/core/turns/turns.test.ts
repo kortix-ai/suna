@@ -170,6 +170,60 @@ describe('groupMessagesIntoTurns', () => {
     expect(turns[1].assistantMessages.map((m) => m.info.id)).toEqual(['a2']);
   });
 
+  test('three orphans attach to the FIRST turn in display order, never reversed', () => {
+    // `unshift` per orphan reversed them: o3, o2, o1. The first message the
+    // session produced must stay first.
+    const turns = groupMessagesIntoTurns([
+      assistantMsg('msg_000000000001'),
+      assistantMsg('msg_000000000002'),
+      assistantMsg('msg_000000000003'),
+      userMsg('msg_000000000004'),
+      assistantMsg('msg_000000000005', 'msg_000000000004'),
+    ]);
+    expect(turns).toHaveLength(1);
+    expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual([
+      'msg_000000000001',
+      'msg_000000000002',
+      'msg_000000000003',
+      'msg_000000000005',
+    ]);
+  });
+
+  test('orphans keep their display order ahead of a reply that sorts before its own prompt', () => {
+    // A placed reply (wire id) whose parent is a still-local user stub sorts
+    // in the PLACED segment, i.e. before the stub — and before an orphan with
+    // a higher wire id. The orphans still lead the turn, in their own order.
+    const turns = groupMessagesIntoTurns([
+      userMsg('local-stub'),
+      assistantMsg('msg_000000000001', 'local-stub'),
+      assistantMsg('msg_000000000002'),
+      assistantMsg('msg_000000000003'),
+    ]);
+    expect(turns).toHaveLength(1);
+    expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual([
+      'msg_000000000002',
+      'msg_000000000003',
+      'msg_000000000001',
+    ]);
+  });
+
+  test('regression: dedupes assistant messages sharing an id, the same way user ids are deduped', () => {
+    const orphan = assistantMsg('msg_000000000001');
+    const reply = assistantMsg('msg_000000000003', 'msg_000000000002');
+    const turns = groupMessagesIntoTurns([
+      orphan,
+      orphan,
+      userMsg('msg_000000000002'),
+      reply,
+      { ...reply },
+    ]);
+    expect(turns).toHaveLength(1);
+    expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual([
+      'msg_000000000001',
+      'msg_000000000003',
+    ]);
+  });
+
   test('creates a synthetic turn when no user messages exist at all', () => {
     const turns = groupMessagesIntoTurns([assistantMsg('a1')]);
     expect(turns).toHaveLength(1);
