@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { isProjectGlyphColor, isProjectGlyphName, PROJECT_GLYPH_COLORS } from '@kortix/shared';
-import { loadAuth } from '../api/auth.ts';
+import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import {
   activeAccount,
   activeHostName,
@@ -118,13 +118,17 @@ export async function runProjects(argv: string[]): Promise<number> {
       const all = takeFlagBool(restCopy, ['--all', '-a']);
       const json = takeFlagBool(restCopy, ['--json']);
       let query: string | undefined;
+      let hostArg: string | undefined;
+      let accountArg: string | undefined;
       try {
         query = takeFlagValue(restCopy, ['--query', '-q']);
+        hostArg = takeFlagValue(restCopy, ['--host']);
+        accountArg = takeFlagValue(restCopy, ['--account']);
       } catch (err) {
         process.stderr.write(`${status.err((err as Error).message)}\n`);
         return 2;
       }
-      return projectsLs(json, all, query);
+      return projectsLs(json, all, query, hostArg, accountArg);
     }
     case 'set':
     case 'update':
@@ -1083,14 +1087,31 @@ function filterProjects(projects: ProjectSummary[], query?: string): ProjectSumm
   );
 }
 
-async function projectsLs(json = false, all = false, query?: string): Promise<number> {
-  const auth = requireAuth();
-  if (!auth) return 1;
+async function projectsLs(
+  json = false,
+  all = false,
+  query?: string,
+  hostArg?: string,
+  accountArg?: string,
+): Promise<number> {
+  // --host names a logged-in host other than the active one; --account picks
+  // the account within it (default: that host's active account).
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${hostArg}" is not logged in.`)} Run ${C.cyan}kortix login --host ${hostArg}${C.reset}.\n`,
+      );
+    }
+    return 1;
+  }
   if (all) return projectsLsAll(auth, json, query);
 
   // Scope to the active account so this lists exactly that account's projects
   // (not the server's earliest-joined-account default).
-  const client = clientFromAuth(auth, { accountId: scopeAccountId(auth) });
+  // --host: that host's own stored account (never the global active one).
+  const accountId = accountArg || (hostArg ? auth.account_id || undefined : scopeAccountId(auth));
+  const client = clientFromAuth(auth, { accountId });
   let projects: ProjectSummary[];
   try {
     projects = filterProjects(await client.get<ProjectSummary[]>('/projects'), query);
