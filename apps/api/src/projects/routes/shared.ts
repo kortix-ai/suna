@@ -10,7 +10,6 @@ import {
   reopenComputeForSandbox,
 } from '../../billing/services/compute-metering';
 import { type SandboxProviderName, config } from '../../config';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, json } from '../../openapi';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
@@ -367,7 +366,6 @@ export async function allocateRuntimeOnOpen(
         opencodeModel,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
-        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
         restoreSessionBranch: true,
       }),

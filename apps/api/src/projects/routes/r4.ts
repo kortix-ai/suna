@@ -80,7 +80,6 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
@@ -2931,7 +2930,6 @@ projectsApp.openapi(
     const apiKeyType = c.get('apiKeyType') as string | undefined;
     const accountId = c.get('accountId') as string | undefined;
     const sandboxId = c.get('sandboxId') as string | undefined;
-    let projectMetadata: unknown;
     let ownerAccountId: string | undefined;
     if (authType === 'apiKey' && apiKeyType === 'sandbox' && accountId && sandboxId) {
       const [sandbox] = await db
@@ -2950,24 +2948,16 @@ projectsApp.openapi(
         return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
       }
       const [project] = await db
-        .select({ metadata: projects.metadata })
+        .select({ projectId: projects.projectId })
         .from(projects)
         .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
         .limit(1);
       if (!project) return c.json({ error: 'Not found' }, 404);
-      projectMetadata = project.metadata;
       ownerAccountId = accountId;
     } else {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      projectMetadata = loaded.row.metadata;
       ownerAccountId = loaded.row.accountId as string | undefined;
-    }
-    if (!projectLlmGatewayEnabled(projectMetadata)) {
-      return c.json(
-        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
-        404,
-      );
     }
     // Free-tier accounts see only managed models explicitly marked free plus
     // their own BYOK/Codex-connected catalog entries. Paid managed models and
@@ -3001,12 +2991,6 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
-      return c.json(
-        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
-        404,
-      );
-    }
 
     const accountId = loaded.row.accountId as string;
     const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
@@ -3151,13 +3135,9 @@ projectsApp.openapi(
 // client can feed it through the exact same toEntry()/order() it already
 // has, no reshaping.
 //
-// Deliberately NOT gated by projectLlmGatewayEnabled unlike /llm-catalog and
-// /model-picker above: the BYOK provider connect modal (which env vars to
-// collect, which providers show "connected") is meaningful for EVERY
-// project, including native (non-gateway) ones — that's the majority of
-// projects and exactly the surface the connect modal serves. Non-secret
-// model metadata; scoped to project auth only for consistency with the
-// other catalog routes, not because it needs to be secret.
+// Same auth as /llm-catalog; non-secret model metadata. Serves the BYOK
+// provider connect modal (which env vars to collect, which providers show
+// "connected").
 projectsApp.openapi(
   createRoute({
     method: 'get',

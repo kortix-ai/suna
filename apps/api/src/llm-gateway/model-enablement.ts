@@ -19,8 +19,8 @@ import { isKnownManagedModelId } from './models/managed-models';
 // This module is the ONLY place that resolves overrides + default into an
 // answer, so no two UI surfaces can disagree.
 //
-// NOTE: distinct from ./enablement.ts, which resolves the `llm_gateway`
-// experimental FEATURE flag — not model on/off.
+// NOTE: model on/off only. Gateway mode itself is not configurable: every
+// session routes through the gateway (see platform/services/session-sandbox.ts).
 
 /** Catalog metadata the default rule reads, as the models routes serve it. */
 type ServedModel = {

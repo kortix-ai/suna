@@ -10,7 +10,6 @@ import {
   resolveFeatureFlag,
   resolveFeatureFlags,
 } from '../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 
 const STABILITIES = ['experimental', 'beta', 'stable'];
 const ENFORCEMENTS = ['routes', 'behavioral', 'ui-only'];
@@ -158,47 +157,30 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     ).toBe(false);
   });
 
-  test('llm_gateway is platform-gated and follows the fleet default', () => {
-    const available = findCatalogFlag('llm_gateway').available;
-    expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(
-      available && config.LLM_GATEWAY_DEFAULT_ENABLED,
+  test('llm_gateway is not a feature flag — gateway mode is the only session mode', () => {
+    // A flag that selects a provider/runtime MODE is a broken branch, not a
+    // flag. The registry must not carry it, so the PATCH route 400s it and the
+    // catalog never emits a row for it. A stale stored override is inert:
+    // resolveFeatureFlags iterates the registry, not the stored map.
+    expect(REGISTERED_FEATURE_FLAGS.map((f) => f.key)).not.toContain('llm_gateway');
+    expect(isFeatureFlagKey('llm_gateway')).toBe(false);
+    expect(buildFeatureFlagCatalog({ experimental: { llm_gateway: true } }).map((f) => f.key)).not.toContain(
+      'llm_gateway',
     );
-    expect(resolveFeatureFlag({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
-      available,
+    expect(resolveFeatureFlags({ experimental: { llm_gateway: false } })).not.toHaveProperty(
+      'llm_gateway',
     );
-    expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(false);
-    expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: true } })).toBe(available);
-  });
-
-  test('llm_gateway fleet default rolls all projects on while the kill switch and project-off override still win', () => {
+    // The operator kill switch for /v1/llm is config, not a flag; flipping it
+    // must not add or remove any catalog row.
     const previousEnabled = config.LLM_GATEWAY_ENABLED;
-    const previousDefault = config.LLM_GATEWAY_DEFAULT_ENABLED;
     try {
       config.LLM_GATEWAY_ENABLED = false;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
-      expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(false);
-      expect(projectLlmGatewayEnabled({})).toBe(false);
-
+      const offKeys = buildFeatureFlagCatalog({}).map((f) => f.key);
       config.LLM_GATEWAY_ENABLED = true;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = false;
-      expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(false);
-
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
-      expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(true);
-      expect(projectLlmGatewayEnabled({})).toBe(true);
-      expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(
-        false,
-      );
-      expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: false } })).toBe(false);
-
-      // The kill switch also beats an explicit project ON.
-      config.LLM_GATEWAY_ENABLED = false;
-      expect(resolveFeatureFlag({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
-        false,
-      );
+      const onKeys = buildFeatureFlagCatalog({}).map((f) => f.key);
+      expect(offKeys).toEqual(onKeys);
     } finally {
       config.LLM_GATEWAY_ENABLED = previousEnabled;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = previousDefault;
     }
   });
 

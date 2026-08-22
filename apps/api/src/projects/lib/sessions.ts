@@ -21,7 +21,6 @@ import {
   type SessionVisibility,
 } from '../../connectors/share';
 import { setContextField } from '../../lib/request-context';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
   isModelServableForAccount,
   resolveEffectiveModel,
@@ -422,11 +421,6 @@ export async function buildSessionSandboxEnvVars(input: {
   initialPrompt?: string | null;
   initialTurn?: PreparedInitialSandboxTurn | null;
   opencodeModel?: string | null;
-  /** Resolved per-project `llm_gateway` feature flag. Gateway ON →
-   *  opencode is locked to the gateway and native provider keys are withheld;
-   *  OFF (default) → native BYOK providers must reach opencode, so the deny
-   *  list is empty. Mirrors the conditional KORTIX_LLM_* injection at provision. */
-  llmGatewayEnabled: boolean;
   /** New session (brand-new branch == base, no remote commits). Lets the
    *  daemon create the session branch LOCALLY instead of a redundant network
    *  fetch of a branch that's identical to base — that fetch cost up to ~10s
@@ -627,7 +621,8 @@ export async function buildSessionSandboxEnvVars(input: {
     [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,
     // Runtime-delivered provider keys may reach the sandbox for user code.
     // OpenCode must not receive them because it would bypass the gateway.
-    KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
+    // Gateway mode is the only mode, so the deny list is always the full set.
+    KORTIX_OPENCODE_DENY_ENV: nativeProviderEnvNames().join(','),
     // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
     // on-demand fetches, which stall through the Kortix git proxy when its
     // partial-clone capability isn't advertised consistently — the clone then
@@ -1060,7 +1055,6 @@ export async function createProjectSession(input: {
   }
 
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
-  const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
 
   // Model: normalize + fail-fast at create. An unservable / retired / typo'd
   // model pin was previously stored verbatim and only failed at prompt time (a
@@ -1102,7 +1096,7 @@ export async function createProjectSession(input: {
     }
     opencodeModel = toOpencodeModelRef(requestedModel);
     opencodeModelSource = 'explicit';
-  } else if (llmGatewayEnabled) {
+  } else {
     try {
       const resolved = await resolveEffectiveModel({
         userId,
@@ -1665,7 +1659,6 @@ export async function createProjectSession(input: {
             initialPrompt,
             initialTurn,
             opencodeModel,
-            llmGatewayEnabled,
             platformMetaAgent,
             freshSession: true,
             baseSha: fastBootGitHint?.baseSha,
@@ -1741,7 +1734,6 @@ export async function createProjectSession(input: {
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
         initialTurn,
         extraEnvVars,
-        projectMetadata: project.metadata,
         gitProject: {
           projectId,
           repoUrl: project.repoUrl,

@@ -34,6 +34,8 @@ import { upsertResourceGrant } from '../iam/resource-grants';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
+/** A second project carrying a STALE `experimental.llm_gateway:false` override. */
+const STALE_PROJECT = crypto.randomUUID();
 const SESSION = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
@@ -43,6 +45,8 @@ const AGENT = 'kortix';
 const minted: string[] = [];
 let memberKey = '';
 let managerKey = '';
+/** MANAGER's token scoped to STALE_PROJECT (tokens are project-scoped). */
+let staleManagerKey = '';
 
 beforeAll(async () => {
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
@@ -57,10 +61,15 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'member-model-gate-test-project',
     repoUrl: 'https://example.com/member-model-gate-test.git',
-    // `GET /model-picker` and `PUT /model-enablement` both 404 with
-    // `llm_gateway_disabled` unless the project has the gateway on. Turn it on
-    // so this suite measures the ROLE gate and not the feature flag.
-    metadata: { experimental: { llm_gateway: true } },
+  });
+  // Gateway mode is the only mode. A row written before the `llm_gateway` flag
+  // was retired may still carry the override; it must be inert.
+  await db.insert(projects).values({
+    projectId: STALE_PROJECT,
+    accountId: ACCOUNT,
+    name: 'member-model-gate-test-stale-override',
+    repoUrl: 'https://example.com/member-model-gate-test-stale.git',
+    metadata: { experimental: { llm_gateway: false } },
   });
   await db.insert(accountMembers).values([
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
@@ -69,6 +78,7 @@ beforeAll(async () => {
   await db.insert(projectMembers).values([
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
+    { accountId: ACCOUNT, projectId: STALE_PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);
   // A RUNNING session the member OWNS. Ownership matters: `mayChangeSessionModel`
   // gates on owner-or-manager (a live model change restarts opencode and would
@@ -101,6 +111,7 @@ beforeAll(async () => {
 
   memberKey = await mint(MEMBER);
   managerKey = await mint(MANAGER);
+  staleManagerKey = await mint(MANAGER, STALE_PROJECT);
 });
 
 afterAll(async () => {
@@ -113,11 +124,11 @@ afterAll(async () => {
 });
 
 /** A plain human PAT — no agent grant, so the coarse project floor is live. */
-async function mint(userId: string): Promise<string> {
+async function mint(userId: string, projectId: string = PROJECT): Promise<string> {
   const t = await createAccountToken({
     accountId: ACCOUNT,
     userId,
-    projectId: PROJECT,
+    projectId,
     name: 'member-model-gate-test',
     agentGrant: null as any,
   });
@@ -235,5 +246,48 @@ describe('project member — model selection', () => {
     const res = await req('PUT', `${base}/model-enablement`, managerKey, { modelOverrides: {} });
     expect(await roleDenied(res)).toBe(false);
     expect(res.status).not.toBe(403);
+  });
+});
+
+describe('gateway mode is the only mode — no llm_gateway flag, no llm_gateway_disabled gate', () => {
+  const staleBase = `/v1/projects/${STALE_PROJECT}`;
+
+  test('a stale `experimental.llm_gateway:false` override does not gate /llm-catalog or /model-picker', async () => {
+    const [catalog, picker] = await Promise.all([
+      req('GET', `${staleBase}/llm-catalog`, staleManagerKey),
+      req('GET', `${staleBase}/model-picker`, staleManagerKey),
+    ]);
+    expect(catalog.status).toBe(200);
+    expect(picker.status).toBe(200);
+    const catalogBody = (await catalog.json()) as { models?: unknown; code?: string };
+    const pickerBody = (await picker.json()) as { models?: unknown; code?: string };
+    // Both bodies are the catalog shape, never the retired
+    // `{code:'llm_gateway_disabled'}` envelope. How MANY models a synthetic
+    // account with no plan entitlement and no BYOK secrets sees is an
+    // entitlement question (`freeManagedOnly`), not a gate question — see the
+    // "sees the SAME model list" test above.
+    expect(catalogBody.code).toBeUndefined();
+    expect(pickerBody.code).toBeUndefined();
+    expect(typeof catalogBody.models).toBe('object');
+    expect(typeof pickerBody.models).toBe('object');
+  });
+
+  test('PATCH /features {feature: llm_gateway} is an unknown flag (400)', async () => {
+    const res = await req('PATCH', `${base}/features`, managerKey, {
+      feature: 'llm_gateway',
+      enabled: true,
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "Unknown feature flag 'llm_gateway'" });
+  });
+
+  test('GET /detail carries no llm_gateway entry in experimental or experimental_features', async () => {
+    const res = await req('GET', `${staleBase}/detail`, staleManagerKey);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      project?: { experimental?: Record<string, unknown>; experimental_features?: Array<{ key: string }> };
+    };
+    expect(body.project?.experimental ?? {}).not.toHaveProperty('llm_gateway');
+    expect((body.project?.experimental_features ?? []).map((f) => f.key)).not.toContain('llm_gateway');
   });
 });

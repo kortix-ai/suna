@@ -23,14 +23,6 @@ const PROJECT_ROW = {
   metadata: null as Record<string, unknown> | null,
 };
 
-/** Mutable per-test gateway mode — mocked directly rather than routed through
- *  real feature-flag resolution, which additionally gates on operator config
- *  (`config.LLM_GATEWAY_ENABLED`) this suite has no reason to wire up. */
-let llmGatewayEnabled = false;
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => llmGatewayEnabled,
-}));
-
 const SESSION_ROW = {
   createdBy: 'user-1',
   agentName: 'support',
@@ -51,10 +43,8 @@ mock.module('../../shared/db', () => ({
       from: () => ({
         where: () => {
           // `resolveOwnerRawEnv` selects the session row, then the project row.
-          // `resolveProjectLlmGatewayEnabled` selects a project row shaped like
-          // `{ metadata }` only. Route on the requested column set so one fake
-          // `db` satisfies every select on this path, same as the sibling
-          // `sandbox-env-sync.prompt.test.ts`.
+          // Route on the requested column set so one fake `db` satisfies every
+          // select on this path, same as the sibling `sandbox-env-sync.prompt.test.ts`.
           const wantsSession = 'createdBy' in columns;
           const rows = wantsSession ? [SESSION_ROW] : [PROJECT_ROW];
           return {
@@ -65,9 +55,15 @@ mock.module('../../shared/db', () => ({
         },
       }),
     }),
-    update: () => ({ set: () => ({ where: async () => undefined }) }),
+    update: () => {
+      dbUpdateCalls += 1;
+      return { set: () => ({ where: async () => undefined }) };
+    },
   },
 }));
+/** Every `db.update(...)` the prompt path issues. The per-prompt hot path must
+ *  issue NONE: there is no per-sandbox "gateway mode" bit to persist. */
+let dbUpdateCalls = 0;
 
 mock.module('./secret-grant', () => ({
   ...realSecretGrant,
@@ -95,6 +91,9 @@ type PostedBody = {
   revision: unknown;
   refreshModels: unknown;
   opencodeEnv: Record<string, unknown>;
+  llmGatewayEnabled?: unknown;
+  llmGatewayBaseUrl?: unknown;
+  llmGatewayDenyEnv?: unknown;
 };
 let posted: PostedBody[] = [];
 
@@ -118,6 +117,8 @@ const ORIGINAL_FETCH = globalThis.fetch;
 const { syncSandboxEnvForPrompt, __resetPromptModelSignatureCacheForTests } = await import(
   './sandbox-env-sync'
 );
+const { nativeProviderEnvNames } = await import('../../llm-gateway/sandbox-credentials');
+const { config } = await import('../../config');
 
 function prompt(externalId = 'ext-1') {
   return syncSandboxEnvForPrompt({
@@ -143,7 +144,7 @@ beforeEach(() => {
   snapshotRevision = 'rev-1';
   snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
   PROJECT_ROW.metadata = null;
-  llmGatewayEnabled = false;
+  dbUpdateCalls = 0;
 });
 
 describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
@@ -199,15 +200,25 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
 
-  test('an LLM-gateway mode flip still asks for a reload', async () => {
-    // Toggling this changes the daemon-side KORTIX_LLM_API_KEY / BASE_URL /
-    // OPENCODE_DENY_ENV triple — the "gateway URL, model tokens/keys" case
-    // named directly in the task.
-    await prompt();
-    llmGatewayEnabled = true;
+  test('every push carries gateway mode ON with the base URL and the full deny list, regardless of project metadata', async () => {
+    // Gateway mode is the only mode. A stale `experimental.llm_gateway:false`
+    // override on the project row must not flip the daemon to native.
+    PROJECT_ROW.metadata = { experimental: { llm_gateway: false } };
     await prompt();
 
-    expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!.llmGatewayEnabled).toBe(true);
+    // In-API gateway at the API's own origin (llm-gateway/sandbox-base-url.ts).
+    expect(posted[0]!.llmGatewayBaseUrl).toBe(`${config.KORTIX_URL}/v1/llm`);
+    expect(posted[0]!.llmGatewayDenyEnv).toBe(nativeProviderEnvNames().join(','));
+  });
+
+  test('the per-prompt hot path writes no session_sandboxes row (no per-sandbox gateway-mode bit)', async () => {
+    await prompt();
+    await prompt();
+
+    expect(posted).toHaveLength(1);
+    expect(dbUpdateCalls).toBe(0);
   });
 
   test('an explicit caller opencodeEnv push still asks for a reload', async () => {

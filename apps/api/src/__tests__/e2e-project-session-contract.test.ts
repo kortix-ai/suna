@@ -561,7 +561,6 @@ mock.module('../shared/account-limits', () => ({
   }),
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   maxProjectsForAccount: async () => 100,
-  accountEntitledToLlmGateway: async () => true,
   FREE_TIER_PROJECT_LIMIT: 1,
   clearAccountLimitCache: () => undefined,
 }));

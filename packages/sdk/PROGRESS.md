@@ -12,6 +12,24 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-22 — session `gateway-mode-only` — `llm_gateway` is not a feature flag (key list half) — DONE
+
+**Files:** `core/rest/projects-client/projects.ts` (`FeatureFlagKey` union and
+`FEATURE_FLAG_KEYS` drop `'llm_gateway'`) + `projects.test.ts` (key list) ·
+`CHANGELOG.md` (`### Breaking`). Type-surface snapshot unchanged (it records
+names; `FeatureFlagKey` keeps its name). Lands in the same commit as the API
+registry + contract removal so `apps/api/src/__tests__/unit-feature-flag-drift.test.ts`
+(contract ↔ SDK ↔ registry) stays green at every commit.
+
+**What.** Gateway mode is the only session mode. A flag that selected a
+provider/runtime MODE (`llm_gateway` off → native OpenCode providers the web
+has no UI for → empty picker, dead session) is a broken branch, not a flag.
+The rest of the SDK half (`useRuntimeProviders` gateway-only, native helpers
+deprecated, `ModelProviderMode` narrowed) is the follow-up session entry above
+this one.
+
+---
+
 ### 2026-08-21 — session `session-busy-flicker` — display order was not an order — DONE
 
 **Files:** `core/turns/grouping.ts` (`compareMessagesForDisplay` rewritten as two

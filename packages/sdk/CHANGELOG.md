@@ -45,6 +45,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is an intentional breaking type-contract change and requires a breaking SDK
   release. The API no longer accepts or emits that value.
 
+### Breaking
+
+- `llm_gateway` is no longer a feature flag; gateway mode is the only mode.
+  `FeatureFlagKey` loses the `'llm_gateway'` member and `FEATURE_FLAG_KEYS` no
+  longer lists it. `useFeatureFlag(id, 'llm_gateway')` stops compiling on
+  purpose: the API registry retired the key (`PATCH /features` returns 400 for
+  it) and every session is configured for the Kortix gateway.
+
 ### Internal
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
   A file's directory declares what it may import, enforced by the tripwire.

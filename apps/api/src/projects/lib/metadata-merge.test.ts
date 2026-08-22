@@ -182,19 +182,19 @@ d('atomic merge preserves the routing pin (throwaway Postgres)', () => {
     // Two DIFFERENT experimental sub-keys — a shallow `||` of the whole
     // `experimental` object would lose one; the nested merge keeps both.
     await db.update(projects).set({ metadata: metadataMergeSubtree('experimental', { agent_tunnel: true }) }).where(eq(projects.projectId, projectId));
-    await db.update(projects).set({ metadata: metadataMergeSubtree('experimental', { llm_gateway: false }) }).where(eq(projects.projectId, projectId));
+    await db.update(projects).set({ metadata: metadataMergeSubtree('experimental', { review_center: false }) }).where(eq(projects.projectId, projectId));
 
     let meta = await readMeta(projectId);
-    expect(meta.experimental).toEqual({ agent_tunnel: true, llm_gateway: false });
+    expect(meta.experimental).toEqual({ agent_tunnel: true, review_center: false });
     expect(meta[PIN_META_KEY]).toBe('platinum');
 
     // Clear one sub-key → the other + the pin remain.
     await db.update(projects).set({ metadata: metadataClearSubtreeKey('experimental', 'agent_tunnel') }).where(eq(projects.projectId, projectId));
     meta = await readMeta(projectId);
-    expect(meta.experimental).toEqual({ llm_gateway: false });
+    expect(meta.experimental).toEqual({ review_center: false });
 
     // Clear the last sub-key → the whole `experimental` object is dropped, pin intact.
-    await db.update(projects).set({ metadata: metadataClearSubtreeKey('experimental', 'llm_gateway') }).where(eq(projects.projectId, projectId));
+    await db.update(projects).set({ metadata: metadataClearSubtreeKey('experimental', 'review_center') }).where(eq(projects.projectId, projectId));
     meta = await readMeta(projectId);
     expect(meta.experimental).toBeUndefined();
     expect(meta[PIN_META_KEY]).toBe('platinum');
