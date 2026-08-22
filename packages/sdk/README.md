@@ -418,6 +418,71 @@ for a no-React plain-text version of the same classification see
 `openEventStream` down to the curated `KortixChatEvent` union (~14 members) a
 chat UI actually dispatches on.
 
+### Timeline rows — one flat list, stable keys, reused identities
+
+`classifyTurn` answers "what is in this part?". `constructTimelineRows`
+(`@kortix/sdk/turns`) answers the next question: **what does this whole
+transcript render as, in order, as one flat list a virtualizer can measure?**
+
+```ts
+import {
+  constructTimelineRows,
+  reuseTimelineRows,
+  type TimelineRow,
+} from "@kortix/sdk/turns";
+
+const rows = constructTimelineRows(messages, { status, activeUserMessageID });
+// → [{ kind: 'user-message', key: 'user-message:msg_…', userMessageID: 'msg_…' }, …]
+```
+
+Eight row kinds, discriminated on `kind` (never on `type` — that is the part
+discriminant): `turn-gap`, `user-message`, `turn-divider` (`compaction` |
+`interrupted`), `assistant-part`, `thinking`, `retry`, `diff-summary`, `error`.
+Per turn they are emitted in exactly that order, with the interrupted divider
+placed inside the assistant run at the aborted message's position.
+
+Three properties make the list usable:
+
+- **Keys are precomputed, unique, and stable.** A key is a function of `kind` +
+  `userMessageID` (+ the divider's `label`, + the part group's key). It contains
+  no index, no timestamp and no content hash, so appending or removing a row
+  never renames its neighbours. `kind` is encoded in the key, so a row's kind
+  can never change under a stable key.
+- **Rows hold ids and refs, never part content.** The only value-bearing fields
+  in the entire union are `error.text` and `diff-summary.diffs` — and `diffs` is
+  a projection (`file`, `additions`, `deletions`, `status`) that deliberately
+  drops the wire's `before` / `after` / `patch` payloads. Read part content from
+  the store by `ref`, never off the row.
+- **Grouping and renderability are injected, not tabled.** `options.groupPart`
+  coalesces consecutive parts into one `context` group; `options.isRenderablePart`
+  decides what gets a row at all (its default hides `todoread`/`context_info`
+  tool parts, empty text parts, and — unless `showReasoning` — reasoning parts).
+  The SDK ships no hardcoded tool table, because `apps/web` already owns a richer
+  grouping model and two implementations that must agree forever is a trap.
+
+`reuseTimelineRows(previous, next)` is the render-loop half:
+
+```ts
+const rows = reuseTimelineRows(previousRowsRef.current, constructTimelineRows(messages));
+```
+
+It returns the **previous object** for every row that did not change, and the
+**previous array itself** when no row changed at all — so a frame that changes
+nothing does not fire the caller's `useMemo`, and a frame that appends one
+streaming part allocates exactly one new row. Equality is an exhaustive per-kind
+scalar comparison with a `never` exhaustiveness guard: adding a ninth row kind
+without adding its comparison is a compile error, not a silently stale row. It is
+idempotent, so it is safe under React StrictMode's double render.
+
+A text part whose body grows keeps its `(messageID, partID)`, so its row is
+correctly reused while it streams. That is the load-bearing property, and it is
+why rows must stay content-free.
+
+Both functions are pure and framework-free. Runnable example:
+`examples/timeline-rows.ts`. No host renders through them yet — `apps/web` still
+renders via `stabilizeTurns` + `segmentTurn` + `mergeBurstSteps`, and migrating
+it is a separate change.
+
 ## Errors
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
