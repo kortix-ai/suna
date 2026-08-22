@@ -657,7 +657,7 @@ function selfHostDoctor(flags: GlobalFlags): number {
     // KORTIX_PREVIEW_BASE_DOMAIN the API hands browsers the `/v1/p/{sandbox}/
     // {port}/` path form, which is a correct transport for programmatic callers
     // and a broken one for a browser: the app escapes the prefix the moment it
-    // emits anything root-absolute (`<a href="/learn">`, `fetch('/api')`,
+    // emits anything root-absolute (`<a href="/learn">`, an XHR to `/api`,
     // pushState, a service worker, `new WebSocket('/hmr')`). Nothing in the
     // running stack fails when this is unset — previews just silently degrade,
     // which is exactly how one instance served path previews for weeks before
