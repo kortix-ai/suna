@@ -36,10 +36,10 @@ import { SessionTimelineList } from './timeline/session-timeline-list';
 import { CompactionDivider } from './timeline/turn-cards';
 import { resolveWorkingTurn } from './turn/working-turn';
 
+import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
-import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { type ModelDefaultControls } from '@/features/session/model-selector';
@@ -69,13 +69,13 @@ import { uploadFile } from '@/features/files/api/runtime-files';
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 
+import { usePlanInChat } from '@/features/session/plan-surface';
 import { ToolActivateContext } from '@/features/session/tool/tool-renderers';
 import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
-import { usePlanInChat } from '@/features/session/plan-surface';
 
 import {
   type AgentRefLike,
@@ -87,12 +87,12 @@ import { playSound } from '@/lib/sounds';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 
+import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import {
   useAttachRequest,

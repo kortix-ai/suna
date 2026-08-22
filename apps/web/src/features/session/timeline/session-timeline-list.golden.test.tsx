@@ -1,6 +1,6 @@
-import './__fixtures__/clock';
+import { freezeClock, restoreClock } from './__fixtures__/clock';
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -27,10 +27,13 @@ function renderCold(element: React.ReactElement): string {
  * The golden was captured ONCE from the LEGACY turn list —
  * `turns.map(TurnViewport > [CompactionDivider] > SessionTurn)` in
  * `session-chat.tsx` — by `__fixtures__/capture-golden.legacy.tsx` on the
- * pre-refactor tree (branch `feat/timeline-render-rows`, the commit that adds
- * this test), under the same clock, providers and `useId` normalization
- * (`__fixtures__/render.tsx`). `SessionTimelineList` has to reproduce it byte
- * for byte: same tags, attributes, classes and text, in the same order.
+ * pre-refactor tree, under the same clock, providers and `useId`
+ * normalization (`__fixtures__/render.tsx`), and re-captured once more on the
+ * last legacy tree before this list landed (e2f626e4c3, main's
+ * `max-md:opacity-100` turn-actions bar included). `SessionTimelineList` has
+ * to reproduce it byte for byte: same tags, attributes, classes and text, in
+ * the same order. The `INTENDED_DIVERGENCES` of `build-chat-rows.test.ts` are
+ * the only goldens taken from the new render instead.
  */
 const golden = (name: string) =>
   readFileSync(
@@ -47,6 +50,9 @@ function firstDifference(a: string, b: string): string {
 }
 
 describe('SessionTimelineList reproduces the legacy turn list', () => {
+  beforeAll(freezeClock);
+  afterAll(restoreClock);
+
   for (const scenario of scenarios) {
     test(`${scenario.name} scenario renders the golden markup`, () => {
       const expected = golden(scenario.name);
