@@ -51,6 +51,25 @@ async function waitForOutputMatch(
 
 export interface Tunnel { url: string; proc: ReturnType<typeof Bun.spawn>; }
 
+/** Is this origin serving the API right now? One short probe, never throws. */
+export async function probeApiOrigin(origin: string, timeoutMs = 5_000): Promise<boolean> {
+  try {
+    const res = await fetch(`${origin.replace(/\/$/, '')}/v1/health`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A Cloudflare QUICK tunnel, which is the only kind that needs no account — and
+ * which rots on its own schedule. The hostname stops resolving while
+ * `cloudflared` keeps running happily, so nothing here notices without a probe.
+ * `startTunnelWatchdog` is what turns that from "the whole stack is broken until
+ * someone restarts it by hand" into a rotation. See its docstring.
+ */
 export async function startTunnel(apiPort: number): Promise<Tunnel | null> {
   if (!which('cloudflared')) return null;
   const proc = spawn(['cloudflared', 'tunnel', '--no-autoupdate', '--url', `http://localhost:${apiPort}`], {
