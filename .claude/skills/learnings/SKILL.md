@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### A browser retry must wait for the result it is retrying (2026-08-22)
+
+**When:** retrying a client-rendered page after an eventually consistent write.
+`domcontentloaded` does not mean that React consumed the API response. Wait for
+the exact response and the final DOM state before the next navigation. A poll
+that reloads immediately can abort every successful render itself.
+*Near-miss:* PR #6724 failed browser-1 twice while every repeated account read
+returned `200`. *Enforcer:* `08-accounts-project-access.spec.ts` waits for the
+exact account response and the visible `Members` heading on each attempt.
+
 ### Mint every OpenCode message id with the native sortable codec (2026-08-22)
 
 **When:** delivering an initial, queued, retried, or imported OpenCode prompt.
@@ -1096,3 +1106,12 @@ strictly (dynamic registration, stateful sessions) as the one you test against.
 *Incident:* found and fixed while building one-click OAuth 2.1 for MCP
 connectors, PR #6579. No production outage — the surface had never been used
 against a real provider, which is precisely why all three shipped unnoticed.
+### Size database pools for the rolling fleet, not the steady fleet
+
+**When:** sizing database pools or changing ECS deployment capacity. Bound the
+sum of every long-lived pool against the maximum rolling fleet. Include startup
+probes and reserve explicit non-API capacity.
+*Incident:* production SQLSTATE `53300` from 01:15:10Z through 01:16:37Z on
+2026-08-22. Twenty overlapping API tasks could request 380 connections against
+237 usable slots. *Enforcer:* `database-capacity.test.ts` pins the full rollout
+ceiling and reserve.

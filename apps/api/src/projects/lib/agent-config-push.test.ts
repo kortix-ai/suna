@@ -8,6 +8,7 @@
 // session merged past days ago kept running the agents it booted with, with no
 // documented way to reconcile the two short of starting a new session.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { config } from '../../config';
 import * as realCompile from './compile-agent-config';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
@@ -147,6 +148,12 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  // Sequential awaited propagates must run immediately in tests: the
+  // production coalescer only exists to merge storm bursts (see
+  // env-sync-coalescer.ts), and a cooling-down interval here would make
+  // every second call in a case queue for the full window.
+  (config as any).KORTIX_ENV_SYNC_MIN_INTERVAL_MS = 0;
+
   compiled = '{"agent":{"support":{"prompt":"fresh"}}}';
   compileThrows = null;
   compileCalls = [];

@@ -1,5 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import { DEFAULT_DB_POOL_MAX } from './connection-defaults';
 import * as schema from './schema';
 
 function intFromEnv(name: string, fallback: number): number {
@@ -29,16 +30,17 @@ function intFromEnv(name: string, fallback: number): number {
  *      (Investigation found real offenders: an unindexed 21M-row audit scan at
  *      80–120s, and account-deletion sweeps at 36–64s, each pinning a connection
  *      for up to the 2-min server statement_timeout.)
- *   2. A modestly larger, env-tunable `max` so normal concurrent page loads
- *      (one IAM page fans out ~15-20 parallel queries) don't exhaust the pool.
+ *   2. An env-tunable `max` so normal concurrent page loads can run without
+ *      letting a rolling deployment exhaust the PostgreSQL server.
  *
  * SIZING: prod connects DIRECTLY to Postgres (db.<ref>.supabase.co:5432), NOT
- * the Supavisor pooler — so every client connection is one real backend, capped
- * by the server's `max_connections` (240 on the current instance, only ~23 in
- * use at rest). Keep `POOL_MAX * max_replicas` comfortably under that ceiling
- * with headroom for other consumers: at the current autoscale max of 10
- * replicas, 15 * 10 = 150 < 240. If replica count or pool size grows, move app
- * traffic to the transaction pooler (port 6543) instead of raising this further.
+ * the Supavisor pooler. Every client connection consumes one real backend.
+ * PostgreSQL exposes 237 non-reserved slots. ECS can overlap 10 old tasks and
+ * 10 new tasks during a rolling deployment. The API also owns an audit pool,
+ * a leader-election connection, and a transient startup schema probe. The
+ * capacity invariant in apps/api/src/shared/database-capacity.test.ts accounts
+ * for all four sources and preserves a non-API reserve. If replica count or
+ * pool size grows, update that invariant before changing this default.
  *
  * All knobs are env-overridable so prod can tune without a code change. The
  * app's background workers (maintenance sweeps, migration workers) only ever run
@@ -46,7 +48,7 @@ function intFromEnv(name: string, fallback: number): number {
  * job needs a longer single statement it should `SET LOCAL statement_timeout`
  * inside its own transaction rather than raising this request-path default.
  */
-const POOL_MAX = intFromEnv('DB_POOL_MAX', 15);
+const POOL_MAX = intFromEnv('DB_POOL_MAX', DEFAULT_DB_POOL_MAX);
 const IDLE_TIMEOUT_S = intFromEnv('DB_IDLE_TIMEOUT_S', 30);
 const CONNECT_TIMEOUT_S = intFromEnv('DB_CONNECT_TIMEOUT_S', 10);
 const MAX_LIFETIME_S = intFromEnv('DB_MAX_LIFETIME_S', 60 * 30); // 30 min

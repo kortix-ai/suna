@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
+    "./connection-defaults": "./src/connection-defaults.ts",
     "./schema": "./src/schema/index.ts",
     "./types": "./src/types.ts"
   },

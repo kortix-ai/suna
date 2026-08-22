@@ -12,6 +12,7 @@ import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/sha
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
+import { consumeProjectSessionCreateBudget } from '../../shared/rate-limit';
 import { agentMayUseConnector } from '../../iam/agent-scope';
 import {
   loadSessionGrants,
@@ -162,6 +163,37 @@ export async function countActiveProjectSessions(accountId: string): Promise<num
   return Number(row?.activeCount ?? 0);
 }
 
+export async function countActiveSessionsInProject(projectId: string): Promise<number> {
+  const [row] = await db
+    .select({ activeCount: sql<number>`count(*)::int` })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.projectId, projectId),
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+      ),
+    )
+    .limit(1);
+
+  return Number(row?.activeCount ?? 0);
+}
+
+/**
+ * Hard per-PROJECT ceiling on active sessions, independent of account tier.
+ *
+ * INCIDENT 2026-08-21: a per-minute trigger in one project spawned a fresh
+ * session every tick and never cleaned up — 104 active sandboxes in one
+ * project, 183 in another. The account-level concurrent-session limit never
+ * fired because those accounts were entitled to be big; no single PROJECT has
+ * a legitimate reason to hold 100+ live sandboxes, and each one multiplies
+ * every env fan-out and provider call the project makes. Deliberately generous
+ * so no real team ever sees it; it exists to clip runaway automation.
+ */
+export function projectActiveSessionLimit(): number {
+  const configured = Number((config as any).KORTIX_PROJECT_ACTIVE_SESSION_LIMIT);
+  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 100;
+}
+
 export async function countProvisioningProjectSessions(projectId: string): Promise<number> {
   const [row] = await db
     .select({ provisioningCount: sql<number>`count(*)::int` })
@@ -239,6 +271,7 @@ export async function checkConcurrentSessionCap(
   userId: string,
   request?: RequestAuditContext,
   reserveSlots = 0,
+  projectId?: string,
 ): Promise<{
   error?: SessionCreateError;
   headers: Record<string, string>;
@@ -250,6 +283,102 @@ export async function checkConcurrentSessionCap(
     'X-RateLimit-Limit': String(limit),
     'X-RateLimit-Remaining': String(remainingAfterCreate),
   };
+
+  // The per-project ceilings run before the account-tier check: they are the
+  // more specific refusals, and an account big enough to pass the tier check
+  // is exactly the account whose runaway project these exist to clip.
+  if (projectId) {
+    const projectLimit = projectActiveSessionLimit();
+    const activeInProject = await countActiveSessionsInProject(projectId);
+    if (activeInProject >= projectLimit) {
+      recordAuditEvent({
+        accountId,
+        actorUserId: userId,
+        action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+        resourceType: 'project_session',
+        resourceId: projectId,
+        ip: request?.ip ?? null,
+        userAgent: request?.userAgent ?? null,
+        metadata: {
+          limiter: 'project_active_sessions',
+          limit: projectLimit,
+          active_sessions_in_project: activeInProject,
+        },
+      }).catch((error) => {
+        console.error('[projects] Failed to record project session cap audit event:', error);
+      });
+      const message = `This project already has ${activeInProject} active sessions (limit ${projectLimit}). Stop or delete finished sessions before starting more — a trigger or automation that never cleans up its sessions is usually what hits this.`;
+      return {
+        headers: {
+          'X-RateLimit-Limit': String(projectLimit),
+          'X-RateLimit-Remaining': '0',
+        },
+        error: {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': String(projectLimit),
+            'X-RateLimit-Remaining': '0',
+          },
+          body: {
+            error: message,
+            message,
+            code: 'project_session_limit',
+            limit: projectLimit,
+            active_sessions: activeInProject,
+          },
+        },
+      };
+    }
+  }
+
+  // The hourly create budget runs AFTER the active-session cap and only
+  // charges REAL creates (reserveSlots === 0). Two genuine-user protections
+  // live in that ordering: a speculative warm pre-create is page-view-driven
+  // and must not drain the budget, and a user retrying against the cap must
+  // not burn budget on refusals — otherwise they clean up their sessions and
+  // find themselves locked out for the rest of the hour anyway.
+  if (projectId && reserveSlots === 0) {
+    const budget = consumeProjectSessionCreateBudget(projectId);
+    if (!budget.allowed) {
+      recordAuditEvent({
+        accountId,
+        actorUserId: userId,
+        action: `RATE_LIMIT ${request?.method ?? 'SYSTEM'} ${request?.path ?? 'project_session'}`,
+        resourceType: 'project_session',
+        resourceId: projectId,
+        ip: request?.ip ?? null,
+        userAgent: request?.userAgent ?? null,
+        metadata: {
+          limiter: 'project_session_creates',
+          limit: budget.limit,
+          retry_after_ms: budget.retryAfterMs ?? null,
+        },
+      }).catch((error) => {
+        console.error('[projects] Failed to record session create budget audit event:', error);
+      });
+      const message = `This project has hit its hourly session-create limit (${budget.limit}/hour). A trigger or automation creating a session on every tick is usually what hits this — reuse sessions instead of spawning new ones.`;
+      return {
+        headers: {
+          'X-RateLimit-Limit': String(budget.limit),
+          'X-RateLimit-Remaining': '0',
+        },
+        error: {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': String(budget.limit),
+            'X-RateLimit-Remaining': '0',
+          },
+          body: {
+            error: message,
+            message,
+            code: 'project_session_create_limit',
+            limit: budget.limit,
+            retry_after_seconds: Math.ceil((budget.retryAfterMs ?? budget.resetMs) / 1000),
+          },
+        },
+      };
+    }
+  }
 
   if (activeSessions < limit - reserveSlots) return { headers };
 
@@ -1220,6 +1349,7 @@ export async function createProjectSession(input: {
           userId,
           input.request,
           input.reserveConcurrentSlots ?? 0,
+          projectId,
         )
       : Promise.resolve(null),
     checkBillingActive(accountId),

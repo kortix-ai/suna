@@ -11,6 +11,7 @@
 import { join } from 'node:path';
 import postgres from 'postgres';
 import { config } from './config';
+import { SCHEMA_CHECK_POOL_MAX } from './shared/database-capacity';
 
 export async function ensureSchema(): Promise<void> {
   if (!config.DATABASE_URL) {
@@ -87,7 +88,7 @@ async function warnIfCriticalTablesMissing(): Promise<void> {
     'project_secrets',
     'projects',
   ];
-  const db = postgres(config.DATABASE_URL, { max: 1 });
+  const db = postgres(config.DATABASE_URL, { max: SCHEMA_CHECK_POOL_MAX });
   try {
     const rows = (await db`
       SELECT table_name
