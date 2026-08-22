@@ -20,6 +20,21 @@ describe('production database connection capacity', () => {
     expect(SCHEMA_CHECK_POOL_MAX).toBe(1);
   });
 
+  test('keeps high-volume audit writers on the bounded audit pool', () => {
+    const auditDb = readFileSync(new URL('./audit-db.ts', import.meta.url), 'utf8');
+    expect(auditDb).toContain("import { DEFAULT_AUDIT_POOL_MAX } from './database-capacity'");
+    expect(auditDb).toContain("intFromEnv('DB_AUDIT_POOL_MAX', DEFAULT_AUDIT_POOL_MAX)");
+
+    for (const relativePath of [
+      '../projects/routes/project-audit.ts',
+      './audit.ts',
+      './gateway-logs.ts',
+    ]) {
+      const writer = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
+      expect(writer).toContain('auditDb()');
+    }
+  });
+
   test('keeps a maximum rolling deployment below the usable PostgreSQL limit', () => {
     expect(PROD_API_MAX_TASKS).toBe(10);
     expect(ROLLING_TASK_OVERLAP).toBe(2);
