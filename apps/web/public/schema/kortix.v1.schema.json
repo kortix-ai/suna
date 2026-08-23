@@ -4,7 +4,9 @@
   "title": "Kortix manifest (kortix_version 1)",
   "description": "kortix.toml / kortix.yaml, schema version 1 — `[[agents]]` is a per-agent governance OVERLAY (connectors/kortix_cli/env grants); absence means an unrestricted default agent (adopt-to-govern back-compat). `[[channels]]` is accepted (validated, though dead at runtime — see docs/specs/2026-07-05-agent-first-config-unification.md §1.5).",
   "type": "object",
-  "required": ["kortix_version"],
+  "required": [
+    "kortix_version"
+  ],
   "properties": {
     "kortix_version": {
       "const": 1
@@ -71,7 +73,9 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["slug"],
+            "required": [
+              "slug"
+            ],
             "properties": {
               "slug": {
                 "allOf": [
@@ -118,15 +122,23 @@
             },
             "oneOf": [
               {
-                "required": ["image"],
+                "required": [
+                  "image"
+                ],
                 "not": {
-                  "required": ["dockerfile"]
+                  "required": [
+                    "dockerfile"
+                  ]
                 }
               },
               {
-                "required": ["dockerfile"],
+                "required": [
+                  "dockerfile"
+                ],
                 "not": {
-                  "required": ["image"]
+                  "required": [
+                    "image"
+                  ]
                 }
               }
             ]
@@ -144,7 +156,10 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["slug", "type"],
+        "required": [
+          "slug",
+          "type"
+        ],
         "properties": {
           "slug": {
             "type": "string",
@@ -152,7 +167,11 @@
           },
           "type": {
             "type": "string",
-            "enum": ["cron", "webhook", "monitor"]
+            "enum": [
+              "cron",
+              "webhook",
+              "monitor"
+            ]
           },
           "name": {
             "type": "string"
@@ -181,7 +200,12 @@
           },
           "session_mode": {
             "type": "string",
-            "enum": ["fresh", "reuse", "pinned", "keyed"]
+            "enum": [
+              "fresh",
+              "reuse",
+              "pinned",
+              "keyed"
+            ]
           },
           "session_key": {
             "type": "string"
@@ -197,7 +221,12 @@
           },
           "sessionMode": {
             "type": "string",
-            "enum": ["fresh", "reuse", "pinned", "keyed"]
+            "enum": [
+              "fresh",
+              "reuse",
+              "pinned",
+              "keyed"
+            ]
           },
           "session_id": {
             "type": "string",
@@ -249,7 +278,10 @@
           },
           "mode": {
             "type": "string",
-            "enum": ["poll", "stream"]
+            "enum": [
+              "poll",
+              "stream"
+            ]
           },
           "interval": {
             "type": "string",
@@ -265,10 +297,14 @@
           {
             "anyOf": [
               {
-                "required": ["prompt"]
+                "required": [
+                  "prompt"
+                ]
               },
               {
-                "required": ["prompt_template"]
+                "required": [
+                  "prompt_template"
+                ]
               }
             ]
           },
@@ -283,16 +319,24 @@
             "then": {
               "anyOf": [
                 {
-                  "required": ["cron"]
+                  "required": [
+                    "cron"
+                  ]
                 },
                 {
-                  "required": ["schedule"]
+                  "required": [
+                    "schedule"
+                  ]
                 },
                 {
-                  "required": ["run_at"]
+                  "required": [
+                    "run_at"
+                  ]
                 },
                 {
-                  "required": ["runAt"]
+                  "required": [
+                    "runAt"
+                  ]
                 }
               ]
             }
@@ -308,10 +352,14 @@
             "then": {
               "anyOf": [
                 {
-                  "required": ["secret_env"]
+                  "required": [
+                    "secret_env"
+                  ]
                 },
                 {
-                  "required": ["secretEnv"]
+                  "required": [
+                    "secretEnv"
+                  ]
                 }
               ]
             }
@@ -325,7 +373,10 @@
               }
             },
             "then": {
-              "required": ["run", "mode"],
+              "required": [
+                "run",
+                "mode"
+              ],
               "properties": {
                 "cron": false,
                 "schedule": false,
@@ -347,10 +398,14 @@
                   "const": "poll"
                 }
               },
-              "required": ["mode"]
+              "required": [
+                "mode"
+              ]
             },
             "then": {
-              "required": ["interval"]
+              "required": [
+                "interval"
+              ]
             }
           },
           {
@@ -363,7 +418,9 @@
                   "const": "stream"
                 }
               },
-              "required": ["mode"]
+              "required": [
+                "mode"
+              ]
             },
             "then": {
               "properties": {
@@ -378,7 +435,10 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["slug", "provider"],
+        "required": [
+          "slug",
+          "provider"
+        ],
         "properties": {
           "slug": {
             "type": "string",
@@ -390,7 +450,15 @@
           },
           "provider": {
             "type": "string",
-            "enum": ["pipedream", "mcp", "openapi", "postman", "graphql", "http", "channel"]
+            "enum": [
+              "pipedream",
+              "mcp",
+              "openapi",
+              "postman",
+              "graphql",
+              "http",
+              "channel"
+            ]
           },
           "app": {
             "type": "string"
@@ -409,25 +477,37 @@
           },
           "transport": {
             "type": "string",
-            "enum": ["http", "sse"]
+            "enum": [
+              "http",
+              "sse"
+            ]
           },
           "spec": {
             "type": "string"
           },
           "platform": {
             "type": "string",
-            "enum": ["slack", "teams", "email"]
+            "enum": [
+              "slack",
+              "teams",
+              "email"
+            ]
           },
           "credential": {},
           "authorization_strategy": {
             "type": "string",
-            "enum": ["project", "user"],
+            "enum": [
+              "project",
+              "user"
+            ],
             "default": "project"
           },
           "agent_scope": {},
           "auth": {
             "type": "object",
-            "required": ["type"],
+            "required": [
+              "type"
+            ],
             "properties": {
               "type": {
                 "type": "string",
@@ -464,7 +544,10 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["match", "action"],
+              "required": [
+                "match",
+                "action"
+              ],
               "properties": {
                 "match": {
                   "type": "string",
@@ -472,7 +555,11 @@
                 },
                 "action": {
                   "type": "string",
-                  "enum": ["always_run", "require_approval", "block"]
+                  "enum": [
+                    "always_run",
+                    "require_approval",
+                    "block"
+                  ]
                 }
               }
             }
@@ -553,7 +640,9 @@
               }
             },
             "then": {
-              "required": ["app"]
+              "required": [
+                "app"
+              ]
             }
           },
           {
@@ -565,7 +654,9 @@
               }
             },
             "then": {
-              "required": ["url"]
+              "required": [
+                "url"
+              ]
             }
           },
           {
@@ -577,7 +668,9 @@
               }
             },
             "then": {
-              "required": ["endpoint"]
+              "required": [
+                "endpoint"
+              ]
             }
           },
           {
@@ -591,10 +684,14 @@
             "then": {
               "anyOf": [
                 {
-                  "required": ["base_url"]
+                  "required": [
+                    "base_url"
+                  ]
                 },
                 {
-                  "required": ["baseUrl"]
+                  "required": [
+                    "baseUrl"
+                  ]
                 }
               ]
             }
@@ -608,7 +705,9 @@
               }
             },
             "then": {
-              "required": ["platform"]
+              "required": [
+                "platform"
+              ]
             }
           },
           {
@@ -618,7 +717,9 @@
                   "const": "channel"
                 }
               },
-              "required": ["auth"]
+              "required": [
+                "auth"
+              ]
             },
             "then": {
               "properties": {
@@ -640,7 +741,9 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -658,7 +761,10 @@
               },
               {
                 "type": "string",
-                "enum": ["all", "none"]
+                "enum": [
+                  "all",
+                  "none"
+                ]
               }
             ]
           },
@@ -731,7 +837,10 @@
               },
               {
                 "type": "string",
-                "enum": ["all", "none"]
+                "enum": [
+                  "all",
+                  "none"
+                ]
               }
             ]
           },
@@ -747,7 +856,10 @@
               },
               {
                 "type": "string",
-                "enum": ["all", "none"]
+                "enum": [
+                  "all",
+                  "none"
+                ]
               }
             ]
           }
@@ -759,7 +871,9 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["platform"],
+        "required": [
+          "platform"
+        ],
         "properties": {
           "platform": {
             "type": "string",
