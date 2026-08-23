@@ -25,10 +25,21 @@ export interface EventSubscriptionState {
   isLiveFor(url: string): boolean
   /** Resolves true as soon as the subscription is live for `url`, false on timeout. */
   waitUntilLiveFor(url: string, timeoutMs: number): Promise<boolean>
+  /**
+   * Monotonic count of successful subscribes. A reload that keeps the process
+   * AND the port (`/global/dispose` — verified live 2026-08-23: it emits
+   * `server.instance.disposed` and ends every open /event stream) leaves the
+   * URL unchanged, so "live for url" alone cannot tell the closing
+   * subscription from its replacement. The generation can.
+   */
+  generation(): number
+  /** Resolves true once a subscription NEWER than `sinceGeneration` is live for `url`; false on timeout. */
+  waitUntilLiveAfter(sinceGeneration: number, url: string, timeoutMs: number): Promise<boolean>
 }
 
 export function createEventSubscriptionState(): EventSubscriptionState {
   let live: string | null = null
+  let generation = 0
   const waiters = new Set<() => void>()
   const notify = () => {
     for (const waiter of [...waiters]) waiter()
@@ -36,6 +47,7 @@ export function createEventSubscriptionState(): EventSubscriptionState {
   const state: EventSubscriptionState = {
     markLive(url) {
       live = url
+      generation += 1
       notify()
     },
     markDropped() {
@@ -44,22 +56,29 @@ export function createEventSubscriptionState(): EventSubscriptionState {
     liveUrl: () => live,
     isLiveFor: (url) => live !== null && live === url,
     waitUntilLiveFor(url, timeoutMs) {
-      if (state.isLiveFor(url)) return Promise.resolve(true)
-      return new Promise<boolean>((resolve) => {
-        let timer: ReturnType<typeof setTimeout> | null = null
-        const check = () => {
-          if (!state.isLiveFor(url)) return
-          waiters.delete(check)
-          if (timer) clearTimeout(timer)
-          resolve(true)
-        }
-        waiters.add(check)
-        timer = setTimeout(() => {
-          waiters.delete(check)
-          resolve(false)
-        }, Math.max(0, timeoutMs))
-      })
+      return waitFor(() => state.isLiveFor(url), timeoutMs)
     },
+    generation: () => generation,
+    waitUntilLiveAfter(sinceGeneration, url, timeoutMs) {
+      return waitFor(() => generation > sinceGeneration && state.isLiveFor(url), timeoutMs)
+    },
+  }
+  function waitFor(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
+    if (predicate()) return Promise.resolve(true)
+    return new Promise<boolean>((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const check = () => {
+        if (!predicate()) return
+        waiters.delete(check)
+        if (timer) clearTimeout(timer)
+        resolve(true)
+      }
+      waiters.add(check)
+      timer = setTimeout(() => {
+        waiters.delete(check)
+        resolve(false)
+      }, Math.max(0, timeoutMs))
+    })
   }
   return state
 }

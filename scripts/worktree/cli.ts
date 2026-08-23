@@ -567,12 +567,19 @@ async function cmdStart(a: Args) {
 
   // The API's KORTIX_URL is baked at spawn, so a tunnel rotation has to
   // respawn it — keep the spawn in a function and the handle mutable.
+  // Resolve pnpm ONCE, to an absolute path. The watchdog respawns the API an
+  // hour into the run; a bare 'pnpm' resolved against a PATH that has since
+  // changed threw ENOENT there (2026-08-23 03:06) — the API was already
+  // killed, the exception escaped the watchdog, and the stack sat API-less
+  // while the web kept serving. Fail here, at launch, or never.
+  const PNPM = Bun.which('pnpm');
+  if (!PNPM) { warn('pnpm is not on PATH — cannot launch the stack'); process.exit(1); }
   const spawnApi = (kortixUrl: string | undefined) =>
-    Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl, stripeWebhookSecret: stripe?.secret, billing, instanceId: name }) }, stdout: 'inherit', stderr: 'inherit' });
+    Bun.spawn([PNPM, '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl, stripeWebhookSecret: stripe?.secret, billing, instanceId: name }) }, stdout: 'inherit', stderr: 'inherit' });
   let api = spawnApi(tunnel?.url);
   let apiRestarting = false;
-  const gateway = Bun.spawn(['pnpm', '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });
-  const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing }) }, stdout: 'inherit', stderr: 'inherit' });
+  const gateway = Bun.spawn([PNPM, '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });
+  const web = Bun.spawn([PNPM, '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing }) }, stdout: 'inherit', stderr: 'inherit' });
   void waitForGateway(e.ports.gateway, gateway);
   let stopping = false;
   // Quick tunnels die silently — cloudflared exits, or the URL starts answering
@@ -604,12 +611,24 @@ async function cmdStart(a: Args) {
         apiRestarting = true;
         try { api.kill(); } catch {}
         await Promise.race([api.exited, Bun.sleep(4000)]);
-        api = spawnApi(tunnel.url);
+        try {
+          api = spawnApi(tunnel.url);
+        } catch (err) {
+          // The old API is already dead. A stack with no API but a live web
+          // server is worse than no stack: say so and tear it down.
+          warn(`tunnel rotated but the API respawn FAILED (${(err as Error).message}) — stopping the stack`);
+          apiRestarting = false;
+          await shutdown();
+          return;
+        }
         void watchApi();
         apiRestarting = false;
         ok(`tunnel rotated: KORTIX_URL → ${tunnel.url} (API restarted)`);
       }
-    })();
+    })().catch(async (err) => {
+      warn(`tunnel watchdog crashed (${(err as Error).message}) — stopping the stack`);
+      await shutdown();
+    });
   };
   // An API exit that WE did not cause (rotation) still tears the stack down.
   const watchApi = async () => {

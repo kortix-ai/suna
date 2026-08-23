@@ -69,7 +69,37 @@ export interface OpencodeEventLoopOptions {
   /** Where the loop publishes which OpenCode URL it is subscribed to. Defaults
    *  to the process-wide state the env route reads; tests inject their own. */
   subscription?: EventSubscriptionState
+  /** Bound on waiting for the /event response HEADERS. Default SUBSCRIBE_HANDSHAKE_TIMEOUT_MS. */
+  subscribeHandshakeTimeoutMs?: number
+  /** A subscription that lived at least this long resets the reconnect backoff. Default HEALTHY_SUBSCRIPTION_MS. */
+  healthySubscriptionMs?: number
 }
+
+/**
+ * How long one subscribe attempt may wait for OpenCode's response headers.
+ *
+ * Live 2026-08-23, every box: the first `/event` request went out the instant
+ * OpenCode bound its port; OpenCode accepted it and never answered it. With no
+ * bound, the loop sat on that request for 300 s — Bun's fetch timeout — while
+ * the first turn ran, answered and idled with nobody subscribed. The retry
+ * subscribed in 7 ms. (`opencode server listening` 02:46:24 → `subscribed`
+ * 02:51:24.) An abandoned attempt costs one cheap request against a
+ * bootstrapping process; a parked one costs every event of the first turn.
+ */
+export const SUBSCRIBE_HANDSHAKE_TIMEOUT_MS = 3_000
+
+/**
+ * A subscription that lived this long was a real one. Its ending — a
+ * `/global/dispose` reload closes every /event stream; a verified restart
+ * kills the old process — is expected, and the replacement is almost always
+ * already serving, so the reconnect happens on the tight interval. Only
+ * consecutive attempts that FAIL to subscribe back off.
+ */
+export const HEALTHY_SUBSCRIPTION_MS = 1_000
+
+/** Terminal reconciliation tick. A backstop behind the live stream, so a lost
+ *  `session.idle` costs at most this long. */
+export const RECONCILE_INTERVAL_MS = 10_000
 
 // Subscribe to opencode's SSE event stream and dispatch known event types.
 // Auto-reconnects on close — when the underlying opencode supervisor restarts,
@@ -95,22 +125,61 @@ export function startOpencodeEventLoop(
   let everConnected = false
   let reconcileTimer: ReturnType<typeof setInterval> | null = null
   const subscription = options.subscription ?? eventSubscription
+  const handshakeTimeoutMs = options.subscribeHandshakeTimeoutMs ?? SUBSCRIBE_HANDSHAKE_TIMEOUT_MS
+  const healthySubscriptionMs = options.healthySubscriptionMs ?? HEALTHY_SUBSCRIPTION_MS
+  let hungHandshakes = 0
+  /** When the CURRENT attempt subscribed (null until it does). Read by the
+   *  retry loop after the attempt ends — by return OR by throw — to tell a
+   *  healthy drop from a failed attempt. */
+  let attemptSubscribedAt: number | null = null
 
+  /** Returns when the subscription ENDS (stream done); throws when it fails. */
   async function connectOnce(): Promise<void> {
     // Read the URL ONCE per attempt: a verified reload moves the active port,
     // and the subscription's liveness is keyed by the URL it actually hit.
     const baseUrl = opencode.getInternalUrl()
     const url = `${baseUrl}/event?directory=${encodeURIComponent(cfg.workspace)}`
     abortController = new AbortController()
-    const res = await fetch(url, {
-      headers: { Accept: 'text/event-stream' },
-      signal: abortController.signal,
-    })
+    // HEADERS must arrive within the bound; the stream itself is unbounded.
+    // The timer is cleared the moment the response resolves, so a live
+    // subscription is never cut by it.
+    const controller = abortController
+    let handshakeTimedOut = false
+    const handshakeTimer = setTimeout(() => {
+      handshakeTimedOut = true
+      controller.abort()
+    }, handshakeTimeoutMs)
+    let res: Response
+    try {
+      res = await fetch(url, {
+        headers: { Accept: 'text/event-stream' },
+        signal: controller.signal,
+      })
+    } catch (err) {
+      if (handshakeTimedOut) {
+        hungHandshakes += 1
+        // Once, then every 10th: the boot race parks one request; a process
+        // that parks EVERY request is a different (loud) problem.
+        if (hungHandshakes === 1 || hungHandshakes % 10 === 0) {
+          logger.warn('[opencode-events] /event subscribe got no response headers within the bound; retrying', {
+            baseUrl,
+            boundMs: handshakeTimeoutMs,
+            hungHandshakes,
+          })
+        }
+        throw new Error(`/event subscribe handshake timed out after ${handshakeTimeoutMs}ms`)
+      }
+      throw err
+    } finally {
+      clearTimeout(handshakeTimer)
+    }
     if (!res.ok || !res.body) {
       throw new Error(`/event subscribe non-ok: ${res.status}`)
     }
     logger.info('[opencode-events] subscribed', { baseUrl })
     everConnected = true
+    hungHandshakes = 0
+    attemptSubscribedAt = Date.now()
     subscription.markLive(baseUrl)
     markConnected()
     // Reconcile any turn that finished before this subscription was live. Fires
@@ -120,7 +189,7 @@ export function startOpencodeEventLoop(
     if (!reconcileTimer && handlers.onReconcile) {
       reconcileTimer = setInterval(
         () => handlers.onReconcile?.(),
-        options.reconcileIntervalMs ?? 30_000,
+        options.reconcileIntervalMs ?? RECONCILE_INTERVAL_MS,
       )
     }
 
@@ -184,8 +253,17 @@ export function startOpencodeEventLoop(
     // hammering a sick opencode makes it worse.
     const PRE_CONNECT_RETRY_MS = 100
     const POST_CONNECT_BACKOFF_START_MS = 250
+    const POST_CONNECT_BACKOFF_MAX_MS = 15_000
     let backoffMs = PRE_CONNECT_RETRY_MS
     while (!stopping) {
+      // A subscription that lived a healthy while and then ended (dispose,
+      // verified swap, a real drop) is NOT a failed attempt: the replacement
+      // process is almost always already serving, and every ms spent sleeping
+      // here is a ms of unobserved events. Only consecutive attempts that fail
+      // to subscribe — or subscribe and die at once — back off. Before this
+      // reset existed the backoff doubled on every drop for the life of the
+      // process: 100ms, 500ms, 1s, 2s, 4s, 8s, 15s (live 2026-08-23).
+      attemptSubscribedAt = null
       try {
         await connectOnce()
       } catch (err) {
@@ -200,10 +278,19 @@ export function startOpencodeEventLoop(
         }
       }
       if (stopping) return
+      const healthy =
+        attemptSubscribedAt !== null && Date.now() - attemptSubscribedAt >= healthySubscriptionMs
+      if (healthy || !everConnected) {
+        // Tight: the boot race before the first subscribe, or an expected drop
+        // after a healthy one.
+        backoffMs = PRE_CONNECT_RETRY_MS
+      } else {
+        backoffMs = Math.min(
+          Math.max(backoffMs, POST_CONNECT_BACKOFF_START_MS) * 2,
+          POST_CONNECT_BACKOFF_MAX_MS,
+        )
+      }
       await new Promise((r) => setTimeout(r, backoffMs))
-      backoffMs = everConnected
-        ? Math.min(Math.max(backoffMs, POST_CONNECT_BACKOFF_START_MS) * 2, 15_000)
-        : PRE_CONNECT_RETRY_MS
     }
   })().catch((err) => logger.error('[opencode-events] loop crashed', err))
 

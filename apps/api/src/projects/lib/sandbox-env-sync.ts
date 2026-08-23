@@ -764,7 +764,7 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayEnabled,
     llmGatewayBaseUrl,
   });
-  if (opencodeReload === 'restarted' && eventSubscriptionLive === false) {
+  if ((opencodeReload === 'restarted' || opencodeReload === 'disposed') && eventSubscriptionLive === false) {
     console.warn(
       `[env-sync] opencode restarted by prompt env-sync but the daemon's /event subscription ` +
         `was not live on the new process within its bound; the prompt is forwarded anyway and the ` +

@@ -73,3 +73,33 @@ describe('event subscription state', () => {
     expect(state.isLiveFor('http://127.0.0.1:4097')).toBe(false)
   })
 })
+
+describe('event subscription generation', () => {
+  test('generation increments on every markLive; waitUntilLiveAfter ignores the generation it was given', async () => {
+    const state = createEventSubscriptionState()
+    const url = 'http://127.0.0.1:4096'
+    expect(state.generation()).toBe(0)
+    state.markLive(url)
+    expect(state.generation()).toBe(1)
+    // Still live on the same URL, but that is the subscription a dispose is
+    // about to close — a wait keyed on the CURRENT generation must not take it.
+    const before = state.generation()
+    const started = Date.now()
+    expect(await state.waitUntilLiveAfter(before, url, 60)).toBe(false)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(55)
+
+    const waiter = state.waitUntilLiveAfter(before, url, 1_000)
+    state.markDropped()
+    state.markLive(url) // the loop re-subscribed to the same URL
+    expect(await waiter).toBe(true)
+    expect(state.generation()).toBe(2)
+  })
+
+  test('waitUntilLiveAfter resolves at once when a newer generation is already live on the url', async () => {
+    const state = createEventSubscriptionState()
+    state.markLive('http://127.0.0.1:4096')
+    state.markLive('http://127.0.0.1:4097')
+    expect(await state.waitUntilLiveAfter(1, 'http://127.0.0.1:4097', 10)).toBe(true)
+    expect(await state.waitUntilLiveAfter(1, 'http://127.0.0.1:4096', 10)).toBe(false)
+  })
+})

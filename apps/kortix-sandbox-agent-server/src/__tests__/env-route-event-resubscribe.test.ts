@@ -91,7 +91,7 @@ async function postEnv(router: ReturnType<typeof createEnvRouter>) {
   return { status: res.status, json: (await res.json()) as Record<string, unknown> }
 }
 
-describe('env route — a restart reload waits (bounded) for the /event re-subscribe on the promoted process', () => {
+describe('env route — a reload (restart OR dispose) waits (bounded) for the /event re-subscribe on the serving process', () => {
   it('answers 200 with event_subscription_live:true as soon as the loop is live on the NEW url', async () => {
     const subscription = createEventSubscriptionState()
     subscription.markLive(OLD_URL) // subscribed to the process about to be retired
@@ -127,7 +127,10 @@ describe('env route — a restart reload waits (bounded) for the /event re-subsc
     expect(Date.now() - started).toBeGreaterThanOrEqual(110)
   })
 
-  it('a dispose reload (same process) does not wait and reports the current state', async () => {
+  it('a dispose reload closes the stream too: waits for a NEW subscription on the same url', async () => {
+    // Verified live 2026-08-23: POST /global/dispose emits server.instance.disposed
+    // and ends every open /event stream. The process and port are unchanged, so
+    // a URL-keyed liveness check would read the closing subscription as live.
     const subscription = createEventSubscriptionState()
     subscription.markLive(OLD_URL)
     const router = createEnvRouter(baseConfig(), fakeOpencode('disposed'), store(), {
@@ -135,11 +138,32 @@ describe('env route — a restart reload waits (bounded) for the /event re-subsc
       eventSubscription: subscription,
       eventResubscribeWaitMs: 1_500,
     })
+    setTimeout(() => {
+      subscription.markDropped()
+      subscription.markLive(OLD_URL)
+    }, 60)
     const started = Date.now()
     const { status, json } = await postEnv(router)
+    const elapsed = Date.now() - started
     expect(status).toBe(200)
     expect(json.opencode_reload).toBe('disposed')
     expect(json.event_subscription_live).toBe(true)
-    expect(Date.now() - started).toBeLessThan(500)
+    expect(elapsed).toBeGreaterThanOrEqual(50)
+    expect(elapsed).toBeLessThan(1_000)
+  })
+
+  it('a dispose reload whose stream never re-subscribes answers event_subscription_live:false after the bound', async () => {
+    const subscription = createEventSubscriptionState()
+    subscription.markLive(OLD_URL) // the subscription the dispose is closing; nothing replaces it
+    const router = createEnvRouter(baseConfig(), fakeOpencode('disposed'), store(), {
+      agentEnvFile: join(TEST_ENV_DIR, `agent-env-${seq++}.sh`),
+      eventSubscription: subscription,
+      eventResubscribeWaitMs: 120,
+    })
+    const started = Date.now()
+    const { status, json } = await postEnv(router)
+    expect(status).toBe(200)
+    expect(json.event_subscription_live).toBe(false)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(110)
   })
 })

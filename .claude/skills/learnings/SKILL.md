@@ -1957,3 +1957,59 @@ test.ts`, `event-subscription.test.ts`, `turn-tracking.test.ts`;
 
 *Incident:* session `eddd499a`, 2026-08-23 02:08:28–02:09:50 UTC; one turn,
 ~80 s of phantom "running" on a 5 s answer; no data lost.
+
+*Correction (2026-08-23 03:00 UTC):* the reconcile + read-path rules above
+stand, but the diagnosis of WHY the idle was lost was wrong — no reload ran
+before that prompt. The daemon's own log shows the first `/event` subscribe
+landing 300 s after OpenCode bound its port, on every box that day. See the
+next entry.
+
+## A long-lived subscribe needs a handshake bound; a reconnect backoff must reset on success; a "reload kept the process" still drops every stream
+
+2026-08-23 02:46 UTC, live worktree, fresh box `sbx_01M0P85XPQ…`. Daemon log
+(`/var/log/pt-app.log` inside the box): `opencode server listening` at
+02:46:24; `[opencode-events] subscribed` at **02:51:24** — 300 s later, Bun's
+fetch timeout — and the retry subscribed in 7 ms. The loop's first `/event`
+request went out the instant OpenCode bound its port; OpenCode accepted the
+connection and never answered it; `fetch` had no handshake bound, so the loop
+sat on one parked request while the first turn ran, answered in 5 s and idled
+with nobody subscribed. The API log shows the same shape on EVERY box that
+day: `initial_turn_claim` → first `kind=end` = +5:00 to +5:04 (00:57→01:02,
+00:59→01:04, 01:57→02:02, 02:08→02:13 — the user's session). The end that did
+arrive at +5:00 was the reconcile-on-connect, not the stream. Two more defects
+found while proving it: (1) the reconnect backoff doubled on every drop for the
+life of the process and never reset after a healthy subscription (100 ms,
+500 ms, 1 s, 2 s, 4 s, 8 s, 15 s); (2) `POST /global/dispose` — the fast
+"same process, no respawn" reload path the pre-prompt env push prefers —
+emits `server.instance.disposed` and **ends every open `/event` stream**
+(verified live: 5 events on a subscription, dispose, 0 events after, a fresh
+subscription sees 5 again), and the `/kortix/env` gate waited for the
+re-subscribe only on the *restart* path.
+
+**The rule.** (1) Every request that opens a long-lived stream bounds the wait
+for its response HEADERS separately from the stream: a parked subscribe is
+abandoned in seconds and retried on the tight interval; the stream itself is
+unbounded. (2) A reconnect backoff grows only across consecutive FAILED
+attempts; a subscription that lived a healthy while resets it — an expected
+drop (dispose, verified swap) reconnects at ~100 ms every time. (3) "The
+process and port did not change" is not "the subscription survived": any
+runtime reload, however light, is treated as a drop, and the gate waits for a
+subscription NEWER than the one that existed before the reload (a generation
+counter), not merely "live on this URL". (4) Diagnose a lost event from the
+emitter's side before theorising: the daemon log inside the box is readable
+(`/kortix/pty/` to `sh -c '… > /tmp/x'`, then `GET /file/raw?path=/tmp/x`);
+the API-side `claim → end` gap histogram names the pattern in one grep.
+
+**The enforcement.** `apps/kortix-sandbox-agent-server/src/opencode-events.ts`:
+`SUBSCRIBE_HANDSHAKE_TIMEOUT_MS` (3 s; abort + retry; warned once then every
+10th), `HEALTHY_SUBSCRIPTION_MS` (1 s) resets the backoff, `RECONCILE_INTERVAL_MS`
+10 s. `event-subscription.ts`: `generation()` / `waitUntilLiveAfter()`.
+`routes/env.ts`: waits ≤ 2 s for a NEWER subscription after `restarted` OR
+`disposed`. API `sandbox-env-sync.ts` warns on `event_subscription_live:false`
+for both. Tests: `__tests__/event-loop-subscribe-handshake.test.ts`,
+`event-loop-reconnect-backoff.test.ts`, `event-subscription.test.ts`
+(generation), `env-route-event-resubscribe.test.ts` (dispose waits).
+
+*Incident:* every box booted 2026-08-23 00:50–03:00 UTC on the worktree
+stack; first turn of each session stuck "running" ~5 min (or ~3.5 min when the
+reaper came first); no data lost.

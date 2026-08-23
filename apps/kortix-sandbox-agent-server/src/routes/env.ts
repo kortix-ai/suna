@@ -261,31 +261,26 @@ export function createEnvRouter(
           // store, so a respawn clears a dropped secret via `mergeProjectEnv`.
           const projectSecretsMoved = result.changedNames.length > 0
           const mustRespawn = projectSecretsMoved || requiresRespawn(opencodeEnvNames)
+          // Captured BEFORE the reload: both reload paths end the current /event
+          // subscription. A verified restart kills the process it was reading;
+          // a `/global/dispose` keeps process and port but closes every open
+          // /event stream (`server.instance.disposed`, verified live
+          // 2026-08-23). Only a subscription NEWER than this one counts.
+          const subscriptionBefore = subscription.generation()
           const applied = await opencode.reloadConfig({ mustRespawn })
           const how = applied.how
           reloadTurnEnded = applied.turnEnded
-          // 'kept-old' means the verified swap declined: the new opencode never
-          // came up, so the running one was left serving. The config did NOT
-          // take, and the caller has to be told — logging it here and returning
-          // ok:true would report a reload that silently did nothing.
           reloadOutcome = how
-          // SUBSCRIBE BEFORE PROMPT, mid-session. The control plane forwards
-          // the prompt it pushed this env for the instant we answer. A restart
-          // promoted a NEW process on the other port and killed the old one;
-          // the /event loop was subscribed to the old one and re-subscribes
-          // only after it notices the drop. Answer 200 once the subscription
-          // is live on the promoted URL — bounded — so a short turn cannot
-          // start and finish with nobody listening for its session.idle
-          // (live 2026-08-23, session eddd499a). A dispose keeps the process,
-          // so the subscription it holds is the one that stays: report, no wait.
-          if (how === 'restarted') {
+          if (how === 'restarted' || how === 'disposed') {
             const waitStartedAt = Date.now()
-            eventSubscriptionLive = await subscription.waitUntilLiveFor(
+            eventSubscriptionLive = await subscription.waitUntilLiveAfter(
+              subscriptionBefore,
               opencode.getInternalUrl(),
               resubscribeWaitMs,
             )
             if (!eventSubscriptionLive) {
-              logger.warn('[env] /event loop not re-subscribed on the promoted opencode within the bound', {
+              logger.warn('[env] /event loop not re-subscribed on the serving opencode within the bound', {
+                reload: how,
                 waitedMs: Date.now() - waitStartedAt,
                 boundMs: resubscribeWaitMs,
                 opencodeUrl: opencode.getInternalUrl(),
