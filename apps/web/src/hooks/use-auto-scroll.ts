@@ -168,6 +168,9 @@ interface UseAutoScrollReturn {
   showScrollButton: boolean;
   /** Go to the end now (instant) and follow from here. */
   scrollToBottom: () => void;
+  /** Leave the end on reader intent expressed through the UI (⌘K jump,
+   *  minimap click). `why` is mirrored to `data-follow-why`. */
+  leaveEnd: (why: string) => void;
   /** The chevron: glide to the end and follow from here. */
   smoothScrollToAbsoluteBottom: () => void;
   /**
@@ -471,6 +474,12 @@ export function useAutoScroll({
     };
   }, [goToEnd, hasContent, setFollow]);
 
+  /** Reader intent expressed through the UI rather than a wheel/touch/key —
+   *  a ⌘K jump or a minimap click. Under the virtual list the target mounts
+   *  on the way (a layout change) and FACT 2 would put a following viewport
+   *  straight back at the end, so the jump leaves the end explicitly. */
+  const leaveEnd = useCallback((why: string) => setFollow(false, why), [setFollow]);
+
   return {
     scrollRef,
     contentRef,
@@ -480,5 +489,6 @@ export function useAutoScroll({
     smoothScrollToAbsoluteBottom,
     anchorTurn,
     startAtTop,
+    leaveEnd,
   };
 }

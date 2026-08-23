@@ -20,6 +20,7 @@ import {
   nearestDashRow,
   type MinimapItem,
 } from './chat-minimap-items';
+import { jumpToTurn } from './jump-to-turn';
 import type { TimelineVirtualApi } from './timeline/timeline-virtual';
 
 interface ChatMinimapProps {
@@ -32,6 +33,9 @@ interface ChatMinimapProps {
    * read the virtual geometry; without it (the flat list) the DOM is read.
    */
   virtualApiRef?: React.RefObject<TimelineVirtualApi | null>;
+  /** Called when a click jumps the transcript — reader intent to leave the
+   *  end; see `jumpToTurn`. */
+  onLeaveEnd?: (why: string) => void;
 }
 
 /**
@@ -108,7 +112,13 @@ function MinimapCard({ item }: { item: MinimapItem }) {
   );
 }
 
-export function ChatMinimap({ turns, scrollRef, contentRef, virtualApiRef }: ChatMinimapProps) {
+export function ChatMinimap({
+  turns,
+  scrollRef,
+  contentRef,
+  virtualApiRef,
+  onLeaveEnd,
+}: ChatMinimapProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   // The rail lives in the chat's left gutter, and that gutter only exists
@@ -208,19 +218,18 @@ export function ChatMinimap({ turns, scrollRef, contentRef, virtualApiRef }: Cha
       if (!contentEl || !scrollEl) return;
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       const behavior: ScrollBehavior = reduceMotion ? 'auto' : 'smooth';
-      // Virtual list: the turn need not be in the DOM — scroll to its index
-      // (TURN_TOP_OFFSET under the viewport top, the `− 24` below).
-      if (virtualApiRef?.current?.scrollToTurn(id, { align: 'start', behavior })) return;
-      const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(id)}"]`);
-      if (!target) return;
-      const offset =
-        target.getBoundingClientRect().top -
-        scrollEl.getBoundingClientRect().top +
-        scrollEl.scrollTop -
-        24;
-      scrollEl.scrollTo({ top: Math.max(0, offset), behavior });
+      // Virtual list: the turn need not be in the DOM — scroll to its index.
+      // A jump is reader intent to leave the end (jump-to-turn.ts).
+      jumpToTurn({
+        id,
+        behavior,
+        api: virtualApiRef?.current ?? null,
+        scrollEl,
+        contentEl,
+        leaveEnd: onLeaveEnd ?? (() => {}),
+      });
     },
-    [contentRef, scrollRef, virtualApiRef],
+    [contentRef, scrollRef, virtualApiRef, onLeaveEnd],
   );
 
   if (items.length < 3 || sidePanelOpen) return null;

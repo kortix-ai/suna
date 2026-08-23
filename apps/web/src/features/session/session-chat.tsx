@@ -95,6 +95,7 @@ import { cn } from '@/lib/utils';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { jumpToTurn } from '@/features/session/jump-to-turn';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
@@ -1304,6 +1305,7 @@ export function SessionChat({
     smoothScrollToAbsoluteBottom,
     anchorTurn,
     startAtTop,
+    leaveEnd,
   } = useAutoScroll({
     hasContent: messageCount > 0,
   });
@@ -1867,30 +1869,20 @@ export function SessionChat({
     const contentEl = contentRef.current;
     const scrollEl = scrollRef.current;
     if (!contentEl || !scrollEl) return;
-
     // Virtual list: the turn need not be in the DOM — the virtualizer scrolls
-    // to its index (TURN_TOP_OFFSET under the viewport top, the `− 24` below)
-    // and re-targets as the turns above it get measured.
-    const api = timelineApiRef.current;
-    if (api?.scrollToTurn(targetMessageId, { align: 'start', behavior: 'smooth' })) {
-      clearJumpTarget();
-      return;
-    }
-
-    const target = contentEl.querySelector<HTMLElement>(
-      `[data-turn-id="${CSS.escape(targetMessageId)}"]`,
-    );
-    if (!target) {
-      clearJumpTarget();
-      return;
-    }
-
-    const scrollRect = scrollEl.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-    const offset = targetRect.top - scrollRect.top + scrollEl.scrollTop - 24;
-    scrollEl.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
+    // to its index and the turn mounts on the way. A jump is reader intent to
+    // leave the end; `jumpToTurn` leaves "follow" so the settle that the mount
+    // triggers does not snap the viewport straight back (jump-to-turn.ts).
+    jumpToTurn({
+      id: targetMessageId,
+      behavior: 'smooth',
+      api: timelineApiRef.current,
+      scrollEl,
+      contentEl,
+      leaveEnd,
+    });
     clearJumpTarget();
-  }, [targetMessageId, clearJumpTarget, contentRef, scrollRef]);
+  }, [targetMessageId, clearJumpTarget, contentRef, scrollRef, leaveEnd]);
 
   // Reset on session change
   useEffect(() => {
@@ -3416,6 +3408,7 @@ export function SessionChat({
               scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
               contentRef={contentRef as React.RefObject<HTMLDivElement>}
               virtualApiRef={timelineApiRef}
+              onLeaveEnd={leaveEnd}
             />
 
             <div
