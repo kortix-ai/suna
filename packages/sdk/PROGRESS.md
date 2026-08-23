@@ -52,6 +52,37 @@ this one.
 
 ---
 
+### 2026-08-23 — session `commands-not-iterable` — a list endpoint must never hand back a non-list — DONE
+
+**Files:** `react/use-opencode-sessions/shared.ts` (NEW internal `asRuntimeList`,
+`cachedRuntimeList`) + `shared.test.ts` (+9 tests) ·
+`react/use-opencode-sessions/commands.ts` (`useOpenCodeCommands` normalizes the
+response and the localStorage placeholder). No public surface change — both
+helpers stay inside `./shared`, which the barrel deliberately does not re-export.
+
+**What.** `dev.kortix.com` threw `TypeError: t is not iterable` from a `useMemo`
+and the session view fell into its error boundary ("Something went wrong").
+Deminified, the frame is `detectCommandFromText`'s `for (const cmd of commands)`
+in `apps/web` — so `commands` was TRUTHY but not iterable. It comes from
+`useRuntimeCommands()` → `useOpenCodeCommands()`, which returned
+`unwrap(client.command.list())` verbatim. `GET /command` is typed `Command[]`;
+a runtime or proxy that answers a list route with an object body breaks that
+type at runtime, and the bad value was also written to the localStorage
+placeholder cache, so the crash survived a reload.
+
+**Fix.** Normalize at the seam. `asRuntimeList` coerces a non-array list
+response to `[]`; `cachedRuntimeList` treats a cached non-array as a MISS so a
+poisoned placeholder refetches instead of painting. Every consumer
+(`detectCommandFromText`, the slash menu's `slash-items`, `composer-logic`,
+`command-attachments`) iterates the list unconditionally, so the guard belongs
+here — one place — not at four call sites. `apps/web`'s `detectCommandFromText`
+also grew an `Array.isArray` guard for defense in depth, matching its existing
+per-item non-string `template` guard.
+
+**Gates:** `typecheck` clean (both projects) · `bun test` — see PR.
+
+---
+
 ### 2026-08-21 — session `session-busy-flicker` — display order was not an order — DONE
 
 **Files:** `core/turns/grouping.ts` (`compareMessagesForDisplay` rewritten as two

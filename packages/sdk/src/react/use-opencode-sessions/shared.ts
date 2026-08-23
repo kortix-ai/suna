@@ -112,6 +112,40 @@ export function setLSCache(family: string, value: unknown, scope?: string): void
   cacheByFamily[family]?.set(scope ?? activeServerKey(), value);
 }
 
+// ============================================================================
+// Helper: shape guard for runtime LIST endpoints
+// ============================================================================
+
+/**
+ * Coerce a runtime list response to an array.
+ *
+ * The OpenCode REST types say `GET /command`, `GET /agent`, … return an array,
+ * but the value that actually arrives does not always agree: a daemon or proxy
+ * that answers a list route with an object body hands the caller a TRUTHY
+ * non-array. Consumers iterate the list (`for…of`, `.find`, `.some`,
+ * `.filter`), so that value does not degrade — it throws
+ * `TypeError: <x> is not iterable` inside a render and takes the whole session
+ * view down with it (dev, 2026-08-23). Normalize at the seam so an unexpected
+ * body reads as "no items" instead.
+ *
+ * This is the list-level twin of `detectCommandFromText`'s per-item
+ * `typeof cmd.template !== 'string'` guard in `apps/web`.
+ */
+export function asRuntimeList<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+/**
+ * Read a localStorage-cached list for `placeholderData`. A cached value that is
+ * not an array reads as a MISS (`undefined`), exactly like a legacy-shaped
+ * entry — the query then simply refetches instead of painting a corrupt
+ * placeholder into the render.
+ */
+export function cachedRuntimeList<T>(family: string, scope?: string): T[] | undefined {
+  const cached = getLSCache<unknown>(family, scope);
+  return Array.isArray(cached) ? (cached as T[]) : undefined;
+}
+
 const PROJECT_SESSION_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
