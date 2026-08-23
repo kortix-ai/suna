@@ -1,17 +1,52 @@
 /**
  * IndexedDB persistence layer for the sync store.
- * Provides instant session data on cold loads (stale-while-revalidate).
+ *
+ * **NOTHING IN KORTIX WRITES OR READS TRANSCRIPTS HERE ANY MORE.** The mirror
+ * that painted a session before its sandbox woke is gone (`use-session-sync.ts`
+ * carries the full reasoning): its freshness test read the transcript's SHAPE —
+ * message count, total part count, tail id — and the two changes that END a
+ * turn move none of them. `time.completed` on the tail and the `error` an abort
+ * stamps were both invisible, so a stopped thread's disk copy claimed the turn
+ * was still running and the next cold paint dimmed every message after it to
+ * "Queued".
+ *
+ * What remains, and why:
+ *
+ *  - `deleteSessionFromIDB` / `clearSessionIDBCache` / `pruneIDBCache` — the
+ *    CLEANUP half, still wired to session delete, sign-out and account switch.
+ *    They must keep working to purge what earlier versions left on disk.
+ *  - `saveSessionToIDB` / `loadSessionFromIDB` / `flushIDBWrites` /
+ *    `loadAllSessionIdsFromIDB` — published API (`public-surface.snapshot.json`).
+ *    Removing an export is a breaking change for a package on npm, so they stay
+ *    and keep their contract. No Kortix host calls them.
  *
  * Schema: one object store "sessions" keyed by cacheKey, each entry holds
  * { cacheKey, userId, sessionId, messages, parts, updatedAt }.
  */
 
-import { idbFlushIntervalMs, transcriptSignature } from './idb-write-policy';
 import { platformConfig } from '../../core/http/config';
 import { buildSessionCacheKey } from './idb-sync-cache-key';
 
 const DB_NAME = 'kortix-session-cache';
-const DB_VERSION = 2;
+/**
+ * 3 — bumped to PURGE what the retired mirror left behind: `onupgradeneeded`
+ * drops and recreates the store.
+ *
+ * BUT NOT ON PAGE LOAD, and that is worth being exact about. `openDB` is lazy,
+ * and with the mirror gone the only callers that still reach it are
+ * `deleteSessionFromIDB` (a session was deleted) and `clearSessionIDBCache`
+ * (sign-out / account switch). So a user who does neither keeps their old
+ * entries on disk indefinitely — `pruneIDBCache`'s 50-session / 7-day caps are
+ * unreachable too, because the only thing that called it was the flush.
+ *
+ * That data is INERT: nothing reads it, so it cannot affect the transcript. It
+ * is wasted quota, not a correctness risk. Purging it eagerly would need a
+ * host-side call at app start, which is deliberately not added here.
+ */
+const DB_VERSION = 3;
+/** Debounce for the batched write. Flat: the caller that made this cadence
+ *  worth tuning is gone. */
+const FLUSH_INTERVAL_MS = 500;
 const STORE_NAME = 'sessions';
 const MAX_CACHED_SESSIONS = 50;
 const MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -92,9 +127,6 @@ const pendingWrites = new Map<
   }
 >();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
-/** What each cache key last WROTE, so an unchanged transcript is not cloned
- *  again. See `transcriptSignature` for what "unchanged" can and cannot see. */
-const lastWrittenSignature = new Map<string, string>();
 
 // The caps below are only real if something enforces them. Prune once per page
 // load, off the back of the first flush, so the cache cannot grow forever
@@ -136,11 +168,7 @@ async function flushPendingWrites(): Promise<void> {
       tx.onerror = () => reject(tx.error);
     });
   } catch {
-    // The write did not land, so nothing may claim it did — drop the
-    // signatures for this batch or the next identical transcript is skipped
-    // and the mirror never catches up.
-    for (const cacheKey of batch.keys()) lastWrittenSignature.delete(cacheKey);
-    // Non-critical
+    // Non-critical — this cache is disposable by construction.
   }
 }
 
@@ -154,15 +182,6 @@ export async function saveSessionToIDB(
   if (!scope) return;
 
   const cacheKey = buildSessionCacheKey(scope, sessionId, kortixSessionScope);
-  // `put()` structured-clones what it is handed, so the cost of this mirror is
-  // the SIZE of the transcript times how often it is written. Skip a write that
-  // would store what is already stored, and let a large transcript write less
-  // often — the mirror is disposable, and a miss costs one refetch of data the
-  // server is about to send anyway.
-  const signature = transcriptSignature(messages, parts);
-  if (lastWrittenSignature.get(cacheKey) === signature) return;
-  lastWrittenSignature.set(cacheKey, signature);
-
   pendingWrites.set(cacheKey, {
     scope,
     sessionId,
@@ -171,7 +190,7 @@ export async function saveSessionToIDB(
     parts,
   });
   if (!flushTimer) {
-    flushTimer = setTimeout(flushPendingWrites, idbFlushIntervalMs(messages.length));
+    flushTimer = setTimeout(flushPendingWrites, FLUSH_INTERVAL_MS);
   }
 }
 
