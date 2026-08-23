@@ -220,6 +220,8 @@ import {
   serverHoldsOpenTurn,
   sessionComposerReadiness,
 } from './session-composer-readiness';
+import { useReadinessSettling } from './use-readiness-settling';
+import { useReloadForensics } from './reload-forensics';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
 import { shouldLoadOlderHistory } from './session-older-autoload';
@@ -4386,8 +4388,18 @@ export function SessionChat({
   // failure counter every tick, so `unreachable` never fires no matter how
   // long it stays wedged. See `useRuntimeBootStalled`.
   const runtimeStalled = useRuntimeBootStalled();
+  // Label an involuntary page load (discarded tab, or a chunk 404 after a
+  // deploy) so the next "my session randomly disconnected" report arrives with
+  // its cause attached instead of a shrug.
+  useReloadForensics(projectSessionId);
+  // Nothing has answered yet and the mount is young: the difference between
+  // "this session is asleep" and "we have not looked yet". Without it, every
+  // page load painted the waking notice for a beat over a session that was
+  // never asleep — which reads as a disconnect. See `settling`.
+  const composerSettling = useReadinessSettling(runtimePhase === 'connecting');
   const composerReadiness = sessionComposerReadiness({
     runtimeReady,
+    settling: composerSettling,
     // Only an OPEN TURN the control plane is holding counts here. This tab's
     // optimistic receipt and a stream frame both survive a box that died
     // mid-turn, and a durable inbox row (which the projection also sources to

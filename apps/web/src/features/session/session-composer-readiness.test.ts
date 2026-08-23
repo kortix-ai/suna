@@ -8,6 +8,47 @@ import {
 } from './session-composer-readiness';
 
 describe('sessionComposerReadiness', () => {
+  // Screen recording (dev, 2026-08-23): a session page reloaded itself while the
+  // agent was mid-turn, and for ~2s the composer claimed "Waking this session
+  // up…" before the transcript resumed streaming. Nothing was asleep — the box
+  // was up and working the whole time. On a cold mount the health probe has not
+  // answered and `GET .../turn` has not landed, so every input is false and the
+  // final fallback asserted the one thing we had not checked. Read to the user
+  // that is a disconnect: the session "dropped and came back".
+  test('says NOTHING while it has not contacted the runtime yet', () => {
+    const readiness = sessionComposerReadiness({ runtimeReady: false, settling: true });
+
+    expect(readiness.notice).toBeNull();
+    expect(readiness.ready).toBe(false);
+    expect(readiness.retryable).toBe(false);
+  });
+
+  test('claims waking once the settle window closes and it is still not ready', () => {
+    expect(sessionComposerReadiness({ runtimeReady: false, settling: false }).notice).toMatch(
+      /waking/i,
+    );
+  });
+
+  test('a KNOWN failure still speaks during the settle window', () => {
+    // `settling` withholds a guess, never a fact. An unreachable box and a
+    // stalled boot are both observations, and both carry a retry.
+    const unreachable = sessionComposerReadiness({
+      runtimeReady: false,
+      settling: true,
+      unreachable: true,
+    });
+    expect(unreachable.notice).toMatch(/lost contact/i);
+    expect(unreachable.retryable).toBe(true);
+
+    const stalled = sessionComposerReadiness({ runtimeReady: false, settling: true, stalled: true });
+    expect(stalled.notice).toMatch(/taking longer/i);
+    expect(stalled.retryable).toBe(true);
+  });
+
+  test('a ready runtime is unaffected by the settle window', () => {
+    expect(sessionComposerReadiness({ runtimeReady: true, settling: true }).notice).toBeNull();
+  });
+
   test('a ready runtime leaves the composer alone — no notice', () => {
     expect(sessionComposerReadiness({ runtimeReady: true })).toEqual({
       ready: true,

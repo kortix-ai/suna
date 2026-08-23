@@ -131,6 +131,24 @@ export function sessionComposerReadiness(input: {
    * "indistinguishable from stuck" failure this module exists to prevent.
    */
   stalled?: boolean;
+  /**
+   * Nothing has been CONTACTED yet — the runtime probe has not answered and
+   * `GET .../turn` has not landed, and the mount is young enough that this is
+   * ordinary startup rather than a wait.
+   *
+   * On a cold mount every other input here is false: not ready, no open turn,
+   * not unreachable, not stalled. The fallback below then asserted the one
+   * thing nobody had checked — that the session is asleep — and a page that had
+   * just reloaded under a working agent showed "Waking this session up…" for a
+   * couple of seconds before the transcript resumed streaming (screen
+   * recording, dev, 2026-08-23). To the person watching, the session dropped
+   * and came back. It never went anywhere; we simply had not looked yet.
+   *
+   * Withholding a GUESS, never a fact: an unreachable box and a stalled boot
+   * are observations and still speak immediately, and so does a live server
+   * turn. Only the "must be waking, then" fallback waits to be sure.
+   */
+  settling?: boolean;
 }): SessionComposerReadiness {
   if (input.runtimeReady) return { ready: true, notice: null, retryable: false };
   if (input.serverTurnLive) {
@@ -160,6 +178,10 @@ export function sessionComposerReadiness(input: {
         'Still waking this session up — taking longer than usual. Messages you send will be queued.',
       retryable: true,
     };
+  }
+  if (input.settling) {
+    // We know nothing yet. Say nothing — see `settling`.
+    return { ready: false, notice: null, retryable: false };
   }
   return {
     ready: false,
