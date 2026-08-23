@@ -127,6 +127,11 @@ export const INBOX_OBSERVATION_MAX_MS = 10_000;
  * Comfortably above the measured relay, far below a provider backoff.
  */
 export const TURN_END_LEDGER_LAG_MS = 3_000;
+// RETAINED AS A MEASUREMENT, NOT A RULE. It no longer gates anything: the veto
+// above is causal now, because a row still open past this lag is far more often
+// a dropped `kind:"end"` relay (turn over) than a live retry (turn running), and
+// guessing wrong in the first case is a visible oscillation. Exported because
+// this package's names are a public contract.
 
 /**
  * How long a stop this tab issued may bar a server read from reporting the
@@ -354,12 +359,24 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     // new one the frame knows nothing about.
     const startedAt = instant(candidate.started_at);
     if (startedAt === null || startedAt >= idleFrame.atMs) return false;
-    // And only while the ledger has not had time to record the close. Past
-    // `TURN_END_LEDGER_LAG_MS` a row that is STILL open is saying something the
-    // frame cannot explain — the commonest cause being that the frame was a
-    // retry's `session.error`, not the end of anything — so the ledger wins
-    // again and the composer goes back to working.
-    return nowMs - idleFrame.atMs < TURN_END_LEDGER_LAG_MS;
+    // And that is the whole rule. It used to expire after
+    // `TURN_END_LEDGER_LAG_MS`, on the theory that a row still open past the
+    // relay's lag must mean the frame was a retry's `session.error` rather than
+    // the end of anything. But time is not evidence: when the `kind:"end"`
+    // relay is simply DROPPED — the documented failure mode, closed by a
+    // reconciliation sweep 15.1s late in this file's own measurement — the row
+    // stays open for exactly the same reason and the turn is exactly as
+    // finished. Expiring the veto therefore announced a finished turn again,
+    // and the user watched "Gathering thoughts…" and the Stop button come back
+    // for seconds with the answer already on screen (dev, 2026-08-23).
+    //
+    // A turn that is genuinely still running says so, and that is what returns
+    // authority to the ledger: any newer frame is not idle, so `idleFrame` is
+    // null on the next evaluation and the row decides again — immediately, with
+    // no window to tune. A runtime that goes silent instead is bounded by
+    // `STREAM_OBSERVATION_MAX_MS`, after which the frame is too stale to veto
+    // anything.
+    return true;
   };
 
   const ledgerTurn = serverFresh ? server!.turns[0] : undefined;
@@ -486,7 +503,9 @@ export function workingExpiryAtMs(inputs: WorkingInputs): number | null {
     // The instant a runtime idle frame stops outranking the ledger's turn row.
     // Nothing else re-renders then, and a session held `idle` by that rule has
     // to go back to `working` on its own when the frame's window closes.
-    stream && stream.type === 'idle' ? stream.atMs + TURN_END_LEDGER_LAG_MS : null,
+    // (An idle frame no longer stops outranking the ledger on a timer — see
+    // `endedByRuntime` — so there is nothing to schedule for it here.)
+    null,
     optimistic ? optimistic.atMs + OPTIMISTIC_RECEIPT_MAX_MS : null,
     abort ? abort.atMs + OPTIMISTIC_ABORT_MAX_MS : null,
     inbox ? inbox.atMs + INBOX_OBSERVATION_MAX_MS : null,

@@ -12,6 +12,33 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-23 — session `turn-end-flap` — a finished turn does not un-finish itself — DONE
+
+**Files:** `core/session/working.ts` (`endedByRuntime` is causal; `workingExpiryAtMs`
+schedules no flip) + `working.test.ts` (+2 tests, 2 rewritten). No public surface
+change — `TURN_END_LEDGER_LAG_MS` stays exported, now as a measurement rather
+than a rule.
+
+**What.** Reported from dev with three screenshots a second apart: the answer is
+on screen and the composer is idle, then "Gathering thoughts…" and the Stop
+button come BACK for a couple of seconds, then leave again. The runtime's idle
+frame outranked the still-open ledger row for exactly `TURN_END_LEDGER_LAG_MS`
+(3s) and then handed authority back. When the `kind:"end"` relay is DROPPED —
+the documented failure mode, closed by a reconciliation sweep 15.1s late in this
+file's own measurement — the row is still open for that whole window, so the UI
+re-announced a turn that had already finished.
+
+**Fix.** Time is not evidence. The veto now holds for as long as the idle frame
+is the newest runtime observation; a turn that is really still running says so,
+and any newer non-idle frame (`busy`/`retry`) hands the ledger back immediately
+with no window to tune. A runtime that goes silent instead is still bounded by
+`STREAM_OBSERVATION_MAX_MS`.
+
+**Gates:** `typecheck` clean (both projects) · `bun test` 2426 pass / 0 fail ·
+`smoke:install` passed.
+
+---
+
 ### 2026-08-23 — session `terminal-ws-wake` — a terminal attach may wake a parked box — DONE
 
 **Files:** `core/runtime/pty.ts` (`getKortixPtyWebSocketUrl` takes `{ wake }`) +

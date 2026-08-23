@@ -660,6 +660,55 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
     expect(projection).toMatchObject({ state: 'working', source: 'server' });
   });
 
+  // Reported from dev 2026-08-23 with three screenshots one second apart: the
+  // answer is on screen and the composer is idle, then "Gathering thoughts…"
+  // and the Stop button come BACK for a couple of seconds, then leave again.
+  // "It finishes, then reconnects for a couple secs, then disconnects again."
+  //
+  // That is this rule oscillating. The runtime went idle; the `kind:"end"`
+  // relay that closes the ledger row was dropped, so `/turn` keeps reporting
+  // the turn open until a reconciliation sweep closes it (MEASURED in this
+  // file's own notes: 15.1s late). The idle frame outranked the row for
+  // exactly 3s and then handed authority back — so the UI announced a turn
+  // that had already finished, for as long as the sweep took.
+  test('a dropped end-relay never re-busies a turn the runtime already ended', () => {
+    const ended = { turns: [turn()], atMs: T0 + 60_100 };
+    const idleFrame = { type: 'idle' as const, atMs: T0 + 60_000 };
+
+    // Immediately after the frame: idle (this part already worked).
+    expect(
+      projectWorking({ optimistic: null, server: ended, stream: idleFrame, nowMs: T0 + 60_200 })
+        .state,
+    ).toBe('idle');
+
+    // Ten seconds later the sweep still has not closed the row. The turn is no
+    // more alive than it was a moment ago, and the composer must not say it is.
+    expect(
+      projectWorking({
+        optimistic: null,
+        server: { turns: [turn()], atMs: T0 + 70_000 },
+        stream: idleFrame,
+        nowMs: T0 + 70_100,
+      }).state,
+    ).toBe('idle');
+  });
+
+  // The protection the old wall-clock window was really buying: a turn that is
+  // still running announces itself, and THAT is what returns authority to the
+  // ledger — evidence, not the passage of time.
+  test('a newer non-idle frame hands the ledger back immediately', () => {
+    for (const type of ['busy', 'retry'] as const) {
+      expect(
+        projectWorking({
+          optimistic: null,
+          server: { turns: [turn()], atMs: T0 + 61_000 },
+          stream: { type, atMs: T0 + 60_500 },
+          nowMs: T0 + 61_100,
+        }),
+      ).toMatchObject({ state: 'working', source: 'server' });
+    }
+  });
+
   test('a BUSY frame never suppresses the ledger — only an idle one ends a turn', () => {
     const projection = projectWorking({
       optimistic: null,
@@ -671,31 +720,29 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
     expect(projection).toMatchObject({ state: 'working' });
   });
 
-  test('a RETRY does not un-busy a live turn — the frame stops outranking the ledger', () => {
-    // `session.error` is relayed into the status slot as `idle` ("errors
-    // terminate the response"), and OpenCode emits it while it is RETRYING a
-    // provider — a 429 backoff, a transient upstream 5xx — with the turn still
-    // running. Trusting any idle frame for the stream's whole 45s life
-    // therefore dropped the composer out of `working` mid-turn and held it
-    // there until the next `busy` frame: the reported "it keeps stopping
-    // visually, the chat input doesn't stay connected".
-    //
-    // Past `TURN_END_LEDGER_LAG_MS` a ledger row that is STILL open outranks
-    // the frame again, so a retry blip self-heals in seconds.
+  test('a retry that announces itself takes the ledger back — no window needed', () => {
+    // OpenCode emits `retry` while it backs off a provider (429, transient 5xx)
+    // with the turn still running, and that frame is NOT idle — so the ledger
+    // decides again the moment it lands. This used to be enforced by expiring
+    // the idle veto after `TURN_END_LEDGER_LAG_MS`, which also un-ended turns
+    // that had genuinely finished (a dropped `kind:"end"` relay looks identical
+    // to a retry from a clock's point of view). Pinning the FRAME is what that
+    // rule was really for.
     const projection = projectWorking({
       optimistic: null,
       server: { turns: [turn()], atMs: T0 + 60_000 + TURN_END_LEDGER_LAG_MS + 500 },
-      stream: { type: 'idle', atMs: T0 + 60_000 },
+      stream: { type: 'retry', atMs: T0 + 60_000 + TURN_END_LEDGER_LAG_MS + 100 },
       nowMs: T0 + 60_000 + TURN_END_LEDGER_LAG_MS + 600,
     });
 
     expect(projection).toMatchObject({ state: 'working', source: 'server' });
   });
 
-  test('the projection re-evaluates when the frame stops outranking the ledger', () => {
-    // The rule moves with `nowMs` and nothing else re-renders at that instant,
-    // so the expiry timer has to name it — exactly why the other bounds are
-    // listed there.
+  test('an ended turn schedules no flip back to working', () => {
+    // The old rule moved with `nowMs` alone, so the expiry timer had to name
+    // the instant it flipped — and that scheduled re-render IS the flap the
+    // user sees. Nothing about a finished turn changes with time now, so the
+    // only expiry left is the frame's own staleness bound.
     const inputs = {
       optimistic: null,
       server: { turns: [turn()], atMs: T0 + 60_100 },
@@ -703,7 +750,7 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
       nowMs: T0 + 60_200,
     };
     expect(projectWorking(inputs).state).toBe('idle');
-    expect(workingExpiryAtMs(inputs)).toBe(T0 + 60_000 + TURN_END_LEDGER_LAG_MS);
+    expect(workingExpiryAtMs(inputs)).toBe(T0 + 60_000 + STREAM_OBSERVATION_MAX_MS);
   });
 
   test('a turn with no start instant keeps the ledger its authority', () => {
