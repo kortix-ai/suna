@@ -221,6 +221,20 @@ export async function opencodeSessionInFlight(
   workspace: string,
   sessionId: string,
 ): Promise<boolean | null> {
+  const statuses = await opencodeSessionStatuses(baseUrl, workspace)
+  if (statuses === null) return null
+  return sessionStatusInFlight(statuses, sessionId)
+}
+
+/**
+ * One read of `GET /session/status` — the `{ [sessionID]: SessionStatus }` map
+ * described above — or `null` when OpenCode did not answer. Callers that ask
+ * about several sessions (the reconnect reconcile) pay for the read once.
+ */
+export async function opencodeSessionStatuses(
+  baseUrl: string,
+  workspace: string,
+): Promise<Record<string, unknown> | null> {
   try {
     const response = await fetch(
       `${baseUrl}/session/status?directory=${encodeURIComponent(workspace)}`,
@@ -229,17 +243,26 @@ export async function opencodeSessionInFlight(
     if (!response.ok) return null
     const statuses = (await response.json()) as unknown
     if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) return null
-    const status = (statuses as Record<string, unknown>)[sessionId]
-    if (status === undefined) return false
-    if (!status || typeof status !== 'object' || Array.isArray(status)) return null
-    const type = (status as { type?: unknown }).type
-    if (type === 'busy' || type === 'retry') return true
-    if (type === 'idle') return false
-    logger.warn('[turn-state] unknown OpenCode session status; treating as unreadable', { type })
-    return null
+    return statuses as Record<string, unknown>
   } catch {
     return null
   }
+}
+
+/** Read one session out of a `/session/status` map — see `opencodeSessionInFlight`
+ *  for why absent is a definite `false` and an unknown type stays `null`. */
+export function sessionStatusInFlight(
+  statuses: Record<string, unknown>,
+  sessionId: string,
+): boolean | null {
+  const status = statuses[sessionId]
+  if (status === undefined) return false
+  if (!status || typeof status !== 'object' || Array.isArray(status)) return null
+  const type = (status as { type?: unknown }).type
+  if (type === 'busy' || type === 'retry') return true
+  if (type === 'idle') return false
+  logger.warn('[turn-state] unknown OpenCode session status; treating as unreadable', { type })
+  return null
 }
 
 /**

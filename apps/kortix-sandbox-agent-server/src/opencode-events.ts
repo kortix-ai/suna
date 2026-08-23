@@ -1,6 +1,7 @@
 import { logger } from './logger'
 import type { Config } from './config'
 import type { Opencode } from './opencode'
+import { eventSubscription, type EventSubscriptionState } from './event-subscription'
 
 // opencode's QuestionInfo schema, mirrored from the v2 SDK. Anything richer
 // (like permission.asked) is layered on top of the same SSE stream.
@@ -65,6 +66,9 @@ type OpencodeEventHandlers = {
 
 export interface OpencodeEventLoopOptions {
   reconcileIntervalMs?: number
+  /** Where the loop publishes which OpenCode URL it is subscribed to. Defaults
+   *  to the process-wide state the env route reads; tests inject their own. */
+  subscription?: EventSubscriptionState
 }
 
 // Subscribe to opencode's SSE event stream and dispatch known event types.
@@ -90,9 +94,13 @@ export function startOpencodeEventLoop(
   // retry loop below.
   let everConnected = false
   let reconcileTimer: ReturnType<typeof setInterval> | null = null
+  const subscription = options.subscription ?? eventSubscription
 
   async function connectOnce(): Promise<void> {
-    const url = `${opencode.getInternalUrl()}/event?directory=${encodeURIComponent(cfg.workspace)}`
+    // Read the URL ONCE per attempt: a verified reload moves the active port,
+    // and the subscription's liveness is keyed by the URL it actually hit.
+    const baseUrl = opencode.getInternalUrl()
+    const url = `${baseUrl}/event?directory=${encodeURIComponent(cfg.workspace)}`
     abortController = new AbortController()
     const res = await fetch(url, {
       headers: { Accept: 'text/event-stream' },
@@ -101,8 +109,9 @@ export function startOpencodeEventLoop(
     if (!res.ok || !res.body) {
       throw new Error(`/event subscribe non-ok: ${res.status}`)
     }
-    logger.info('[opencode-events] subscribed')
+    logger.info('[opencode-events] subscribed', { baseUrl })
     everConnected = true
+    subscription.markLive(baseUrl)
     markConnected()
     // Reconcile any turn that finished before this subscription was live. Fires
     // on every (re)connect; the handler is idempotent (per-turn dedup), so a
@@ -118,34 +127,40 @@ export function startOpencodeEventLoop(
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) return
-      buf += decoder.decode(value, { stream: true })
-      // SSE permits LF and CRLF line endings. OpenCode can emit CRLF frames,
-      // including when the delimiter spans reader chunks, so retain the raw
-      // buffer and consume the complete delimiter returned by the match.
-      let boundary = /\r?\n\r?\n/.exec(buf)
-      while (boundary?.index !== undefined) {
-        const frame = buf.slice(0, boundary.index)
-        buf = buf.slice(boundary.index + boundary[0].length)
-        boundary = /\r?\n\r?\n/.exec(buf)
-        const dataLines = frame
-          .split(/\r?\n/)
-          .filter((l) => l.startsWith('data:'))
-          .map((l) => l.slice(5).trim())
-          .filter(Boolean)
-        if (dataLines.length === 0) continue
-        try {
-          const event = JSON.parse(dataLines.join('\n')) as {
-            type?: string
-            properties?: unknown
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) return
+        buf += decoder.decode(value, { stream: true })
+        // SSE permits LF and CRLF line endings. OpenCode can emit CRLF frames,
+        // including when the delimiter spans reader chunks, so retain the raw
+        // buffer and consume the complete delimiter returned by the match.
+        let boundary = /\r?\n\r?\n/.exec(buf)
+        while (boundary?.index !== undefined) {
+          const frame = buf.slice(0, boundary.index)
+          buf = buf.slice(boundary.index + boundary[0].length)
+          boundary = /\r?\n\r?\n/.exec(buf)
+          const dataLines = frame
+            .split(/\r?\n/)
+            .filter((l) => l.startsWith('data:'))
+            .map((l) => l.slice(5).trim())
+            .filter(Boolean)
+          if (dataLines.length === 0) continue
+          try {
+            const event = JSON.parse(dataLines.join('\n')) as {
+              type?: string
+              properties?: unknown
+            }
+            dispatch(event, handlers)
+          } catch (err) {
+            logger.warn('[opencode-events] parse failed', { err: (err as Error).message })
           }
-          dispatch(event, handlers)
-        } catch (err) {
-          logger.warn('[opencode-events] parse failed', { err: (err as Error).message })
         }
       }
+    } finally {
+      // Whatever ended the read — the old process dying under a verified
+      // reload, an abort, a transport error — this subscription is over.
+      subscription.markDropped()
     }
   }
   (async () => {

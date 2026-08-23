@@ -19,6 +19,7 @@ import { createWebProxyRouter } from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
 import { registerAgentSwapBlocker } from './runtime-assets'
 import type { ProjectEnvStore } from './project-env'
+import { proxiedPromptSessionId, trackRootTurnSession } from './turn-tracking'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -336,6 +337,13 @@ export function buildOpencodeApp(
 
     const method = c.req.method.toUpperCase()
     const hasBody = method !== 'GET' && method !== 'HEAD'
+
+    // A control-plane prompt delivery names the root its turn runs on. Track
+    // it (turn-tracking.ts) so the /event reconnect reconcile asks about this
+    // root even when the turn starts AND ends before the loop is subscribed —
+    // the one observer that exists for that shape.
+    const promptSessionId = proxiedPromptSessionId(method, url.pathname)
+    if (promptSessionId) trackRootTurnSession(promptSessionId, 'proxied_prompt')
 
     // Bound only the wait for opencode's response (headers) — not the abort
     // controller's whole lifetime — so we can free-run a stream once it starts.

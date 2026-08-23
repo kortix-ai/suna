@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import { writeAgentEnvFile } from '../agent-env-file'
 import type { Config } from '../config'
 import { syncEgressShim } from '../egress-shim'
+import { eventSubscription, type EventSubscriptionState } from '../event-subscription'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
 import { requiresRespawn, type Opencode } from '../opencode'
@@ -110,14 +111,31 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
   })
 }
 
+/**
+ * How long a RESTART reload waits for the daemon's /event loop to re-subscribe
+ * on the promoted OpenCode before this route answers. The loop re-subscribes
+ * ~100ms after it notices the old process drop (opencode-events.ts backoff),
+ * so 2s is a ceiling, not a cost; a box that does not make it still answers
+ * 200 — `event_subscription_live:false` — and the reconnect reconcile
+ * (main.ts reconcileFinishedTrackedTurns) is the backstop for the gap.
+ */
+export const EVENT_RESUBSCRIBE_WAIT_MS = 2_000
+
 export function createEnvRouter(
   cfg: Config,
   opencode: Opencode,
   projectEnv: ProjectEnvStore,
-  opts: { agentEnvFile?: string } = {},
+  opts: {
+    agentEnvFile?: string
+    /** The /event subscription state the loop publishes to. Tests inject one. */
+    eventSubscription?: EventSubscriptionState
+    eventResubscribeWaitMs?: number
+  } = {},
 ): Hono {
   const router = new Hono()
   let syncInFlight: Promise<Response> | null = null
+  const subscription = opts.eventSubscription ?? eventSubscription
+  const resubscribeWaitMs = opts.eventResubscribeWaitMs ?? EVENT_RESUBSCRIBE_WAIT_MS
 
   router.post('/', async (c) => {
     if (!cfg.sandboxToken) {
@@ -174,6 +192,9 @@ export function createEnvRouter(
         // Whether applying the config interrupted work someone was waiting on.
         // null = no reload happened, or the box could not tell.
         let reloadTurnEnded: boolean | null = null
+        // Whether the daemon's /event subscription is live on the OpenCode that
+        // serves AFTER the reload. null = no reload happened.
+        let eventSubscriptionLive: boolean | null = null
         const opencodeEnvChanged = opencodeEnv.changed || llmGatewayEnv.changed
         const opencodeEnvNames = [...new Set([...opencodeEnv.names, ...llmGatewayEnv.names])].sort()
 
@@ -248,12 +269,38 @@ export function createEnvRouter(
           // take, and the caller has to be told — logging it here and returning
           // ok:true would report a reload that silently did nothing.
           reloadOutcome = how
+          // SUBSCRIBE BEFORE PROMPT, mid-session. The control plane forwards
+          // the prompt it pushed this env for the instant we answer. A restart
+          // promoted a NEW process on the other port and killed the old one;
+          // the /event loop was subscribed to the old one and re-subscribes
+          // only after it notices the drop. Answer 200 once the subscription
+          // is live on the promoted URL — bounded — so a short turn cannot
+          // start and finish with nobody listening for its session.idle
+          // (live 2026-08-23, session eddd499a). A dispose keeps the process,
+          // so the subscription it holds is the one that stays: report, no wait.
+          if (how === 'restarted') {
+            const waitStartedAt = Date.now()
+            eventSubscriptionLive = await subscription.waitUntilLiveFor(
+              opencode.getInternalUrl(),
+              resubscribeWaitMs,
+            )
+            if (!eventSubscriptionLive) {
+              logger.warn('[env] /event loop not re-subscribed on the promoted opencode within the bound', {
+                waitedMs: Date.now() - waitStartedAt,
+                boundMs: resubscribeWaitMs,
+                opencodeUrl: opencode.getInternalUrl(),
+              })
+            }
+          } else {
+            eventSubscriptionLive = subscription.isLiveFor(opencode.getInternalUrl())
+          }
           logger.info('[env] config-affecting env changed; applied to opencode', {
             projectRevision: result.revision,
             projectEnvChanged: result.changed,
             opencodeEnvNames,
             how,
             mustRespawn,
+            eventSubscriptionLive,
           })
         }
 
@@ -292,6 +339,11 @@ export function createEnvRouter(
           // boot — a successful safety outcome, and a FAILED reload.
           opencode_reload: reloadOutcome,
           opencode_turn_ended: reloadTurnEnded,
+          // Whether the daemon's /event subscription is live on the OpenCode
+          // serving after the reload (awaited ≤ EVENT_RESUBSCRIBE_WAIT_MS for a
+          // restart). null when no reload happened. A `false` after a restart
+          // is the rare box whose loop did not re-subscribe in time.
+          event_subscription_live: eventSubscriptionLive,
         })
       } catch (err) {
         const message = (err as Error).message || 'env sync failed'
