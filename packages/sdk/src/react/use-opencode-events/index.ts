@@ -19,7 +19,7 @@ import {
 import { useServerStore } from '../../browser/stores/server-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { opencodeKeys } from '../use-opencode-sessions';
 import { useKortixRouteProjectId } from '../route-project';
 import { resetPrefetchState } from '../use-session-prefetch';
@@ -30,6 +30,7 @@ import {
   resolveClientEvictionUrl,
 } from './helpers';
 import { sessionsNeedingRehydrate } from './rehydrate-targets';
+import { createStreamRevival } from './stream-revival';
 import { useEventStreamRefs } from './use-event-stream-refs';
 import { openEventStream } from '../../core/stream/event-stream';
 
@@ -71,6 +72,15 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
   const isMountRef = useRef(true);
   const prevRuntimeVersionRef = useRef(runtimeVersion);
   const prevServerUrlRef = useRef(activeServerUrl);
+  // Bumped when a parked stream earns another attempt. It is an effect DEP, so
+  // the bump tears the dead handle down and opens a fresh one — the same path
+  // a runtime switch takes, rather than a second reconnect mechanism.
+  const [streamGeneration, setStreamGeneration] = useState(0);
+  const revival = useMemo(
+    () => createStreamRevival(() => setStreamGeneration((generation) => generation + 1)),
+    [],
+  );
+  useEffect(() => revival.stop, [revival]);
 
   const {
     normalizeDiagnosticPaths,
@@ -292,6 +302,17 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     // the QueryClient-dependent event handler and the gap-rehydrate hook.
     const handle = openEventStream({
       client,
+      // A park is not a verdict about the sandbox — only about the last few
+      // attempts. Nothing supplied this callback before, so the stream's
+      // documented "terminal for this handle" silently became terminal for the
+      // PAGE: the session view kept rendering a transcript nobody was updating
+      // until the user reloaded. See `createStreamRevival`.
+      onParked: (info) => {
+        logger.warn('SSE stream parked — arming revival', {
+          consecutiveFailures: info.consecutiveFailures,
+        });
+        revival.park();
+      },
       onEvent: (event) => {
         // Every delivered frame is live proof the runtime is reachable — it
         // vetoes concurrent health-probe failures (a loaded box can miss the
@@ -304,6 +325,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     });
 
     return () => {
+      revival.stop();
       handle.close();
     };
     // NOTE: urlVersion is intentionally excluded from deps. We only reconnect
@@ -325,6 +347,10 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     applySyncEvent,
     stopCompaction,
     projectId,
+    revival,
+    // A revived park re-opens the stream through this effect. Without it the
+    // park stayed terminal for the page.
+    streamGeneration,
   ]);
 }
 

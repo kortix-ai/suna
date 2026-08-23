@@ -12,7 +12,7 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
-### 2026-08-24 — session `transcript-convergence` — the transcript must catch up, and four things stopped it — DONE
+### 2026-08-24 — session `transcript-convergence` — the transcript must catch up, and five things stopped it — DONE
 
 **Files:** `core/session-sync/session-sync-controller.ts` (turn-end reconcile,
 `SessionSyncReason` += `turn-end` | `visible`) + tests (+3) ·
@@ -21,7 +21,9 @@ transcript frames) + tests (+2) · `browser/session-sync/visibility.ts` (NEW) +
 tests (+4) · `react/use-session-sync.ts` (visible-reconcile effect;
 `livenessBusy` no longer gated on the health probe) + tests (+1) ·
 `react/use-opencode-events/rehydrate-targets.ts` (NEW) + tests (+3) ·
-`react/use-opencode-events/index.ts` (gap rehydrates every held transcript).
+`react/use-opencode-events/stream-revival.ts` (NEW) + tests (+6) ·
+`react/use-opencode-events/index.ts` (gap rehydrates every held transcript;
+supplies `onParked`).
 
 **What.** Reported from a live self-host with a screenshot: an 8m13s turn
 FINISHED — the runtime's own terminal shows the complete answer — and the
@@ -54,7 +56,17 @@ Plus the case the user named directly: a backgrounded tab has its timers
 clamped to about one a minute, so return is the moment the tab is least sure
 what it holds. `onTabVisible` reconciles on the way back in.
 
-**Gates:** `typecheck` clean (both projects) · `pnpm test` 2459 pass / 0 fail ·
+**5. And the stream could die for good.** `openEventStream` PARKS after 8
+consecutive hard failures and documents itself as terminal for that handle —
+correct, and the point: a dead or archived sandbox should not be hammered
+forever. But **nothing in this package supplied `onParked`**, so "terminal for
+this handle" silently became terminal for the PAGE. No error, no retry, no
+transcript updates until the user reloaded. `createStreamRevival` re-opens the
+stream on the first cheap evidence that something may have changed — the tab
+came back, the network came back, or 30s passed — exactly once per park, so a
+genuinely dead box costs one connect attempt per interval instead of a storm.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2456 pass / 0 fail ·
 `smoke:install` passed · apps/web tsc clean, session suite 2513 pass / 0 fail.
 
 ---
