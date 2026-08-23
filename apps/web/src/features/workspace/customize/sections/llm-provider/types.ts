@@ -1,5 +1,7 @@
 /**
- * Two tabs, each answering one question and owning one list:
+ * The dialog's two tabs — `QUICK_LLM_TABS` in `gateway-view.tsx`, aliased
+ * here so the modal's prop types and the strip it renders can never name a
+ * different set. Adding a tab to the dialog is one edit, in that file.
  *
  *  - `providers` — "where do my models come from" (`ProviderConnect`): ONE
  *     flat list of providers, one key field each. A key is stored as a project
@@ -12,7 +14,9 @@
  * provider keys from its env. Custom OpenAI-compatible endpoints are a
  * gateway-side upstream feature, not an OpenCode config.
  */
-export type ActiveTab = 'providers' | 'models';
+import type { QuickLlmTab } from '@/features/workspace/customize/sections/gateway-view';
+
+export type ActiveTab = QuickLlmTab;
 
 export interface ProjectProviderModalProps {
   projectId: string;

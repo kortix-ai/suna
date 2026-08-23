@@ -317,16 +317,12 @@ test('project(id).gateway.routing binds policy CRUD and preview to the project',
   expect(last().method).toBe('DELETE');
 });
 
-test('project(id).channels covers slack, email and voice', async () => {
+test('project(id).channels covers slack and email', async () => {
   await kortix.project('PID123').channels.slack.installation();
   expect(last().url).toContain('/projects/PID123/channels/slack/installation');
 
   await kortix.project('PID123').channels.email.mode();
   expect(last().url).toContain('/projects/PID123/channels/email/mode');
-
-  await kortix.project('PID123').channels.voice.setBotName('Kortix');
-  expect(last().url).toContain('/projects/PID123/channels/meet/name');
-  expect(last().method).toBe('PUT');
 });
 
 test('project(id) exposes provider-neutral Apps without a generic deployments alias', () => {
@@ -560,13 +556,6 @@ test('project(id) covers experimental-feature toggle, sandbox provider pin, and 
 test('kortix.projects.createRepo hits the create-repo endpoint (not bound to an existing project id)', async () => {
   await kortix.projects.createRepo({ name: 'new-repo' });
   expect(last().url).toContain('/projects/create-repo');
-  expect(last().method).toBe('POST');
-});
-
-test('kortix.transcribe hits the top-level /transcription endpoint (not project-scoped)', async () => {
-  const file = new File(['audio'], 'clip.webm', { type: 'audio/webm' });
-  await kortix.transcribe(file);
-  expect(last().url).toContain('/transcription');
   expect(last().method).toBe('POST');
 });
 
@@ -1600,7 +1589,11 @@ test('kortix.iam.roles and kortix.iam.groups reach their collections', async () 
 });
 
 test('kortix.iam.can probes one leaf for one principal', async () => {
-  await kortix.iam.can('ACC1', 'U1', { action: 'project.write', resourceType: 'project', resourceId: 'PID1' });
+  await kortix.iam.can('ACC1', 'U1', {
+    action: 'project.write',
+    resourceType: 'project',
+    resourceId: 'PID1',
+  });
   expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
   expect(last().url).toContain('action=project.write');
 });

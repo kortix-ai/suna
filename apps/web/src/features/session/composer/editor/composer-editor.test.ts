@@ -13,7 +13,7 @@ import {
   trackEmptyBoundary,
 } from './composer-editor';
 import { mergeFailedSubmissionText } from '../../composer-draft-recovery';
-import { appendTranscribedText, planPrefillMerge, textToDocument } from '../composer-logic';
+import { planPrefillMerge, textToDocument } from '../composer-logic';
 import { MentionNode } from './mention-node';
 import { serializeDocument } from './serialize';
 
@@ -660,44 +660,6 @@ describe('merge-mode prefill and transcription round-trip to the old strings', (
     ]);
   });
 
-  test('row 21: transcription serializes to "draft transcript" — a space, not a block break', () => {
-    const editor = createHeadlessEditor(() => {});
-    editor.commands.insertContent({ type: 'text', text: 'hello' });
-
-    setEditorDocument(
-      editor,
-      appendTranscribedText(getEditorDocument(editor), editor.isEmpty, 'transcribed'),
-    );
-
-    expect(serializeDocument(editor.state.doc).text).toBe('hello transcribed');
-    expect(editor.state.doc.childCount).toBe(1); // one paragraph, no block split
-  });
-
-  test('row 21: dictating with the caret mid-draft still appends at the END', () => {
-    const editor = createHeadlessEditor(() => {});
-    editor.commands.insertContent({ type: 'text', text: 'hello world' });
-    editor.commands.setTextSelection(6); // between "hello" and " world"
-
-    setEditorDocument(
-      editor,
-      appendTranscribedText(getEditorDocument(editor), editor.isEmpty, 'dictated'),
-    );
-
-    // The regression produced "hello\n\ndictated\n world" — the transcript
-    // dropped into the middle of the sentence at the stale caret.
-    expect(serializeDocument(editor.state.doc).text).toBe('hello world dictated');
-  });
-
-  test('row 21: transcription into an empty composer has no leading space', () => {
-    const editor = createHeadlessEditor(() => {});
-
-    setEditorDocument(
-      editor,
-      appendTranscribedText(getEditorDocument(editor), editor.isEmpty, 'transcribed'),
-    );
-
-    expect(serializeDocument(editor.state.doc).text).toBe('transcribed');
-  });
 });
 
 describe('createUpdateHandler — per-change doc snapshots alongside the empty boundary', () => {

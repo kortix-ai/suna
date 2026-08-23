@@ -52,6 +52,11 @@ on:
         type: boolean
         required: true
         default: false
+      allow_deletes:
+        description: Permit reviewed Terraform deletes during a manual rollback
+        type: boolean
+        required: true
+        default: false
 
 # Cancel a superseded deploy so dev always converges to the newest commit.
 #
@@ -287,6 +292,7 @@ jobs:
       github_environment: dev
       trusted_branch: main
       cloudflare: true
+      allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
     secrets: inherit
 
   terraform-dev:
@@ -309,6 +315,7 @@ jobs:
       github_environment: dev
       trusted_branch: main
       cloudflare: true
+      allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
     secrets: inherit
 
   # ── Compute the dev version (single source of truth) ────────────────────────

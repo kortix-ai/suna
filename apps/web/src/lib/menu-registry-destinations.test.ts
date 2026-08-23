@@ -99,15 +99,10 @@ describe('every project settings section has a palette row', () => {
     });
   }
 
-  test('the two flag-gated sections carry the SAME flag their section does', () => {
-    // `projectSettingsSections` pushes Review only when `reviewEnabled` and
-    // Voice only when `voiceEnabled`. A palette row without the matching
-    // `requiresFlag` outlives its own pane and lands on a section the sub-nav
-    // does not render.
+  test('the flag-gated section carries the same flag its section does', () => {
     expect(rowFor(projectSettingsSectionHref(PROJECT_TOKEN, 'review'))?.requiresFlag).toBe(
       'review_center',
     );
-    expect(rowFor(projectSettingsSectionHref(PROJECT_TOKEN, 'voice'))?.requiresFlag).toBe('voice');
   });
 });
 

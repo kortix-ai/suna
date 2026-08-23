@@ -14,7 +14,6 @@ import {
   getSlackManifest,
   getSlackMode,
   listChannelBindings,
-  setMeetBotName,
   updateChannelBinding,
   updateEmailPolicy,
   uploadSlackChannelFile,
@@ -190,15 +189,6 @@ test('disconnectEmail throws with the server error message on failure', async ()
   await expect(disconnectEmail('P1')).rejects.toThrow('nope');
 });
 
-
-
-test('setMeetBotName PUTs the bot name', async () => {
-  nextResponse = { status: 200, body: { bot_name: 'Suna' } };
-  await setMeetBotName('P1', 'Suna');
-  expect(last().url).toContain('/projects/P1/channels/meet/name');
-  expect(last().method).toBe('PUT');
-  expect(last().body).toEqual({ name: 'Suna' });
-});
 
 
 test('getSlackChannelFile GETs the file proxy with the url query param', async () => {

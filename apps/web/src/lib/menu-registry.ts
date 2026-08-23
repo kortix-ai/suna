@@ -64,7 +64,6 @@ import {
   UserPlusIcon as UserPlus,
   UsersIcon as UsersSolid,
   ImagesSquareIcon as WallpaperIcon,
-  WaveformIcon as Waveform,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -86,7 +85,12 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
  */
 export type MenuItemKind =
-  'navigate' | 'action' | 'settings' | 'theme' | 'wallpaper' | 'sandboxService';
+  | 'navigate'
+  | 'action'
+  | 'settings'
+  | 'theme'
+  | 'wallpaper'
+  | 'sandboxService';
 
 export type SettingsTabId =
   | 'general'
@@ -693,18 +697,6 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },
   {
-    id: 'proj-config-voice',
-    label: 'Settings · Voice',
-    icon: Waveform,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/config?section=voice',
-    requiresProject: true,
-    requiresFlag: 'voice',
-    keywords: 'voice call spoken livekit talk speech phone',
-  },
-  {
     id: 'proj-config-feature-flags',
     label: 'Settings · Feature flags',
     icon: Flask,
@@ -1199,18 +1191,20 @@ export const menuRegistry: MenuItemDef[] = [
   // WALLPAPERS — derived from the appearance-tab list; typing a wallpaper's
   // name (Dither, Grain, Silk, …) in the palette applies it directly.
   // ──────────────────────────────────────────────────────────────────────────
-  ...WALLPAPERS.map((wp): MenuItemDef => ({
-    id: `wallpaper-${wp.id}`,
-    label: `Appearance · ${wp.name}`,
-    icon: WallpaperIcon,
-    group: 'wallpaper',
-    showIn: ['commandPalette'],
-    kind: 'wallpaper',
-    wallpaperValue: wp.id,
-    keywords: `wallpaper wallpapers background appearance ${wp.id}${
-      wp.type === 'shader' ? ' shader shaders animated' : ''
-    }`,
-  })),
+  ...WALLPAPERS.map(
+    (wp): MenuItemDef => ({
+      id: `wallpaper-${wp.id}`,
+      label: `Appearance · ${wp.name}`,
+      icon: WallpaperIcon,
+      group: 'wallpaper',
+      showIn: ['commandPalette'],
+      kind: 'wallpaper',
+      wallpaperValue: wp.id,
+      keywords: `wallpaper wallpapers background appearance ${wp.id}${
+        wp.type === 'shader' ? ' shader shaders animated' : ''
+      }`,
+    }),
+  ),
 
   // ──────────────────────────────────────────────────────────────────────────
   // VIEW

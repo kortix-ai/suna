@@ -102,7 +102,6 @@ const PUBLIC_ROUTES = [
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated
   '/a1o', // "All in one" — WebGL stack-layer cube landing page, public, unauthenticated
-  '/voice', // Direct join page for a live voice call — token-gated, MUST load with no login
   ...locales.flatMap((locale) =>
     MARKETING_ROUTES.map((route) => `/${locale}${route === '/' ? '' : route}`),
   ),

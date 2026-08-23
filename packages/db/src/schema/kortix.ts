@@ -1334,7 +1334,7 @@ export const projectMonitorBoxes = kortixSchema.table(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    accountId: uuid('account_id').notNull(),
+    accountId: uuid('account_id').notNull().references(() => accounts.accountId, { onDelete: 'cascade' }),
     provider: varchar('provider', { length: 32 }).notNull(),
     /** The provider's sandbox id. Null until the create call returns. */
     externalId: text('external_id'),
@@ -1670,14 +1670,8 @@ export const chatTurnStreams = kortixSchema.table(
 );
 
 /**
- * The shared transcript of a live voice call — written by the realtime provider
- * as speech happens, read back by the Kortix session through `voice_read`.
- *
- * `cursor` (bigserial) is what makes the read non-blocking: the agent loop is
- * single-threaded and can never sit on a stream, so it asks "what is new since
- * X" and gets an answer immediately. Ordering is on the cursor, never
- * created_at — two turns can land in the same millisecond and a wall-clock tie
- * would silently drop one on the next poll.
+ * Dormant compatibility table for the removed experimental voice runtime.
+ * A later contract migration removes it after every old API pod is retired.
  */
 export const voiceCallTurns = kortixSchema.table(
   'voice_call_turns',
@@ -1686,9 +1680,7 @@ export const voiceCallTurns = kortixSchema.table(
     callId: text('call_id').notNull(),
     projectId: uuid('project_id').notNull(),
     sessionId: text('session_id').notNull(),
-    /** 'user' (a human in the call) | 'agent' (the voice agent speaking) |
-     *  'tool' (an ask_kortix/run_command call the worker made through the
-     *  voice MCP — see mcp.ts's callTool). CHECK constraint enforces this set. */
+    /** Historical participant classification. The runtime no longer writes this table. */
     role: varchar('role', { length: 16 }).notNull(),
     speaker: text('speaker'),
     text: text('text').notNull(),
@@ -1701,20 +1693,8 @@ export const voiceCallTurns = kortixSchema.table(
 );
 
 /**
- * The Kortix agent's read position in a call's transcript — the state that lets
- * a bare `read_transcript {}` mean "only what I have not been shown yet".
- *
- * Cursor-paging was already incremental, but only for an agent that threaded the
- * returned cursor back on every call; one that forgot passed 0 and re-read the
- * whole conversation. Keeping the position here makes the cheap path the DEFAULT
- * path and removes the agent's obligation to remember anything.
- *
- * `cursor` is the highest `voice_call_turns.cursor` actually handed over, and it
- * only ever moves forward (the upsert's `setWhere` refuses to lower it) — a race
- * between two reads in one call must not rewind it. Exactly one writer: the
- * agent-side `read_transcript`. The call page's poll (r7.ts,
- * public-join-routes.ts) passes its own explicit cursor and never touches this
- * row, so a human scrolling the transcript cannot consume the agent's unread.
+ * Dormant compatibility table for the removed experimental voice runtime.
+ * A later contract migration removes it after every old API pod is retired.
  */
 export const voiceCallReadCursors = kortixSchema.table('voice_call_read_cursors', {
   /** The call — which is also the session id. */
@@ -1725,22 +1705,8 @@ export const voiceCallReadCursors = kortixSchema.table('voice_call_read_cursors'
 });
 
 /**
- * Short, ungessable join links that resolve server-side to a fresh LiveKit
- * access token — see `apps/api/src/channels/voice/join-links.ts`. Replaces
- * handing out the raw ~300-char LiveKit JWT itself in `voice_spawn`'s
- * `join_url` (fragile in transit: one corrupted character breaks the
- * signature and the browser gets "invalid token").
- *
- * `token_hash` (sha256 of the raw token), never the raw token, is the primary
- * key — same posture as `project_session_public_shares.token_hash`: a DB dump
- * should not itself be a bag of live capability tokens.
- *
- * DB-backed rather than a stateless encrypted envelope (compare
- * `setup-links/token.ts`) for the one property a self-contained token cannot
- * give: revocation. A live call can end while a copy of its link is still
- * sitting in someone's chat history, and that link must stop working the
- * moment the call does (`revoked_at`, set by `endCall`) -- not just whenever
- * its TTL happens to lapse.
+ * Dormant compatibility table for the removed experimental voice runtime.
+ * A later contract migration removes it after every old API pod is retired.
  */
 export const voiceJoinLinks = kortixSchema.table(
   'voice_join_links',
@@ -1842,6 +1808,174 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+  ],
+);
+
+/** Provider-neutral machines connected by the outbound kortixd channel. */
+export const computeNodes = kortixSchema.table(
+  'compute_nodes',
+  {
+    nodeId: uuid('node_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    type: text('type').default('sandbox').notNull(),
+    provider: text('provider'),
+    allocationId: text('allocation_id'),
+    architecture: text('architecture'),
+    operatingSystem: text('operating_system'),
+    daemonVersion: text('daemon_version'),
+    updateChannel: text('update_channel').default('stable').notNull(),
+    status: text('status').default('provisioning').notNull(),
+    capabilities: jsonb('capabilities').default([]).$type<string[]>().notNull(),
+    harnesses: jsonb('harnesses').default([]).$type<Array<Record<string, unknown>>>().notNull(),
+    concurrency: integer('concurrency').default(1).notNull(),
+    lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
+    relayOwnerId: text('relay_owner_id'),
+    relayOwnerInstance: text('relay_owner_instance'),
+    relayOwnerStartedAt: timestamp('relay_owner_started_at', { withTimezone: true }),
+    relayOwnerHeartbeatAt: timestamp('relay_owner_heartbeat_at', { withTimezone: true }),
+    desiredManifest: jsonb('desired_manifest').default({}).$type<Record<string, unknown>>().notNull(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('compute_nodes_type_check', sql`${table.type} IN ('sandbox', 'workstation', 'vm', 'container', 'bare_metal', 'ci')`),
+    check('compute_nodes_status_check', sql`${table.status} IN ('provisioning', 'online', 'offline', 'disabled', 'draining', 'error', 'deleted')`),
+    check('compute_nodes_concurrency_check', sql`${table.concurrency} > 0 AND ${table.concurrency} <= 1024`),
+    uniqueIndex('compute_nodes_allocation_unique').on(table.provider, table.allocationId),
+    index('compute_nodes_account_idx').on(table.accountId),
+    index('compute_nodes_project_idx').on(table.projectId),
+    index('compute_nodes_status_idx').on(table.status),
+  ],
+);
+
+/** Lease-shaped session assignments. One active assignment is enforced by writers. */
+export const computeNodeAssignments = kortixSchema.table(
+  'compute_node_assignments',
+  {
+    assignmentId: uuid('assignment_id').defaultRandom().primaryKey(),
+    nodeId: uuid('node_id').notNull().references(() => computeNodes.nodeId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull().references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').notNull().references(() => projects.projectId, { onDelete: 'cascade' }),
+    sessionId: text('session_id').notNull(),
+    status: text('status').default('assigned').notNull(),
+    leaseEpoch: integer('lease_epoch').default(1).notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('compute_node_assignments_status_check', sql`${table.status} IN ('assigned', 'ready', 'draining', 'released', 'failed')`),
+    check('compute_node_assignments_lease_epoch_check', sql`${table.leaseEpoch} > 0`),
+    uniqueIndex('compute_node_assignments_node_session_unique').on(table.nodeId, table.sessionId),
+    index('compute_node_assignments_node_idx').on(table.nodeId, table.status),
+    index('compute_node_assignments_session_idx').on(table.sessionId, table.status),
+  ],
+);
+
+/** Node-only channel credentials. Secrets are returned once and stored as hashes. */
+export const computeNodeCredentials = kortixSchema.table(
+  'compute_node_credentials',
+  {
+    credentialId: uuid('credential_id').defaultRandom().primaryKey(),
+    nodeId: uuid('node_id').notNull().references(() => computeNodes.nodeId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull().references(() => accounts.accountId, { onDelete: 'cascade' }),
+    publicPrefix: varchar('public_prefix', { length: 32 }).notNull(),
+    secretHash: varchar('secret_hash', { length: 128 }).notNull(),
+    generation: integer('generation').default(1).notNull(),
+    status: text('status').default('active').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('compute_node_credentials_status_check', sql`${table.status} IN ('active', 'revoked')`),
+    check('compute_node_credentials_generation_check', sql`${table.generation} > 0`),
+    uniqueIndex('compute_node_credentials_hash_unique').on(table.secretHash),
+    uniqueIndex('compute_node_credentials_generation_unique').on(table.nodeId, table.generation),
+    index('compute_node_credentials_node_idx').on(table.nodeId, table.status),
+  ],
+);
+
+/** Short-lived single-use tokens that exchange into one node credential. */
+export const computeNodeEnrollmentTokens = kortixSchema.table(
+  'compute_node_enrollment_tokens',
+  {
+    enrollmentId: uuid('enrollment_id').defaultRandom().primaryKey(),
+    nodeId: uuid('node_id').notNull().references(() => computeNodes.nodeId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    secretHash: varchar('secret_hash', { length: 128 }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'compute_node_enrollment_account_fk',
+      columns: [table.accountId],
+      foreignColumns: [accounts.accountId],
+    }).onDelete('cascade'),
+    uniqueIndex('compute_node_enrollment_tokens_hash_unique').on(table.secretHash),
+    index('compute_node_enrollment_tokens_node_idx').on(table.nodeId, table.expiresAt),
+  ],
+);
+
+/** Browser-approved enrollment challenges for headless/local node installation. */
+export const computeNodeDeviceAuthRequests = kortixSchema.table(
+  'compute_node_device_auth_requests',
+  {
+    requestId: uuid('request_id').defaultRandom().primaryKey(),
+    deviceCode: varchar('device_code', { length: 16 }).notNull(),
+    secretHash: varchar('secret_hash', { length: 128 }).notNull(),
+    machineHostname: varchar('machine_hostname', { length: 255 }).notNull(),
+    nodeType: text('node_type').default('workstation').notNull(),
+    status: text('status').default('pending').notNull(),
+    accountId: uuid('account_id'),
+    nodeId: uuid('node_id'),
+    encryptedEnrollment: jsonb('encrypted_enrollment').$type<{ iv: string; ciphertext: string; tag: string }>(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('compute_node_device_auth_status_check', sql`${table.status} IN ('pending', 'approved', 'denied')`),
+    check('compute_node_device_auth_type_check', sql`${table.nodeType} IN ('workstation', 'vm', 'container', 'bare_metal', 'ci')`),
+    foreignKey({ name: 'cn_device_auth_account_fk', columns: [table.accountId], foreignColumns: [accounts.accountId] }).onDelete('cascade'),
+    foreignKey({ name: 'cn_device_auth_node_fk', columns: [table.nodeId], foreignColumns: [computeNodes.nodeId] }).onDelete('cascade'),
+    uniqueIndex('compute_node_device_auth_code_unique').on(table.deviceCode),
+    index('compute_node_device_auth_expiry_idx').on(table.expiresAt),
+  ],
+);
+
+/** Durable cross-instance forwarding for bounded compute-node capability RPC. */
+export const computeNodeRpcForwards = kortixSchema.table(
+  'compute_node_rpc_forwards',
+  {
+    requestId: uuid('request_id').defaultRandom().primaryKey(),
+    nodeId: uuid('node_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    requesterRelayOwnerId: text('requester_relay_owner_id').notNull(),
+    targetRelayOwnerId: text('target_relay_owner_id').notNull(),
+    status: text('status').default('pending').notNull(),
+    method: text('method').notNull(),
+    params: jsonb('params').default({}).$type<Record<string, unknown>>().notNull(),
+    result: jsonb('result'),
+    error: jsonb('error').$type<{ code?: number; message?: string }>(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('compute_node_rpc_forwards_status_check', sql`${table.status} IN ('pending', 'processing', 'completed', 'error')`),
+    foreignKey({ name: 'cn_rpc_forwards_node_fk', columns: [table.nodeId], foreignColumns: [computeNodes.nodeId] }).onDelete('cascade'),
+    foreignKey({ name: 'cn_rpc_forwards_account_fk', columns: [table.accountId], foreignColumns: [accounts.accountId] }).onDelete('cascade'),
+    index('compute_node_rpc_forwards_target_idx').on(table.targetRelayOwnerId, table.status),
+    index('compute_node_rpc_forwards_expiry_idx').on(table.expiresAt),
   ],
 );
 

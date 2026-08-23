@@ -55,7 +55,6 @@ describe('railGroups', () => {
       'snapshots',
       'marketplace',
       'review',
-      'voice',
       'experimental',
       'feature-flags',
       'upgrades',

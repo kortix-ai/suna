@@ -34,7 +34,7 @@ function SectionDivider(): ReactNode {
  *
  * Copy lives in `features/marketing/channels/content.ts`, whose header carries
  * the accuracy gate that governs this page. The short version: Slack is the one
- * live channel, Teams is off unless the operator turns it on, email and voice
+ * live channel, Teams is off unless the operator turns it on, and email
  * are experimental, and Telegram / WhatsApp / SMS are not channels at all.
  * Re-verify against `packages/manifest-schema/src/constants.ts` before adding a
  * surface to this page.

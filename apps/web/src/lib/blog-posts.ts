@@ -1748,7 +1748,7 @@ for (const dispute of open.data?.disputes ?? []) {
  *    "its own isolated machine".
  *  - SELF-HOST is NOT air-gapped — `kortix self-host start` pulls images from
  *    docker.io and reaches a sandbox provider over egress.
- *  - CHANNELS are a closed enum of four: slack | teams | email | voice.
+ *  - CHANNELS are a closed enum of three: slack | teams | email.
  *    Telegram, WhatsApp, SMS and Discord are not channels. And `channels:` is
  *    REJECTED by the v2 validator (`rejectChannelsV2`) — it is live project
  *    state, not repo config.
@@ -1896,7 +1896,7 @@ triggers:
     },
     {
       type: 'p',
-      text: 'The honest list is short, because the platform enum is closed at four. **Slack is live.** Microsoft Teams is code-complete behind an operator switch. Email and voice are experimental and opt in per project. Telegram, WhatsApp, SMS and Discord are not channels, in any tense.',
+      text: 'The honest list is short, because the platform enum is closed at three. **Slack is live.** Microsoft Teams is code-complete behind an operator switch. Email is experimental and opt in per project. Telegram, WhatsApp, SMS and Discord are not channels, in any tense.',
     },
     { type: 'h2', text: 'When nobody is asking' },
     {

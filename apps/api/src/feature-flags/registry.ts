@@ -163,24 +163,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'voice',
-    name: 'Voice',
-    description:
-      'Give the agent a live voice call it can start and hold a real spoken conversation in: it listens continuously, answers in its own voice, and hands work off to itself in the background while the call continues. The agent spawns the call and shares a join link with whoever should be on it — it does not join a meeting itself.',
-    stability: 'experimental',
-    // Always listable; a project turns it on in Settings like any other flag.
-    // Credentials (LIVEKIT_*) are still resolved server-side per project and a
-    // missing one surfaces as an error at spawn time — which is the right place
-    // to find out, rather than the feature silently not existing.
-    available: () => true,
-    // Explicit opt-in: a project enables voice in Settings.
-    platformDefault: () => false,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Voice has no HTTP routes of its own; the flag IS the registration — it ' +
-      'decides whether the kortix_voice channel connector materializes ' +
-      '(connectors/channel-materialize.ts).',
-  },
   {
     key: 'review_center',
     name: 'Review Center',

@@ -4,11 +4,7 @@
   "title": "Kortix manifest (kortix_version 2)",
   "description": "kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must be declared, and OpenCode behavior (description/model/mode/temperature/permission/the prompt itself) lives entirely in that agent’s own native `.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields here is a hard error. `[[channels]]` is removed outright. See docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.",
   "type": "object",
-  "required": [
-    "kortix_version",
-    "default_agent",
-    "agents"
-  ],
+  "required": ["kortix_version", "default_agent", "agents"],
   "properties": {
     "kortix_version": {
       "const": 2
@@ -19,9 +15,7 @@
     },
     "runtime": {
       "type": "string",
-      "enum": [
-        "opencode"
-      ]
+      "enum": ["opencode"]
     },
     "agents": {
       "type": "object",
@@ -51,10 +45,7 @@
               },
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "none"
-                ]
+                "enum": ["all", "none"]
               }
             ]
           },
@@ -87,10 +78,7 @@
               },
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "none"
-                ]
+                "enum": ["all", "none"]
               }
             ]
           },
@@ -106,10 +94,7 @@
               },
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "none"
-                ]
+                "enum": ["all", "none"]
               }
             ]
           },
@@ -172,20 +157,13 @@
               },
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "none"
-                ]
+                "enum": ["all", "none"]
               }
             ]
           },
           "workspace": {
             "type": "string",
-            "enum": [
-              "runtime",
-              "read",
-              "branch"
-            ]
+            "enum": ["runtime", "read", "branch"]
           }
         },
         "additionalProperties": false
@@ -253,9 +231,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": [
-              "slug"
-            ],
+            "required": ["slug"],
             "properties": {
               "slug": {
                 "allOf": [
@@ -302,23 +278,15 @@
             },
             "oneOf": [
               {
-                "required": [
-                  "image"
-                ],
+                "required": ["image"],
                 "not": {
-                  "required": [
-                    "dockerfile"
-                  ]
+                  "required": ["dockerfile"]
                 }
               },
               {
-                "required": [
-                  "dockerfile"
-                ],
+                "required": ["dockerfile"],
                 "not": {
-                  "required": [
-                    "image"
-                  ]
+                  "required": ["image"]
                 }
               }
             ]
@@ -336,10 +304,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "slug",
-          "type"
-        ],
+        "required": ["slug", "type"],
         "properties": {
           "slug": {
             "type": "string",
@@ -347,11 +312,7 @@
           },
           "type": {
             "type": "string",
-            "enum": [
-              "cron",
-              "webhook",
-              "monitor"
-            ]
+            "enum": ["cron", "webhook", "monitor"]
           },
           "name": {
             "type": "string"
@@ -380,12 +341,7 @@
           },
           "session_mode": {
             "type": "string",
-            "enum": [
-              "fresh",
-              "reuse",
-              "pinned",
-              "keyed"
-            ]
+            "enum": ["fresh", "reuse", "pinned", "keyed"]
           },
           "session_key": {
             "type": "string"
@@ -401,12 +357,7 @@
           },
           "sessionMode": {
             "type": "string",
-            "enum": [
-              "fresh",
-              "reuse",
-              "pinned",
-              "keyed"
-            ]
+            "enum": ["fresh", "reuse", "pinned", "keyed"]
           },
           "session_id": {
             "type": "string",
@@ -458,10 +409,7 @@
           },
           "mode": {
             "type": "string",
-            "enum": [
-              "poll",
-              "stream"
-            ]
+            "enum": ["poll", "stream"]
           },
           "interval": {
             "type": "string",
@@ -477,14 +425,10 @@
           {
             "anyOf": [
               {
-                "required": [
-                  "prompt"
-                ]
+                "required": ["prompt"]
               },
               {
-                "required": [
-                  "prompt_template"
-                ]
+                "required": ["prompt_template"]
               }
             ]
           },
@@ -499,24 +443,16 @@
             "then": {
               "anyOf": [
                 {
-                  "required": [
-                    "cron"
-                  ]
+                  "required": ["cron"]
                 },
                 {
-                  "required": [
-                    "schedule"
-                  ]
+                  "required": ["schedule"]
                 },
                 {
-                  "required": [
-                    "run_at"
-                  ]
+                  "required": ["run_at"]
                 },
                 {
-                  "required": [
-                    "runAt"
-                  ]
+                  "required": ["runAt"]
                 }
               ]
             }
@@ -532,14 +468,10 @@
             "then": {
               "anyOf": [
                 {
-                  "required": [
-                    "secret_env"
-                  ]
+                  "required": ["secret_env"]
                 },
                 {
-                  "required": [
-                    "secretEnv"
-                  ]
+                  "required": ["secretEnv"]
                 }
               ]
             }
@@ -553,10 +485,7 @@
               }
             },
             "then": {
-              "required": [
-                "run",
-                "mode"
-              ],
+              "required": ["run", "mode"],
               "properties": {
                 "cron": false,
                 "schedule": false,
@@ -578,14 +507,10 @@
                   "const": "poll"
                 }
               },
-              "required": [
-                "mode"
-              ]
+              "required": ["mode"]
             },
             "then": {
-              "required": [
-                "interval"
-              ]
+              "required": ["interval"]
             }
           },
           {
@@ -598,9 +523,7 @@
                   "const": "stream"
                 }
               },
-              "required": [
-                "mode"
-              ]
+              "required": ["mode"]
             },
             "then": {
               "properties": {
@@ -615,10 +538,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "slug",
-          "provider"
-        ],
+        "required": ["slug", "provider"],
         "properties": {
           "slug": {
             "type": "string",
@@ -630,15 +550,7 @@
           },
           "provider": {
             "type": "string",
-            "enum": [
-              "pipedream",
-              "mcp",
-              "openapi",
-              "postman",
-              "graphql",
-              "http",
-              "channel"
-            ]
+            "enum": ["pipedream", "mcp", "openapi", "postman", "graphql", "http", "channel"]
           },
           "app": {
             "type": "string"
@@ -657,40 +569,27 @@
           },
           "transport": {
             "type": "string",
-            "enum": [
-              "http",
-              "sse"
-            ]
+            "enum": ["http", "sse"]
           },
           "spec": {
             "type": "string"
           },
           "platform": {
             "type": "string",
-            "enum": [
-              "slack",
-              "teams",
-              "email",
-              "voice"
-            ]
+            "enum": ["slack", "teams", "email"]
           },
           "credential": {
             "const": "shared"
           },
           "authorization_strategy": {
             "type": "string",
-            "enum": [
-              "project",
-              "user"
-            ],
+            "enum": ["project", "user"],
             "default": "project"
           },
           "agent_scope": false,
           "auth": {
             "type": "object",
-            "required": [
-              "type"
-            ],
+            "required": ["type"],
             "properties": {
               "type": {
                 "type": "string",
@@ -727,10 +626,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "match",
-                "action"
-              ],
+              "required": ["match", "action"],
               "properties": {
                 "match": {
                   "type": "string",
@@ -738,11 +634,7 @@
                 },
                 "action": {
                   "type": "string",
-                  "enum": [
-                    "always_run",
-                    "require_approval",
-                    "block"
-                  ]
+                  "enum": ["always_run", "require_approval", "block"]
                 }
               }
             }
@@ -802,22 +694,6 @@
             "if": {
               "properties": {
                 "slug": {
-                  "const": "kortix_voice"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "provider": {
-                  "const": "channel"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "slug": {
                   "const": "computer"
                 }
               }
@@ -839,9 +715,7 @@
               }
             },
             "then": {
-              "required": [
-                "app"
-              ]
+              "required": ["app"]
             }
           },
           {
@@ -853,9 +727,7 @@
               }
             },
             "then": {
-              "required": [
-                "url"
-              ]
+              "required": ["url"]
             }
           },
           {
@@ -867,9 +739,7 @@
               }
             },
             "then": {
-              "required": [
-                "endpoint"
-              ]
+              "required": ["endpoint"]
             }
           },
           {
@@ -883,14 +753,10 @@
             "then": {
               "anyOf": [
                 {
-                  "required": [
-                    "base_url"
-                  ]
+                  "required": ["base_url"]
                 },
                 {
-                  "required": [
-                    "baseUrl"
-                  ]
+                  "required": ["baseUrl"]
                 }
               ]
             }
@@ -904,9 +770,7 @@
               }
             },
             "then": {
-              "required": [
-                "platform"
-              ]
+              "required": ["platform"]
             }
           },
           {
@@ -916,9 +780,7 @@
                   "const": "channel"
                 }
               },
-              "required": [
-                "auth"
-              ]
+              "required": ["auth"]
             },
             "then": {
               "properties": {
@@ -952,12 +814,7 @@
           },
           "type": {
             "type": "string",
-            "enum": [
-              "static",
-              "bundle",
-              "dockerfile",
-              "oci_image"
-            ]
+            "enum": ["static", "bundle", "dockerfile", "oci_image"]
           },
           "image": {
             "type": "string",
@@ -983,10 +840,7 @@
             "minimum": 1,
             "maximum": 65535,
             "not": {
-              "enum": [
-                7331,
-                8080
-              ]
+              "enum": [7331, 8080]
             }
           },
           "root": {
@@ -1075,21 +929,13 @@
             "if": {
               "properties": {
                 "type": {
-                  "enum": [
-                    "dockerfile",
-                    "oci_image"
-                  ]
+                  "enum": ["dockerfile", "oci_image"]
                 }
               },
-              "required": [
-                "type"
-              ]
+              "required": ["type"]
             },
             "then": {
-              "required": [
-                "command",
-                "port"
-              ]
+              "required": ["command", "port"]
             }
           },
           {
@@ -1099,14 +945,10 @@
                   "const": "oci_image"
                 }
               },
-              "required": [
-                "type"
-              ]
+              "required": ["type"]
             },
             "then": {
-              "required": [
-                "image"
-              ]
+              "required": ["image"]
             }
           }
         ]
@@ -1128,11 +970,7 @@
         },
         "mode": {
           "type": "string",
-          "enum": [
-            "primary",
-            "subagent",
-            "all"
-          ]
+          "enum": ["primary", "subagent", "all"]
         },
         "variant": {
           "type": "string"
@@ -1155,15 +993,7 @@
             },
             {
               "type": "string",
-              "enum": [
-                "primary",
-                "secondary",
-                "accent",
-                "success",
-                "warning",
-                "error",
-                "info"
-              ]
+              "enum": ["primary", "secondary", "accent", "success", "warning", "error", "info"]
             }
           ]
         },
@@ -1180,75 +1010,43 @@
           "oneOf": [
             {
               "type": "string",
-              "enum": [
-                "ask",
-                "allow",
-                "deny"
-              ]
+              "enum": ["ask", "allow", "deny"]
             },
             {
               "type": "object",
               "properties": {
                 "todowrite": {
                   "type": "string",
-                  "enum": [
-                    "ask",
-                    "allow",
-                    "deny"
-                  ]
+                  "enum": ["ask", "allow", "deny"]
                 },
                 "question": {
                   "type": "string",
-                  "enum": [
-                    "ask",
-                    "allow",
-                    "deny"
-                  ]
+                  "enum": ["ask", "allow", "deny"]
                 },
                 "webfetch": {
                   "type": "string",
-                  "enum": [
-                    "ask",
-                    "allow",
-                    "deny"
-                  ]
+                  "enum": ["ask", "allow", "deny"]
                 },
                 "websearch": {
                   "type": "string",
-                  "enum": [
-                    "ask",
-                    "allow",
-                    "deny"
-                  ]
+                  "enum": ["ask", "allow", "deny"]
                 },
                 "doom_loop": {
                   "type": "string",
-                  "enum": [
-                    "ask",
-                    "allow",
-                    "deny"
-                  ]
+                  "enum": ["ask", "allow", "deny"]
                 }
               },
               "additionalProperties": {
                 "oneOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
-                    ]
+                    "enum": ["ask", "allow", "deny"]
                   },
                   {
                     "type": "object",
                     "additionalProperties": {
                       "type": "string",
-                      "enum": [
-                        "ask",
-                        "allow",
-                        "deny"
-                      ]
+                      "enum": ["ask", "allow", "deny"]
                     }
                   }
                 ]

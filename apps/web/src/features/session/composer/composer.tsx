@@ -54,7 +54,6 @@ import {
   readCommandChipLabel,
 } from './command-attachments';
 import {
-  appendTranscribedText,
   planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
@@ -437,8 +436,6 @@ function ComposerImpl({
     attachedFilesRef.current = attachedFiles;
   }, [attachedFiles]);
   const [isDragOver, setIsDragOver] = useState(false);
-  /** Bumped by the `/` palette's "Start voice input" row — see `VoiceRecorder`. */
-  const [voiceStartRequestId, setVoiceStartRequestId] = useState(0);
   const [isEmpty, setIsEmpty] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -874,13 +871,6 @@ function ComposerImpl({
     }
   }, [lockForQuestion]);
 
-  const handleTranscription = useCallback((transcribedText: string) => {
-    const handle = editorRef.current;
-    if (!handle) return;
-    const next = appendTranscribedText(handle.getDocument(), handle.isEmpty(), transcribedText);
-    setDocumentWithoutStealingFocus(handle, next);
-  }, []);
-
   /**
    * The model popover's open state, hoisted out of `ModelSelector` so the `/`
    * palette can open it. `focusSection` is what separates the palette's two
@@ -942,13 +932,6 @@ function ComposerImpl({
           return;
         case 'attach-file':
           fileInputRef.current?.click();
-          return;
-        case 'start-voice':
-          // A counter, not a boolean: `VoiceRecorder` owns its own recording
-          // state, and this is the one signal that reaches into it. Two
-          // consecutive `/start-voice` selections must both arrive, which a
-          // boolean already `true` cannot express.
-          setVoiceStartRequestId((n) => n + 1);
           return;
       }
     },
@@ -1557,9 +1540,6 @@ function ComposerImpl({
               // it — passing it here as well would show the gear twice.
               toolbarSlot={inlineUnderbar ? toolbarSlot : undefined}
               rewind={rewind}
-              onTranscription={handleTranscription}
-              voiceDisabled={submitDisabled || isBusy}
-              voiceStartRequestId={voiceStartRequestId}
               isSending={isSending}
               isBusy={isBusy}
               onStop={onStop}

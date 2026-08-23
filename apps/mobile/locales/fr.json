@@ -506,9 +506,6 @@
     "galleryTitle": "Autorisation Galerie Requise",
     "galleryMessage": "Veuillez activer l'accès à la galerie dans vos paramètres pour choisir des images."
   },
-  "audio": {
-    "transcriptionFailed": "Échec de la transcription audio. Veuillez réessayer."
-  },
   "billing": {
     "loadingPaywall": "Chargement des plans...",
     "checkoutUnavailable": "Paiement mobile non disponible",

@@ -125,18 +125,15 @@ describe('buildSlashSections', () => {
   });
 
   test('filters actions via the same query, alongside commands', () => {
-    // 'voice' matches one of each — the "alongside commands" the test name
-    // claims — and the expected order doubles as a check that Actions render
-    // before Commands. It queried 'scope' while `set-scope` existed; that row
-    // was removed because it opened nothing, and `start-voice` came back with
-    // a real control behind it (`VoiceRecorder` in the composer toolbar).
+    // 'attach' matches one action and one command. The expected order also
+    // proves that Actions render before Commands.
     const sections = buildSlashSections({
-      commands: [cmd('build'), cmd('voice-check')],
-      query: 'voice',
+      commands: [cmd('build'), cmd('attach-check')],
+      query: 'attach',
     });
     const rows = sections.flatMap((s) => s.rows);
 
-    expect(rows.map((r) => r.name)).toEqual(['Start voice input', 'voice-check']);
+    expect(rows.map((r) => r.name)).toEqual(['Attach file', 'attach-check']);
   });
 
   test('no commands leaves just the Actions section, indices starting at 0', () => {

@@ -270,7 +270,7 @@ Provider-specific fields:
 | `channel`   | `platform`     | `slack`, `teams`, `email`, or `voice`.                                                                                                     |
 | `computer`  | —              | API-managed. You cannot declare it by hand. A profile selects one or more paired machines. See [Computer Tunnel](/docs/connect/computers). |
 
-`channel` connectors rarely need a hand-written entry — connecting a channel from the dashboard creates one for you. See [Slack & channels](/docs/connect/slack). The slugs `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_voice`, and `computer` are platform-owned; using one with a different provider is a validation error. Computer Tunnel profiles are created through the connector API because tunnel ids are account control-plane identities and must not enter the manifest.
+`channel` connectors rarely need a hand-written entry — connecting a channel from the dashboard creates one for you. See [Slack & channels](/docs/connect/slack). The slugs `kortix_slack`, `kortix_teams`, `kortix_email`, and `computer` are platform-owned; using one with a different provider is a validation error. Computer Tunnel profiles are created through the connector API because tunnel ids are account control-plane identities and must not enter the manifest.
 
 `connectors.auth`: optional, for providers other than `pipedream`. `type` is `bearer`, `basic`, `custom`, `api_key`, `oauth1`, `hmac`, `aws_sigv4`, `mtls`, or `none` (default). `oauth1` is restricted to `openapi`, `postman`, and `http` providers. `in` is `header` (default), `query`, or `cookie`. `name` is required when `type` is `custom` or `api_key`.
 

@@ -42,8 +42,6 @@ function render(
             projectId={undefined}
             toolbarSlot={toolbarSlot}
             rewind={rewind}
-            onTranscription={noop}
-            voiceDisabled={false}
             isSending={false}
             isBusy={false}
             stopDisabled={false}
@@ -73,18 +71,6 @@ describe('ComposerToolbar toolbarSlot', () => {
   test('renders nothing extra without a slot', () => {
     const html = render(undefined);
     expect(html).not.toContain('slot-sentinel-content');
-  });
-});
-
-describe('ComposerToolbar voice input', () => {
-  // Exactly the `toolbarSlot` failure above, one prop over: `onTranscription`
-  // and `voiceDisabled` were declared, threaded from `composer.tsx`, and
-  // destructured here — and `VoiceRecorder` was never placed in the JSX. The
-  // whole dictation feature was unreachable from every composer in the app,
-  // with nothing type-checking wrong.
-  test('renders the microphone control', () => {
-    const html = render(undefined);
-    expect(html).toContain('aria-label="Start voice input"');
   });
 });
 

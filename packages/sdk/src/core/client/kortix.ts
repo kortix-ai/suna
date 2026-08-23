@@ -417,8 +417,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         get: (appId: string) => P.getApp(projectId, appId),
         update: (...a: DropFirst<Parameters<typeof P.updateApp>>) => P.updateApp(projectId, ...a),
         access: {
-          get: (...a: DropFirst<Parameters<typeof P.getAppAccess>>) => P.getAppAccess(projectId, ...a),
-          update: (...a: DropFirst<Parameters<typeof P.updateAppAccess>>) => P.updateAppAccess(projectId, ...a),
+          get: (...a: DropFirst<Parameters<typeof P.getAppAccess>>) =>
+            P.getAppAccess(projectId, ...a),
+          update: (...a: DropFirst<Parameters<typeof P.updateAppAccess>>) =>
+            P.updateAppAccess(projectId, ...a),
           session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
             P.createAppAccessSession(projectId, ...a),
         },
@@ -729,9 +731,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.disconnectEmail(projectId, connectorSlug),
           updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
             P.updateEmailPolicy(projectId, ...a),
-        },
-        voice: {
-          setBotName: (name: string) => P.setMeetBotName(projectId, name),
         },
       },
 
@@ -1064,8 +1063,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         /** Hold (or release) the whole queue — what the Stop button writes. */
         hold: (held: boolean) => P.holdSessionPrompts(projectId, sessionId, held),
       },
-      /** This session's live voice-call transcript (spoken turns + ask_kortix/run_command calls). */
-
       /**
        * Resolve THIS handle's own runtime (idempotent): provisions/resumes the
        * sandbox (long-poll until ready) and caches the resolved OpenCode session
@@ -1284,8 +1281,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     billing,
     /** Public share links for a sandbox port (`/v1/p/share`, sandbox-scoped). */
     sandboxShares,
-    /** Speech-to-text transcription (`/transcription` — not project-scoped). */
-    transcribe: P.transcribeAudio,
     /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
     connectStatus,
     /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */

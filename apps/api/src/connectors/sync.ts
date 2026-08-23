@@ -557,10 +557,9 @@ export async function syncProjectConnectors(
       // only the spec (provider/platform/auth/...), which a code-side action
       // change does not touch. Skipping therefore froze every existing channel
       // connector's action list at whatever shipped the day it materialized:
-      // adding `read_transcript`/`send_prompt` to voice reached only brand-new
-      // projects, and the same was true of any Slack/Teams/email action ever
-      // added. Re-resolving locally on every sync is free and keeps deployed
-      // projects honest.
+      // the same was true of any Slack/Teams/email action ever added.
+      // Re-resolving locally on every sync is free and keeps deployed projects
+      // honest.
       const catalogUnchanged = shouldReuseConnectorCatalog({
         force: opts.force === true,
         hasExisting: !!ex,

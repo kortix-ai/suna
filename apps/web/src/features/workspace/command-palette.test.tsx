@@ -254,7 +254,7 @@ describe('search terms carried across from the removed registry entries', () => 
    * assertion is per-word rather than per-row on purpose: it is the query the
    * user types, and it is what regressed.
    */
-  test('each of the thirteen vocabularies reaches the row that owns it', () => {
+  test('each retained vocabulary reaches the row that owns it', () => {
     const OWNER: ReadonlyArray<[string, string]> = [
       ['secrets', 'proj-secrets'],
       ['env', 'proj-secrets'],
@@ -270,7 +270,6 @@ describe('search terms carried across from the removed registry entries', () => 
       ['templates', 'proj-config-sandbox'],
       ['snapshots', 'proj-config-sandbox'],
       ['approvals', 'proj-config-review'],
-      ['livekit', 'proj-config-voice'],
       ['feature flags', 'proj-config-feature-flags'],
       ['upgrades', 'proj-config-upgrades'],
       ['customize', 'proj-customize'],

@@ -374,9 +374,7 @@ export async function ensureWarmProjectSession(
   projectId: string,
   options?: EnsureWarmProjectSessionOptions,
 ) {
-  const body = options?.excludeSessionId
-    ? { exclude_session_id: options.excludeSessionId }
-    : {};
+  const body = options?.excludeSessionId ? { exclude_session_id: options.excludeSessionId } : {};
   const result = unwrap(
     await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, body, {
       showErrors: false,
@@ -587,9 +585,7 @@ export async function getSessionTurn(
   sessionId: string,
 ): Promise<SessionTurnStatus> {
   return unwrap(
-    await backendApi.get<SessionTurnStatus>(
-      `/projects/${projectId}/sessions/${sessionId}/turn`,
-    ),
+    await backendApi.get<SessionTurnStatus>(`/projects/${projectId}/sessions/${sessionId}/turn`),
   );
 }
 

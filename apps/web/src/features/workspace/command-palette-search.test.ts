@@ -409,7 +409,6 @@ describe('genuine synonyms still answer', () => {
     ['danger', 'nav:proj-config-general'],
     ['sandbox', 'nav:proj-config-sandbox'],
     ['approvals', 'nav:proj-config-review'],
-    ['livekit', 'nav:proj-config-voice'],
     ['experimental', 'nav:proj-config-feature-flags'],
     ['labs', 'nav:proj-config-feature-flags'],
     ['migration', 'nav:proj-config-upgrades'],

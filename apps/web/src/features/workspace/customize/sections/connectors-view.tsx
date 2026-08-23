@@ -274,10 +274,7 @@ export function ConnectorsView({ projectId }: { projectId: string }) {
 function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const connectionQueryKeys = useMemo(
-    () => connectorConnectionQueryKeys(projectId),
-    [projectId],
-  );
+  const connectionQueryKeys = useMemo(() => connectorConnectionQueryKeys(projectId), [projectId]);
   const queryKey = connectionQueryKeys[0];
   const invalidate = () => {
     for (const affectedQueryKey of connectionQueryKeys) {
@@ -796,7 +793,11 @@ function ConnectionRow({
             aria-label={`Actions for ${connection.label}`}
             disabled={pending || disabled}
           >
-            {pending ? <Loading className="size-4 shrink-0" /> : <DotsThreeIcon className="size-4" />}
+            {pending ? (
+              <Loading className="size-4 shrink-0" />
+            ) : (
+              <DotsThreeIcon className="size-4" />
+            )}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-48">
@@ -1667,18 +1668,13 @@ export function ConnectorDetail({
 
 type ChannelPlatform = 'slack' | 'email';
 
-/** Which connection UI a channel connector shows. Wider than ChannelPlatform,
- *  which is the set a user can CREATE — voice is materialized automatically
- *  from the experimental flag and never appears in the add-connector picker. */
-type ChannelConnectionPlatform = ChannelPlatform | 'voice';
+/** Which connection UI a channel connector shows. */
+type ChannelConnectionPlatform = ChannelPlatform;
 
 function connectorPlatform(connector: AdminConnector): ChannelConnectionPlatform | null {
   if (connector.platform === 'slack' || connector.platform === 'email') {
     return connector.platform;
   }
-  // `platform` is typed to the platforms that have an install flow; voice has
-  // none, so it is matched on the reserved slug instead of widening that type.
-  if (connector.slug === 'kortix_voice') return 'voice';
   if (connector.slug === 'kortix_slack') return 'slack';
   if (connector.slug === 'kortix_email') return 'email';
   if (connector.slug.startsWith('email_')) return 'email';
@@ -1718,24 +1714,6 @@ export function ChannelConnectionSection({
         onRemoved={onRemoved}
         canWrite={canWrite}
       />
-    );
-  }
-  if (platform === 'voice') {
-    // Voice genuinely has nothing to connect: no OAuth, no API key, no
-    // workspace to link. Calls run on Kortix's own LiveKit project, and each
-    // one is scoped to the session that spawned it. Falling through to the
-    // warning below told people their connection was broken when it was complete.
-    return (
-      <section className="space-y-4">
-        <Label>Connection</Label>
-        <div className="bg-popover rounded-md border px-4 py-3">
-          <p className="text-muted-foreground text-sm">
-            Nothing to connect — voice calls run on Kortix&apos;s own infrastructure. Your agent can
-            start a call, follow what is said, and speak into it. Use the Permissions tab to choose
-            what it may do without asking.
-          </p>
-        </div>
-      </section>
     );
   }
   return (
@@ -2532,9 +2510,7 @@ export function SlackConnectForm({
                   {(manifest.error as Error)?.message || 'Failed to load Slack manifest'}
                 </InfoBanner>
               ) : manifest.data ? (
-                <div
-                  className={cn('max-h-[26rem] overflow-auto', !customOnly && 'rounded-2xl')}
-                >
+                <div className={cn('max-h-[26rem] overflow-auto', !customOnly && 'rounded-2xl')}>
                   <CodeSnippet code={manifest.data} language="json" />
                 </div>
               ) : null}
@@ -2890,9 +2866,7 @@ function tsSignature(slug: string, action: ConnectorAction): string {
   const props =
     (action.inputSchema as { properties?: Record<string, { type?: string }> } | null)?.properties ??
     {};
-  const required = new Set(
-    (action.inputSchema as { required?: string[] } | null)?.required ?? [],
-  );
+  const required = new Set((action.inputSchema as { required?: string[] } | null)?.required ?? []);
   const args = Object.entries(props).map(([k, v]) => {
     const t = v?.type === 'integer' ? 'number' : (v?.type ?? 'string');
     return `  ${k}${required.has(k) ? '' : '?'}: ${t};`;
@@ -3657,7 +3631,10 @@ function AddEmailConnectionCard({
   const [username, setUsername] = useState('');
   const add = useMutation({
     mutationFn: async () => {
-      const slug = buildEmailConnectorConnectionSlug(username || name, globalThis.crypto.randomUUID());
+      const slug = buildEmailConnectorConnectionSlug(
+        username || name,
+        globalThis.crypto.randomUUID(),
+      );
       const result = await createConnector(
         projectId,
         createOnlyConnectorDraft({
@@ -3705,8 +3682,7 @@ function AddEmailConnectionCard({
           <ModalHeader>
             <ModalTitle>Add Email inbox</ModalTitle>
             <ModalDescription>
-              Create a separate connection. You choose the AgentMail address when connecting
-              it.
+              Create a separate connection. You choose the AgentMail address when connecting it.
             </ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
@@ -4646,8 +4622,8 @@ export function CustomConnectorForm({
           )}
           {effectiveAuthorizationStrategy === 'user' && authActive && (
             <InfoBanner tone="info">
-              Add the connector first. Each user then stores their own private credential
-              from the connector page.
+              Add the connector first. Each user then stores their own private credential from the
+              connector page.
             </InfoBanner>
           )}
           {draft.auth === undefined && discovery.isFetching && (
@@ -4887,8 +4863,7 @@ export function SetCredentialModal({
   const autoConnect = useMutation({
     mutationFn: async () => {
       if (!discovery) throw new Error('Discovery has not completed');
-      const activeConnectionId =
-        discoveryQuery.data?.connectionId ?? (await resolveConnectionId());
+      const activeConnectionId = discoveryQuery.data?.connectionId ?? (await resolveConnectionId());
       await registerConnectionOAuth2Client(
         projectId,
         activeConnectionId,
@@ -4921,11 +4896,7 @@ export function SetCredentialModal({
       if (application.grant === 'client_credentials') {
         const oauth2Input = buildOAuth2CredentialInput(oauth2);
         if (authorizationStrategy === 'user') {
-          return updateConnectionCredential(
-            projectId,
-            await resolveConnectionId(),
-            oauth2Input,
-          );
+          return updateConnectionCredential(projectId, await resolveConnectionId(), oauth2Input);
         }
         return setConnectorCredential(projectId, connector!.slug, oauth2Input);
       }
@@ -4958,13 +4929,9 @@ export function SetCredentialModal({
         window.location.assign(result.authorization_url);
         return result;
       }
-      const result = await startConnectionOAuth2DeviceAuthorization(
-        projectId,
-        activeConnectionId,
-        {
-          scopes: scopes.length ? scopes : undefined,
-        },
-      );
+      const result = await startConnectionOAuth2DeviceAuthorization(projectId, activeConnectionId, {
+        scopes: scopes.length ? scopes : undefined,
+      });
       setDeviceConnectionId(activeConnectionId);
       setDevice(result);
       return result;
@@ -5065,8 +5032,7 @@ export function SetCredentialModal({
                   </InfoBanner>
                 ) : plan.kind === 'no_authorization' ? (
                   <InfoBanner tone="neutral" title="No authorization needed">
-                    This server answered without credentials. It does not need an OAuth
-                    connection.
+                    This server answered without credentials. It does not need an OAuth connection.
                   </InfoBanner>
                 ) : plan.kind === 'register' && !manualSetup ? (
                   <div className="space-y-3">
@@ -5099,8 +5065,7 @@ export function SetCredentialModal({
                 ) : plan.kind === 'client_id_required' ? (
                   <InfoBanner tone="neutral" title="This server needs a pre-registered OAuth app">
                     Kortix discovered its endpoints and scopes, but the server does not support
-                    dynamic client registration. Create an app there and paste its client ID
-                    below.
+                    dynamic client registration. Create an app there and paste its client ID below.
                   </InfoBanner>
                 ) : plan.kind === 'manual' && !manualSetup ? (
                   <InfoBanner
@@ -5121,8 +5086,8 @@ export function SetCredentialModal({
                   </InfoBanner>
                 ) : (
                   <InfoBanner tone="info">
-                    Kortix stores the application configuration, rotates refresh tokens, and
-                    revokes the connection when you disconnect it.
+                    Kortix stores the application configuration, rotates refresh tokens, and revokes
+                    the connection when you disconnect it.
                   </InfoBanner>
                 )}
                 {discoveryError && (
@@ -5131,45 +5096,45 @@ export function SetCredentialModal({
                   </InfoBanner>
                 )}
                 {showManualOAuth2Fields && (
-                <>
-                <Field>
-                  <FieldLabel htmlFor="connector-oauth2-grant">Grant</FieldLabel>
-                  <Select
-                    value={application.grant}
-                    onValueChange={(grant) => {
-                      setDevice(null);
-                      setApplication({
-                        ...application,
-                        grant: grant as OAuth2ApplicationForm['grant'],
-                      });
-                    }}
-                  >
-                    <SelectTrigger id="connector-oauth2-grant">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="client_credentials">Client Credentials</SelectItem>
-                      <SelectItem value="authorization_code">
-                        Authorization Code with PKCE
-                      </SelectItem>
-                      <SelectItem value="device_authorization">Device Authorization</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                {application.grant === 'client_credentials' ? (
-                  <OAuth2CredentialFields
-                    value={oauth2}
-                    onChange={setOauth2}
-                    idPrefix="connector-oauth2"
-                  />
-                ) : (
-                  <OAuth2ApplicationFields
-                    value={effectiveApplication}
-                    onChange={setApplication}
-                    idPrefix="connector-oauth2-application"
-                  />
-                )}
-                </>
+                  <>
+                    <Field>
+                      <FieldLabel htmlFor="connector-oauth2-grant">Grant</FieldLabel>
+                      <Select
+                        value={application.grant}
+                        onValueChange={(grant) => {
+                          setDevice(null);
+                          setApplication({
+                            ...application,
+                            grant: grant as OAuth2ApplicationForm['grant'],
+                          });
+                        }}
+                      >
+                        <SelectTrigger id="connector-oauth2-grant">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="client_credentials">Client Credentials</SelectItem>
+                          <SelectItem value="authorization_code">
+                            Authorization Code with PKCE
+                          </SelectItem>
+                          <SelectItem value="device_authorization">Device Authorization</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    {application.grant === 'client_credentials' ? (
+                      <OAuth2CredentialFields
+                        value={oauth2}
+                        onChange={setOauth2}
+                        idPrefix="connector-oauth2"
+                      />
+                    ) : (
+                      <OAuth2ApplicationFields
+                        value={effectiveApplication}
+                        onChange={setApplication}
+                        idPrefix="connector-oauth2-application"
+                      />
+                    )}
+                  </>
                 )}
                 {device && (
                   <InfoBanner

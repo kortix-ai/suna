@@ -1076,9 +1076,6 @@
     "galleryTitle": "Fotobibliothek-Genehmigung erforderlich",
     "galleryMessage": "Bitte aktivieren Sie in Ihren Einstellungen den Zugriff auf die Fotobibliothek, um Bilder auszuwählen."
   },
-  "audio": {
-    "transcriptionFailed": "Audio konnte nicht transkribiert werden. Bitte versuchen Sie es erneut."
-  },
   "loading": {
     "threads": "Chats werden geladen...",
     "triggers": "Lade Trigger..."

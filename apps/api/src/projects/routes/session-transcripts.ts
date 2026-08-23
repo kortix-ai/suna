@@ -1,19 +1,14 @@
 /**
- * Session transcript reads: the compact server-side chat transcript and the
- * live voice-call transcript. Both are project-read + session-visible gated.
+ * Session transcript reads.
  */
 
-import { isCallLive, readTurns } from '../../channels/voice/runtime';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { and } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX,
-  parseBoundedPositiveInt,
-} from '../lib/serializers';
+import { UUID_V4_REGEX, parseBoundedPositiveInt } from '../lib/serializers';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/transcript
@@ -28,30 +23,30 @@ projectsApp.openapi(
     tags: ['sessions'],
     summary: 'GET /:projectId/sessions/:sessionId/transcript',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        query: z.object({
-          limit: z.string().optional(),
-          chars: z.string().optional(),
-        }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      query: z.object({
+        limit: z.string().optional(),
+        chars: z.string().optional(),
+      }),
+    },
     responses: {
-        200: json(AnyObject, 'Compact session transcript'),
-        ...errors(400, 404),
+      200: json(AnyObject, 'Compact session transcript'),
+      ...errors(400, 404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const limit = parseBoundedPositiveInt(c.req.query('limit'), 40, 1, 500, 'limit');
-  if (!limit.ok) return c.json({ error: limit.error }, 400);
-  const maxChars = parseBoundedPositiveInt(c.req.query('chars'), 700, 80, 5000, 'chars');
-  if (!maxChars.ok) return c.json({ error: maxChars.error }, 400);
+    const limit = parseBoundedPositiveInt(c.req.query('limit'), 40, 1, 500, 'limit');
+    if (!limit.ok) return c.json({ error: limit.error }, 400);
+    const maxChars = parseBoundedPositiveInt(c.req.query('chars'), 700, 80, 5000, 'chars');
+    if (!maxChars.ok) return c.json({ error: maxChars.error }, 400);
 
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -60,17 +55,22 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-  if (!visible) return c.json({ error: 'Not found' }, 404);
+    const visible = await loadVisibleSession(
+      loaded,
+      sessionId,
+      c.get('sessionId') ?? null,
+      callerKortixSessionId(c),
+    );
+    if (!visible) return c.json({ error: 'Not found' }, 404);
 
-  const transcript = await buildSessionTranscriptDigest({
-    session: visible.row,
-    projectId,
-    accountId: loaded.row.accountId,
-    userId: loaded.userId,
-    limit: limit.value,
-    maxChars: maxChars.value,
-  });
-  return c.json(transcript);
-},
+    const transcript = await buildSessionTranscriptDigest({
+      session: visible.row,
+      projectId,
+      accountId: loaded.row.accountId,
+      userId: loaded.userId,
+      limit: limit.value,
+      maxChars: maxChars.value,
+    });
+    return c.json(transcript);
+  },
 );

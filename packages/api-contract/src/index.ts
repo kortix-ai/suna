@@ -55,7 +55,6 @@ export const FeatureFlagMapSchema = z.object({
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
   teams: z.boolean(),
-  voice: z.boolean(),
   review_center: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
@@ -252,9 +251,7 @@ export const SessionConnectorBindingInputSchema = z
     connection_id: z.string().uuid(),
   })
   .strict();
-export type SessionConnectorBindingInput = z.input<
-  typeof SessionConnectorBindingInputSchema
->;
+export type SessionConnectorBindingInput = z.input<typeof SessionConnectorBindingInputSchema>;
 
 export const SessionConnectorBindingSchema = z
   .object({
@@ -412,9 +409,7 @@ export const RequiredConnectorConnectionSchema = z
     authorization_strategy: ConnectorAuthorizationStrategySchema,
   })
   .strict();
-export type RequiredConnectorConnection = z.infer<
-  typeof RequiredConnectorConnectionSchema
->;
+export type RequiredConnectorConnection = z.infer<typeof RequiredConnectorConnectionSchema>;
 
 export const ConnectorConnectionRequiredErrorSchema = z
   .object({
@@ -427,12 +422,7 @@ export type ConnectorConnectionRequiredError = z.infer<
   typeof ConnectorConnectionRequiredErrorSchema
 >;
 
-export const ConnectionOwnerTypeSchema = z.enum([
-  'agent',
-  'member',
-  'subject',
-  'external',
-]);
+export const ConnectionOwnerTypeSchema = z.enum(['agent', 'member', 'subject', 'external']);
 export const ConnectionStatusSchema = z.enum(['active', 'revoked', 'error']);
 export const ConnectionMetadataSchema = z
   .record(
@@ -797,9 +787,7 @@ export const UpdateConnectionCredentialInputSchema = z.union([
     .strict(),
   z.object({ oauth2: OAuth2ClientCredentialsSchema }).strict(),
 ]);
-export type UpdateConnectionCredentialInput = z.infer<
-  typeof UpdateConnectionCredentialInputSchema
->;
+export type UpdateConnectionCredentialInput = z.infer<typeof UpdateConnectionCredentialInputSchema>;
 export const PendingSessionPromptSchema = z
   .object({
     text: z.string().max(1_000_000),

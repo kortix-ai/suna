@@ -1153,10 +1153,6 @@
     "PublicSessionTranscript",
     "PublicSessionTranscriptMessage",
     "PublicSessionTranscriptToolCall",
-    "PublicVoiceJoinError",
-    "PublicVoiceJoinInfo",
-    "PublicVoiceTranscriptPage",
-    "PublicVoiceTranscriptTurn",
     "PurchaseCreditsInput",
     "PurchaseCreditsResult",
     "QuestionAnswer",
@@ -1678,7 +1674,6 @@
     "ToolView",
     "ToolViewModel",
     "TranscriptOptions",
-    "TranscriptionResponse",
     "TriggerSessionAccess",
     "TriggeredAgent",
     "TuiAppendPromptData",
@@ -2559,8 +2554,6 @@
     "getPublicSessionShareMessages",
     "getPublicShareByToken",
     "getPublicTemplate",
-    "getPublicVoiceJoin",
-    "getPublicVoiceTranscript",
     "getQuestionForTool",
     "getReferralCode",
     "getReferralStats",
@@ -2899,7 +2892,6 @@
     "setGitHubAppPat",
     "setImpersonationSession",
     "setMaintenanceConfig",
-    "setMeetBotName",
     "setMemberSuperAdmin",
     "setMfaRequired",
     "setModelDefault",
@@ -2951,7 +2943,6 @@
     "toWorkspaceRelative",
     "toolInfo",
     "toolViewModel",
-    "transcribeAudio",
     "triggerSandboxUpdate",
     "triggersRequest",
     "turnHasSteps",
@@ -3706,12 +3697,7 @@
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
-  "./server": [
-    "createScopedKortix",
-    "forwardKortixRequest",
-    "getScopedConfig",
-    "runWithKortix"
-  ],
+  "./server": ["createScopedKortix", "forwardKortixRequest", "getScopedConfig", "runWithKortix"],
   "./internal/sync-store": [
     "Binary",
     "MessageError",
@@ -3744,9 +3730,7 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./internal/opencode-pending-store": [
-    "useOpenCodePendingStore"
-  ],
+  "./internal/opencode-pending-store": ["useOpenCodePendingStore"],
   "./internal/idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
@@ -5804,10 +5788,6 @@
     "PublicSessionTranscript",
     "PublicSessionTranscriptMessage",
     "PublicSessionTranscriptToolCall",
-    "PublicVoiceJoinError",
-    "PublicVoiceJoinInfo",
-    "PublicVoiceTranscriptPage",
-    "PublicVoiceTranscriptTurn",
     "PurchaseCreditsInput",
     "PurchaseCreditsResult",
     "RebuildSnapshotResponse",
@@ -5911,7 +5891,10 @@
     "SsoProvider",
     "StaticAppSource",
     "SubscriptionMutationResult",
-    "TranscriptionResponse",
+    "TemplateDetail",
+    "TemplateInput",
+    "TemplateInstallResult",
+    "TemplateRequirement",
     "TriggerSessionAccess",
     "UpdateAppAccessInput",
     "UpdateAppInput",
@@ -6108,8 +6091,6 @@
     "getProrationPreview",
     "getPublicSessionShare",
     "getPublicSessionShareMessages",
-    "getPublicVoiceJoin",
-    "getPublicVoiceTranscript",
     "getReferralCode",
     "getReferralStats",
     "getReviewItem",
@@ -6296,7 +6277,6 @@
     "setEnterpriseDemo",
     "setGatewayBudget",
     "setGatewayRoutingPolicy",
-    "setMeetBotName",
     "setMemberSuperAdmin",
     "setMfaRequired",
     "setModelDefault",
@@ -6320,7 +6300,6 @@
     "submitReviewItem",
     "syncConnectors",
     "syncSubscription",
-    "transcribeAudio",
     "updateAccountAuditWebhook",
     "updateAccountMemberRole",
     "updateAccountName",
@@ -6358,16 +6337,8 @@
     "validateToken",
     "verifyGatewayProvider"
   ],
-  "./feature-flags": [
-    "FeatureFlags",
-    "featureFlags",
-    "parseFlagOverride"
-  ],
-  "./fresh-sessions": [
-    "clearSessionFresh",
-    "isSessionFresh",
-    "markSessionFresh"
-  ],
+  "./feature-flags": ["FeatureFlags", "featureFlags", "parseFlagOverride"],
+  "./fresh-sessions": ["clearSessionFresh", "isSessionFresh", "markSessionFresh"],
   "./instance-routes": [
     "ACTIVE_INSTANCE_COOKIE",
     "INSTANCE_SCOPED_ROUTES",
@@ -6833,9 +6804,7 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./opencode-pending-store": [
-    "useOpenCodePendingStore"
-  ],
+  "./opencode-pending-store": ["useOpenCodePendingStore"],
   "./idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",

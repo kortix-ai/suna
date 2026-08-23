@@ -189,54 +189,6 @@ export function planPrefillMerge(input: {
   return merged === input.currentDoc ? null : merged;
 }
 
-/**
- * Where a voice transcription goes — Task 14, matrix row 21.
- *
- * Old behaviour (`session-chat-input.tsx:1050-1052`) was
- * `setText(prev => (prev ? `${prev} ${text}` : text))`: append at the END of
- * the whole draft, joined by a single SPACE, without moving focus. The
- * rewrite had used `setContent(transcribedText, 'merge')`, which inserts at
- * the CURRENT SELECTION, separates with a block boundary, and ends with
- * `focus('end')`. Dictating with the caret parked mid-draft therefore dropped
- * the transcript into the middle of a sentence, and `"hello transcribed"`
- * went out as `"hello\n\ntranscribed"` — a different string reaching the
- * agent.
- *
- * Appending to the last block rather than concatenating a new one is what
- * makes the separator a space instead of a paragraph break.
- *
- * The `else` branch is a whitelist fallback, not dead code, even though
- * `paragraph` is now the only block type the composer schema defines
- * (`editor/extensions.ts` — lists, blockquotes and code blocks are gone).
- * This function takes a `JSONContent` from a CALLER, not from the live
- * editor: a prefill, a restored draft, or a failed-send snapshot can carry
- * any shape. Appending a text node into a block that holds child blocks would
- * build an invalid document, so anything that is not a paragraph gets a fresh
- * paragraph instead — where a leading space would be meaningless.
- */
-export function appendTranscribedText(
-  doc: JSONContent,
-  isEmpty: boolean,
-  transcribedText: string,
-): JSONContent {
-  if (!transcribedText) return doc;
-  if (isEmpty) return textToDocument(transcribedText);
-
-  const blocks = [...(doc.content ?? [])];
-  const last = blocks[blocks.length - 1];
-
-  if (last?.type === 'paragraph') {
-    blocks[blocks.length - 1] = {
-      ...last,
-      content: [...(last.content ?? []), { type: 'text', text: ` ${transcribedText}` }],
-    };
-  } else {
-    blocks.push({ type: 'paragraph', content: [{ type: 'text', text: transcribedText }] });
-  }
-
-  return { type: 'doc', content: blocks };
-}
-
 export interface ShouldApplyPrefillInput {
   /** `prefill?.id` — `undefined` means "no prefill at all". */
   prefillId: number | undefined;

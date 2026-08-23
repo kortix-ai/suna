@@ -29,7 +29,7 @@ const reconcileProjectChannels: ToggleEffect = async ({ projectId }) => {
 };
 
 /**
- * Effects by flag. Channel-backed flags (voice, teams, agentmail_email) all
+ * Effects by flag. Channel-backed flags (teams and agentmail_email) all
  * re-run channel-connector materialization so the connector row appears or
  * disappears with the flag instead of waiting for the next periodic sweep.
  */
@@ -40,7 +40,6 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   agent_tunnel: async ({ accountId }) => {
     await reconcileComputerConnectors(accountId);
   },
-  voice: reconcileProjectChannels,
   teams: reconcileProjectChannels,
   agentmail_email: reconcileProjectChannels,
 };

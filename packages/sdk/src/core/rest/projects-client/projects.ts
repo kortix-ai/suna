@@ -28,7 +28,6 @@ export type FeatureFlagKey =
   | 'connectors_api_discover'
   | 'agentmail_email'
   | 'teams'
-  | 'voice'
   | 'review_center'
   | 'meta_agent'
   | 'apps'
@@ -47,7 +46,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'connectors_api_discover',
   'agentmail_email',
   'teams',
-  'voice',
   'review_center',
   'meta_agent',
   'apps',
@@ -602,10 +600,9 @@ function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
     // production nothing to go on — no mention of provisionProjectStream, no
     // mention that this came from an SSE frame, no sight of what the frame
     // actually contained.
-    throw new Error(
-      `provisionProjectStream: received an unparseable SSE frame (${excerpt})`,
-      { cause },
-    );
+    throw new Error(`provisionProjectStream: received an unparseable SSE frame (${excerpt})`, {
+      cause,
+    });
   }
 }
 
@@ -666,7 +663,10 @@ export async function provisionProjectStream(
   );
 
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string; code?: string } | null;
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      code?: string;
+    } | null;
     // A REAL `ApiError`, not a bare `Error` — see the `ProvisionStreamEvent`
     // doc comment above. `apps/web`'s `messageFor`/`isRetryableError` read
     // `.status`/`.code` off whatever `provisionProject`/`provisionProjectStream`

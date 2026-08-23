@@ -314,7 +314,6 @@ const PANEL_SECTIONS_VIA_WRAPPER: string[] = [];
  */
 const PANEL_SECTIONS_OWN_CONTAINER = [
   'features/workspace/customize/migrate-to-v2/upgrade-view.tsx',
-  'features/workspace/customize/sections/view/voice-view.tsx',
   // `components/projects/schedule-view.tsx` was here until Schedules and
   // Webhooks graduated out of the settings overlay into their own capability
   // pages. It is no longer panel content, so the panel's two-width rule does
@@ -358,10 +357,7 @@ const PANEL_SECTIONS_OWN_CONTAINER = [
  * Repositories folded INTO General as a "Git repo" section, so it dropped the
  * lookup and the container both — it is `general-tab.test.tsx`'s pane now.
  */
-const PANES_WITH_REGISTRY_LOOKUP = [
-  'features/workspace/customize/migrate-to-v2/upgrade-view.tsx',
-  'features/workspace/customize/sections/view/voice-view.tsx',
-];
+const PANES_WITH_REGISTRY_LOOKUP = ['features/workspace/customize/migrate-to-v2/upgrade-view.tsx'];
 
 /**
  * The mirror image: a pane no registry answers for, where `SettingsTabHeader`
@@ -419,10 +415,7 @@ describe('customize sections mounted in the settings panel', () => {
    * different reason: not a graduation, a merge into General — it never had
    * its own heading to check once its content became a section of General's.
    */
-  const PANES_WITH_REGISTRY_HEADING: ProjectSettingsSectionKey[] = [
-    'upgrades',
-    'voice',
-  ];
+  const PANES_WITH_REGISTRY_HEADING: ProjectSettingsSectionKey[] = ['upgrades'];
 
   for (const key of PANES_WITH_REGISTRY_HEADING) {
     test(`the '${key}' section entry carries the heading its pane renders`, () => {

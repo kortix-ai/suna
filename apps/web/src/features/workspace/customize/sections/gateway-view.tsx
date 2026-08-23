@@ -48,6 +48,25 @@
  * This view reads `useSettingsNav()`, never a store directly, so it mounts
  * under either the legacy Customize panel or the new Settings panel — see
  * `features/workspace/shared/settings-nav-context.tsx`.
+ *
+ * ## This module is also the dialog
+ *
+ * `ProjectProviderModal` — the quick version the session model picker and the
+ * Secrets tab open — renders THESE components, not copies of them. It used to
+ * be a second implementation with its own tab root, its own underline strip at
+ * `text-xs`, its own labels ("API keys" for what this page calls "Providers"),
+ * no project-default control, and a scroll body with no horizontal padding, so
+ * the model rows ran into the modal's clipped edge. Four exports ended that:
+ *
+ *   - `LlmTabStrip` — takes an optional `tabs` SUBSET (`QUICK_LLM_TABS`), so
+ *     the dialog draws three of the same pills, not three different ones.
+ *   - `ProjectDefaultPicker` — the one page-level control, both places.
+ *   - `LlmSections` — the section bodies, chosen by the host's `tab`.
+ *   - `MODELS_PAGE_TITLE` / `MODELS_PAGE_DESCRIPTION` — the same two lines.
+ *
+ * None of them carries horizontal padding: the host column supplies it
+ * (`CapabilityPageShell` here, `px-5` in the dialog). Adding one back here
+ * double-indents the page.
  */
 
 import { useEffect, useState } from 'react';
@@ -71,14 +90,29 @@ import { useIsMutating } from '@tanstack/react-query';
 export const MODELS_PAGE_TITLE = 'Models';
 export const MODELS_PAGE_DESCRIPTION = 'Which providers and models this project can use.';
 
-type LlmTab = 'providers' | 'models' | 'gateway' | 'routing' | 'overview' | 'logs';
+export type LlmTab =
+  | 'providers'
+  | 'models'
+  | 'gateway'
+  | 'routing'
+  | 'overview'
+  | 'logs';
 
-export const LLM_TABS: { id: LlmTab; label: string }[] = [
+export interface LlmTabEntry {
+  id: LlmTab;
+  label: string;
+}
+
+export const LLM_TABS: LlmTabEntry[] = [
   // The keys you bring IN. Only the provider list — it was called "API keys"
   // and also carried the gateway key and its reference, which point the other
   // way; see `gateway-access-tab.tsx`.
   { id: 'providers', label: 'Providers' },
   { id: 'models', label: 'Models' },
+  // There is no `custom` tab. It generated an OpenCode `provider:{...}` block
+  // for `.opencode/opencode.jsonc` — an OpenCode-native provider, which no
+  // session can use: OpenCode sees exactly one provider, `kortix`, and the
+  // daemon strips provider keys from its env.
   // The key you hand OUT, and the endpoints it opens. Two tabs once, four
   // apart, one of them sharing the other's label.
   { id: 'gateway', label: 'Gateway' },
@@ -90,6 +124,28 @@ export const LLM_TABS: { id: LlmTab; label: string }[] = [
   { id: 'overview', label: 'Costs' },
   { id: 'logs', label: 'Logs' },
 ];
+
+/**
+ * The two tabs the QUICK version carries — `ProjectProviderModal`, the
+ * dialog the session model picker and the Secrets tab open.
+ *
+ * It is a slice of `LLM_TABS`, not a second list: same ids, same labels, same
+ * order, same pills, and it renders through the same `LlmTabStrip` and the
+ * same `LlmSections`. What the dialog drops is the four tabs that are project
+ * administration rather than "let me use a model right now" — Gateway (the key
+ * you hand out), Routing, Costs and Logs. Those live on the full page, which
+ * has the width and the height for a log table.
+ */
+export type QuickLlmTab = 'providers' | 'models';
+
+export const QUICK_LLM_TABS: LlmTabEntry[] = LLM_TABS.filter((t) =>
+  (['providers', 'models'] as string[]).includes(t.id),
+);
+
+/** True when `tab` is one of the quick version's two. */
+export function isQuickLlmTab(tab: string): tab is QuickLlmTab {
+  return QUICK_LLM_TABS.some((t) => t.id === tab);
+}
 
 /**
  * The legacy Customize overlay's `llm-*` `CustomizeSection` ids. The new
@@ -134,18 +190,25 @@ const TAB_BY_SECTION: Partial<Record<LegacyLlmSubTab, LlmTab>> = {
  * `size` or a className — the whole point of this component is that Models and
  * Connectors draw the same control, and a prop added on one side is how they
  * stop.
+ *
+ * `tabs` is a SUBSET, never a different list: the modal passes
+ * `QUICK_LLM_TABS` and gets the same pills, the same labels and the same order
+ * as the page. It is the only knob, and it selects entries out of `LLM_TABS` —
+ * it cannot introduce one.
  */
 export function LlmTabStrip({
   value,
   onValueChange,
+  tabs = LLM_TABS,
 }: {
   value: string;
   onValueChange: (next: string) => void;
+  tabs?: readonly LlmTabEntry[];
 }) {
   return (
     <Tabs value={value} onValueChange={onValueChange}>
       <TabsList>
-        {LLM_TABS.map((t) => (
+        {tabs.map((t) => (
           <TabsTrigger key={t.id} value={t.id}>
             {t.label}
           </TabsTrigger>
@@ -155,15 +218,20 @@ export function LlmTabStrip({
   );
 }
 
-export function LlmManagementView({ projectId }: { projectId: string }) {
-  const { isOpen: open, activeTab: section } = useSettingsNav();
-  const [tab, setTab] = useState<LlmTab>(
-    () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? 'providers',
-  );
-
-  // The project default is the single model authority for this project. Account
-  // and platform defaults are display-only inheritance when no project value is
-  // configured; choosing here always writes project scope.
+/**
+ * The project-default model picker — the ONE page-level control, rendered by
+ * the page in `CapabilityPageShell`'s `action` slot and by the modal in the
+ * same place beside its title.
+ *
+ * The project default is the single model authority for this project. Account
+ * and platform defaults are display-only inheritance when no project value is
+ * configured; choosing here always writes project scope.
+ *
+ * Callers gate it on write access — a role with the LLM section's READ leaf
+ * (`project.read`) but not `project.write` sees the gateway read-only, and the
+ * one mutating control in this bar is hidden rather than left to 403.
+ */
+export function ProjectDefaultPicker({ projectId }: { projectId: string }) {
   const models = useProjectModels(projectId);
   const modelDefaults = useModelDefaults(projectId);
   const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
@@ -172,10 +240,107 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
     modelDefaults.accountDefault ??
     (modelDefaults.freeTier ? undefined : modelDefaults.platformDefault) ??
     null;
-  // A role with the LLM section's READ leaf (project.read) but not project.write
-  // sees the gateway read-only: logs/overview/spend stay visible, but the
-  // project-default model picker — the one mutating control in this bar — is
-  // hidden so a read-only user cannot trigger a forbidden write.
+
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <span className="text-muted-foreground hidden text-xs sm:inline">Project default</span>
+      <ModelSelector
+        models={models}
+        selectedModel={effectiveDefault}
+        unsetLabel="Project default"
+        disabled={modelDefaults.isLoading || modelDefaults.isUpdating || routingMutationCount > 0}
+        onSelect={(m) => {
+          if (!m) return;
+          void modelDefaults
+            .setProjectDefault(m)
+            .catch(() => errorToast('Could not update the project default'));
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * The selected section — the page's body and the modal's, character for
+ * character.
+ *
+ * One section at a time, by the caller's state — NOT seven `TabsContent`
+ * panels. Radix keeps every panel in the tree and each one used to open its
+ * own `overflow-y-auto`, which is how this page ended up with three nested
+ * scroll containers under a shell that already had one.
+ *
+ * It renders NO padding of its own: the host column supplies it
+ * (`CapabilityPageShell`'s `max-w-5xl px-4` on the page, the modal's `px-5`),
+ * which is what makes the model list line up under the heading in both.
+ */
+export function LlmSections({
+  projectId,
+  tab,
+  onTabChange,
+  canWrite,
+  enabled,
+}: {
+  projectId: string;
+  tab: LlmTab;
+  /** Sections that hand the reader on — the gateway tab's "view models" —
+   *  move the host's tab, so it has to come back up. */
+  onTabChange: (next: LlmTab) => void;
+  canWrite: boolean;
+  /** Gates the provider list's fetch. False while the host is closed. */
+  enabled: boolean;
+}) {
+  const modelDefaults = useModelDefaults(projectId);
+
+  return (
+    <>
+      {tab === 'providers' && (
+        /* JAY-510: this path mounts `ProviderConnect` DIRECTLY — no nested
+           dialog, so connecting Anthropic here opens nothing on top of what
+           you are already looking at. `p-0` because the host column already
+           carries the padding. */
+        <ProviderConnect
+          projectId={projectId}
+          canWrite={canWrite}
+          enabled={enabled}
+          className="gap-4 p-0"
+        />
+      )}
+      {/* The model-visibility list used to sit one level deeper, inside the
+          provider modal's own "Models" tab. Flattened to a sibling here so it
+          keeps a home now that `ProviderConnect` has no tabs of its own. */}
+      {tab === 'models' && <ModelsTab projectId={projectId} />}
+      {tab === 'gateway' && (
+        <GatewayAccessTab
+          projectId={projectId}
+          canWrite={canWrite}
+          onViewModels={() => onTabChange('models')}
+        />
+      )}
+      {tab === 'routing' && (
+        <GatewayRouting
+          projectId={projectId}
+          canWrite={canWrite}
+          projectDefaultPending={modelDefaults.isUpdating}
+        />
+      )}
+      {/* Stats + the spend cap. `canWrite` reaches the budget controls that
+          used to live one tab over. */}
+      {tab === 'overview' && <GatewayOverview projectId={projectId} canWrite={canWrite} />}
+      {tab === 'logs' && <GatewayLogs projectId={projectId} />}
+    </>
+  );
+}
+
+export function LlmManagementView({ projectId }: { projectId: string }) {
+  const { isOpen: open, activeTab: section } = useSettingsNav();
+  const [tab, setTab] = useState<LlmTab>(
+    () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? 'providers',
+  );
+
+  // A role with the LLM section's READ leaf (project.read) but not
+  // project.write sees the gateway read-only: logs/overview/spend stay
+  // visible, but the project-default model picker is hidden so a read-only
+  // user cannot trigger a forbidden write.
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
 
@@ -196,67 +361,17 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
            beside the tabs: a bordered dropdown opposite a filled pill strip
            reads as a second tab strip, and the row that has to look identical
            to Connectors / Agents / Skills is exactly that one. */
-        canWrite ? (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className="text-muted-foreground hidden text-xs sm:inline">Project default</span>
-            <ModelSelector
-              models={models}
-              selectedModel={effectiveDefault}
-              unsetLabel="Project default"
-              disabled={
-                modelDefaults.isLoading || modelDefaults.isUpdating || routingMutationCount > 0
-              }
-              onSelect={(m) => {
-                if (!m) return;
-                void modelDefaults
-                  .setProjectDefault(m)
-                  .catch(() => errorToast('Could not update the project default'));
-              }}
-            />
-          </div>
-        ) : undefined
+        canWrite ? <ProjectDefaultPicker projectId={projectId} /> : undefined
       }
       filters={<LlmTabStrip value={tab} onValueChange={(v) => setTab(v as LlmTab)} />}
     >
-      {/* One section at a time, by local state — NOT six `TabsContent` panels.
-          Radix keeps every panel in the tree and each one used to open its own
-          `overflow-y-auto`, which is how this page ended up with three nested
-          scroll containers under a shell that already had one. */}
-      {tab === 'providers' && (
-        /* JAY-510: this path mounts `ProviderConnect` DIRECTLY — no Modal, no
-           dialog, so connecting Anthropic here opens nothing. The modal shell
-           (`ProjectProviderModal`) is only for the model selector and the
-           Secrets tab, which are dialogs by construction. `p-0` because the
-           shell's column already carries the page padding. */
-        <ProviderConnect
-          projectId={projectId}
-          canWrite={canWrite}
-          enabled={open}
-          className="gap-4 p-0"
-        />
-      )}
-      {/* The model-visibility list used to sit one level deeper, inside the
-          provider modal's own "Models" tab. Flattened to a sibling here so it
-          keeps a home now that `ProviderConnect` has no tabs of its own. */}
-      {tab === 'models' && <ModelsTab projectId={projectId} />}
-      {tab === 'gateway' && (
-        <GatewayAccessTab
-          projectId={projectId}
-          canWrite={canWrite}
-          onViewModels={() => setTab('models')}
-        />
-      )}
-      {tab === 'routing' && (
-        <GatewayRouting
-          projectId={projectId}
-          canWrite={canWrite}
-          projectDefaultPending={modelDefaults.isUpdating}
-        />
-      )}
-      {/* Stats + the spend cap. `canWrite` reaches the budget controls that
-          used to live one tab over. */}
-      {tab === 'overview' && <GatewayOverview projectId={projectId} canWrite={canWrite} />}
-      {tab === 'logs' && <GatewayLogs projectId={projectId} />}
+      <LlmSections
+        projectId={projectId}
+        tab={tab}
+        onTabChange={setTab}
+        canWrite={canWrite}
+        enabled={open}
+      />
     </CapabilityPageShell>
   );
 }

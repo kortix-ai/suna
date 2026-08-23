@@ -75,7 +75,6 @@ import {
   startTunnelService,
   stopTunnelService,
 } from './tunnel';
-import { voiceMcpRoutes } from './channels/voice/routes';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
@@ -868,12 +867,6 @@ app.route('/v1/account', accountDeletionApp); // account deletion status/request
 app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
-// Voice routes are registered BEFORE projectsApp: Hono matches in registration
-// order, and projectsApp's auth middleware would otherwise claim the worker's
-// MCP callback (/sessions/:id/mcp/voice) and reject it with a generic 401
-// before its own per-call HMAC check ever runs. The worker is not a Kortix
-// session and cannot present session auth.
-app.route('/v1/projects', voiceMcpRoutes);
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
@@ -972,13 +965,6 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 // access — the API reads the sandbox's OpenCode daemon server-side.
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
-
-// Anonymous resolve step for a `voice_spawn` join link: exchanges the short,
-// ungessable id for a freshly-minted LiveKit access token + server URL. Backs
-// the logged-out `/voice/[token]` page the same way publicSessionSharesApp
-// backs `/share/[shareId]` above — see join-links.ts / public-join-routes.ts.
-import { voiceJoinPublicApp } from './channels/voice/public-join-routes';
-app.route('/v1/public/voice-join', voiceJoinPublicApp); // /v1/public/voice-join/:token
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.

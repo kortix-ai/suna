@@ -1,7 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "lib": ["ES2023", "DOM"]
-  },
-  "include": ["src/**/*", "scripts/**/*"]
-}

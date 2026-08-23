@@ -28,7 +28,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
   const teams = useFeatureFlag(projectId, 'teams');
-  const voice = useFeatureFlag(projectId, 'voice');
   const reviewCenter = useFeatureFlag(projectId, 'review_center');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
@@ -43,7 +42,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       connectors_api_discover: connectorsApiDiscover.enabled,
       agentmail_email: agentmailEmail.enabled,
       teams: teams.enabled,
-      voice: voice.enabled,
       review_center: reviewCenter.enabled,
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,

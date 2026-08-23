@@ -24,7 +24,6 @@
     "PREVIEW_PROBE_TIMEOUT_MS",
     "PROVISION_IN_FLIGHT_CODE",
     "PublicSessionShareError",
-    "PublicVoiceJoinError",
     "RequestTooLargeError",
     "RuntimeNotReadyError",
     "SANDBOX_FS_ROOTS",
@@ -339,8 +338,6 @@
     "getPublicSessionShareMessages",
     "getPublicShareByToken",
     "getPublicTemplate",
-    "getPublicVoiceJoin",
-    "getPublicVoiceTranscript",
     "getQuestionForTool",
     "getReferralCode",
     "getReferralStats",
@@ -679,7 +676,6 @@
     "setGitHubAppPat",
     "setImpersonationSession",
     "setMaintenanceConfig",
-    "setMeetBotName",
     "setMemberSuperAdmin",
     "setMfaRequired",
     "setModelDefault",
@@ -731,7 +727,6 @@
     "toWorkspaceRelative",
     "toolInfo",
     "toolViewModel",
-    "transcribeAudio",
     "triggerSandboxUpdate",
     "triggersRequest",
     "turnHasSteps",
@@ -1252,18 +1247,8 @@
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
-  "./server": [
-    "createScopedKortix",
-    "forwardKortixRequest",
-    "getScopedConfig",
-    "runWithKortix"
-  ],
-  "./internal/sync-store": [
-    "Binary",
-    "ascendingId",
-    "sameSessionStatus",
-    "useSyncStore"
-  ],
+  "./server": ["createScopedKortix", "forwardKortixRequest", "getScopedConfig", "runWithKortix"],
+  "./internal/sync-store": ["Binary", "ascendingId", "sameSessionStatus", "useSyncStore"],
   "./internal/server-store": [
     "deriveSubdomainOpts",
     "getActiveDbSandboxId",
@@ -1286,9 +1271,7 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./internal/opencode-pending-store": [
-    "useOpenCodePendingStore"
-  ],
+  "./internal/opencode-pending-store": ["useOpenCodePendingStore"],
   "./internal/idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
@@ -1414,7 +1397,6 @@
   "./projects-client": [
     "FEATURE_FLAG_KEYS",
     "PublicSessionShareError",
-    "PublicVoiceJoinError",
     "SessionStartError",
     "acceptAccountInvite",
     "actReviewItem",
@@ -1590,8 +1572,6 @@
     "getProrationPreview",
     "getPublicSessionShare",
     "getPublicSessionShareMessages",
-    "getPublicVoiceJoin",
-    "getPublicVoiceTranscript",
     "getReferralCode",
     "getReferralStats",
     "getReviewItem",
@@ -1778,7 +1758,6 @@
     "setEnterpriseDemo",
     "setGatewayBudget",
     "setGatewayRoutingPolicy",
-    "setMeetBotName",
     "setMemberSuperAdmin",
     "setMfaRequired",
     "setModelDefault",
@@ -1802,7 +1781,6 @@
     "submitReviewItem",
     "syncConnectors",
     "syncSubscription",
-    "transcribeAudio",
     "updateAccountAuditWebhook",
     "updateAccountMemberRole",
     "updateAccountName",
@@ -1840,15 +1818,8 @@
     "validateToken",
     "verifyGatewayProvider"
   ],
-  "./feature-flags": [
-    "featureFlags",
-    "parseFlagOverride"
-  ],
-  "./fresh-sessions": [
-    "clearSessionFresh",
-    "isSessionFresh",
-    "markSessionFresh"
-  ],
+  "./feature-flags": ["featureFlags", "parseFlagOverride"],
+  "./fresh-sessions": ["clearSessionFresh", "isSessionFresh", "markSessionFresh"],
   "./instance-routes": [
     "ACTIVE_INSTANCE_COOKIE",
     "INSTANCE_SCOPED_ROUTES",
@@ -1930,11 +1901,7 @@
     "submitSecretSetupLink",
     "triggerSandboxUpdate"
   ],
-  "./event-stream": [
-    "heartbeatGapEvent",
-    "narrowChatEvent",
-    "openEventStream"
-  ],
+  "./event-stream": ["heartbeatGapEvent", "narrowChatEvent", "openEventStream"],
   "./files": [
     "SANDBOX_FS_ROOTS",
     "copyFile",
@@ -2124,12 +2091,7 @@
     "turnHasSteps",
     "unwrapError"
   ],
-  "./sync-store": [
-    "Binary",
-    "ascendingId",
-    "sameSessionStatus",
-    "useSyncStore"
-  ],
+  "./sync-store": ["Binary", "ascendingId", "sameSessionStatus", "useSyncStore"],
   "./server-store": [
     "deriveSubdomainOpts",
     "getActiveDbSandboxId",
@@ -2152,9 +2114,7 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./opencode-pending-store": [
-    "useOpenCodePendingStore"
-  ],
+  "./opencode-pending-store": ["useOpenCodePendingStore"],
   "./idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
