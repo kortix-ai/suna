@@ -12,7 +12,13 @@ export function detectCommandFromText(
   rawText: string,
   commands?: Command[],
 ): { name: string; args?: string } | undefined {
-  if (!commands || !rawText) return undefined;
+  // `commands` is typed `Command[]`, but the runtime's `GET /command` has been
+  // observed answering with a truthy NON-array (Better Stack, dev 2026-08-23:
+  // "TypeError: t is not iterable" thrown from the `for…of` below, which took
+  // the whole session view down through the error boundary). `@kortix/sdk` now
+  // normalizes that response, and this guard keeps the crash site itself safe
+  // for any other caller — same spirit as the non-string `template` guard below.
+  if (!Array.isArray(commands) || !rawText) return undefined;
 
   const trimmedRawText = rawText.trim();
   const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

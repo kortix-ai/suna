@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   activeServerKey,
+  asRuntimeList,
+  cachedRuntimeList,
   canQueryOpenCodeSession,
   CACHE_SCOPE_GLOBAL,
   clearProjectProviderCache,
   getLSCache,
   LS_AGENTS,
+  LS_COMMANDS,
   LS_PROVIDERS,
   LS_SESSIONS,
   setLSCache,
@@ -175,5 +178,65 @@ describe('getLSCache / setLSCache (localStorage stubbed)', () => {
     delete (globalThis as GlobalWithDom).localStorage;
     expect(() => setLSCache(LS_SESSIONS, ['x'])).not.toThrow();
     expect(getLSCache(LS_SESSIONS)).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// asRuntimeList / cachedRuntimeList — the shape guard for runtime LIST
+// endpoints.
+//
+// Incident (dev, 2026-08-23): `TypeError: t is not iterable` crashed the whole
+// session view. `GET /command` is typed `Command[]`, but the value that reached
+// the render was a truthy non-array, and every consumer iterates the list
+// (`for…of` in detect-command, `.find`/`.some`/`.filter` in the composer). A
+// list endpoint that answers with an unexpected shape must degrade to "no
+// items", never crash the page.
+// ============================================================================
+
+describe('asRuntimeList', () => {
+  test('passes an array through unchanged (same reference)', () => {
+    const list = [{ name: 'build' }];
+    expect(asRuntimeList(list)).toBe(list);
+  });
+
+  test('coerces every truthy non-array shape to an empty list', () => {
+    expect(asRuntimeList({})).toEqual([]);
+    expect(asRuntimeList({ commands: [{ name: 'build' }] })).toEqual([]);
+    expect(asRuntimeList('not-a-list')).toEqual([]);
+    expect(asRuntimeList(42)).toEqual([]);
+    expect(asRuntimeList(true)).toEqual([]);
+  });
+
+  test('coerces undefined/null to an empty list', () => {
+    expect(asRuntimeList(undefined)).toEqual([]);
+    expect(asRuntimeList(null)).toEqual([]);
+  });
+});
+
+describe('cachedRuntimeList (localStorage stubbed)', () => {
+  beforeEach(() => {
+    (globalThis as GlobalWithDom).window = {};
+    (globalThis as GlobalWithDom).localStorage = new MemoryStorage();
+    setCurrentRuntime(null);
+  });
+
+  afterEach(() => {
+    delete (globalThis as GlobalWithDom).window;
+    delete (globalThis as GlobalWithDom).localStorage;
+    setCurrentRuntime(null);
+  });
+
+  test('returns the cached array', () => {
+    setLSCache(LS_COMMANDS, [{ name: 'build' }]);
+    expect(cachedRuntimeList<{ name: string }>(LS_COMMANDS)).toEqual([{ name: 'build' }]);
+  });
+
+  test('a cached non-array reads as a MISS, not as placeholder data', () => {
+    setLSCache(LS_COMMANDS, { commands: [{ name: 'build' }] });
+    expect(cachedRuntimeList(LS_COMMANDS)).toBeUndefined();
+  });
+
+  test('an empty cache is a miss', () => {
+    expect(cachedRuntimeList(LS_COMMANDS)).toBeUndefined();
   });
 });
