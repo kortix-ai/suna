@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 593,
+  "count": 595,
   "routes": [
     {
       "method": "GET",
@@ -940,6 +940,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/edge/tls-check"
+    },
+    {
+      "method": "GET",
       "path": "/v1/generation"
     },
     {
@@ -1061,6 +1065,10 @@
     {
       "method": "POST",
       "path": "/v1/p/auth"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/p/config"
     },
     {
       "method": "GET",
@@ -1824,11 +1832,11 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/secrets/:identifier/relay"
+      "path": "/v1/projects/:projectId/secrets/:identifier/grant"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/secrets/:identifier/grant"
+      "path": "/v1/projects/:projectId/secrets/:identifier/relay"
     },
     {
       "method": "PUT",
