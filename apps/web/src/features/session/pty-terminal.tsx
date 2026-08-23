@@ -145,6 +145,10 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
   const reconnectAttemptsRef = useRef(0);
   const disposedRef = useRef(false);
   const hadErrorRef = useRef(false);
+  /** True while the NEXT connect is user intent (mount, or "Reconnect now") and
+   *  may therefore wake a parked sandbox. Cleared by each connect so automatic
+   *  backoff retries never resurrect a box. */
+  const wakeOnNextConnectRef = useRef(true);
   // Until this timestamp, drop capability-query responses (see isTerminalReport)
   // so the scrollback replayed on connect doesn't echo garbage at the prompt.
   const suppressReportsUntilRef = useRef(0);
@@ -293,6 +297,11 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
 
     const connectWebSocket = async () => {
       if (disposedRef.current) return;
+      // A user-initiated attach (panel open, "Reconnect now") may WAKE a parked
+      // sandbox; an automatic backoff retry may not. Consume the flag here so a
+      // single intent wakes the box exactly once — see getPtyWebSocketUrl.
+      const wake = wakeOnNextConnectRef.current;
+      wakeOnNextConnectRef.current = false;
 
       // --- WebSocket connect ---
       globalPtyConnectionId++;
@@ -306,7 +315,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
 
       let wsUrl = '';
       try {
-        wsUrl = await getPtyWebSocketUrl(pty.id, serverUrl);
+        wsUrl = await getPtyWebSocketUrl(pty.id, serverUrl, { wake });
       } catch (err) {
         console.error('[PtyTerminal] Failed to resolve WebSocket URL:', err);
         hadErrorRef.current = true;
@@ -387,6 +396,13 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
 
       ws.onerror = () => {
         if (connectionIdRef.current !== myConnectionId || disposedRef.current) return;
+        // A refused upgrade reaches the browser as a bare error + 1006 with no
+        // status, so the one thing we DO know is worth saying: this attach asked
+        // the API to wake a parked sandbox, and a parked box takes a few seconds
+        // to come back. Without this the panel just counts down at the user.
+        if (wake) {
+          term.writeln('\r\n\x1b[33mWaking the sandbox — this can take a few seconds...\x1b[0m');
+        }
         // Browser WS error events carry no detail (always an empty Event) and the
         // status (e.g. a 401) is never exposed. The onclose that follows drives
         // backoff/reconnect, so just flag it — don't spam the terminal with red
@@ -432,6 +448,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
     // next automatic retry (if this one also fails) starts at 1s again.
     reconnectNowRef.current = () => {
       if (disposedRef.current) return;
+      wakeOnNextConnectRef.current = true;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
@@ -440,6 +457,10 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
       setReconnectPending(false);
       connectWebSocket();
     };
+
+    // A fresh (pty, serverUrl) pair is a new attach — the panel opened, or the
+    // runtime moved. Both are user intent, so the first dial may wake a parked box.
+    wakeOnNextConnectRef.current = true;
 
     // Delay fit + initial WS connect to ensure the container has real dimensions
     const initTimer = setTimeout(() => {

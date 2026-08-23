@@ -89,8 +89,20 @@ export async function removeKortixPty(baseUrl: string, ptyId: string): Promise<v
  * mixed-content upgrade, and `?token=` query auth (WebSocket can't set
  * custom headers) the OpenCode-backed terminal used, just pointed at
  * `/kortix/pty` instead of OpenCode's `/pty`.
+ *
+ * `opts.wake` marks the attach as USER-INITIATED (the panel's first connect, or
+ * "Reconnect now"). A parked sandbox refuses the upgrade with 503, which the
+ * browser can only surface as close code 1006 — so without this marker the
+ * terminal reconnects forever against a box that nothing in the loop will ever
+ * wake. The API resumes a stopped box only for a marked attach
+ * (`shouldWakeStoppedSandboxForWsAttach`), so automatic backoff retries — which
+ * must never resurrect a box — leave it off.
  */
-export async function getKortixPtyWebSocketUrl(ptyId: string, baseUrl: string): Promise<string> {
+export async function getKortixPtyWebSocketUrl(
+  ptyId: string,
+  baseUrl: string,
+  opts?: { wake?: boolean },
+): Promise<string> {
   const base = requireBaseUrl(baseUrl);
   const wsBase = (() => {
     try {
@@ -107,13 +119,16 @@ export async function getKortixPtyWebSocketUrl(ptyId: string, baseUrl: string): 
       return base.replace('https://', 'wss://').replace('http://', 'ws://');
     }
   })();
-  const url = `${wsBase}/kortix/pty/${encodeURIComponent(ptyId)}/connect`;
+  const connectUrl = `${wsBase}/kortix/pty/${encodeURIComponent(ptyId)}/connect`;
+  const params = new URLSearchParams();
   // Browser WebSocket API doesn't support custom headers, so inject the auth
   // token as a query param for the daemon (via the backend proxy) to check.
   const token = await getAuthToken();
-  if (!token) return url;
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}token=${encodeURIComponent(token)}`;
+  if (token) params.set('token', token);
+  if (opts?.wake) params.set('wake', '1');
+  const query = params.toString();
+  if (!query) return connectUrl;
+  return `${connectUrl}${connectUrl.includes('?') ? '&' : '?'}${query}`;
 }
 
 /** Grouped namespace for ergonomic use (also available as named exports). */

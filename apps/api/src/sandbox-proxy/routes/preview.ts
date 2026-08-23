@@ -14,6 +14,7 @@ import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
+import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
 import { recordSessionActivity } from '../../projects/session-activity';
 import {
   createExtendThrottle,
@@ -724,6 +725,38 @@ export function shouldAutoResumeStoppedSandbox(
     return Boolean(method && !['GET', 'HEAD', 'OPTIONS'].includes(method));
   }
   return opts.browserNavigation === true && !carriesSessionData(upstreamPort);
+}
+
+/**
+ * Should a WebSocket UPGRADE wake a stopped box?
+ *
+ * The HTTP data path wakes a parked box on explicit user intent
+ * (`shouldAutoResumeStoppedSandbox`). The WebSocket path had no such branch at
+ * all: it answered `503 sandbox not ready` and stopped there. A browser never
+ * sees that status — a refused upgrade surfaces only as close code `1006` — so
+ * the terminal reconnected against a parked box forever, and nothing in the
+ * loop could ever wake it. Reloading the page did not help either: the panel's
+ * `GET /kortix/pty` is a GET on a session-data port, which by policy also never
+ * resumes. The terminal was therefore unrecoverable until the user prompted the
+ * agent (a POST) or restarted the session.
+ *
+ * A terminal ATTACH is the same class of intent as a session mutation: a human
+ * opened the panel or pressed "Reconnect now". The client marks exactly those
+ * two connects with `wake=1` and NEVER marks its automatic backoff retries, so
+ * the "passive resurrection" the resume policy exists to prevent (polling,
+ * hydration, background reconnects) still cannot wake a box.
+ *
+ * Pure + exported so the gate is unit-tested without provisioning a box.
+ */
+export function shouldWakeStoppedSandboxForWsAttach(
+  status: string,
+  remainingPath: string,
+  opts: { wakeRequested: boolean; accessKind?: string },
+): boolean {
+  if (status !== 'stopped') return false;
+  if (!opts.wakeRequested) return false;
+  if (opts.accessKind && opts.accessKind !== 'principal') return false;
+  return classifyPtyWebSocketPath(remainingPath) !== null;
 }
 /**
  * Is this a proxied attempt at the daemon's DESTRUCTIVE branch reset?
@@ -1638,6 +1671,10 @@ export async function resolvePreviewWsUpstream(opts: {
   /** The caller's AGENT/SANDBOX token binding. Only the trigger-session manager
    *  override reads it (connectors/share.ts). REQUIRED, same reasoning. */
   boundCredentialSessionId: string | null;
+  /** The client marked this attach as user-initiated (`wake=1`): the panel's
+   *  first connect, or "Reconnect now". Automatic backoff retries never set it.
+   *  See `shouldWakeStoppedSandboxForWsAttach`. */
+  wakeRequested?: boolean;
 }): Promise<
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
@@ -1646,7 +1683,7 @@ export async function resolvePreviewWsUpstream(opts: {
   const callerSessionId = opts.callerSessionId;
   const boundCredentialSessionId = opts.boundCredentialSessionId;
 
-  const record = await loadSandbox(sandboxId);
+  let record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
 
   const ingressRequest = {
@@ -1682,7 +1719,27 @@ export async function resolvePreviewWsUpstream(opts: {
     };
   }
   if (record.status !== 'active') {
-    return { ok: false, status: 503, message: 'sandbox not ready' };
+    // A user-initiated terminal attach resumes a parked box, exactly like a
+    // session mutation does on the HTTP path. Without this the socket can only
+    // loop: the browser sees 1006, retries, and nothing ever wakes the sandbox.
+    if (
+      shouldWakeStoppedSandboxForWsAttach(record.status, remainingPath, {
+        wakeRequested: opts.wakeRequested === true,
+        accessKind: 'principal',
+      })
+    ) {
+      await resumeStoppedSandboxByExternalId(record.externalId).catch((err) => {
+        console.warn(`[preview-ws] auto-resume failed for ${record.externalId}:`, err);
+        return false;
+      });
+      // The resume flips the row to 'active' immediately; the box finishes
+      // booting in the background and the client's next retry connects.
+      const resumed = await loadSandbox(sandboxId);
+      if (resumed) record = resumed;
+    }
+    if (record.status !== 'active') {
+      return { ok: false, status: 503, message: `sandbox not ready (status: ${record.status})` };
+    }
   }
 
   const ingress = await resolveSandboxIngress(record, ingressRequest);

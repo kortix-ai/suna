@@ -1764,6 +1764,7 @@ export default {
       }
       const prep = await preparePreviewWsUpgrade(url);
       if (!prep.ok) {
+        console.warn(`[preview-ws] REFUSED ${prep.status} ${prep.message} path=${url.pathname} hasToken=${url.searchParams.has('token')}`);
         return new Response(JSON.stringify({ error: prep.message }), {
           status: prep.status,
           headers: { 'Content-Type': 'application/json' },

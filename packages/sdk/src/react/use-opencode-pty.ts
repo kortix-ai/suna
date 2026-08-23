@@ -135,6 +135,14 @@ export function useUpdatePty(options?: PtyMutationOptions) {
 // WebSocket URL helper
 // ============================================================================
 
-export async function getPtyWebSocketUrl(ptyId: string, serverUrl?: string): Promise<string> {
-  return getKortixPtyWebSocketUrl(ptyId, serverUrl || getActiveOpenCodeUrl());
+/**
+ * `opts.wake` marks a USER-INITIATED attach so the API resumes a parked box.
+ * Automatic reconnect attempts must leave it off — see `getKortixPtyWebSocketUrl`.
+ */
+export async function getPtyWebSocketUrl(
+  ptyId: string,
+  serverUrl?: string,
+  opts?: { wake?: boolean },
+): Promise<string> {
+  return getKortixPtyWebSocketUrl(ptyId, serverUrl || getActiveOpenCodeUrl(), opts);
 }

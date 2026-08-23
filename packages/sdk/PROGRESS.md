@@ -12,6 +12,33 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-23 — session `terminal-ws-wake` — a terminal attach may wake a parked box — DONE
+
+**Files:** `core/runtime/pty.ts` (`getKortixPtyWebSocketUrl` takes `{ wake }`) +
+`core/runtime/pty.test.ts` (NEW, 3 tests) · `react/use-opencode-pty.ts`
+(`getPtyWebSocketUrl` passes it through). Additive optional argument — no
+export added, no signature broken.
+
+**What.** The session Terminal panel looped `Reconnecting in Ns (code 1006)`
+forever. A sandbox that idle-parks answers a WebSocket UPGRADE with
+`503 sandbox not ready` (`resolvePreviewWsUpstream` in `apps/api`), and a
+browser can only report a refused upgrade as close code `1006`. The HTTP data
+path wakes a parked box on explicit user intent; the WebSocket path had no wake
+branch at all, so nothing in the retry loop could ever resume the box — and the
+panel's own `GET /kortix/pty` is a GET on a session-data port, which by policy
+also never resumes. Reloading the page did not help.
+
+**Fix.** A USER-INITIATED attach (panel mount, "Reconnect now") carries
+`wake=1`; the API resumes a stopped box for a marked PTY attach only
+(`shouldWakeStoppedSandboxForWsAttach`). Automatic backoff retries stay
+unmarked, so polling and background reconnects still cannot resurrect a box.
+
+**Gates:** `typecheck` clean (both projects) · `bun test` 2424 pass / 0 fail ·
+verified live in a browser: parked box → `1006` loop → Reconnect now → row
+`stopped`→`active` → `WebSocket connected` → `echo` executed in the shell.
+
+---
+
 ### 2026-08-23 — session `commands-not-iterable` — a list endpoint must never hand back a non-list — DONE
 
 **Files:** `react/use-opencode-sessions/shared.ts` (NEW internal `asRuntimeList`,

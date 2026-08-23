@@ -221,8 +221,12 @@ async function resolveUpgradeForPrincipal(input: {
   // Strip our own auth credentials before forwarding — opencode authenticates
   // via the Daytona preview token header, not our query params.
   const upstreamQuery = new URLSearchParams(input.search);
+  // `wake=1` is OUR resume signal (see shouldWakeStoppedSandboxForWsAttach) and
+  // means nothing to the daemon — strip it with the credentials.
+  const wakeRequested = upstreamQuery.get('wake') === '1';
   upstreamQuery.delete('token');
   upstreamQuery.delete('public_share');
+  upstreamQuery.delete('wake');
   const queryString = upstreamQuery.toString() ? `?${upstreamQuery.toString()}` : '';
 
   try {
@@ -236,6 +240,7 @@ async function resolveUpgradeForPrincipal(input: {
       // A PreviewPrincipal's sessionId is the SANDBOX's own token binding, never
       // a Supabase login id — so it is also the correct agent binding.
       boundCredentialSessionId: callerSessionId,
+      wakeRequested,
     });
     if (!upstream.ok) {
       return { ok: false, status: upstream.status, message: upstream.message };
