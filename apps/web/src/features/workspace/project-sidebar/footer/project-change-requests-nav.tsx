@@ -1,7 +1,7 @@
 'use client';
 
 import { useFeatureFlag } from '@kortix/sdk/react';
-import { CaretRightIcon, GitDiffIcon as ChangesIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, TrayIcon } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -118,7 +118,11 @@ function NavItemInner({ projectId }: { projectId: string }) {
 
   if (count === 0) return null;
 
-  const label = reviewEnabled ? 'Review' : count === 1 ? 'Review change' : 'Review changes';
+  // One word, whichever surface it opens — both are "things waiting for you".
+  // The old label switched between "Review change" and "Review changes" on the
+  // count, so a nav row rewrote itself as work arrived; the badge already
+  // carries the number.
+  const label = 'Review';
   // The pill is one sidebar row: a three-digit count would push the label into
   // an ellipsis, so it clamps instead. The exact number lives in the list.
   const countLabel = count > 99 ? '99+' : String(count);
@@ -126,7 +130,6 @@ function NavItemInner({ projectId }: { projectId: string }) {
 
   const menuButton = (
     <SidebarMenuButton
-      variant="success"
       className="font-medium"
       onClick={
         reviewEnabled
@@ -137,15 +140,20 @@ function NavItemInner({ projectId }: { projectId: string }) {
             : undefined
       }
     >
-      <ChangesIcon className="size-4" />
+      <TrayIcon className="size-4" />
       {/* `truncate` sits on the label, not on the trailing group: the sidebar's
           base recipe truncates the last child, which used to be the count. */}
       <span className="truncate">{label}</span>
       <span className="ml-auto flex shrink-0 items-center gap-1">
+        {/* Pending, not done. The row used to be a filled green pill with green
+            text (`variant="success"`), which is the tone this system uses for
+            "finished" — on a row that exists precisely because something is
+            NOT finished. A plain row with an amber count says "N waiting"
+            without claiming a colour it has not earned. */}
         <Badge
           variant="transparent"
           size="tabular"
-          className="bg-kortix-green/15 dark:bg-kortix-green/25 text-current"
+          className="bg-kortix-yellow/15 dark:bg-kortix-yellow/25 text-current"
         >
           {countLabel}
         </Badge>
