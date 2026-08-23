@@ -125,14 +125,14 @@ triggers:
   # objectives), and refines the shared harness — agent prompts,
   # sub-agents, skills/tools, memory — via the four-pass protocol in
   # the `kortix-harness-refinement` skill. Opens a `harness: …` change
-  # request; exits silently when nothing is worth changing — a quiet
-  # project costs one short no-op session per day. Flip `enabled: false`
-  # to opt out.
+  # request; exits silently when nothing is worth changing. Disabled by
+  # default because every run creates a sandbox. Flip `enabled: true` after
+  # the project has enough activity for daily reflection to be useful.
   - slug: harness-reflector
     name: Harness reflector
     type: cron
     agent: harness-reflector
-    enabled: true
+    enabled: false
     cron: "0 0 3 * * *" # 03:00 daily
     timezone: UTC
     prompt: |

@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Ship starter cron automation disabled unless fleet admission bounds it (2026-08-23)
+
+**When:** adding scheduled automation to a project starter. Default every cron
+trigger to disabled. An enabled fleet default must have deterministic jitter and
+a global compute budget before release. Per-project limits cannot stop one run
+across every project. *Incident:* 666 synchronized reflector sessions exhausted
+Platinum capacity; 139 sandboxes started and 527 creates failed. *Enforcer:*
+`packages/starter/src/index.test.ts` asserts starter automation is disabled.
+
 ### Resolve a pnpm global package through `pnpm root -g` (2026-08-23)
 
 **When:** validating or linking a binary installed by `pnpm add -g`. Build the
