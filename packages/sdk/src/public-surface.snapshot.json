@@ -1213,6 +1213,7 @@
     "useShareSession",
     "useSignupsByDate",
     "useStartKortixTask",
+    "useStaticFilePreview",
     "useStopImpersonation",
     "useSummarizeOpenCodeSession",
     "useSummarizeRuntimeSession",
