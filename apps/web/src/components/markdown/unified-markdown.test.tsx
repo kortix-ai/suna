@@ -123,21 +123,20 @@ const FENCE_IN_LIST_MD = [
 const PATH_IN_LIST_MD = ['- open docs/readme.md now', ''].join('\n');
 
 /**
- * The rendered text with markup removed.
+ * The text a reader sees, with the markup removed.
  *
  * Asserting on raw markup is only stable while the fence is UNHIGHLIGHTED:
- * where Shiki's grammar loads synchronously it splits `cd ~/UnrealEngine` into
- * one span per token, so a substring match on the markup passes locally and
- * fails in CI. Compare what the reader sees instead.
+ * where Shiki's grammar loads synchronously it emits one span per token, so
+ * `cd ~/UnrealEngine` lands in two elements and a substring match on the HTML
+ * misses. Splitting on the tag delimiters — rather than a `replace()` that
+ * reads as an HTML sanitizer it is not — keeps this a test-only text
+ * extractor.
  */
 function visibleText(html: string): string {
   return html
-    .replace(/<[^>]*>/g, '')
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
+    .split('<')
+    .map((chunk, index) => (index === 0 ? chunk : chunk.slice(chunk.indexOf('>') + 1)))
+    .join('');
 }
 
 describe('UnifiedMarkdown code fence inside a list', () => {
