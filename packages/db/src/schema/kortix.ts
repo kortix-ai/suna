@@ -1334,7 +1334,13 @@ export const projectMonitorBoxes = kortixSchema.table(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    accountId: uuid('account_id').notNull().references(() => accounts.accountId, { onDelete: 'cascade' }),
+    // NO foreign key: the live database has never had one. A `.references()`
+    // arrived here with the kortixd series (99931e2ef3) and survived its revert,
+    // while no migration ever created the constraint — so schema, snapshot and
+    // database disagreed silently and the next generated migration would have
+    // been diffed against a fiction. Account deletion already reaches these rows
+    // through `project_id` -> projects -> accounts.
+    accountId: uuid('account_id').notNull(),
     provider: varchar('provider', { length: 32 }).notNull(),
     /** The provider's sandbox id. Null until the create call returns. */
     externalId: text('external_id'),

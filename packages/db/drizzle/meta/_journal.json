@@ -421,6 +421,13 @@
       "when": 1787518162367,
       "tag": "20260823204922_drop_compute_node_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1787519077480,
+      "tag": "20260823210437_reconcile_monitor_box_account_fk",
+      "breakpoints": true
     }
   ]
 }
