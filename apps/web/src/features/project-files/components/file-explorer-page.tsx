@@ -38,7 +38,6 @@ import { CheckpointsPanel } from './checkpoints-panel';
 import { DriveGridView } from './drive-grid-view';
 import { DriveHeader } from './drive-header';
 import { DriveListView } from './drive-list-view';
-import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { type FilesRightPanel, requestedFilesRightPanel } from './file-route-state';
@@ -382,10 +381,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
           onToggle: () => toggleRightPanel('proposed-changes'),
           openCount: openCrCount,
         }}
-      />
-
-      <DriveToolbar
-        showVersionSelector
+        onRefresh={() => refetchFiles()}
         onDownloadDir={() => {
           const dirName = isRootPath
             ? 'workspace'
@@ -394,7 +390,6 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
           downloadDir(dirPath, dirName);
         }}
         isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
-        onRefresh={() => refetchFiles()}
       />
 
       <div className="relative min-h-0 flex-1">

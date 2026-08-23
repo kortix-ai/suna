@@ -1621,7 +1621,12 @@ html[data-desktop='true'] .kx-titlebar-spacer {
    y=0, so it shares the band with the OS window controls: the macOS traffic
    lights on the left, the Win/Linux cluster on the right. Wear
    `.kx-titlebar-row` and it indents past whichever applies. Indent only — the
-   row keeps its own height, exactly like .kx-files-header below.
+   row keeps its own height.
+
+   The standalone Files header (/projects/[id]/files) wears this too. It used
+   to carry a Files-only near-duplicate of these rules, with its own md+ and
+   per-platform split, for a header that no longer exists in that shape — see
+   `drive-header.tsx`. One class, one rule.
 
    `data-sidebar-collapsed` gates the left indent: an expanded sidebar covers
    the lights (and the shell's toggle self-hides), so indenting then would
@@ -1633,25 +1638,6 @@ html[data-desktop='true'] .kx-titlebar-row {
 }
 html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
   padding-left: var(--kx-titlebar-content-left);
-}
-
-/* Files page header (/projects/[id]/files) — the one page header that reaches
-   the top of the window with nothing above it, so it shares the title-bar row
-   with the OS window controls. No extra vertical space, indent only.
-
-   Both indents are scoped to md+ where the title shares the traffic-light row. */
-@media (min-width: 768px) {
-  /* macOS: indent past the lights AND the shell's floating sidebar toggle —
-     --kx-titlebar-content-left is exactly "after both". Only while collapsed;
-     an expanded sidebar covers the lights itself. */
-  html[data-desktop-platform='macos'] .kx-files-header[data-sidebar-collapsed] {
-    padding-left: var(--kx-titlebar-content-left);
-  }
-  /* Win/Linux: window controls live top-right, where the history / proposed-
-     changes / view-mode controls sit. Left stays at the web's `pl-14`. */
-  html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-files-header {
-    padding-right: var(--kx-titlebar-controls-width);
-  }
 }
 
 /* Full-screen / top-reaching modals (e.g. the File Preview modal) start
