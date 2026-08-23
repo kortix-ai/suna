@@ -12,6 +12,44 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `connection-projection` — one answer for "is this session connected" — DONE
+
+**Files:** `core/session/connection.ts` (NEW — `SessionConnection`,
+`SandboxLifecycle`, `SessionConnectionInputs`, `projectSessionConnection`,
+`connectionIsFaulted`) + `connection.test.ts` (12 tests) ·
+`core/session/index.ts` (barrel) · both surface snapshots (additive) ·
+`apps/web/.../session-composer-readiness.ts` (+ optional `connection` input) ·
+`apps/web/.../session-chat.tsx` (reads `project_sessions.status`, computes the
+projection, passes it in).
+
+**What.** The composer's waking notice was a FALLBACK: every specific branch
+(ready / open server turn / unreachable / stalled) missed, so it asserted the
+one thing nobody had checked — "this session is asleep." On a reload that fires
+before any probe answers, which is every reload. Screen recording (dev,
+2026-08-24 00:10): page reloads at 00:05, "Waking this session up… messages you
+send will be queued" shows 00:11–00:13 over a session that streams at 00:13
+with a live green dot. Nothing was waking. Nobody had looked yet.
+
+A settle TIMER was the first attempt and the wrong shape — it guessed HOW LONG
+to stay quiet instead of asking whether anything was wrong, so it was always
+either too short (notice flashes over a live session) or too long (a genuinely
+parked box announces itself late).
+
+**Fix.** `projectSessionConnection` folds the four observers into one ordered
+answer, and the order is the whole design: streamed CONTENT and a passing probe
+mean `live` whatever else says; a failed probe means `unreachable`; only the
+control plane's own `project_sessions.status` earns `waking`. Everything else
+is `connecting` or `unknown` — a WAIT, not a fault, and a wait says nothing.
+Stale status is safe in both directions because the probe outranks it: a stale
+`stopped` under a live runtime still reads `live`, and a stale `running` over a
+dead box still reads `unreachable`.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2456 pass / 0 fail ·
+`smoke:install` passed · apps/web tsc clean (known `@types/bun` `test.each`
+noise only), readiness suite 29 pass / 0 fail.
+
+---
+
 ### 2026-08-24 — session `content-is-evidence` — the runtime's output is not an opinion about the runtime — DONE
 
 **Files:** `core/session/working.ts` (+`WorkingActivityInput`, the content branch,

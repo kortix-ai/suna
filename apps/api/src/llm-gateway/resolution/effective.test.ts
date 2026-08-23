@@ -67,18 +67,23 @@ describe('toWireModel / toOpencodeModelRef', () => {
     expect(toWireModel('glm-5.2')).toBe('glm-5.2');
   });
 
-  test('re-prefixes a bare managed id to the opencode ref; leaves BYOK/codex alone', () => {
+  test('puts every gateway model under the kortix OpenCode provider', () => {
     expect(toOpencodeModelRef('glm-5.2')).toBe('kortix/glm-5.2');
     expect(toOpencodeModelRef('deepseek-v4-flash')).toBe('kortix/deepseek-v4-flash');
-    // 2026-08-10 slim-down: a deactivated managed id is no longer re-prefixed.
-    expect(toOpencodeModelRef('claude-opus-4.8')).toBe('claude-opus-4.8');
+    expect(toOpencodeModelRef('claude-opus-4.8')).toBe('kortix/claude-opus-4.8');
     expect(toOpencodeModelRef('kortix/glm-5.2')).toBe('kortix/glm-5.2');
-    expect(toOpencodeModelRef('anthropic/claude-sonnet-4.6')).toBe('anthropic/claude-sonnet-4.6');
-    expect(toOpencodeModelRef('codex/gpt-5.5')).toBe('codex/gpt-5.5');
+    expect(toOpencodeModelRef('anthropic/claude-sonnet-4.6')).toBe(
+      'kortix/anthropic/claude-sonnet-4.6',
+    );
+    expect(toOpencodeModelRef('codex/gpt-5.6-sol')).toBe('kortix/codex/gpt-5.6-sol');
   });
 
   test('round-trips a managed id through wire → opencode', () => {
     expect(toOpencodeModelRef(toWireModel('kortix/glm-5.2'))).toBe('kortix/glm-5.2');
+    expect(toWireModel(toOpencodeModelRef('codex/gpt-5.6-sol'))).toBe('codex/gpt-5.6-sol');
+    expect(toWireModel(toOpencodeModelRef('anthropic/claude-sonnet-4.6'))).toBe(
+      'anthropic/claude-sonnet-4.6',
+    );
   });
 });
 
@@ -167,7 +172,7 @@ describe('degradeUnservableDefault — stale default guard', () => {
     ).toBeNull();
   });
 
-  test('unservable default + a fallback that finds a connected provider → the fallback model, not platform (the essentia bug)', async () => {
+  test('unservable default + a fallback that finds a connected provider → the fallback model, not platform', async () => {
     // A stale/disconnected openrouter default degrades to whatever the project
     // ACTUALLY has connected (e.g. its own OpenAI BYOK key) instead of silently
     // falling all the way to a platform default that may ALSO be unusable
