@@ -86,6 +86,15 @@ function isTextLikePart(part: Part): part is TextLikePart {
 // (the assistant appeared to hang mid-sentence).
 // ============================================================================
 
+/**
+ * How coarsely `sessionActivityAt` is stamped.
+ *
+ * One second: far finer than any consumer needs (the projection compares it
+ * against observations bounded in tens of seconds) and coarse enough that a
+ * runtime streaming at ~140ms per frame updates it once, not seven times.
+ */
+const ACTIVITY_STAMP_RESOLUTION_MS = 1_000;
+
 /** The index of `id` in `list`, or `-1`. Binary first, linear on a miss. */
 function indexOfId<T>(list: readonly T[], id: string, idOf: (item: T) => string): number {
 	const result = Binary.search(list as T[], id, idOf);
@@ -138,6 +147,20 @@ interface SyncState {
 	messages: Record<string, Message[]>;
 	parts: Record<string, Part[]>;
 	sessionStatus: Record<string, SessionStatus>;
+	/**
+	 * When the RUNTIME'S OWN OUTPUT last reached this tab, per session.
+	 *
+	 * Not a status, not a poll — the instant a streamed part or message landed.
+	 * `projectWorking` reads it as the one input that is not an observer of the
+	 * runtime but the runtime itself (see `WorkingActivityInput`): a composer
+	 * showing its send arrow over a transcript that is visibly streaming is what
+	 * its absence looked like.
+	 *
+	 * QUANTIZED to `ACTIVITY_STAMP_RESOLUTION_MS`. A busy runtime emits parts
+	 * every few tens of milliseconds; stamping each one would re-render every
+	 * subscriber at that rate for a value nothing needs to the millisecond.
+	 */
+	sessionActivityAt: Record<string, number>;
 	diffs: Record<string, FileDiff[]>;
 	todos: Record<string, Todo[]>;
 	/**
@@ -326,6 +349,8 @@ interface SyncState {
 	 */
 	markOptimisticInboxBacked: (sessionID: string, messageID: string) => void;
 	clearOptimisticMessages: (sessionID: string) => void;
+	/** Record that the runtime produced output for this session just now. */
+	noteSessionActivity: (sessionID: string, atMs?: number) => void;
 	/**
 	 * The runtime's id for an optimistic message that was superseded under a
 	 * DIFFERENT id (the control plane re-mints a wire id that would sort below
@@ -1028,6 +1053,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	messages: {},
 	parts: {},
 	sessionStatus: {},
+	sessionActivityAt: {},
 	diffs: {},
 	todos: {},
 	sessionRevert: {},
@@ -1452,6 +1478,17 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		});
 	},
 
+	noteSessionActivity: (sessionID, atMs) => {
+		if (!sessionID) return;
+		const now = atMs ?? Date.now();
+		const previous = get().sessionActivityAt[sessionID];
+		// Quantized: a busy runtime emits parts every few tens of milliseconds and
+		// nothing reads this to the millisecond. Without the floor, every
+		// subscriber re-renders at the stream's own rate for a timestamp.
+		if (previous !== undefined && now - previous < ACTIVITY_STAMP_RESOLUTION_MS) return;
+		set((s) => ({ sessionActivityAt: { ...s.sessionActivityAt, [sessionID]: now } }));
+	},
+
 	clearOptimisticMessages: (sessionID) => {
 		set((s) => {
 			const list = s.messages[sessionID];
@@ -1489,9 +1526,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const nextParts = { ...s.parts };
 			for (const message of existingMessages) delete nextParts[message.id];
 			deleteOrphanPartBuckets(nextParts, [sessionID]);
+			const nextActivity = { ...s.sessionActivityAt };
+			delete nextActivity[sessionID];
 			return {
 				messages: { ...s.messages, [sessionID]: [] },
 				parts: nextParts,
+				sessionActivityAt: nextActivity,
 				sessionStatus: { ...s.sessionStatus, [sessionID]: { type: "idle" } as SessionStatus },
 				diffs: { ...s.diffs, [sessionID]: [] },
 				todos: { ...s.todos, [sessionID]: [] },
@@ -2040,6 +2080,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		const store = get();
 		switch (event.type) {
 			case "message.updated": {
+				{
+					const info = (event.properties as { info?: { sessionID?: string } })?.info;
+					const sid =
+						info?.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
+					if (sid) get().noteSessionActivity(sid);
+				}
 				const info = (event.properties as { info: Message }).info;
 				if (!info?.sessionID) return;
 				// The user cancelled this message; the runtime's husk stays dead.
@@ -2205,6 +2251,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			case "message.part.updated": {
 				const part = (event.properties as { part: Part }).part;
 				if (!part?.messageID) return;
+				// The runtime just produced output. This is the evidence
+				// `projectWorking` trusts above every observer — see
+				// `sessionActivityAt`.
+				{
+					const sid =
+						part.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
+					if (sid) get().noteSessionActivity(sid);
+				}
 
 				const eventSessionID =
 					(event.properties as { sessionID?: string })?.sessionID;
