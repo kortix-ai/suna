@@ -155,40 +155,25 @@ async function configureSafeDirectory(target: string): Promise<void> {
   logger.info('[git] configured safe git directory', { target })
 }
 
-/** Build the `-c http.<repo-origin>/.extraheader=...` auth args for git. */
+/** Build auth args only for the Kortix Git proxy. */
 export function buildGitAuthArgs(
   repoUrl: string | undefined,
   token: string | undefined,
-  username = 'x-access-token',
 ): string[] {
-  if (!token) return []
+  if (!token || !repoUrl || !/\/v1\/git\//.test(repoUrl)) return []
 
-  let authOrigin = 'https://github.com'
-  if (repoUrl) {
-    try {
-      const parsed = new URL(repoUrl)
-      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-        authOrigin = `${parsed.protocol}//${parsed.host}`
-      }
-    } catch {
-      const scpLikeHost = repoUrl.match(/^[^@]+@([^:/]+)[:/]/)?.[1]
-      if (scpLikeHost) authOrigin = `https://${scpLikeHost}`
-    }
-  }
+  const parsed = new URL(repoUrl)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return []
+  const authOrigin = `${parsed.protocol}//${parsed.host}`
 
-  const headerValue = Buffer.from(`${username}:${token}`).toString('base64')
+  const headerValue = Buffer.from(`x-access-token:${token}`).toString('base64')
   const header = `AUTHORIZATION: basic ${headerValue}`
-  const args = ['-c', `http.${authOrigin}/.extraheader=${header}`]
-
-  // The Kortix git proxy is the sandbox's own control-plane URL. During the
-  // initial clone we do not rely on HOME-scoped credential helper config, so
-  // add a one-command fallback header that git applies to the proxy request.
-  // This is intentionally limited to /v1/git URLs: direct upstream clones keep
-  // the host-scoped header only.
-  if (repoUrl && /\/v1\/git\//.test(repoUrl)) {
-    args.push('-c', `http.extraheader=${header}`)
-  }
-  return args
+  return [
+    '-c',
+    `http.${authOrigin}/.extraheader=${header}`,
+    '-c',
+    `http.extraheader=${header}`,
+  ]
 }
 
 interface CloneCredential {
@@ -203,122 +188,31 @@ async function gitWithAuth(
   opts: { cwd?: string; timeoutMs?: number } = {},
 ): Promise<ExecResult> {
   return execGit([
-    ...buildGitAuthArgs(repoUrl, credential?.token, credential?.username),
+    ...buildGitAuthArgs(repoUrl, credential?.token),
     ...args,
   ], opts)
 }
 
-const CLONE_CRED_TIMEOUT_MS = 15_000
-const CLONE_CRED_ATTEMPTS = 4
-
-/**
- * Per-process cache for the clone-credential round-trip. `materializeRepo`
- * calls `resolveCloneCredential` twice (base clone + branch checkout) on the cold
- * path; the API token doesn't change within a single boot, so caching it
- * avoids a second control-plane round-trip over the public internet.
- * Memoize on the input shape (api+project+token) so re-keying invalidates.
- */
-let cachedCloneToken: { key: string; value: CloneCredential | undefined } | null = null
-
-/** Test-only: drop the cached clone token so a fresh fetch happens next call. */
-export function __clearCloneTokenCacheForTests(): void {
-  cachedCloneToken = null
-}
-
 async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | undefined> {
-  if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
-  // Universal proxy origin: when the repo is served by the Kortix git proxy
-  // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
-  // credential IS our own KORTIX_TOKEN — the proxy authenticates it and resolves
-  // the real upstream + host credential server-side. No clone-credential round
-  // trip, and a real GitHub token never enters the sandbox.
-  if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
-    return { username: 'x-access-token', token: cfg.sandboxToken }
-  }
-  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}`
-  if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
-
-  const rawBase = cfg.apiUrl.replace(/\/+$/, '')
-  const base = rawBase.endsWith('/v1/router')
-    ? rawBase.replace(/\/router$/, '')
-    : rawBase.endsWith('/v1')
-      ? rawBase
-      : `${rawBase}/v1`
-  const url = `${base}/projects/${encodeURIComponent(cfg.projectId)}/git/clone-credential`
-
-  // The control plane is reached over the public internet (KORTIX_API_URL).
-  // A bare fetch with no timeout/retry turns one transient blip — or a
-  // misconfigured (e.g. loopback) callback URL — into a permanent boot failure
-  // surfaced as the opaque Bun error "Unable to connect. Is the computer able to
-  // access the url?". Retry transient failures, time-box each attempt, and on
-  // exhaustion throw an error that names the URL so /kortix/health explains the
-  // real problem instead of leaking that string verbatim.
-  let lastErr: unknown
-  for (let attempt = 1; attempt <= CLONE_CRED_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${cfg.sandboxToken}`,
-          Accept: 'application/json',
-        },
-        signal: AbortSignal.timeout(CLONE_CRED_TIMEOUT_MS),
-      })
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        // 4xx (bad token / not found) won't fix itself — fail immediately.
-        if (res.status >= 400 && res.status < 500) {
-          throw new Error(`failed to fetch git clone credential (${res.status}): ${text || res.statusText}`)
-        }
-        // 5xx is potentially transient — retry.
-        throw new Error(`clone-credential ${res.status}: ${text || res.statusText}`)
-      }
-      const body = await res.json().catch(() => null) as
-        | { auth?: { username?: string | null; token?: string | null } | null }
-        | null
-      const token = body?.auth?.token?.trim()
-      const username = body?.auth?.username?.trim() || 'x-access-token'
-      const value = token ? { username, token } : undefined
-      cachedCloneToken = { key: cacheKey, value }
-      return value
-    } catch (err) {
-      lastErr = err
-      const is4xx = err instanceof Error && /\((4\d\d)\)/.test(err.message)
-      if (is4xx || attempt === CLONE_CRED_ATTEMPTS) break
-      logger.warn('[git] clone-credential fetch failed; retrying', {
-        attempt,
-        of: CLONE_CRED_ATTEMPTS,
-        url: base,
-        err: err instanceof Error ? err.message : String(err),
-      })
-      await new Promise((r) => setTimeout(r, 500 * attempt))
+  if (!cfg.repoUrl || !/\/v1\/git\//.test(cfg.repoUrl)) {
+    if (cfg.repoUrl && (cfg.repoUrl.startsWith('/') || cfg.repoUrl.startsWith('file:'))) {
+      return undefined
     }
+    throw new Error('direct Git origins are refused; KORTIX_REPO_URL must use the Kortix Git proxy')
   }
-
-  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr)
-  if (lastErr instanceof Error && /\((4\d\d)\)/.test(lastErr.message)) {
-    throw lastErr
-  }
-  throw new Error(
-    `could not reach the Kortix control plane at ${base} to fetch the git clone ` +
-    `credential after ${CLONE_CRED_ATTEMPTS} attempts — is KORTIX_API_URL publicly ` +
-    `reachable from this sandbox? (${detail})`,
-  )
+  if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
+  return { username: 'x-access-token', token: cfg.sandboxToken }
 }
 
 /**
  * Configure git so that *any* push/fetch the agent runs against the project's
  * managed remote authenticates with zero setup — the same credential the
- * daemon mints for itself at clone time.
+ * daemon receives as KORTIX_TOKEN at session start.
  *
  * Mechanism: a git credential helper pointed back at this very binary
  * (`kortix-agent git-credential`). When git needs a credential for the repo
- * host it execs the helper, which fetches a fresh push-capable token from the
- * control plane (`/git/clone-credential`) and hands git
- * `username=x-access-token` + `password=<token>`. Fetching on demand (rather
- * than baking a token into `.git/config`) means a long-running session never
- * pushes with a stale token — the exact failure mode that left an agent unable
- * to `git push origin HEAD`.
+ * host it execs the helper, which returns KORTIX_TOKEN without storing it in
+ * `.git/config`.
  *
  * Scoped to the repo's origin host so it never fires for unrelated hosts.
  */
@@ -347,8 +241,7 @@ export async function configureGitCredentialHelper(
   if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
-  const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
-    ?? 'x-access-token'
+  const username = (await resolveCloneCredential(cfg))?.username ?? 'x-access-token'
 
   const env = { HOME: home }
   // `--replace-all` keeps re-boots idempotent instead of appending duplicate
@@ -387,8 +280,7 @@ export async function configureRepoCredentialHelper(cfg: Config, target: string)
   if (!(await pathExists(`${target}/.git`))) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
-  const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
-    ?? 'x-access-token'
+  const username = (await resolveCloneCredential(cfg))?.username ?? 'x-access-token'
 
   const setHelper = await execGit(
     ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.helper`, credentialHelperSpec()],
@@ -409,9 +301,8 @@ export async function configureRepoCredentialHelper(cfg: Config, target: string)
 /**
  * Git credential-helper entrypoint (`kortix-agent git-credential <action>`).
  * Implements the read side of git's credential protocol: on `get` it resolves
- * a fresh push/clone token and writes `username`/`password` to stdout. Every
- * other action (`store`, `erase`) is a no-op — the control plane owns the
- * credential, there's nothing local to persist or forget.
+ * the session token and writes `username`/`password` to stdout. Every other
+ * action (`store`, `erase`) is a no-op. The helper persists nothing.
  */
 export async function runGitCredentialHelper(
   cfg: Config,

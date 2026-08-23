@@ -19,15 +19,21 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { accountTokens } from '@kortix/db';
+import { accountTokens, sessionSandboxes } from '@kortix/db';
 
 let capturedWhere: unknown = null;
 let rows: Array<Record<string, unknown>> = [];
+let leaseRows: Array<Record<string, unknown>> = [];
 
 mock.module('../shared/db', () => ({
   db: {
     select: () => ({
-      from: () => ({
+      from: (table: unknown) => table === sessionSandboxes ? ({
+        where: (cond: unknown) => {
+          capturedWhere = cond;
+          return { limit: async () => leaseRows };
+        },
+      }) : ({
         innerJoin: () => ({
           where: (cond: unknown) => {
             capturedWhere = cond;
@@ -69,6 +75,7 @@ function filteredColumns(node: unknown, seen = new Set<unknown>(), out: string[]
 beforeEach(() => {
   capturedWhere = null;
   rows = [];
+  leaseRows = [];
 });
 
 describe('validateAccountToken revocation gate', () => {
@@ -134,6 +141,37 @@ describe('validateAccountToken revocation gate', () => {
     expect(result.isValid).toBe(true);
     expect(result.accountId).toBe('acct-1');
     expect(result.userId).toBe('user-1');
+  });
+
+  test('a stopped session cannot use its retained sandbox credential', async () => {
+    const { secretKey } = generateAccountTokenPair();
+    rows = [{
+      tokenId: 'tok-session', accountId: 'acct-1', userId: 'user-1',
+      projectId: 'project-1', sessionId: 'session-1', status: 'active',
+      expiresAt: null, lastUsedAt: new Date(), createdAt: new Date(),
+      agentGrant: null, patIdleRevokeDays: null,
+    }];
+    leaseRows = [];
+
+    const result = await validateAccountToken(secretKey);
+
+    expect(result).toEqual({ isValid: false, error: 'Session token is not active' });
+  });
+
+  test('an active session can use its sandbox credential', async () => {
+    const { secretKey } = generateAccountTokenPair();
+    rows = [{
+      tokenId: 'tok-session', accountId: 'acct-1', userId: 'user-1',
+      projectId: 'project-1', sessionId: 'session-1', status: 'active',
+      expiresAt: null, lastUsedAt: new Date(), createdAt: new Date(),
+      agentGrant: null, patIdleRevokeDays: null,
+    }];
+    leaseRows = [{ status: 'active' }];
+
+    const result = await validateAccountToken(secretKey);
+
+    expect(result.isValid).toBe(true);
+    expect(result.sessionId).toBe('session-1');
   });
 
   test('a malformed token is refused before any lookup runs', async () => {

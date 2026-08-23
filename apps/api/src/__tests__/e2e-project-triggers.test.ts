@@ -101,6 +101,7 @@ function resetState() {
   modelDefaults = { account: null, agents: {}, projects: {} };
   projectRow.metadata = {};
   secretValues.clear();
+  secretConsumerConfigurationStates.clear();
   secretConsumerReads.length = 0;
 }
 
@@ -348,6 +349,10 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 // Stub secrets so webhook tests can resolve the trigger's signing secret.
 // Tests can read/override `secretValues` to drive specific behaviors.
 const secretValues = new Map<string, string>();
+const secretConsumerConfigurationStates = new Map<
+  string,
+  'configured' | 'missing' | 'inactive' | 'delivery_mismatch'
+>();
 const secretConsumerReads: Array<Record<string, unknown>> = [];
 const realProjectSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
@@ -361,9 +366,17 @@ mock.module('../projects/secrets', () => ({
   listProjectSecretNamesForConsumer: async () => [],
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   projectSecretsRevision: async () => 'empty',
+  getProjectSecretConsumerConfigurationStatus: async (input: { name: string }) =>
+    secretConsumerConfigurationStates.get(input.name) ??
+    (secretValues.has(input.name) ? 'configured' : 'missing'),
   getProjectSecretValueForConsumer: async (input: { name: string; consumer: string }) => {
     secretConsumerReads.push(input);
-    return input.consumer === 'connector' ? (secretValues.get(input.name) ?? null) : null;
+    const configuration =
+      secretConsumerConfigurationStates.get(input.name) ??
+      (secretValues.has(input.name) ? 'configured' : 'missing');
+    return input.consumer === 'connector' && configuration === 'configured'
+      ? (secretValues.get(input.name) ?? null)
+      : null;
   },
 }));
 
@@ -912,6 +925,7 @@ describe('git-backed triggers — CRUD', () => {
   });
 
   test('POST /triggers commits a webhook trigger and exposes the URL on listing', async () => {
+    secretValues.set('SLACK_WEBHOOK_SECRET', 'configured-test-value');
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
       method: 'POST',
@@ -933,6 +947,62 @@ describe('git-backed triggers — CRUD', () => {
       secret_env: 'SLACK_WEBHOOK_SECRET',
     });
     expect(body.triggers[0].webhook_url).toContain(`/v1/webhooks/projects/${PROJECT_ID}/slack-hook`);
+  });
+
+  test('POST /triggers rejects a webhook whose secret is missing or has sandbox delivery', async () => {
+    const app = createApp();
+    const body = {
+      name: 'Slack hook',
+      type: 'webhook',
+      secret_env: 'SLACK_WEBHOOK_SECRET',
+      prompt_template: 'New event',
+    };
+
+    const missing = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(missing.status).toBe(409);
+    expect(await missing.json()).toMatchObject({ code: 'webhook_secret_missing' });
+    expect(commitCalls).toHaveLength(0);
+
+    secretValues.set('SLACK_WEBHOOK_SECRET', 'configured-test-value');
+    secretConsumerConfigurationStates.set('SLACK_WEBHOOK_SECRET', 'delivery_mismatch');
+    const mismatched = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(mismatched.status).toBe(409);
+    expect(await mismatched.json()).toMatchObject({
+      code: 'webhook_secret_delivery_mismatch',
+    });
+    expect(commitCalls).toHaveLength(0);
+  });
+
+  test('PATCH /triggers/:slug rejects an existing webhook with sandbox secret delivery', async () => {
+    seedManifest(webhookEntry({
+      slug: 'hook',
+      name: 'Hook',
+      secretEnv: 'HOOK_SECRET',
+      prompt: 'New event',
+    }));
+    secretValues.set('HOOK_SECRET', 'configured-test-value');
+    secretConsumerConfigurationStates.set('HOOK_SECRET', 'delivery_mismatch');
+    const app = createApp();
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/hook`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Renamed hook' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      code: 'webhook_secret_delivery_mismatch',
+    });
+    expect(commitCalls).toHaveLength(0);
   });
 
   test('POST /triggers reloads and retries one manifest revision conflict', async () => {
@@ -1452,6 +1522,34 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(repeated.status).toBe(401);
     expect(mirrorInvalidationCalls).toBe(1);
     expect(manifestReadCalls).toBe(2);
+  });
+
+  test('webhook reports a connector delivery mismatch without creating a session', async () => {
+    seedManifest(webhookEntry({
+      slug: 'hook',
+      name: 'Hook',
+      secretEnv: 'HOOK_SECRET',
+      prompt: 'New event',
+    }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    secretConsumerConfigurationStates.set('HOOK_SECRET', 'delivery_mismatch');
+    const app = createApp();
+    const rawBody = JSON.stringify({ action: 'opened' });
+
+    const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+      },
+      body: rawBody,
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      code: 'webhook_secret_delivery_mismatch',
+    });
+    expect(sandboxProvisionCalls).toBe(0);
   });
 
   test('webhook fires with a valid HMAC spawn a session', async () => {

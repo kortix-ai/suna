@@ -301,12 +301,6 @@ const envSchema = z.object({
   // Git remote host for clone/push URLs. Defaults to `<CODE_STORAGE_ORG>.code.storage`
   // when blank.
   CODE_STORAGE_GIT_HOST: optStr,
-  // When true, runtime clients (sandbox + `kortix` CLI) use the Kortix git
-  // proxy as their git origin (auth = KORTIX_TOKEN) instead of the real host —
-  // so a real GitHub credential never reaches a sandbox. Requires a
-  // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
-  // OFF leaves the direct clone-credential token flow untouched).
-  KORTIX_GIT_PROXY: optBoolFalse,
   // ── Pause / resume tuning ─────────────────────────────────────────────────
   // The sandbox idle→stop / stop→archive / →delete intervals live below as
   // KORTIX_SANDBOX_AUTOSTOP_MINUTES / AUTOARCHIVE_MINUTES / AUTODELETE_MINUTES
@@ -1059,7 +1053,6 @@ export const config = {
   CODE_STORAGE_PRIVATE_KEY: env.CODE_STORAGE_PRIVATE_KEY,
   CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,
   CODE_STORAGE_GIT_HOST: env.CODE_STORAGE_GIT_HOST,
-  KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────

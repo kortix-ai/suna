@@ -134,11 +134,14 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
 /**
  * Resolve the agent's grant from the manifest's `[[agents]]` overlay, then mint
  * the per-session account token carrying it — the sandbox's one Kortix
- * credential (`KORTIX_TOKEN`). A manifest hiccup yields a null grant (full
- * access, capped at the user by the route's own role check). A mint failure
- * THROWS: the caller fails provisioning closed (gateway mode is the only mode,
- * and the gateway authenticates this token). The grant is read from the default
- * branch, so any `[[agents]]` change activates only via a merged CR.
+ * credential (`KORTIX_TOKEN`). Grant resolution is fail-closed: an unreadable
+ * manifest THROWS and stops provisioning instead of minting an unrestricted
+ * credential. A mint failure THROWS too. Either way the caller fails
+ * provisioning closed (gateway mode is the only mode, and the gateway
+ * authenticates this token): the row is marked `error` with a user-visible
+ * reason and a typed ConnectorTokenUnavailableError carries the cause. The
+ * grant is read from the default branch, so any `[[agents]]` change activates
+ * only through a merged change request.
  */
 async function mintSessionToken(opts: {
   accountId: string;
@@ -156,16 +159,11 @@ async function mintSessionToken(opts: {
     ? [platformMetaAgentGrant(), null]
     : await Promise.all([
         // Resolve the per-session grant AND the agent's standing-identity
-        // service account in parallel. The SA resolution is FAIL-SAFE: on error
+        // service account in parallel. Grant resolution must throw on failure.
+        // The SA resolution is FAIL-SAFE: on error
         // we mint without a service_account_id, which is the legacy behavior
         // (authorize as the user ∩ grant). It never widens authority.
-        resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
-          console.warn(
-            `[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`,
-            err,
-          );
-          return null;
-        }),
+        resolveAgentGrant(opts.agentName, opts.gitProject),
         ensureAgentServiceAccount({
           accountId: opts.accountId,
           projectId: opts.projectId,

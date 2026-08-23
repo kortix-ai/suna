@@ -104,7 +104,7 @@ The initial prompt and turn-ledger identifiers are not environment variables. Th
 
 ## Pushing from a session
 
-The daemon fetches a short-lived clone credential from `GET /v1/projects/:id/git/clone-credential`, authenticated with `KORTIX_TOKEN`. No static git token sits in the environment. With that credential, `git push origin HEAD` sends commits to the session branch. Landing on the default branch requires a merged [change request](/docs/work/change-requests).
+The daemon sends `KORTIX_TOKEN` only to the Kortix Git proxy. The proxy resolves the upstream Git credential on the server. No upstream Git token enters the sandbox. `git push origin HEAD` sends commits to the session branch. Landing on the default branch requires a merged [change request](/docs/work/change-requests).
 
 ## The agent runtime
 

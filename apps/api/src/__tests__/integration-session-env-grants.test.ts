@@ -18,6 +18,7 @@ import { and, eq, sql, inArray, isNull } from 'drizzle-orm';
 import {
   auditEvents,
   auditSessionSequences,
+  connectors,
   projects,
   projectSecrets,
   projectSessionSecretHandles,
@@ -28,6 +29,7 @@ import { resolveSandboxEnvSnapshot } from '../projects/lib/sandbox-env-sync';
 import { buildSessionSandboxEnvVars } from '../projects/lib/sessions';
 import {
   AmbiguousSecretGrantError,
+  confineSharedProjectSecretToConnector,
   encryptProjectSecret,
   intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
@@ -56,6 +58,8 @@ const BROKER_IDENT = `E2E_BROKER_${SUFFIX}`;
 const BROKER_KEY = `E2E_BROKER_KEY_${SUFFIX}`;
 const BROKER_SESSION = `e2e-broker-${crypto.randomUUID()}`;
 const BROKER_VALUE = `broker-plaintext-${crypto.randomUUID()}`;
+const CONNECTOR_IDENT = `E2E_CONNECTOR_${SUFFIX}`;
+const CONNECTOR_KEY = `E2E_CONNECTOR_KEY_${SUFFIX}`;
 
 beforeAll(async () => {
   const rows = (await db.execute(
@@ -92,6 +96,21 @@ beforeAll(async () => {
     projectId: ctx.projectId,
     name: UNSCOPED,
     value: 'open-val',
+  });
+  await writeSharedProjectSecret({
+    projectId: ctx.projectId,
+    identifier: CONNECTOR_IDENT,
+    name: CONNECTOR_KEY,
+    value: 'connector-only-val',
+  });
+  await db.insert(connectors).values({
+    accountId: ctx.accountId,
+    projectId: ctx.projectId,
+    slug: `connector-${SUFFIX.toLowerCase()}`,
+    name: 'Connector boundary fixture',
+    providerType: 'http',
+    config: { baseUrl: 'https://connector.example.test', auth: { type: 'bearer' } },
+    authSecret: CONNECTOR_IDENT,
   });
 
   // One identifier with a shared value plus a distinct personal override for
@@ -221,6 +240,7 @@ afterAll(async () => {
           VEYRIS_API_IDENT,
           VEYRIS_TOKEN_IDENT,
           BROKER_IDENT,
+          CONNECTOR_IDENT,
         ]),
       ),
     );
@@ -228,6 +248,37 @@ afterAll(async () => {
 });
 
 describe('listProjectSecretsSnapshotForUser — session env injection by identifier', () => {
+  test('a connector binding excludes a legacy runtime row and permanently confines it', async () => {
+    if (!ctx) return;
+
+    const before = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [CONNECTOR_IDENT]);
+    expect(before.env).toEqual({});
+    expect(before.names).toEqual([]);
+
+    await confineSharedProjectSecretToConnector(ctx.projectId, CONNECTOR_IDENT);
+    const [row] = await db
+      .select({
+        scope: projectSecrets.scope,
+        strategy: projectSecrets.strategy,
+        consumer: projectSecrets.consumer,
+        strategyLocked: projectSecrets.strategyLocked,
+      })
+      .from(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, ctx.projectId),
+          eq(projectSecrets.identifier, CONNECTOR_IDENT),
+          isNull(projectSecrets.ownerUserId),
+        ),
+      );
+    expect(row).toEqual({
+      scope: 'connector',
+      strategy: 'broker',
+      consumer: 'connector',
+      strategyLocked: true,
+    });
+  });
+
   test('an agent granted ONE identifier gets exactly that value under the shared key', async () => {
     if (!ctx) {
       console.warn('[integration] no project in local DB — skipping');

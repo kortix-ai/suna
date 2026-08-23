@@ -143,6 +143,7 @@ import {
   triggersPausedForProject,
   upsertTriggerInManifest,
 } from '../lib/triggers';
+import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { listProjectSecretNamesForConsumer } from '../secrets';
@@ -1124,6 +1125,13 @@ projectsApp.openapi(
 
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ('error' in draft) return c.json({ error: draft.error }, 400);
+    if (draft.type === 'webhook' && draft.secretEnv) {
+      const configurationError = await validateWebhookSecretConfiguration({
+        projectId,
+        secretEnv: draft.secretEnv,
+      });
+      if (configurationError) return c.json(configurationError, 409);
+    }
     const parsedAccess =
       body.session_access === undefined
         ? { ok: true as const, access: PRIVATE_TRIGGER_SESSION_ACCESS }
@@ -1324,6 +1332,15 @@ projectsApp.openapi(
         if (patchesKey && !patchesMode) delete base.session_mode;
         const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
         if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+        if (draft.type === 'webhook' && draft.secretEnv) {
+          const configurationError = await validateWebhookSecretConfiguration({
+            projectId,
+            secretEnv: draft.secretEnv,
+          });
+          if (configurationError) {
+            return { ok: false, status: 409, ...configurationError };
+          }
+        }
         effectivePinnedSessionId = draft.pinnedSessionId;
 
         // A `pinned` trigger may only target a session that belongs to THIS project.
@@ -1354,7 +1371,14 @@ projectsApp.openapi(
       },
     );
     if (!result.ok) {
-      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
+      return c.json(
+        {
+          error: result.error,
+          ...(result.code ? { code: result.code } : {}),
+          ...(result.remediation ? { remediation: result.remediation } : {}),
+        },
+        result.status as 400 | 404 | 409 | 502,
+      );
     }
     if (touchesManifest) {
       if (!committedManifest) throw new Error('trigger update completed without a manifest');

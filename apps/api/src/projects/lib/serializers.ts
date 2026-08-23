@@ -201,10 +201,9 @@ export function serializeProject(
     account_id: row.accountId,
     name: row.name,
     repo_url: row.repoUrl,
-    // Universal client-facing git origin. When the proxy is enabled, runtime
-    // clients (CLI `ship`, web) clone/push this with a Kortix token instead of
-    // the real host URL. Falls back to repo_url so callers can always use it.
-    git_origin_url: config.KORTIX_GIT_PROXY ? proxyGitUrl(row.projectId) : row.repoUrl,
+    // Runtime clients clone and push only through the Kortix Git proxy. The
+    // upstream origin and its credential remain server-side.
+    git_origin_url: proxyGitUrl(row.projectId),
     default_branch: row.defaultBranch,
     manifest_path: row.manifestPath,
     status: row.status,

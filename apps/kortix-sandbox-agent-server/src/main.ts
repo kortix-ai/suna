@@ -789,7 +789,7 @@ function reloadSessionEnv(paths: string[] = ['/etc/pt-env']): void {
 // gatewayModelCatalog(projectId, userId). During seed capture there is NO live
 // sessionSandboxes row (it's a template build), and the token is a type='user'
 // account key, so the route must authorize by validateAccountToken→accountId/projectId,
-// NOT by the sandbox-row check clone-credential uses.
+// NOT by the live-session check used for ordinary sandbox tokens.
 async function prefetchSeedCatalog(cfg: Config): Promise<void> {
   const url = process.env.KORTIX_LLM_CATALOG_URL
   if (!url || !cfg.sandboxToken) return

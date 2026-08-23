@@ -156,6 +156,29 @@ export async function writeSharedProjectSecret(input: {
     });
 }
 
+/** Lock a legacy runtime secret to the server-side connector boundary. */
+export async function confineSharedProjectSecretToConnector(
+  projectId: string,
+  identifier: string,
+): Promise<void> {
+  await db
+    .update(projectSecrets)
+    .set({
+      scope: 'connector',
+      strategy: 'broker',
+      consumer: 'connector',
+      strategyLocked: true,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.identifier, identifier),
+        isNull(projectSecrets.ownerUserId),
+      ),
+    );
+}
+
 /**
  * Decrypted KEY->value map of the project's SHARED runtime secrets
  * (owner_user_id IS NULL). Platform-reserved KORTIX_* rows are excluded so
@@ -854,11 +877,39 @@ export interface ProjectSecretConsumerValue {
   value: string;
 }
 
-export async function projectSecretIsConfiguredForConsumer(input: {
+type ServerSecretConsumer = Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'>;
+
+export type ProjectSecretConsumerConfigurationStatus =
+  | 'configured'
+  | 'missing'
+  | 'inactive'
+  | 'delivery_mismatch';
+
+function secretPolicyAllowsConsumer(
+  row: {
+    scope: string;
+    strategy: SecretStrategy;
+    consumer: SecretConsumer | null;
+  },
+  consumer: ServerSecretConsumer,
+): boolean {
+  return consumer === 'connector'
+    ? (row.strategy === 'broker' && row.consumer === 'connector') ||
+        (row.scope === 'connector' &&
+          (row.consumer === 'connector' || row.consumer === 'sandbox'))
+    : row.strategy === 'broker' && row.consumer === consumer;
+}
+
+/**
+ * Read whether a named shared secret can cross one server-consumer boundary.
+ * This does not decrypt the value. Callers can distinguish a missing secret
+ * from an existing secret whose delivery policy denies the consumer.
+ */
+export async function getProjectSecretConsumerConfigurationStatus(input: {
   projectId: string;
   name: string;
-  consumer: Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'>;
-}): Promise<boolean> {
+  consumer: ServerSecretConsumer;
+}): Promise<ProjectSecretConsumerConfigurationStatus> {
   const normalizedName = input.name.trim().toUpperCase();
   const rows = await db
     .select({
@@ -875,14 +926,20 @@ export async function projectSecretIsConfiguredForConsumer(input: {
         isNull(projectSecrets.ownerUserId),
       ),
     );
-  return rows.some(
-    (row) =>
-      row.active &&
-      (input.consumer === 'connector'
-        ? row.scope === 'connector' ||
-          (row.strategy === 'broker' && row.consumer === 'connector')
-        : row.strategy === 'broker' && row.consumer === input.consumer),
-  );
+  if (rows.length === 0) return 'missing';
+  if (rows.some((row) => row.active && secretPolicyAllowsConsumer(row, input.consumer))) {
+    return 'configured';
+  }
+  if (rows.some((row) => row.active)) return 'delivery_mismatch';
+  return 'inactive';
+}
+
+export async function projectSecretIsConfiguredForConsumer(input: {
+  projectId: string;
+  name: string;
+  consumer: ServerSecretConsumer;
+}): Promise<boolean> {
+  return (await getProjectSecretConsumerConfigurationStatus(input)) === 'configured';
 }
 
 export async function listProjectSecretNamesForConsumer(input: {
@@ -927,12 +984,7 @@ export async function listProjectSecretNamesForConsumer(input: {
     const selected = slot.personal?.active ? slot.personal : slot.shared;
     if (!selected?.active || selected.name.toUpperCase().startsWith('KORTIX_')) continue;
     const policy = slot.shared ?? selected;
-    const configured =
-      input.consumer === 'connector'
-        ? (policy.strategy === 'broker' && policy.consumer === 'connector') ||
-          (policy.scope === 'connector' &&
-            (policy.consumer === 'connector' || policy.consumer === 'sandbox'))
-        : policy.strategy === 'broker' && policy.consumer === input.consumer;
+    const configured = secretPolicyAllowsConsumer(policy, input.consumer);
     if (configured) names.add(selected.name.toUpperCase());
   }
   return [...names].sort();
@@ -1023,13 +1075,7 @@ async function resolveProjectSecretValuesForConsumer(
 
   const resolved: ProjectSecretConsumerValue[] = [];
   for (const { row, policyRow } of selectedRows) {
-    const allowed =
-      row.active &&
-      (input.consumer === 'connector'
-        ? (policyRow.strategy === 'broker' && policyRow.consumer === 'connector') ||
-          (policyRow.scope === 'connector' &&
-            (policyRow.consumer === 'connector' || policyRow.consumer === 'sandbox'))
-        : policyRow.strategy === 'broker' && policyRow.consumer === input.consumer);
+    const allowed = row.active && secretPolicyAllowsConsumer(policyRow, input.consumer);
     if (!allowed) {
       await recordAuditEvent({
         accountId,

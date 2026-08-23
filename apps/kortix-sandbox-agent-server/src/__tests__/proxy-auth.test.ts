@@ -21,7 +21,6 @@ import { buildOpencodeApp } from '../proxy'
 import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import {
-  __clearCloneTokenCacheForTests,
   __clearRepoIdentityMemoForTests,
   __setScaffoldRepoPathForTests,
   buildGitAuthArgs,
@@ -173,9 +172,8 @@ function createDetachedWarmCheckout(prefix: string): {
 
 describe('daemon proxy auth gate', () => {
   beforeEach(() => {
-    // Process-global caches reset between tests so each one observes its
-    // own fetch call count + git-config side effects.
-    __clearCloneTokenCacheForTests()
+    // Process-global state resets between tests so each one observes its own
+    // git-config side effects.
     __clearRepoIdentityMemoForTests()
     __setScaffoldRepoPathForTests()
     rmSync(TEST_AGENT_ENV_FILE, { force: true })
@@ -193,18 +191,12 @@ describe('daemon proxy auth gate', () => {
     expect(loadConfig({}).sessionBranchRestore).toBe(false)
   })
 
-  it('scopes git auth headers to the project repo host', () => {
+  it('builds auth headers only for the Kortix Git proxy', () => {
     const encoded = Buffer.from('x-access-token:secret-token').toString('base64')
 
     expect(buildGitAuthArgs(undefined, undefined)).toEqual([])
-    expect(buildGitAuthArgs('https://git.example.test/repo-id', 'secret-token')).toEqual([
-      '-c',
-      `http.https://git.example.test/.extraheader=AUTHORIZATION: basic ${encoded}`,
-    ])
-    expect(buildGitAuthArgs('https://github.com/kortix/suna.git', 'secret-token')).toEqual([
-      '-c',
-      `http.https://github.com/.extraheader=AUTHORIZATION: basic ${encoded}`,
-    ])
+    expect(buildGitAuthArgs('https://git.example.test/repo-id', 'secret-token')).toEqual([])
+    expect(buildGitAuthArgs('https://github.com/kortix/suna.git', 'secret-token')).toEqual([])
     expect(buildGitAuthArgs('https://api.kortix.test/v1/git/project-123.git', 'secret-token')).toEqual([
       '-c',
       `http.https://api.kortix.test/.extraheader=AUTHORIZATION: basic ${encoded}`,
@@ -213,20 +205,7 @@ describe('daemon proxy auth gate', () => {
     ])
   })
 
-  it('uses the provider-selected username for direct-upstream auth', () => {
-    const encoded = Buffer.from('t:code-storage-jwt').toString('base64')
-
-    expect(buildGitAuthArgs(
-      'https://kortix.code.storage/project-123.git',
-      'code-storage-jwt',
-      't',
-    )).toEqual([
-      '-c',
-      `http.https://kortix.code.storage/.extraheader=AUTHORIZATION: basic ${encoded}`,
-    ])
-  })
-
-  it('fetches clone credentials from the API v1 project endpoint', async () => {
+  it('does not fetch a provider credential for a local repository fixture', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-clone-credential-'))
     const originalFetch = globalThis.fetch
     const requests: Array<{ url: string; init?: RequestInit }> = []
@@ -262,16 +241,9 @@ describe('daemon proxy auth gate', () => {
         defaultBranch: 'main',
       }))
 
-      // Filter to the clone-credential endpoint — other fetches (env loads,
-      // health probes from supervisors that may have been spawned in earlier
-      // tests in the same process) are unrelated noise.
+      // Local repository fixtures need no network credential.
       const credRequests = requests.filter((r) => r.url.includes('/git/clone-credential'))
-      expect(credRequests).toHaveLength(1)
-      expect(credRequests[0]!.url).toBe('http://api.local/v1/projects/project-123/git/clone-credential')
-      // Assert auth on the credential request itself — not requests[0], which
-      // can be unrelated background-fetch noise (health probes from a daemon
-      // supervisor booted by another test in the same process).
-      expect((credRequests[0]!.init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${TEST_TOKEN}`)
+      expect(credRequests).toHaveLength(0)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('v1\n')
       expect(gitOutput(['-C', target, 'config', 'user.name'])).toBe('Kortix Agent')
       expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
@@ -683,7 +655,7 @@ describe('daemon proxy auth gate', () => {
         'session-existing',
       )
       const credentialRequests = requests.filter((url) => url.includes('/git/clone-credential'))
-      expect(credentialRequests).toHaveLength(1)
+      expect(credentialRequests).toHaveLength(0)
 
       writeFileSync(join(target, 'dirty-after-restore.txt'), 'keep after daemon restart\n')
       await materializeRepo(cfg)
@@ -692,7 +664,7 @@ describe('daemon proxy auth gate', () => {
       expect(readFileSync(join(target, 'dirty-after-restore.txt'), 'utf8')).toBe(
         'keep after daemon restart\n',
       )
-      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(1)
+      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(0)
     } finally {
       globalThis.fetch = originalFetch
       rmSync(root, { recursive: true, force: true })
@@ -852,7 +824,7 @@ describe('daemon proxy auth gate', () => {
         baseSha: undefined,
       }))
 
-      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(1)
+      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(0)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('imported repository\n')
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(importedSha)
     } finally {
@@ -985,7 +957,7 @@ describe('daemon proxy auth gate', () => {
         gitDeltaParentCommitBase64: Buffer.from('forged parent commit').toString('base64'),
       }))
 
-      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(1)
+      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(0)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('remote truth\n')
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(baseSha)
     } finally {
