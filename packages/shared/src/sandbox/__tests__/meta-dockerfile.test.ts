@@ -18,8 +18,9 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('pnpm runtime set node 22.23.1 --global');
     expect(dockerfile).toContain('opencode-ai@1.18.19');
     expect(dockerfile).toContain(
-      "opencode_package=\"$(pnpm list -g --parseable --depth 0 opencode-ai | sed -n '\\#/node_modules/opencode-ai$#p' | tail -n 1)\"",
+      'opencode_package="$(pnpm root -g)/opencode-ai"',
     );
+    expect(dockerfile).not.toContain('pnpm list -g');
     expect(dockerfile).toContain('opencode_native="$opencode_package/bin/opencode.exe"');
     expect(dockerfile).toContain('test "$(wc -c < "$opencode_native")" -gt 50000000');
     expect(dockerfile).toContain('ln -sfn "$opencode_native" /opt/kortix/opencode.current');

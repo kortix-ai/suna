@@ -141,8 +141,9 @@ describe('runtime artifact integrity', () => {
 
   test('exposes the native OpenCode executable at the supervisor path', () => {
     expect(rendered).toContain(
-      "opencode_package=\"$(pnpm list -g --parseable --depth 0 opencode-ai | sed -n '\\#/node_modules/opencode-ai$#p' | tail -n 1)\"",
+      'opencode_package="$(pnpm root -g)/opencode-ai"',
     );
+    expect(rendered).not.toContain('pnpm list -g');
     expect(rendered).toContain('opencode_native="$opencode_package/bin/opencode.exe"');
     expect(rendered).toContain('test "$(wc -c < "$opencode_native")" -gt 50000000');
     expect(rendered).toContain('ln -sfn "$opencode_native" /opt/kortix/opencode.current');

@@ -597,7 +597,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     `RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
     '    && opencode --version \\',
-    "    && opencode_package=\"$(pnpm list -g --parseable --depth 0 opencode-ai | sed -n '\\#/node_modules/opencode-ai$#p' | tail -n 1)\" \\",
+    '    && opencode_package="$(pnpm root -g)/opencode-ai" \\',
     '    && opencode_native="$opencode_package/bin/opencode.exe" \\',
     '    && test -x "$opencode_native" \\',
     '    && test "$(wc -c < "$opencode_native")" -gt 50000000 \\',

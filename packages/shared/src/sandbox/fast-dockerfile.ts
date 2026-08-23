@@ -74,7 +74,7 @@ RUN case "$(uname -m)" in \
  && test "$(npm --version)" = "${NPM_VERSION}" \
  && HOME=/home/kortix pnpm add --global --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
  && test "$(opencode --version)" = "${OPENCODE_VERSION}" \
- && opencode_package="$(pnpm list -g --parseable --depth 0 opencode-ai | sed -n '\\#/node_modules/opencode-ai$#p' | tail -n 1)" \
+ && opencode_package="$(pnpm root -g)/opencode-ai" \
  && opencode_native="$opencode_package/bin/opencode.exe" \
  && test -x "$opencode_native" \
  && test "$(wc -c < "$opencode_native")" -gt 50000000 \
