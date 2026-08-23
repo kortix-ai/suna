@@ -35,7 +35,7 @@ export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): strin
   return resolveLlmGatewayBaseUrl(config.KORTIX_URL);
 }
 
-const SANDBOX_SERVICE_PORT = 8000;
+export const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
 const ENV_PUSH_TIMEOUT_MS = 15_000;
 
@@ -477,7 +477,13 @@ function isSecureOrPrivateTarget(rawUrl: string): boolean {
   return false; // plain http to a public host — refuse to send secrets in cleartext
 }
 
-async function postEnvToDaemon(args: {
+/**
+ * The one `POST /kortix/env` every env-push path shares — per-prompt sync,
+ * secret fan-out, model/scope/agent-config pushes and boot-time gateway-URL
+ * convergence (`gateway-url-convergence.ts`). Exported for that last caller;
+ * it is not a public API beyond this directory.
+ */
+export async function postEnvToDaemon(args: {
   previewUrl: string;
   providerHeaders: Record<string, string>;
   serviceKey: string;
@@ -954,7 +960,7 @@ async function runProjectSecretPropagation(
   }
 }
 
-function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
+export function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
   return {
     env: {},
     names: [],
@@ -964,7 +970,7 @@ function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
   };
 }
 
-async function runBounded<T>(
+export async function runBounded<T>(
   items: T[],
   limit: number,
   fn: (item: T) => Promise<void>,

@@ -609,6 +609,49 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     }
   });
 
+  test('stamps metadata.kortixUrl = KORTIX_URL (the origin KORTIX_LLM_BASE_URL was derived from) on the row it creates, and the finish write keeps it', async () => {
+    // Gateway-URL convergence (projects/lib/gateway-url-convergence.ts): the
+    // stamp is what lets the API, after a KORTIX_URL rotation, find the boxes
+    // that still point at the dead gateway URL and re-push the live one.
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect((finishCall?.updates.metadata as Record<string, unknown>).kortixUrl).toBe(
+      'http://localhost:8008',
+    );
+  });
+
+  test('the provider-loss reclaim stamps metadata.kortixUrl too (the row is re-homed to this API origin)', async () => {
+    identityConflict = true;
+    recoveryPlaceholder = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const claim = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes &&
+        call.updates.status === 'provisioning' &&
+        'config' in call.updates,
+    );
+    expect(claim).toBeDefined();
+    const merged = dialect.sqlToQuery(claim!.updates.metadata as Parameters<typeof dialect.sqlToQuery>[0]);
+    const stamp = merged.params.find(
+      (param) => typeof param === 'string' && param.includes('"kortixUrl"'),
+    ) as string | undefined;
+    expect(stamp).toBeDefined();
+    expect(JSON.parse(stamp!)).toMatchObject({ kortixUrl: 'http://localhost:8008' });
+  });
+
   test('no KORTIX_INSTANCE_ID → no instanceId stamp (deployed environments are untouched)', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;

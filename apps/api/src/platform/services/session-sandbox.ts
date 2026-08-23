@@ -61,6 +61,7 @@ import { ConnectorTokenUnavailableError } from '../../projects/connector-token-e
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { instanceStampMetadata } from '../../projects/instance-scope';
+import { kortixUrlStampMetadata } from '../../projects/gateway-url-stamp';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
@@ -413,6 +414,10 @@ export async function provisionSessionSandbox(opts: {
           // Instance scope for background work on a shared DB — see
           // projects/instance-scope.ts. `{}` when KORTIX_INSTANCE_ID is unset.
           ...instanceStampMetadata(),
+          // The API origin this box's KORTIX_LLM_BASE_URL is derived from — see
+          // projects/gateway-url-stamp.ts. Boot-time convergence re-pushes the
+          // live gateway URL to rows whose stamp no longer matches KORTIX_URL.
+          ...kortixUrlStampMetadata(),
           ...(opts.initialTurn
             ? {
                 activeTurns: {
@@ -445,7 +450,7 @@ export async function provisionSessionSandbox(opts: {
         // out. Consume their authorization marker atomically so at most one
         // allocator can claim the row and call provider.create(). New code never
         // creates this marker because established identities are fail-closed.
-        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt') || ${JSON.stringify(instanceStampMetadata())}::jsonb`,
+        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt') || ${JSON.stringify({ ...instanceStampMetadata(), ...kortixUrlStampMetadata() })}::jsonb`,
         updatedAt: new Date(),
       })
       .where(
