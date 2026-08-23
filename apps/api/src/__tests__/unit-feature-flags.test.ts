@@ -158,47 +158,24 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     ).toBe(false);
   });
 
-  test('llm_gateway is platform-gated and follows the fleet default', () => {
-    const available = findCatalogFlag('llm_gateway').available;
-    expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(
-      available && config.LLM_GATEWAY_DEFAULT_ENABLED,
-    );
-    expect(resolveFeatureFlag({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
-      available,
-    );
-    expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(false);
-    expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: true } })).toBe(available);
-  });
-
-  test('llm_gateway fleet default rolls all projects on while the kill switch and project-off override still win', () => {
+  test('llm_gateway is an operator capability, not a project feature flag', () => {
     const previousEnabled = config.LLM_GATEWAY_ENABLED;
-    const previousDefault = config.LLM_GATEWAY_DEFAULT_ENABLED;
     try {
       config.LLM_GATEWAY_ENABLED = false;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
       expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(false);
       expect(projectLlmGatewayEnabled({})).toBe(false);
 
       config.LLM_GATEWAY_ENABLED = true;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = false;
-      expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(false);
-
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
       expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(true);
       expect(projectLlmGatewayEnabled({})).toBe(true);
-      expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(
-        false,
-      );
-      expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: false } })).toBe(false);
-
-      // The kill switch also beats an explicit project ON.
-      config.LLM_GATEWAY_ENABLED = false;
-      expect(resolveFeatureFlag({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
-        false,
+      expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(true);
+      expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: false } })).toBe(true);
+      expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: true } })).toBe(true);
+      expect(buildFeatureFlagCatalog({ experimental: { llm_gateway: false } })).not.toContainEqual(
+        expect.objectContaining({ key: 'llm_gateway' }),
       );
     } finally {
       config.LLM_GATEWAY_ENABLED = previousEnabled;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = previousDefault;
     }
   });
 
