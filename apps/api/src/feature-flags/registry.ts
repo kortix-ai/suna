@@ -163,7 +163,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-  {
     key: 'review_center',
     name: 'Review Center',
     description:
