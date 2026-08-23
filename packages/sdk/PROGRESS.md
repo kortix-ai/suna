@@ -12,6 +12,18 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-23 — session `gateway-default` — retire project gateway mode — IN PROGRESS
+
+**Scope:** Keep the published `llm_gateway` feature-key literal as a deprecated
+compatibility input. Stop advertising or honoring the project override. Make
+`LLM_GATEWAY_ENABLED` the only runtime availability gate. Remove native-mode UI
+branches and the account-entitlement gate from sandbox provider injection.
+
+**TDD:** The API registry tests will first pin that the project catalog omits
+`llm_gateway` and stored `true`/`false` overrides cannot change runtime mode.
+
+---
+
 ### 2026-08-21 — session `session-busy-flicker` — display order was not an order — DONE
 
 **Files:** `core/turns/grouping.ts` (`compareMessagesForDisplay` rewritten as two
