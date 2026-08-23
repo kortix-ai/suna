@@ -122,13 +122,33 @@ const FENCE_IN_LIST_MD = [
 
 const PATH_IN_LIST_MD = ['- open docs/readme.md now', ''].join('\n');
 
+/**
+ * The rendered text with markup removed.
+ *
+ * Asserting on raw markup is only stable while the fence is UNHIGHLIGHTED:
+ * where Shiki's grammar loads synchronously it splits `cd ~/UnrealEngine` into
+ * one span per token, so a substring match on the markup passes locally and
+ * fails in CI. Compare what the reader sees instead.
+ */
+function visibleText(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
 describe('UnifiedMarkdown code fence inside a list', () => {
   test('renders the snippet, not a stringified React element', () => {
-    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={FENCE_IN_LIST_MD} />));
+    const text = visibleText(
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={FENCE_IN_LIST_MD} />)),
+    );
 
-    expect(html).not.toContain('[object Object]');
-    expect(html).toContain('./Setup.sh');
-    expect(html).toContain('cd ~/UnrealEngine');
+    expect(text).not.toContain('[object Object]');
+    expect(text).toContain('./Setup.sh');
+    expect(text).toContain('cd ~/UnrealEngine');
   });
 
   test('does not inject clickable-path chrome into the fence body', () => {

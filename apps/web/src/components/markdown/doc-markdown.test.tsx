@@ -115,9 +115,12 @@ const FENCE_IN_LIST_MD = [
 describe('DocMarkdown code fence inside a list', () => {
   test('renders the snippet, not a stringified React element', () => {
     const html = renderToStaticMarkup(withIntl(<DocMarkdown content={FENCE_IN_LIST_MD} />));
+    // Markup-free, because Shiki splits the snippet into per-token spans
+    // wherever its grammar loads synchronously.
+    const text = html.replace(/<[^>]*>/g, '');
 
-    expect(html).not.toContain('[object Object]');
-    expect(html).toContain('./Setup.sh');
+    expect(text).not.toContain('[object Object]');
+    expect(text).toContain('./Setup.sh');
     expect(html).not.toContain('Click to preview');
   });
 });
