@@ -20,6 +20,12 @@ import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import {
+  currentInstanceId,
+  sandboxBelongsToThisInstance,
+  sandboxInstanceId,
+} from '../instance-scope';
+import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
@@ -585,6 +591,9 @@ export async function continueSession(
   });
 }
 
+/** How far out a released foreign command is re-queued; the owner's drain ticks every 1s. */
+const INSTANCE_RELEASE_DELAY_MS = 2_000;
+
 export async function drainSessionLifecycleQueue(
   input: {
     workerId?: string;
@@ -594,7 +603,7 @@ export async function drainSessionLifecycleQueue(
     /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
     availableBefore?: Date;
   } = {},
-): Promise<{ claimed: number; succeeded: number; failed: number; queued: number }> {
+): Promise<{ claimed: number; succeeded: number; failed: number; queued: number; released: number }> {
   const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
   // COALESCE a burst before claiming. A targeted kick fires per POST, and the
   // composer sends a burst's POSTs concurrently — their arrival order is the
@@ -623,7 +632,44 @@ export async function drainSessionLifecycleQueue(
       rows.push(...siblings.filter((sib) => !rows.some((r) => r.commandId === sib.commandId)));
     }
   }
-  const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };
+  const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0, released: 0 };
+
+  // INSTANCE SCOPE (local dev on a shared DB — projects/instance-scope.ts).
+  // A command whose session's sandbox was provisioned by ANOTHER API instance
+  // goes back on the queue for that instance: executing it here would push
+  // this instance's `KORTIX_URL` (its tunnel) into a box that is not ours.
+  // Gated on `KORTIX_INSTANCE_ID`, so deployed environments never run the
+  // lookup. Done here, after the claim and the sibling sweep, so every
+  // command type and every claim path is covered.
+  const mine = currentInstanceId();
+  if (mine && rows.length > 0) {
+    const sessionIds = [...new Set(rows.map((r) => r.sessionId).filter((v): v is string => !!v))];
+    const metadataBySession =
+      sessionIds.length > 0 ? await loadSandboxMetadataForSessions(sessionIds) : new Map();
+    const availableAt = new Date(Date.now() + INSTANCE_RELEASE_DELAY_MS);
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      const row = rows[i];
+      if (!row.sessionId) continue;
+      const metadata = metadataBySession.get(row.sessionId);
+      if (metadata === undefined || sandboxBelongsToThisInstance(metadata)) continue;
+      const owner = sandboxInstanceId(metadata);
+      await releaseCommandToOwningInstance(row.commandId, { availableAt, owner }).catch((err) => {
+        logger.warn('[session-lifecycle] instance-scope release failed; lock expiry will reclaim', {
+          commandId: row.commandId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      logger.info('[session-lifecycle] command belongs to another instance — released', {
+        commandId: row.commandId,
+        sessionId: row.sessionId,
+        commandType: row.commandType,
+        owner,
+        instance: mine,
+      });
+      rows.splice(i, 1);
+      out.released += 1;
+    }
+  }
 
   // ONE LANE PER SESSION, and the lanes run concurrently.
   //

@@ -140,6 +140,16 @@ describe('launch envs', () => {
     expect(env.ALLOWED_SANDBOX_PROVIDERS).toBeUndefined();
   });
 
+  test('api carries the worktree name as KORTIX_INSTANCE_ID (instance-scoped background work on the shared DB)', () => {
+    const env = apiLaunchEnv(ports, creds, { instanceId: 'feat-x' });
+    expect(env.KORTIX_INSTANCE_ID).toBe('feat-x');
+  });
+
+  test('no instanceId → KORTIX_INSTANCE_ID is not set (scoping off)', () => {
+    const env = apiLaunchEnv(ports, creds);
+    expect(env.KORTIX_INSTANCE_ID).toBeUndefined();
+  });
+
   test('--stripe turns billing on and injects the webhook secret', () => {
     const env = apiLaunchEnv(ports, creds, { stripeWebhookSecret: 'whsec_x' });
     expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');

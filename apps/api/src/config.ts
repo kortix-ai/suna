@@ -144,6 +144,14 @@ const envSchema = z.object({
   // `preview` = ephemeral per-PR API on EKS (shares the dev data plane, never
   // migrates it, workers off, allows preview frontends in CORS). See ensure-schema.ts + the CORS block in index.ts.
   INTERNAL_KORTIX_ENV: z.enum(['dev', 'staging', 'prod', 'preview']).optional().default('dev'),
+  // Instance scope for BACKGROUND work on a shared database (local dev only:
+  // worktrees + the primary `pnpm dev` share one Supabase, so the lifecycle
+  // queue, env-sync fan-outs and the box reaper are one queue across every
+  // running API). Set by the launchers (`scripts/dev-local.sh` → `primary`,
+  // `scripts/worktree/lib/launch-env.ts` → the worktree name). Unset in every
+  // deployed environment → every scope check is a no-op.
+  // See projects/instance-scope.ts.
+  KORTIX_INSTANCE_ID: z.string().trim().optional(),
 
   // Wildcard domain every preview ORIGIN sits under
   // (`{env}-p{port}-{sandbox}.{domain}`). Unset on managed cloud, where it is
@@ -988,6 +996,9 @@ export const config = {
 
   // ─── Internal Deployment Controls ─────────────────────────────────────────
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
+  // Empty string reads as unset: the launchers always export the var, and a
+  // blank value must not turn into an instance called "".
+  KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
   KORTIX_PREVIEW_BASE_DOMAIN: env.KORTIX_PREVIEW_BASE_DOMAIN,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,

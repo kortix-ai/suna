@@ -587,6 +587,42 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(finishCall?.updates.config).toMatchObject({ serviceKey: 'exec-tok-1' });
   });
 
+  test('stamps metadata.instanceId from KORTIX_INSTANCE_ID on the row it creates, and the finish write keeps it', async () => {
+    // Instance scoping for background work on a shared DB (projects/instance-scope.ts).
+    // The stamp is what lets another local API instance recognise this box as
+    // not its own and hand its queued work back.
+    (testConfig as Record<string, unknown>).KORTIX_INSTANCE_ID = 'wt-instance-a';
+    try {
+      const opened = waitFor((resolve) => {
+        onComputeOpened = resolve;
+      });
+      await provisionSessionSandbox(baseOpts());
+      await opened;
+
+      const finishCall = updateCalls.find(
+        (call) =>
+          call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+      );
+      expect((finishCall?.updates.metadata as Record<string, unknown>).instanceId).toBe('wt-instance-a');
+    } finally {
+      delete (testConfig as Record<string, unknown>).KORTIX_INSTANCE_ID;
+    }
+  });
+
+  test('no KORTIX_INSTANCE_ID → no instanceId stamp (deployed environments are untouched)', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect((finishCall?.updates.metadata as Record<string, unknown>).instanceId).toBeUndefined();
+  });
+
   test('the fast flag keeps the standard image so the edge optimization stays isolated', async () => {
     process.env.KORTIX_FAST_COLD_BOOT_ENABLED = 'true';
     const opened = waitFor((resolve) => {

@@ -1534,7 +1534,7 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     provisioningSessionCount = 0;
     const drained = await drainSessionLifecycleQueue({ workerId: 'test-worker', limit: 1 });
-    expect(drained).toEqual({ claimed: 1, succeeded: 1, failed: 0, queued: 0 });
+    expect(drained).toEqual({ claimed: 1, succeeded: 1, failed: 0, queued: 0, released: 0 });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBeUndefined();
