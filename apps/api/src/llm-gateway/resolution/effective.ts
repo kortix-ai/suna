@@ -22,14 +22,13 @@ export function toWireModel(ref: string): string {
 }
 
 /**
- * The OPENCODE ref form: opencode addresses a managed model as `kortix/<id>` (and
- * sends the bare id on the wire), so a bare managed id must be re-prefixed before
- * it's handed to opencode as `opencode_model`. BYOK/codex refs already carry a
- * provider segment and pass through unchanged.
+ * The OPENCODE ref form: every gateway model is registered under OpenCode's
+ * `kortix` provider. The remaining path is the gateway wire model, including
+ * nested provider paths such as `codex/gpt-5.6-sol`.
  */
 export function toOpencodeModelRef(model: string): string {
   if (model.startsWith(KORTIX_PREFIX)) return model;
-  return isRuntimeManagedModelId(model) ? `${KORTIX_PREFIX}${model}` : model;
+  return `${KORTIX_PREFIX}${model}`;
 }
 
 function isManagedRef(ref: string): boolean {
