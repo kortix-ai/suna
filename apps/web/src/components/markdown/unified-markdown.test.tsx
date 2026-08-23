@@ -97,3 +97,49 @@ describe('UnifiedMarkdown table cells', () => {
     expect(html).not.toContain('node=');
   });
 });
+
+// ─── A fenced block inside a list item ──────────────────────────────────────
+// `li` runs its children through `wrapChildrenWithPaths`. That walk used to
+// descend into the fence and swap the snippet for a React element, so
+// `MarkdownCode` stringified an object and Shiki highlighted the literal
+// `[object Object]` in place of the commands. Only fences whose body holds a
+// detected path (`./Setup.sh`) tripped it, which is why it read as random.
+// ────────────────────────────────────────────────────────────────────────────
+
+const FENCE_IN_LIST_MD = [
+  '1. Link your GitHub account',
+  '',
+  '2. **Clone + build**:',
+  '',
+  '   ```bash',
+  '   git clone --depth 1 https://github.com/EpicGames/UnrealEngine ~/UnrealEngine',
+  '   cd ~/UnrealEngine',
+  '   ./Setup.sh',
+  '   make',
+  '   ```',
+  '',
+].join('\n');
+
+const PATH_IN_LIST_MD = ['- open docs/readme.md now', ''].join('\n');
+
+describe('UnifiedMarkdown code fence inside a list', () => {
+  test('renders the snippet, not a stringified React element', () => {
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={FENCE_IN_LIST_MD} />));
+
+    expect(html).not.toContain('[object Object]');
+    expect(html).toContain('./Setup.sh');
+    expect(html).toContain('cd ~/UnrealEngine');
+  });
+
+  test('does not inject clickable-path chrome into the fence body', () => {
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={FENCE_IN_LIST_MD} />));
+
+    expect(html).not.toContain('Click to preview');
+  });
+
+  test('still makes a path in list prose clickable', () => {
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={PATH_IN_LIST_MD} />));
+
+    expect(html).toContain('docs/readme.md — Click to preview');
+  });
+});

@@ -18,6 +18,8 @@ import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import Link from 'next/link';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
+import { childrenToText } from './children-text';
+
 // ─── Inline code ─────────────────────────────────────────────────────────────
 export const INLINE_CODE =
   'rounded-[5px] bg-muted px-1.5 py-[0.08rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card border border-muted-foreground/5';
@@ -140,7 +142,7 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
 // Inline code that becomes a link (URLs) or opens a file preview (paths).
 export function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   const { proxyUrl } = useSandboxProxy();
-  const text = String(children).trim();
+  const text = childrenToText(children).trim();
   const isUrl = looksLikeUrl(text);
 
   if (isUrl) {

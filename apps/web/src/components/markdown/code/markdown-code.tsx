@@ -7,6 +7,7 @@ import { parseSetupLinkHref } from '@/components/setup-links/util';
 import { isMermaidCode } from '@/lib/mermaid-utils';
 import React, { lazy, Suspense } from 'react';
 
+import { childrenToText } from './children-text';
 import { CodeBlock, HighlightedCode } from './code-block';
 import { ClickableInlineCode } from './inline-code';
 
@@ -33,7 +34,7 @@ export function MarkdownCode({
 }: MarkdownCodeProps) {
   const match = /language-(\w+)/.exec(codeClassName || '');
   const language = match ? match[1] : '';
-  const code = String(children).replace(/\n$/, '');
+  const code = childrenToText(children).replace(/\n$/, '');
   const isBlock = codeClassName?.includes('language-') || code.includes('\n');
 
   if (isBlock) {

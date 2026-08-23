@@ -97,3 +97,27 @@ describe('DocMarkdown table cells', () => {
     expect(html).not.toContain('node=');
   });
 });
+
+// The docs renderer shares `MarkdownCode` and the same `li` path-wrapping walk
+// as UnifiedMarkdown, so it carried the same fence regression. See
+// `unified-markdown.test.tsx` for the full account.
+
+const FENCE_IN_LIST_MD = [
+  '1. Install:',
+  '',
+  '   ```bash',
+  '   cd ~/UnrealEngine',
+  '   ./Setup.sh',
+  '   ```',
+  '',
+].join('\n');
+
+describe('DocMarkdown code fence inside a list', () => {
+  test('renders the snippet, not a stringified React element', () => {
+    const html = renderToStaticMarkup(withIntl(<DocMarkdown content={FENCE_IN_LIST_MD} />));
+
+    expect(html).not.toContain('[object Object]');
+    expect(html).toContain('./Setup.sh');
+    expect(html).not.toContain('Click to preview');
+  });
+});
