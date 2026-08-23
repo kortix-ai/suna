@@ -36,13 +36,31 @@ describe('livenessBusy', () => {
     ).toBe(true);
   });
 
-  test('a poll that cannot reach the runtime never runs', () => {
+  test('an offline tab never polls', () => {
     expect(
       livenessBusy({ networkEnabled: false, runtimeHealthy: true, working: true, streamBusy: true }),
     ).toBe(false);
+  });
+
+  /**
+   * The feedback loop this whole file keeps paying for: the repair for a
+   * broken stream was gated on the health probe, and the health probe is the
+   * thing that flaps. A loaded box that misses its probe deadline mid-turn got
+   * its transcript repair switched off at the exact moment the repair was
+   * needed — and stayed off for as long as the probe kept missing.
+   *
+   * The probe does not decide this. A working session polls; if the box really
+   * is unreachable the read fails, bounded, and costs one request per interval.
+   */
+  test('a failing health probe never switches the repair off', () => {
     expect(
-      livenessBusy({ networkEnabled: true, runtimeHealthy: false, working: true, streamBusy: true }),
-    ).toBe(false);
+      livenessBusy({
+        networkEnabled: true,
+        runtimeHealthy: false,
+        working: true,
+        streamBusy: false,
+      }),
+    ).toBe(true);
   });
 });
 

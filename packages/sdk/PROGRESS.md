@@ -12,6 +12,65 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `transcript-convergence` — the transcript must catch up, and five things stopped it — DONE
+
+**Files:** `core/session-sync/session-sync-controller.ts` (turn-end reconcile,
+`SessionSyncReason` += `turn-end` | `visible`) + tests (+3) ·
+`browser/session-sync/session-sync-registry.ts` (freshness renews only on
+transcript frames) + tests (+2) · `browser/session-sync/visibility.ts` (NEW) +
+tests (+4) · `react/use-session-sync.ts` (visible-reconcile effect;
+`livenessBusy` no longer gated on the health probe) + tests (+1) ·
+`react/use-opencode-events/rehydrate-targets.ts` (NEW) + tests (+3) ·
+`react/use-opencode-events/stream-revival.ts` (NEW) + tests (+6) ·
+`react/use-opencode-events/index.ts` (gap rehydrates every held transcript;
+supplies `onParked`).
+
+**What.** Reported from a live self-host with a screenshot: an 8m13s turn
+FINISHED — the runtime's own terminal shows the complete answer — and the
+browser's transcript stopped mid-turn under a spinner. Not a label bug. The
+messages were never fetched.
+
+The repair for a stream that drops content is the liveness poll: one bounded
+tail read every 10s while a session is working. Four separate things could stop
+it, and each one is the same mistake — the repair was gated on a signal that
+fails in exactly the situation the repair exists for.
+
+1. **`noteActivity()` renewed on EVERY frame** carrying the session id, and
+   `checkLiveness` skips while activity is newer than the interval. A runtime
+   emitting status frames while its message frames were lost kept postponing
+   the poll built to catch the loss. Now only transcript-bearing frames renew.
+2. **`setBusy(false)` stopped the poll with no final read.** Turn end is when
+   a transcript is most likely to be short — the closing frames are the ones
+   most often lost — and stopping there made the truncation PERMANENT. A busy
+   session now always reads its own tail one last time (`turn-end`).
+3. **`livenessBusy` was gated on `runtimeHealthy`.** The health probe is the
+   thing that flaps; a loaded box that misses its deadline mid-turn lost its
+   transcript repair for as long as the probe kept missing. The probe no longer
+   decides. (`runtimeHealthy` stays on the published input shape, ignored.)
+4. **The SSE-gap rehydrate only re-read sessions whose STATUS SLOT said busy** —
+   and the slot is filled by the stream, so a gap wide enough to lose message
+   frames is wide enough to lose the frame that marks the session busy. Every
+   held transcript is re-read now.
+
+Plus the case the user named directly: a backgrounded tab has its timers
+clamped to about one a minute, so return is the moment the tab is least sure
+what it holds. `onTabVisible` reconciles on the way back in.
+
+**5. And the stream could die for good.** `openEventStream` PARKS after 8
+consecutive hard failures and documents itself as terminal for that handle —
+correct, and the point: a dead or archived sandbox should not be hammered
+forever. But **nothing in this package supplied `onParked`**, so "terminal for
+this handle" silently became terminal for the PAGE. No error, no retry, no
+transcript updates until the user reloaded. `createStreamRevival` re-opens the
+stream on the first cheap evidence that something may have changed — the tab
+came back, the network came back, or 30s passed — exactly once per park, so a
+genuinely dead box costs one connect attempt per interval instead of a storm.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2456 pass / 0 fail ·
+`smoke:install` passed · apps/web tsc clean, session suite 2513 pass / 0 fail.
+
+---
+
 ### 2026-08-24 — session `connection-projection` — one answer for "is this session connected" — DONE
 
 **Files:** `core/session/connection.ts` (NEW — `SessionConnection`,
