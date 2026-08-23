@@ -229,11 +229,13 @@ test.describe('18 — Kortix Apps UI', () => {
       const seededCard = page.getByRole('button', { name: 'Open Seed App' });
       await expect(seededCard).toBeVisible();
       await expect(seededCard.getByText('Deploy to see a live preview.')).toBeVisible();
-      // The hostname is NOT on the tile. Every App's URL is the same
-      // `<generated-key>.apps.<domain>` shape, so a column of them differs only
-      // in a token nobody reads — a third of the caption spent on noise. It
-      // moved to the control that opens the App, asserted below.
-      await expect(seededCard.getByText(seededUrl.host, { exact: true })).toHaveCount(0);
+      // The tile's second line is the App's HOST — `appHost()` strips the
+      // scheme and any trailing slash, so it is `seededUrl.host`, never the
+      // full `seeded.url`. main asserts the opposite (`toHaveCount(0)`) because
+      // a LATER main change moved the hostname off the tile into the Open
+      // control's tooltip; that change is not part of this staging backport, so
+      // the host is still here. When it lands, flip this back to main's form.
+      await expect(seededCard.getByText(seededUrl.host, { exact: true })).toBeVisible();
       // Never deployed, so it must not claim to be running.
       await expect(seededCard.getByText('Not deployed', { exact: true })).toBeVisible();
 
@@ -245,8 +247,9 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect(
         appModal.getByRole('button', { name: 'Put this App to sleep' }),
       ).toBeDisabled();
-      // …and this is where the URL went: the control that opens the App names
-      // the host it will open, so the tile can stay a picture of the App.
+      // The Open control also names the host, in its tooltip. On main that is
+      // the ONLY place the host appears; here it is the second one, because the
+      // tile above still carries it (see the note there).
       const openInNewTab = appModal.getByRole('link', { name: 'Open in a new tab' });
       await expect(openInNewTab).toBeVisible();
       // Containment, not an exact shape: this App has no deployment, so the
