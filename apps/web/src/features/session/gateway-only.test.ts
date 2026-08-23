@@ -71,8 +71,13 @@ describe('gateway mode is the only mode (web)', () => {
     expect(source('features/workspace/customize/sections/llm-provider/utils.ts')).not.toContain(
       'buildCustomProviderSnippet',
     );
+    // #6771 made the dialog's tab set an alias of the page's QUICK slice — the
+    // two-tab truth now lives in gateway-view.tsx, and types.ts points at it.
     expect(source('features/workspace/customize/sections/llm-provider/types.ts')).toContain(
-      "export type ActiveTab = 'providers' | 'models';",
+      'export type ActiveTab = QuickLlmTab;',
+    );
+    expect(source('features/workspace/customize/sections/gateway-view.tsx')).toContain(
+      "export type QuickLlmTab = 'providers' | 'models';",
     );
   });
 });
