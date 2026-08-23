@@ -1,5 +1,11 @@
 export * from './types';
-export { getBackend, getDefaultManagedBackend, hasBackend } from './registry';
+export {
+  defaultManagedProviderId,
+  getBackend,
+  getDefaultManagedBackend,
+  hasBackend,
+  isRetiredManagedProvider,
+} from './registry';
 export {
   githubBackend,
   managedGithubInstallId,

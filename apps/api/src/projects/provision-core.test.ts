@@ -40,7 +40,7 @@ describe('provision phases', () => {
     expect(fnStart).toBeGreaterThan(-1);
 
     const emitValidating = source.indexOf("emit('validating')", fnStart);
-    const providerCheck = source.indexOf('MANAGED_GIT_PROVIDER', fnStart);
+    const providerCheck = source.indexOf('defaultManagedProviderId()', fnStart);
     const nameCheck = source.indexOf("name is required", fnStart);
     expect(emitValidating).toBeGreaterThan(-1);
     expect(providerCheck).toBeGreaterThan(-1);

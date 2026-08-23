@@ -56,6 +56,29 @@ describe('registry', () => {
     process.env.MANAGED_GIT_PROVIDER = 'github';
     expect(getDefaultManagedBackend()).toBe(githubBackend);
   });
+
+  // code.storage is RETIRED as a provisioning target. The value still exists in
+  // deployed env bundles (dev's `kortix-dev-env` among them), and every one of
+  // them would otherwise keep minting new repos on a host we no longer want.
+  // The code refuses it outright so no environment can select it by config —
+  // reading and writing EXISTING code.storage repos is unaffected, since those
+  // resolve per project through `getBackend(connection.provider)`.
+  test('MANAGED_GIT_PROVIDER=code-storage no longer selects code.storage', () => {
+    process.env.MANAGED_GIT_PROVIDER = 'code-storage';
+    expect(getDefaultManagedBackend()).toBe(githubBackend);
+    process.env.MANAGED_GIT_PROVIDER = ' Code-Storage ';
+    expect(getDefaultManagedBackend()).toBe(githubBackend);
+    process.env.MANAGED_GIT_PROVIDER = 'code_storage';
+    expect(getDefaultManagedBackend()).toBe(githubBackend);
+  });
+
+  // Existing repos must keep resolving through their own backend, or every
+  // manifest read on a code.storage project fails the way the retirement was
+  // supposed to prevent.
+  test('an existing code-storage connection still resolves its own backend', () => {
+    expect(getBackend('code-storage').id).toBe('code-storage');
+    expect(hasBackend('code-storage')).toBe(true);
+  });
 });
 
 describe('basicAuthHeader', () => {

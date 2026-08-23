@@ -14,7 +14,14 @@
  * response shape is a contract (the CLI and `@kortix/sdk` depend on it) and
  * must not change. The streaming route (next) is the only real consumer.
  */
-import { getBackend, hasBackend, parseBasicAuthHeader, type GitConnectionRef } from './git-backends';
+import {
+  defaultManagedProviderId,
+  getBackend,
+  hasBackend,
+  isRetiredManagedProvider,
+  parseBasicAuthHeader,
+  type GitConnectionRef,
+} from './git-backends';
 import {
   ManagedRepoSeedError,
   buildManagedRepoSeedState,
@@ -157,11 +164,22 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   // Managed-git provider, provider-agnostic via the backend registry. GitHub is
   // the default + only active managed backend. Forgejo / Artifacts slot in here
   // as drop-ins.
-  const provider =
-    normalizeString(body.provider) ??
-    (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
+  //
+  // `defaultManagedProviderId()` — never `process.env.MANAGED_GIT_PROVIDER`
+  // directly: a retired backend must not be selectable by a deployed env bundle
+  // (see registry.ts). A caller naming one explicitly is refused for the same
+  // reason; EXISTING repos on it keep working through their connection row.
+  const provider = normalizeString(body.provider) ?? defaultManagedProviderId();
   if (!hasBackend(provider)) {
     return { status: 400, body: { error: `Unsupported managed git provider "${provider}"` } };
+  }
+  if (isRetiredManagedProvider(provider)) {
+    return {
+      status: 400,
+      body: {
+        error: `Managed git provider "${provider}" is retired — new repositories are provisioned on github`,
+      },
+    };
   }
   const backend = getBackend(provider);
   if (!(await backend.isConfigured())) {

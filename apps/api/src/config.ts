@@ -272,7 +272,10 @@ const envSchema = z.object({
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
-  // ('github' default). The GitHub backend creates repos under
+  // ('github' default). `code-storage` is RETIRED here and is refused by
+  // `defaultManagedProviderId()` — a deployed bundle that still names it
+  // provisions on github and logs a warning. Existing code.storage repos keep
+  // resolving through their own connection row. The GitHub backend creates repos under
   // MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App
   // installed there (MANAGED_GIT_GITHUB_INSTALL_ID). Reuses KORTIX_GITHUB_APP_*
   // for the App JWT. Each backend's isConfigured() checks its own vars, so
@@ -286,8 +289,10 @@ const envSchema = z.object({
   // collaborator). Leave blank to use the App installation instead.
   MANAGED_GIT_GITHUB_TOKEN: optStr,
   // Second managed backend: code.storage (Pierre), a headless git-hosting API
-  // (https://code.storage/docs). Select it with MANAGED_GIT_PROVIDER=code-storage
-  // — inert (isConfigured() false) until org + private key are both set.
+  // (https://code.storage/docs). RETIRED as a provisioning target — it can no
+  // longer be selected with MANAGED_GIT_PROVIDER. These credentials stay
+  // because EXISTING projects still clone, fetch and push their repos through
+  // it; clearing them breaks those projects, not new ones.
   // CODE_STORAGE_ORG: your code.storage organization identifier — doubles as
   // the JWT `iss` claim and (unless overridden) the git-remote/API host prefix.
   CODE_STORAGE_ORG: optStr,
