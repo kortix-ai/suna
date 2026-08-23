@@ -246,6 +246,16 @@ describe('full self-host Docker distribution', () => {
     expect(document.services).not.toHaveProperty('caddy');
   });
 
+  test('the API gives remote sandboxes the public self-host gateway route', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+
+    expect(document.services['kortix-api']?.environment?.LLM_GATEWAY_BASE_URL).toBe(
+      '${KORTIX_URL}/v1/llm',
+    );
+  });
+
   test('the kortix-updater service is always present and mounts the docker socket', () => {
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, { volumes?: string[]; environment?: Record<string, string> }>;
