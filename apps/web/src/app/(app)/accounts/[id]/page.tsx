@@ -27,6 +27,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AccessHelp } from '@/components/iam/access-help';
 import { AccessProjectsTab } from '@/components/iam/access-projects-tab';
+import { BackToCustomizeOverlay } from '@/components/iam/back-to-customize-overlay';
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
@@ -674,6 +675,14 @@ export default function AccountSettingsPage() {
               )
             ) : null}
 
+            {/* Page chrome, not panel chrome: `fixed`, so it costs this
+                layout no height and the panel's own "All projects" breadcrumb
+                is untouched. Only on the project panel — the section the
+                Customize bar's "Members" link actually opens. */}
+            {activeSection === 'access-projects' && selectedAccessProjectId && cameFromCustomize ? (
+              <BackToCustomizeOverlay />
+            ) : null}
+
             {activeSection === 'access-projects' ? (
               <AccessProjectsTab
                 accountId={account.account_id}
@@ -681,7 +690,6 @@ export default function AccountSettingsPage() {
                 onSelectProject={(id) => navigate('access-projects', { project: id })}
                 rbacEnabled={rbacEnabled}
                 canManageRoles={canManageRoles}
-                cameFromCustomize={cameFromCustomize}
               />
             ) : null}
 
