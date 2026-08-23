@@ -1728,8 +1728,9 @@ export async function resolvePreviewWsUpstream(opts: {
         accessKind: 'principal',
       })
     ) {
-      await resumeStoppedSandboxByExternalId(record.externalId).catch((err) => {
-        console.warn(`[preview-ws] auto-resume failed for ${record.externalId}:`, err);
+      const resumeExternalId = record.externalId;
+      await resumeStoppedSandboxByExternalId(resumeExternalId).catch((err) => {
+        console.warn(`[preview-ws] auto-resume failed for ${resumeExternalId}:`, err);
         return false;
       });
       // The resume flips the row to 'active' immediately; the box finishes
