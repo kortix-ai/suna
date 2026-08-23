@@ -547,7 +547,7 @@ describe('opencode convergence — idle only', () => {
     expect(installs).toEqual([])
   })
 
-  test('an unreadable opencode converges nothing', async () => {
+  test('a missing managed opencode binary is installed when the runtime is unreadable', async () => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, CLI_BYTES)
     await Bun.write(ws.agentBakedPath, AGENT_BYTES)
@@ -557,7 +557,29 @@ describe('opencode convergence — idle only', () => {
       ...opencodeSeam(),
       opencodeDepsDir: ws.depsDir,
       readOpencodeVersion: async () => null,
+      opencodeBinaryExists: async () => false,
       turnProbe: async () => false,
+      installOpencode: async (v: string) => {
+        installs.push(v)
+      },
+    })
+
+    expect(result.opencode).toBe('updated')
+    expect(result.reasons?.opencode).toBeUndefined()
+    expect(installs).toEqual(['1.18.19'])
+  })
+
+  test('an existing managed binary is not replaced during a transient unreadable runtime', async () => {
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, CLI_BYTES)
+    await Bun.write(ws.agentBakedPath, AGENT_BYTES)
+    const installs: string[] = []
+
+    const result = await run(ws, stubFetch(), {
+      ...opencodeSeam(),
+      opencodeDepsDir: ws.depsDir,
+      readOpencodeVersion: async () => null,
+      opencodeBinaryExists: async () => true,
       installOpencode: async (v: string) => {
         installs.push(v)
       },
