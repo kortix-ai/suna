@@ -594,7 +594,10 @@ jobs:
   promote-dev-channel-api:
     name: Move :dev → this build (API)
     needs: [detect-changes, tag-api, deploy-api-ecs]
-    if: needs.detect-changes.outputs.api == 'true'
+    if: ${{ always()
+      && needs.detect-changes.outputs.api == 'true'
+      && needs.tag-api.result == 'success'
+      && needs.deploy-api-ecs.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: docker/setup-buildx-action@v4
@@ -730,7 +733,10 @@ jobs:
   promote-dev-channel-gateway:
     name: Move :dev → this build (gateway)
     needs: [detect-changes, tag-gateway, verify-gateway-dev-parity]
-    if: needs.detect-changes.outputs.gateway == 'true'
+    if: ${{ always()
+      && needs.detect-changes.outputs.gateway == 'true'
+      && needs.tag-gateway.result == 'success'
+      && needs.verify-gateway-dev-parity.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: docker/setup-buildx-action@v4
@@ -941,7 +947,10 @@ jobs:
   promote-dev-channel-frontend:
     name: Move :dev → this build (frontend)
     needs: [detect-changes, build-frontend, verify-web-dev]
-    if: needs.detect-changes.outputs.frontend == 'true'
+    if: ${{ always()
+      && needs.detect-changes.outputs.frontend == 'true'
+      && needs.build-frontend.result == 'success'
+      && needs.verify-web-dev.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: docker/setup-buildx-action@v4
