@@ -196,8 +196,7 @@ RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versio
     && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
     && opencode --version \
-    && opencode_package="$(pnpm root -g)/opencode-ai" \
-    && opencode_native="$opencode_package/bin/opencode.exe" \
+    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \
     && test -x "$opencode_native" \
     && test "$(wc -c < "$opencode_native")" -gt 50000000 \
     && test "$("$opencode_native" --version)" = "$OPENCODE_VERSION" \

@@ -25,10 +25,10 @@ describe('buildFastSandboxDockerfile', () => {
 expect(dockerfile).toContain('FROM ubuntu:24.04');
     expect(dockerfile).toContain('opencode-ai@1.18.19');
     expect(dockerfile).toContain(
-      'opencode_package="$(pnpm root -g)/opencode-ai"',
+      "opencode_native=\"$(sed -n 's/^# cmd-shim-target=//p' \"$(command -v opencode)\" | tail -n 1)\"",
     );
     expect(dockerfile).not.toContain('pnpm list -g');
-    expect(dockerfile).toContain('opencode_native="$opencode_package/bin/opencode.exe"');
+    expect(dockerfile).not.toContain('pnpm root -g');
     expect(dockerfile).toContain('test "$(wc -c < "$opencode_native")" -gt 50000000');
     expect(dockerfile).toContain('ln -sfn "$opencode_native" /opt/kortix/opencode.current');
     expect(dockerfile).toContain(

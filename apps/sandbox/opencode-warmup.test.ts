@@ -438,9 +438,9 @@ exit 1
 
     expect(dockerfile).toContain('iputils-arping util-linux');
     expect(dockerfile).toContain(
-      'opencode_package="$(pnpm root -g)/opencode-ai"',
+      "opencode_native=\"$(sed -n 's/^# cmd-shim-target=//p' \"$(command -v opencode)\" | tail -n 1)\"",
     );
-    expect(dockerfile).toContain('opencode_native="$opencode_package/bin/opencode.exe"');
+    expect(dockerfile).not.toContain('pnpm root -g');
     expect(dockerfile).toContain('test "$(wc -c < "$opencode_native")" -gt 50000000');
     expect(dockerfile).toContain('ln -sfn "$opencode_native" /opt/kortix/opencode.current');
     expect(dockerfile).toContain(

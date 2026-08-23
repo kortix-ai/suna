@@ -141,10 +141,10 @@ describe('runtime artifact integrity', () => {
 
   test('exposes the native OpenCode executable at the supervisor path', () => {
     expect(rendered).toContain(
-      'opencode_package="$(pnpm root -g)/opencode-ai"',
+      "opencode_native=\"$(sed -n 's/^# cmd-shim-target=//p' \"$(command -v opencode)\" | tail -n 1)\"",
     );
     expect(rendered).not.toContain('pnpm list -g');
-    expect(rendered).toContain('opencode_native="$opencode_package/bin/opencode.exe"');
+    expect(rendered).not.toContain('pnpm root -g');
     expect(rendered).toContain('test "$(wc -c < "$opencode_native")" -gt 50000000');
     expect(rendered).toContain('ln -sfn "$opencode_native" /opt/kortix/opencode.current');
     expect(rendered).toContain(
