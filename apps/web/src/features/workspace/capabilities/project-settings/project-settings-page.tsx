@@ -84,15 +84,12 @@ import {
  * (`sections.map`, a single `TabsList`); mobile keeps the separate horizontal
  * tab strip, unchanged, since it has no rail to match rows with.
  *
- * Two things it must NOT grow, both removed 2026-08-23 on Jay's call:
- *
- *  - **No identity header.** An `EntityAvatar` + project name sat above the
- *    nav, mirroring the account rail's. On the account page that block is the
- *    only place the account is named; here the app sidebar already carries
- *    this project's avatar and name two columns to the left, at the same `md`
- *    size, so the rail said it twice.
- *  - **No `border-r`.** It drew a third vertical edge right beside the app
- *    sidebar's own, and boxed the repetition above it in.
+ * **No identity header.** An `EntityAvatar` + project name sat above the nav,
+ * mirroring the account rail's. On the account page that block is the only
+ * place the account is named; here the app sidebar already carries this
+ * project's avatar and name two columns to the left, at the same `md` size, so
+ * the rail said it twice. Removed 2026-08-23 on Jay's call — and it was the
+ * only thing removed: the `border-r` beside it stays.
  *
  * **The section lives in the URL, not in a store.** `?section=<key>` is
  * shareable, survives a reload, and is what `settings-tabs.ts`'s `GRADUATED`
@@ -215,14 +212,13 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
             </FadedScrollArea>
           </nav>
         ) : (
-          /* No identity header, and no `border-r`. The header named the
-             project a SECOND time — the app sidebar carries this project's
-             avatar and name two columns to the left, at the same `md` size —
-             and the rule then drew a third vertical edge beside the sidebar's
-             own, boxing that repetition in. Everything else about this rail is
-             unchanged: 230px column, its own scroller, `py-4`, the `Tabs`
-             vertical list. */
-          <section className="bg-background flex min-h-0 flex-col overflow-y-auto py-4">
+          /* No identity header — and that is the ONLY change to this rail. It
+             named the project a SECOND time: the app sidebar already carries
+             this project's avatar and name two columns to the left, at the
+             same `md` size. Everything else is untouched — the 230px column,
+             the `border-r`, its own scroller, `py-4`, the `Tabs` vertical
+             list. */
+          <section className="bg-background flex min-h-0 flex-col overflow-y-auto border-r py-4">
             <div className="min-h-0 flex-1 px-2.5">
               <nav aria-label="Project settings" className="space-y-0.5">
                 {/* ONE unlabeled nav group — the account rail's own

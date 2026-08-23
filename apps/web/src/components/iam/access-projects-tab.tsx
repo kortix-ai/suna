@@ -133,6 +133,7 @@ import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import {
   ArrowClockwiseIcon,
   ArrowSquareOutIcon,
+  CaretLeftIcon,
   CheckIcon,
   ClockIcon,
   EnvelopeIcon,
@@ -267,9 +268,7 @@ function ExpiryMeta({ expiresAt }: { expiresAt: string | null | undefined }) {
   const expiry = formatExpiry(expiresAt);
   if (!expiry.bounded) return <span className="tabular-nums">Expires never</span>;
   return (
-    <span
-      className={cn('tabular-nums', expiry.expired ? 'text-kortix-red' : 'text-kortix-yellow')}
-    >
+    <span className={cn('tabular-nums', expiry.expired ? 'text-kortix-red' : 'text-kortix-yellow')}>
       Expires {expiry.label}
     </span>
   );
@@ -323,6 +322,41 @@ export function AccessProjectsTab({
   );
 }
 
+/**
+ * `BackToCustomizeOverlay` — the way back to the project you came from, and
+ * deliberately NOT part of this page's layout.
+ *
+ * The account hub is the account's own screen; a "Back to Customize" row wedged
+ * into its header would be permanent chrome describing a temporary situation,
+ * and it would push the panel down for everyone who never came from a project.
+ * So this floats: `fixed`, out of flow, costing the page zero height. Nothing
+ * below it moves whether it is there or not.
+ *
+ * Bottom-left, not top-left: the top-left of this page is the account rail and
+ * the identity block, and an overlay there would sit on top of them. The bottom
+ * corner is empty on every section of the hub.
+ *
+ * `router.back()` rather than a URL — it returns to the exact Customize tab the
+ * person left (Models, Connectors, Skills, …), which no single href can name.
+ * Safe because `?from=customize` is set by ONE link
+ * (`capabilities/shared/capability-tabs.tsx`), so the entry is always in
+ * history.
+ */
+function BackToCustomizeOverlay({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4 sm:inset-x-auto sm:left-6 sm:justify-start sm:px-0">
+      <button
+        type="button"
+        onClick={onBack}
+        className="bg-background/80 text-muted-foreground hover:text-foreground border-border pointer-events-auto flex items-center gap-1.5 rounded-full border py-2 pr-4 pl-3 text-sm shadow-sm backdrop-blur-md transition-colors"
+      >
+        <CaretLeftIcon className="size-3.5 shrink-0" />
+        Back to Customize
+      </button>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Project picker (selectedProjectId === null)
 // ─────────────────────────────────────────────────────────────────────────
@@ -358,7 +392,9 @@ function ProjectPicker({
   return (
     <div className="space-y-4">
       <div className="space-y-0.5">
-        <p className="text-foreground text-sm font-medium">Projects{settled ? ` · ${total}` : ''}</p>
+        <p className="text-foreground text-sm font-medium">
+          Projects{settled ? ` · ${total}` : ''}
+        </p>
         <p className="text-muted-foreground text-xs">
           Every project&apos;s access, in one place. Pick one to see who&apos;s in and manage it.
         </p>
@@ -622,7 +658,8 @@ function ProjectAccessPanel({
 
   // ── Pending invites ───────────────────────────────────────────────────
   const [pendingInviteBusyIds, setPendingInviteBusyIds] = useState<Set<string>>(() => new Set());
-  const markInvitePending = (id: string) => setPendingInviteBusyIds((prev) => new Set(prev).add(id));
+  const markInvitePending = (id: string) =>
+    setPendingInviteBusyIds((prev) => new Set(prev).add(id));
   const clearInvitePending = (id: string) =>
     setPendingInviteBusyIds((prev) => {
       const next = new Set(prev);
@@ -729,329 +766,333 @@ function ProjectAccessPanel({
   const settledRows = !accessQuery.isLoading && !accessQuery.isError;
 
   return (
-    <AccessDetailShell
-      /* Two different journeys end on this panel, and the way out is not the
-         same for both.
-
-         Reached from inside the hub — the Access > Projects picker — "back" is
-         that picker, and `onBack` clears `?project=`.
-
-         Reached from a project's Customize bar ("Members ↗"), the picker is
-         not where you were and not anywhere you have been. `router.back()`
-         returns to the exact Customize tab you left, which is why the marker
-         is set only by that link (`capability-tabs.tsx`): it guarantees the
-         entry is in history. Without this the trip was one-way — you landed a
-         level above your own project with no way back to it. */
-      back={
-        cameFromCustomize
-          ? { label: 'Back to Customize', onClick: () => router.back() }
-          : { label: 'All projects', onClick: onBack }
-      }
-      avatar={<EntityAvatar icon={FolderOpenIcon} size="lg" />}
-      title={project?.name ?? '…'}
-      loading={projectQuery.isLoading}
-      actions={
-        <Button asChild type="button" variant="ghost" size="sm" className="gap-1.5">
-          <Link href={`/projects/${projectId}`}>
-            Open project
-            <ArrowSquareOutIcon className="size-3.5" />
-          </Link>
-        </Button>
-      }
-    >
-      {/* ── Asked to join ─────────────────────────────────────────────── */}
-      {showAccessRequests ? (
-        accessRequestsQuery.isLoading ? (
-          <Skeleton className="h-14 w-full rounded-md" />
-        ) : (
-          <AccessList header={{ title: 'Asked to join', count: accessRequests.length }}>
-            {accessRequests.map((request) => {
-              const busy = accessRequestBusyIds.has(request.request_id);
-              return (
-                <AccessRow
-                  key={request.request_id}
-                  leading={
-                    <span className="bg-kortix-yellow/10 text-kortix-yellow inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                      <EnvelopeIcon className="size-4" />
-                    </span>
-                  }
-                  title={request.requester_email}
-                  metaParts={[
-                    <span key="requested" className="tabular-nums">
-                      Requested {formatDate(request.created_at)}
-                    </span>,
-                    ...(request.message ? [<span key="message">&quot;{request.message}&quot;</span>] : []),
-                  ]}
-                  pending={busy}
-                  actions={
-                    busy ? undefined : (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => approveRequestMutation.mutate(request.request_id)}
-                          className="gap-1.5"
-                        >
-                          <CheckIcon className="size-3.5" />
-                          Approve
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => rejectRequestMutation.mutate(request.request_id)}
-                          className="gap-1.5"
-                        >
-                          <XIcon className="size-3.5" />
-                          Decline
-                        </Button>
-                      </>
-                    )
-                  }
-                />
-              );
-            })}
-          </AccessList>
-        )
-      ) : null}
-
-      {/* ── Invited to this project ───────────────────────────────────── */}
-      {showPendingInvites ? (
-        pendingInvitesQuery.isLoading ? (
-          <Skeleton className="h-14 w-full rounded-md" />
-        ) : (
-          <AccessList header={{ title: 'Invited to this project', count: pendingInvites.length }}>
-            {pendingInvites.map((invite) => {
-              const busy = pendingInviteBusyIds.has(invite.invite_id);
-              return (
-                <AccessRow
-                  key={invite.invite_id}
-                  dashed
-                  leading={
-                    <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                      <EnvelopeIcon className="size-4" />
-                    </span>
-                  }
-                  title={invite.email}
-                  badges={
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {invite.project_role}
-                    </Badge>
-                  }
-                  metaParts={[
-                    <span key="invited" className="tabular-nums">
-                      Invited {formatDate(invite.created_at)}
-                    </span>,
-                    invite.invite_expired ? (
-                      <span key="expiry" className="text-kortix-orange">
-                        Link expired
+    <>
+      {cameFromCustomize ? <BackToCustomizeOverlay onBack={() => router.back()} /> : null}
+      <AccessDetailShell
+        /* Unconditional. This breadcrumb belongs to the HUB — it walks up to
+         the Access > Projects picker and clears `?project=`. Arriving from a
+         project's Customize bar does not change what one level up means here;
+         that journey gets `BackToCustomizeOverlay` instead, which floats and
+         costs this header no room. */
+        back={{ label: 'All projects', onClick: onBack }}
+        avatar={<EntityAvatar icon={FolderOpenIcon} size="lg" />}
+        title={project?.name ?? '…'}
+        loading={projectQuery.isLoading}
+        actions={
+          <Button asChild type="button" variant="ghost" size="sm" className="gap-1.5">
+            <Link href={`/projects/${projectId}`}>
+              Open project
+              <ArrowSquareOutIcon className="size-3.5" />
+            </Link>
+          </Button>
+        }
+      >
+        {/* ── Asked to join ─────────────────────────────────────────────── */}
+        {showAccessRequests ? (
+          accessRequestsQuery.isLoading ? (
+            <Skeleton className="h-14 w-full rounded-md" />
+          ) : (
+            <AccessList header={{ title: 'Asked to join', count: accessRequests.length }}>
+              {accessRequests.map((request) => {
+                const busy = accessRequestBusyIds.has(request.request_id);
+                return (
+                  <AccessRow
+                    key={request.request_id}
+                    leading={
+                      <span className="bg-kortix-yellow/10 text-kortix-yellow inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                        <EnvelopeIcon className="size-4" />
                       </span>
-                    ) : (
-                      <span key="expiry" className="inline-flex items-center gap-1 tabular-nums">
-                        <ClockIcon className="size-3" />
-                        Expires {formatDate(invite.invite_expires_at)}
+                    }
+                    title={request.requester_email}
+                    metaParts={[
+                      <span key="requested" className="tabular-nums">
+                        Requested {formatDate(request.created_at)}
+                      </span>,
+                      ...(request.message
+                        ? [<span key="message">&quot;{request.message}&quot;</span>]
+                        : []),
+                    ]}
+                    pending={busy}
+                    actions={
+                      busy ? undefined : (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => approveRequestMutation.mutate(request.request_id)}
+                            className="gap-1.5"
+                          >
+                            <CheckIcon className="size-3.5" />
+                            Approve
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => rejectRequestMutation.mutate(request.request_id)}
+                            className="gap-1.5"
+                          >
+                            <XIcon className="size-3.5" />
+                            Decline
+                          </Button>
+                        </>
+                      )
+                    }
+                  />
+                );
+              })}
+            </AccessList>
+          )
+        ) : null}
+
+        {/* ── Invited to this project ───────────────────────────────────── */}
+        {showPendingInvites ? (
+          pendingInvitesQuery.isLoading ? (
+            <Skeleton className="h-14 w-full rounded-md" />
+          ) : (
+            <AccessList header={{ title: 'Invited to this project', count: pendingInvites.length }}>
+              {pendingInvites.map((invite) => {
+                const busy = pendingInviteBusyIds.has(invite.invite_id);
+                return (
+                  <AccessRow
+                    key={invite.invite_id}
+                    dashed
+                    leading={
+                      <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                        <EnvelopeIcon className="size-4" />
                       </span>
-                    ),
-                  ]}
-                  pending={busy}
-                  actions={
-                    busy ? undefined : (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => resendInviteMutation.mutate(invite.invite_id)}
-                          className="gap-1.5"
-                        >
-                          <ArrowClockwiseIcon className="size-3.5" />
-                          Resend
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setRevokeInviteTarget(invite)}
-                          className="gap-1.5"
-                        >
-                          <XIcon className="size-3.5" />
-                          Revoke
-                        </Button>
-                      </>
-                    )
-                  }
-                />
-              );
-            })}
+                    }
+                    title={invite.email}
+                    badges={
+                      <Badge variant="outline" size="sm" className="capitalize">
+                        {invite.project_role}
+                      </Badge>
+                    }
+                    metaParts={[
+                      <span key="invited" className="tabular-nums">
+                        Invited {formatDate(invite.created_at)}
+                      </span>,
+                      invite.invite_expired ? (
+                        <span key="expiry" className="text-kortix-orange">
+                          Link expired
+                        </span>
+                      ) : (
+                        <span key="expiry" className="inline-flex items-center gap-1 tabular-nums">
+                          <ClockIcon className="size-3" />
+                          Expires {formatDate(invite.invite_expires_at)}
+                        </span>
+                      ),
+                    ]}
+                    pending={busy}
+                    actions={
+                      busy ? undefined : (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => resendInviteMutation.mutate(invite.invite_id)}
+                            className="gap-1.5"
+                          >
+                            <ArrowClockwiseIcon className="size-3.5" />
+                            Resend
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setRevokeInviteTarget(invite)}
+                            className="gap-1.5"
+                          >
+                            <XIcon className="size-3.5" />
+                            Revoke
+                          </Button>
+                        </>
+                      )
+                    }
+                  />
+                );
+              })}
+            </AccessList>
+          )
+        ) : null}
+
+        {/* ── Access ────────────────────────────────────────────────────── */}
+        {accessQuery.isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-[58px] w-full rounded-md" />
+            ))}
+          </div>
+        ) : accessQuery.isError ? (
+          <ErrorState
+            size="sm"
+            title="Failed to load access"
+            description={(accessQuery.error as Error)?.message}
+            action={
+              <Button variant="outline" size="sm" onClick={() => accessQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        ) : rowCount === 0 ? (
+          <EmptyState
+            icon={UsersIcon}
+            size="sm"
+            title="Nobody has access yet"
+            description="Grant a member or group access to get started."
+            action={
+              canManageMembers ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setGrantOpen(true)}
+                >
+                  <PlusIcon className="size-3.5" />
+                  Grant access
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <AccessList
+            header={{
+              title: 'Access',
+              count: settledRows ? rowCount : undefined,
+              actions: canManageMembers ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setGrantOpen(true)}
+                  className="gap-1.5"
+                >
+                  <PlusIcon className="size-3.5" />
+                  Grant access
+                </Button>
+              ) : undefined,
+            }}
+          >
+            {members.map((member) => (
+              <MemberAccessRow
+                key={`member:${member.user_id}`}
+                member={member}
+                canManageMembers={canManageMembers}
+                busy={pendingUserIds.has(member.user_id)}
+                projectAgentCount={projectAgentCount}
+                onEdit={openEdit}
+                onRequestRemove={() => setRemoveMemberTarget(member)}
+              />
+            ))}
+            {groups.map((group) => (
+              <GroupAccessRowView
+                key={`group:${group.group_id}`}
+                group={group}
+                canManageMembers={canManageMembers}
+                busy={pendingGroupIds.has(group.group_id)}
+                projectAgentCount={projectAgentCount}
+                onEdit={openEdit}
+                onRequestRemove={() => setRemoveGroupTarget(group)}
+              />
+            ))}
           </AccessList>
-        )
-      ) : null}
+        )}
 
-      {/* ── Access ────────────────────────────────────────────────────── */}
-      {accessQuery.isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
-          ))}
-        </div>
-      ) : accessQuery.isError ? (
-        <ErrorState
-          size="sm"
-          title="Failed to load access"
-          description={(accessQuery.error as Error)?.message}
-          action={
-            <Button variant="outline" size="sm" onClick={() => accessQuery.refetch()}>
-              Retry
-            </Button>
-          }
-        />
-      ) : rowCount === 0 ? (
-        <EmptyState
-          icon={UsersIcon}
-          size="sm"
-          title="Nobody has access yet"
-          description="Grant a member or group access to get started."
-          action={
-            canManageMembers ? (
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setGrantOpen(true)}>
-                <PlusIcon className="size-3.5" />
-                Grant access
-              </Button>
-            ) : undefined
-          }
-        />
-      ) : (
-        <AccessList
-          header={{
-            title: 'Access',
-            count: settledRows ? rowCount : undefined,
-            actions: canManageMembers ? (
-              <Button type="button" size="sm" onClick={() => setGrantOpen(true)} className="gap-1.5">
-                <PlusIcon className="size-3.5" />
-                Grant access
-              </Button>
-            ) : undefined,
-          }}
-        >
-          {members.map((member) => (
-            <MemberAccessRow
-              key={`member:${member.user_id}`}
-              member={member}
-              canManageMembers={canManageMembers}
-              busy={pendingUserIds.has(member.user_id)}
-              projectAgentCount={projectAgentCount}
-              onEdit={openEdit}
-              onRequestRemove={() => setRemoveMemberTarget(member)}
-            />
-          ))}
-          {groups.map((group) => (
-            <GroupAccessRowView
-              key={`group:${group.group_id}`}
-              group={group}
-              canManageMembers={canManageMembers}
-              busy={pendingGroupIds.has(group.group_id)}
-              projectAgentCount={projectAgentCount}
-              onEdit={openEdit}
-              onRequestRemove={() => setRemoveGroupTarget(group)}
-            />
-          ))}
-        </AccessList>
-      )}
-
-      {/* ── The one grant / edit modal ────────────────────────────────── */}
-      <AccessDialog
-        open={grantOpen}
-        onOpenChange={setGrantOpen}
-        accountId={accountId}
-        scope={{ kind: 'project', projectId, projectName }}
-        mode={{ kind: 'grant' }}
-        rbacEnabled={rbacEnabled}
-        canManageRoles={canManageRoles}
-        onDone={invalidateAccess}
-      />
-
-      {editTarget ? (
+        {/* ── The one grant / edit modal ────────────────────────────────── */}
         <AccessDialog
-          key={`${editTarget.principal.type}:${editTarget.principal.id}`}
-          open={editOpen}
-          onOpenChange={setEditOpen}
+          open={grantOpen}
+          onOpenChange={setGrantOpen}
           accountId={accountId}
           scope={{ kind: 'project', projectId, projectName }}
-          mode={{ kind: 'edit', principal: editTarget.principal, current: editTarget.current }}
+          mode={{ kind: 'grant' }}
           rbacEnabled={rbacEnabled}
           canManageRoles={canManageRoles}
-          inheritedFrom={editTarget.inheritedFrom}
           onDone={invalidateAccess}
         />
-      ) : null}
 
-      {/* ── Destructive confirms ──────────────────────────────────────── */}
-      <ConfirmDialog
-        open={removeMemberTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setRemoveMemberTarget(null);
-        }}
-        {...removeAccessCopy({
-          principal: removeMemberTarget ? principalLabel(removeMemberTarget) : '',
-          scopeName: projectName,
-          inherited: (removeMemberTarget?.group_sources ?? []).map((g) => g.group_name),
-        })}
-        confirmLabel="Remove"
-        confirmVariant="destructive"
-        isPending={removeMemberMutation.isPending}
-        onConfirm={() => {
-          if (!removeMemberTarget) return;
-          const target = removeMemberTarget;
-          setRemoveMemberTarget(null);
-          removeMemberMutation.mutate(target.user_id);
-        }}
-      />
+        {editTarget ? (
+          <AccessDialog
+            key={`${editTarget.principal.type}:${editTarget.principal.id}`}
+            open={editOpen}
+            onOpenChange={setEditOpen}
+            accountId={accountId}
+            scope={{ kind: 'project', projectId, projectName }}
+            mode={{ kind: 'edit', principal: editTarget.principal, current: editTarget.current }}
+            rbacEnabled={rbacEnabled}
+            canManageRoles={canManageRoles}
+            inheritedFrom={editTarget.inheritedFrom}
+            onDone={invalidateAccess}
+          />
+        ) : null}
 
-      <ConfirmDialog
-        open={removeGroupTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setRemoveGroupTarget(null);
-        }}
-        {...removeAccessCopy({
-          principal: removeGroupTarget
-            ? (removeGroupTarget.group_name ?? removeGroupTarget.group_id)
-            : '',
-          scopeName: projectName,
-        })}
-        confirmLabel="Detach"
-        confirmVariant="destructive"
-        isPending={detachGroupMutation.isPending}
-        onConfirm={() => {
-          if (!removeGroupTarget) return;
-          const target = removeGroupTarget;
-          setRemoveGroupTarget(null);
-          detachGroupMutation.mutate(target.group_id);
-        }}
-      />
+        {/* ── Destructive confirms ──────────────────────────────────────── */}
+        <ConfirmDialog
+          open={removeMemberTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setRemoveMemberTarget(null);
+          }}
+          {...removeAccessCopy({
+            principal: removeMemberTarget ? principalLabel(removeMemberTarget) : '',
+            scopeName: projectName,
+            inherited: (removeMemberTarget?.group_sources ?? []).map((g) => g.group_name),
+          })}
+          confirmLabel="Remove"
+          confirmVariant="destructive"
+          isPending={removeMemberMutation.isPending}
+          onConfirm={() => {
+            if (!removeMemberTarget) return;
+            const target = removeMemberTarget;
+            setRemoveMemberTarget(null);
+            removeMemberMutation.mutate(target.user_id);
+          }}
+        />
 
-      <ConfirmDialog
-        open={revokeInviteTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setRevokeInviteTarget(null);
-        }}
-        title="Revoke invitation?"
-        description={
-          revokeInviteTarget
-            ? `The invitation to ${revokeInviteTarget.email} will be cancelled.`
-            : ''
-        }
-        confirmLabel="Revoke"
-        confirmVariant="destructive"
-        isPending={revokeInviteMutation.isPending}
-        onConfirm={() => {
-          if (!revokeInviteTarget) return;
-          const target = revokeInviteTarget;
-          setRevokeInviteTarget(null);
-          revokeInviteMutation.mutate(target.invite_id);
-        }}
-      />
-    </AccessDetailShell>
+        <ConfirmDialog
+          open={removeGroupTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setRemoveGroupTarget(null);
+          }}
+          {...removeAccessCopy({
+            principal: removeGroupTarget
+              ? (removeGroupTarget.group_name ?? removeGroupTarget.group_id)
+              : '',
+            scopeName: projectName,
+          })}
+          confirmLabel="Detach"
+          confirmVariant="destructive"
+          isPending={detachGroupMutation.isPending}
+          onConfirm={() => {
+            if (!removeGroupTarget) return;
+            const target = removeGroupTarget;
+            setRemoveGroupTarget(null);
+            detachGroupMutation.mutate(target.group_id);
+          }}
+        />
+
+        <ConfirmDialog
+          open={revokeInviteTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setRevokeInviteTarget(null);
+          }}
+          title="Revoke invitation?"
+          description={
+            revokeInviteTarget
+              ? `The invitation to ${revokeInviteTarget.email} will be cancelled.`
+              : ''
+          }
+          confirmLabel="Revoke"
+          confirmVariant="destructive"
+          isPending={revokeInviteMutation.isPending}
+          onConfirm={() => {
+            if (!revokeInviteTarget) return;
+            const target = revokeInviteTarget;
+            setRevokeInviteTarget(null);
+            revokeInviteMutation.mutate(target.invite_id);
+          }}
+        />
+      </AccessDetailShell>
+    </>
   );
 }
 
