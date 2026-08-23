@@ -3,9 +3,13 @@
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 
+import { Badge } from '@/components/ui/badge';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   capabilityTabHref,
   channelsHref,
@@ -23,17 +27,14 @@ import {
   SettingsNavProvider,
   type SettingsNav,
 } from '@/features/workspace/shared/settings-nav-context';
-import {
-  SettingsRail,
-  SettingsShell,
-  type SettingsRailGroup,
-} from '@/features/workspace/shared/settings-shell';
+import { useIsMobile } from '@/hooks/utils';
 import {
   CUSTOMIZE_SECTION_GATE_ACTIONS,
   isCustomizeSectionVisible,
   type ProjectAction,
 } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
+import { cn } from '@/lib/utils';
 import {
   ACCOUNT_GRADUATED,
   isAccountGraduatedSection,
@@ -46,6 +47,7 @@ import {
   parseProjectSettingsSection,
   projectSettingsSectionHref,
   projectSettingsSections,
+  type ProjectSettingsSection,
   type ProjectSettingsSectionKey,
 } from './project-settings-sections';
 
@@ -75,24 +77,22 @@ import {
  * `Advanced`) are gone; see `project-settings-sections.ts`'s "One flat list,
  * no headings". Do not reintroduce those headings.
  *
- * **The desktop rail's SHELL is the account settings page's**
- * (`app/(app)/accounts/[id]/page.tsx`'s `<aside>`): a `208px` column, no
- * border and no rule, and rows in that page's `NAV_GROUPS` dialect — same
- * `h-8 rounded-sm px-2.5 gap-2.5`, same `size-4` icon, same
- * `bg-primary/[0.06]` active fill and `hover:bg-accent` otherwise. It is ONE
- * list under the hood (`sections.map`, a single `TabsList`); mobile keeps the
- * separate horizontal tab strip, unchanged, since it has no rail to match
- * shells with.
+ * **The desktop rail's rows are the account settings page's**
+ * (`app/(app)/accounts/[id]/page.tsx`'s `<aside>`): the nav renders as one
+ * unlabeled group in that page's `NAV_GROUPS` dialect — same row classes, same
+ * icon size, same active/hover treatment. It is ONE list under the hood
+ * (`sections.map`, a single `TabsList`); mobile keeps the separate horizontal
+ * tab strip, unchanged, since it has no rail to match rows with.
  *
- * Two things the account rail has that this one must NOT grow back:
+ * Two things it must NOT grow, both removed 2026-08-23 on Jay's call:
  *
- *  - **No identity header.** The account rail's avatar + name block is the
- *    only place that page names the account. Here it was the second — the app
- *    sidebar carries this project's avatar and name two columns to the left,
- *    at the same `md` size — so the rail repeated it.
- *  - **No `border-r`.** The account rail is nav sitting in the page, separated
- *    by its grid column, not a boxed panel. The rule here drew a third
- *    vertical edge next to the sidebar's, and boxed in the repetition above.
+ *  - **No identity header.** An `EntityAvatar` + project name sat above the
+ *    nav, mirroring the account rail's. On the account page that block is the
+ *    only place the account is named; here the app sidebar already carries
+ *    this project's avatar and name two columns to the left, at the same `md`
+ *    size, so the rail said it twice.
+ *  - **No `border-r`.** It drew a third vertical edge right beside the app
+ *    sidebar's own, and boxed the repetition above it in.
  *
  * **The section lives in the URL, not in a store.** `?section=<key>` is
  * shareable, survives a reload, and is what `settings-tabs.ts`'s `GRADUATED`
@@ -105,6 +105,7 @@ import {
  * for every inactive tab for the same reason.
  */
 export function ProjectSettingsPage({ projectId }: { projectId: string }) {
+  const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -179,85 +180,151 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
 
   const activeSection = sections.find((s) => s.key === active);
 
-  // The rail's groups: ONE unlabeled group, in the order
-  // `projectSettingsSections()` returns them. The account rail's own
-  // precedent for a cluster with nothing to split into — its leading
-  // Settings/Git/Tokens group carries no label either. No group HEADINGS over
-  // these four-to-six rows: Jay's 2026-08-17 call ("you don't need the
-  // categories") stands. See `project-settings-sections.ts`'s "One flat list,
-  // no headings".
-  const railGroups: SettingsRailGroup[] = useMemo(
-    () => [
-      {
-        items: sections.map((section) => ({
-          id: section.key,
-          label: section.label,
-          icon: section.icon,
-          // A real link, not an `onSelect` push: the section is URL state, so
-          // it has to be something a person can middle-click and copy.
-          href: projectSettingsSectionHref(projectId, section.key),
-          count: section.key === 'review' ? reviewNeedsYou : undefined,
-          attention: section.key === 'upgrades' && upgradeAttention,
-        })),
-      },
-    ],
-    [sections, projectId, reviewNeedsYou, upgradeAttention],
-  );
-
   return (
     <SettingsNavProvider value={settingsNav}>
-      {/* This page's ONE scroll container. It has to open its own:
-          `(capabilities)/layout.tsx` is `h-svh … overflow-hidden` so the tab
-          bar above cannot move, which means the window never scrolls here.
-          `lg:sticky` on the rail resolves against THIS element.
-
-          It carries NO padding of its own. A scroll container's own padding
-          insets the rectangle a sticky descendant measures `top` against, so
-          `py-10` here made the rail's `lg:top-8` push it 30px BELOW the
-          heading beside it — at rest, with nothing scrolled. Measured on
-          localhost:18000: aside top 117 vs heading top 87, and 87 with
-          `top: 0`. The account hub never hit this; its scrollport is the
-          window, which has no padding to inset. */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* `CapabilityPageShell`'s column — same `px-4 py-10 pb-20 lg:py-14`
-            and the same `max-w-5xl` ceiling as the six tabs beside it on the
-            Customize bar. Without a column at all the rail sat hard against
-            the app sidebar's edge with no left spacing.
-
-            `lg:w-fit` is what makes the two gutters equal. Every pane here
-            declares its own `mx-auto w-full max-w-2xl` (the settings width
-            rule — `settings/tab-content-width.test.ts`), so a `1fr` content
-            track hands the pane 742px of column that its ink only fills 672 of
-            and re-centres inside. The block then sat 54px from the sidebar and
-            89px from the right edge. Sizing the column to its content instead
-            centres rail AND pane together as one block: measured on
-            localhost:18000, left gutter 89 and right gutter 89. `w-full`
-            below `lg`, where the shell is stacked and there is nothing to
-            hug.
-
-            The tradeoff, stated so nobody "fixes" it back: the hugged block is
-            954px against the sibling tabs' 1024px column, so switching from
-            Models to Settings shifts the left edge by 33px (ink at 346 vs
-            313). Both cannot hold at once. Filling 1024 symmetrically would
-            need a 112px rail gap — the account rail's is 44 — or a pane wider
-            than `max-w-2xl`, which is the settings width rule that
-            `settings/tab-content-width.test.ts` enforces across every pane
-            these tabs also render in the overlay. A 33px hop between tabs is
-            smaller than a 35px lopsided margin you sit and read inside. */}
-        <div className="mx-auto w-full max-w-5xl px-4 py-10 pb-20 lg:w-fit lg:py-14">
-          <SettingsShell
-            activeKey={active}
-            rail={
-              <SettingsRail groups={railGroups} activeId={active} ariaLabel="Project settings" />
-            }
+      <div
+        className={cn(
+          'min-h-0 flex-1',
+          isMobile ? 'flex flex-col overflow-hidden' : 'grid grid-cols-[230px_1fr] overflow-hidden',
+        )}
+      >
+        {isMobile ? (
+          <nav
+            aria-label="Project settings"
+            className="border-border/60 bg-background flex h-auto shrink-0 items-center border-b"
           >
+            <FadedScrollArea
+              orientation="horizontal"
+              fadeColor="from-background"
+              className="min-w-0 flex-1 py-2"
+            >
+              <Tabs value={active} className="w-fit">
+                <TabsList orientation="horizontal" className="w-fit gap-1 px-2">
+                  {sections.map((section) => (
+                    <SectionTrigger
+                      key={section.key}
+                      projectId={projectId}
+                      section={section}
+                      horizontal
+                      count={section.key === 'review' ? reviewNeedsYou : undefined}
+                      attention={section.key === 'upgrades' && upgradeAttention}
+                    />
+                  ))}
+                </TabsList>
+              </Tabs>
+            </FadedScrollArea>
+          </nav>
+        ) : (
+          /* No identity header, and no `border-r`. The header named the
+             project a SECOND time — the app sidebar carries this project's
+             avatar and name two columns to the left, at the same `md` size —
+             and the rule then drew a third vertical edge beside the sidebar's
+             own, boxing that repetition in. Everything else about this rail is
+             unchanged: 230px column, its own scroller, `py-4`, the `Tabs`
+             vertical list. */
+          <section className="bg-background flex min-h-0 flex-col overflow-y-auto py-4">
+            <div className="min-h-0 flex-1 px-2.5">
+              <nav aria-label="Project settings" className="space-y-0.5">
+                {/* ONE unlabeled nav group — the account rail's own
+                    precedent for a cluster with nothing to split into (its
+                    leading Settings/Git/Tokens group carries no label
+                    either; see `NAV_GROUPS` in `accounts/[id]/page.tsx`).
+                    Still no group HEADING over these four-to-six rows —
+                    Jay's 2026-08-17 call ("you don't need the categories")
+                    stands, this just renders that same choice through the
+                    account page's own group-wrapper shape instead of a bare
+                    list. See `project-settings-sections.ts`'s "One flat
+                    list, no headings". */}
+                <Tabs value={active} orientation="vertical">
+                  <TabsList orientation="vertical" className="w-full">
+                    {sections.map((section) => (
+                      <SectionTrigger
+                        key={section.key}
+                        projectId={projectId}
+                        section={section}
+                        count={section.key === 'review' ? reviewNeedsYou : undefined}
+                        attention={section.key === 'upgrades' && upgradeAttention}
+                      />
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </nav>
+            </div>
+          </section>
+        )}
+
+        <main className="bg-background flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="mx-auto flex min-h-0 w-full flex-1 flex-col space-y-6 overflow-y-auto px-4 py-10 pb-20 lg:py-14">
             {activeSection ? (
               <ProjectSettingsSectionPane sectionKey={activeSection.key} projectId={projectId} />
             ) : null}
-          </SettingsShell>
-        </div>
+          </div>
+        </main>
       </div>
     </SettingsNavProvider>
+  );
+}
+
+/**
+ * One sub-nav row. A real `<Link prefetch>` inside the `TabsTrigger`, not an
+ * `onValueChange` push: the section is URL state, so it has to be a link a
+ * person can middle-click, copy, and land on directly.
+ */
+function SectionTrigger({
+  projectId,
+  section,
+  count,
+  attention,
+  horizontal = false,
+}: {
+  projectId: string;
+  section: ProjectSettingsSection;
+  count?: number;
+  attention?: boolean;
+  horizontal?: boolean;
+}) {
+  const Icon = section.icon;
+  const showCount = count != null && count > 0;
+  return (
+    <TabsTrigger
+      value={section.key}
+      asChild
+      className={
+        horizontal
+          ? 'w-auto shrink-0 gap-2.5 px-3 py-0.75 whitespace-nowrap'
+          : cn(
+              // The account rail's exact nav-item dialect
+              // (`NAV_GROUPS.map` button classes in `accounts/[id]/page.tsx`):
+              // h-8 row, rounded-sm, `bg-primary/[0.06]` active fill, `hover:bg-accent`
+              // otherwise — not the Tabs primitive's default pill/pill-input classes.
+              'h-8 w-full justify-start gap-2.5 rounded-sm px-2.5 text-sm',
+              'data-[state=active]:bg-primary/[0.06] data-[state=active]:text-foreground data-[state=active]:font-medium',
+              'data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-accent hover:data-[state=inactive]:text-foreground',
+            )
+      }
+    >
+      <Link href={projectSettingsSectionHref(projectId, section.key)} prefetch>
+        <Icon className="size-4 shrink-0" />
+        <span className={cn(!horizontal && 'truncate')}>{section.label}</span>
+        {showCount ? (
+          <Badge
+            variant="kortix"
+            size="xs"
+            className={cn('tabular-nums', !horizontal && 'ml-auto')}
+          >
+            {count}
+          </Badge>
+        ) : attention ? (
+          <span
+            aria-hidden
+            className={cn(
+              'bg-kortix-orange size-1.5 shrink-0 rounded-full',
+              !horizontal && 'ml-auto',
+            )}
+          />
+        ) : null}
+      </Link>
+    </TabsTrigger>
   );
 }
 

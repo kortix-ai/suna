@@ -114,14 +114,7 @@ describe('account page rail groups every access surface under Access', () => {
 
   test('the enterprise-demo toggle moved OUT of Identity and INTO Settings (tucked away, not headline)', () => {
     const identityStart = pageSource.indexOf("activeSection === 'identity' && canWriteAccount");
-    // The content pane's closing tag. It was `</m.div>` while the account page
-    // built its own two-column layout inline; the pane is `SettingsShell`'s
-    // now (`features/workspace/shared/settings-shell.tsx`), so the page's last
-    // tag is the shell's. A boundary that no longer matches makes `indexOf`
-    // return -1 and `slice(start, -1)` swallow the whole rest of the file,
-    // which is how this test can only ever fail loudly — keep it a string the
-    // page actually contains.
-    const identityEnd = pageSource.indexOf('</SettingsShell>', identityStart);
+    const identityEnd = pageSource.indexOf('</m.div>', identityStart);
     const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
     const identityBody = pageSource.slice(identityStart, Math.min(identityEnd, settingsStart));
     expect(identityBody).not.toContain('EnterpriseDemoCard');

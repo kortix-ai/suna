@@ -68,6 +68,7 @@
  */
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
@@ -290,6 +291,12 @@ export interface AccessProjectsTabProps {
   rbacEnabled?: boolean;
   /** Shows the "Create a custom role →" link inside `RoleSelect`. */
   canManageRoles?: boolean;
+  /**
+   * True when this hub was opened from a project's Customize bar
+   * (`?from=customize`). The project panel then offers "Back to Customize"
+   * instead of the hub's own "All projects" — see `ProjectAccessPanel`.
+   */
+  cameFromCustomize?: boolean;
 }
 
 export function AccessProjectsTab({
@@ -298,6 +305,7 @@ export function AccessProjectsTab({
   onSelectProject,
   rbacEnabled = true,
   canManageRoles = false,
+  cameFromCustomize = false,
 }: AccessProjectsTabProps) {
   if (!selectedProjectId) {
     return <ProjectPicker accountId={accountId} onSelectProject={onSelectProject} />;
@@ -310,6 +318,7 @@ export function AccessProjectsTab({
       rbacEnabled={rbacEnabled}
       canManageRoles={canManageRoles}
       onBack={() => onSelectProject(null)}
+      cameFromCustomize={cameFromCustomize}
     />
   );
 }
@@ -503,13 +512,16 @@ function ProjectAccessPanel({
   rbacEnabled,
   canManageRoles,
   onBack,
+  cameFromCustomize = false,
 }: {
   accountId: string;
   projectId: string;
   rbacEnabled: boolean;
   canManageRoles: boolean;
   onBack: () => void;
+  cameFromCustomize?: boolean;
 }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
 
   // The single leaf every write control below gates on.
@@ -718,7 +730,23 @@ function ProjectAccessPanel({
 
   return (
     <AccessDetailShell
-      back={{ label: 'All projects', onClick: onBack }}
+      /* Two different journeys end on this panel, and the way out is not the
+         same for both.
+
+         Reached from inside the hub — the Access > Projects picker — "back" is
+         that picker, and `onBack` clears `?project=`.
+
+         Reached from a project's Customize bar ("Members ↗"), the picker is
+         not where you were and not anywhere you have been. `router.back()`
+         returns to the exact Customize tab you left, which is why the marker
+         is set only by that link (`capability-tabs.tsx`): it guarantees the
+         entry is in history. Without this the trip was one-way — you landed a
+         level above your own project with no way back to it. */
+      back={
+        cameFromCustomize
+          ? { label: 'Back to Customize', onClick: () => router.back() }
+          : { label: 'All projects', onClick: onBack }
+      }
       avatar={<EntityAvatar icon={FolderOpenIcon} size="lg" />}
       title={project?.name ?? '…'}
       loading={projectQuery.isLoading}
