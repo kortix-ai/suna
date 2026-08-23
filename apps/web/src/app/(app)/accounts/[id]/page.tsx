@@ -46,6 +46,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import {
+  SettingsRail,
+  SettingsShell,
+  type SettingsRailGroup,
+} from '@/features/workspace/shared/settings-shell';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -435,6 +440,18 @@ export default function AccountSettingsPage() {
   // visible to everyone, so this always resolves.
   const firstVisibleSection: AccountSection =
     NAV_GROUPS.flatMap((group) => group.items).find((item) => sectionVisible[item.id])?.id ?? 'help';
+
+  // The rail's rows, gated. Groups that empty out entirely are dropped here
+  // rather than inside the shell, so the shell can index what it is actually
+  // going to draw — see `SettingsRail`'s note on the leading-spacer bug that
+  // indexing the UNFILTERED list used to cause.
+  // Not memoised: `sectionVisible` is a fresh object literal every render, so
+  // a `useMemo` keyed on it would recompute every render anyway — and there is
+  // an early return above this line, which is where the hook would sit.
+  const railGroups: SettingsRailGroup[] = NAV_GROUPS.map((group) => ({
+    label: group.label,
+    items: group.items.filter((item) => sectionVisible[item.id]),
+  })).filter((group) => group.items.length > 0);
   const activeSection: AccountSection = sectionVisible[requestedTab]
     ? requestedTab
     : firstVisibleSection;
@@ -503,77 +520,38 @@ export default function AccountSettingsPage() {
           </div>
         </div>
       ) : account ? (
-        <div className="lg:grid lg:grid-cols-[208px_minmax(0,1fr)] lg:gap-12">
-          {/* ── Rail — identity + section nav ── */}
-          <aside className="mb-6 space-y-4 self-start lg:sticky lg:top-8 lg:mb-0">
-            <div className="flex min-w-0 items-center gap-2.5 px-1">
-              <EntityAvatar label={account.name || 'Account'} size="md" />
-              <div className="min-w-0">
-                <p className="text-foreground truncate text-sm font-medium">{account.name}</p>
-                {/* `members` is `[]` for a caller without `member.read` — the
-                    query never runs — and "0 members" on an account they are
-                    demonstrably a member of is a lie, not a placeholder. */}
-                {sectionVisible.members && !membersQuery.isLoading ? (
-                  <p className="text-muted-foreground text-xs">
-                    {members.length} member{members.length === 1 ? '' : 's'}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-
-            <nav
-              aria-label="Account sections"
-              className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0"
-            >
-              {NAV_GROUPS.map((group, gi) => {
-                const items = group.items.filter((item) => sectionVisible[item.id]);
-                if (items.length === 0) return null;
-                return (
-                  <div key={group.label ?? gi} className="contents lg:block lg:space-y-0.5">
-                    {gi > 0 ? <div className="hidden lg:block lg:h-4" aria-hidden /> : null}
-                    {group.label ? (
-                      // Same label dialect as the project sidebar's group
-                      // headings. Hidden on the mobile horizontal strip —
-                      // there the items flow as one row of chips.
-                      <p className="text-muted-foreground/60 hidden px-2.5 pb-1 text-xs font-medium tracking-wider uppercase lg:block">
-                        {group.label}
+        /* The account hub's own column is the `mx-auto w-full max-w-6xl pb-10`
+           wrapper this whole page already sits in — the shell draws the grid
+           only, so each host keeps the gutter its route calls for. */
+        <SettingsShell
+          activeKey={activeSection}
+          contentClassName={activeSection === 'transactions' ? 'max-w-6xl' : undefined}
+          rail={
+            <SettingsRail
+              groups={railGroups}
+              activeId={activeSection}
+              onSelect={(id) => navigate(id as AccountSection)}
+              ariaLabel="Account sections"
+              identity={
+                <div className="flex min-w-0 items-center gap-2.5 px-1">
+                  <EntityAvatar label={account.name || 'Account'} size="md" />
+                  <div className="min-w-0">
+                    <p className="text-foreground truncate text-sm font-medium">{account.name}</p>
+                    {/* `members` is `[]` for a caller without `member.read` — the
+                        query never runs — and "0 members" on an account they are
+                        demonstrably a member of is a lie, not a placeholder. */}
+                    {sectionVisible.members && !membersQuery.isLoading ? (
+                      <p className="text-muted-foreground text-xs">
+                        {members.length} member{members.length === 1 ? '' : 's'}
                       </p>
                     ) : null}
-                    {items.map((item) => {
-                      const active = item.id === activeSection;
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => navigate(item.id)}
-                          aria-current={active ? 'page' : undefined}
-                          className={cn(
-                            'flex h-8 shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-sm whitespace-nowrap transition-colors lg:w-full',
-                            active
-                              ? 'bg-primary/[0.06] text-foreground font-medium'
-                              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                          )}
-                        >
-                          <item.icon className="size-4 shrink-0" />
-                          {item.label}
-                        </button>
-                      );
-                    })}
                   </div>
-                );
-              })}
-            </nav>
-          </aside>
-
-          {/* ── Content pane. Keyed remount + a 200ms rise on section switch;
-                opacity-only under reduced motion. ── */}
-          <m.div
-            key={activeSection}
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-            className={cn('min-w-0', activeSection === 'transactions' ? 'max-w-6xl' : 'max-w-3xl')}
-          >
+                </div>
+              }
+            />
+          }
+        >
+          <>
             {paneMeta ? (
               <div className="mb-6 space-y-1">
                 <h2 className="text-foreground text-xl font-medium">{paneMeta.title}</h2>
@@ -816,8 +794,8 @@ export default function AccountSettingsPage() {
                 ) : null}
               </div>
             ) : null}
-          </m.div>
-        </div>
+          </>
+        </SettingsShell>
       ) : null}
     </div>
   );

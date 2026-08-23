@@ -3,13 +3,9 @@
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   capabilityTabHref,
   channelsHref,
@@ -27,14 +23,17 @@ import {
   SettingsNavProvider,
   type SettingsNav,
 } from '@/features/workspace/shared/settings-nav-context';
-import { useIsMobile } from '@/hooks/utils';
+import {
+  SettingsRail,
+  SettingsShell,
+  type SettingsRailGroup,
+} from '@/features/workspace/shared/settings-shell';
 import {
   CUSTOMIZE_SECTION_GATE_ACTIONS,
   isCustomizeSectionVisible,
   type ProjectAction,
 } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
 import {
   ACCOUNT_GRADUATED,
   isAccountGraduatedSection,
@@ -47,7 +46,6 @@ import {
   parseProjectSettingsSection,
   projectSettingsSectionHref,
   projectSettingsSections,
-  type ProjectSettingsSection,
   type ProjectSettingsSectionKey,
 } from './project-settings-sections';
 
@@ -107,7 +105,6 @@ import {
  * for every inactive tab for the same reason.
  */
 export function ProjectSettingsPage({ projectId }: { projectId: string }) {
-  const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -182,160 +179,65 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
 
   const activeSection = sections.find((s) => s.key === active);
 
+  // The rail's groups: ONE unlabeled group, in the order
+  // `projectSettingsSections()` returns them. The account rail's own
+  // precedent for a cluster with nothing to split into — its leading
+  // Settings/Git/Tokens group carries no label either. No group HEADINGS over
+  // these four-to-six rows: Jay's 2026-08-17 call ("you don't need the
+  // categories") stands. See `project-settings-sections.ts`'s "One flat list,
+  // no headings".
+  const railGroups: SettingsRailGroup[] = useMemo(
+    () => [
+      {
+        items: sections.map((section) => ({
+          id: section.key,
+          label: section.label,
+          icon: section.icon,
+          // A real link, not an `onSelect` push: the section is URL state, so
+          // it has to be something a person can middle-click and copy.
+          href: projectSettingsSectionHref(projectId, section.key),
+          count: section.key === 'review' ? reviewNeedsYou : undefined,
+          attention: section.key === 'upgrades' && upgradeAttention,
+        })),
+      },
+    ],
+    [sections, projectId, reviewNeedsYou, upgradeAttention],
+  );
+
   return (
     <SettingsNavProvider value={settingsNav}>
-      <div
-        className={cn(
-          'min-h-0 flex-1',
-          isMobile
-            ? 'flex flex-col overflow-hidden'
-            : 'grid grid-cols-[208px_minmax(0,1fr)] overflow-hidden',
-        )}
-      >
-        {isMobile ? (
-          <nav
-            aria-label="Project settings"
-            className="border-border/60 bg-background flex h-auto shrink-0 items-center border-b"
-          >
-            <FadedScrollArea
-              orientation="horizontal"
-              fadeColor="from-background"
-              className="min-w-0 flex-1 py-2"
-            >
-              <Tabs value={active} className="w-fit">
-                <TabsList orientation="horizontal" className="w-fit gap-1 px-2">
-                  {sections.map((section) => (
-                    <SectionTrigger
-                      key={section.key}
-                      projectId={projectId}
-                      section={section}
-                      horizontal
-                      count={section.key === 'review' ? reviewNeedsYou : undefined}
-                      attention={section.key === 'upgrades' && upgradeAttention}
-                    />
-                  ))}
-                </TabsList>
-              </Tabs>
-            </FadedScrollArea>
-          </nav>
-        ) : (
-          /* No `border-r`, and no identity header. The account rail
-             (`accounts/[id]/page.tsx`'s `<aside>`) draws neither a rule nor a
-             column edge — it is nav sitting in the page — and its avatar +
-             name block is the ONLY place that page names the account. Here it
-             was the second: the app sidebar already carries this project's
-             avatar and name two columns to the left, at the same size, so the
-             rail's copy said it twice and the rule then boxed the repetition
-             in. See `2026-08-23`, Jay: "remove the separator line & also the
-             project thing". */
-          /* The SAME top padding the content pane opens with (`py-10
-             lg:py-14`), so the first nav row sits level with the section
-             heading beside it — which is how the account rail reads, its
-             identity block level with that page's `<h1>`. `py-4` started the
-             rail 40px above the heading and the two columns looked unrelated. */
-          <section className="bg-background flex min-h-0 flex-col overflow-y-auto py-10 lg:py-14">
-            <div className="min-h-0 flex-1 px-2.5">
-              <nav aria-label="Project settings" className="space-y-0.5">
-                {/* ONE unlabeled nav group — the account rail's own
-                    precedent for a cluster with nothing to split into (its
-                    leading Settings/Git/Tokens group carries no label
-                    either; see `NAV_GROUPS` in `accounts/[id]/page.tsx`).
-                    Still no group HEADING over these four-to-six rows —
-                    Jay's 2026-08-17 call ("you don't need the categories")
-                    stands, this just renders that same choice through the
-                    account page's own group-wrapper shape instead of a bare
-                    list. See `project-settings-sections.ts`'s "One flat
-                    list, no headings". */}
-                <Tabs value={active} orientation="vertical">
-                  <TabsList orientation="vertical" className="w-full">
-                    {sections.map((section) => (
-                      <SectionTrigger
-                        key={section.key}
-                        projectId={projectId}
-                        section={section}
-                        count={section.key === 'review' ? reviewNeedsYou : undefined}
-                        attention={section.key === 'upgrades' && upgradeAttention}
-                      />
-                    ))}
-                  </TabsList>
-                </Tabs>
-              </nav>
-            </div>
-          </section>
-        )}
+      {/* This page's ONE scroll container. It has to open its own:
+          `(capabilities)/layout.tsx` is `h-svh … overflow-hidden` so the tab
+          bar above cannot move, which means the window never scrolls here.
+          `lg:sticky` on the rail resolves against THIS element.
 
-        <main className="bg-background flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="mx-auto flex min-h-0 w-full flex-1 flex-col space-y-6 overflow-y-auto px-4 py-10 pb-20 lg:py-14">
+          It carries NO padding of its own. A scroll container's own padding
+          insets the rectangle a sticky descendant measures `top` against, so
+          `py-10` here made the rail's `lg:top-8` push it 30px BELOW the
+          heading beside it — at rest, with nothing scrolled. Measured on
+          localhost:18000: aside top 117 vs heading top 87, and 87 with
+          `top: 0`. The account hub never hit this; its scrollport is the
+          window, which has no padding to inset. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* `CapabilityPageShell`'s column, verbatim. Settings is the seventh
+            tab on the Customize bar and has to open in the same gutter as the
+            six beside it — Models, Connectors, Agents, Skills, Triggers,
+            Secrets. Without it the rail sat hard against the app sidebar's
+            edge with no left spacing at all. */}
+        <div className="mx-auto w-full max-w-5xl px-4 py-10 pb-20 lg:py-14">
+          <SettingsShell
+            activeKey={active}
+            rail={
+              <SettingsRail groups={railGroups} activeId={active} ariaLabel="Project settings" />
+            }
+          >
             {activeSection ? (
               <ProjectSettingsSectionPane sectionKey={activeSection.key} projectId={projectId} />
             ) : null}
-          </div>
-        </main>
+          </SettingsShell>
+        </div>
       </div>
     </SettingsNavProvider>
-  );
-}
-
-/**
- * One sub-nav row. A real `<Link prefetch>` inside the `TabsTrigger`, not an
- * `onValueChange` push: the section is URL state, so it has to be a link a
- * person can middle-click, copy, and land on directly.
- */
-function SectionTrigger({
-  projectId,
-  section,
-  count,
-  attention,
-  horizontal = false,
-}: {
-  projectId: string;
-  section: ProjectSettingsSection;
-  count?: number;
-  attention?: boolean;
-  horizontal?: boolean;
-}) {
-  const Icon = section.icon;
-  const showCount = count != null && count > 0;
-  return (
-    <TabsTrigger
-      value={section.key}
-      asChild
-      className={
-        horizontal
-          ? 'w-auto shrink-0 gap-2.5 px-3 py-0.75 whitespace-nowrap'
-          : cn(
-              // The account rail's exact nav-item dialect
-              // (`NAV_GROUPS.map` button classes in `accounts/[id]/page.tsx`):
-              // h-8 row, rounded-sm, `bg-primary/[0.06]` active fill, `hover:bg-accent`
-              // otherwise — not the Tabs primitive's default pill/pill-input classes.
-              'h-8 w-full justify-start gap-2.5 rounded-sm px-2.5 text-sm',
-              'data-[state=active]:bg-primary/[0.06] data-[state=active]:text-foreground data-[state=active]:font-medium',
-              'data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-accent hover:data-[state=inactive]:text-foreground',
-            )
-      }
-    >
-      <Link href={projectSettingsSectionHref(projectId, section.key)} prefetch>
-        <Icon className="size-4 shrink-0" />
-        <span className={cn(!horizontal && 'truncate')}>{section.label}</span>
-        {showCount ? (
-          <Badge
-            variant="kortix"
-            size="xs"
-            className={cn('tabular-nums', !horizontal && 'ml-auto')}
-          >
-            {count}
-          </Badge>
-        ) : attention ? (
-          <span
-            aria-hidden
-            className={cn(
-              'bg-kortix-orange size-1.5 shrink-0 rounded-full',
-              !horizontal && 'ml-auto',
-            )}
-          />
-        ) : null}
-      </Link>
-    </TabsTrigger>
   );
 }
 
