@@ -693,6 +693,31 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
     ).toBe('idle');
   });
 
+  test('and it never re-busies once the frame ages out either', () => {
+    // The first cut of this fix left the same oscillation 42 seconds later:
+    // `idleFrame` was gated on `streamFresh`, so at
+    // `stream.atMs + STREAM_OBSERVATION_MAX_MS` the veto vanished with no new
+    // input and a still-open row took the composer back to `working` — and this
+    // one does NOT self-heal. An unobservable turn record is cleared only at its
+    // deadline, and an accepted turn's grant defaults to 240 MINUTES.
+    //
+    // Staleness cannot make an ended turn un-end. The frame is a statement about
+    // a turn that started before it, and that stays true however old the
+    // statement gets; a turn that resumed would have produced a newer, non-idle
+    // frame.
+    const idleFrame = { type: 'idle' as const, atMs: T0 + 60_000 };
+    for (const age of [STREAM_OBSERVATION_MAX_MS + 100, 10 * 60_000, 4 * 60 * 60_000]) {
+      expect(
+        projectWorking({
+          optimistic: null,
+          server: { turns: [turn()], atMs: T0 + 60_000 + age - 50 },
+          stream: idleFrame,
+          nowMs: T0 + 60_000 + age,
+        }).state,
+      ).toBe('idle');
+    }
+  });
+
   // The protection the old wall-clock window was really buying: a turn that is
   // still running announces itself, and THAT is what returns authority to the
   // ledger — evidence, not the passage of time.
@@ -766,19 +791,30 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
     expect(projection).toMatchObject({ state: 'working' });
   });
 
-  test('an idle frame too old to decide anything stops suppressing the ledger', () => {
-    // The suppression borrows the stream's OWN freshness bound rather than
-    // inventing a second one: once a frame is too stale to answer, it is too
-    // stale to veto, and a turn the ledger still holds open is the only
-    // observation left.
-    const projection = projectWorking({
-      optimistic: null,
-      server: { turns: [turn()], atMs: T0 + 60_000 + STREAM_OBSERVATION_MAX_MS + 1_000 },
-      stream: { type: 'idle', atMs: T0 + 60_000 },
-      nowMs: T0 + 60_000 + STREAM_OBSERVATION_MAX_MS + 1_100,
-    });
+  test('a stale idle frame still cannot decide WORKING — only that a turn ended', () => {
+    // The freshness bound is about testifying to the present, so it still gates
+    // every branch that reads `working` out of the stream. What it must not gate
+    // is the veto: this test used to assert that an aged-out idle frame handed a
+    // still-open row back to the ledger, which is the same oscillation the 3s
+    // window produced, 42s later and permanent (an accepted turn's record is
+    // cleared only at its deadline — 240 minutes by default).
+    //
+    // A turn started AFTER the frame is untouched by it at any age, and that is
+    // what the ledger keeps deciding.
+    const staleIdle = { type: 'idle' as const, atMs: T0 + 60_000 };
+    const nowMs = T0 + 60_000 + STREAM_OBSERVATION_MAX_MS + 1_100;
 
-    expect(projection).toMatchObject({ state: 'working', source: 'server' });
+    expect(
+      projectWorking({
+        optimistic: null,
+        server: {
+          turns: [turn({ started_at: new Date(T0 + 60_500).toISOString() })],
+          atMs: nowMs - 100,
+        },
+        stream: staleIdle,
+        nowMs,
+      }),
+    ).toMatchObject({ state: 'working', source: 'server' });
   });
 
   test('the ledger\'s token survives the frame — only the WORKING answer moves', () => {

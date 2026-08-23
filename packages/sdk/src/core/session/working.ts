@@ -319,10 +319,18 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   const streamFresh = !!stream && nowMs - stream.atMs <= STREAM_OBSERVATION_MAX_MS;
   const inboxFresh = !!inbox && nowMs - inbox.atMs <= INBOX_OBSERVATION_MAX_MS;
 
-  // The runtime's own end-of-turn frame, while it is fresh enough to decide
-  // anything at all. It borrows `STREAM_OBSERVATION_MAX_MS` rather than
-  // inventing a second bound: a frame too stale to answer is too stale to veto.
-  const idleFrame = streamFresh && stream!.type === 'idle' ? stream! : null;
+  // The runtime's own end-of-turn frame.
+  //
+  // NOT gated on `streamFresh`, unlike every branch that decides `working` from
+  // the stream. The bound exists because an old frame cannot testify to what is
+  // happening NOW — but this frame is not asked that. It is asked whether a turn
+  // that started BEFORE it has ended, and that answer does not rot: a turn which
+  // resumed would have produced a newer, non-idle frame, and then this is not an
+  // idle frame at all. Gating it cost exactly what the 3s window cost, 42s later
+  // and permanently — at `stream.atMs + STREAM_OBSERVATION_MAX_MS` the veto
+  // vanished with no new input, and a row the relay never closed put the
+  // composer back on Stop until its deadline (240 MINUTES for an accepted turn).
+  const idleFrame = stream && stream.type === 'idle' ? stream : null;
 
   /**
    * Whether the runtime has already finished this turn.

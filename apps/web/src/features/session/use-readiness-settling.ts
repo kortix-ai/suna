@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
  * How long a freshly mounted session may say NOTHING about its runtime.
@@ -21,18 +21,27 @@ export const READINESS_SETTLE_MS = 1_500;
  * one claim nothing had checked. See that input's docstring.
  */
 export function useReadinessSettling(uncontacted: boolean, windowMs = READINESS_SETTLE_MS): boolean {
-  // Each uninterrupted stretch of "uncontacted" is one ARM. The timer reports
-  // which arm it belongs to, so a session switch (uncontacted false -> true)
-  // starts a fresh window without a state reset inside the effect.
-  const armRef = useRef(0);
-  const [expiredArm, setExpiredArm] = useState(-1);
+  // The window is identified by WHEN it opened, and that instant is state, not a
+  // ref: an earlier cut bumped a ref inside the effect and compared it during
+  // render, so on the first render of each window the ref still held the
+  // previous value, the hook answered "not settling", and the notice this hook
+  // exists to suppress flashed anyway before the effect could run.
+  const [openedAt, setOpenedAt] = useState<number | null>(null);
+  const [elapsedFor, setElapsedFor] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!uncontacted) return;
-    const arm = (armRef.current += 1);
-    const timer = window.setTimeout(() => setExpiredArm(arm), windowMs);
+    if (!uncontacted) {
+      setOpenedAt(null);
+      return;
+    }
+    const startedAt = Date.now();
+    setOpenedAt(startedAt);
+    const timer = window.setTimeout(() => setElapsedFor(startedAt), windowMs);
     return () => window.clearTimeout(timer);
   }, [uncontacted, windowMs]);
 
-  return uncontacted && expiredArm !== armRef.current;
+  // Settling from the first render onward: `openedAt === null` means the effect
+  // has not run yet, which is the very moment the flash used to happen.
+  if (!uncontacted) return false;
+  return openedAt === null || elapsedFor !== openedAt;
 }

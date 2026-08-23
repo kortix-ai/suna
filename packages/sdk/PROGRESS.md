@@ -12,6 +12,35 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-23 — session `turn-end-flap-2` — the same flap, 42 seconds later — DONE
+
+**Files:** `core/session/working.ts` (the veto is no longer gated on
+`streamFresh`) + `working.test.ts` (+1 test, 1 rewritten) ·
+`react/use-session-send.ts` (an abort TIMEOUT no longer settles the receipt).
+
+**What.** An audit of the first fix found it incomplete. `idleFrame` was still
+gated on `streamFresh`, so at `stream.atMs + STREAM_OBSERVATION_MAX_MS` the veto
+vanished with no new input and a still-open ledger row put the composer back on
+Stop — this time permanently, since an accepted turn's record is cleared only at
+its deadline (240 minutes by default). Proven against the real function: idle at
++21s and +64s, `working` at +65.1s with identical inputs.
+
+**Fix.** The freshness bound is about testifying to the PRESENT, and the veto is
+not asked about the present: a turn that started before the frame has ended, and
+that stays true however old the statement gets. A turn which resumed would have
+produced a newer, non-idle frame — at which point it is not an idle frame at all.
+The bound still gates every branch that reads `working` out of the stream.
+
+Also: `awaitAbortSettlement` resolves `timed-out` when nobody answered, and that
+was written into `AbortReceipt.settledAtMs` — 5s of clock in an evidence field,
+which cleared `abortFloor` and brought the Stop button back mid-cancel.
+`OPTIMISTIC_ABORT_MAX_MS` bounds an unanswered abort instead; that is what it is
+for.
+
+**Gates:** `typecheck` clean (both projects) · `bun test` 2427 pass / 0 fail.
+
+---
+
 ### 2026-08-23 — session `turn-end-flap` — a finished turn does not un-finish itself — DONE
 
 **Files:** `core/session/working.ts` (`endedByRuntime` is causal; `workingExpiryAtMs`
