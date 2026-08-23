@@ -54,6 +54,7 @@ import {
   stopSession,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
+import { reconcileStaleTurnsOnRead } from '../session-lifecycle/turn-read-reconcile';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
   PROMPT_TEXT_PREVIEW_CHARS,
@@ -384,12 +385,41 @@ projectsApp.openapi(
     // every ledger row left open on a stopped box. Served by
     // idx_session_sandboxes_session (plain Index Scan; measured, see below).
     const [box] = await db
-      .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
+      .select({
+        status: sessionSandboxes.status,
+        metadata: sessionSandboxes.metadata,
+        // The read-path reconcile below needs to reach the box's daemon: the
+        // same columns the reaper selects for its probe.
+        sandboxId: sessionSandboxes.sandboxId,
+        provider: sessionSandboxes.provider,
+        externalId: sessionSandboxes.externalId,
+      })
       .from(sessionSandboxes)
       .where(eq(sessionSandboxes.sessionId, sessionId))
       .limit(1);
     const authority =
       box && RUNNING_SANDBOX_STATUSES.has(box.status) ? storedSandboxTurns(box.metadata) : [];
+    // BOUNDED SERVER-TRUTH RECONCILE — session-lifecycle/turn-read-reconcile.ts.
+    // The web is server-truth-first, so an `active` record the daemon's
+    // turn-end relay lost (an OpenCode replacement dropped its /event
+    // subscription; live 2026-08-23, session eddd499a) is a spinner until the
+    // reaper's cadence. Ask the runtime through the reaper's own observation,
+    // for records older than 15s, at most once per 10s per box, and end only
+    // what the daemon says is over. Fire-and-forget: the probe is a provider
+    // round trip (100-800ms, 10s timeout) that must not hold a poll; THIS
+    // read answers from the authority as it stands and the NEXT read sees the
+    // result. Nothing is written when nothing changes.
+    if (box && authority.length > 0) {
+      void reconcileStaleTurnsOnRead(
+        { sandboxId: box.sandboxId, provider: box.provider, externalId: box.externalId },
+        authority,
+      ).catch((err) =>
+        console.warn(
+          `[turn-read-reconcile] failed for session ${sessionId}:`,
+          err instanceof Error ? err.message : err,
+        ),
+      );
+    }
 
     // Decoration only, keyed by the tokens the authority already named: the
     // ledger owns `accepted_at`, and it fills in an identity the authority may

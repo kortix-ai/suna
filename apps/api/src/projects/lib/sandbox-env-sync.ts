@@ -513,6 +513,11 @@ export async function postEnvToDaemon(args: {
    * `null` = the box did not say (older daemon, or no reload happened).
    */
   opencodeTurnEnded: boolean | null;
+  /**
+   * Is the daemon's OpenCode /event subscription live on the process serving
+   * after the reload? `null` = no reload, or an older daemon that does not say.
+   */
+  eventSubscriptionLive: boolean | null;
 }> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
@@ -562,6 +567,7 @@ export async function postEnvToDaemon(args: {
     opencode?: unknown;
     opencode_reload?: unknown;
     opencode_turn_ended?: unknown;
+    event_subscription_live?: unknown;
   } | null;
   const expectedExported = Object.keys(args.snapshot.env).length;
   if (args.requireAgentEnvProof) {
@@ -588,6 +594,13 @@ export async function postEnvToDaemon(args: {
         : null,
     opencodeTurnEnded:
       typeof body?.opencode_turn_ended === 'boolean' ? body.opencode_turn_ended : null,
+    // Whether the daemon's OpenCode /event subscription is live on the process
+    // serving AFTER the reload (the daemon waits ≤2s for it on a restart before
+    // answering — routes/env.ts). `false` after a restart names the exact
+    // window in which a prompt forwarded now can finish with no `session.idle`
+    // listener (2026-08-23, session eddd499a). Older daemons omit it: null.
+    eventSubscriptionLive:
+      typeof body?.event_subscription_live === 'boolean' ? body.event_subscription_live : null,
     revision: typeof body?.revision === 'string' ? body.revision : args.snapshot.revision,
     exported: typeof body?.exported === 'number' ? body.exported : expectedExported,
     managed: typeof body?.managed === 'number' ? body.managed : null,
@@ -741,7 +754,7 @@ export async function syncSandboxEnvForPrompt(args: {
     console.log(`[env-sync] timing sandbox=${args.externalId} push=skipped ${JSON.stringify(timing)}`);
     return;
   }
-  const { opencodeState } = await postEnvToDaemon({
+  const { opencodeState, opencodeReload, eventSubscriptionLive } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
     providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
@@ -751,6 +764,13 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayEnabled,
     llmGatewayBaseUrl,
   });
+  if (opencodeReload === 'restarted' && eventSubscriptionLive === false) {
+    console.warn(
+      `[env-sync] opencode restarted by prompt env-sync but the daemon's /event subscription ` +
+        `was not live on the new process within its bound; the prompt is forwarded anyway and the ` +
+        `daemon's reconnect reconcile + the /turn read-path reconcile are the backstops session=${args.sessionId}`,
+    );
+  }
   // Remember only AFTER a successful push. A throw below (network/HTTP
   // failure) must leave the memo alone so the next prompt retries with
   // `refreshModels: true` again instead of assuming the failed attempt landed.
@@ -772,7 +792,10 @@ export async function syncSandboxEnvForPrompt(args: {
         `(ready=${ready}) session=${args.sessionId}`,
     );
   }
-  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ${JSON.stringify(timing)}`);
+  console.log(
+    `[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ` +
+      `reload=${opencodeReload ?? 'none'} eventSubscriptionLive=${eventSubscriptionLive ?? 'n/a'} ${JSON.stringify(timing)}`,
+  );
 }
 
 /**

@@ -1909,3 +1909,51 @@ listening unless `--ff-only`.
 
 *Incident:* `timeline-parity` worktree, 2026-08-22 ~21:35 UTC, ~60 s of
 `tsc` errors on the live API; aborted, re-done in `tp-main-merge`, ff'd.
+
+## A subscription that must outlive the process it watches needs a reconcile keyed to the NEW process — and a bounded server-truth fallback
+
+2026-08-23 02:08 UTC, live worktree, first user test (session `eddd499a`,
+prompt "yo?!"). The pre-prompt env sync (`[env-sync] … push=sent
+refreshModels=true`) made the daemon run a verified OpenCode reload: a new
+process on the other port, promoted, the old one killed. The daemon's
+`/event` SSE loop was subscribed to the OLD process and re-subscribed to the
+new one only after it saw the drop (~100 ms + connect). The prompt reached the
+new process first; OpenCode answered in ~5 s; its single `session.idle` was
+emitted into that gap — there is no replay. No `turn-stream kind=end` was
+relayed; the ledger turn stayed `active`; `GET …/turn` kept reporting a
+running turn; the web (server-truth-first) showed "Gathering thoughts" for
+80+ s. The existing reconcile-on-connect covered only the boot-pinned root,
+and the turn did not run on it; the reaper clears husks only on its cadence
+behind an orphan min-age.
+
+**The rule.** Any "X ends when the runtime emits Y over a stream" contract
+needs two things beyond the stream: (1) on every (re)subscribe AND on a tick,
+a reconcile that asks the runtime directly about EVERY subject a begin was
+observed for — tracked in memory from every observer that can see a begin
+(the proxy that delivers the prompt, the status frames, the begin relay), not
+only the boot-claimed one — and relays the terminal evidence idempotently;
+(2) a bounded server-truth reconcile on the read path that serves the UI,
+through the same runtime observation the reaper uses, so the UI never waits
+on the relay or the reaper's cadence: only records older than a min age, at
+most one probe per box per window, end only what the runtime says is over,
+never on silence, no write when nothing changes. And a planned runtime swap
+must not answer "done" to the control plane until the subscription is live on
+the promoted process — the mid-session twin of the boot-time "subscribe
+before prompt" rule — bounded, so a slow box degrades to the reconciles
+rather than hanging the prompt.
+
+**The enforcement.** Daemon: `turn-tracking.ts` (bounded registry fed by the
+proxy's `POST /session/:id/prompt_async|message|command|shell`, the
+busy/retry begin relay) + `reconcileFinishedTrackedTurns` on `onConnected` /
+`onReconcile` (main.ts) + `event-subscription.ts` (URL-keyed liveness the
+loop publishes) + `/kortix/env` awaiting it ≤ 2 s after a restart reload and
+reporting `event_subscription_live`. API: `session-lifecycle/
+turn-read-reconcile.ts` on `GET …/turn` (min age 15 s, one probe per box per
+10 s, `observeSandboxTurn` → `finalizeHuskTurn` → `clearSandboxTurn` with the
+daemon's own reason, fire-and-forget). Tests: `__tests__/
+reconcile-tracked-turns-after-reload.test.ts`, `env-route-event-resubscribe.
+test.ts`, `event-subscription.test.ts`, `turn-tracking.test.ts`;
+`turn-read-reconcile.test.ts`, `r8-session-turn.test.ts`.
+
+*Incident:* session `eddd499a`, 2026-08-23 02:08:28–02:09:50 UTC; one turn,
+~80 s of phantom "running" on a 5 s answer; no data lost.
