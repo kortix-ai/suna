@@ -8,7 +8,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 
 import { Badge } from '@/components/ui/badge';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -78,14 +77,24 @@ import {
  * `Advanced`) are gone; see `project-settings-sections.ts`'s "One flat list,
  * no headings". Do not reintroduce those headings.
  *
- * **The desktop rail's SHELL matches the account settings page's**
- * (`app/(app)/accounts/[id]/page.tsx`'s `<aside>`): an identity header
- * (`EntityAvatar` + name + one-line summary) above the nav, and the nav
- * itself rendered as one unlabeled group in that page's `NAV_GROUPS` dialect
- * — same row classes, same icon size, same active/hover treatment. It is
- * still ONE list under the hood (`sections.map`, a single `TabsList`); mobile
- * keeps the separate horizontal tab strip, unchanged, since it has no rail to
- * match shells with.
+ * **The desktop rail's SHELL is the account settings page's**
+ * (`app/(app)/accounts/[id]/page.tsx`'s `<aside>`): a `208px` column, no
+ * border and no rule, and rows in that page's `NAV_GROUPS` dialect — same
+ * `h-8 rounded-sm px-2.5 gap-2.5`, same `size-4` icon, same
+ * `bg-primary/[0.06]` active fill and `hover:bg-accent` otherwise. It is ONE
+ * list under the hood (`sections.map`, a single `TabsList`); mobile keeps the
+ * separate horizontal tab strip, unchanged, since it has no rail to match
+ * shells with.
+ *
+ * Two things the account rail has that this one must NOT grow back:
+ *
+ *  - **No identity header.** The account rail's avatar + name block is the
+ *    only place that page names the account. Here it was the second — the app
+ *    sidebar carries this project's avatar and name two columns to the left,
+ *    at the same `md` size — so the rail repeated it.
+ *  - **No `border-r`.** The account rail is nav sitting in the page, separated
+ *    by its grid column, not a boxed panel. The rule here drew a third
+ *    vertical edge next to the sidebar's, and boxed in the repetition above.
  *
  * **The section lives in the URL, not in a store.** `?section=<key>` is
  * shareable, survives a reload, and is what `settings-tabs.ts`'s `GRADUATED`
@@ -109,21 +118,6 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   const project = detail.data?.project;
-  const gitConnection = detail.data?.git_connection;
-  // The rail header's one-line summary, under the project name — the same
-  // slot the account rail fills with a member count (`accounts/[id]/page.tsx`'s
-  // `<aside>` header). A project has no member count of its own here (Members
-  // graduated to the account hub), so this reaches for the next most
-  // identifying fact: the repo it's connected to, or its archived status when
-  // there is no repo. Neither is shown while the project itself is still
-  // loading, matching the account rail's `!membersQuery.isLoading` guard.
-  const projectSummary = !detail.isLoading
-    ? gitConnection?.repo_owner && gitConnection?.repo_name
-      ? `${gitConnection.repo_owner}/${gitConnection.repo_name}`
-      : project?.status === 'archived'
-        ? 'Archived'
-        : undefined
-    : undefined;
 
   const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS, {
     accountId: project?.account_id,
@@ -193,7 +187,9 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
       <div
         className={cn(
           'min-h-0 flex-1',
-          isMobile ? 'flex flex-col overflow-hidden' : 'grid grid-cols-[230px_1fr] overflow-hidden',
+          isMobile
+            ? 'flex flex-col overflow-hidden'
+            : 'grid grid-cols-[208px_minmax(0,1fr)] overflow-hidden',
         )}
       >
         {isMobile ? (
@@ -223,30 +219,22 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
             </FadedScrollArea>
           </nav>
         ) : (
-          <section className="bg-background flex min-h-0 flex-col overflow-y-auto border-r py-4">
-            <div className="min-h-0 flex-1 space-y-4 px-2.5">
-              {/* Identity header — same treatment as the account settings
-                  rail's avatar + name + one-line summary block
-                  (`accounts/[id]/page.tsx`'s `<aside>` header): `EntityAvatar`
-                  size `md`, `gap-2.5`, `text-sm font-medium` name over a
-                  `text-xs text-muted-foreground` summary line. */}
-              <div className="flex min-w-0 items-center gap-2.5 px-1">
-                <EntityAvatar
-                  label={project?.name || 'Project'}
-                  emoji={project?.icon}
-                  glyph={project?.icon_glyph}
-                  size="md"
-                />
-                <div className="min-w-0">
-                  <p className="text-foreground truncate text-sm font-medium">
-                    {project?.name || 'Project'}
-                  </p>
-                  {projectSummary ? (
-                    <p className="text-muted-foreground truncate text-xs">{projectSummary}</p>
-                  ) : null}
-                </div>
-              </div>
-
+          /* No `border-r`, and no identity header. The account rail
+             (`accounts/[id]/page.tsx`'s `<aside>`) draws neither a rule nor a
+             column edge — it is nav sitting in the page — and its avatar +
+             name block is the ONLY place that page names the account. Here it
+             was the second: the app sidebar already carries this project's
+             avatar and name two columns to the left, at the same size, so the
+             rail's copy said it twice and the rule then boxed the repetition
+             in. See `2026-08-23`, Jay: "remove the separator line & also the
+             project thing". */
+          /* The SAME top padding the content pane opens with (`py-10
+             lg:py-14`), so the first nav row sits level with the section
+             heading beside it — which is how the account rail reads, its
+             identity block level with that page's `<h1>`. `py-4` started the
+             rail 40px above the heading and the two columns looked unrelated. */
+          <section className="bg-background flex min-h-0 flex-col overflow-y-auto py-10 lg:py-14">
+            <div className="min-h-0 flex-1 px-2.5">
               <nav aria-label="Project settings" className="space-y-0.5">
                 {/* ONE unlabeled nav group — the account rail's own
                     precedent for a cluster with nothing to split into (its
