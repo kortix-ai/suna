@@ -7,7 +7,11 @@ import { isPendingAction, useSessionAudit } from '@/features/session/session-aud
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-disconnected';
-import { type SessionPrompt, hasRetryingAssistantTurn } from '@kortix/sdk';
+import {
+  type SessionPrompt,
+  hasRetryingAssistantTurn,
+  listSessionPrompts,
+} from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
 import {
   WarningIcon as AlertTriangle,
@@ -3739,10 +3743,23 @@ export function SessionChat({
           acceptSendReceipt(clientMessageId);
           return { ok: true } as const;
         } catch (cause) {
-          // Unchanged recovery: clear busy, then either rehydrate the real
-          // messages or drop the optimistic one if the server has no record.
+          // Ask the INBOX, not the runtime. This prompt's home is a durable
+          // control-plane row; OpenCode's transcript cannot see it until the
+          // admission gate delivers it, so a rehydrate always reports it
+          // missing and the recovery used to delete the bubble on that answer —
+          // while the row was already running. Reported from a live self-host:
+          // "it queues the message and starts running it, but doesn't show in
+          // the frontend."
+          //
+          // `clientMessageId` is the POST's idempotency key, so the row is
+          // addressable by exactly the thing this send already holds.
           const error = recoverFromSendFailure(sessionId, messageID, cause, {
             classify: classifySessionError,
+            inboxRowExists: async () => {
+              if (!projectId || !projectSessionId) return false;
+              const { prompts } = await listSessionPrompts(projectId, projectSessionId);
+              return prompts.some((prompt) => prompt.client_message_id === clientMessageId);
+            },
           });
           return { ok: false, error, cause } as const;
         }
@@ -3752,6 +3769,13 @@ export function SessionChat({
         // rather than let a refused send claim `working` for a minute. Named,
         // so a slow refusal cannot drop the receipt of a send the user made
         // after it.
+        //
+        // ONE exception, and it resolves AFTER this line: if the inbox turns
+        // out to hold the row, `recoverFromSendFailure` re-takes the receipt
+        // when its lookup lands, so the composer goes back to working on its
+        // own. This clear is still right in the moment — as far as this tab
+        // knows right now, nothing is coming — and it is NAMED, so it can only
+        // ever drop this send's own receipt.
         clearSendReceipt(clientMessageId);
         setCommandError(result.error);
         throw result.cause instanceof Error ? result.cause : new Error(result.error.message);

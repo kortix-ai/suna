@@ -12,6 +12,33 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-23 — session `queued-prompt-invisible` — ask the inbox, not the runtime — DONE
+
+**Files:** `react/use-session-send.ts` (`recoverFromSendFailure` takes
+`inboxRowExists`) + `use-session-send.test.ts` (+3 tests). Additive optional
+option — no export added, no signature broken.
+
+**What.** Reported from a live self-host: stop a turn, send the next prompt, and
+the SERVER queues and runs it while the tab shows nothing — no bubble, no queued
+row, composer back on its send arrow. Everything appeared ~30s later under the
+runtime's echo.
+
+`recoverFromSendFailure` asked `client.session.messages()` — the RUNTIME — whether
+the send survived. A prompt that goes to `POST .../prompts` is a control-plane
+row waiting for admission and is not in OpenCode's transcript until the gate
+delivers it, so that question always answers "no such message", and the recovery
+deleted the user's bubble on the strength of it.
+
+**Fix.** For an inbox-backed send the recovery asks the INBOX, addressed by the
+`clientMessageId` the POST already carries. A row that exists means the send
+succeeded however the response ended — the bubble stays and the receipt is
+re-taken. No row means it really was lost. A lookup that itself fails keeps the
+bubble: not knowing is not evidence of loss.
+
+**Gates:** `typecheck` clean (both projects) · `bun test` 2441 pass / 0 fail.
+
+---
+
 ### 2026-08-23 — session `session-memory-retention` — stop paying for the transcript twice a second — DONE
 
 **Files:** `browser/cache/idb-write-policy.ts` (NEW: `idbFlushIntervalMs`,
