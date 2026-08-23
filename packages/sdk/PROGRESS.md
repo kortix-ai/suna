@@ -70,6 +70,63 @@ bubble: not knowing is not evidence of loss.
 
 ---
 
+### 2026-08-24 — session `invisible-message-running` — remove the IndexedDB transcript mirror — DONE
+
+**Files:** `react/use-session-sync.ts` (both cache effects removed) ·
+`browser/session-sync/session-transcript-cache.ts` + test (DELETED, 14 tests) ·
+`browser/cache/idb-write-policy.ts` + test (DELETED, 8 tests) ·
+`browser/cache/idb-sync-cache.ts` (write-policy stripped, `DB_VERSION` 2 → 3 so
+`onupgradeneeded` drops what the mirror already wrote — **not on page load**:
+`openDB` is lazy and its only remaining callers are `deleteSessionFromIDB` and
+`clearSessionIDBCache`, so stale entries survive until a session delete or a
+sign-out; they are inert, since nothing reads them) ·
+`browser/cache/no-transcript-mirror.test.ts`
+(NEW, 1 static import-graph tripwire). No public surface change — the seven
+`*IDB*` exports stay and keep their contract.
+
+**What.** Reported from dev: stop a thread, send a message, and the message runs
+while the UI shows it dimmed and captioned "Queued — runs with your next
+message". Part of that is the mirror added by #5837 and gated by #6810. The gate
+(`transcriptSignature`) is STRUCTURAL — message count, total part count, tail id
+— and neither change that ends a turn moves any of them: `time.completed`
+stamped on the tail, and the `error` an abort stamps. Proved with a throwaway
+probe: all three of "turn completed", "abort stamped", "tokens appended to the
+same text part" leave the signature identical, so no write is queued.
+
+A normal turn escaped by accident, because OpenCode appends a `step-finish` part
+and that moves the part count. **A Stop appends no part at all.** So the disk
+copy of a stopped thread held an assistant message with neither `time.completed`
+nor `error` — which `core/turns/open-turn.ts` reads as a turn that is STILL
+RUNNING. On the next cold paint `resolveWorkingTurn` picked it as the working
+turn and dimmed every message after it to "Queued".
+
+**Fix.** Remove the mirror rather than re-tune the signature. Its own test file
+covered six cases, all structural; a shape-based freshness test cannot see a
+turn end, and making it see one means hashing the bodies — which is the cost the
+gate existed to avoid.
+
+**Known cost, accepted:** opening a hibernated session no longer paints history
+before the sandbox wakes (18.9s Daytona / 24.5s Platinum, measured in #5837). If
+that is worth re-solving it needs a mirror keyed on the MESSAGE, not its shape.
+
+**Left in place, deliberately:** the sync store's `hydrate(…, { source: 'cache' })`
+branch and its `cacheSourcedIds` provisional-phantom reconciliation are now
+unreachable (`fromCache` is never true). Inert, and a ~40-line excision inside a
+2000-line store is its own change — recorded here as follow-up rather than done
+in this one.
+
+**Gates:** `typecheck` clean (both projects) · `bun run test` (`--isolate`)
+**2420 pass / 0 fail**, 163 files — HEAD measured at 2441 across 164, and the
+delta is exactly the 22 deleted minus 1 added · `smoke:install` passed ·
+apps/web `bun test src/features/session` 2513 pass / 0 fail.
+
+> **Trap for the next session:** the suite MUST be run as `bun run test`
+> (`bun test --isolate src`). A bare `bun test src` shares module state across
+> files and reports **477 pre-existing failures** that have nothing to do with
+> your change.
+
+---
+
 ### 2026-08-23 — session `session-memory-retention` — stop paying for the transcript twice a second — DONE
 
 **Files:** `browser/cache/idb-write-policy.ts` (NEW: `idbFlushIntervalMs`,
