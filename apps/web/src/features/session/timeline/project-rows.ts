@@ -65,6 +65,7 @@ import { abortErrorReason, isAbortError } from '@kortix/sdk';
 
 import { stripSystemPtyText } from '../message-parsing';
 import { sessionTurnDurationMs, sessionTurnEndedAt } from '../session-turn-meta-rows';
+import { type GatewayTurnError, classifyGatewayTurnError } from '../turn/gateway-error';
 import { isPlanWriteTool } from '../turn/plan-anchor';
 import { samePartsList } from '../turn/same-parts';
 import { type TurnRowGroup, webIsRenderablePart } from './build-chat-rows';
@@ -224,6 +225,10 @@ export interface TurnFacts {
   turnErrorIsAbort: boolean;
   turnErrorAbortReason: string | undefined;
   turnErrorDetails: ReturnType<typeof getTurnErrorDetails>;
+  /** `classifyGatewayTurnError` over the same message-level error `turnError`
+   *  reports — `gateway-unreachable` swaps the raw provider string for a human
+   *  row (`TurnErrorDisplay`). Undefined when the turn has no message error. */
+  turnGatewayError: GatewayTurnError | undefined;
   sessionReport: SessionReport | null;
   systemMessages: KortixSystemMessage[];
   hasVisibleUserContent: boolean;
@@ -408,6 +413,13 @@ export function deriveTurnFacts(turn: Turn): TurnFacts {
   const { isAbort: turnErrorIsAbort, abortReason: turnErrorAbortReason } =
     deriveTurnErrorAbortState(run);
   const turnErrorDetails = getTurnErrorDetails(run);
+  // Same pick as the SDK's `getTurnError`: the first assistant message carrying
+  // a message-level error. `Message` is the user|assistant union, so read the
+  // field structurally.
+  const rawTurnError = run.assistantMessages
+    .map((msg) => (msg.info as { error?: unknown }).error)
+    .find((error) => !!error);
+  const turnGatewayError = rawTurnError ? classifyGatewayTurnError(rawTurnError) : undefined;
 
   const shellModePart = getShellModePart(run) as ToolPart | undefined;
   const { sessionReport, systemMessages, hasVisibleUserContent, userMessageText } = assistantOnly
@@ -429,6 +441,7 @@ export function deriveTurnFacts(turn: Turn): TurnFacts {
     turnErrorIsAbort,
     turnErrorAbortReason,
     turnErrorDetails,
+    turnGatewayError,
     sessionReport,
     systemMessages,
     hasVisibleUserContent,

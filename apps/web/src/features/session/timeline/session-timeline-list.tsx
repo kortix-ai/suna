@@ -908,6 +908,7 @@ function TurnFrameImpl({
               <TurnErrorDisplay
                 errorText={view.turnError}
                 errorDetails={view.turnErrorDetails}
+                gatewayError={view.turnGatewayError}
                 isAbort={view.turnErrorIsAbort}
                 abortReason={view.turnErrorAbortReason}
                 className="mt-2"
@@ -1034,6 +1035,7 @@ function TurnFrameImpl({
               retryMessage={retryMessage}
               turnError={view.turnError}
               turnErrorDetails={view.turnErrorDetails}
+              turnGatewayError={view.turnGatewayError}
               turnErrorIsAbort={view.turnErrorIsAbort}
               turnErrorAbortReason={view.turnErrorAbortReason}
               // The copy button needs the response only once the turn settled;
@@ -1425,6 +1427,7 @@ interface TurnTailRowProps {
   retryMessage: string | undefined;
   turnError: string | undefined;
   turnErrorDetails: TurnView['turnErrorDetails'];
+  turnGatewayError: TurnView['turnGatewayError'];
   turnErrorIsAbort: boolean;
   turnErrorAbortReason: string | undefined;
   /** The response to copy — `''` while working (no copy button then). */
@@ -1447,6 +1450,7 @@ function TurnTailRowImpl({
   retryMessage,
   turnError,
   turnErrorDetails,
+  turnGatewayError,
   turnErrorIsAbort,
   turnErrorAbortReason,
   copyText,
@@ -1516,6 +1520,7 @@ function TurnTailRowImpl({
         <TurnErrorDisplay
           errorText={turnError}
           errorDetails={turnErrorDetails}
+          gatewayError={turnGatewayError}
           isAbort={turnErrorIsAbort}
           abortReason={turnErrorAbortReason}
         />

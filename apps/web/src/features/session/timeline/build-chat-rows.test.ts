@@ -302,6 +302,11 @@ const INTENDED_DIVERGENCES: { fixture: string; rationale: string }[] = [
     rationale:
       'A streaming text part that is still all whitespace has no row, so no response block mounts until its first non-blank character; legacy mounted an empty streaming markdown container (an empty div inside the space-y stack).',
   },
+  {
+    fixture: 'gateway-unreachable',
+    rationale:
+      'A reply whose info.error is OpenCode\'s "Cannot connect to API …" against the Kortix LLM gateway (a rotated KORTIX_URL / dead tunnel / 530 from the edge) renders the human row — "Couldn\'t reach the Kortix gateway from the sandbox" plus what to do, the raw message behind a "Show error" disclosure (turn/gateway-error.ts classifier); legacy printed the raw provider string verbatim.',
+  },
 ];
 
 describe('intended divergences', () => {

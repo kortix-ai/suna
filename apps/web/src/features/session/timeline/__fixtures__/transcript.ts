@@ -669,6 +669,28 @@ export const edgeScenarios: TimelineScenario[] = [
   idle('assistant-only-head-question', [
     orphanAssistant('oe17', (m) => [answeredQuestion(m, 'oe17q'), text(m, 'oe17t', 'then prose')]),
   ]),
+  // The sandbox could not reach the Kortix LLM gateway (2026-08-22: OpenCode
+  // still pointed at a rotated KORTIX_URL). The reply has no parts and its
+  // `info.error` is OpenCode's raw APIError; legacy printed that string, now
+  // the row says what happened and what to do, with the raw message behind a
+  // disclosure (`turn/gateway-error.ts`). Appended LAST: the fixture clock
+  // ticks per message, so an earlier insertion re-stamps every golden after it.
+  idle('gateway-unreachable', [
+    user('ue18', (m) => [text(m, 'ue18t', 'hello?')]),
+    assistant('ae18', 'ue18', () => [], {
+      error: {
+        name: 'APIError',
+        data: {
+          message:
+            'Cannot connect to API: Unable to connect. Is the computer able to access the url?',
+          isRetryable: true,
+          metadata: {
+            url: 'https://edt-skirt-example.trycloudflare.com/v1/llm-gateway/v1/chat/completions',
+          },
+        },
+      },
+    }),
+  ]),
 ];
 
 // ---------------------------------------------------------------------------
