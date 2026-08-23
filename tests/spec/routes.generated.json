@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 599,
+  "count": 593,
   "routes": [
     {
       "method": "GET",
@@ -1375,10 +1375,6 @@
       "path": "/v1/projects/:projectId/channels/email/mode"
     },
     {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/channels/meet/name"
-    },
-    {
       "method": "POST",
       "path": "/v1/projects/:projectId/channels/slack/bind-thread"
     },
@@ -1891,10 +1887,6 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/config"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
-    },
-    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/sessions/:sessionId/model"
     },
@@ -1981,10 +1973,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/voice-transcript"
     },
     {
       "method": "POST",
@@ -2117,14 +2105,6 @@
     {
       "method": "GET",
       "path": "/v1/public/session-shares/:shareId/messages"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/public/voice-join/:token"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/public/voice-join/:token/transcript"
     },
     {
       "method": "POST",

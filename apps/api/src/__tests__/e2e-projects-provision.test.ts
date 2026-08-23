@@ -95,10 +95,12 @@ const stubBackend = {
 };
 
 mock.module('../projects/git-backends', () => ({
+  defaultManagedProviderId: () => 'github',
   hasBackend: (provider: string) => provider === 'github',
   getBackend: (provider: string) => (provider === 'github' ? stubBackend : stubBackend),
   getDefaultManagedBackend: () => stubBackend,
   githubBackend: stubBackend,
+  isRetiredManagedProvider: () => false,
   managedGithubInstallId: () => INSTALL_ID,
   managedGithubOwner: () => REPO_OWNER,
   managedGithubOwnerType: () => undefined,
