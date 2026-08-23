@@ -22,6 +22,7 @@ mock.module('../shared/audit', () => ({
 const {
   decryptProjectSecret,
   encryptProjectSecret,
+  getProjectSecretConsumerConfigurationStatus,
   getProjectSecretValueForConsumer,
   listProjectSecretNamesForConsumer,
   resolveProjectSecretsForConsumer,
@@ -84,6 +85,26 @@ describe('getProjectSecretValueForConsumer', () => {
       },
     });
     expect(JSON.stringify(audits)).not.toContain('plaintext-test-value');
+  });
+
+  test('distinguishes missing, inactive, mismatched, and configured connector secrets', async () => {
+    const status = () =>
+      getProjectSecretConsumerConfigurationStatus({
+        projectId: PROJECT_ID,
+        name: 'provider_key',
+        consumer: 'connector',
+      });
+
+    expect(await status()).toBe('missing');
+
+    rows = [secret({ strategy: 'broker', consumer: 'connector', active: false })];
+    expect(await status()).toBe('inactive');
+
+    rows = [secret({ strategy: 'runtime', consumer: 'sandbox' })];
+    expect(await status()).toBe('delivery_mismatch');
+
+    rows = [secret({ strategy: 'broker', consumer: 'connector' })];
+    expect(await status()).toBe('configured');
   });
 
   test('does not decrypt or audit fallback identifiers when the first value resolves', async () => {

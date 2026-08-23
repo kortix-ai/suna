@@ -33,7 +33,10 @@ import {
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/index';
 import { extractProjectPolicies } from '../projects/policies';
-import { getProjectSecretValueForConsumer } from '../projects/secrets';
+import {
+  confineSharedProjectSecretToConnector,
+  getProjectSecretValueForConsumer,
+} from '../projects/secrets';
 import { extractTriggers, readManifest } from '../projects/triggers';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { db } from '../shared/db';
@@ -468,6 +471,15 @@ export async function syncProjectConnectors(
   // A regular connector — no experimental opt-in — also manifest-independent.
   const computerSpecs = await synthesizeComputerConnectors(projectId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
+
+  // A connector binding is server-side by definition. Convert legacy runtime
+  // rows before catalog discovery or a concurrent sandbox start can read them.
+  await Promise.all(
+    specs
+      .map((spec) => spec.auth.secret)
+      .filter((identifier): identifier is string => Boolean(identifier))
+      .map((identifier) => confineSharedProjectSecretToConnector(projectId, identifier)),
+  );
 
   // No readable manifest AND nothing installed → bail WITHOUT deleting (a
   // transient git error must never wipe a project's connectors).

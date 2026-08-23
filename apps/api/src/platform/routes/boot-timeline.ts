@@ -13,8 +13,8 @@
  *   2. Add this route's path suffix to `sandboxTokenPathAllowed` in
  *      middleware/auth.ts's `supabaseAuth` — a sandbox (Kortix) token is only
  *      accepted on an explicit allowlist of path suffixes (currently
- *      `/git/clone-credential`, `/turn-stream`, `/turn-question`,
- *      `/llm-catalog`); without adding `/boot-timeline` there, every relay
+ *      `/turn-stream`, `/turn-question`, `/llm-catalog`); without adding
+ *      `/boot-timeline` there, every relay
  *      POST 401s before it reaches the handler below. That file is outside
  *      this change's file set, same reasoning as main.ts not being wired here.
  */

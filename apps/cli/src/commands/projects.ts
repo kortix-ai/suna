@@ -509,8 +509,8 @@ async function projectsRename(argv: string[]): Promise<number> {
 const CLI_TOKENS_HELP = help`Usage: kortix projects cli-tokens [ls | new | rm <token-id>] [options]
 
 Project-scoped CLI tokens (kortix_pat_…). A token is bound to ONE project —
-the API rejects it on every other project — and is what a session sandbox's
-in-container CLI authenticates with (KORTIX_CLI_TOKEN).
+the API rejects it on every other project. Session sandboxes use their
+session-bound KORTIX_TOKEN instead.
 
 Subcommands:
   ls                   List this project's tokens. (--json)

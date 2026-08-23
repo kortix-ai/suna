@@ -1,5 +1,5 @@
 import { eq, and, desc, inArray, isNull } from 'drizzle-orm';
-import { accountTokens, accounts } from '@kortix/db';
+import { accountTokens, accounts, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   hashSecretKey,
@@ -419,6 +419,26 @@ export async function validateAccountToken(
 
     if (row.expiresAt && row.expiresAt < new Date()) {
       return { isValid: false, error: 'PAT expired' };
+    }
+
+    // A session credential is authority for one live sandbox, not a durable
+    // project PAT. Refuse it whenever that sandbox is not provisioning or
+    // active. This closes the stopped/deleted-session replay window without
+    // affecting human CLI tokens, and permits the daemon's boot callbacks.
+    if (row.sessionId) {
+      const [lease] = await db
+        .select({ status: sessionSandboxes.status })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sessionId, row.sessionId),
+            eq(sessionSandboxes.accountId, row.accountId),
+            ...(row.projectId ? [eq(sessionSandboxes.projectId, row.projectId)] : []),
+            inArray(sessionSandboxes.status, ['provisioning', 'active']),
+          ),
+        )
+        .limit(1);
+      if (!lease) return { isValid: false, error: 'Session token is not active' };
     }
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't

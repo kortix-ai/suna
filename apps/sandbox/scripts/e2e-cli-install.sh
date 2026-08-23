@@ -31,9 +31,7 @@ cd "$REPO_ROOT"
 IMAGE="kortix-cli-e2e:test"
 PORT="${KORTIX_E2E_PORT:-17790}"
 PROJECT="proj-e2e-123"
-PAT="kortix_pat_e2e_connector"          # project-scoped PAT (KORTIX_TOKEN)
-SBKEY="kortix_sb_e2e_service_key"       # sandbox service key (KORTIX_TOKEN)
-PUSH_TOKEN="FRESH-PUSH-TOKEN-e2e"
+TOKEN="kortix_sb_e2e_session"           # session-bound KORTIX_TOKEN
 
 GREEN=$'\e[32m'; RED=$'\e[31m'; DIM=$'\e[2m'; RST=$'\e[0m'
 pass() { echo "  ${GREEN}✓${RST} $1"; }
@@ -50,7 +48,7 @@ trap cleanup EXIT
 
 # ── Mock control plane ──────────────────────────────────────────────────────
 cat > "$MOCK_DIR/mock.ts" <<MOCK
-const PAT = "$PAT", SBKEY = "$SBKEY", PROJECT = "$PROJECT", PUSH = "$PUSH_TOKEN";
+const TOKEN = "$TOKEN", PROJECT = "$PROJECT";
 const crs: any[] = [];
 const bearer = (r: Request) => (r.headers.get("authorization") || "").replace(/^Bearer /, "");
 Bun.serve({
@@ -58,14 +56,9 @@ Bun.serve({
   fetch(req) {
     const url = new URL(req.url);
     const p = url.pathname, tok = bearer(req);
-    // clone-credential: accepts the SANDBOX key (matches prod auth).
-    if (p === \`/v1/projects/\${PROJECT}/git/clone-credential\`) {
-      if (tok !== SBKEY) return Response.json({ error: "bad" }, { status: 401 });
-      return Response.json({ repo_url: "https://git.example.test/repo", auth: { username: "x-access-token", token: PUSH, type: "basic" }, source: "managed" });
-    }
-    // change-requests: require the PROJECT PAT; reject the sandbox key.
+    // The session-bound token authorizes project routes through its grant.
     if (p === \`/v1/projects/\${PROJECT}/change-requests\`) {
-      if (tok !== PAT) return Response.json({ error: true, message: "Invalid or expired token", status: 401 }, { status: 401 });
+      if (tok !== TOKEN) return Response.json({ error: true, message: "Invalid or expired token", status: 401 }, { status: 401 });
       if (req.method === "POST")
         return req.json().then((b: any) => { const cr = { cr_id: "cr-1", number: crs.length + 1, status: "open", title: b.title, description: b.description ?? "", head_ref: b.head_ref, base_ref: b.base_ref ?? "main", created_at: new Date(0).toISOString() }; crs.push(cr); return Response.json(cr, { status: 201 }); });
       return Response.json({ change_requests: crs });
@@ -95,25 +88,25 @@ else
 fi
 
 echo
-echo "2. The sandbox service key (KORTIX_TOKEN) is rejected on project routes"
-OUT="$(drun -e KORTIX_TOKEN="$SBKEY" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" "$IMAGE" /cli/kortix cr ls 2>&1 || true)"
+echo "2. An invalid token is rejected on project routes"
+OUT="$(drun -e KORTIX_TOKEN="invalid" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" "$IMAGE" /cli/kortix cr ls 2>&1 || true)"
 if echo "$OUT" | grep -qi "Token rejected"; then
-  pass "service key correctly rejected (the original misdiagnosis)"
+  pass "invalid token correctly rejected"
 else
   fail "expected a rejection, got: $(echo "$OUT" | tail -1)"
 fi
 
 echo
-echo "3. The injected project PAT (KORTIX_TOKEN) opens + lists a CR"
-OUT="$(drun -e KORTIX_TOKEN="$PAT" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" \
+echo "3. The session-bound KORTIX_TOKEN opens + lists a CR"
+OUT="$(drun -e KORTIX_TOKEN="$TOKEN" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" \
   -e KORTIX_BRANCH_NAME="session-e2e" -e KORTIX_SESSION_ID="session-e2e" \
   "$IMAGE" /cli/kortix cr open --title "Add portfolio site" --description "e2e" 2>&1 || true)"
 if echo "$OUT" | grep -q "Opened CR #1"; then
-  pass "kortix cr open succeeded with the PAT"
+  pass "kortix cr open succeeded with the session token"
 else
   fail "cr open failed: $(echo "$OUT" | tail -2)"
 fi
-OUT="$(drun -e KORTIX_TOKEN="$PAT" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" "$IMAGE" /cli/kortix cr ls 2>&1 || true)"
+OUT="$(drun -e KORTIX_TOKEN="$TOKEN" -e KORTIX_API_URL="$API_HOST" -e KORTIX_PROJECT_ID="$PROJECT" "$IMAGE" /cli/kortix cr ls 2>&1 || true)"
 if echo "$OUT" | grep -q "Add portfolio site"; then
   pass "kortix cr ls shows the open CR"
 else
@@ -126,16 +119,16 @@ else
 fi
 
 echo
-echo "4. git push authenticates via the daemon credential helper"
+echo "4. Git proxy authentication uses the same session token"
 DAEMON="apps/kortix-sandbox-agent-server/src/main.ts"
 HOME_T="$(mktemp -d)"
-HOME="$HOME_T" git config --global --replace-all "credential.https://git.example.test.helper" "!bun '$REPO_ROOT/$DAEMON' git-credential"
-CRED="$(printf 'protocol=https\nhost=git.example.test\npath=repo\n\n' | \
-  HOME="$HOME_T" KORTIX_API_URL="http://127.0.0.1:$PORT/v1" KORTIX_PROJECT_ID="$PROJECT" KORTIX_TOKEN="$SBKEY" \
+HOME="$HOME_T" git config --global --replace-all "credential.http://127.0.0.1:$PORT.helper" "!bun '$REPO_ROOT/$DAEMON' git-credential"
+CRED="$(printf 'protocol=http\nhost=127.0.0.1:%s\npath=v1/git/%s.git\n\n' "$PORT" "$PROJECT" | \
+  HOME="$HOME_T" KORTIX_API_URL="http://127.0.0.1:$PORT/v1" KORTIX_PROJECT_ID="$PROJECT" KORTIX_TOKEN="$TOKEN" \
   git credential fill 2>/dev/null || true)"
 rm -rf "$HOME_T"
-if echo "$CRED" | grep -q "password=$PUSH_TOKEN" && echo "$CRED" | grep -q "username=x-access-token"; then
-  pass "git received a fresh push-capable credential (username=x-access-token)"
+if echo "$CRED" | grep -q "password=$TOKEN" && echo "$CRED" | grep -q "username=x-access-token"; then
+  pass "git received the session token for the Kortix Git proxy"
 else
   fail "git credential fill did not return the push token: $CRED"
 fi

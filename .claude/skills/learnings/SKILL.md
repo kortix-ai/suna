@@ -21,6 +21,18 @@ linked, not inlined.
 
 ## Register
 
+### Webhook signing secrets must use connector delivery (2026-08-23)
+
+**When:** creating, updating, or diagnosing a webhook trigger. A stored secret
+is not sufficient. Its delivery policy must authorize the `connector` consumer:
+use `broker` strategy with `connector` consumer, then rotate after narrowing a
+secret that previously reached a sandbox. Reject invalid policy during trigger
+create/update, and return distinct runtime codes for missing, inactive, and
+delivery-mismatched secrets. *Incident:* production `test-webhook` returned 409
+because `SECRET` existed with `runtime`/`sandbox` delivery; the same manifest
+also named an undeclared agent. *Enforcer:* `e2e-project-triggers.test.ts` and
+`secret-consumer-access.test.ts`.
+
 ### Assert monotonic timestamps when later writes can advance one field (2026-08-22)
 
 **When:** a test reads two timestamps written by one statement after asynchronous
@@ -1843,3 +1855,57 @@ watching the rotation (PR #6755).
 
 *Incident:* session `b090016e…` / `cbde77cf…` on worktree `timeline-parity`,
 three tunnel deaths, each surfaced as an OpenCode retry loop.
+
+## A credential boundary cannot depend on a feature flag
+
+2026-08-22. Session provisioning could advertise a direct upstream Git origin
+when `KORTIX_GIT_PROXY` was false. The sandbox daemon then called
+`/projects/:id/git/clone-credential`, which returned the raw upstream token.
+The proxy path was secure, but an environment flag could restore credential
+delivery into every sandbox.
+
+**The rule.** A server-side credential boundary is unconditional. Runtime
+clients receive one session credential and a Kortix proxy URL. No feature flag,
+compatibility endpoint, or generic authorization-header helper may expose or
+attach an upstream credential inside the sandbox.
+
+**The enforcement.** Session provisioning and project serialization always use
+`/v1/git/:project.git`. The clone-credential route no longer exists. The daemon
+rejects direct network Git origins and builds auth headers only for `/v1/git/`.
+Route coverage pins the endpoint removal. Daemon tests pin direct-origin denial.
+
+*Incident:* a sandbox environment audit found four Kortix token aliases and
+provider credentials. The Git compatibility path could also return a raw Git
+provider token to the sandbox.
+
+## Never resolve a merge inside a worktree whose API runs `--hot`
+
+2026-08-22. `git merge origin/main` was run inside `suna-timeline-parity`, the
+worktree that served the user's live test stack (`bun --hot` API, Next dev
+web). The merge stopped on conflicts, the tree held conflict markers, and the
+hot-reloading API picked them up (`tsc`: `TS1185: Merge conflict marker
+encountered` in `r4.ts`) while the user was testing. `git merge --abort`
+restored it within a minute; no sandbox was lost.
+
+**The rule.** A worktree that serves a live stack is read-only to git
+operations that can leave the tree in a non-compiling state: merges with
+possible conflicts, rebases, cherry-picks, checkouts of other branches.
+Resolve in a scratch worktree on a sibling branch, run the gates there, then
+`git merge --ff-only` inside the live worktree so it only ever moves between
+two consistent trees. Fast-forward is the only git write a live worktree
+should see — and a fast-forward that moves `apps/kortix-sandbox-agent-server`,
+`apps/cli`, or `apps/kortix-app-runtime` source must be followed by the same
+artifact builds the launcher runs at start (`pnpm --filter` build for the
+agent server and CLI, `bash apps/kortix-app-runtime/build.sh`), or every new
+session fails provisioning with `kortix-agent dist binary … is older than its
+source` (seen 2026-08-22 21:41 right after the ff; rebuilt, sessions booted
+again).
+
+**The enforcement.** The integration-branch memory note names the rule; the
+scratch-worktree-then-ff sequence is the procedure
+(`timeline-parity-main-merge` → `git merge --ff-only`). Candidate for a
+`pnpm worktree` guard: refuse `merge`/`rebase` in a slot whose API port is
+listening unless `--ff-only`.
+
+*Incident:* `timeline-parity` worktree, 2026-08-22 ~21:35 UTC, ~60 s of
+`tsc` errors on the live API; aborted, re-done in `tp-main-merge`, ff'd.

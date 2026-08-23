@@ -631,11 +631,10 @@ export async function buildSessionSandboxEnvVars(input: {
     ...buildSessionRuntimeEnv({
       projectId: input.projectId,
       sessionId: input.sessionId,
-      // Universal proxy origin: when enabled, the sandbox clones via the Kortix
-      // git proxy with its own KORTIX_TOKEN — a real host credential never lands
-      // in the sandbox. The daemon's credential helper returns KORTIX_TOKEN for
-      // the proxy host. OFF → direct clone of the real repo (legacy token flow).
-      repoUrl: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
+      // Every sandbox clones through the Kortix Git proxy with KORTIX_TOKEN.
+      // Direct upstream origins are never delivered to the guest because they
+      // require exposing a provider credential to the sandbox.
+      repoUrl: proxyGitUrl(input.projectId),
       baseRef: input.baseRef,
       agentName: input.agentName,
       apiUrl: deriveKortixApiBase(),

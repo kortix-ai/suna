@@ -31,6 +31,10 @@ import { registerGitHubLinkedProject } from '../lib/project-registration';
 import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import {
+  validateWebhookSecretConfiguration,
+  webhookSecretConfigurationError,
+} from '../lib/webhook-secret-policy';
+import {
   consumeProjectWebhookManifestRefreshBudget,
   createProjectWebhookRateLimitMiddleware,
 } from '../../shared/rate-limit';
@@ -80,16 +84,21 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   }
 
   const rawBody = await c.req.text();
-  const secret = spec.secretEnv
-    ? await getProjectSecretValueForConsumer({
-        projectId: project.projectId,
-        accountId: project.accountId,
-        name: spec.secretEnv,
-        consumer: 'connector',
-      })
-    : null;
+  if (!spec.secretEnv) {
+    return c.json(webhookSecretConfigurationError('missing'), 409);
+  }
+  const secret = await getProjectSecretValueForConsumer({
+    projectId: project.projectId,
+    accountId: project.accountId,
+    name: spec.secretEnv,
+    consumer: 'connector',
+  });
   if (!secret) {
-    return c.json({ error: 'Webhook secret is not configured' }, 409);
+    const configurationError = await validateWebhookSecretConfiguration({
+      projectId: project.projectId,
+      secretEnv: spec.secretEnv,
+    });
+    return c.json(configurationError ?? webhookSecretConfigurationError('unavailable'), 409);
   }
 
   // Primary auth: HMAC-SHA256 signature over the raw body (GitHub-compatible).

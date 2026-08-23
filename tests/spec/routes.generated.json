@@ -1662,10 +1662,6 @@
       "path": "/v1/projects/:projectId/git-token"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/git/clone-credential"
-    },
-    {
       "method": "POST",
       "path": "/v1/projects/:projectId/git/collaborators"
     },

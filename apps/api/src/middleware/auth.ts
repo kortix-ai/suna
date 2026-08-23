@@ -166,9 +166,8 @@ export async function apiKeyAuth(c: Context, next: Next) {
  * pipeline (resolveAccountId, project access checks, etc.) works
  * unchanged.
  *
- * The one sandbox-token exception is the runtime clone-credential endpoint:
- * a session sandbox calls it with its sandbox-scoped KORTIX_TOKEN so it does
- * not need a second project PAT or raw Git token in env.
+ * Selected runtime routes accept a session-scoped KORTIX_TOKEN. They never
+ * return an upstream provider credential.
  */
 export async function supabaseAuth(c: Context, next: Next) {
   return resolveSupabaseAuth(c, () => applyImpersonation(c, () => withActor(c, next)));
@@ -264,7 +263,6 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
 
   const path = c.req.path;
   const sandboxTokenPathAllowed =
-    path.endsWith('/git/clone-credential') ||
     path.endsWith('/turn-stream') ||
     path.endsWith('/turn-question') ||
     // The seed daemon fetches the org model catalog at PARK with its sandbox

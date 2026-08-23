@@ -18,9 +18,7 @@
  *    acceptable evidence (billing/services/compute-liveness.ts) — letting a box
  *    extend its own bill is the bug, not the feature.
  *  - **The repo comes through the git proxy.** The box clones
- *    `${API}/v1/git/<project>.git` with its own sandbox token. The
- *    clone-credential HTTP route is scoped to `session_sandboxes` and would 403
- *    a monitor box; the git-proxy form is the only transport that works.
+ *    `${API}/v1/git/<project>.git` with its own sandbox token.
  *  - **No session branch.** `KORTIX_BRANCH_NAME` is deliberately omitted, so
  *    the daemon leaves the checkout on default-branch HEAD. A monitor watches
  *    what is shipped, not what some session is working on.

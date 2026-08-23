@@ -212,9 +212,7 @@ async function buildMonitorBoxEnv(input: {
     KORTIX_API_URL: deriveKortixApiBase(),
     KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
     KORTIX_SERVICE_PORT: '8000',
-    // Clone through the Kortix git proxy, authenticated with the box's own
-    // sandbox token. The clone-credential HTTP route is session-scoped and
-    // would 403 this box, so the proxy form is the ONLY transport available.
+    // Clone through the Kortix Git proxy with the box's own sandbox token.
     KORTIX_REPO_URL: proxyGitUrl(input.project.projectId),
     KORTIX_DEFAULT_BRANCH: input.gitProject.defaultBranch,
     KORTIX_BASE_REF: input.gitProject.defaultBranch,

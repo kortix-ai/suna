@@ -288,8 +288,8 @@ A project shows one icon, so writing `--icon` clears the glyph and writing
 unavailable stays off regardless of the project override.
 
 A project CLI token is bound to one project — the API rejects it everywhere
-else — and is what a session sandbox's in-container CLI authenticates with
-(`KORTIX_CLI_TOKEN`). `cli-tokens ls` needs project read; `new` and `rm` need
+else. A session sandbox uses its session-bound `KORTIX_TOKEN`. `cli-tokens ls`
+needs project read; `new` and `rm` need
 `project.credentials.issue`. An agent-session token can neither mint nor
 revoke project tokens (`403`).
 

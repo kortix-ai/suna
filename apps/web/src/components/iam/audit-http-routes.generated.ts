@@ -417,7 +417,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|gateway|sessions",
   "PUT|v1|projects|:projectId|git-credential",
   "POST|v1|projects|:projectId|git-token",
-  "GET|v1|projects|:projectId|git|clone-credential",
   "POST|v1|projects|:projectId|git|collaborators",
   "GET|v1|projects|:projectId|group-grants",
   "POST|v1|projects|:projectId|group-grants",
