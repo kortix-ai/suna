@@ -226,6 +226,13 @@ jobs:
               LLM_GATEWAY_BASE_URL: $gateway,
               ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum",
               KORTIX_WARM_SNAPSHOT_ENABLED: "false",
+              # Pinned, not inherited: the base above can be kortix-dev-env,
+              # which still carries the RETIRED `code-storage` value. The API
+              # refuses that value for new repos anyway
+              # (`defaultManagedProviderId`), but a stale key propagating from
+              # dev into staging is how it survives — state it here so the
+              # bundle says what is actually true.
+              MANAGED_GIT_PROVIDER: "github",
               # The staging Supabase database permits 60 connections. ECS can
               # run 3 API tasks. Four app connections plus one leader connection
               # per process
