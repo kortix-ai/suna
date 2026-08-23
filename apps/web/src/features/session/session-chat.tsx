@@ -93,9 +93,9 @@ import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
+import { jumpToTurn } from '@/features/session/jump-to-turn';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { jumpToTurn } from '@/features/session/jump-to-turn';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
