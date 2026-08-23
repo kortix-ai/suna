@@ -10,9 +10,9 @@ the repo.
 > 0. **Read `packages/sdk/PROGRESS.md` first, and update it before you finish.**
 >    Multiple sessions run against this repo. It tracks what is done, what is in
 >    flight, and what is next. Claim a task before you work on it.
-> 1. **Write the failing test first.** Invoke the `tdd` skill (`/tdd`) before any
->    implementation code. RED → GREEN → REFACTOR, no exceptions. *A test you have
->    never seen fail is not a test.*
+> 1. **Write the failing test first**, before any implementation code.
+>    RED → GREEN → REFACTOR, no exceptions. *A test you have never seen fail is
+>    not a test.* The full loop is in **Test-driven, always** below.
 > 2. **Never hand back a red suite.** Loop — run, read, fix, re-run — until every
 >    test passes. **Loop on the code, never on the test.** Deleting, skipping,
 >    weakening, or filtering a test to reach green is forbidden. If the test
@@ -33,8 +33,9 @@ Learn this once and most questions answer themselves.
 
 1. **The Kortix platform REST API** (`backendUrl`, e.g. `http://localhost:8008/v1`).
    Owns everything *about* your work: accounts, projects, sessions, secrets,
-   billing, triggers, marketplace, audit. Lives in `platform/projects-client/` and
-   `platform/platform-client/`, over `platform/api-client.ts` (`backendApi`).
+   billing, triggers, marketplace, audit. Lives in `src/core/rest/projects-client/`
+   and `src/core/rest/platform-client/`, over `src/core/http/api-client.ts`
+   (`backendApi`).
 
 2. **The session runtime** — OpenCode running *inside a per-session cloud
    sandbox*. The SDK reaches its REST API through the Kortix API proxy:
@@ -73,17 +74,22 @@ one.
 ### The layers, bottom to top
 
 ```
-platform/auth + platform/api-client   ← transport: token, fetch, ApiError
-platform/*-client                     ← typed REST surfaces (one file per domain)
-opencode/client                       ← OpenCode REST compatibility client
-state/event-stream                    ← SSE reconnect/backoff/heartbeat/coalesce
-kortix.ts (createKortix)              ← the facade: binds ids, hides the seam
-turns/                                ← normalizes ~50 wire part types → ClassifiedPart
-react/                                ← optional glue. Nothing below this line knows React.
+core/http/auth + core/http/api-client  ← transport: token, fetch, ApiError
+core/rest/*-client                     ← typed REST surfaces (one file per domain)
+core/runtime/client                    ← OpenCode REST compatibility client
+core/stream/event-stream               ← SSE reconnect/backoff/heartbeat/coalesce
+core/client/kortix.ts (createKortix)   ← the facade: binds ids, hides the seam
+core/turns/                            ← normalizes ~50 wire part types → ClassifiedPart
+browser/, node/, platform/             ← host adapters: zustand stores, ./server, env
+react/                                 ← optional glue. Nothing below this line knows React.
 ```
 
-`turns/` deserves a note: the opencode wire format has ~50 part variants. `turns/`
-collapses them into a compile-time-**exhaustive** `ClassifiedPart` union so a
+`src/deprecated/` holds the ~20 legacy subpath shims (`./projects-client`,
+`./event-stream`, `./server-store`, …). They re-export from `core/` and stay
+until the next major. Add nothing new there.
+
+`core/turns/` deserves a note: the opencode wire format has ~50 part variants.
+It collapses them into a compile-time-**exhaustive** `ClassifiedPart` union so a
 renderer can `switch (part.kind)` and have TypeScript prove no case is missed.
 It is framework-free on purpose — `examples/04` renders a transcript to plain
 text with the exact same code `whitelabel-demo` renders to React.
@@ -92,12 +98,13 @@ text with the exact same code `whitelabel-demo` renders to React.
 
 Follow the grain. Almost every feature is this shape:
 
-1. **REST function** in `platform/projects-client/<domain>.ts`. Typed request and
-   response, called through `backendApi`. Colocate `<domain>.test.ts`.
+1. **REST function** in `src/core/rest/projects-client/<domain>.ts`. Typed request
+   and response, called through `backendApi`. Colocate `<domain>.test.ts`.
 2. **Export it** from that directory's barrel.
-3. **Wire it into the facade** in `kortix.ts` as a *direct reference*
-   (`create: P.createThing`) — not a wrapper. Direct references keep the exact
-   types with zero re-typing, which is why the facade is 941 lines and not 4000.
+3. **Wire it into the facade** in `src/core/client/kortix.ts` as a *direct
+   reference* (`create: P.createThing`) — not a wrapper. Direct references keep
+   the exact types with zero re-typing, which is what keeps the facade around a
+   thousand lines instead of several thousand.
 4. **Reactive?** Then, and only then, add a hook in `react/` over the client fn.
    The client fn must exist first and must work without React.
 5. **New public name?** Re-read the naming rules below. It is forever.
@@ -207,8 +214,8 @@ Renames are expensive, so front-load the thinking. Conventions for this package:
   same name is a `TS2308` build error, not a silent shadow.
 
 > **`KortixProject` was declared twice** — the platform project
-> (`platform/projects-client/projects.ts`, keyed `project_id`/`account_id`/`repo_url`)
-> and the kortix-master daemon's board project (`opencode/kortix-master.ts`, keyed
+> (`core/rest/projects-client/projects.ts`, keyed `project_id`/`account_id`/`repo_url`)
+> and the kortix-master daemon's board project (`core/runtime/kortix-master.ts`, keyed
 > `id`/`path`/`opencode_id`/`structure_version`). Same word, unrelated concepts;
 > the split subpath surface hid the clash for months.
 >
@@ -229,8 +236,8 @@ not as a test to re-record until it goes green.
 
 ## Versioning: never touch the `version` field
 
-`packages/sdk/package.json` has `"version": "0.2.0"`. **It is inert.** Nothing
-reads it.
+`packages/sdk/package.json` carries a placeholder `version` (`0.3.0` today).
+**It is inert.** Nothing reads it.
 
 At publish time `scripts/stage-npm-publish.mjs` overwrites it:
 
@@ -273,9 +280,9 @@ Every non-React subpath is classified in `SUBPATH_TIERS`
 
 | Tier | Entry points | Forbids |
 |---|---|---|
-| `isomorphic-core` | root `.`, `./session`, `./turns`, `./files`, `./event-stream`, most clients | `react`, `react-dom`, `next`, `zustand`, `@tanstack/react-query`, `'use client'`, **any `node:` import** |
+| `isomorphic-core` | root `.`, `./message-queue`, and the `src/deprecated/` shims (`./session`, `./turns`, `./files`, `./event-stream`, `./projects-client`, …) | `react`, `react-dom`, `next`, `zustand`, `@tanstack/react-query`, `'use client'`, **any `node:` import** |
 | `node-allowed` | `./server` only | same, except `node:async_hooks` is permitted (per-request config isolation) |
-| `browser-only` | `./sync-store`, `./server-store`, `./sandbox-connection-store`, `./opencode-pending-store`, `./idb-sync-cache` | only `react` / `react-dom` / `next`. zustand and `window`/`localStorage`/`indexedDB` are expected here |
+| `browser-only` | `./internal/sync-store`, `./internal/server-store`, `./internal/sandbox-connection-store`, `./internal/opencode-pending-store`, `./internal/idb-sync-cache` — plus their un-prefixed `@deprecated` aliases | only `react` / `react-dom` / `next`. zustand and `window`/`localStorage`/`indexedDB` are expected here |
 
 If a test named `<subpath> (<tier>): no forbidden framework imports` fails, you
 did not "break a lint rule" — you broke the package for a host that has no
@@ -290,23 +297,28 @@ framework *imports*; it does **not** prove the core *runs* on RN or in a
 `<script>` tag.
 
 Touching a bare `process.env` on a non-Next host throws a **`ReferenceError`**, not
-`undefined`. The SDK knows this — `platform/feature-flags.ts:14` says so and ships
-`safeEnv()` for it. Use it. Guarded reads are the rule:
+`undefined`. The SDK knows this — `core/http/feature-flags.ts` documents it and
+`core/http/env.ts` ships `safeEnv()` for it. Use it. Guarded reads are the rule:
 
 ```ts
-if (typeof window !== 'undefined' && window.location?.origin) { … }   // ✅ kortix.ts:102
-const url = process.env.BACKEND_URL || …                              // ❌ shared.ts:29
+if (typeof window !== 'undefined' && window.location?.origin) { … }  // ✅ core/client/kortix.ts
+const url = safeEnv('BACKEND_URL') || …                              // ✅ core/http/env.ts
+const url = process.env.BACKEND_URL || …                             // ❌ throws on RN
 ```
 
 **Never introduce a bare global into `core/`.** Guard it, or inject it.
 
 ### The `browser-only` tier is internal machinery
 
-Those five zustand stores are consumed only by `apps/web`, via thin
-`export * from '@kortix/sdk/…'` shims in `apps/web/src/stores/`. Nothing
+Those five zustand stores are `apps/web` machinery, imported directly at their
+use sites from `@kortix/sdk/internal/*`. They are outside semver. Nothing
 third-party should build on them, and they are **not** exposed on the
 `window.Kortix` global. Treat them as implementation detail that is
 regrettably visible, not as a designed API.
+
+`apps/web/eslint.config.mjs` and `apps/web/scripts/sdk-boundary.mjs` both list the
+un-prefixed aliases (`@kortix/sdk/server-store`, …). Import the `./internal/`
+form in new code.
 
 ## Adding or moving an export requires three synchronized edits
 
@@ -333,8 +345,9 @@ For (2), know exactly what is and is not covered:
   `publishConfig` entry carries both `types` and `import`). Add `./foo` to one
   map and forget the other, and this test goes red — before `npm install
   @kortix/sdk` can ship a subpath that resolves in the workspace but not on npm.
-- ✅ `scripts/smoke-install.mjs` — run in CI as the step **"Install smoke test"**,
-  or locally via `pnpm --filter @kortix/sdk run smoke:install` — packs the
+- ✅ `scripts/smoke-install.mjs` — run by the `packages` lane
+  (`tests/bin/package-quality.ts`), locally via `pnpm test -- --packages-only` or
+  `pnpm --filter @kortix/sdk run smoke:install` — packs the
   tarball, installs it into a throwaway project, and imports it, so a resolution
   or runtime failure in the published artifact fails a PR instead of a stranger's
   build.
@@ -358,7 +371,7 @@ belongs.
 ```
 
 `npm view @kortix/sdk main` returns `./dist/index.js`, so the swap works today.
-`scripts/smoke-install.mjs` (CI step **"Install smoke test"**, or `pnpm --filter
+`scripts/smoke-install.mjs` (the `packages` lane, or `pnpm --filter
 @kortix/sdk run smoke:install`) now exercises an actual *install* — it packs,
 installs the tarball into a throwaway project, and imports it — so this swap is no
 longer unguarded. It is still the subtlest thing a refactor can quietly break, so
@@ -393,7 +406,7 @@ const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
 
 So streaming requires `fetch` with a real `ReadableStream` body, plus
 `TextDecoderStream`. Reconnect, backoff, heartbeat, and event coalescing are
-ours (`state/event-stream.ts`); the wire is theirs.
+ours (`src/core/stream/event-stream.ts`); the wire is theirs.
 
 | Target | Streams? | Notes |
 |---|---|---|
@@ -411,8 +424,9 @@ broken change, not a partial one.
 > PR description. It does not work. `apps/mobile` streams today only because it
 > **bypasses the SDK entirely**: `apps/mobile/lib/opencode/event-stream.ts` is
 > **655 lines** reimplementing reconnect/backoff/heartbeat/coalescing on
-> `react-native-sse`'s `EventSource`, beside the SDK's own 571-line version. Two
-> divergent copies of the most failure-prone logic in the product.
+> `react-native-sse`'s `EventSource`, beside the SDK's own
+> `src/core/stream/event-stream.ts`. Two divergent copies of the most
+> failure-prone logic in the product.
 >
 > It happened because the SDK left **no transport seam**. The fix — extracting an
 > injectable `EventStreamTransport`, so the platform-specific part is only *how
@@ -512,12 +526,14 @@ Nothing is done until `typecheck`, `test`, and the tripwire are green. The
 tripwire lives inside `test`, so a green `test` covers it — but read the output;
 a skipped file is not a passing file.
 
-CI (`.github/workflows/package-tests.yml`) additionally runs
-`stage-npm-publish.test.mjs` and a build + stage + **dry-pack** of
-`@kortix/llm-catalog`, `@kortix/sdk`, and the final deprecated
-`@kortix/executor-sdk` adapter on every PR.
-That is the release gate. It catches a broken `publishConfig`; it does not catch
-a broken *install*.
+The `packages` lane (`tests/bin/package-quality.ts`, reached by
+`pnpm test -- --packages-only` and by CI through `.github/workflows/tests-pr.yml`
+→ `tests.yml`) additionally runs `scripts/stage-npm-publish.test.mjs`,
+`scripts/publish-npm-package.test.mjs`, this package's `smoke:install`, and a
+stage + **dry-pack** of `@kortix/llm-catalog`, `@kortix/sdk`, and the deprecated
+`@kortix/executor-sdk` adapter.
+That is the release gate. It catches a broken `publishConfig` *and* a broken
+install; it does not catch a broken runtime target.
 
 ## `PROGRESS.md` — read it first, update it last
 
@@ -566,10 +582,9 @@ in the log rather than overwriting silently.
 
 ## Test-driven, always. No exceptions in this package.
 
-**Before writing any implementation code, invoke the `tdd` skill** (`/tdd`, or
-`superpowers:test-driven-development`). For broader repo conventions — which test
-type a change needs, factories, determinism, CI gates — the project skill is
-`.claude/skills/testing/SKILL.md`.
+**Write the failing test before any implementation code.** The loop is below.
+For broader repo conventions — which test type a change needs, factories,
+determinism, CI gates — the project skill is `.claude/skills/testing/SKILL.md`.
 
 This is not a preference. This package is **published to npm**. A regression here
 does not show up in a PR review; it shows up in a stranger's build, on their
@@ -605,12 +620,10 @@ pnpm --filter @kortix/sdk test        # bun test src — includes the tripwire
 pnpm --filter @kortix/sdk run smoke:install   # pack → install → import the tarball
 ```
 
-Baseline (measured 2026-08-09): **1626 passing, 0 failing, across 129 test
-files.** This number only grows — it is a floor, not a fixed target, and it WILL
-be stale by the time you read this (it has already drifted twice: 1046 → 1069 →
-1357 → 1626, see `PROGRESS.md`). **Do not trust the literal number above without
-re-deriving it.** Get today's real count by running the full suite once on a
-clean `main` before you start:
+**There is no baseline number in this file, on purpose.** The suite only grows
+(1046 → 1069 → 1357 → 1626 → … , see `PROGRESS.md`), so any figure written here
+is wrong by the time you read it. Get today's real count by running the full
+suite once on a clean `main` before you start:
 
 ```bash
 pnpm --filter @kortix/sdk test 2>&1 | tail -3   # → "N pass, 0 fail" / "Ran N tests across M files"
@@ -645,7 +658,7 @@ These are **forbidden** as a response to a red test:
 | Weakening an assertion (`toEqual` → `toBeDefined`, dropping a field) | Green by lowering the bar |
 | Filtering the run (`bun test src/thing.test.ts`) to dodge an unrelated failure | Green by not looking |
 | Re-recording a snapshot to match your output | The snapshot *is* the expectation. See below. |
-| Adding `no-tests-needed` to a PR that changed behaviour | The label is for formatting and comments |
+| Declaring a behaviour change "doesn't need a test" | Nothing blocks the PR, which is exactly why it is on you |
 | `catch {}` around the thing that throws | Green by silence |
 
 **Three reasons a test goes red. Only one of them is a loop.**
@@ -670,9 +683,9 @@ you just broke every consumer: add an alias, do not accept the diff.
 **Bound the loop.** "Infinite" is a figure of speech; thrashing is real, and it
 burns budget while hiding a design problem.
 
-- Same failure **three times** with three different fixes? Stop guessing. Invoke
-  `superpowers:systematic-debugging`. Form a hypothesis, add an instrument, prove
-  it — do not keep permuting code.
+- Same failure **three times** with three different fixes? Stop guessing. Form a
+  written hypothesis, add an instrument that would disprove it, run it, and read
+  the result — do not keep permuting code.
 - About to modify a test's assertion? **Stop and surface it.** That is case 2 or 3,
   and it needs a human, not a loop.
 - Failure is environmental (network, Daytona sandbox, a flaky port)? Say so, name
@@ -716,14 +729,14 @@ report what happened. If tests fail, say so and show the output.
 
 ### Tests ship with the change
 
-Repo-wide rule, enforced by `.github/workflows/package-tests.yml`: a PR that
-changes source under `packages/*/src` without changing a test **fails**, unless
-labelled `no-tests-needed`. That label is for formatting, comments, and renames of
-non-exported symbols — never for behaviour.
+**This is a convention, not a gate.** No workflow blocks a PR that changes
+`packages/*/src` without touching a test — so the only thing enforcing it is you
+and the reviewer. A behaviour change ships with a test. Formatting, comments, and
+renames of non-exported symbols do not need one.
 
-This package is well covered (65 test files) — match the neighbouring file's style
-rather than inventing a harness. Tests live beside the code they test
-(`foo.ts` → `foo.test.ts`).
+This package is densely covered — match the neighbouring file's style rather than
+inventing a harness. Tests live beside the code they test (`foo.ts` →
+`foo.test.ts`).
 
 ## Examples are executable documentation
 
