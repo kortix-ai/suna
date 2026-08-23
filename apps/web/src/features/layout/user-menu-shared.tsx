@@ -124,13 +124,8 @@ export function ThemeSubmenu() {
           <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
             {THEME_OPTIONS.map(({ value, label, Icon }) => (
               <DropdownMenuRadioItem key={value} value={value}>
-                {/* RadioItem wraps its children in a single flex-1 span to push
-                    the check to the right edge, so the icon and label need their
-                    own flex row inside it to stay aligned. */}
-                <span className="flex items-center gap-2">
-                  <Icon />
-                  {label}
-                </span>
+                <Icon />
+                {label}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>

@@ -44,7 +44,12 @@ import {
 } from '../upload-batch';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
-import { DriveToolbar } from './drive-toolbar';
+import {
+  DRIVE_ACTION_ROW_CLASS,
+  DriveNewMenu,
+  DrivePathBar,
+  DriveViewMenu,
+} from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileSearch } from './file-search';
@@ -52,25 +57,25 @@ import { FileSearch } from './file-search';
 /** System directories always pinned at the top of the listing. */
 const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
 
-export interface DriveExplorerToolbarOptions {
-  showVersionSelector?: boolean;
-  checkpointsToggle?: { open: boolean; onToggle: () => void };
-  changeRequestsToggle?: { open: boolean; onToggle: () => void; openCount?: number };
-  openChangeRequestAction?: { onClick: () => void; disabled?: boolean };
-}
-
 /**
  * Google Drive-style file explorer — the ONE explorer implementation, shared
  * by every surface. Data access comes from the injected FileExplorerSource
  * (live sandbox vs. project git-ref); capabilities on the source decide which
  * affordances render (mutations, search overlay, dotfile toggle, …).
  *
- * Layout:
+ * Layout — ONE action row, and a path strip that only appears once there is
+ * a path to show:
  * +---------------------------------------------------+
- * | DriveToolbar (breadcrumbs + actions)               |
+ * | {leading}                          [+ New]  [ ⋯ ]  |
+ * +---------------------------------------------------+
+ * | workspace › src › ui          (hidden at the root) |
  * +---------------------------------------------------+
  * | Main area (grid or list view) + injected panels    |
  * +---------------------------------------------------+
+ *
+ * `leading` is how a host puts its own identity — the session panel's
+ * All files / Changes tabs — in that row instead of stacking a second full
+ * header above it.
  *
  * Opening a file (single- or double-click, context menu) always opens the
  * full-screen preview modal overlay.
@@ -78,13 +83,24 @@ export interface DriveExplorerToolbarOptions {
 export function DriveExplorer({
   embedded = false,
   shareContext,
-  toolbar,
+  leading,
+  contentPanel,
   panels,
   children,
 }: {
   embedded?: boolean;
   shareContext?: { projectId: string; sessionId: string };
-  toolbar?: DriveExplorerToolbarOptions;
+  /**
+   * Host chrome for the START of the action row — the session panel's tab
+   * strip. Sharing the row is what lets that host drop its own header.
+   */
+  leading?: ReactNode;
+  /**
+   * ARIA wiring for the listing region when `leading` is a tab strip. The
+   * tabs live in this component's row, so only this component can stamp the
+   * panel they control.
+   */
+  contentPanel?: { id: string; labelledBy: string };
   /** Rendered inside the relative content area (slide-in side panels). */
   panels?: ReactNode;
   /** Rendered at the root (portal dialogs owned by the wrapping surface). */
@@ -650,24 +666,33 @@ export function DriveExplorer({
       onDragOver={handlePageDragOver}
       onDrop={handlePageDrop}
     >
-      <DriveToolbar
-        showSearch={capabilities.search}
-        showHiddenToggle={capabilities.hiddenToggle}
-        showVersionSelector={toolbar?.showVersionSelector}
-        onRefresh={() => refetchFiles()}
-        isRefreshing={isFetching}
-        onDownloadDir={() => {
-          const dirName = isRootPath
-            ? 'workspace'
-            : currentPath.split('/').filter(Boolean).pop() || 'directory';
-          const dirPath = isRootPath ? '/workspace' : currentPath;
-          downloadDir(dirPath, dirName);
-        }}
-        isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
-        onUpload={canWrite ? handleUpload : undefined}
-        onNewFile={canWrite ? () => setIsCreatingFile(true) : undefined}
-        onNewFolder={canWrite ? () => setIsCreatingFolder(true) : undefined}
-      />
+      <div className={DRIVE_ACTION_ROW_CLASS}>
+        {leading}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <DriveNewMenu
+            compact={embedded}
+            onUpload={canWrite ? handleUpload : undefined}
+            onNewFile={canWrite ? () => setIsCreatingFile(true) : undefined}
+            onNewFolder={canWrite ? () => setIsCreatingFolder(true) : undefined}
+          />
+          <DriveViewMenu
+            showSearch={capabilities.search}
+            showHiddenToggle={capabilities.hiddenToggle}
+            onRefresh={() => refetchFiles()}
+            isRefreshing={isFetching}
+            onDownloadDir={() => {
+              const dirName = isRootPath
+                ? 'workspace'
+                : currentPath.split('/').filter(Boolean).pop() || 'directory';
+              const dirPath = isRootPath ? '/workspace' : currentPath;
+              downloadDir(dirPath, dirName);
+            }}
+            isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
+          />
+        </div>
+      </div>
+
+      <DrivePathBar as="row" />
 
       {/* Search overlay */}
       {capabilities.search && isSearchOpen && <FileSearch />}
@@ -749,7 +774,12 @@ export function DriveExplorer({
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1">
+      <div
+        className="relative min-h-0 flex-1"
+        id={contentPanel?.id}
+        role={contentPanel ? 'tabpanel' : undefined}
+        aria-labelledby={contentPanel?.labelledBy}
+      >
         <div className="absolute inset-0 overflow-y-auto">
           {isLoading && showSkeleton && (
             <div className="animate-in fade-in-0 p-4 duration-200">

@@ -12,6 +12,37 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `content-is-evidence` — the runtime's output is not an opinion about the runtime — DONE
+
+**Files:** `core/session/working.ts` (+`WorkingActivityInput`, the content branch,
+its expiry) + `working.test.ts` (+5 tests) · `browser/stores/sync-store.ts`
+(+`sessionActivityAt`, `noteSessionActivity`, stamped on `message.updated` and
+`message.part.updated`) · `react/use-session-working.ts` (subscribes and folds
+it in) · both surface snapshots (one additive TYPE export).
+
+**What.** Every input to `projectWorking` was an OBSERVER of the runtime: a
+`/turn` poll, an SSE status frame, a health probe, an inbox read. The transcript
+renders the runtime's actual OUTPUT, and that was not an input at all — so a
+dropped status frame, or a poll throttled by a backgrounded tab, left the
+composer showing its send arrow over a transcript that was visibly streaming
+(screen recording, essentia 2026-08-23: 00:00–00:03 arrow with a live tool
+spinner and a 19s timer on screen).
+
+The same gap explains the rarer "Lost contact with this session's runtime while
+a turn is still open": on return from a background tab both observations can be
+older than their bounds while content is still arriving, and the projection had
+nothing left that could speak for the runtime.
+
+**Fix.** Content is now an input, bounded by the stream's own freshness rule and
+outranking every observer inside that window — including an idle frame it
+postdates. Quantized to 1s in the store so subscribing cannot re-render at the
+stream's ~140ms rate.
+
+**Gates:** `typecheck` clean (both projects) · `bun test` 2446 pass / 0 fail ·
+`smoke:install` passed · apps/web tsc clean, session suite 2513 pass / 0 fail.
+
+---
+
 ### 2026-08-23 — session `queued-prompt-invisible` — ask the inbox, not the runtime — DONE
 
 **Files:** `react/use-session-send.ts` (`recoverFromSendFailure` takes

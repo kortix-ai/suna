@@ -314,17 +314,13 @@ export function ReasoningEffortSelector({
               model's own default once an override is set, and without it the
               control would be a one-way door. */}
           <DropdownMenuRadioItem value={AUTO} disabled={pending}>
-            <span className="flex items-center gap-2">
-              <EffortIcon value={null} className="size-4 shrink-0" />
-              Auto
-            </span>
+            <EffortIcon value={null} className="size-4 shrink-0" />
+            Auto
           </DropdownMenuRadioItem>
           {values.map((value) => (
             <DropdownMenuRadioItem key={value} value={value} disabled={pending}>
-              <span className="flex items-center gap-2">
-                <EffortIcon value={value} className="size-4 shrink-0" />
-                {label(value)}
-              </span>
+              <EffortIcon value={value} className="size-4 shrink-0" />
+              {label(value)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
