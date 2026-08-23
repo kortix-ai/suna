@@ -702,16 +702,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             className={cn(
               'absolute inset-0 flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity duration-300 ease-out',
               chatReady ? 'opacity-100' : 'pointer-events-none opacity-0',
-              // `isolate` traps this layer's own z-indices — `SessionLayout`'s
-              // `z-10` panel wrapper, its `z-20` handle, and `z-[35]` while a
-              // detail is expanded — inside it. Without a stacking context here
-              // they resolve against one far ABOVE both layers and paint
-              // straight through the boot overlay, which is how a crashed
-              // chat's "Something went wrong" card ended up drawn on top of a
-              // live "Connecting" loader. Scoped to the overlay's lifetime, so
-              // once it unmounts the expanded detail competes with the shell
-              // chrome exactly as `session-layout` intends.
-              loaderMounted && 'isolate',
             )}
           >
             <ProjectSessionRuntimeConnection>
