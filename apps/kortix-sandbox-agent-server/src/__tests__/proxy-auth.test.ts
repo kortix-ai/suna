@@ -1615,6 +1615,73 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
+  it('sets the gateway base URL against the session token, and refuses to leave gateway mode on llmGatewayEnabled=false', async () => {
+    const saved = {
+      base: process.env.KORTIX_LLM_BASE_URL,
+      token: process.env.KORTIX_TOKEN,
+    }
+    delete process.env.KORTIX_LLM_BASE_URL
+    process.env.KORTIX_TOKEN = 'kortix_pat_exec'
+
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', { restart: () => {} }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
+    )
+
+    try {
+      // GATEWAY on: the base URL is stamped; the session token (KORTIX_TOKEN) is
+      // the gateway credential, so no separate LLM key exists.
+      const on = await app.request('/kortix/env', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          revision: 'rev-on',
+          env: {},
+          names: [],
+          refreshModels: true,
+          llmGatewayEnabled: true,
+          llmGatewayBaseUrl: 'https://api.kortix.test/v1/llm',
+        }),
+      })
+      expect(on.status).toBe(200)
+      expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
+      expect(process.env.KORTIX_LLM_API_KEY).toBeUndefined()
+
+      // Gateway mode is the ONLY mode. `llmGatewayEnabled: false` is what an
+      // OLDER API could still send for a moment during a mixed-version rollout;
+      // the daemon answers 200 (no 4xx storm) but REFUSES to leave gateway mode:
+      // the base URL stays exactly as it was.
+      const off = await app.request('/kortix/env', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          revision: 'rev-off',
+          env: {},
+          names: [],
+          refreshModels: true,
+          llmGatewayEnabled: false,
+        }),
+      })
+      expect(off.status).toBe(200)
+      expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
+    } finally {
+      for (const [k, v] of Object.entries({
+        KORTIX_LLM_BASE_URL: saved.base,
+        KORTIX_TOKEN: saved.token,
+      })) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
+  })
+
   it('does not restart opencode when env sync matches the boot revision and values', async () => {
     let restartCalls = 0
     const store = createProjectEnvStore({

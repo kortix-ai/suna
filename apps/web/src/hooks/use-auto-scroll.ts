@@ -168,6 +168,9 @@ interface UseAutoScrollReturn {
   showScrollButton: boolean;
   /** Go to the end now (instant) and follow from here. */
   scrollToBottom: () => void;
+  /** Leave the end on reader intent expressed through the UI (⌘K jump,
+   *  minimap click). `why` is mirrored to `data-follow-why`. */
+  leaveEnd: (why: string) => void;
   /** The chevron: glide to the end and follow from here. */
   smoothScrollToAbsoluteBottom: () => void;
   /**
@@ -185,7 +188,9 @@ function distanceFromEnd(el: HTMLElement): number {
   return el.scrollHeight - el.scrollTop - el.clientHeight;
 }
 
-export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {}): UseAutoScrollReturn {
+export function useAutoScroll({
+  hasContent = false,
+}: UseAutoScrollOptions = {}): UseAutoScrollReturn {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const spacerElRef = useRef<HTMLDivElement>(null);
@@ -220,6 +225,12 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
    * turn's top to the end of the content, so queued bubbles under it simply
    * take some of that room; the moment the agent reaches one (its pending
    * mark drops) it becomes the anchor and the viewport shifts to it.
+   *
+   * Under the VIRTUAL timeline list only the turns near the viewport are in
+   * the DOM, so `[data-turn-id]` returns a handful of elements — and the list
+   * PINS the last turn, the working turn and every pending / interrupted
+   * bubble (`pinnedTurnIndexes`, timeline-virtual.ts), so the anchor turn this
+   * query looks for is always mounted. Nothing here reads the virtualizer.
    */
   const sizeRoom = useCallback((): { room: number; anchorChanged: boolean } => {
     const el = scrollRef.current;
@@ -463,6 +474,12 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
     };
   }, [goToEnd, hasContent, setFollow]);
 
+  /** Reader intent expressed through the UI rather than a wheel/touch/key —
+   *  a ⌘K jump or a minimap click. Under the virtual list the target mounts
+   *  on the way (a layout change) and FACT 2 would put a following viewport
+   *  straight back at the end, so the jump leaves the end explicitly. */
+  const leaveEnd = useCallback((why: string) => setFollow(false, why), [setFollow]);
+
   return {
     scrollRef,
     contentRef,
@@ -472,5 +489,6 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
     smoothScrollToAbsoluteBottom,
     anchorTurn,
     startAtTop,
+    leaveEnd,
   };
 }

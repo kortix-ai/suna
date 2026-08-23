@@ -69,18 +69,18 @@ describe('LLM provider modal shell', () => {
   });
 
   /**
-   * The dialog's tabs come from `QUICK_LLM_TABS` — a slice of the page's seven,
+   * The dialog's tabs come from `QUICK_LLM_TABS` — a slice of the page's six,
    * shipped by the page's own module. It cannot name a tab the page does not
    * have, and it cannot relabel one.
    */
-  test('its tabs are the page’s first three, by reference not by copy', () => {
+  test('its tabs are the page’s first two, by reference not by copy', () => {
     expect(modalSource).toContain('tabs={QUICK_LLM_TABS}');
-    expect(QUICK_LLM_TABS).toEqual(LLM_TABS.slice(0, 3));
-    expect(QUICK_LLM_TABS.map((t) => t.id)).toEqual(['providers', 'models', 'custom']);
-    expect(QUICK_LLM_TABS.map((t) => t.label)).toEqual(['Providers', 'Models', 'Custom']);
+    expect(QUICK_LLM_TABS).toEqual(LLM_TABS.slice(0, 2));
+    expect(QUICK_LLM_TABS.map((t) => t.id)).toEqual(['providers', 'models']);
+    expect(QUICK_LLM_TABS.map((t) => t.label)).toEqual(['Providers', 'Models']);
     // Gateway / Routing / Costs / Logs are project administration and stay on
     // the page, which has the width and height for a log table.
-    for (const pageOnly of LLM_TABS.slice(3)) {
+    for (const pageOnly of LLM_TABS.slice(2)) {
       expect(QUICK_LLM_TABS).not.toContainEqual(pageOnly);
     }
   });

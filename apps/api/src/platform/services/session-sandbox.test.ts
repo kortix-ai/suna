@@ -37,6 +37,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realComputeMetering from '../../billing/services/compute-metering';
+import * as realEntitlements from '../../billing/services/entitlements';
 import * as realAgents from '../../projects/agents';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
 import * as realProviderTransitionStore from '../../projects/provider-transition/provider-transition-store';
@@ -107,6 +108,9 @@ let agentGrantError: Error | null = null;
 const testConfig = {
   ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
   KORTIX_URL: 'http://localhost:8008',
+  // The /v1/llm kill switch. Off here on purpose: it must not change what a
+  // sandbox receives (see the gateway-mode test below).
+  LLM_GATEWAY_ENABLED: false,
   LLM_GATEWAY_PROXY_PORT: undefined,
   LLM_GATEWAY_PROXY_TARGET: undefined,
   LLM_GATEWAY_BASE_URL: undefined,
@@ -353,9 +357,13 @@ mock.module('../../repositories/api-keys', () => ({
   createApiKey: async (_opts: unknown) => ({ secretKey: 'sbx-key-1' }),
 }));
 
+// Flip to make the connector-token mint fail — the ONE way a session could
+// boot without KORTIX_LLM_* (see the gateway-mode-only test below).
+let accountTokenFails = false;
 mock.module('../../repositories/account-tokens', () => ({
   createAccountToken: async (opts: Record<string, unknown>) => {
     accountTokenCreateCalls.push(opts);
+    if (accountTokenFails) throw new Error('account_tokens insert failed (simulated)');
     return { secretKey: 'exec-tok-1' };
   },
 }));
@@ -367,8 +375,11 @@ mock.module('../../repositories/service-accounts', () => ({
   },
 }));
 
-mock.module('../../shared/account-limits', () => ({
-  accountEntitledToLlmGateway: async (_accountId: string) => false,
+// Gateway mode is the only mode: the managed-model entitlement must NOT gate
+// KORTIX_LLM_* injection. Mock it false to prove provisioning never consults it.
+mock.module('../../billing/services/entitlements', () => ({
+  ...realEntitlements,
+  accountMayUseManagedModels: async (_accountId: string) => false,
 }));
 
 mock.module('../../projects/triggers', () => ({
@@ -385,10 +396,6 @@ mock.module('../../projects/agents', () => ({
     if (agentGrantError) throw agentGrantError;
     return null;
   },
-}));
-
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (_metadata: unknown) => false,
 }));
 
 mock.module('../../shared/session-failure-notifier', () => ({
@@ -408,6 +415,7 @@ function waitFor(setResolver: (resolve: () => void) => void, timeoutMs = 2000): 
 }
 
 beforeEach(() => {
+  accountTokenFails = false;
   updateCalls = [];
   scenario = {
     archiveBeforeFinish: false,
@@ -471,6 +479,18 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await expect(provisionSessionSandbox(baseOpts())).rejects.toThrow('manifest unavailable');
     expect(accountTokenCreateCalls).toHaveLength(0);
     expect(providerCreateCalls).toBe(0);
+
+    // Gateway mode is the only mode, so "no grant" is "no session token": the
+    // same fail-closed path as a mint failure — the row is marked `error` with
+    // a user-visible reason that names the cause, and the typed error is thrown.
+    const errorRow = updateCalls.find(
+      (c) => c.table === sessionSandboxes && c.updates.status === 'error',
+    );
+    expect(errorRow).toBeDefined();
+    expect(errorRow?.updates.metadata).toMatchObject({
+      initStatus: 'failed',
+      errorMessage: expect.stringMatching(/manifest unavailable/),
+    });
   });
 
   test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {
@@ -522,6 +542,57 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(envVars).not.toHaveProperty('KORTIX_LLM_AI_SDK_NATIVE');
   });
 
+  test('gateway mode is the only mode: KORTIX_LLM_BASE_URL is always injected next to the session token, independent of the kill switch, entitlement, or a stale project override', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    // LLM_GATEWAY_ENABLED=false (testConfig), accountMayUseManagedModels → false
+    // (mock above), and a stale `experimental.llm_gateway:false` override on the
+    // project. None of the three may strip the gateway env.
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      projectMetadata: { experimental: { llm_gateway: false } },
+    } as unknown as Parameters<typeof provisionSessionSandbox>[0]);
+    await opened;
+
+    expect(providerCreateOpts).toHaveLength(1);
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_TOKEN).toBe('exec-tok-1');
+    // No separate LLM key: the gateway authenticates the session token itself.
+    expect(envVars).not.toHaveProperty('KORTIX_LLM_API_KEY');
+    expect(envVars.KORTIX_LLM_BASE_URL).toBe('http://localhost:8008/v1/llm');
+
+    // The persisted sandbox config carries the service key only — there is no
+    // per-sandbox "gateway mode" bit to read back because there is no other mode.
+    const finishCall = updateCalls.find(
+      (c) => c.table === sessionSandboxes && 'externalId' in c.updates && 'config' in c.updates,
+    );
+    expect(finishCall).toBeTruthy();
+    expect(finishCall?.updates.config).toEqual({ serviceKey: 'exec-tok-1' });
+  });
+
+  test('no connector token → provisioning FAILS CLOSED: row marked error, caller gets a typed throw, no provider create', async () => {
+    // Gateway mode is the only mode. A box without KORTIX_LLM_* has no model
+    // access and rejects every later env push (daemon: 'KORTIX_TOKEN is
+    // unavailable') — a dead session that LOOKS provisioned. The connector
+    // token is therefore a hard prerequisite, not best-effort.
+    accountTokenFails = true;
+    await expect(provisionSessionSandbox(baseOpts())).rejects.toThrow(/connector token/i);
+
+    const errorRow = updateCalls.find(
+      (c) => c.table === sessionSandboxes && c.updates.status === 'error',
+    );
+    expect(errorRow).toBeDefined();
+    expect(errorRow?.updates.metadata).toMatchObject({
+      initStatus: 'failed',
+      errorMessage: expect.stringMatching(/session credential/i),
+    });
+    // Never reached the provider: no sandbox was created for a session that
+    // could not have worked.
+    expect(providerCreateCalls).toBe(0);
+  });
+
   test('injects one session credential under one canonical environment name', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
@@ -562,6 +633,49 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     } finally {
       delete (testConfig as Record<string, unknown>).KORTIX_INSTANCE_ID;
     }
+  });
+
+  test('stamps metadata.kortixUrl = KORTIX_URL (the origin KORTIX_LLM_BASE_URL was derived from) on the row it creates, and the finish write keeps it', async () => {
+    // Gateway-URL convergence (projects/lib/gateway-url-convergence.ts): the
+    // stamp is what lets the API, after a KORTIX_URL rotation, find the boxes
+    // that still point at the dead gateway URL and re-push the live one.
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect((finishCall?.updates.metadata as Record<string, unknown>).kortixUrl).toBe(
+      'http://localhost:8008',
+    );
+  });
+
+  test('the provider-loss reclaim stamps metadata.kortixUrl too (the row is re-homed to this API origin)', async () => {
+    identityConflict = true;
+    recoveryPlaceholder = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const claim = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes &&
+        call.updates.status === 'provisioning' &&
+        'config' in call.updates,
+    );
+    expect(claim).toBeDefined();
+    const merged = dialect.sqlToQuery(claim!.updates.metadata as Parameters<typeof dialect.sqlToQuery>[0]);
+    const stamp = merged.params.find(
+      (param) => typeof param === 'string' && param.includes('"kortixUrl"'),
+    ) as string | undefined;
+    expect(stamp).toBeDefined();
+    expect(JSON.parse(stamp!)).toMatchObject({ kortixUrl: 'http://localhost:8008' });
   });
 
   test('no KORTIX_INSTANCE_ID → no instanceId stamp (deployed environments are untouched)', async () => {

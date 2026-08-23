@@ -178,18 +178,6 @@ export function wsDomain(url: string): string {
   }
 }
 
-/** Registrable domain for grouping subdomains (e.g. photos.google.com → google.com). */
-export function wsRootDomain(url: string): string {
-  try {
-    const hostname = new URL(url).hostname.replace(/^www\./, '');
-    const parts = hostname.split('.');
-    if (parts.length <= 2) return hostname;
-    return parts.slice(-2).join('.');
-  } catch {
-    return wsDomain(url);
-  }
-}
-
 export { faviconUrlForUrl as wsFavicon } from '@/lib/favicon';
 
 export interface ScrapeResult {

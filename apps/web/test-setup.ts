@@ -11,3 +11,6 @@ process.env.NEXT_PUBLIC_BACKEND_URL ||= 'http://localhost:8008/v1';
 process.env.NEXT_PUBLIC_APP_URL ||= 'http://localhost:3000';
 process.env.NEXT_PUBLIC_WEBHOOK_BASE_URL ||= 'http://localhost:8008';
 process.env.NEXT_PUBLIC_BILLING_ENABLED ||= 'false';
+
+// Module marker so the transcript bench can `import()` this preload.
+export {};

@@ -70,9 +70,7 @@ import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import {
   type ProjectSecret,
@@ -83,7 +81,6 @@ import {
   type SecretEgressPolicy,
   type SecretInjectionSlot,
   deleteProjectSecret,
-  getProjectDetail,
   grantSecretToAgent,
   listConnectors,
   listProjectSecrets,
@@ -190,12 +187,6 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const { navigate } = useSettingsNav();
   const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
   // Network-Enforced Secrets (`secrets_egress`) is experimental and off by
   // default. When off, the picker offers only Environment variable and
   // Disabled — a new secret loads its real value into the sandbox.
@@ -231,7 +222,6 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const missingRequired = allRows.filter((r) => r.requirement === 'required' && !r.configured);
 
   const [query, setQuery] = useState('');
-  const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogRow, setDialogRow] = useState<SecretRow | null>(null);
   const [deleteRow, setDeleteRow] = useState<SecretRow | null>(null);
@@ -262,13 +252,9 @@ export function SecretsView({ projectId }: { projectId: string }) {
     setDialogRow(row);
     setDialogOpen(true);
   };
-  const openProviderManagement = () => {
-    if (llmGatewayEnabled) {
-      navigate('llm-providers');
-    } else {
-      setProviderModalOpen(true);
-    }
-  };
+  // Gateway mode is the only mode: provider keys live on the Models page, so
+  // "Manage providers" navigates there — no in-page modal branch.
+  const openProviderManagement = () => navigate('llm-providers');
 
   /** The list resolved. Neither header control means anything before it does. */
   const showContent = !secretsQuery.isLoading && !secretsQuery.isError;
@@ -425,12 +411,6 @@ export function SecretsView({ projectId }: { projectId: string }) {
           </>
         )}
       </div>
-      <ProjectProviderModal
-        projectId={projectId}
-        open={providerModalOpen}
-        onOpenChange={setProviderModalOpen}
-        canWrite={canManage}
-      />
       <ConfirmDialog
         open={deleteRow !== null}
         onOpenChange={(open) => {

@@ -55,7 +55,6 @@ export const FeatureFlagMapSchema = z.object({
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
   teams: z.boolean(),
-  llm_gateway: z.boolean(),
   review_center: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),

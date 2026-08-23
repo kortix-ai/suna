@@ -42,6 +42,7 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { trackRootTurnSession, trackedRootTurnSessions } from './turn-tracking'
 import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
@@ -66,7 +67,12 @@ import {
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
-import { opencodeDeliveryInFlight, opencodeTurnInFlight } from './opencode-turn-state'
+import {
+  opencodeDeliveryInFlight,
+  opencodeSessionStatuses,
+  opencodeTurnInFlight,
+  sessionStatusInFlight,
+} from './opencode-turn-state'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
@@ -692,6 +698,15 @@ async function startSessionRuntime(
     void reconcileInitialTurnAcceptance()
     void reconcileFinishedFirstTurn(opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
+    )
+    // EVERY root a turn was observed on, not only the boot-pinned one. An
+    // OpenCode replacement (verified reload after a pre-prompt env push,
+    // /kortix/refresh, a crash respawn) drops this subscription; a short turn
+    // that starts and ends before the re-subscribe emits its session.idle into
+    // the gap. Live 2026-08-23, session eddd499a: 80+s of "Gathering thoughts"
+    // on a turn that had answered in 5s. Same dedup, same idempotence.
+    void reconcileFinishedTrackedTurns(opencode, cfg).catch((err) =>
+      logger.warn('[opencode-events] tracked-turn reconcile failed', { err: (err as Error).message }),
     )
   }
   const eventHandlers = {
@@ -2428,8 +2443,13 @@ async function relayQuestionToApi(
   // `question` tool" — the tool park-and-restore exists to make reliable.
   //
   // If the box is parked while the question is still open, the control plane
-  // has it (persisted above) and POST /sessions/:id/question delivers the answer
-  // as a follow-up turn. Nothing is lost by leaving this one blocked.
+  // has it (persisted above). There is no longer a control-plane answer route:
+  // GET/POST /v1/projects/:projectId/sessions/:sessionId/question was removed
+  // from apps/api (routes/r4.ts), so the persisted row is a record of the ask,
+  // not a delivery channel. The user answers by sending a new prompt to the
+  // resumed session. Leaving this one blocked is still correct: the box is
+  // parked on schedule and the UI keeps answering over opencode's own SSE while
+  // it is alive.
   if (!slackRelayContext()) {
     logger.info('[opencode-events] question persisted; left open for the UI', {
       requestId: req.id,
@@ -2523,6 +2543,10 @@ export async function relayTurnBeginToApi(
   turnBeginRelaysInFlight.add(opencodeSessionId)
   try {
     if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
+    // A root a turn is running on: the reconnect reconcile asks about it from
+    // now on (turn-tracking.ts). Before the dedup below, so a turn whose begin
+    // was already relayed is still tracked after a daemon-side reset.
+    trackRootTurnSession(opencodeSessionId, 'turn_begin_relay')
     // The newest USER message names the turn that is running.
     let newestUserId: string | null = null
     try {
@@ -2831,9 +2855,11 @@ async function readRootTurnState(
 export async function reconcileFinishedFirstTurn(
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Config,
+  /** The boot-pinned root. Read from the pin file by default; tests inject it. */
+  pinnedRootId: string | null = readPinnedOpencodeSessionId(),
 ): Promise<void> {
   if (!sandboxRelayContext()) return
-  const rootId = readPinnedOpencodeSessionId()
+  const rootId = pinnedRootId
   if (!rootId) return
   const turn = await readRootTurnState(rootId, opencode, cfg)
   // Only reconcile a turn that has actually completed; a still-running turn will
@@ -2841,6 +2867,53 @@ export async function reconcileFinishedFirstTurn(
   if (turn.completedAt == null) return
   logger.info('[opencode-events] reconciling turn that completed before subscribe', { rootId, completedAt: turn.completedAt })
   await relayTurnEndToApi(rootId, 'idle', opencode, cfg)
+}
+
+/**
+ * Reconcile EVERY root this daemon observed a turn on (turn-tracking.ts), on
+ * each /event (re)subscribe and on the periodic reconcile tick.
+ *
+ * The pinned-root reconcile above covers the boot-claimed first turn. This one
+ * covers the live-session twin of the same race: an OpenCode replacement drops
+ * the subscription, and a turn that starts AND finishes before the loop is
+ * subscribed to the new process emits its only `session.idle` into the gap.
+ * Observed 2026-08-23 (session eddd499a, first prompt "yo?!"): a pre-prompt
+ * env push replaced OpenCode; the prompt reached the new process first; the
+ * answer took ~5s; no `end` was ever relayed; the ledger turn stayed `active`
+ * and the web showed "Gathering thoughts" for 80+s.
+ *
+ * Per tracked root, two local reads decide:
+ *   - `/session/status` — BUSY or RETRY: the turn is live and its own idle
+ *     will relay it; skip. Unreadable: skip — never end on silence.
+ *   - the transcript — a completed newest assistant reply is what a synthetic
+ *     `idle` relays; no completed reply means nothing is over. Named by the
+ *     reply's `parentID`, so the API closes exactly that message's turn.
+ *
+ * Idempotent: `relayTurnEndToApi` dedups per completed turn, so the natural
+ * idle (if it was not dropped), the reconnect, and every 30-second tick
+ * collapse to one relay per completed turn.
+ */
+export async function reconcileFinishedTrackedTurns(
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+  sessionIds: string[] = trackedRootTurnSessions(),
+): Promise<void> {
+  if (sessionIds.length === 0) return
+  if (!sandboxRelayContext()) return
+  const statuses = await opencodeSessionStatuses(opencode.getInternalUrl(), cfg.workspace)
+  // Unreadable status is not "idle". Leave every root to its live stream.
+  if (statuses === null) return
+  for (const rootId of sessionIds) {
+    const busy = sessionStatusInFlight(statuses, rootId)
+    if (busy !== false) continue
+    const turn = await readRootTurnState(rootId, opencode, cfg)
+    if (turn.completedAt == null) continue
+    logger.info('[opencode-events] reconciling tracked root that completed without a subscribed idle', {
+      rootId,
+      completedAt: turn.completedAt,
+    })
+    await relayTurnEndToApi(rootId, 'idle', opencode, cfg)
+  }
 }
 
 // Is this opencode session the ROOT turn session (not a subagent child)? A root

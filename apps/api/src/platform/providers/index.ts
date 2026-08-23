@@ -353,8 +353,8 @@ export interface SandboxProvider {
  *
  * FLOOR 60. Never below the value this function returned before the split, so a
  * mis-set env var cannot resurrect the mid-work-kill class. Callers needing a
- * deliberately short timer pass an explicit override instead (the trigger path
- * does: KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES). The floor is also what makes
+ * deliberately short timer pass an explicit override instead; no caller does so
+ * today (the trigger path uses the default). The floor is also what makes
  * the required ordering `billingLivenessGraceMinutes() <= this` structural
  * rather than coincidental — the billing grace floors at the same 60 and only
  * leaves that floor above a 30-minute idle window, which no environment sets.

@@ -77,7 +77,6 @@ import { ProviderConnect } from '@/features/providers/provider-connect';
 import { ModelSelector } from '@/features/session/model-selector';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { GatewayAccessTab } from '@/features/workspace/customize/sections/gateway-access-tab';
-import { CustomProviderPanel } from '@/features/workspace/customize/sections/llm-provider/custom-provider-panel';
 import { ModelsTab } from '@/features/workspace/customize/sections/llm-provider/models-tab';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
@@ -94,7 +93,6 @@ export const MODELS_PAGE_DESCRIPTION = 'Which providers and models this project 
 export type LlmTab =
   | 'providers'
   | 'models'
-  | 'custom'
   | 'gateway'
   | 'routing'
   | 'overview'
@@ -111,10 +109,10 @@ export const LLM_TABS: LlmTabEntry[] = [
   // way; see `gateway-access-tab.tsx`.
   { id: 'providers', label: 'Providers' },
   { id: 'models', label: 'Models' },
-  // The custom-provider form used to be section 4 of the Providers tab. It
-  // moved to its own tab so the screen everyone uses to paste a key stops
-  // ending in a form almost nobody fills — see `custom-provider-panel.tsx`.
-  { id: 'custom', label: 'Custom' },
+  // There is no `custom` tab. It generated an OpenCode `provider:{...}` block
+  // for `.opencode/opencode.jsonc` — an OpenCode-native provider, which no
+  // session can use: OpenCode sees exactly one provider, `kortix`, and the
+  // daemon strips provider keys from its env.
   // The key you hand OUT, and the endpoints it opens. Two tabs once, four
   // apart, one of them sharing the other's label.
   { id: 'gateway', label: 'Gateway' },
@@ -128,7 +126,7 @@ export const LLM_TABS: LlmTabEntry[] = [
 ];
 
 /**
- * The three tabs the QUICK version carries — `ProjectProviderModal`, the
+ * The two tabs the QUICK version carries — `ProjectProviderModal`, the
  * dialog the session model picker and the Secrets tab open.
  *
  * It is a slice of `LLM_TABS`, not a second list: same ids, same labels, same
@@ -138,13 +136,13 @@ export const LLM_TABS: LlmTabEntry[] = [
  * you hand out), Routing, Costs and Logs. Those live on the full page, which
  * has the width and the height for a log table.
  */
-export type QuickLlmTab = 'providers' | 'models' | 'custom';
+export type QuickLlmTab = 'providers' | 'models';
 
 export const QUICK_LLM_TABS: LlmTabEntry[] = LLM_TABS.filter((t) =>
-  (['providers', 'models', 'custom'] as string[]).includes(t.id),
+  (['providers', 'models'] as string[]).includes(t.id),
 );
 
-/** True when `tab` is one of the quick version's three. */
+/** True when `tab` is one of the quick version's two. */
 export function isQuickLlmTab(tab: string): tab is QuickLlmTab {
   return QUICK_LLM_TABS.some((t) => t.id === tab);
 }
@@ -284,8 +282,8 @@ export function LlmSections({
 }: {
   projectId: string;
   tab: LlmTab;
-  /** Sections that hand the reader on — the custom form's "Done", the gateway
-   *  tab's "view models" — move the host's tab, so it has to come back up. */
+  /** Sections that hand the reader on — the gateway tab's "view models" —
+   *  move the host's tab, so it has to come back up. */
   onTabChange: (next: LlmTab) => void;
   canWrite: boolean;
   /** Gates the provider list's fetch. False while the host is closed. */
@@ -311,16 +309,6 @@ export function LlmSections({
           provider modal's own "Models" tab. Flattened to a sibling here so it
           keeps a home now that `ProviderConnect` has no tabs of its own. */}
       {tab === 'models' && <ModelsTab projectId={projectId} />}
-      {/* A saved custom provider gets a key like any other and a row on the
-          provider list, so a "Done" that leaves you on the form you just
-          submitted is not done. */}
-      {tab === 'custom' && (
-        <CustomProviderPanel
-          projectId={projectId}
-          canWrite={canWrite}
-          onDone={() => onTabChange('providers')}
-        />
-      )}
       {tab === 'gateway' && (
         <GatewayAccessTab
           projectId={projectId}

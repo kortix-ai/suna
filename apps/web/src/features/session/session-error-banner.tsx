@@ -10,15 +10,12 @@ import {
 } from '@/components/ai-elements/checkpoint';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import Loading from '@/components/ui/loading';
+import type { GatewayTurnError } from '@/features/session/turn/gateway-error';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
-import {
-  CreditCardIcon,
-  LightningIcon,
-  WarningCircleIcon,
-} from '@phosphor-icons/react';
+import { CreditCardIcon, LightningIcon, WarningCircleIcon } from '@phosphor-icons/react';
 
 // ============================================================================
 // Insufficient-credits detection — upstream 402 from /v1/router/chat/completions
@@ -163,6 +160,15 @@ interface TurnErrorDisplayProps {
    */
   errorDetails?: TurnErrorGatewayDetails | null;
   /**
+   * `classifyGatewayTurnError` over the raw message-level error behind
+   * `errorText` (`turn/gateway-error.ts`). `kind: 'gateway-unreachable'` — the
+   * sandbox could not reach the Kortix LLM gateway (a rotated KORTIX_URL, a dead
+   * tunnel, a 530 from the edge) — renders the human row instead of the raw
+   * provider string; the raw message stays behind a "Show error" disclosure.
+   * Every other kind renders exactly as without this prop.
+   */
+  gatewayError?: GatewayTurnError | null;
+  /**
    * Typed send failure from the SDK's `classifySendError` (send/command/reply
    * catch paths). When present, billing-vs-runtime routing reads `.kind`
    * (and `.billing.detail.code` for the credits-vs-usage-limit card) instead
@@ -208,6 +214,7 @@ interface TurnErrorDisplayProps {
 export function TurnErrorDisplay({
   errorText,
   errorDetails,
+  gatewayError,
   error,
   isAbort,
   abortReason,
@@ -255,6 +262,32 @@ export function TurnErrorDisplay({
       return <UsageLimitCard errorText={text} className={className} />;
     }
     return <InsufficientCreditsCard errorText={text} className={className} />;
+  }
+
+  // The sandbox never reached the Kortix gateway (turn-level path only; the
+  // classifier read the raw `info.error`). Say what happened and what to do
+  // instead of OpenCode's `Cannot connect to API: …` — the raw message stays
+  // one disclosure away for debugging.
+  if (gatewayError?.kind === 'gateway-unreachable') {
+    return (
+      <div className={className}>
+        <Checkpoint>
+          <CheckpointIcon>
+            <WarningCircleIcon className="text-muted-foreground size-4 shrink-0" />
+          </CheckpointIcon>
+          <CheckpointLabel className="overflow-visible whitespace-normal">
+            {gatewayError.title}
+          </CheckpointLabel>
+        </Checkpoint>
+        <p className="text-muted-foreground mt-1 px-1 text-xs text-pretty">{gatewayError.detail}</p>
+        {gatewayError.raw ? (
+          <details className="text-muted-foreground mt-1 px-1 text-xs">
+            <summary className="cursor-pointer select-none">Show error</summary>
+            <code className="break-all">{gatewayError.raw}</code>
+          </details>
+        ) : null}
+      </div>
+    );
   }
 
   // Insufficient credits → actionable card with buy/auto-topup buttons.
@@ -326,8 +359,7 @@ export function SessionRetryDisplay({
         </ItemMedia>
         <ItemContent>
           <ItemTitle className="tabular-nums">
-            {title}{' '}
-            <span className="text-muted-foreground font-normal">#{attempt}</span>
+            {title} <span className="text-muted-foreground font-normal">#{attempt}</span>
           </ItemTitle>
           <ItemDescription className={cn('text-pretty', !details && 'line-clamp-2')}>
             {message}

@@ -316,12 +316,6 @@ mock.module('../platform/services/provider-balancer', () => ({
   selectProvider: async () => 'daytona',
 }));
 
-mock.module('../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (metadata: unknown) =>
-    (metadata as { experimental?: { llm_gateway?: unknown } } | null)?.experimental
-      ?.llm_gateway === true,
-}));
-
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
@@ -1368,7 +1362,6 @@ describe('git-backed triggers — runtime fire paths', () => {
     modelDefaults.projects[PROJECT_ID] = 'glm-5.2';
     projectRow.metadata = {
       default_agent: 'asana-refresher',
-      experimental: { llm_gateway: true },
     };
     seedManifest(cronEntry({
       slug: 'daily',

@@ -4,7 +4,6 @@ import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import type { ProviderName } from '../../platform/providers';
 import {
@@ -36,7 +35,7 @@ export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): strin
   return resolveLlmGatewayBaseUrl(config.KORTIX_URL);
 }
 
-const SANDBOX_SERVICE_PORT = 8000;
+export const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
 const ENV_PUSH_TIMEOUT_MS = 15_000;
 
@@ -160,7 +159,8 @@ export function __resetPromptModelSignatureCacheForTests(): void {
 function promptModelSignature(input: {
   revision: string;
   capabilitiesJson: string;
-  llmGatewayEnabled: boolean;
+  /** Still per-provider (origin) and per-catalog-revision, hence in the digest.
+   *  Gateway mode itself is constant (always on) and is not an input. */
   llmGatewayBaseUrl?: string;
   opencodeEnv?: Record<string, string | null>;
 }): string {
@@ -170,7 +170,6 @@ function promptModelSignature(input: {
   return JSON.stringify([
     input.revision,
     input.capabilitiesJson,
-    input.llmGatewayEnabled,
     input.llmGatewayBaseUrl ?? '',
     opencodeEnvEntries,
   ]);
@@ -478,7 +477,13 @@ function isSecureOrPrivateTarget(rawUrl: string): boolean {
   return false; // plain http to a public host — refuse to send secrets in cleartext
 }
 
-async function postEnvToDaemon(args: {
+/**
+ * The one `POST /kortix/env` every env-push path shares — per-prompt sync,
+ * secret fan-out, model/scope/agent-config pushes and boot-time gateway-URL
+ * convergence (`gateway-url-convergence.ts`). Exported for that last caller;
+ * it is not a public API beyond this directory.
+ */
+export async function postEnvToDaemon(args: {
   previewUrl: string;
   providerHeaders: Record<string, string>;
   serviceKey: string;
@@ -508,6 +513,11 @@ async function postEnvToDaemon(args: {
    * `null` = the box did not say (older daemon, or no reload happened).
    */
   opencodeTurnEnded: boolean | null;
+  /**
+   * Is the daemon's OpenCode /event subscription live on the process serving
+   * after the reload? `null` = no reload, or an older daemon that does not say.
+   */
+  eventSubscriptionLive: boolean | null;
 }> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
@@ -557,6 +567,7 @@ async function postEnvToDaemon(args: {
     opencode?: unknown;
     opencode_reload?: unknown;
     opencode_turn_ended?: unknown;
+    event_subscription_live?: unknown;
   } | null;
   const expectedExported = Object.keys(args.snapshot.env).length;
   if (args.requireAgentEnvProof) {
@@ -583,6 +594,13 @@ async function postEnvToDaemon(args: {
         : null,
     opencodeTurnEnded:
       typeof body?.opencode_turn_ended === 'boolean' ? body.opencode_turn_ended : null,
+    // Whether the daemon's OpenCode /event subscription is live on the process
+    // serving AFTER the reload (the daemon waits ≤2s for it on a restart before
+    // answering — routes/env.ts). `false` after a restart names the exact
+    // window in which a prompt forwarded now can finish with no `session.idle`
+    // listener (2026-08-23, session eddd499a). Older daemons omit it: null.
+    eventSubscriptionLive:
+      typeof body?.event_subscription_live === 'boolean' ? body.event_subscription_live : null,
     revision: typeof body?.revision === 'string' ? body.revision : args.snapshot.revision,
     exported: typeof body?.exported === 'number' ? body.exported : expectedExported,
     managed: typeof body?.managed === 'number' ? body.managed : null,
@@ -701,11 +719,14 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   lap('arm');
-  const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
-  lap('gateway-flag');
-  const llmGatewayBaseUrl = llmGatewayEnabled
-    ? llmGatewayBaseUrlForProvider(args.providerName)
-    : undefined;
+  // Gateway mode is the only mode: every push re-stamps mode ON and the base
+  // URL for THIS provider's origin. The daemon honours `llmGatewayEnabled:true`
+  // on every build, so a box that booted before this rule converges on its
+  // next prompt. Native provider keys never reach the sandbox env at all
+  // (`materializeSecretDelivery` withholds gateway-managed credentials
+  // server-side), so no per-push deny list travels with the mode.
+  const llmGatewayEnabled = true;
+  const llmGatewayBaseUrl = llmGatewayBaseUrlForProvider(args.providerName);
   // Only ask the daemon to reload when something that could move ITS
   // `result.changed || opencodeEnvChanged` gate has actually changed since the
   // last time THIS process pushed to THIS sandbox. The daemon already no-ops a
@@ -718,7 +739,6 @@ export async function syncSandboxEnvForPrompt(args: {
   const signature = promptModelSignature({
     revision: snapshot.revision,
     capabilitiesJson: snapshot.capabilitiesJson,
-    llmGatewayEnabled,
     llmGatewayBaseUrl,
     opencodeEnv: args.opencodeEnv,
   });
@@ -731,12 +751,10 @@ export async function syncSandboxEnvForPrompt(args: {
   ) {
     // Byte-identical to what this process pushed to this box moments ago:
     // nothing to say, and the daemon would no-op it. Skip the round-trip.
-    await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
-    lap('mark');
     console.log(`[env-sync] timing sandbox=${args.externalId} push=skipped ${JSON.stringify(timing)}`);
     return;
   }
-  const { opencodeState } = await postEnvToDaemon({
+  const { opencodeState, opencodeReload, eventSubscriptionLive } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
     providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
@@ -746,6 +764,13 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayEnabled,
     llmGatewayBaseUrl,
   });
+  if ((opencodeReload === 'restarted' || opencodeReload === 'disposed') && eventSubscriptionLive === false) {
+    console.warn(
+      `[env-sync] opencode restarted by prompt env-sync but the daemon's /event subscription ` +
+        `was not live on the new process within its bound; the prompt is forwarded anyway and the ` +
+        `daemon's reconnect reconcile + the /turn read-path reconcile are the backstops session=${args.sessionId}`,
+    );
+  }
   // Remember only AFTER a successful push. A throw below (network/HTTP
   // failure) must leave the memo alone so the next prompt retries with
   // `refreshModels: true` again instead of assuming the failed attempt landed.
@@ -767,9 +792,10 @@ export async function syncSandboxEnvForPrompt(args: {
         `(ready=${ready}) session=${args.sessionId}`,
     );
   }
-  await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
-  lap('mark');
-  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ${JSON.stringify(timing)}`);
+  console.log(
+    `[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ` +
+      `reload=${opencodeReload ?? 'none'} eventSubscriptionLive=${eventSubscriptionLive ?? 'n/a'} ${JSON.stringify(timing)}`,
+  );
 }
 
 /**
@@ -957,93 +983,7 @@ async function runProjectSecretPropagation(
   }
 }
 
-export async function propagateLlmGatewayModeToActiveSandboxes(
-  projectId: string,
-  enabled: boolean,
-): Promise<void> {
-  try {
-    const rows = await db
-      .select({
-        externalId: sessionSandboxes.externalId,
-        sessionId: sessionSandboxes.sessionId,
-        provider: sessionSandboxes.provider,
-        config: sessionSandboxes.config,
-      })
-      .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
-
-    const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
-    if (targets.length === 0) return;
-
-    // Computed PER ROW (not once, hoisted) — a project's active sandboxes can
-    // span more than one provider (mid-migration, failover), and each needs
-    // the base URL resolved onto ITS OWN provider's origin.
-    await runBounded(targets, FANOUT_CONCURRENCY, async (row) => {
-      const rowConfig = (row.config || {}) as Record<string, unknown>;
-      const serviceKey = typeof rowConfig.serviceKey === 'string' ? rowConfig.serviceKey : null;
-      if (!serviceKey) return;
-      try {
-        const snapshot =
-          (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
-          emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
-        const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
-        await postEnvToDaemon({
-          previewUrl: url,
-          providerHeaders: headers,
-          serviceKey,
-          snapshot,
-          refreshModels: true,
-          llmGatewayEnabled: enabled,
-          llmGatewayBaseUrl: enabled ? llmGatewayBaseUrlForProvider(row.provider as ProviderName) : undefined,
-        });
-        await markSandboxLlmGatewayMode(row.sessionId, enabled);
-      } catch (err) {
-        console.warn(
-          `[env-sync] LLM gateway mode push failed for sandbox ${row.externalId}:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-    });
-  } catch (err) {
-    console.warn(
-      `[env-sync] LLM gateway mode fan-out failed for project ${projectId}:`,
-      err instanceof Error ? err.message : err,
-    );
-  }
-}
-
-async function resolveProjectLlmGatewayEnabled(projectId: string): Promise<boolean> {
-  const [project] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
-  return projectLlmGatewayEnabled(project?.metadata);
-}
-
-async function markSandboxLlmGatewayMode(
-  sessionId: string,
-  enabled: boolean,
-): Promise<void> {
-  const [row] = await db
-    .select({ config: sessionSandboxes.config })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
-    .limit(1);
-  if (!row) return;
-  await db
-    .update(sessionSandboxes)
-    .set({
-      config: {
-        ...((row.config as Record<string, unknown> | null) ?? {}),
-        llmGatewayEnabled: enabled,
-      },
-      updatedAt: new Date(),
-    })
-    .where(eq(sessionSandboxes.sessionId, sessionId));
-}
-
-function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
+export function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
   return {
     env: {},
     names: [],
@@ -1053,7 +993,7 @@ function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
   };
 }
 
-async function runBounded<T>(
+export async function runBounded<T>(
   items: T[],
   limit: number,
   fn: (item: T) => Promise<void>,
@@ -1271,10 +1211,8 @@ export async function pushSessionModelToSandbox(input: {
  * Pushing here — the same pattern the `/model` PUT already uses — fixes both
  * halves: the snapshot is re-derived from the freshly-committed allowlist and
  * POSTed to the daemon, and `refreshModels: true` restarts opencode so
- * `spawnChild` re-runs `mergeProjectEnv` + `withoutDeniedProviderEnv`. The
- * LLM-gateway provider strip is re-stamped alongside (it lives in the same
- * `opencodeEnv`/`llmGatewayDenyEnv` channel), so the 42/47-vs-47/47 split
- * between the opencode process and tool shells is preserved, and revocation
+ * `spawnChild` re-runs `mergeProjectEnv`. The LLM-gateway mode + base URL are
+ * re-stamped alongside (same channel), and revocation
  * keeps working (`knownNames` is still tracked in the daemon store, so a
  * dropped secret is actively cleared on the respawn).
  *
@@ -1315,7 +1253,6 @@ export async function pushSessionScopeToSandbox(input: {
     const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
     if (!snapshot) return { applied: false, reason: 'no env snapshot' };
 
-    const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(input.projectId);
     const { url, headers } = await resolveSandboxIngress(row.externalId, {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',
@@ -1330,12 +1267,11 @@ export async function pushSessionScopeToSandbox(input: {
       // secrets shape it at spawn, not via the config file), so the respawn is
       // the load-bearing part — see the daemon-side gate in routes/env.ts.
       refreshModels: true,
-      llmGatewayEnabled,
-      llmGatewayBaseUrl: llmGatewayEnabled
-        ? llmGatewayBaseUrlForProvider(row.provider as ProviderName)
-        : undefined,
+      // Gateway mode is the only mode: re-stamp it with the snapshot so the
+      // respin cannot drop the gateway routing (see the per-prompt path).
+      llmGatewayEnabled: true,
+      llmGatewayBaseUrl: llmGatewayBaseUrlForProvider(row.provider as ProviderName),
     });
-    await markSandboxLlmGatewayMode(input.sessionId, llmGatewayEnabled);
     return { applied: true };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);

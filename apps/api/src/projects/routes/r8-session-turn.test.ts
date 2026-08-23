@@ -228,6 +228,17 @@ let capabilityCalls: Array<{ accountId: string; projectId: string; action: strin
 let visibleSessionCallerIds: Array<string | null> = [];
 
 mock.module('../../shared/db', () => ({ db: databaseMock, hasDatabase: true }));
+/** Every read-path reconcile the handler kicked off (session-lifecycle/
+ *  turn-read-reconcile.ts). Recorded, never awaited by the handler — the read
+ *  answers from the authority as it stands and the NEXT read sees the result. */
+let reconcileCalls: Array<{ box: Record<string, unknown>; turns: Array<Record<string, unknown>> }> =
+  [];
+mock.module('../session-lifecycle/turn-read-reconcile', () => ({
+  reconcileStaleTurnsOnRead: async (box: Record<string, unknown>, turns: Array<Record<string, unknown>>) => {
+    reconcileCalls.push({ box, turns });
+    return { probed: 0, ended: 0, skipped: 'none' };
+  },
+}));
 mock.module('../lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async (_c: unknown, projectId: string, action: string) => {
@@ -272,9 +283,15 @@ function getTurn(sessionId = SESSION_ID, caller?: { authType: string; sessionId?
 }
 
 /** A running box holding the given `activeTurns` entries. */
+const SANDBOX_ID = '66666666-6666-4666-8666-666666666666';
+const EXTERNAL_ID = 'ext-box-1';
+
 function runningBox(...turns: Array<ReturnType<typeof authorityTurn>>) {
   return {
     session_id: SESSION_ID,
+    sandbox_id: SANDBOX_ID,
+    provider: 'daytona',
+    external_id: EXTERNAL_ID,
     status: 'active',
     metadata: { activeTurns: Object.fromEntries(turns.map((turn) => [turn.token, turn])) },
   };
@@ -290,6 +307,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     loadProjectCalls = [];
     capabilityCalls = [];
     visibleSessionCallerIds = [];
+    reconcileCalls = [];
     loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
     visibleSession = { row: { sessionId: SESSION_ID } };
   });
@@ -676,6 +694,57 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     const body = await (await getTurn()).json();
     expect(body.last_ended.ended_at).toMatch(ISO_UTC_MS);
     expect(body.last_ended.ended_at).toBe('2026-08-17T12:34:58.250Z');
+  });
+
+  // ── Bounded server-truth reconcile on the read path ─────────────────────
+  //
+  // The web is server-truth-first: an `active` record IS "Gathering thoughts".
+  // When the daemon's turn-end relay is lost, the read path itself asks the
+  // runtime (session-lifecycle/turn-read-reconcile.ts) — fire-and-forget, so
+  // THIS read answers from the authority as it stands and the NEXT one sees the
+  // result. The route's only job here: hand the reconcile the box identity and
+  // the authority's records, and only for a running box.
+
+  test('kicks off the read-path reconcile with the box identity and the authority turns', async () => {
+    sandboxTable = [
+      runningBox(
+        authorityTurn({ token: 't-live', opencodeSessionId: 'ses_root', messageId: 'msg_1', startedAtMs: 1_755_000_000_000 }),
+      ),
+    ];
+    const response = await getTurn();
+    expect(response.status).toBe(200);
+    expect(reconcileCalls).toEqual([
+      {
+        box: { sandboxId: SANDBOX_ID, provider: 'daytona', externalId: EXTERNAL_ID },
+        turns: [
+          {
+            token: 't-live',
+            state: 'active',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_1',
+            startedAtMs: 1_755_000_000_000,
+          },
+        ],
+      },
+    ]);
+  });
+
+  test('answers from the authority as it stands — the reconcile never changes THIS response', async () => {
+    sandboxTable = [runningBox(authorityTurn({ token: 't-live' }))];
+    const body = (await (await getTurn()).json()) as { turns: Array<{ turn_token: string }> };
+    expect(body.turns.map((turn) => turn.turn_token)).toEqual(['t-live']);
+  });
+
+  test('does not kick off the reconcile when no turn is live', async () => {
+    sandboxTable = [runningBox()];
+    await getTurn();
+    expect(reconcileCalls).toEqual([]);
+  });
+
+  test('does not kick off the reconcile for a box that is no longer running', async () => {
+    sandboxTable = [{ ...runningBox(authorityTurn({ token: 't-stale' })), status: 'stopped' }];
+    await getTurn();
+    expect(reconcileCalls).toEqual([]);
   });
 
   test('carries a null end_reason and a null ended_at through as null', async () => {

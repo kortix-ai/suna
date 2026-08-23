@@ -54,14 +54,14 @@ import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
+import { ConnectorTokenUnavailableError } from '../../projects/connector-token-error';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { instanceStampMetadata } from '../../projects/instance-scope';
+import { kortixUrlStampMetadata } from '../../projects/gateway-url-stamp';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
@@ -133,10 +133,15 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
 
 /**
  * Resolve the agent's grant from the manifest's `[[agents]]` overlay, then mint
- * the per-session account token carrying it. Grant resolution is fail-closed:
- * an unreadable manifest stops provisioning instead of minting an unrestricted
- * credential. The grant is read from the default branch, so any `[[agents]]`
- * change activates only through a merged change request.
+ * the per-session account token carrying it — the sandbox's one Kortix
+ * credential (`KORTIX_TOKEN`). Grant resolution is fail-closed: an unreadable
+ * manifest THROWS and stops provisioning instead of minting an unrestricted
+ * credential. A mint failure THROWS too. Either way the caller fails
+ * provisioning closed (gateway mode is the only mode, and the gateway
+ * authenticates this token): the row is marked `error` with a user-visible
+ * reason and a typed ConnectorTokenUnavailableError carries the cause. The
+ * grant is read from the default branch, so any `[[agents]]` change activates
+ * only through a merged change request.
  */
 async function mintSessionToken(opts: {
   accountId: string;
@@ -300,8 +305,6 @@ export async function provisionSessionSandbox(opts: {
   metadata?: Record<string, unknown>;
   /** Pre-created authority for a prompt the daemon delivers during boot. */
   initialTurn?: PreparedInitialSandboxTurn | null;
-  /** Project metadata, used for per-project experimental gates. */
-  projectMetadata?: unknown;
   /** False for meta/read/runtime sessions that may not receive repository bytes. */
   allowProjectImage?: boolean;
   /**
@@ -391,7 +394,6 @@ export async function provisionSessionSandbox(opts: {
   // sandbox API key can be minted before the row lands. Previously serial
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-  const llmGatewayEnabled = projectLlmGatewayEnabled(opts.projectMetadata);
   const createOrClaimSandboxRow = async () => {
     const inserted = await db
       .insert(sessionSandboxes)
@@ -410,6 +412,10 @@ export async function provisionSessionSandbox(opts: {
           // Instance scope for background work on a shared DB — see
           // projects/instance-scope.ts. `{}` when KORTIX_INSTANCE_ID is unset.
           ...instanceStampMetadata(),
+          // The API origin this box's KORTIX_LLM_BASE_URL is derived from — see
+          // projects/gateway-url-stamp.ts. Boot-time convergence re-pushes the
+          // live gateway URL to rows whose stamp no longer matches KORTIX_URL.
+          ...kortixUrlStampMetadata(),
           ...(opts.initialTurn
             ? {
                 activeTurns: {
@@ -442,7 +448,7 @@ export async function provisionSessionSandbox(opts: {
         // out. Consume their authorization marker atomically so at most one
         // allocator can claim the row and call provider.create(). New code never
         // creates this marker because established identities are fail-closed.
-        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt') || ${JSON.stringify(instanceStampMetadata())}::jsonb`,
+        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt') || ${JSON.stringify({ ...instanceStampMetadata(), ...kortixUrlStampMetadata() })}::jsonb`,
         updatedAt: new Date(),
       })
       .where(
@@ -456,11 +462,13 @@ export async function provisionSessionSandbox(opts: {
       .returning();
   };
 
-  const [sandboxRows, sessionToken, gatewayEntitled] = await Promise.all([
+  let sessionTokenMintError: unknown = null;
+  const [sandboxRows, sessionToken] = await Promise.all([
     createOrClaimSandboxRow(),
     // Resolve the per-agent grant and mint the sole sandbox credential. Token
     // minting is fail-closed: a sandbox without its session identity cannot
-    // securely reach any Kortix service.
+    // securely reach any Kortix service. The failure is captured (not thrown
+    // here) so the row below can be marked `error` with a user-visible reason.
     mintSessionToken({
       accountId,
       userId,
@@ -468,16 +476,11 @@ export async function provisionSessionSandbox(opts: {
       sandboxId,
       agentName: opts.agentName ?? 'default',
       gitProject: opts.gitProject,
+    }).catch((err: unknown): null => {
+      sessionTokenMintError = err;
+      console.warn(`[session-sandbox] failed to mint session token for ${projectId}:`, err);
+      return null;
     }),
-    llmGatewayEnabled
-      ? accountEntitledToLlmGateway(accountId).catch((err) => {
-          console.warn(
-            `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
-            err instanceof Error ? err.message : String(err),
-          );
-          return false;
-        })
-      : Promise.resolve(false),
   ]);
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
@@ -493,23 +496,51 @@ export async function provisionSessionSandbox(opts: {
   const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
   const llmBaseUrl = resolveLlmGatewayBaseUrl(kortixOrigin);
 
-  // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
-  // injected (otherwise OpenCode falls back to showing only its built-in Zen
-  // catalog). It authenticates the gateway with the per-session connector PAT,
-  // which the gateway resolves via validateAccountToken and meters.
+  // Gateway mode is the only mode. OpenCode sees exactly one provider,
+  // `kortix`, at KORTIX_LLM_BASE_URL, authenticated with the per-session
+  // connector PAT (the gateway resolves it via validateAccountToken and
+  // meters it). Free-tier narrowing lives in the gateway (`resolveCandidates`
+  // → `plan_upgrade_required`) and the catalog (`freeManagedOnly`), never here.
+  // LLM_GATEWAY_ENABLED is an operator kill switch for /v1/llm (503), not a
+  // mode selector: a sandbox is configured the same way with it off.
   //
   // YOLO is gone — we no longer mint/inject a per-member kyolo_ token here. That
   // path was a single row per member, re-minted on every provision, so concurrent
   // boots clobbered each other and left older sandboxes with a stale token the
   // gateway rejects (401). The PAT is per-session and stable.
-  //
-  // Enablement is a three-part gate: operator availability, per-project
-  // experimental opt-in, and account entitlement. If any part is off we inject
-  // no KORTIX_LLM_* env, so OpenCode stays on its native provider behavior.
-  // accountEntitledToLlmGateway gates on the resolved TIER, not billing_model,
-  // so legacy paying customers are no longer wrongly stripped to the Zen-only
-  // catalog. Per-request affordability stays in the gateway's own billing gate.
-  const gatewayEnabled = llmGatewayEnabled && gatewayEntitled;
+  if (!sessionToken) {
+    // createAccountToken failed. That is the ONE way a session could boot
+    // without its credential: no model access (the gateway authenticates
+    // KORTIX_TOKEN), and every later env push rejected by the daemon — a dead
+    // box that looks provisioned. Gateway mode is the only mode, so the token is
+    // a hard prerequisite: mark the row failed with a user-visible reason and
+    // throw. Nothing has reached the provider yet; there is nothing to clean
+    // up. The caller marks the project session `failed` with the message.
+    const err = new ConnectorTokenUnavailableError(sandboxId, sessionTokenMintError);
+    console.error('[session-sandbox] session token missing — failing provisioning closed', {
+      sessionId: sandboxId,
+      projectId,
+      accountId,
+    });
+    await db
+      .update(sessionSandboxes)
+      .set({
+        status: 'error',
+        metadata: {
+          ...buildSandboxInitFailureMetadata(
+            sandbox.metadata as Record<string, unknown> | null,
+            err,
+            1,
+            false,
+            1,
+          ),
+          errorMessage: err.message,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+    throw err;
+  }
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -524,11 +555,14 @@ export async function provisionSessionSandbox(opts: {
     location,
     envVars: {
       ...(opts.extraEnvVars ?? {}),
-      // One sandbox, one session-scoped Kortix credential. Provider, connector,
+      // One sandbox, one session-scoped Kortix credential (`kortix_pat_…`: acts
+      // AS the launching user, scoped by the agent grant). Provider, connector,
       // executor and Git credentials stay server-side. The route being called
-      // determines what this token may do.
+      // determines what this token may do. The LLM gateway authenticates the
+      // same token at KORTIX_LLM_BASE_URL — always injected, because gateway
+      // mode is the only mode.
       KORTIX_TOKEN: sessionToken,
-      ...(gatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
+      KORTIX_LLM_BASE_URL: llmBaseUrl,
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
@@ -880,7 +914,7 @@ export async function provisionSessionSandbox(opts: {
           attempts,
           lastProvisionMaxAttempts,
         ),
-        config: { serviceKey: sessionToken, llmGatewayEnabled: gatewayEnabled },
+        config: { serviceKey: sessionToken },
         lastUsedAt: new Date(),
         updatedAt: new Date(),
       };

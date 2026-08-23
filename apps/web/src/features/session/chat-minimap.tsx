@@ -20,11 +20,71 @@ import {
   nearestDashRow,
   type MinimapItem,
 } from './chat-minimap-items';
+import { jumpToTurn } from './jump-to-turn';
+import type { TimelineVirtualApi } from './timeline/timeline-virtual';
 
 interface ChatMinimapProps {
   turns: Turn[];
   scrollRef: React.RefObject<HTMLDivElement>;
   contentRef: React.RefObject<HTMLDivElement>;
+  /**
+   * The virtual list's API while it is mounted (`session-timeline-list.tsx`).
+   * Off-screen turns are NOT in the DOM there, so the active turn and a jump
+   * read the virtual geometry; without it (the flat list) the DOM is read.
+   */
+  virtualApiRef?: React.RefObject<TimelineVirtualApi | null>;
+  /** Called when a click jumps the transcript — reader intent to leave the
+   *  end; see `jumpToTurn`. */
+  onLeaveEnd?: (why: string) => void;
+}
+
+/**
+ * Which turn the reader is on: the one under the viewport's midpoint. For the
+ * virtual list that is one lookup in the measured geometry; for the flat list
+ * the mounted turn elements are scanned (the last one that starts at or above
+ * the midpoint).
+ */
+export function activeTurnIdAt(input: {
+  api: TimelineVirtualApi | null;
+  scrollEl: HTMLElement;
+  contentEl: HTMLElement;
+}): string | null {
+  const { api, scrollEl, contentEl } = input;
+  const probe = scrollEl.scrollTop + scrollEl.clientHeight / 2;
+  if (api) return api.turnAtOffset(probe) ?? null;
+  const scrollTop = scrollEl.getBoundingClientRect().top;
+  let best: string | null = null;
+  for (const el of contentEl.querySelectorAll<HTMLElement>('[data-turn-id]')) {
+    const top = el.getBoundingClientRect().top - scrollTop + scrollEl.scrollTop;
+    if (top > probe) break;
+    best = el.getAttribute('data-turn-id');
+  }
+  return best;
+}
+
+/**
+ * The minimap only lists turns with a preview; a turn without one maps to the
+ * nearest listed turn at or before it, so the rail never goes blank over a
+ * system-only bubble.
+ */
+export function nearestListedTurnId(
+  activeTurnId: string | null,
+  turnOrder: ReadonlyMap<string, number>,
+  listedIds: ReadonlySet<string>,
+): string | null {
+  if (activeTurnId === null) return null;
+  if (listedIds.has(activeTurnId)) return activeTurnId;
+  const activeIndex = turnOrder.get(activeTurnId);
+  if (activeIndex === undefined) return null;
+  let best: string | null = null;
+  let bestIndex = -1;
+  for (const id of listedIds) {
+    const index = turnOrder.get(id);
+    if (index === undefined || index > activeIndex || index <= bestIndex) continue;
+    best = id;
+    bestIndex = index;
+  }
+  return best;
 }
 
 function MinimapCard({ item }: { item: MinimapItem }) {
@@ -52,7 +112,13 @@ function MinimapCard({ item }: { item: MinimapItem }) {
   );
 }
 
-export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) {
+export function ChatMinimap({
+  turns,
+  scrollRef,
+  contentRef,
+  virtualApiRef,
+  onLeaveEnd,
+}: ChatMinimapProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   // The rail lives in the chat's left gutter, and that gutter only exists
@@ -108,62 +174,62 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
   // Idle, the rail reports scroll position. On hover it follows the pointer.
   const focusedRow = hoverRow ?? activeRow;
 
-  // The observer only cares about which turns exist, not about streaming
+  // The tracker only cares about which turns exist, not about streaming
   // updates inside them — key it on the id list, not the array identity.
   const idsKey = useMemo(() => items.map((item) => item.id).join('\n'), [items]);
+  const turnOrder = useMemo(
+    () => new Map(turns.map((turn, index) => [turn.userMessage.info.id, index] as const)),
+    [turns],
+  );
 
-  // Track which turn is currently in view so we can highlight it.
+  // Track which turn is currently in view so we can highlight it. Driven by
+  // the scroll position (one frame per scroll), not an IntersectionObserver
+  // over the turn elements: the virtual list mounts only the turns near the
+  // viewport, so the observed set would change under the observer.
   useEffect(() => {
     const scrollEl = scrollRef.current;
     const contentEl = contentRef.current;
     if (!scrollEl || !contentEl || idsKey.length === 0) return;
 
     const ids = new Set(idsKey.split('\n'));
-    const visibleMap = new Map<string, number>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const id = (entry.target as HTMLElement).getAttribute('data-turn-id');
-          if (!id) continue;
-          visibleMap.set(id, entry.intersectionRatio);
-        }
-        let bestId: string | null = null;
-        let bestRatio = 0;
-        for (const [id, ratio] of visibleMap) {
-          if (ratio > bestRatio) {
-            bestRatio = ratio;
-            bestId = id;
-          }
-        }
-        if (bestId) setActiveId(bestId);
-      },
-      { root: scrollEl, threshold: [0, 0.25, 0.5, 0.75, 1] },
-    );
-
-    contentEl.querySelectorAll<HTMLElement>('[data-turn-id]').forEach((el) => {
-      const id = el.getAttribute('data-turn-id');
-      if (id && ids.has(id)) observer.observe(el);
-    });
-
-    return () => observer.disconnect();
-  }, [scrollRef, contentRef, idsKey]);
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const turnId = activeTurnIdAt({ api: virtualApiRef?.current ?? null, scrollEl, contentEl });
+      const listed = nearestListedTurnId(turnId, turnOrder, ids);
+      if (listed) setActiveId(listed);
+    };
+    const schedule = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(update);
+    };
+    update();
+    scrollEl.addEventListener('scroll', schedule, { passive: true });
+    return () => {
+      scrollEl.removeEventListener('scroll', schedule);
+      cancelAnimationFrame(frame);
+    };
+  }, [scrollRef, contentRef, idsKey, turnOrder, virtualApiRef]);
 
   const handleJump = useCallback(
     (id: string) => {
       const contentEl = contentRef.current;
       const scrollEl = scrollRef.current;
       if (!contentEl || !scrollEl) return;
-      const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(id)}"]`);
-      if (!target) return;
-      const offset =
-        target.getBoundingClientRect().top -
-        scrollEl.getBoundingClientRect().top +
-        scrollEl.scrollTop -
-        24;
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      scrollEl.scrollTo({ top: Math.max(0, offset), behavior: reduceMotion ? 'auto' : 'smooth' });
+      const behavior: ScrollBehavior = reduceMotion ? 'auto' : 'smooth';
+      // Virtual list: the turn need not be in the DOM — scroll to its index.
+      // A jump is reader intent to leave the end (jump-to-turn.ts).
+      jumpToTurn({
+        id,
+        behavior,
+        api: virtualApiRef?.current ?? null,
+        scrollEl,
+        contentEl,
+        leaveEnd: onLeaveEnd ?? (() => {}),
+      });
     },
-    [contentRef, scrollRef],
+    [contentRef, scrollRef, virtualApiRef, onLeaveEnd],
   );
 
   if (items.length < 3 || sidePanelOpen) return null;

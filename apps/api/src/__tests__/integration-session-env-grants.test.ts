@@ -387,9 +387,11 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       repoUrl: 'https://example.test/principal.git',
       baseRef: 'main',
       agentName: 'default',
-      llmGatewayEnabled: false,
     });
     expect(env[OVERRIDE_KEY]).toBe('owner-val');
+    // Gateway mode is the only mode and native provider keys are withheld
+    // server-side (materializeSecretDelivery), so no opencode deny list travels.
+    expect(env).not.toHaveProperty('KORTIX_OPENCODE_DENY_ENV');
   });
 
   test('sandbox boot snapshots the latest committed Veyris capability secrets without caching', async () => {
@@ -434,8 +436,8 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       repoUrl: 'https://example.test/veyris.git',
       baseRef: 'main',
       agentName: 'veyris',
-      llmGatewayEnabled: false,
     });
+    expect(env).not.toHaveProperty('KORTIX_OPENCODE_DENY_ENV');
     expect(env.VEYRIS_API_URL).toBe('https://fresh.veyris.example.test');
     expect(env.VEYRIS_AGENT_TOKEN).toBe('fresh-capability');
     expect(env.KORTIX_PROJECT_SECRET_NAMES?.split(',').sort()).toEqual([

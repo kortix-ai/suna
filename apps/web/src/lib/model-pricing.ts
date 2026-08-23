@@ -128,7 +128,18 @@ export function useModelPricingLookup(
   useEffect(() => {
     prefetchModelPricing();
     if (pricingCache) return;
-    pricingPromise?.then(() => setPricingReady(true));
+    // The fetch outlives any one mount. A `setState` from its `.then` after
+    // this component unmounted is a no-op in a browser, but under a test that
+    // tears its DOM down between files it runs `react-dom`'s update path with
+    // no `window` → `ReferenceError: window is not defined` between tests.
+    // Cleanup disarms the continuation (StrictMode re-arms a fresh one).
+    let disposed = false;
+    pricingPromise?.then(() => {
+      if (!disposed) setPricingReady(true);
+    });
+    return () => {
+      disposed = true;
+    };
   }, []);
 
   return useMemo(
@@ -137,3 +148,23 @@ export function useModelPricingLookup(
     [providers, pricingReady],
   );
 }
+
+/**
+ * Test seam. The module cache is process-wide, so a test that mounts a
+ * consumer of `useModelPricingLookup` would otherwise fetch models.dev for
+ * real. `seed` fills the cache (so `prefetchModelPricing` never fetches);
+ * `reset` empties it; `pending` is the in-flight fetch, if any, to await.
+ */
+export const __testing = {
+  seed(map: Map<string, ModelCostRates> = new Map()): void {
+    pricingCache = map;
+    pricingPromise = Promise.resolve(map);
+  },
+  reset(): void {
+    pricingCache = null;
+    pricingPromise = null;
+  },
+  pending(): Promise<Map<string, ModelCostRates>> | null {
+    return pricingPromise;
+  },
+};

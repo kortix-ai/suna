@@ -3,10 +3,12 @@
 /**
  * Shared data + helpers for the PER-SESSION audit / approvals surface.
  *
- * Two views consume this: the side-panel "Audit" tab (session-audit-panel.tsx)
- * and the header nudge (header/session-pending-approvals-indicator.tsx). Both
- * read from ONE react-query key so they dedupe into a single request and stay
- * in lockstep — resolve a pending item in either place and both refresh.
+ * Consumers include the side-panel "Audit" tab (session-audit-panel.tsx), the
+ * header nudge (header/session-pending-approvals-indicator.tsx), and the inline
+ * approval prompt (session-approval-prompt.tsx). All pending-approval readers
+ * share ONE react-query key (`sessionAuditKey`) so they dedupe into a single
+ * request and stay in lockstep — resolve a pending item in any of them and
+ * every surface refreshes.
  *
  * Gating note: we drive everything off `getSessionAudit` (gated on session
  * VISIBILITY — the launcher can see their own session) rather than the
@@ -20,62 +22,15 @@ import {
   type SessionAudit,
   type SessionAuditAction,
   getSessionAudit,
-  listSessionsNeedingInput,
   resolveApproval,
 } from '@kortix/sdk';
 import {
   type QueryClient,
   useInfiniteQuery,
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-
-/**
- * Per-session pending-approval summary for the sidebar "needs input" badge.
- * Returns `{ sessions: { [sessionId]: count } }` keyed by BOTH the OpenCode and
- * Kortix session ids, so a caller can look up whichever id it holds. Polls
- * quietly (no error toast) since it's an ambient indicator.
- */
-export function useSessionsNeedingInput(projectId: string | undefined) {
-  return useQuery({
-    queryKey: ['sessions-needing-input', projectId ?? ''],
-    // `enabled` guards presence, so the `?? ''` fallback is never exercised.
-    queryFn: () => listSessionsNeedingInput(projectId ?? '', { showErrors: false }),
-    enabled: !!projectId,
-    staleTime: 5_000,
-    refetchInterval: 15_000,
-  });
-}
-
-/**
- * Route-independent variant for the sidebar: query needs-input for EACH project
- * the visible sessions belong to (their `projectID`), then merge. Avoids relying
- * on a route projectId — the sidebar renders on routes (e.g. /sessions/:id) where
- * the route param isn't a project. Returns `{ sessions, total }` where `sessions`
- * is keyed by both OpenCode + Kortix session ids.
- */
-export function useSessionsNeedingInputForProjects(projectIds: string[]) {
-  const results = useQueries({
-    queries: projectIds.map((pid) => ({
-      queryKey: ['sessions-needing-input', pid],
-      queryFn: () => listSessionsNeedingInput(pid, { showErrors: false }),
-      enabled: !!pid,
-      staleTime: 5_000,
-      refetchInterval: 12_000,
-    })),
-  });
-  const sessions: Record<string, number> = {};
-  let total = 0;
-  for (const result of results) {
-    const data = result.data;
-    if (!data) continue;
-    for (const [key, count] of Object.entries(data.sessions)) sessions[key] = count;
-    total += data.total ?? 0;
-  }
-  return { sessions, total };
-}
 
 /** One poll cadence for the shared session-audit query, so both surfaces (panel
  *  + header nudge) agree regardless of which mounts first. Pauses in background

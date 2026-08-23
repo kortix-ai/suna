@@ -340,6 +340,9 @@ mock.module('../config', () => ({
   SANDBOX_VERSION: 'test-version',
   config: {
     isDaytonaEnabled: () => true,
+    // The per-prompt env push always carries the gateway base URL, derived
+    // from this origin (llm-gateway/sandbox-base-url.ts).
+    KORTIX_URL: 'http://localhost:8008',
     // The preview CORS allowlist reads this. Set to the SAME value as the real
     // config default, because this file's collaborators resolve a mix of the
     // mocked and the real module — a disagreement here reads as a CORS bug.
@@ -904,7 +907,10 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
-      llmGatewayEnabled: false,
+      // Gateway mode is the only mode: every push carries mode ON and the base
+      // URL. No deny list: native provider keys are withheld server-side.
+      llmGatewayBaseUrl: 'http://localhost:8008/v1/llm',
+      llmGatewayEnabled: true,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
       opencodeEnv: {},
       refreshModels: true,

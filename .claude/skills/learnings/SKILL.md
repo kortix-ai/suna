@@ -1951,6 +1951,110 @@ listening unless `--ff-only`.
 *Incident:* `timeline-parity` worktree, 2026-08-22 ~21:35 UTC, ~60 s of
 `tsc` errors on the live API; aborted, re-done in `tp-main-merge`, ff'd.
 
+## A subscription that must outlive the process it watches needs a reconcile keyed to the NEW process — and a bounded server-truth fallback
+
+2026-08-23 02:08 UTC, live worktree, first user test (session `eddd499a`,
+prompt "yo?!"). The pre-prompt env sync (`[env-sync] … push=sent
+refreshModels=true`) made the daemon run a verified OpenCode reload: a new
+process on the other port, promoted, the old one killed. The daemon's
+`/event` SSE loop was subscribed to the OLD process and re-subscribed to the
+new one only after it saw the drop (~100 ms + connect). The prompt reached the
+new process first; OpenCode answered in ~5 s; its single `session.idle` was
+emitted into that gap — there is no replay. No `turn-stream kind=end` was
+relayed; the ledger turn stayed `active`; `GET …/turn` kept reporting a
+running turn; the web (server-truth-first) showed "Gathering thoughts" for
+80+ s. The existing reconcile-on-connect covered only the boot-pinned root,
+and the turn did not run on it; the reaper clears husks only on its cadence
+behind an orphan min-age.
+
+**The rule.** Any "X ends when the runtime emits Y over a stream" contract
+needs two things beyond the stream: (1) on every (re)subscribe AND on a tick,
+a reconcile that asks the runtime directly about EVERY subject a begin was
+observed for — tracked in memory from every observer that can see a begin
+(the proxy that delivers the prompt, the status frames, the begin relay), not
+only the boot-claimed one — and relays the terminal evidence idempotently;
+(2) a bounded server-truth reconcile on the read path that serves the UI,
+through the same runtime observation the reaper uses, so the UI never waits
+on the relay or the reaper's cadence: only records older than a min age, at
+most one probe per box per window, end only what the runtime says is over,
+never on silence, no write when nothing changes. And a planned runtime swap
+must not answer "done" to the control plane until the subscription is live on
+the promoted process — the mid-session twin of the boot-time "subscribe
+before prompt" rule — bounded, so a slow box degrades to the reconciles
+rather than hanging the prompt.
+
+**The enforcement.** Daemon: `turn-tracking.ts` (bounded registry fed by the
+proxy's `POST /session/:id/prompt_async|message|command|shell`, the
+busy/retry begin relay) + `reconcileFinishedTrackedTurns` on `onConnected` /
+`onReconcile` (main.ts) + `event-subscription.ts` (URL-keyed liveness the
+loop publishes) + `/kortix/env` awaiting it ≤ 2 s after a restart reload and
+reporting `event_subscription_live`. API: `session-lifecycle/
+turn-read-reconcile.ts` on `GET …/turn` (min age 15 s, one probe per box per
+10 s, `observeSandboxTurn` → `finalizeHuskTurn` → `clearSandboxTurn` with the
+daemon's own reason, fire-and-forget). Tests: `__tests__/
+reconcile-tracked-turns-after-reload.test.ts`, `env-route-event-resubscribe.
+test.ts`, `event-subscription.test.ts`, `turn-tracking.test.ts`;
+`turn-read-reconcile.test.ts`, `r8-session-turn.test.ts`.
+
+*Incident:* session `eddd499a`, 2026-08-23 02:08:28–02:09:50 UTC; one turn,
+~80 s of phantom "running" on a 5 s answer; no data lost.
+
+*Correction (2026-08-23 03:00 UTC):* the reconcile + read-path rules above
+stand, but the diagnosis of WHY the idle was lost was wrong — no reload ran
+before that prompt. The daemon's own log shows the first `/event` subscribe
+landing 300 s after OpenCode bound its port, on every box that day. See the
+next entry.
+
+## A long-lived subscribe needs a handshake bound; a reconnect backoff must reset on success; a "reload kept the process" still drops every stream
+
+2026-08-23 02:46 UTC, live worktree, fresh box `sbx_01M0P85XPQ…`. Daemon log
+(`/var/log/pt-app.log` inside the box): `opencode server listening` at
+02:46:24; `[opencode-events] subscribed` at **02:51:24** — 300 s later, Bun's
+fetch timeout — and the retry subscribed in 7 ms. The loop's first `/event`
+request went out the instant OpenCode bound its port; OpenCode accepted the
+connection and never answered it; `fetch` had no handshake bound, so the loop
+sat on one parked request while the first turn ran, answered in 5 s and idled
+with nobody subscribed. The API log shows the same shape on EVERY box that
+day: `initial_turn_claim` → first `kind=end` = +5:00 to +5:04 (00:57→01:02,
+00:59→01:04, 01:57→02:02, 02:08→02:13 — the user's session). The end that did
+arrive at +5:00 was the reconcile-on-connect, not the stream. Two more defects
+found while proving it: (1) the reconnect backoff doubled on every drop for the
+life of the process and never reset after a healthy subscription (100 ms,
+500 ms, 1 s, 2 s, 4 s, 8 s, 15 s); (2) `POST /global/dispose` — the fast
+"same process, no respawn" reload path the pre-prompt env push prefers —
+emits `server.instance.disposed` and **ends every open `/event` stream**
+(verified live: 5 events on a subscription, dispose, 0 events after, a fresh
+subscription sees 5 again), and the `/kortix/env` gate waited for the
+re-subscribe only on the *restart* path.
+
+**The rule.** (1) Every request that opens a long-lived stream bounds the wait
+for its response HEADERS separately from the stream: a parked subscribe is
+abandoned in seconds and retried on the tight interval; the stream itself is
+unbounded. (2) A reconnect backoff grows only across consecutive FAILED
+attempts; a subscription that lived a healthy while resets it — an expected
+drop (dispose, verified swap) reconnects at ~100 ms every time. (3) "The
+process and port did not change" is not "the subscription survived": any
+runtime reload, however light, is treated as a drop, and the gate waits for a
+subscription NEWER than the one that existed before the reload (a generation
+counter), not merely "live on this URL". (4) Diagnose a lost event from the
+emitter's side before theorising: the daemon log inside the box is readable
+(`/kortix/pty/` to `sh -c '… > /tmp/x'`, then `GET /file/raw?path=/tmp/x`);
+the API-side `claim → end` gap histogram names the pattern in one grep.
+
+**The enforcement.** `apps/kortix-sandbox-agent-server/src/opencode-events.ts`:
+`SUBSCRIBE_HANDSHAKE_TIMEOUT_MS` (3 s; abort + retry; warned once then every
+10th), `HEALTHY_SUBSCRIPTION_MS` (1 s) resets the backoff, `RECONCILE_INTERVAL_MS`
+10 s. `event-subscription.ts`: `generation()` / `waitUntilLiveAfter()`.
+`routes/env.ts`: waits ≤ 2 s for a NEWER subscription after `restarted` OR
+`disposed`. API `sandbox-env-sync.ts` warns on `event_subscription_live:false`
+for both. Tests: `__tests__/event-loop-subscribe-handshake.test.ts`,
+`event-loop-reconnect-backoff.test.ts`, `event-subscription.test.ts`
+(generation), `env-route-event-resubscribe.test.ts` (dispose waits).
+
+*Incident:* every box booted 2026-08-23 00:50–03:00 UTC on the worktree
+stack; first turn of each session stuck "running" ~5 min (or ~3.5 min when the
+reaper came first); no data lost.
+
 ## A cancelled deploy-dev can advertise a SHA it never promoted, and the next run then skips that surface
 
 2026-08-23. `deploy-dev` run 32605966965 (`e6c4ba0b62`, an `apps/web`-only

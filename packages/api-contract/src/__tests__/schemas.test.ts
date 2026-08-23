@@ -112,7 +112,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       connectors_api_discover: false,
       agentmail_email: false,
       teams: false,
-      llm_gateway: true,
       review_center: false,
       meta_agent: false,
       apps: false,
@@ -288,11 +287,21 @@ describe('ProjectSchema', () => {
   });
 
   test('rejects an experimental map missing a registered key', () => {
-    const { llm_gateway: _dropped, ...partial } = projectFixture().experimental as Record<
+    const { review_center: _dropped, ...partial } = projectFixture().experimental as Record<
       string,
       boolean
     >;
     expect(() => ProjectSchema.parse(projectFixture({ experimental: partial }))).toThrow();
+  });
+
+  test('a stale llm_gateway override is stripped, not rejected (gateway mode is the only mode)', () => {
+    // `llm_gateway` is no longer a feature flag. Rows written before its
+    // retirement may still carry the key; a non-strict map drops it on parse.
+    const parsed = ProjectSchema.parse(
+      projectFixture({ experimental: { ...projectFixture().experimental, llm_gateway: true } }),
+    );
+    expect(parsed.experimental).not.toHaveProperty('llm_gateway');
+    expect(FEATURE_FLAG_KEYS).not.toContain('llm_gateway');
   });
 
   test('accepts a null icon', () => {
@@ -684,7 +693,6 @@ describe('envelopes', () => {
       'connectors_api_discover',
       'agentmail_email',
       'teams',
-      'llm_gateway',
       'review_center',
       'meta_agent',
       'apps',

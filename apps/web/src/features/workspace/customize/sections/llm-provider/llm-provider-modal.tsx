@@ -28,13 +28,12 @@
  * declares no `TabsTrigger`, no section, and no label of its own; a change to
  * any of those has exactly one place to be made.
  *
- * ## Why three tabs and not seven
+ * ## Why two tabs and not six
  *
- * The page carries Providers / Models / Custom / Gateway / Routing / Costs /
- * Logs. This dialog opens from the session model picker's connect gate
+ * The page carries Providers / Models / Gateway / Routing / Costs / Logs. This dialog opens from the session model picker's connect gate
  * (`use-model-connection-gate.tsx`) and the Secrets tab's "Manage providers"
  * (`secrets-view.tsx`) — both are "let me use a model right now" moments. It
- * carries the three tabs that answer that and drops the four that are project
+ * carries the two tabs that answer that and drops the four that are project
  * administration; a log table wants the page's width and height, not 680px of
  * dialog. `QUICK_LLM_TABS` is that decision, expressed once.
  *
@@ -79,8 +78,8 @@ export function ProjectProviderModal({
           carries `lg:h-auto` (modal.tsx), which twMerge does NOT collapse
           into the unprefixed `h-[…]` (different modifier group) — so the
           modal silently became content-sized at `lg:` and its height jumped
-          with every tab switch (3 key rows vs 34 model rows vs the Custom
-          form). `lg:min-h` + `lg:max-h` clamp that `h-auto` to a constant.
+          with every tab switch (3 key rows vs 34 model rows). `lg:min-h` +
+          `lg:max-h` clamp that `h-auto` to a constant.
           The unprefixed mobile sheet keeps its own `max-h-[90%]` cap. */}
       <ModalContent className="flex h-(--provider-modal-h) w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 [--provider-modal-h:min(680px,calc(100dvh-2rem))] lg:max-h-(--provider-modal-h) lg:min-h-(--provider-modal-h) lg:max-w-4xl">
         <ProviderModalBody
@@ -104,9 +103,9 @@ export function ProjectProviderModal({
  * exactly as the uncontrolled version did, with no `setState` in an effect
  * body (`react-hooks/set-state-in-effect`).
  *
- * Controlled at all because `LlmSections` hands the reader on: saving a custom
- * provider gives it a key like any other and a row on the provider list, so a
- * "Done" that leaves you on the form you just submitted is not done.
+ * Controlled at all because `LlmSections` hands the reader on (the gateway
+ * tab's "view models" moves the host's tab), so the shell has to be able to
+ * move the reader between tabs without remounting.
  */
 function ProviderModalBody({
   projectId,

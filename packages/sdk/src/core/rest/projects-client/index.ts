@@ -37,7 +37,6 @@ export * from './tokens';
 export * from './audit';
 export * from './setup-links';
 export * from './marketplace-catalog';
-export * from './templates';
 export * from './apps';
 
 // Cross-cutting types that originally lived in this module. Re-exported

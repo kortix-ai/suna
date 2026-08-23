@@ -7,7 +7,6 @@ import { useCallback, useMemo, useState } from 'react';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
@@ -85,7 +84,8 @@ export function useModelConnectionGate(
     enabled: !!projectId,
     ...contract('config'),
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  // The detail read serves `account_id` only (permission probes + the upgrade
+  // dialog). Gateway mode is the only mode, so no flag is read off it.
   const canWriteProviders =
     useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_WRITE, {
       accountId: projectDetailQuery.data?.project.account_id,
@@ -94,10 +94,8 @@ export function useModelConnectionGate(
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectModalTab, setProjectModalTab] = useState<'providers' | 'models'>('providers');
 
-  const baseModels = useMemo(
-    () => (llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix')),
-    [models, llmGatewayEnabled],
-  );
+  // Gateway mode is the only mode: every served model is a `kortix` model.
+  const baseModels = models;
   // `project.secret.read` is manager-tier, so for a project `member` this query
   // was a guaranteed 403 on every project-home render — a permission check
   // performed by asking the server to refuse. Gate it on the leaf instead.
@@ -110,7 +108,7 @@ export function useModelConnectionGate(
   const secretsQuery = useQuery({
     queryKey: qk.project.secrets(projectId ?? ''),
     queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && llmGatewayEnabled && canReadSecrets,
+    enabled: !!projectId && canReadSecrets,
     ...contract('config'),
   });
   const { isPending: accountStatePending } = useAccountState();
@@ -131,8 +129,8 @@ export function useModelConnectionGate(
   // on `unsetLabel`, no check mark rendered, and each click looked like a no-op
   // even though `onSelect` fired and the model store was written.
   //
-  // Native (non-gateway) catalogs carry no `enabled` — opencode only lists
-  // models of CONNECTED providers, so presence there already means usable.
+  // Every catalog entry carries `enabled`: the picker is always the gateway's
+  // `/model-picker` answer; there is no second (native) catalog shape.
   const isModelOffered = useCallback((model: FlatModel) => model.enabled !== false, []);
   const hasSelectableModels = useMemo(
     () => baseModels.some(isModelOffered),
@@ -159,9 +157,7 @@ export function useModelConnectionGate(
   // queries stay `isPending` forever, so each is guarded by its `enabled`
   // condition.
   const entitlementsPending =
-    (!!projectId && projectDetailQuery.isPending) ||
-    (!!projectId && llmGatewayEnabled && secretsQuery.isPending) ||
-    accountStatePending;
+    (!!projectId && canReadSecrets && secretsQuery.isPending) || accountStatePending;
 
   const openConnectProvider = useCallback(
     (tab: ProviderModalTab = 'providers') => {

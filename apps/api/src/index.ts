@@ -115,6 +115,7 @@ import {
   getTriggerSchedulerHealth,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+import { convergeActiveSandboxGatewayUrl } from './projects/lib/gateway-url-convergence';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { projectImageRolloutDiagnostic } from './snapshots/project-image-scope';
@@ -1465,6 +1466,16 @@ async function stopSingletonWorkers() {
 // (self-host single node → sole leader, no coordination).
 async function bootServices() {
   await startReplicaServices();
+  // Re-point the running sandboxes of THIS instance at the live gateway URL.
+  // A box is configured at boot with KORTIX_LLM_BASE_URL derived from
+  // KORTIX_URL; when that origin changes (dev: the quick tunnel rotated and the
+  // launcher respawned the API with a new one) every running box keeps calling
+  // the dead URL until its next prompt's env sync, and that first prompt fails
+  // inside OpenCode with `Cannot connect to API`. Selects rows whose stamped
+  // `metadata.kortixUrl` differs from the current KORTIX_URL — 0 candidates on
+  // deployed environments (one stable URL). Fire-and-forget: never blocks
+  // readiness, never throws (projects/lib/gateway-url-convergence.ts).
+  void convergeActiveSandboxGatewayUrl({ reason: 'boot' });
   // Only pods that actually run singleton workers join the election. An API-only
   // pod (workers disabled) that won the lease would become a dead-weight leader,
   // holding it while running nothing and starving the scheduler fleet-wide.

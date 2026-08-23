@@ -24,6 +24,7 @@ let posted: Array<{
   refreshModels?: boolean;
   opencodeEnv?: Record<string, string | null>;
   llmGatewayEnabled?: boolean;
+  llmGatewayBaseUrl?: string;
   llmGatewayDenyEnv?: string;
 }> = [];
 // One fake row that satisfies every select on this path — the sandbox lookup
@@ -42,7 +43,9 @@ let SESSION_ROW: {
   accountId: string;
 };
 let activeSandbox: { externalId: string; provider: string; config: Record<string, unknown> } | null;
-let gatewayEnabled = false;
+/** Every `db.update(...)` the push issues. Must stay 0: there is no per-sandbox
+ *  "gateway mode" bit to persist. */
+let dbUpdateCalls = 0;
 
 function freshSessionRow(): typeof SESSION_ROW {
   return {
@@ -71,7 +74,10 @@ mock.module('../../shared/db', () => ({
         }),
       }),
     }),
-    update: () => ({ set: () => ({ where: async () => undefined }) }),
+    update: () => {
+      dbUpdateCalls += 1;
+      return { set: () => ({ where: async () => undefined }) };
+    },
   },
 }));
 
@@ -91,10 +97,6 @@ mock.module('../secrets', () => ({
   }),
 }));
 
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: async () => gatewayEnabled,
-}));
-
 mock.module('../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
@@ -110,6 +112,7 @@ function recordingFetch(): (u: unknown, init?: { body?: string }) => Promise<Res
       refreshModels: body.refreshModels as boolean | undefined,
       opencodeEnv: body.opencodeEnv as Record<string, string | null> | undefined,
       llmGatewayEnabled: body.llmGatewayEnabled as boolean | undefined,
+      llmGatewayBaseUrl: body.llmGatewayBaseUrl as string | undefined,
       llmGatewayDenyEnv: body.llmGatewayDenyEnv as string | undefined,
     } satisfies RecordedPost);
     return Response.json({ ok: true, opencode: 'ok' });
@@ -120,6 +123,7 @@ const ORIGINAL_FETCH = globalThis.fetch;
 (globalThis as { fetch: unknown }).fetch = recordingFetch();
 
 const { pushSessionScopeToSandbox } = await import('./sandbox-env-sync');
+const { config } = await import('../../config');
 
 const INPUT = {
   projectId: 'proj-1',
@@ -134,7 +138,7 @@ beforeEach(() => {
   posted = [];
   activeSandbox = SANDBOX_ROW;
   SESSION_ROW = freshSessionRow();
-  gatewayEnabled = false;
+  dbUpdateCalls = 0;
   // Each test starts from the recording fetch; a test that swaps it restores
   // it itself.
   (globalThis as { fetch: unknown }).fetch = recordingFetch();
@@ -202,14 +206,20 @@ describe('pushSessionScopeToSandbox', () => {
     expect(posted).toEqual([]);
   });
 
-  test('stamps LLM gateway mode without a provider-key deny list', async () => {
-    gatewayEnabled = true;
+  test('always stamps gateway mode ON and the base URL alongside the snapshot, without a provider-key deny list', async () => {
+    // The scope push must re-stamp gateway mode so a respin does not silently
+    // drop the gateway routing. Gateway mode is the only mode: no project
+    // metadata read, no per-sandbox mode bit written. Native provider keys are
+    // withheld server-side (materializeSecretDelivery), so no deny list travels.
     const result = await pushSessionScopeToSandbox(INPUT);
 
     expect(result).toEqual({ applied: true });
     expect(posted).toHaveLength(1);
     expect(posted[0].llmGatewayEnabled).toBe(true);
+    // In-API gateway at the API's own origin (llm-gateway/sandbox-base-url.ts).
+    expect(posted[0].llmGatewayBaseUrl).toBe(`${config.KORTIX_URL}/v1/llm`);
     expect(posted[0].llmGatewayDenyEnv).toBeUndefined();
+    expect(dbUpdateCalls).toBe(0);
   });
 
   test('a fetch failure is reported, not thrown at the caller', async () => {
