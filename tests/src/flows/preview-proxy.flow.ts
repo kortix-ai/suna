@@ -96,9 +96,15 @@ flow(
   async (ctx) => {
     await ctx.step("GET /p/config is public and returns the preview origin contract", async () => {
       const response = await ctx.client.as(ctx.P.ANON).get("/v1/p/config");
-      response.status(200).body().exists("$.preview_url_template");
-      const template = response.json<{ preview_url_template: string | null }>()
-        .preview_url_template;
+      response.status(200);
+      const payload = response.json<{ preview_url_template?: string | null }>();
+      if (!("preview_url_template" in payload)) {
+        throw new Error("preview configuration omitted preview_url_template");
+      }
+      const template = payload.preview_url_template;
+      if (template === undefined) {
+        throw new Error("preview_url_template is undefined");
+      }
       if (template !== null && (!template.includes("{port}") || !template.includes("{sandbox}"))) {
         throw new Error(`preview_url_template lacks required slots: ${template}`);
       }
