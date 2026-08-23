@@ -219,12 +219,32 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
           `top: 0`. The account hub never hit this; its scrollport is the
           window, which has no padding to inset. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* `CapabilityPageShell`'s column, verbatim. Settings is the seventh
-            tab on the Customize bar and has to open in the same gutter as the
-            six beside it — Models, Connectors, Agents, Skills, Triggers,
-            Secrets. Without it the rail sat hard against the app sidebar's
-            edge with no left spacing at all. */}
-        <div className="mx-auto w-full max-w-5xl px-4 py-10 pb-20 lg:py-14">
+        {/* `CapabilityPageShell`'s column — same `px-4 py-10 pb-20 lg:py-14`
+            and the same `max-w-5xl` ceiling as the six tabs beside it on the
+            Customize bar. Without a column at all the rail sat hard against
+            the app sidebar's edge with no left spacing.
+
+            `lg:w-fit` is what makes the two gutters equal. Every pane here
+            declares its own `mx-auto w-full max-w-2xl` (the settings width
+            rule — `settings/tab-content-width.test.ts`), so a `1fr` content
+            track hands the pane 742px of column that its ink only fills 672 of
+            and re-centres inside. The block then sat 54px from the sidebar and
+            89px from the right edge. Sizing the column to its content instead
+            centres rail AND pane together as one block: measured on
+            localhost:18000, left gutter 89 and right gutter 89. `w-full`
+            below `lg`, where the shell is stacked and there is nothing to
+            hug.
+
+            The tradeoff, stated so nobody "fixes" it back: the hugged block is
+            954px against the sibling tabs' 1024px column, so switching from
+            Models to Settings shifts the left edge by 33px (ink at 346 vs
+            313). Both cannot hold at once. Filling 1024 symmetrically would
+            need a 112px rail gap — the account rail's is 44 — or a pane wider
+            than `max-w-2xl`, which is the settings width rule that
+            `settings/tab-content-width.test.ts` enforces across every pane
+            these tabs also render in the overlay. A 33px hop between tabs is
+            smaller than a 35px lopsided margin you sit and read inside. */}
+        <div className="mx-auto w-full max-w-5xl px-4 py-10 pb-20 lg:w-fit lg:py-14">
           <SettingsShell
             activeKey={active}
             rail={
