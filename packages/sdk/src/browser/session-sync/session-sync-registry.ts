@@ -262,6 +262,18 @@ export function loadSessionTranscriptMessages(
   );
 }
 
+/**
+ * The frame types that carry transcript content. Everything else the runtime
+ * emits — status, idle, permission, question, diagnostics — says something
+ * about the session but nothing about whether this tab has its messages.
+ */
+const TRANSCRIPT_EVENT_TYPES = new Set([
+  'message.updated',
+  'message.part.updated',
+  'message.removed',
+  'message.part.removed',
+]);
+
 export function noteSessionSyncEvent(event: {
   type?: string;
   properties?: unknown;
@@ -275,11 +287,18 @@ export function noteSessionSyncEvent(event: {
     info?.sessionID ||
     part?.sessionID;
   if (!sessionId) return;
-  // Every frame for this session is proof its transcript moved, and that is
-  // all this hook does now: it renews freshness. The frames themselves are
-  // applied by the event handler, and "is this session working?" is answered
-  // by `projectWorking` over the server's turn authority — not by inferring a
-  // phase from which frame arrived when.
+  // Only a frame that MOVES the transcript renews freshness — and freshness is
+  // what postpones the liveness poll, the one repair for a stream that is
+  // dropping content.
+  //
+  // It used to be every frame carrying this session's id. That inverted the
+  // repair: a runtime emitting status while its message frames were lost kept
+  // renewing the very timer built to catch the loss, so the browser's
+  // transcript could sit arbitrarily stale and the poll would never run. The
+  // frames themselves are applied by the event handler, and "is this session
+  // working?" is answered by `projectWorking` over the server's turn authority
+  // — not by inferring a phase from which frame arrived when.
+  if (!TRANSCRIPT_EVENT_TYPES.has(event.type ?? '')) return;
   findExistingSessionEntry(sessionId)?.controller.noteActivity();
 }
 

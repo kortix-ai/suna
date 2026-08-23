@@ -51,7 +51,19 @@ export interface SessionSyncScheduler {
 }
 
 export type SessionSyncReason =
-  'initial' | 'poll' | 'sse-gap' | 'compaction' | 'session-error' | 'send-recovery' | 'manual';
+  | 'initial'
+  | 'poll'
+  | 'sse-gap'
+  | 'compaction'
+  | 'session-error'
+  | 'send-recovery'
+  /** The turn ended. The last read of a busy session, and the one that catches
+   *  a final answer whose closing frames the stream never delivered. */
+  | 'turn-end'
+  /** The tab became visible again. A backgrounded tab is throttled, not
+   *  notified, so return is a moment to re-read rather than to assume. */
+  | 'visible'
+  | 'manual';
 
 export interface SessionSyncTelemetryEvent {
   operation: 'tail' | 'older';
@@ -298,7 +310,20 @@ export class SessionSyncController {
    */
   setBusy(isBusy: boolean): void {
     if (!isBusy) {
+      // The turn is over — and that is exactly when the transcript is most
+      // likely to be short. A stream that dropped its last frames leaves the
+      // browser holding a truncated answer while the runtime holds the whole
+      // one, and stopping the poll here used to make that state PERMANENT:
+      // nothing read the tail again until the session was reopened. Reported
+      // from a live self-host (2026-08-24): an 8m13s turn finished in the
+      // runtime's own terminal while the tab still showed a spinner under a
+      // half-written answer.
+      //
+      // One bounded read, only for a session that was actually busy, so an
+      // idle session churns nothing.
+      const wasBusy = this.livenessTimer !== undefined;
       this.stopLivenessTimer();
+      if (wasBusy && !this.destroyed) void this.reconcile('turn-end');
       return;
     }
     if (this.livenessTimer !== undefined) return;
@@ -310,6 +335,9 @@ export class SessionSyncController {
   }
 
   destroy(): void {
+    // `destroyed` FIRST: `stopLivenessTimer` is also reached through
+    // `setBusy(false)`, which now fires a turn-end read, and a controller being
+    // torn down must not start a request it can never hydrate.
     this.destroyed = true;
     this.stopLivenessTimer();
     this.listeners.clear();

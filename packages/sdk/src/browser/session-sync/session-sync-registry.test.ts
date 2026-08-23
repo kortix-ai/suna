@@ -178,6 +178,40 @@ describe('session sync events', () => {
     expect(controller.getSnapshot().freshness).toBe('fresh');
   });
 
+  /**
+   * The starvation bug. `checkLiveness` skips whenever the last activity is
+   * newer than the poll interval, so ANY frame carrying this session's id used
+   * to postpone the repair — including frames that carry no transcript at all.
+   * A stream that keeps emitting status while dropping message parts could
+   * therefore keep the browser's transcript arbitrarily stale, forever, and
+   * the poll built to catch exactly that never ran.
+   *
+   * Only a frame that MOVES the transcript is evidence the transcript moved.
+   */
+  test('a status frame is not evidence that the transcript moved', () => {
+    const sessionId = 'session-status-only';
+    const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
+
+    for (const type of ['session.status', 'session.idle', 'permission.updated']) {
+      noteSessionSyncEvent({ type, properties: { sessionID: sessionId } });
+      expect(controller.getSnapshot().freshness).toBe('idle');
+    }
+  });
+
+  test('every frame that carries transcript content renews freshness', () => {
+    const sessionId = 'session-content';
+    for (const event of [
+      { type: 'message.updated', properties: { info: { id: 'm1', sessionID: sessionId } } },
+      { type: 'message.part.updated', properties: { part: { sessionID: sessionId } } },
+      { type: 'message.removed', properties: { sessionID: sessionId, messageID: 'm1' } },
+    ]) {
+      resetSessionSyncControllers();
+      const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
+      noteSessionSyncEvent(event);
+      expect(controller.getSnapshot().freshness).toBe('fresh');
+    }
+  });
+
   test('a frame for another session never touches this one', () => {
     const controller = getSessionSyncController('session-a', undefined, 'runtime-a');
 
