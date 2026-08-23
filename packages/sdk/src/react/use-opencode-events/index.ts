@@ -212,6 +212,30 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
           // for the rest.
           const statuses = res.data ?? {};
           for (const [sessionID, status] of Object.entries(statuses)) {
+            // ONLY where this read is newer than what the live stream has
+            // already said. The read is a snapshot of the moment it was ISSUED,
+            // it carries no timestamp of its own, and it used to be written in
+            // unconditionally — so a `busy` that was true when the request left
+            // overwrote an `idle` frame that arrived while it was in flight, and
+            // because the object identity changed the store restamped the stale
+            // reading as the freshest observation there is. That put the Stop
+            // button and the turn shimmer back on a finished turn, and
+            // `hydrateCore` runs on every heartbeat-gap rehydrate, so it could
+            // land on any turn boundary.
+            // FILL A GAP, NEVER OVERWRITE. This snapshot describes the moment
+            // the request was ISSUED and carries no timestamp of its own, so an
+            // unconditional write let a `busy` that was true on the way out
+            // clobber an `idle` frame that arrived while it was in flight — and
+            // because the object identity changed, the store restamped that
+            // stale reading as the freshest observation there is. Stop and the
+            // turn shimmer came back on a finished turn, and `hydrateCore` runs
+            // on every heartbeat-gap rehydrate, so it could land on any turn
+            // boundary. While the live stream is delivering (~140ms per frame
+            // for a busy session, and this runs on connect) the stream owns this
+            // value; the correction for a session that went idle unseen is
+            // `reconcileMissingBusySessions` below, which reads ABSENCE from the
+            // complete list rather than a per-session reading.
+            if (useSyncStore.getState().sessionStatus[sessionID]) continue;
             // Locally-synthesized event (this is a REST poll, not an SSE
             // frame) — omits the `id` field every real `Event` union member
             // carries, hence the assertion.
@@ -220,6 +244,10 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
               properties: { sessionID, status },
             } as unknown as OpenCodeSdkEvent);
           }
+          // The ENUMERATION half is not a per-session reading and does not go
+          // stale the same way: a session absent from a complete list was not
+          // running when the list was taken, and the repair it drives
+          // (`markSessionIdleLocally`) is guarded on its own.
           reconcileMissingBusySessions.current(statuses);
         })
         .catch((err) => {
