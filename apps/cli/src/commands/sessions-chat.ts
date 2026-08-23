@@ -232,7 +232,16 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   const opts: CtxOpts = { projectArg, hostArg };
 
   // ── Resolve which session to chat with ──────────────────────────────────
-  const sessionId = await resolveChatSessionId(positional[0], wantNew, promptText, opts);
+  const initialPromptSubmitted =
+    positional[0] === undefined && wantNew && promptText !== undefined && !queue;
+  const sessionId = await resolveChatSessionId(
+    positional[0],
+    wantNew,
+    queue ? undefined : promptText,
+    opts,
+    json,
+    agent,
+  );
   if (!sessionId) return 1;
 
   // --queue is deliberately routed BEFORE loadSessionForChat: the whole point
@@ -252,6 +261,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
 
   // ── One-shot ─────────────────────────────────────────────────────────────
   if (promptText !== undefined) {
+    if (initialPromptSubmitted) return waitForInitialReply(resolved, json);
     return sendAndPrint(resolved, promptText, extra, json);
   }
 
@@ -329,6 +339,39 @@ async function queuePrompt(
   return 0;
 }
 
+/** Read the reply to the `initial_prompt` submitted by session creation. */
+async function waitForInitialReply(resolved: ResolvedSession, json: boolean): Promise<number> {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    try {
+      const messages = await withKortixScope(resolved.auth, async () =>
+        unwrapRuntime(
+          await resolved.runtime.session.messages({
+            sessionID: resolved.opencodeSessionId,
+            limit: 10,
+          }),
+        ),
+      );
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (!message || message.info.role !== 'assistant') continue;
+        const info = message.info as MessageWithParts['info'] & {
+          time?: { completed?: number };
+          error?: unknown;
+        };
+        if (info.time?.completed == null && !info.error) break;
+        if (json) emitJson(messageToJson(message));
+        else printMessage(message);
+        return info.error ? 1 : 0;
+      }
+    } catch (err) {
+      if (attempt === 119) return surfaceApiError(err);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  process.stderr.write(`${status.err('Timed out waiting for the initial prompt reply.')}\n`);
+  return 1;
+}
+
 /**
  * Resolve the target session id: explicit positional → --new (create) →
  * most-recent running session on the project. Prints guidance + returns null
@@ -339,6 +382,8 @@ async function resolveChatSessionId(
   wantNew: boolean,
   initialPrompt: string | undefined,
   opts: CtxOpts,
+  quiet = false,
+  agent?: string,
 ): Promise<string | null> {
   if (explicit) return explicit;
 
@@ -348,16 +393,19 @@ async function resolveChatSessionId(
   if (wantNew) {
     const body: Record<string, unknown> = {};
     if (initialPrompt) body.initial_prompt = initialPrompt;
+    if (agent) body.agent_name = agent;
     try {
       const created = await ctx.client.post<ProjectSession>(
         `/projects/${ctx.projectId}/sessions`,
         body,
       );
-      process.stdout.write(
-        `${status.ok(`Started session ${C.bold}${created.session_id.split('-')[0]}${C.reset}`)} ${C.dim}(${created.status})${C.reset}\n`,
-      );
+      if (!quiet) {
+        process.stdout.write(
+          `${status.ok(`Started session ${C.bold}${created.session_id.split('-')[0]}${C.reset}`)} ${C.dim}(${created.status})${C.reset}\n`,
+        );
+      }
       if (created.status !== 'running') {
-        process.stdout.write(`  ${C.dim}Waiting for the sandbox to come up…${C.reset}\n`);
+        if (!quiet) process.stdout.write(`  ${C.dim}Waiting for the sandbox to come up…${C.reset}\n`);
         const ready = await waitForRunning(ctx, created.session_id);
         if (!ready) return null;
       }
