@@ -224,7 +224,7 @@ import { useReadinessSettling } from './use-readiness-settling';
 import { useReloadForensics } from './reload-forensics';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
-import { shouldLoadOlderHistory } from './session-older-autoload';
+import { olderAutoloadExhausted, shouldLoadOlderHistory } from './session-older-autoload';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -2808,8 +2808,12 @@ export function SessionChat({
   // in the turn anchor — capture where the topmost visible turn sits, restore
   // it after the prepended turns render, and the viewport never jumps.
   const [olderPullFailed, setOlderPullFailed] = useState(false);
+  // Pages the SENTINEL has pulled. An explicit pull never counts — see
+  // `OLDER_AUTOLOAD_MAX_PAGES` for why the automatic path is the one bounded.
+  const [autoLoadedPages, setAutoLoadedPages] = useState(0);
   useEffect(() => {
     setOlderPullFailed(false);
+    setAutoLoadedPages(0);
   }, [sessionId]);
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
@@ -2838,8 +2842,10 @@ export function SessionChat({
             hasOlder,
             isLoadingOlder,
             lastPullFailed: olderPullFailed,
+            autoLoadedPages,
           })
         ) {
+          setAutoLoadedPages((pages) => pages + 1);
           void handleLoadOlder();
         }
       },
@@ -2850,7 +2856,15 @@ export function SessionChat({
     return () => observer.disconnect();
     // sessionId is a dep because switching sessions swaps the scroll
     // container the observer is rooted in.
-  }, [hasOlder, isLoadingOlder, olderPullFailed, handleLoadOlder, scrollRef, sessionId]);
+  }, [
+    hasOlder,
+    isLoadingOlder,
+    olderPullFailed,
+    autoLoadedPages,
+    handleLoadOlder,
+    scrollRef,
+    sessionId,
+  ]);
 
   // Scroll to the bottom on initial load / session change.
   // Uses a callback ref on the scroll container to guarantee it's mounted.
@@ -4620,6 +4634,18 @@ export function SessionChat({
                         soon as the prepended turns render. */}
                       <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
                       {isLoadingOlder && <Loading />}
+                      {!isLoadingOlder &&
+                        !olderPullFailed &&
+                        olderAutoloadExhausted({ hasOlder, autoLoadedPages }) && (
+                          <Button
+                            type="button"
+                            variant="outline-ghost"
+                            size="sm"
+                            onClick={() => void handleLoadOlder()}
+                          >
+                            Load older messages
+                          </Button>
+                        )}
                       {olderPullFailed && !isLoadingOlder && (
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground text-xs">

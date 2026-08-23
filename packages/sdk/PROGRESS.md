@@ -12,6 +12,32 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-23 — session `session-memory-retention` — stop paying for the transcript twice a second — DONE
+
+**Files:** `browser/cache/idb-write-policy.ts` (NEW: `idbFlushIntervalMs`,
+`transcriptSignature`) + `idb-write-policy.test.ts` (NEW, 8 tests) ·
+`browser/cache/idb-sync-cache.ts` (skips an unchanged write; a large transcript
+writes less often). Internal module — not re-exported from the package barrel,
+so no public surface change.
+
+**What.** The IndexedDB transcript mirror rewrote the WHOLE transcript every
+500ms for as long as a turn streamed, and `put()` structured-clones what it is
+given — roughly 40MB/s of transient main-thread allocation on a 20MB transcript,
+for a cache whose only job is to paint something on the next load. It is the
+largest single allocator in a long session and a leading suspect for the tab
+discards behind "my session reloaded itself".
+
+**Fix.** Two levers, both pure and tested: do not write what is already written
+(an O(messages) signature over counts and the tail id, never the bodies), and
+write a transcript past 120 messages every 3s instead of every 500ms. A failed
+flush drops its signatures so the mirror cannot get stuck claiming a write
+landed.
+
+**Gates:** `typecheck` clean (both projects) · `bun test` 2438 pass / 0 fail ·
+`smoke:install` passed.
+
+---
+
 ### 2026-08-23 — session `turn-end-flap-2` — the same flap, 42 seconds later — DONE
 
 **Files:** `core/session/working.ts` (the veto is no longer gated on

@@ -6,6 +6,7 @@
  * { cacheKey, userId, sessionId, messages, parts, updatedAt }.
  */
 
+import { idbFlushIntervalMs, transcriptSignature } from './idb-write-policy';
 import { platformConfig } from '../../core/http/config';
 import { buildSessionCacheKey } from './idb-sync-cache-key';
 
@@ -91,7 +92,9 @@ const pendingWrites = new Map<
   }
 >();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
-const FLUSH_INTERVAL_MS = 500;
+/** What each cache key last WROTE, so an unchanged transcript is not cloned
+ *  again. See `transcriptSignature` for what "unchanged" can and cannot see. */
+const lastWrittenSignature = new Map<string, string>();
 
 // The caps below are only real if something enforces them. Prune once per page
 // load, off the back of the first flush, so the cache cannot grow forever
@@ -133,6 +136,10 @@ async function flushPendingWrites(): Promise<void> {
       tx.onerror = () => reject(tx.error);
     });
   } catch {
+    // The write did not land, so nothing may claim it did — drop the
+    // signatures for this batch or the next identical transcript is skipped
+    // and the mirror never catches up.
+    for (const cacheKey of batch.keys()) lastWrittenSignature.delete(cacheKey);
     // Non-critical
   }
 }
@@ -147,6 +154,15 @@ export async function saveSessionToIDB(
   if (!scope) return;
 
   const cacheKey = buildSessionCacheKey(scope, sessionId, kortixSessionScope);
+  // `put()` structured-clones what it is handed, so the cost of this mirror is
+  // the SIZE of the transcript times how often it is written. Skip a write that
+  // would store what is already stored, and let a large transcript write less
+  // often — the mirror is disposable, and a miss costs one refetch of data the
+  // server is about to send anyway.
+  const signature = transcriptSignature(messages, parts);
+  if (lastWrittenSignature.get(cacheKey) === signature) return;
+  lastWrittenSignature.set(cacheKey, signature);
+
   pendingWrites.set(cacheKey, {
     scope,
     sessionId,
@@ -155,7 +171,7 @@ export async function saveSessionToIDB(
     parts,
   });
   if (!flushTimer) {
-    flushTimer = setTimeout(flushPendingWrites, FLUSH_INTERVAL_MS);
+    flushTimer = setTimeout(flushPendingWrites, idbFlushIntervalMs(messages.length));
   }
 }
 
