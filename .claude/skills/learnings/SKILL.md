@@ -21,6 +21,14 @@ linked, not inlined.
 
 ## Register
 
+### Submit an initial session prompt exactly once (2026-08-23)
+
+**When:** creating a session with `initial_prompt`. Do not submit the same
+prompt again after session readiness. Assert one user turn and one assistant
+turn through the real CLI process. *Incident:* the CLI created the session with
+the prompt, then posted it again and returned HTTP 500 after the first reply.
+*Enforcer:* `sessions.test.ts` counts runtime prompt requests for `--new`.
+
 ### Resolve a pnpm global package through `pnpm root -g` (2026-08-23)
 
 **When:** validating or linking a binary installed by `pnpm add -g`. Build the
@@ -90,7 +98,7 @@ lock must record the boot ID and owner PID, and recover an empty or stale lock.
 **When:** changing `LLM_GATEWAY_PROXY_TARGET`, Caddy LLM matchers, or sandbox
 gateway URL resolution. Test the final public URL through the deployed proxy.
 Internal proxy mode does not prove that `/v1/llm-gateway/v1` is public.
-*Incident:* Essentia sessions received Caddy `404` because Compose selected that
+*Incident:* self-host sessions received Caddy `404` because Compose selected that
 internal prefix while Caddy exposed `/v1/llm` directly to the gateway.
 *Enforcer:* `compose-assets.test.ts` pins `LLM_GATEWAY_BASE_URL` to the public
 `${KORTIX_URL}/v1/llm` route.
