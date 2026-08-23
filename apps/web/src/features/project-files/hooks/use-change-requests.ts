@@ -35,6 +35,9 @@ export const changeRequestKeys = {
    *  project's CRs changed" invalidation; `all` above is unscoped (every
    *  project) and too broad for that. */
   project: (projectId: string) => ['project-files', 'change-requests', projectId] as const,
+  /** Every status bucket for one project — the prefix `list` nests under. */
+  listScope: (projectId: string) =>
+    ['project-files', 'change-requests', projectId, 'list'] as const,
   list: (projectId: string, status: ChangeRequestStatus | 'all') =>
     ['project-files', 'change-requests', projectId, 'list', status] as const,
   detail: (projectId: string, crId: string) =>
@@ -56,6 +59,93 @@ const versionDiffKeys = {
   idle: ['project-files', 'version-diff', 'idle'] as const,
 };
 
+/**
+ * The `ChangeRequest` for `crId` already sitting in a cached LIST response.
+ *
+ * `ChangeRequestDetailResponse` is `{ change_request: ChangeRequest }` and the
+ * list endpoint returns those very objects — same server, same shape, one
+ * request earlier. So a CR opened from a loaded list needs no round trip to
+ * paint; the detail fetch becomes a background refresh instead of a gate.
+ *
+ * Scans every status bucket (`open` / `merged` / `closed` / `all`), because the
+ * panel's filter decides which list is populated and a CR can be reached from
+ * more than one of them.
+ */
+export type CachedListEntry = readonly [
+  readonly unknown[],
+  { change_requests: ChangeRequest[] } | undefined,
+];
+
+/**
+ * Find `crId` in a set of cached list responses, and say WHICH list it came
+ * from.
+ *
+ * Pure so the lookup can be tested without a QueryClient. The key matters as
+ * much as the hit: the seed's `initialDataUpdatedAt` has to be that list's
+ * timestamp (see the caller), so the function that finds the row is the one
+ * that must report where it found it.
+ */
+export function findCachedChangeRequest(
+  entries: readonly CachedListEntry[],
+  crId: string,
+): { cr: ChangeRequest; key: readonly unknown[] } | undefined {
+  if (!crId) return undefined;
+  for (const [key, data] of entries) {
+    const cr = data?.change_requests.find((row) => row.cr_id === crId);
+    if (cr) return { cr, key };
+  }
+  return undefined;
+}
+
+function cachedChangeRequest(
+  qc: ReturnType<typeof useQueryClient>,
+  projectId: string,
+  crId: string,
+): { data: ChangeRequestDetailResponse; updatedAt: number } | undefined {
+  if (!projectId || !crId) return undefined;
+  const hit = findCachedChangeRequest(
+    qc.getQueriesData<{ change_requests: ChangeRequest[] }>({
+      queryKey: changeRequestKeys.listScope(projectId),
+    }),
+    crId,
+  );
+  if (!hit) return undefined;
+  return {
+    data: { change_request: hit.cr },
+    // The LIST's timestamp, not `Date.now()`. Passing "fresh right now" would
+    // suppress the background refetch for `staleTime`, so a CR whose status
+    // changed server-side would show the stale row until the poll caught up.
+    updatedAt: qc.getQueryState(hit.key)?.dataUpdatedAt ?? 0,
+  };
+}
+
+/**
+ * Warm a change request's detail + diff before it is opened.
+ *
+ * The diff is the expensive half and the only thing the dialog genuinely has
+ * to wait for, so starting it on pointer-enter buys the ~150-300ms of hover
+ * before the click lands. Both are plain `prefetchQuery` calls: they respect
+ * `staleTime`, so re-hovering the same row costs nothing.
+ */
+export function usePrefetchChangeRequest() {
+  const qc = useQueryClient();
+  const ctx = useProjectContext();
+  const projectId = ctx?.projectId ?? '';
+  return (crId: string) => {
+    if (!projectId || !crId) return;
+    void qc.prefetchQuery({
+      queryKey: changeRequestKeys.detail(projectId, crId),
+      queryFn: () => fetchChangeRequest(projectId, crId),
+      staleTime: 5_000,
+    });
+    void qc.prefetchQuery({
+      queryKey: changeRequestKeys.diff(projectId, crId),
+      queryFn: () => fetchChangeRequestDiff(projectId, crId),
+      staleTime: 10_000,
+    });
+  };
+}
+
 export function useChangeRequests(
   status: ChangeRequestStatus | 'all' = 'all',
   options?: { enabled?: boolean; refetchInterval?: number },
@@ -73,7 +163,9 @@ export function useChangeRequests(
 
 export function useChangeRequest(crId: string | null, options?: { enabled?: boolean }) {
   const ctx = useProjectContext();
+  const qc = useQueryClient();
   const projectId = ctx?.projectId ?? '';
+  const seed = crId ? cachedChangeRequest(qc, projectId, crId) : undefined;
   return useQuery<ChangeRequestDetailResponse>({
     queryKey: crId
       ? changeRequestKeys.detail(projectId, crId)
@@ -82,6 +174,11 @@ export function useChangeRequest(crId: string | null, options?: { enabled?: bool
     enabled: Boolean(projectId && crId) && options?.enabled !== false,
     staleTime: 5_000,
     refetchInterval: 8_000,
+    // Opening a CR from the panel paints its header on the click frame. The
+    // dialog's merge-preview query is gated on `status === 'open'`, so this
+    // also breaks a detail -> preview waterfall into two parallel requests.
+    initialData: seed?.data,
+    initialDataUpdatedAt: seed?.updatedAt,
   });
 }
 

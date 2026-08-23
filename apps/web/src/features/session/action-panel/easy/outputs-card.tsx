@@ -19,6 +19,7 @@ import Loading from '@/components/ui/loading';
 import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/runtime-files';
 import { getFileIcon } from '@/features/project-files';
+import { ObjectUrlCache } from '@/lib/object-url-cache';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import {
@@ -47,9 +48,14 @@ const KIND_ICON = {
 /** `callID:path` → object URL, shared across rows and re-renders. Keyed by
  * call, not bare path: paths repeat across sessions (`output.png`), and callID
  * is unique per tool call, so one session can never be served another's bytes.
- * Never revoked: a session shows dozens of thumbs at ~28px, and revoking on
- * unmount would refetch on every expand/collapse. */
-const thumbCache = new Map<string, string>();
+ * Not revoked on unmount: a session shows dozens of thumbs at ~28px, and
+ * revoking there would refetch on every expand/collapse. BOUNDED, though —
+ * "never revoke" and "never evict" were two decisions and only the first was
+ * needed. A long session opens dozens of image-producing tool calls and every
+ * blob behind these URLs stayed pinned for the tab's lifetime, because a
+ * session page never unmounts a turn. Least-recently-USED, so re-expanding the
+ * same output still never refetches. */
+const thumbCache = new ObjectUrlCache(64);
 
 /**
  * A 28×28 image thumbnail — the glyph is a promise ("this is an image"), the

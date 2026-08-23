@@ -1,3 +1,4 @@
+import { ObjectUrlCache } from "@/lib/object-url-cache"
 import type { PdfDocumentObject, PdfEngine } from "@embedpdf/models"
 
 const PDFIUM_WASM_PATH = "/pdfium/pdfium.wasm"
@@ -13,7 +14,19 @@ function resolvePdfiumWasmUrl(): string {
 
 let sharedEnginePromise: Promise<PdfEngine> | null = null
 const pdfDocumentCache = new Map<string, Promise<PdfDocumentObject>>()
-const thumbnailUrlCache = new Map<string, Promise<string | null>>()
+/**
+ * Rendered page thumbnails, BOUNDED and revoked on eviction.
+ *
+ * This was an uncapped `Map<string, Promise<string|null>>`, so every page of
+ * every PDF a session ever previewed kept its object URL — and the blob behind
+ * it — alive for the tab's lifetime. The in-flight map below still dedupes
+ * concurrent renders of the same page; it just stops being the permanent home
+ * for the result.
+ */
+const thumbnailUrlCache = new ObjectUrlCache(48)
+/** Renders currently in flight, so two callers share one decode. Cleared as
+ *  soon as the render settles — a resolved entry lives in the bounded cache. */
+const thumbnailInFlight = new Map<string, Promise<string | null>>()
 
 export function loadSharedPdfEngine() {
   sharedEnginePromise ??= import("@embedpdf/engines/pdfium-worker-engine").then(
@@ -57,7 +70,10 @@ export function renderPdfThumbnailUrl({
   width: number
 }) {
   const cacheKey = `${url}#${pageIndex}@${width}x${dpr}`
-  let thumbnailPromise = thumbnailUrlCache.get(cacheKey)
+  const cached = thumbnailUrlCache.get(cacheKey)
+  if (cached !== undefined) return cached
+
+  let thumbnailPromise = thumbnailInFlight.get(cacheKey)
 
   if (!thumbnailPromise) {
     thumbnailPromise = (async () => {
@@ -78,9 +94,18 @@ export function renderPdfThumbnailUrl({
         })
         .toPromise()
 
-      return URL.createObjectURL(blob)
+      const objectUrl = URL.createObjectURL(blob)
+      thumbnailUrlCache.set(cacheKey, objectUrl)
+      return objectUrl
     })()
-    thumbnailUrlCache.set(cacheKey, thumbnailPromise)
+    thumbnailInFlight.set(cacheKey, thumbnailPromise)
+    // Settled is settled: the result (or the failure) leaves the in-flight map
+    // either way, so a failed render is retried rather than remembered forever.
+    void thumbnailPromise.finally(() => {
+      if (thumbnailInFlight.get(cacheKey) === thumbnailPromise) {
+        thumbnailInFlight.delete(cacheKey)
+      }
+    })
   }
 
   return thumbnailPromise

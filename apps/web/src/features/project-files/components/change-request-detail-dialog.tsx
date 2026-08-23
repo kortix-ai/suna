@@ -56,6 +56,7 @@ import {
   useMergeChangeRequest,
   useReopenChangeRequest,
 } from '../hooks/use-change-requests';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { DiffRenderer } from './diff-renderer';
 
 function StatusBadge({ status }: { status: ChangeRequestStatus }) {
@@ -457,16 +458,24 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
 
         <ModalBody className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-0 lg:flex lg:flex-col lg:overflow-hidden">
           {diffQuery.isLoading ? (
-            <div className="grid gap-3 p-3 sm:gap-4 sm:p-5 lg:grid-cols-[270px_minmax(0,1fr)]">
-              <Skeleton className="h-40 w-full rounded-lg lg:h-72" />
-              <div className="space-y-3">
-                <Skeleton className="h-24 w-full rounded-lg" />
-                <Skeleton className="h-96 w-full rounded-lg" />
+            <div className="grid min-h-full lg:min-h-0 lg:flex-1 lg:grid-cols-[270px_minmax(0,1fr)]">
+              <div className="border-border/60 space-y-2 border-b p-3 sm:p-4 lg:border-r lg:border-b-0">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-3 w-16" />
+                <div className="space-y-1.5 pt-3">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-8 w-full rounded-md" />
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-3 p-3 sm:p-4 lg:p-5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-64 w-full rounded-md" />
               </div>
             </div>
           ) : diff && diff.files.length > 0 ? (
             <div className="grid min-h-full grid-rows-[auto_minmax(0,1fr)] lg:min-h-0 lg:flex-1 lg:grid-cols-[270px_minmax(0,1fr)]">
-              <aside className="border-border bg-background flex flex-col gap-3 border-b p-3 sm:p-4 lg:h-full lg:min-h-0 lg:border-r lg:border-b-0">
+              <aside className="border-border/60 bg-background flex flex-col gap-3 border-b p-3 sm:p-4 lg:h-full lg:min-h-0 lg:border-r lg:border-b-0">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="text-foreground text-sm font-medium">
@@ -478,12 +487,12 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                       into {diff.base_ref}
                     </p>
                   </div>
-                  <span className="bg-muted text-muted-foreground shrink-0 rounded-md px-2 py-1 text-xs font-medium tabular-nums">
+                  <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                     {diff.files.length}
                   </span>
                 </div>
 
-                <div className="border-border bg-card rounded-md border px-3 py-2">
+                <div className="border-border/60 border-t pt-3">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">
                       {tI18nHardcoded.raw(
@@ -498,7 +507,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   </div>
                 </div>
 
-                <div className="bg-card flex items-center gap-1 rounded-full border p-0.5">
+                <div className="bg-muted/40 flex items-center gap-0.5 rounded-md p-0.5">
                   <Hint label="Inline (unified) diff">
                     <Button
                       type="button"
@@ -507,8 +516,8 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                       onClick={() => setDiffLayout('unified')}
                       aria-pressed={diffLayout === 'unified'}
                       className={cn(
-                        'h-7 flex-1 gap-1.5 rounded-full',
-                        diffLayout === 'unified' && 'bg-primary/10 text-primary',
+                        'h-7 flex-1 gap-1.5 rounded-sm',
+                        diffLayout === 'unified' && 'bg-background text-foreground shadow-2xs',
                       )}
                     >
                       <Rows3 className="size-3.5" />
@@ -523,8 +532,8 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                       onClick={() => setDiffLayout('split')}
                       aria-pressed={diffLayout === 'split'}
                       className={cn(
-                        'h-7 flex-1 gap-1.5 rounded-full',
-                        diffLayout === 'split' && 'bg-primary/10 text-primary',
+                        'h-7 flex-1 gap-1.5 rounded-sm',
+                        diffLayout === 'split' && 'bg-background text-foreground shadow-2xs',
                       )}
                     >
                       <Columns2 className="size-3.5" />
@@ -595,8 +604,8 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
 
               <section className="min-w-0 space-y-3 p-3 pb-5 sm:space-y-4 sm:p-4 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:p-5">
                 {hasReviewContext && (
-                  <div className="border-border bg-background overflow-hidden rounded-lg border">
-                    <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-foreground text-sm font-medium">
                           {tI18nHardcoded.raw(
@@ -615,7 +624,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                         </Badge>
                       )}
                     </div>
-                    <div className="border-border space-y-2.5 border-t p-3">
+                    <div className="space-y-2.5">
                       {cr?.description && (
                         <div className="text-muted-foreground text-sm wrap-break-word [&_pre]:overflow-x-auto">
                           <UnifiedMarkdown content={cr.description} />
@@ -753,13 +762,15 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               </section>
             </div>
           ) : (
-            <div className="p-5">
-              <p className="border-border text-muted-foreground bg-background rounded-lg border border-dashed p-5 text-center text-xs">
-                {tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsChangeRequestDetailDialog.line356JsxTextNoChangesDetected',
-                )}
-              </p>
-            </div>
+            <EmptyState
+              size="sm"
+              className="py-16"
+              icon={FileDiff}
+              title="No changes detected"
+              description={
+                cr ? `Nothing differs between ${cr.head_ref} and ${cr.base_ref}.` : undefined
+              }
+            />
           )}
         </ModalBody>
 

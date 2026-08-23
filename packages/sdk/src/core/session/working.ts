@@ -127,6 +127,11 @@ export const INBOX_OBSERVATION_MAX_MS = 10_000;
  * Comfortably above the measured relay, far below a provider backoff.
  */
 export const TURN_END_LEDGER_LAG_MS = 3_000;
+// RETAINED AS A MEASUREMENT, NOT A RULE. It no longer gates anything: the veto
+// above is causal now, because a row still open past this lag is far more often
+// a dropped `kind:"end"` relay (turn over) than a live retry (turn running), and
+// guessing wrong in the first case is a visible oscillation. Exported because
+// this package's names are a public contract.
 
 /**
  * How long a stop this tab issued may bar a server read from reporting the
@@ -200,6 +205,25 @@ export interface WorkingStreamInput {
   atMs: number;
 }
 
+/**
+ * The last moment the RUNTIME'S OWN OUTPUT reached this tab for this session —
+ * a streamed part, a message. Stamped on observation, like every other input.
+ *
+ * Every other input here is an OBSERVER of the runtime: a `/turn` poll, a
+ * status frame, a health probe, an inbox read. Each can be dropped, throttled
+ * or aged out, and when one is, the projection has historically had to guess.
+ * This one is not an observer. Content arriving is not a report that the
+ * runtime is working — it IS the runtime working, and no report outranks it.
+ *
+ * Reported with a screen recording (essentia, 2026-08-23): a tool row with a
+ * live spinner and text growing on screen, and a composer showing its send
+ * arrow. Every observer had gone quiet; the only thing still speaking was the
+ * content, and nothing was listening to it.
+ */
+export interface WorkingActivityInput {
+  atMs: number;
+}
+
 /** One read of the session's durable prompt inbox: how many rows the server is
  *  still going to run, and when that list was read. */
 export interface WorkingInboxInput {
@@ -215,6 +239,8 @@ export interface WorkingInputs {
   inbox?: WorkingInboxInput | null;
   server: WorkingServerInput | null;
   stream: WorkingStreamInput | null;
+  /** The runtime's own output, last seen. See `WorkingActivityInput`. */
+  activity?: WorkingActivityInput | null;
   nowMs: number;
 }
 
@@ -280,7 +306,7 @@ function instant(value: string | null | undefined): number | null {
  *    must re-evaluate at those instants — see `workingExpiryAtMs`.
  */
 export function projectWorking(inputs: WorkingInputs): WorkingProjection {
-  const { optimistic, abort, inbox, server, stream, nowMs } = inputs;
+  const { optimistic, abort, inbox, server, stream, activity, nowMs } = inputs;
   const receiptLive = !!optimistic && nowMs - optimistic.atMs < OPTIMISTIC_RECEIPT_MAX_MS;
   // TWO floors, because the two server-side observers have different knowledge.
   //
@@ -314,10 +340,26 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   const streamFresh = !!stream && nowMs - stream.atMs <= STREAM_OBSERVATION_MAX_MS;
   const inboxFresh = !!inbox && nowMs - inbox.atMs <= INBOX_OBSERVATION_MAX_MS;
 
-  // The runtime's own end-of-turn frame, while it is fresh enough to decide
-  // anything at all. It borrows `STREAM_OBSERVATION_MAX_MS` rather than
-  // inventing a second bound: a frame too stale to answer is too stale to veto.
-  const idleFrame = streamFresh && stream!.type === 'idle' ? stream! : null;
+  // The runtime's own end-of-turn frame.
+  //
+  // NOT gated on `streamFresh`, unlike every branch that decides `working` from
+  // the stream. The bound exists because an old frame cannot testify to what is
+  // happening NOW — but this frame is not asked that. It is asked whether a turn
+  // that started BEFORE it has ended, and that answer does not rot: a turn which
+  // resumed would have produced a newer, non-idle frame, and then this is not an
+  // idle frame at all. Gating it cost exactly what the 3s window cost, 42s later
+  // and permanently — at `stream.atMs + STREAM_OBSERVATION_MAX_MS` the veto
+  // vanished with no new input, and a row the relay never closed put the
+  // composer back on Stop until its deadline (240 MINUTES for an accepted turn).
+  const idleFrame = stream && stream.type === 'idle' ? stream : null;
+
+  // CONTENT FIRST. Bounded by the stream's own freshness rule, because it
+  // arrives on the same transport and goes stale for the same reasons — but
+  // within that window it outranks every observer, including an idle frame it
+  // postdates. A runtime that is emitting parts is working, whatever the last
+  // status frame said and whatever a poll that has not answered yet will say.
+  const activityFresh = !!activity && nowMs - activity.atMs <= STREAM_OBSERVATION_MAX_MS;
+  const activityAfterIdle = activityFresh && (!idleFrame || activity!.atMs > idleFrame.atMs);
 
   /**
    * Whether the runtime has already finished this turn.
@@ -354,13 +396,35 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     // new one the frame knows nothing about.
     const startedAt = instant(candidate.started_at);
     if (startedAt === null || startedAt >= idleFrame.atMs) return false;
-    // And only while the ledger has not had time to record the close. Past
-    // `TURN_END_LEDGER_LAG_MS` a row that is STILL open is saying something the
-    // frame cannot explain — the commonest cause being that the frame was a
-    // retry's `session.error`, not the end of anything — so the ledger wins
-    // again and the composer goes back to working.
-    return nowMs - idleFrame.atMs < TURN_END_LEDGER_LAG_MS;
+    // And that is the whole rule. It used to expire after
+    // `TURN_END_LEDGER_LAG_MS`, on the theory that a row still open past the
+    // relay's lag must mean the frame was a retry's `session.error` rather than
+    // the end of anything. But time is not evidence: when the `kind:"end"`
+    // relay is simply DROPPED — the documented failure mode, closed by a
+    // reconciliation sweep 15.1s late in this file's own measurement — the row
+    // stays open for exactly the same reason and the turn is exactly as
+    // finished. Expiring the veto therefore announced a finished turn again,
+    // and the user watched "Gathering thoughts…" and the Stop button come back
+    // for seconds with the answer already on screen (dev, 2026-08-23).
+    //
+    // A turn that is genuinely still running says so, and that is what returns
+    // authority to the ledger: any newer frame is not idle, so `idleFrame` is
+    // null on the next evaluation and the row decides again — immediately, with
+    // no window to tune. A runtime that goes silent instead is bounded by
+    // `STREAM_OBSERVATION_MAX_MS`, after which the frame is too stale to veto
+    // anything.
+    return true;
   };
+
+  if (activityAfterIdle) {
+    return {
+      state: 'working',
+      source: 'stream',
+      turnId: null,
+      since: activity!.atMs,
+      serverOpenTurnToken: serverFresh ? (server!.turns[0]?.turn_token ?? null) : null,
+    };
+  }
 
   const ledgerTurn = serverFresh ? server!.turns[0] : undefined;
   // `serverOpenTurnToken` deliberately keeps reporting the LEDGER's turn even
@@ -481,17 +545,22 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
  * skipped, so re-arming from the timer this returns terminates.
  */
 export function workingExpiryAtMs(inputs: WorkingInputs): number | null {
-  const { optimistic, abort, inbox, server, stream, nowMs } = inputs;
+  const { optimistic, abort, inbox, server, stream, activity, nowMs } = inputs;
   const deadlines = [
     // The instant a runtime idle frame stops outranking the ledger's turn row.
     // Nothing else re-renders then, and a session held `idle` by that rule has
     // to go back to `working` on its own when the frame's window closes.
-    stream && stream.type === 'idle' ? stream.atMs + TURN_END_LEDGER_LAG_MS : null,
+    // (An idle frame no longer stops outranking the ledger on a timer — see
+    // `endedByRuntime` — so there is nothing to schedule for it here.)
+    null,
     optimistic ? optimistic.atMs + OPTIMISTIC_RECEIPT_MAX_MS : null,
     abort ? abort.atMs + OPTIMISTIC_ABORT_MAX_MS : null,
     inbox ? inbox.atMs + INBOX_OBSERVATION_MAX_MS : null,
     server ? server.atMs + SERVER_OBSERVATION_MAX_MS : null,
     stream ? stream.atMs + STREAM_OBSERVATION_MAX_MS : null,
+    // Content stops answering when it goes stale, and nothing else re-renders
+    // at that instant.
+    activity ? activity.atMs + STREAM_OBSERVATION_MAX_MS : null,
   ];
   let next: number | null = null;
   for (const deadline of deadlines) {

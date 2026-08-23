@@ -56,6 +56,15 @@ export default function Error({
   useEffect(() => {
     if (runtimeNotReady) {
       console.debug('[runtime] not ready yet (sandbox still loading) — retrying', error?.message);
+      // Silent on screen, NOT silent in telemetry. This branch renders `null`
+      // for the whole route and soft-resets every 800ms, so to anyone watching
+      // — or to a screen recording — it is a black page that comes back on its
+      // own: indistinguishable from the browser reloading the tab, which is the
+      // other explanation for the same report. One breadcrumb separates them.
+      Sentry.captureMessage('global boundary blanked the page (runtime not ready)', {
+        level: 'info',
+        extra: { message: error?.message, digest: error?.digest },
+      });
       return;
     }
     console.error('[Kortix Home Error]', error);

@@ -22,6 +22,22 @@ import * as Sentry from '@sentry/nextjs';
  */
 
 const CHUNK_ERROR_KEY = 'kortix.lastChunkError';
+const HEAP_SAMPLE_KEY = 'kortix.lastHeapSample';
+
+/**
+ * Heap size above which a bare reload stops looking ordinary.
+ *
+ * Chrome kills a renderer that runs out of memory and reloads the tab, and that
+ * load is indistinguishable from cmd+R in every field the platform exposes —
+ * `wasDiscarded` is false, the navigation type is 'reload', no chunk failed. So
+ * the previous life has to leave the evidence behind itself. A session tab
+ * sitting above this before it vanished is not a person pressing reload.
+ *
+ * Chrome's per-renderer budget on a 64-bit desktop is ~2-4GB; 1.5GB is high
+ * enough that an ordinary thread never reaches it and low enough to catch the
+ * approach to a kill.
+ */
+export const HEAP_PRESSURE_BYTES = 1_500_000_000;
 
 /** A failed lazy chunk is the one involuntary reload cause we can see COMING. */
 export function noteChunkLoadFailure(message: string): void {
@@ -32,6 +48,20 @@ export function noteChunkLoadFailure(message: string): void {
   }
 }
 
+/** Record what this tab is holding, so the NEXT load can say whether it died
+ *  under memory pressure. Best-effort: `performance.memory` is Chromium-only
+ *  and absent in a cross-origin-isolated context. */
+export function noteHeapSample(now = Date.now()): void {
+  try {
+    const memory = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory;
+    const used = memory?.usedJSHeapSize;
+    if (typeof used !== 'number') return;
+    sessionStorage.setItem(HEAP_SAMPLE_KEY, JSON.stringify({ used, at: now }));
+  } catch {
+    /* storage or the API is unavailable — the label is a nice-to-have */
+  }
+}
+
 export interface ReloadForensics {
   /** Chrome dropped the tab (memory pressure) and restored it on return. */
   discarded: boolean;
@@ -39,12 +69,16 @@ export interface ReloadForensics {
   navigationType: string | null;
   /** A chunk load failed in the previous life of this tab, within 30s. */
   recentChunkError: string | null;
+  /** Bytes this tab was holding just before it went away, when the previous
+   *  life recorded a sample within the last 2 minutes. */
+  heapBeforeReload: number | null;
 }
 
 export function readReloadForensics(now = Date.now()): ReloadForensics {
   let discarded = false;
   let navigationType: string | null = null;
   let recentChunkError: string | null = null;
+  let heapBeforeReload: number | null = null;
 
   try {
     discarded = (document as Document & { wasDiscarded?: boolean }).wasDiscarded === true;
@@ -72,14 +106,32 @@ export function readReloadForensics(now = Date.now()): ReloadForensics {
     /* storage unavailable */
   }
 
-  return { discarded, navigationType, recentChunkError };
+  try {
+    const raw = sessionStorage.getItem(HEAP_SAMPLE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { used?: number; at?: number };
+      if (parsed?.at && now - parsed.at < 120_000 && typeof parsed.used === 'number') {
+        heapBeforeReload = parsed.used;
+      }
+      sessionStorage.removeItem(HEAP_SAMPLE_KEY);
+    }
+  } catch {
+    /* storage unavailable */
+  }
+
+  return { discarded, navigationType, recentChunkError, heapBeforeReload };
 }
 
 /** True when the load looks involuntary — worth reporting, unlike an ordinary
  *  navigation or a reload the user pressed themselves (which we cannot tell
  *  apart from an automatic one, so a bare 'reload' alone is NOT enough). */
 export function isInvoluntaryLoad(f: ReloadForensics): boolean {
-  return f.discarded || f.recentChunkError !== null;
+  if (f.discarded || f.recentChunkError !== null) return true;
+  // The renderer-OOM signature: a plain reload, no chunk error, nothing
+  // discarded — but the tab was holding more than a person's session should
+  // just before it vanished. Without this the one hypothesis with no other
+  // fingerprint stays invisible.
+  return f.navigationType === 'reload' && (f.heapBeforeReload ?? 0) >= HEAP_PRESSURE_BYTES;
 }
 
 /**
@@ -101,6 +153,11 @@ export function useReloadForensics(sessionId: string | null | undefined): void {
     };
     window.addEventListener('error', onError);
 
+    // Sample now and on an interval, so whatever ends this tab leaves a number
+    // behind. 30s is far below the 2-minute freshness window the reader applies.
+    noteHeapSample();
+    const heapTimer = window.setInterval(() => noteHeapSample(), 30_000);
+
     const forensics = readReloadForensics();
     if (isInvoluntaryLoad(forensics)) {
       console.warn('[session] involuntary page load', { sessionId, ...forensics });
@@ -110,6 +167,9 @@ export function useReloadForensics(sessionId: string | null | undefined): void {
       });
     }
 
-    return () => window.removeEventListener('error', onError);
+    return () => {
+      window.clearInterval(heapTimer);
+      window.removeEventListener('error', onError);
+    };
   }, [sessionId]);
 }

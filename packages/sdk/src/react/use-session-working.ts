@@ -80,6 +80,9 @@ export function buildWorkingInputs(input: {
   inbox: WorkingInboxInput | undefined;
   status: SessionStatus | undefined;
   statusAtMs: number;
+  /** When the runtime's own output last reached this tab for this session
+   *  (`useSyncStore.sessionActivityAt`). 0/undefined when it never has. */
+  activityAtMs?: number;
   optimistic: SendReceipt | null;
   abort?: AbortReceipt | null;
   nowMs: number;
@@ -92,6 +95,11 @@ export function buildWorkingInputs(input: {
     server: input.turn
       ? { turns: input.turn.turns, lastEnded: input.turn.last_ended, atMs: input.turn.atMs }
       : null,
+    // The runtime's own output, which is not an observation OF the runtime but
+    // the runtime itself — see `WorkingActivityInput`. It is what answers when
+    // every observer has gone quiet: a dropped status frame, a poll throttled
+    // by a backgrounded tab.
+    activity: input.activityAtMs ? { atMs: input.activityAtMs } : null,
     // Silence is not an observation. A session with no status frame yet feeds
     // NOTHING here — the old code read "no status" as idle, which unmasked
     // live turns whenever a frame was dropped.
@@ -180,6 +188,12 @@ export function useSessionWorking(
   }, [status, streamKey]);
   const stream = observed && observed.key === streamKey ? observed : null;
 
+  // The runtime's own output for THIS session's wire id. Quantized to a second
+  // in the store, so subscribing here cannot re-render at the stream's rate.
+  const activityAtMs = useSyncStore((s) =>
+    streamKey ? s.sessionActivityAt[streamKey] : undefined,
+  );
+
   const canRead = enabled && !!projectId && !!sessionId;
 
   const inputsFor = (turn: SessionTurnObservation | undefined, nowMs: number): WorkingInputs =>
@@ -188,6 +202,7 @@ export function useSessionWorking(
       inbox,
       status: stream?.status,
       statusAtMs: stream?.atMs ?? 0,
+      activityAtMs,
       optimistic,
       abort,
       nowMs,

@@ -7,7 +7,11 @@ import { isPendingAction, useSessionAudit } from '@/features/session/session-aud
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-disconnected';
-import { type SessionPrompt, hasRetryingAssistantTurn } from '@kortix/sdk';
+import {
+  type SessionPrompt,
+  hasRetryingAssistantTurn,
+  listSessionPrompts,
+} from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
 import {
   WarningIcon as AlertTriangle,
@@ -224,7 +228,7 @@ import { useReadinessSettling } from './use-readiness-settling';
 import { useReloadForensics } from './reload-forensics';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
-import { shouldLoadOlderHistory } from './session-older-autoload';
+import { olderAutoloadExhausted, shouldLoadOlderHistory } from './session-older-autoload';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -2808,8 +2812,12 @@ export function SessionChat({
   // in the turn anchor — capture where the topmost visible turn sits, restore
   // it after the prepended turns render, and the viewport never jumps.
   const [olderPullFailed, setOlderPullFailed] = useState(false);
+  // Pages the SENTINEL has pulled. An explicit pull never counts — see
+  // `OLDER_AUTOLOAD_MAX_PAGES` for why the automatic path is the one bounded.
+  const [autoLoadedPages, setAutoLoadedPages] = useState(0);
   useEffect(() => {
     setOlderPullFailed(false);
+    setAutoLoadedPages(0);
   }, [sessionId]);
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
@@ -2838,8 +2846,10 @@ export function SessionChat({
             hasOlder,
             isLoadingOlder,
             lastPullFailed: olderPullFailed,
+            autoLoadedPages,
           })
         ) {
+          setAutoLoadedPages((pages) => pages + 1);
           void handleLoadOlder();
         }
       },
@@ -2850,7 +2860,15 @@ export function SessionChat({
     return () => observer.disconnect();
     // sessionId is a dep because switching sessions swaps the scroll
     // container the observer is rooted in.
-  }, [hasOlder, isLoadingOlder, olderPullFailed, handleLoadOlder, scrollRef, sessionId]);
+  }, [
+    hasOlder,
+    isLoadingOlder,
+    olderPullFailed,
+    autoLoadedPages,
+    handleLoadOlder,
+    scrollRef,
+    sessionId,
+  ]);
 
   // Scroll to the bottom on initial load / session change.
   // Uses a callback ref on the scroll container to guarantee it's mounted.
@@ -3725,10 +3743,23 @@ export function SessionChat({
           acceptSendReceipt(clientMessageId);
           return { ok: true } as const;
         } catch (cause) {
-          // Unchanged recovery: clear busy, then either rehydrate the real
-          // messages or drop the optimistic one if the server has no record.
+          // Ask the INBOX, not the runtime. This prompt's home is a durable
+          // control-plane row; OpenCode's transcript cannot see it until the
+          // admission gate delivers it, so a rehydrate always reports it
+          // missing and the recovery used to delete the bubble on that answer —
+          // while the row was already running. Reported from a live self-host:
+          // "it queues the message and starts running it, but doesn't show in
+          // the frontend."
+          //
+          // `clientMessageId` is the POST's idempotency key, so the row is
+          // addressable by exactly the thing this send already holds.
           const error = recoverFromSendFailure(sessionId, messageID, cause, {
             classify: classifySessionError,
+            inboxRowExists: async () => {
+              if (!projectId || !projectSessionId) return false;
+              const { prompts } = await listSessionPrompts(projectId, projectSessionId);
+              return prompts.some((prompt) => prompt.client_message_id === clientMessageId);
+            },
           });
           return { ok: false, error, cause } as const;
         }
@@ -3738,6 +3769,13 @@ export function SessionChat({
         // rather than let a refused send claim `working` for a minute. Named,
         // so a slow refusal cannot drop the receipt of a send the user made
         // after it.
+        //
+        // ONE exception, and it resolves AFTER this line: if the inbox turns
+        // out to hold the row, `recoverFromSendFailure` re-takes the receipt
+        // when its lookup lands, so the composer goes back to working on its
+        // own. This clear is still right in the moment — as far as this tab
+        // knows right now, nothing is coming — and it is NAMED, so it can only
+        // ever drop this send's own receipt.
         clearSendReceipt(clientMessageId);
         setCommandError(result.error);
         throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
@@ -4620,6 +4658,18 @@ export function SessionChat({
                         soon as the prepended turns render. */}
                       <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
                       {isLoadingOlder && <Loading />}
+                      {!isLoadingOlder &&
+                        !olderPullFailed &&
+                        olderAutoloadExhausted({ hasOlder, autoLoadedPages }) && (
+                          <Button
+                            type="button"
+                            variant="outline-ghost"
+                            size="sm"
+                            onClick={() => void handleLoadOlder()}
+                          >
+                            Load older messages
+                          </Button>
+                        )}
                       {olderPullFailed && !isLoadingOlder && (
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground text-xs">

@@ -608,6 +608,83 @@ function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
  * own `started_at` is what separates them: a turn that began BEFORE the idle
  * frame is the turn that frame ended.
  */
+describe('projectWorking — content is evidence', () => {
+  // Reported with a screen recording: the transcript is streaming — a tool row
+  // with a live spinner, text growing — and the composer shows its SEND ARROW.
+  // No Stop. The session dot in the sidebar is green the whole time.
+  //
+  // Every input this projection had was an OBSERVER of the runtime: a `/turn`
+  // poll, an SSE status frame, a health probe, an inbox read. The transcript
+  // renders the runtime's actual OUTPUT, and that was not an input at all. So a
+  // dropped status frame — or a poll throttled by a backgrounded tab — left the
+  // composer telling the user something the screen was contradicting.
+  //
+  // Content is the strongest evidence there is: it does not report that the
+  // runtime is working, it IS the runtime working.
+  test('streaming content outranks a stale idle frame', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 + 61_000 },
+      stream: { type: 'idle', atMs: T0 + 60_000 },
+      activity: { atMs: T0 + 60_500 },
+      nowMs: T0 + 61_100,
+    });
+
+    expect(projection).toMatchObject({ state: 'working' });
+  });
+
+  test('content older than the idle frame does not resurrect the turn', () => {
+    // The frame is the newer statement here, and it says the turn ended.
+    expect(
+      projectWorking({
+        optimistic: null,
+        server: { turns: [turn()], atMs: T0 + 61_000 },
+        stream: { type: 'idle', atMs: T0 + 60_500 },
+        activity: { atMs: T0 + 60_000 },
+        nowMs: T0 + 61_100,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('content answers even when every observer has gone stale', () => {
+    // A backgrounded tab throttles the poll and can drop the stream, so both
+    // observations age out — and the screen keeps streaming. This is the case
+    // where the projection had nothing left to say and said `idle`.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 },
+      stream: { type: 'busy', atMs: T0 },
+      activity: { atMs: T0 + 200_000 },
+      nowMs: T0 + 200_500,
+    });
+
+    expect(projection).toMatchObject({ state: 'working' });
+  });
+
+  test('stale content is not evidence of anything', () => {
+    expect(
+      projectWorking({
+        optimistic: null,
+        server: null,
+        stream: null,
+        activity: { atMs: T0 },
+        nowMs: T0 + 200_000,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('no activity input at all behaves exactly as before', () => {
+    expect(
+      projectWorking({
+        optimistic: null,
+        server: { turns: [], atMs: T0 + 100 },
+        stream: null,
+        nowMs: T0 + 200,
+      }).state,
+    ).toBe('idle');
+  });
+});
+
 describe('projectWorking — a runtime idle frame ends the turn it names', () => {
   test('an open ledger turn that STARTED BEFORE the newest idle frame is over', () => {
     const projection = projectWorking({
@@ -660,6 +737,80 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
     expect(projection).toMatchObject({ state: 'working', source: 'server' });
   });
 
+  // Reported from dev 2026-08-23 with three screenshots one second apart: the
+  // answer is on screen and the composer is idle, then "Gathering thoughts…"
+  // and the Stop button come BACK for a couple of seconds, then leave again.
+  // "It finishes, then reconnects for a couple secs, then disconnects again."
+  //
+  // That is this rule oscillating. The runtime went idle; the `kind:"end"`
+  // relay that closes the ledger row was dropped, so `/turn` keeps reporting
+  // the turn open until a reconciliation sweep closes it (MEASURED in this
+  // file's own notes: 15.1s late). The idle frame outranked the row for
+  // exactly 3s and then handed authority back — so the UI announced a turn
+  // that had already finished, for as long as the sweep took.
+  test('a dropped end-relay never re-busies a turn the runtime already ended', () => {
+    const ended = { turns: [turn()], atMs: T0 + 60_100 };
+    const idleFrame = { type: 'idle' as const, atMs: T0 + 60_000 };
+
+    // Immediately after the frame: idle (this part already worked).
+    expect(
+      projectWorking({ optimistic: null, server: ended, stream: idleFrame, nowMs: T0 + 60_200 })
+        .state,
+    ).toBe('idle');
+
+    // Ten seconds later the sweep still has not closed the row. The turn is no
+    // more alive than it was a moment ago, and the composer must not say it is.
+    expect(
+      projectWorking({
+        optimistic: null,
+        server: { turns: [turn()], atMs: T0 + 70_000 },
+        stream: idleFrame,
+        nowMs: T0 + 70_100,
+      }).state,
+    ).toBe('idle');
+  });
+
+  test('and it never re-busies once the frame ages out either', () => {
+    // The first cut of this fix left the same oscillation 42 seconds later:
+    // `idleFrame` was gated on `streamFresh`, so at
+    // `stream.atMs + STREAM_OBSERVATION_MAX_MS` the veto vanished with no new
+    // input and a still-open row took the composer back to `working` — and this
+    // one does NOT self-heal. An unobservable turn record is cleared only at its
+    // deadline, and an accepted turn's grant defaults to 240 MINUTES.
+    //
+    // Staleness cannot make an ended turn un-end. The frame is a statement about
+    // a turn that started before it, and that stays true however old the
+    // statement gets; a turn that resumed would have produced a newer, non-idle
+    // frame.
+    const idleFrame = { type: 'idle' as const, atMs: T0 + 60_000 };
+    for (const age of [STREAM_OBSERVATION_MAX_MS + 100, 10 * 60_000, 4 * 60 * 60_000]) {
+      expect(
+        projectWorking({
+          optimistic: null,
+          server: { turns: [turn()], atMs: T0 + 60_000 + age - 50 },
+          stream: idleFrame,
+          nowMs: T0 + 60_000 + age,
+        }).state,
+      ).toBe('idle');
+    }
+  });
+
+  // The protection the old wall-clock window was really buying: a turn that is
+  // still running announces itself, and THAT is what returns authority to the
+  // ledger — evidence, not the passage of time.
+  test('a newer non-idle frame hands the ledger back immediately', () => {
+    for (const type of ['busy', 'retry'] as const) {
+      expect(
+        projectWorking({
+          optimistic: null,
+          server: { turns: [turn()], atMs: T0 + 61_000 },
+          stream: { type, atMs: T0 + 60_500 },
+          nowMs: T0 + 61_100,
+        }),
+      ).toMatchObject({ state: 'working', source: 'server' });
+    }
+  });
+
   test('a BUSY frame never suppresses the ledger — only an idle one ends a turn', () => {
     const projection = projectWorking({
       optimistic: null,
@@ -671,31 +822,29 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
     expect(projection).toMatchObject({ state: 'working' });
   });
 
-  test('a RETRY does not un-busy a live turn — the frame stops outranking the ledger', () => {
-    // `session.error` is relayed into the status slot as `idle` ("errors
-    // terminate the response"), and OpenCode emits it while it is RETRYING a
-    // provider — a 429 backoff, a transient upstream 5xx — with the turn still
-    // running. Trusting any idle frame for the stream's whole 45s life
-    // therefore dropped the composer out of `working` mid-turn and held it
-    // there until the next `busy` frame: the reported "it keeps stopping
-    // visually, the chat input doesn't stay connected".
-    //
-    // Past `TURN_END_LEDGER_LAG_MS` a ledger row that is STILL open outranks
-    // the frame again, so a retry blip self-heals in seconds.
+  test('a retry that announces itself takes the ledger back — no window needed', () => {
+    // OpenCode emits `retry` while it backs off a provider (429, transient 5xx)
+    // with the turn still running, and that frame is NOT idle — so the ledger
+    // decides again the moment it lands. This used to be enforced by expiring
+    // the idle veto after `TURN_END_LEDGER_LAG_MS`, which also un-ended turns
+    // that had genuinely finished (a dropped `kind:"end"` relay looks identical
+    // to a retry from a clock's point of view). Pinning the FRAME is what that
+    // rule was really for.
     const projection = projectWorking({
       optimistic: null,
       server: { turns: [turn()], atMs: T0 + 60_000 + TURN_END_LEDGER_LAG_MS + 500 },
-      stream: { type: 'idle', atMs: T0 + 60_000 },
+      stream: { type: 'retry', atMs: T0 + 60_000 + TURN_END_LEDGER_LAG_MS + 100 },
       nowMs: T0 + 60_000 + TURN_END_LEDGER_LAG_MS + 600,
     });
 
     expect(projection).toMatchObject({ state: 'working', source: 'server' });
   });
 
-  test('the projection re-evaluates when the frame stops outranking the ledger', () => {
-    // The rule moves with `nowMs` and nothing else re-renders at that instant,
-    // so the expiry timer has to name it — exactly why the other bounds are
-    // listed there.
+  test('an ended turn schedules no flip back to working', () => {
+    // The old rule moved with `nowMs` alone, so the expiry timer had to name
+    // the instant it flipped — and that scheduled re-render IS the flap the
+    // user sees. Nothing about a finished turn changes with time now, so the
+    // only expiry left is the frame's own staleness bound.
     const inputs = {
       optimistic: null,
       server: { turns: [turn()], atMs: T0 + 60_100 },
@@ -703,7 +852,7 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
       nowMs: T0 + 60_200,
     };
     expect(projectWorking(inputs).state).toBe('idle');
-    expect(workingExpiryAtMs(inputs)).toBe(T0 + 60_000 + TURN_END_LEDGER_LAG_MS);
+    expect(workingExpiryAtMs(inputs)).toBe(T0 + 60_000 + STREAM_OBSERVATION_MAX_MS);
   });
 
   test('a turn with no start instant keeps the ledger its authority', () => {
@@ -719,19 +868,30 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
     expect(projection).toMatchObject({ state: 'working' });
   });
 
-  test('an idle frame too old to decide anything stops suppressing the ledger', () => {
-    // The suppression borrows the stream's OWN freshness bound rather than
-    // inventing a second one: once a frame is too stale to answer, it is too
-    // stale to veto, and a turn the ledger still holds open is the only
-    // observation left.
-    const projection = projectWorking({
-      optimistic: null,
-      server: { turns: [turn()], atMs: T0 + 60_000 + STREAM_OBSERVATION_MAX_MS + 1_000 },
-      stream: { type: 'idle', atMs: T0 + 60_000 },
-      nowMs: T0 + 60_000 + STREAM_OBSERVATION_MAX_MS + 1_100,
-    });
+  test('a stale idle frame still cannot decide WORKING — only that a turn ended', () => {
+    // The freshness bound is about testifying to the present, so it still gates
+    // every branch that reads `working` out of the stream. What it must not gate
+    // is the veto: this test used to assert that an aged-out idle frame handed a
+    // still-open row back to the ledger, which is the same oscillation the 3s
+    // window produced, 42s later and permanent (an accepted turn's record is
+    // cleared only at its deadline — 240 minutes by default).
+    //
+    // A turn started AFTER the frame is untouched by it at any age, and that is
+    // what the ledger keeps deciding.
+    const staleIdle = { type: 'idle' as const, atMs: T0 + 60_000 };
+    const nowMs = T0 + 60_000 + STREAM_OBSERVATION_MAX_MS + 1_100;
 
-    expect(projection).toMatchObject({ state: 'working', source: 'server' });
+    expect(
+      projectWorking({
+        optimistic: null,
+        server: {
+          turns: [turn({ started_at: new Date(T0 + 60_500).toISOString() })],
+          atMs: nowMs - 100,
+        },
+        stream: staleIdle,
+        nowMs,
+      }),
+    ).toMatchObject({ state: 'working', source: 'server' });
   });
 
   test('the ledger\'s token survives the frame — only the WORKING answer moves', () => {

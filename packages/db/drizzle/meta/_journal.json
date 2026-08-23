@@ -414,6 +414,13 @@
       "when": 1787430914634,
       "tag": "20260822203514_add_compute_node_relay_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1787518162367,
+      "tag": "20260823204922_drop_compute_node_tables",
+      "breakpoints": true
     }
   ]
 }

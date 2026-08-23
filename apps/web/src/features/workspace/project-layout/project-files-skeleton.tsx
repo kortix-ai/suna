@@ -17,23 +17,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 export function ProjectFilesSkeleton() {
   return (
     <div className="bg-background flex h-full flex-col" data-slot="project-files-skeleton">
-      {/* DriveHeader — h-12 with a bottom border, matching drive-header.tsx */}
-      <div className="border-border/40 flex h-12 shrink-0 items-center gap-2 border-b px-3">
+      {/* The one header row — h-11, matching drive-header.tsx. There is no
+          second toolbar row to placehold any more: the path strip below it
+          only renders once you are inside a folder, and this boundary always
+          paints at the root. */}
+      <div className="border-border/60 flex h-11 shrink-0 items-center gap-2 border-b px-2">
         <Skeleton className="size-7 rounded-md" />
-        <Skeleton className="h-4 w-28 rounded" />
-        <div className="ml-auto flex items-center gap-2">
+        <Skeleton className="h-4 w-16 rounded" />
+        <div className="ml-auto flex items-center gap-1.5">
+          <Skeleton className="h-8 w-30 rounded-md" />
           <Skeleton className="size-7 rounded-md" />
-          <Skeleton className="size-7 rounded-md" />
-        </div>
-      </div>
-
-      {/* DriveToolbar — breadcrumbs on the left, version selector on the right */}
-      <div className="border-border/40 flex h-10 shrink-0 items-center gap-2 border-b px-3">
-        <Skeleton className="h-4 w-20 rounded" />
-        <Skeleton className="size-3 rounded" />
-        <Skeleton className="h-4 w-24 rounded" />
-        <div className="ml-auto flex items-center gap-2">
-          <Skeleton className="h-7 w-24 rounded-md" />
+          <Skeleton className="h-8 w-36 rounded-md" />
           <Skeleton className="size-7 rounded-md" />
         </div>
       </div>
