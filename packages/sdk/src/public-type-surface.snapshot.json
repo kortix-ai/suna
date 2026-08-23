@@ -3697,7 +3697,12 @@
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
-  "./server": ["createScopedKortix", "forwardKortixRequest", "getScopedConfig", "runWithKortix"],
+  "./server": [
+    "createScopedKortix",
+    "forwardKortixRequest",
+    "getScopedConfig",
+    "runWithKortix"
+  ],
   "./internal/sync-store": [
     "Binary",
     "MessageError",
@@ -3730,7 +3735,9 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./internal/opencode-pending-store": ["useOpenCodePendingStore"],
+  "./internal/opencode-pending-store": [
+    "useOpenCodePendingStore"
+  ],
   "./internal/idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
@@ -5891,10 +5898,6 @@
     "SsoProvider",
     "StaticAppSource",
     "SubscriptionMutationResult",
-    "TemplateDetail",
-    "TemplateInput",
-    "TemplateInstallResult",
-    "TemplateRequirement",
     "TriggerSessionAccess",
     "UpdateAppAccessInput",
     "UpdateAppInput",
@@ -6337,8 +6340,16 @@
     "validateToken",
     "verifyGatewayProvider"
   ],
-  "./feature-flags": ["FeatureFlags", "featureFlags", "parseFlagOverride"],
-  "./fresh-sessions": ["clearSessionFresh", "isSessionFresh", "markSessionFresh"],
+  "./feature-flags": [
+    "FeatureFlags",
+    "featureFlags",
+    "parseFlagOverride"
+  ],
+  "./fresh-sessions": [
+    "clearSessionFresh",
+    "isSessionFresh",
+    "markSessionFresh"
+  ],
   "./instance-routes": [
     "ACTIVE_INSTANCE_COOKIE",
     "INSTANCE_SCOPED_ROUTES",
@@ -6804,7 +6815,9 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./opencode-pending-store": ["useOpenCodePendingStore"],
+  "./opencode-pending-store": [
+    "useOpenCodePendingStore"
+  ],
   "./idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
