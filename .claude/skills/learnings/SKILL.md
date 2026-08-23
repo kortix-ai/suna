@@ -21,6 +21,14 @@ linked, not inlined.
 
 ## Register
 
+### Resolve a pnpm global package through `pnpm root -g` (2026-08-23)
+
+**When:** validating or linking a binary installed by `pnpm add -g`. Build the
+path as `$(pnpm root -g)/<package>`; do not parse `pnpm list --parseable` output.
+That output changed shape and made the E2B template fail after a successful
+OpenCode install, so new sessions continued using a stale warm template.
+*Enforcer:* `apps/sandbox/opencode-warmup.test.ts` pins the Dockerfile command.
+
 ### A channel promotion must evaluate after skipped sibling surfaces (2026-08-23)
 
 **When:** adding a dev image promotion job after a conditional multi-surface

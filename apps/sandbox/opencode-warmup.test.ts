@@ -438,7 +438,7 @@ exit 1
 
     expect(dockerfile).toContain('iputils-arping util-linux');
     expect(dockerfile).toContain(
-      "opencode_package=\"$(pnpm list -g --parseable --depth 0 opencode-ai | sed -n '\\#/node_modules/opencode-ai$#p' | tail -n 1)\"",
+      'opencode_package="$(pnpm root -g)/opencode-ai"',
     );
     expect(dockerfile).toContain('opencode_native="$opencode_package/bin/opencode.exe"');
     expect(dockerfile).toContain('test "$(wc -c < "$opencode_native")" -gt 50000000');
