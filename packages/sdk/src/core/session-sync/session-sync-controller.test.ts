@@ -7,6 +7,7 @@ import {
   loadCompleteSessionHistory,
   type SessionSyncControllerOptions,
   type SessionSyncPage,
+  type SessionSyncReason,
   type SessionSyncScheduler,
 } from './session-sync-controller';
 
@@ -650,5 +651,75 @@ describe('SessionSyncController', () => {
     await pending;
 
     expect(hydrated).toEqual([['message-newest']]);
+  });
+  /**
+   * The screenshot that started this: the runtime finished an 8-minute turn
+   * and its terminal showed the whole answer; the browser's transcript stopped
+   * mid-turn with a spinner. The turn ENDED — and turn end was exactly the
+   * moment the repair switched itself off.
+   */
+  test('the last thing a busy session does is read its own tail', async () => {
+    const clock = createScheduler();
+    const reasons: SessionSyncReason[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page([]),
+      hydrate: () => {},
+      markLoaded: () => {},
+      onTelemetry: (event) => reasons.push(event.reason),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    await controller.start();
+    reasons.length = 0;
+    controller.setBusy(true);
+    controller.setBusy(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reasons).toEqual(['turn-end']);
+  });
+
+  test('a session that was never busy does not read a tail when it stays idle', async () => {
+    const clock = createScheduler();
+    const reasons: SessionSyncReason[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page([]),
+      hydrate: () => {},
+      markLoaded: () => {},
+      onTelemetry: (event) => reasons.push(event.reason),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    await controller.start();
+    reasons.length = 0;
+    controller.setBusy(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reasons).toEqual([]);
+  });
+
+  test('destruction does not fire a turn-end read', async () => {
+    const clock = createScheduler();
+    const reasons: SessionSyncReason[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page([]),
+      hydrate: () => {},
+      markLoaded: () => {},
+      onTelemetry: (event) => reasons.push(event.reason),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    await controller.start();
+    controller.setBusy(true);
+    reasons.length = 0;
+    controller.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reasons).toEqual([]);
   });
 });

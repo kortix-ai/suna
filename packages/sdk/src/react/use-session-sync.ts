@@ -15,6 +15,7 @@ import {
   resetSessionSyncControllersForSession,
   retainSessionSyncController,
 } from '../browser/session-sync/session-sync-registry';
+import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
@@ -81,11 +82,23 @@ export function sessionSyncBusy(input: {
  */
 export function livenessBusy(input: {
   networkEnabled: boolean;
-  runtimeHealthy: boolean;
+  /**
+   * Read, and deliberately IGNORED. Retained because this object is a
+   * published parameter shape.
+   *
+   * It used to gate the poll, which inverted the whole point of having one:
+   * the repair for a broken stream was switched off by the health probe, and
+   * the health probe is the signal that flaps. A loaded box that misses its
+   * probe deadline mid-turn lost its transcript repair at the exact moment it
+   * needed it, for as long as the probe kept missing. If the box truly is
+   * unreachable the tail read fails on its own — bounded by the controller's
+   * deadline — at a cost of one request per interval.
+   */
+  runtimeHealthy?: boolean;
   working: boolean | undefined;
   streamBusy: boolean;
 }): boolean {
-  if (!input.networkEnabled || !input.runtimeHealthy) return false;
+  if (!input.networkEnabled) return false;
   return sessionSyncBusy(input);
 }
 
@@ -167,6 +180,19 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     void controller.reconcile('initial');
     return release;
   }, [controller, networkEnabled, runtimeHealthy, runtimeScope, sessionId]);
+
+  // Coming back to the tab is a moment of MAXIMUM uncertainty, so it is a
+  // moment to re-read. A backgrounded tab has its timers clamped (Chrome: about
+  // one tick a minute), so the 10s liveness poll effectively stops, and the SSE
+  // connection can be dropped with no visible error. Whatever the transcript
+  // shows on return was assembled from a stream nobody was watching. One
+  // bounded tail read settles it.
+  useEffect(() => {
+    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
+    return onTabVisible(() => {
+      void controller.reconcile('visible');
+    });
+  }, [controller, networkEnabled, sessionId]);
 
   const messages = useSyncStore((state) =>
     state.buildSessionMessages(

@@ -29,6 +29,7 @@ import {
   reserveMessageRehydrate,
   resolveClientEvictionUrl,
 } from './helpers';
+import { sessionsNeedingRehydrate } from './rehydrate-targets';
 import { useEventStreamRefs } from './use-event-stream-refs';
 import { openEventStream } from '../../core/stream/event-stream';
 
@@ -269,10 +270,11 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
 
       if (options?.rehydrateMessages) {
         const syncState = useSyncStore.getState();
-        const loadedSessionIds = Object.keys(syncState.messages);
-        for (const sid of loadedSessionIds) {
-          const status = syncState.sessionStatus[sid];
-          if (status?.type !== 'busy' && status?.type !== 'retry') continue;
+        // EVERY held transcript, not only the ones the status slot calls busy
+        // — see `sessionsNeedingRehydrate`. The slot is filled by the stream,
+        // so a gap wide enough to lose message frames is wide enough to lose
+        // the frame that would have marked the session busy.
+        for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages))) {
           if (!reserveMessageRehydrate(sid)) continue;
           reconcileSessionTail(sid, 'sse-gap')
             .catch(() => {})
