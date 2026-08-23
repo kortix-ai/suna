@@ -9,6 +9,7 @@ import {
 } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { parse as parseYaml } from 'yaml';
 
 import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 
@@ -662,6 +663,13 @@ describe('create-repo starter scaffold contract', () => {
     // The manifest IS shipped and names the project.
     const manifest = files.find((file) => file.path === 'kortix.yaml');
     expect(manifest?.content).toContain('name: "Company OS"');
+    if (!manifest) throw new Error('starter is missing kortix.yaml');
+    const parsedManifest = parseYaml(manifest.content) as {
+      triggers?: Array<{ slug?: string; enabled?: boolean }>;
+    };
+    expect(
+      parsedManifest.triggers?.find((trigger) => trigger.slug === 'harness-reflector'),
+    ).toEqual(expect.objectContaining({ enabled: false }));
     expect(files.some((file) => file.path.includes('/agent-tunnel/'))).toBe(false);
   });
 

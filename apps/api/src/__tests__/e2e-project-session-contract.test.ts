@@ -1966,7 +1966,7 @@ describe('project session API contract', () => {
     const env = lastProvisionInput!.extraEnvVars ?? {};
     expect(env).not.toHaveProperty('KORTIX_END_USER_REF');
     expect(env).not.toHaveProperty('KORTIX_ORIGIN_REF');
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/anthropic/claude-opus-4-8');
     expect(env.GMAIL_TOKEN).toBe('g-secret');
     expect(env.STRIPE_SECRET).toBeUndefined();
 

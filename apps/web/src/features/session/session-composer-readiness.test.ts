@@ -8,6 +8,39 @@ import {
 } from './session-composer-readiness';
 
 describe('sessionComposerReadiness', () => {
+  // The connection projection replaces the settle TIMER this file used to
+  // carry. A timer was the same mistake in miniature: it guessed how long to
+  // stay quiet instead of asking whether anything was actually wrong. Now the
+  // notice is a function of what the control plane and the runtime have
+  // actually said.
+  test('a cold load says nothing — unknown is not a fault', () => {
+    expect(sessionComposerReadiness({ runtimeReady: false, connection: 'unknown' }).notice).toBeNull();
+  });
+
+  test('a running sandbox we have not reached yet says nothing either', () => {
+    // The reported bug: a reload of a live, mid-turn session announced
+    // "Waking this session up…" before anything had answered.
+    const readiness = sessionComposerReadiness({ runtimeReady: false, connection: 'connecting' });
+    expect(readiness.notice).toBeNull();
+    expect(readiness.ready).toBe(false);
+  });
+
+  test('only a box the control plane says is down is announced as waking', () => {
+    expect(sessionComposerReadiness({ runtimeReady: false, connection: 'waking' }).notice).toMatch(
+      /waking/i,
+    );
+  });
+
+  test('an unreachable runtime is still announced', () => {
+    const readiness = sessionComposerReadiness({
+      runtimeReady: false,
+      connection: 'unreachable',
+      unreachable: true,
+    });
+    expect(readiness.notice).toMatch(/lost contact/i);
+    expect(readiness.retryable).toBe(true);
+  });
+
   // Screen recording (dev, 2026-08-23): a session page reloaded itself while the
   // agent was mid-turn, and for ~2s the composer claimed "Waking this session
   // up…" before the transcript resumed streaming. Nothing was asleep — the box

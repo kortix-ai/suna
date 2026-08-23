@@ -205,6 +205,25 @@ export interface WorkingStreamInput {
   atMs: number;
 }
 
+/**
+ * The last moment the RUNTIME'S OWN OUTPUT reached this tab for this session —
+ * a streamed part, a message. Stamped on observation, like every other input.
+ *
+ * Every other input here is an OBSERVER of the runtime: a `/turn` poll, a
+ * status frame, a health probe, an inbox read. Each can be dropped, throttled
+ * or aged out, and when one is, the projection has historically had to guess.
+ * This one is not an observer. Content arriving is not a report that the
+ * runtime is working — it IS the runtime working, and no report outranks it.
+ *
+ * Reported with a screen recording (essentia, 2026-08-23): a tool row with a
+ * live spinner and text growing on screen, and a composer showing its send
+ * arrow. Every observer had gone quiet; the only thing still speaking was the
+ * content, and nothing was listening to it.
+ */
+export interface WorkingActivityInput {
+  atMs: number;
+}
+
 /** One read of the session's durable prompt inbox: how many rows the server is
  *  still going to run, and when that list was read. */
 export interface WorkingInboxInput {
@@ -220,6 +239,8 @@ export interface WorkingInputs {
   inbox?: WorkingInboxInput | null;
   server: WorkingServerInput | null;
   stream: WorkingStreamInput | null;
+  /** The runtime's own output, last seen. See `WorkingActivityInput`. */
+  activity?: WorkingActivityInput | null;
   nowMs: number;
 }
 
@@ -285,7 +306,7 @@ function instant(value: string | null | undefined): number | null {
  *    must re-evaluate at those instants — see `workingExpiryAtMs`.
  */
 export function projectWorking(inputs: WorkingInputs): WorkingProjection {
-  const { optimistic, abort, inbox, server, stream, nowMs } = inputs;
+  const { optimistic, abort, inbox, server, stream, activity, nowMs } = inputs;
   const receiptLive = !!optimistic && nowMs - optimistic.atMs < OPTIMISTIC_RECEIPT_MAX_MS;
   // TWO floors, because the two server-side observers have different knowledge.
   //
@@ -331,6 +352,14 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   // vanished with no new input, and a row the relay never closed put the
   // composer back on Stop until its deadline (240 MINUTES for an accepted turn).
   const idleFrame = stream && stream.type === 'idle' ? stream : null;
+
+  // CONTENT FIRST. Bounded by the stream's own freshness rule, because it
+  // arrives on the same transport and goes stale for the same reasons — but
+  // within that window it outranks every observer, including an idle frame it
+  // postdates. A runtime that is emitting parts is working, whatever the last
+  // status frame said and whatever a poll that has not answered yet will say.
+  const activityFresh = !!activity && nowMs - activity.atMs <= STREAM_OBSERVATION_MAX_MS;
+  const activityAfterIdle = activityFresh && (!idleFrame || activity!.atMs > idleFrame.atMs);
 
   /**
    * Whether the runtime has already finished this turn.
@@ -386,6 +415,16 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     // anything.
     return true;
   };
+
+  if (activityAfterIdle) {
+    return {
+      state: 'working',
+      source: 'stream',
+      turnId: null,
+      since: activity!.atMs,
+      serverOpenTurnToken: serverFresh ? (server!.turns[0]?.turn_token ?? null) : null,
+    };
+  }
 
   const ledgerTurn = serverFresh ? server!.turns[0] : undefined;
   // `serverOpenTurnToken` deliberately keeps reporting the LEDGER's turn even
@@ -506,7 +545,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
  * skipped, so re-arming from the timer this returns terminates.
  */
 export function workingExpiryAtMs(inputs: WorkingInputs): number | null {
-  const { optimistic, abort, inbox, server, stream, nowMs } = inputs;
+  const { optimistic, abort, inbox, server, stream, activity, nowMs } = inputs;
   const deadlines = [
     // The instant a runtime idle frame stops outranking the ledger's turn row.
     // Nothing else re-renders then, and a session held `idle` by that rule has
@@ -519,6 +558,9 @@ export function workingExpiryAtMs(inputs: WorkingInputs): number | null {
     inbox ? inbox.atMs + INBOX_OBSERVATION_MAX_MS : null,
     server ? server.atMs + SERVER_OBSERVATION_MAX_MS : null,
     stream ? stream.atMs + STREAM_OBSERVATION_MAX_MS : null,
+    // Content stops answering when it goes stale, and nothing else re-renders
+    // at that instant.
+    activity ? activity.atMs + STREAM_OBSERVATION_MAX_MS : null,
   ];
   let next: number | null = null;
   for (const deadline of deadlines) {

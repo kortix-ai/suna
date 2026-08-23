@@ -15,12 +15,6 @@ import {
   resetSessionSyncControllersForSession,
   retainSessionSyncController,
 } from '../browser/session-sync/session-sync-registry';
-import {
-  readCachedTranscript,
-  shouldHydrateFromCache,
-  toHydrateEntries,
-  writeCachedTranscript,
-} from '../browser/session-sync/session-transcript-cache';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
@@ -138,35 +132,26 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     useSyncStore.getState().clearSession(sessionId);
   }, [cacheOwnerScope, runtimeScope, sessionId]);
 
-  // Paint from disk FIRST, and deliberately without waiting on `runtimeHealthy`.
-  // The transcript is settled history; gating it on a woken sandbox is what made
-  // opening a hibernated session a blank screen for the length of a VM boot.
-  // `shouldHydrateFromCache` keeps this strictly additive — the moment the store
-  // holds anything for this session, live data owns it and the cache stands down.
-  useEffect(() => {
-    if (!canQueryOpenCodeSession(sessionId)) return;
-    let cancelled = false;
-    void (async () => {
-      const cached = await readCachedTranscript(sessionId, kortixSessionScope);
-      if (cancelled || !cached) return;
-      const store = useSyncStore.getState();
-      if (
-        !shouldHydrateFromCache({
-          storeHasSession: sessionId in store.messages,
-          storeSessionWasEvicted: store.wasTranscriptEvicted(sessionId),
-          cachedMessageCount: cached.messages.length,
-        })
-      ) {
-        return;
-      }
-      // Provisional: the first runtime read settles what the disk copy holds.
-      store.hydrate(sessionId, toHydrateEntries(cached), { source: 'cache' });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [kortixSessionScope, sessionId]);
-
+  // NO DISK PAINT. The transcript renders from the runtime and from this tab's
+  // own optimistic writes — nothing else.
+  //
+  // There used to be an IndexedDB mirror here, hydrated before `runtimeHealthy`
+  // so a hibernated session showed its history instead of a blank screen for
+  // the length of a VM boot. It was removed because it could not tell a
+  // FINISHED turn from a running one. Its write gate was structural (message
+  // count, total part count, tail id), and the two changes that end a turn move
+  // none of those: `time.completed` stamped on the tail message, and the `error`
+  // an abort stamps. A normal turn escaped by accident, because OpenCode
+  // appends a `step-finish` part and that moves the part count — but a STOP
+  // appends no part at all. So the disk copy of a stopped thread held an
+  // assistant message with neither `time.completed` nor `error`, which
+  // `open-turn.ts` reads as STILL RUNNING: on the next cold paint the stopped
+  // turn shimmered and every message the user sent after it dimmed to "Queued".
+  //
+  // The cold-open cost is real and known — see `session-sync-registry`'s
+  // `reconcile('initial')` below, which is now the only thing that fills the
+  // transcript. If the blank wake is worth solving again, it needs a mirror
+  // whose freshness test reads the MESSAGE, not its shape.
   useEffect(() => {
     if (
       !networkEnabled ||
@@ -177,38 +162,11 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       return;
     resetSessionSyncControllersForSession(sessionId, runtimeScope);
     const release = retainSessionSyncController(sessionId, runtimeScope);
-    // Cached messages render immediately. Revalidate one bounded tail so
-    // events produced while this route was inactive are not skipped.
+    // The ONLY thing that fills the transcript now. One bounded tail, so events
+    // produced while this route was inactive are not skipped.
     void controller.reconcile('initial');
     return release;
   }, [controller, networkEnabled, runtimeHealthy, runtimeScope, sessionId]);
-
-  // Mirror the tail back to disk as it changes, so the NEXT open of this session
-  // has something to paint. Subscribing to the store (rather than reacting to
-  // rendered output) also captures SSE updates that arrive while the transcript
-  // is scrolled out of view. The IDB layer batches these on its own timer.
-  useEffect(() => {
-    if (!canQueryOpenCodeSession(sessionId)) return;
-    let lastMessages: unknown;
-    let lastParts: unknown;
-    const persist = (state: {
-      messages: any;
-      parts: any;
-      isOptimisticMessage: (sessionID: string, messageID: string) => boolean;
-    }) => {
-      // The store is shared by every session and also carries status/todos, so
-      // most notifications are irrelevant here. Compare the two slices this
-      // cache actually mirrors before rebuilding anything.
-      if (state.messages[sessionId] === lastMessages && state.parts === lastParts) return;
-      lastMessages = state.messages[sessionId];
-      lastParts = state.parts;
-      void writeCachedTranscript(state, sessionId, kortixSessionScope, (id) =>
-        state.isOptimisticMessage(sessionId, id),
-      );
-    };
-    persist(useSyncStore.getState());
-    return useSyncStore.subscribe(persist);
-  }, [kortixSessionScope, sessionId]);
 
   const messages = useSyncStore((state) =>
     state.buildSessionMessages(

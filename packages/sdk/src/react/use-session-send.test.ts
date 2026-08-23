@@ -213,6 +213,67 @@ describe('abandonOptimisticSend', () => {
 });
 
 describe('recoverFromSendFailure', () => {
+  // Reported from a live self-host: the user stopped a turn, sent the next
+  // prompt, the SERVER queued it and ran it — and the tab showed nothing. No
+  // bubble, no queued row, the composer back on its send arrow. Everything
+  // appeared ~30s later when the runtime's echo arrived.
+  //
+  // The cause is which authority this function asks. A prompt that goes to the
+  // durable inbox is a CONTROL-PLANE row waiting for admission; it is not in
+  // OpenCode's transcript and will not be until the gate delivers it. Asking
+  // `session.messages()` about it therefore always answers "no such message",
+  // and the recovery deleted the user's bubble on the strength of that answer —
+  // while the row it could not see was already running.
+  //
+  // The row is addressable: the POST carries a `clientMessageId`, so the
+  // ambiguity a lost response creates is RESOLVABLE rather than guessable.
+  test('an inbox-backed send whose row exists is a SUCCESS, not a loss', async () => {
+    beginOptimisticSend('sess-1', 'msg-1', 'go');
+    useSessionWorkingStore.getState().noteSendReceipt('sess-1', { messageId: 'msg-1', atMs: 1 });
+    messagesImpl = async () => ({ data: undefined });
+
+    const classified = recoverFromSendFailure('sess-1', 'msg-1', new Error('network down'), {
+      inboxRowExists: async () => true,
+    });
+    await tick();
+    await tick();
+
+    // The bubble stays: the server has the prompt and is going to run it.
+    expect(useSyncStore.getState().messages['sess-1']?.some((m) => m.id === 'msg-1')).toBe(true);
+    // And the composer keeps saying so — the receipt is re-accepted, because a
+    // row the control plane holds is exactly what a receipt is waiting for.
+    expect(useSessionWorkingStore.getState().receipts['sess-1']?.messageId).toBe('msg-1');
+    expect(classified.kind).toBeDefined();
+  });
+
+  test('an inbox-backed send with NO row still drops the bubble', async () => {
+    beginOptimisticSend('sess-1', 'msg-2', 'never landed');
+    messagesImpl = async () => ({ data: undefined });
+
+    recoverFromSendFailure('sess-1', 'msg-2', new Error('network down'), {
+      inboxRowExists: async () => false,
+    });
+    await tick();
+    await tick();
+
+    expect(useSyncStore.getState().messages['sess-1']?.some((m) => m.id === 'msg-2')).toBe(false);
+  });
+
+  test('an inbox lookup that itself fails keeps the bubble — ambiguity is not proof of loss', async () => {
+    beginOptimisticSend('sess-1', 'msg-3', 'unknown fate');
+    messagesImpl = async () => ({ data: undefined });
+
+    recoverFromSendFailure('sess-1', 'msg-3', new Error('network down'), {
+      inboxRowExists: async () => {
+        throw new Error('inbox unreachable');
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(useSyncStore.getState().messages['sess-1']?.some((m) => m.id === 'msg-3')).toBe(true);
+  });
+
   test('a billing error keeps the optimistic message, clears busy, and rehydrates from the server', async () => {
     beginOptimisticSend('sess-1', 'msg-1', 'buy me a model');
     messagesImpl = async () => ({

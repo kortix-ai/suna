@@ -44,6 +44,159 @@ as our auth gate catching up rather than a dead sandbox.
 
 ---
 
+### 2026-08-24 — session `connection-projection` — one answer for "is this session connected" — DONE
+
+**Files:** `core/session/connection.ts` (NEW — `SessionConnection`,
+`SandboxLifecycle`, `SessionConnectionInputs`, `projectSessionConnection`,
+`connectionIsFaulted`) + `connection.test.ts` (12 tests) ·
+`core/session/index.ts` (barrel) · both surface snapshots (additive) ·
+`apps/web/.../session-composer-readiness.ts` (+ optional `connection` input) ·
+`apps/web/.../session-chat.tsx` (reads `project_sessions.status`, computes the
+projection, passes it in).
+
+**What.** The composer's waking notice was a FALLBACK: every specific branch
+(ready / open server turn / unreachable / stalled) missed, so it asserted the
+one thing nobody had checked — "this session is asleep." On a reload that fires
+before any probe answers, which is every reload. Screen recording (dev,
+2026-08-24 00:10): page reloads at 00:05, "Waking this session up… messages you
+send will be queued" shows 00:11–00:13 over a session that streams at 00:13
+with a live green dot. Nothing was waking. Nobody had looked yet.
+
+A settle TIMER was the first attempt and the wrong shape — it guessed HOW LONG
+to stay quiet instead of asking whether anything was wrong, so it was always
+either too short (notice flashes over a live session) or too long (a genuinely
+parked box announces itself late).
+
+**Fix.** `projectSessionConnection` folds the four observers into one ordered
+answer, and the order is the whole design: streamed CONTENT and a passing probe
+mean `live` whatever else says; a failed probe means `unreachable`; only the
+control plane's own `project_sessions.status` earns `waking`. Everything else
+is `connecting` or `unknown` — a WAIT, not a fault, and a wait says nothing.
+Stale status is safe in both directions because the probe outranks it: a stale
+`stopped` under a live runtime still reads `live`, and a stale `running` over a
+dead box still reads `unreachable`.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2456 pass / 0 fail ·
+`smoke:install` passed · apps/web tsc clean (known `@types/bun` `test.each`
+noise only), readiness suite 29 pass / 0 fail.
+
+---
+
+### 2026-08-24 — session `content-is-evidence` — the runtime's output is not an opinion about the runtime — DONE
+
+**Files:** `core/session/working.ts` (+`WorkingActivityInput`, the content branch,
+its expiry) + `working.test.ts` (+5 tests) · `browser/stores/sync-store.ts`
+(+`sessionActivityAt`, `noteSessionActivity`, stamped on `message.updated` and
+`message.part.updated`) · `react/use-session-working.ts` (subscribes and folds
+it in) · both surface snapshots (one additive TYPE export).
+
+**What.** Every input to `projectWorking` was an OBSERVER of the runtime: a
+`/turn` poll, an SSE status frame, a health probe, an inbox read. The transcript
+renders the runtime's actual OUTPUT, and that was not an input at all — so a
+dropped status frame, or a poll throttled by a backgrounded tab, left the
+composer showing its send arrow over a transcript that was visibly streaming
+(screen recording, essentia 2026-08-23: 00:00–00:03 arrow with a live tool
+spinner and a 19s timer on screen).
+
+The same gap explains the rarer "Lost contact with this session's runtime while
+a turn is still open": on return from a background tab both observations can be
+older than their bounds while content is still arriving, and the projection had
+nothing left that could speak for the runtime.
+
+**Fix.** Content is now an input, bounded by the stream's own freshness rule and
+outranking every observer inside that window — including an idle frame it
+postdates. Quantized to 1s in the store so subscribing cannot re-render at the
+stream's ~140ms rate.
+
+**Gates:** `typecheck` clean (both projects) · `bun test` 2446 pass / 0 fail ·
+`smoke:install` passed · apps/web tsc clean, session suite 2513 pass / 0 fail.
+
+---
+
+### 2026-08-23 — session `queued-prompt-invisible` — ask the inbox, not the runtime — DONE
+
+**Files:** `react/use-session-send.ts` (`recoverFromSendFailure` takes
+`inboxRowExists`) + `use-session-send.test.ts` (+3 tests). Additive optional
+option — no export added, no signature broken.
+
+**What.** Reported from a live self-host: stop a turn, send the next prompt, and
+the SERVER queues and runs it while the tab shows nothing — no bubble, no queued
+row, composer back on its send arrow. Everything appeared ~30s later under the
+runtime's echo.
+
+`recoverFromSendFailure` asked `client.session.messages()` — the RUNTIME — whether
+the send survived. A prompt that goes to `POST .../prompts` is a control-plane
+row waiting for admission and is not in OpenCode's transcript until the gate
+delivers it, so that question always answers "no such message", and the recovery
+deleted the user's bubble on the strength of it.
+
+**Fix.** For an inbox-backed send the recovery asks the INBOX, addressed by the
+`clientMessageId` the POST already carries. A row that exists means the send
+succeeded however the response ended — the bubble stays and the receipt is
+re-taken. No row means it really was lost. A lookup that itself fails keeps the
+bubble: not knowing is not evidence of loss.
+
+**Gates:** `typecheck` clean (both projects) · `bun test` 2441 pass / 0 fail.
+
+---
+
+### 2026-08-24 — session `invisible-message-running` — remove the IndexedDB transcript mirror — DONE
+
+**Files:** `react/use-session-sync.ts` (both cache effects removed) ·
+`browser/session-sync/session-transcript-cache.ts` + test (DELETED, 14 tests) ·
+`browser/cache/idb-write-policy.ts` + test (DELETED, 8 tests) ·
+`browser/cache/idb-sync-cache.ts` (write-policy stripped, `DB_VERSION` 2 → 3 so
+`onupgradeneeded` drops what the mirror already wrote — **not on page load**:
+`openDB` is lazy and its only remaining callers are `deleteSessionFromIDB` and
+`clearSessionIDBCache`, so stale entries survive until a session delete or a
+sign-out; they are inert, since nothing reads them) ·
+`browser/cache/no-transcript-mirror.test.ts`
+(NEW, 1 static import-graph tripwire). No public surface change — the seven
+`*IDB*` exports stay and keep their contract.
+
+**What.** Reported from dev: stop a thread, send a message, and the message runs
+while the UI shows it dimmed and captioned "Queued — runs with your next
+message". Part of that is the mirror added by #5837 and gated by #6810. The gate
+(`transcriptSignature`) is STRUCTURAL — message count, total part count, tail id
+— and neither change that ends a turn moves any of them: `time.completed`
+stamped on the tail, and the `error` an abort stamps. Proved with a throwaway
+probe: all three of "turn completed", "abort stamped", "tokens appended to the
+same text part" leave the signature identical, so no write is queued.
+
+A normal turn escaped by accident, because OpenCode appends a `step-finish` part
+and that moves the part count. **A Stop appends no part at all.** So the disk
+copy of a stopped thread held an assistant message with neither `time.completed`
+nor `error` — which `core/turns/open-turn.ts` reads as a turn that is STILL
+RUNNING. On the next cold paint `resolveWorkingTurn` picked it as the working
+turn and dimmed every message after it to "Queued".
+
+**Fix.** Remove the mirror rather than re-tune the signature. Its own test file
+covered six cases, all structural; a shape-based freshness test cannot see a
+turn end, and making it see one means hashing the bodies — which is the cost the
+gate existed to avoid.
+
+**Known cost, accepted:** opening a hibernated session no longer paints history
+before the sandbox wakes (18.9s Daytona / 24.5s Platinum, measured in #5837). If
+that is worth re-solving it needs a mirror keyed on the MESSAGE, not its shape.
+
+**Left in place, deliberately:** the sync store's `hydrate(…, { source: 'cache' })`
+branch and its `cacheSourcedIds` provisional-phantom reconciliation are now
+unreachable (`fromCache` is never true). Inert, and a ~40-line excision inside a
+2000-line store is its own change — recorded here as follow-up rather than done
+in this one.
+
+**Gates:** `typecheck` clean (both projects) · `bun run test` (`--isolate`)
+**2420 pass / 0 fail**, 163 files — HEAD measured at 2441 across 164, and the
+delta is exactly the 22 deleted minus 1 added · `smoke:install` passed ·
+apps/web `bun test src/features/session` 2513 pass / 0 fail.
+
+> **Trap for the next session:** the suite MUST be run as `bun run test`
+> (`bun test --isolate src`). A bare `bun test src` shares module state across
+> files and reports **477 pre-existing failures** that have nothing to do with
+> your change.
+
+---
+
 ### 2026-08-23 — session `session-memory-retention` — stop paying for the transcript twice a second — DONE
 
 **Files:** `browser/cache/idb-write-policy.ts` (NEW: `idbFlushIntervalMs`,

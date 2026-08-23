@@ -7,8 +7,14 @@ import { isPendingAction, useSessionAudit } from '@/features/session/session-aud
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-disconnected';
-import { type SessionPrompt, hasRetryingAssistantTurn } from '@kortix/sdk';
-import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
+import {
+  type SandboxLifecycle,
+  type SessionPrompt,
+  hasRetryingAssistantTurn,
+  listSessionPrompts,
+  projectSessionConnection,
+} from '@kortix/sdk';
+import { isOptimisticSessionPrompt, useProjectSession } from '@kortix/sdk/react';
 import {
   WarningIcon as AlertTriangle,
   ArrowBendUpLeftIcon,
@@ -3739,10 +3745,23 @@ export function SessionChat({
           acceptSendReceipt(clientMessageId);
           return { ok: true } as const;
         } catch (cause) {
-          // Unchanged recovery: clear busy, then either rehydrate the real
-          // messages or drop the optimistic one if the server has no record.
+          // Ask the INBOX, not the runtime. This prompt's home is a durable
+          // control-plane row; OpenCode's transcript cannot see it until the
+          // admission gate delivers it, so a rehydrate always reports it
+          // missing and the recovery used to delete the bubble on that answer —
+          // while the row was already running. Reported from a live self-host:
+          // "it queues the message and starts running it, but doesn't show in
+          // the frontend."
+          //
+          // `clientMessageId` is the POST's idempotency key, so the row is
+          // addressable by exactly the thing this send already holds.
           const error = recoverFromSendFailure(sessionId, messageID, cause, {
             classify: classifySessionError,
+            inboxRowExists: async () => {
+              if (!projectId || !projectSessionId) return false;
+              const { prompts } = await listSessionPrompts(projectId, projectSessionId);
+              return prompts.some((prompt) => prompt.client_message_id === clientMessageId);
+            },
           });
           return { ok: false, error, cause } as const;
         }
@@ -3752,6 +3771,13 @@ export function SessionChat({
         // rather than let a refused send claim `working` for a minute. Named,
         // so a slow refusal cannot drop the receipt of a send the user made
         // after it.
+        //
+        // ONE exception, and it resolves AFTER this line: if the inbox turns
+        // out to hold the row, `recoverFromSendFailure` re-takes the receipt
+        // when its lookup lands, so the composer goes back to working on its
+        // own. This clear is still right in the moment — as far as this tab
+        // knows right now, nothing is coming — and it is NAMED, so it can only
+        // ever drop this send's own receipt.
         clearSendReceipt(clientMessageId);
         setCommandError(result.error);
         throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
@@ -4396,6 +4422,13 @@ export function SessionChat({
   // confirmed unreachable past the poll loop's failure threshold — plain
   // `runtimeReady` collapses both into the same false. See `retryable` on
   // `SessionComposerReadiness`.
+  // The control plane's own statement about the sandbox behind this session —
+  // the positive evidence the connection projection needs before anything may
+  // say "waking". Read from the shared cache entry `useProjectSession`
+  // populates, so this mounts no second poll of its own.
+  const projectSessionRow = useProjectSession(projectId, projectSessionId ?? undefined, {
+    enabled: !!projectId && !!projectSessionId,
+  }).data;
   const runtimePhase = useRuntimePhase();
   // Covers the one gap `unreachable` can't: a sandbox proxy that keeps
   // answering with a 503 (OpenCode wedged mid-boot) resets the probe's
@@ -4411,8 +4444,20 @@ export function SessionChat({
   // page load painted the waking notice for a beat over a session that was
   // never asleep — which reads as a disconnect. See `settling`.
   const composerSettling = useReadinessSettling(runtimePhase === 'connecting');
+  // ONE answer for every surface that draws this session's runtime, and the
+  // reason the composer no longer guesses: `unknown` and `connecting` are
+  // waits, and a wait is not a fault. Only the control plane saying the box is
+  // down earns the waking notice.
+  const sessionConnection = projectSessionConnection({
+    sandbox: (projectSessionRow?.status as SandboxLifecycle | undefined) ?? null,
+    runtimeReady,
+    unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
+    stalled: runtimeStalled,
+    activityFresh: working.state === 'working' && working.source === 'stream',
+  });
   const composerReadiness = sessionComposerReadiness({
     runtimeReady,
+    connection: sessionConnection,
     settling: composerSettling,
     // Only an OPEN TURN the control plane is holding counts here. This tab's
     // optimistic receipt and a stream frame both survive a box that died

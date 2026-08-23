@@ -188,6 +188,23 @@ export interface SendRecoveryOptions {
    * apps/web's `ProviderModelNotFoundError` special-casing) injects its own
    * classifier that wraps it. */
   classify?: (error: unknown) => KortixSendError;
+  /**
+   * Does the durable prompt inbox already hold this send?
+   *
+   * A prompt that goes to `POST .../prompts` becomes a CONTROL-PLANE row
+   * waiting for admission. It is not in OpenCode's transcript and will not be
+   * until the gate delivers it — so the message rehydrate below, which asks the
+   * RUNTIME, always answers "no such message" for one. Acting on that answer
+   * deleted the user's bubble while the row it could not see was already
+   * running: reported from a live self-host as "it queues the message and
+   * starts running it, but doesn't show in the frontend".
+   *
+   * The POST carries a `clientMessageId`, so this ambiguity is resolvable
+   * rather than guessable. Provide this for an inbox-backed send and the
+   * recovery asks the right authority. A lookup that throws keeps the bubble:
+   * not knowing is not evidence of loss.
+   */
+  inboxRowExists?: () => Promise<boolean>;
 }
 
 /**
@@ -219,6 +236,31 @@ export function recoverFromSendFailure(
   // NAMED: a slow failure must not drop the receipt of a send submitted after
   // it whose POST is still on the wire. See `clearSendReceipt`.
   useSessionWorkingStore.getState().clearSendReceipt(sessionId, messageId);
+
+  // The inbox is the authority for an inbox-backed send, and it outranks
+  // everything below: a row the control plane holds means the prompt was NOT
+  // lost, however the response to this tab ended.
+  if (options.inboxRowExists) {
+    void options
+      .inboxRowExists()
+      .then((exists) => {
+        if (!exists) {
+          useSyncStore.getState().optimisticRemove(sessionId, messageId);
+          return;
+        }
+        // The send succeeded after all. Put the receipt back so the composer
+        // keeps saying so until `GET .../turn` reports the turn the inbox
+        // admits, exactly as a clean send would have.
+        useSessionWorkingStore
+          .getState()
+          .noteSendReceipt(sessionId, { messageId, atMs: Date.now() });
+      })
+      .catch(() => {
+        // Unreachable inbox: the prompt's fate is unknown, and an unknown fate
+        // is not a deletion. The bubble stays; the inbox poll reconciles it.
+      });
+    return classified;
+  }
 
   let client: OpenCodeMessagesClient;
   try {

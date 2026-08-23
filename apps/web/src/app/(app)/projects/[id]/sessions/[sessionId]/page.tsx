@@ -516,12 +516,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     completeSessionSwitch,
   ]);
   // Existing sessions can mount from their server-owned pin before the runtime
-  // switch completes, and `useSessionSync` paints the cached transcript out of
-  // IndexedDB without waiting for the sandbox, then revalidates over the live
-  // runtime once useSession finishes the switch. (This comment claimed the IDB
-  // hydration for a long time before anything actually called it — nothing read
-  // or wrote that cache, so every open waited out a full VM wake to show text
-  // the user already had.)
+  // switch completes; `useSessionSync` then fills the transcript from the live
+  // runtime once useSession finishes the switch.
+  //
+  // There is NO local paint any more. An IndexedDB mirror used to render the
+  // transcript without waiting for the sandbox, and it was removed because its
+  // freshness test could not see a turn ENDING — see `use-session-sync.ts`. So
+  // opening a hibernated session shows the loading state for the length of the
+  // wake again, which is honest but slower. Re-solving it needs a mirror that
+  // compares the message, not the transcript's shape.
   const canMountChat = sessionContentAvailable;
   // For a genuinely new session, hold the real chat until the user actually sends
   // their first message — the instant shell is the typing surface until then, and

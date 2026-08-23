@@ -8,7 +8,12 @@ export { FileTreeItem } from '@/features/file-browser/components/file-tree-item'
 export { FileHistoryPopoverContent } from './file-history-popover';
 export { getFileIcon } from './file-icon';
 export { FileExplorerPage } from './file-explorer-page';
-export { DriveToolbar } from './drive-toolbar';
+export {
+  DRIVE_ACTION_ROW_CLASS,
+  DriveNewMenu,
+  DrivePathBar,
+  DriveViewMenu,
+} from './drive-toolbar';
 export { DriveGridView } from './drive-grid-view';
 export { DriveListView } from './drive-list-view';
 export { FilePreviewModal } from './file-preview-modal';

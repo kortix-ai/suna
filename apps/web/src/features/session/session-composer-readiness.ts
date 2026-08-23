@@ -26,6 +26,9 @@
  * — the composer stays usable, and this module's job shrinks to one thing:
  * saying what is going on.
  */
+
+import type { SessionConnection } from '@kortix/sdk';
+
 export interface SessionComposerReadiness {
   /** The runtime is up. False means a submit becomes a queued inbox row rather
    *  than a delivery. */
@@ -132,6 +135,19 @@ export function sessionComposerReadiness(input: {
    */
   stalled?: boolean;
   /**
+   * The shared connection projection (`projectSessionConnection`).
+   *
+   * This is what replaced a settle TIMER here. The timer was the same mistake
+   * this module keeps having to unlearn: it guessed how long to stay quiet
+   * instead of asking whether anything was actually wrong, so it was always
+   * either too short (the notice flashed over a live session) or too long (a
+   * genuinely parked box announced itself late).
+   *
+   * `unknown` and `connecting` are WAITS. Only `waking` — the control plane
+   * saying the box is down — earns the waking notice.
+   */
+  connection?: SessionConnection;
+  /**
    * Nothing has been CONTACTED yet — the runtime probe has not answered and
    * `GET .../turn` has not landed, and the mount is young enough that this is
    * ordinary startup rather than a wait.
@@ -179,8 +195,17 @@ export function sessionComposerReadiness(input: {
       retryable: true,
     };
   }
+  // A wait is not a fault. `unknown` means nothing has answered; `connecting`
+  // means the control plane says the box is UP and the runtime simply has not
+  // reached us. Neither is the state this notice describes, and asserting it
+  // from them is what put "Waking this session up…" over a live, streaming
+  // session on every reload.
+  if (input.connection === 'unknown' || input.connection === 'connecting' || input.connection === 'live') {
+    return { ready: false, notice: null, retryable: false };
+  }
   if (input.settling) {
-    // We know nothing yet. Say nothing — see `settling`.
+    // Legacy path for a caller with no connection projection yet: say nothing
+    // while the mount is young. See `settling`.
     return { ready: false, notice: null, retryable: false };
   }
   return {
