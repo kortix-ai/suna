@@ -4487,6 +4487,11 @@ export function SessionChat({
     // compact "starting" loader for a frame or two before the real chat
     // appeared: the flicker, mid-crossfade.
     hasOptimisticPrompt: promptInbox.prompts.length > 0 || firstPromptPreview !== null,
+    // The session OBJECT arriving is not the transcript arriving — they are two
+    // different requests, and the message read is the one that loses to a
+    // waking box. Without this the shell rendered over an unread session and
+    // the user saw an empty conversation instead of a wait.
+    transcriptLoaded: !syncMessagesLoading,
   });
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still

@@ -67,12 +67,36 @@ export function resolveSessionContentState(input: {
   hasRuntimeSession: boolean;
   hasMessages: boolean;
   hasOptimisticPrompt: boolean;
+  /**
+   * A message read has SUCCEEDED for this session — `useSessionSync`'s
+   * `isLoading === false`, which the store sets only when an authoritative read
+   * lands.
+   *
+   * Without this, "the session object exists" was taken as proof the
+   * conversation had been read, and those are two different requests. The
+   * session GET is small and lands first; the message read is the big one and
+   * is the one that loses to a waking box. When it lost, the page rendered the
+   * full shell — header, composer, empty thread — over a session with a long
+   * history, and the user saw an EMPTY CONVERSATION rather than a wait
+   * (screenshot, essentia 2026-08-24: composer live, thread blank, runtime
+   * terminal holding the whole session).
+   *
+   * Optional so existing callers keep their behaviour; `undefined` means the
+   * caller does not track it and the old rule applies.
+   */
+  transcriptLoaded?: boolean;
 }) {
   const sessionResolved = input.runtimeReady && input.sessionFetched;
   const isNotFound =
     !input.hasRuntimeSession && sessionResolved && !input.hasMessages && !input.hasOptimisticPrompt;
+  // Nothing to paint AND nothing read yet. Either half alone is not enough:
+  // a session with zero messages that HAS been read is genuinely empty and must
+  // render its composer, and a session whose read has not landed must wait
+  // however complete the rest of its metadata looks.
+  const nothingToPaint = !input.hasMessages && !input.hasOptimisticPrompt;
+  const readOutstanding = input.transcriptLoaded === false;
   const isDataLoading =
-    !input.hasRuntimeSession && !isNotFound && !input.hasMessages && !input.hasOptimisticPrompt;
+    !isNotFound && nothingToPaint && (!input.hasRuntimeSession || readOutstanding);
 
   return { isNotFound, isDataLoading };
 }

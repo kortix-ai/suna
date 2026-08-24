@@ -46,8 +46,16 @@ waits for the probe: it starts as soon as the sandbox is known, because THE READ
 IS THE LIVENESS CHECK. Readiness is a byproduct of asking for what we wanted
 anyway, not a precondition for asking.
 
+**And the last blank.** The session OBJECT arriving is not the transcript
+arriving — two different requests, and the message read is the one that loses.
+`resolveSessionContentState` treated the first as proof of the second, so a
+session whose read had not landed rendered the full shell — header, composer,
+empty thread — over a long history. It now takes `transcriptLoaded` (the sync
+hook's `isLoading`, which flips only when an authoritative read lands) and waits
+for the read rather than for the metadata.
+
 **Gates:** `typecheck` clean (both projects) · `pnpm test` 2464 pass / 0 fail ·
-apps/web tsc clean, session suite 2517 pass / 0 fail.
+apps/web tsc clean, session suite 2523 pass / 0 fail.
 
 ---
 
