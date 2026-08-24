@@ -165,6 +165,68 @@ export function mergeProjectSecretConnectedProviders(
   return { ...normalized, connected: [...connected] };
 }
 
+/**
+ * Native mode, BEFORE any sandbox runtime exists: synthesize the picker's
+ * provider list from the ungated `/llm-catalog/providers` route plus the
+ * project's secret NAMES.
+ *
+ * OpenCode in the box is the native catalog's source of truth — but on the
+ * project home and on a cold session there IS no box yet, and without a
+ * pre-runtime source the composer showed "No models available" on every
+ * native project until one booted (connecting a key changed nothing). This is
+ * the native twin of gateway mode's `/model-picker`, and it deliberately:
+ *
+ *  • includes ONLY providers whose auth the project's secrets satisfy — the
+ *    195-provider catalog would be dead weight `flattenModels` filters out,
+ *    and an unconnected provider's models must not be pickable;
+ *  • maps the catalog's `released` onto `release_date` (what the flatten and
+ *    the picker sort read);
+ *  • never emits the synthetic `kortix` provider;
+ *  • returns an EMPTY list with no keys, so the connect-provider call to
+ *    action stays honest.
+ *
+ * Once the runtime is up, the live `/provider` list replaces this (it knows
+ * auth.json, autoloaded providers like OpenCode Zen, and real capabilities).
+ */
+export function nativeProviderListFromCatalog(
+  catalog: {
+    providers: Array<{
+      id: string;
+      name: string;
+      models: Array<{ id: string; name: string; released: string | null }>;
+    }>;
+  },
+  secretNames: Set<string>,
+): ProviderListResponse {
+  const connectedIds = connectedGatewayProviderIdsFromSecretNames(secretNames);
+  const all = (catalog.providers ?? [])
+    .filter(
+      (provider) =>
+        connectedIds.has(provider.id) &&
+        !NATIVE_EXCLUDED_PROVIDER_IDS.has(provider.id) &&
+        (provider.models?.length ?? 0) > 0,
+    )
+    .map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      source: 'env',
+      models: Object.fromEntries(
+        provider.models.map((model) => [
+          model.id,
+          {
+            id: model.id,
+            name: model.name,
+            ...(model.released ? { release_date: model.released } : {}),
+          },
+        ]),
+      ),
+    }));
+  return {
+    all,
+    connected: all.map((provider) => provider.id),
+  } as unknown as ProviderListResponse;
+}
+
 export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<string>): Set<string> {
   const ids = new Set<string>();
   for (const provider of LLM_PROVIDER_CREDENTIALS) {

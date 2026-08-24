@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Size sandbox memory from measured peak RSS, not nominal workload size (2026-08-24)
+
+**When:** assigning a sandbox template to image-heavy, document-heavy, or long-context agents.
+Measure the largest runtime process during a representative turn and leave headroom for the
+daemon, tools, and filesystem cache. A 4 GiB sandbox with no swap cannot safely run an
+OpenCode process at 3.07 GiB anonymous RSS. Bind the agent to a larger ready template before
+the next session; changing the default does not migrate existing sessions. *Incident:*
+Essentia session `fea31312` lost its active turn when Linux OOM-killed OpenCode after a
+141k-token image workflow. *Enforcer:* template and fresh-session slug read-back; no RSS gate.
+
 ### A snapshot build stuck in progress silently rolls every later resume back (2026-08-24)
 
 **When:** operating pause/resume sandbox lifecycles where each pause appends a
