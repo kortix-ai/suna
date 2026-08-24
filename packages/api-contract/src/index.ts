@@ -986,6 +986,53 @@ export const SESSION_SANDBOX_STATUSES = [
 export const SessionSandboxStatusSchema = z.enum(SESSION_SANDBOX_STATUSES);
 export type SessionSandboxStatus = z.infer<typeof SessionSandboxStatusSchema>;
 
+/**
+ * WHY a sandbox parked. Written to `session_sandboxes.metadata.stopReason` by
+ * every path that stops a box, read by the path-classification query, and — as
+ * of this contract — serialized onto the wire so a client can say what
+ * happened instead of showing an unexplained "stopped".
+ *
+ * CLOSED on purpose. The classification query groups on this value, so a
+ * free-text reason does not produce a wrong answer — it produces a quietly
+ * incomplete one, which is worse. The same closedness is what lets a client
+ * map every member to copy and have the compiler catch a member it forgot.
+ *
+ * This list lives here rather than in `apps/api` because it is now part of the
+ * contract: `apps/api/src/projects/stop-reason.ts` re-exports it, so there is
+ * one catalogue rather than a server copy and a wire copy that can disagree.
+ */
+export const STOP_REASONS = [
+  /** deadline_at passed with a normal grant behind it. Spec Path A/B. */
+  'deadline_expired',
+  /** Burned the whole 24h continuous stretch. Spec Path C. */
+  'run_cap',
+  /** Terminal turn end pulled the deadline to the idle tail, then it passed. */
+  'idle_grace',
+  /** Only ever held the 20-minute stopped->active boot floor. Spec Path A'. */
+  'boot_floor_expired',
+  /** Provider said stopped; we synced our row. Spec Path D. */
+  'provider_reconcile',
+  /** Provider said REMOVED; identity preserved, NOT resumable. Spec Path D2. */
+  'provider_removed',
+  /** A wake of a parked box never produced a running runtime. */
+  'runtime_wake_failed',
+  /** The box IS provider-running, but OpenCode never became reachable. */
+  'runtime_boot_failed',
+  /** An explicit session restart could not re-establish the runtime. */
+  'restart_failed',
+  /** Provisioning stalled past its staleness bound and was never usable. */
+  'provisioning_stalled',
+  /** The sandbox row reached a state /start cannot use while the session row
+   *  still claimed to be live. A control-plane desync, not a provider event. */
+  'unusable_runtime_state',
+  /** A human stopped or deleted it. */
+  'manual',
+  /** An ops sweep parked a wedged box outside the normal reaper. */
+  'wedged_backlog_remediation',
+] as const;
+export const StopReasonSchema = z.enum(STOP_REASONS);
+export type StopReason = z.infer<typeof StopReasonSchema>;
+
 /** A session_sandboxes row as serialized onto `SessionStartResult.sandbox`. */
 export const ProjectSessionSandboxSchema = z.object({
   sandbox_id: z.string(),
@@ -998,6 +1045,11 @@ export const ProjectSessionSandboxSchema = z.object({
   status: SessionSandboxStatusSchema,
   config: JsonObjectSchema,
   metadata: JsonObjectSchema,
+  /** WHY this row stopped, promoted out of `metadata.stopReason` to a typed
+   *  field. Null while the box is live, and also for a row parked before this
+   *  field existed or by a path that wrote a value outside the catalogue —
+   *  a client must treat null as "no reason recorded", never as an error. */
+  stop_reason: StopReasonSchema.nullable(),
   last_used_at: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),

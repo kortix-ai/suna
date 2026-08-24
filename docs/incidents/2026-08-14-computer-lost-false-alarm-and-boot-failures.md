@@ -165,6 +165,21 @@ the tunnel cannot be recovered. Corrective action 6 closes this gap.
    boot gets its own screen ("The computer could not start", retriable) and its
    own stop reason surface. Files: `shared.ts` (preserve call sites),
    `page.tsx:596`.
+
+   **Stop-reason surface: shipped.** `stopReason` was already written by every
+   path that parks a box, and read by nothing the user could see — so every
+   stop, routine or not, rendered the same unexplained "<sandbox> is stopped".
+   The catalogue now lives in `@kortix/api-contract` (the server re-exports it,
+   so there is one list), is serialized as the typed
+   `ProjectSessionSandbox.stop_reason` rather than left in the metadata blob,
+   and `features/session/stop-reason-copy.ts` maps every member to its own
+   words — exhaustively, so a reason added later is a compile error rather than
+   a session that says nothing. A boot failure now reads "Computer could not
+   finish starting … the agent runtime never became reachable inside it",
+   which is what a dead tunnel actually looks like from the outside.
+
+   The gate half of this action (only a verified `removed` may classify a loss)
+   shipped earlier with `runtimeLossVerdict`.
 2. **Surface the guest's own reason.** Platinum already reports
    `runtimeReason: "git clone failed ... <url>"` in sandbox metadata; pipe it
    into the boot-failure screen so a dead tunnel names itself.

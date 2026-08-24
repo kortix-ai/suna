@@ -87,6 +87,7 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
     agent_name: "default",
     retriable: true,
     sandbox: {
+      stop_reason: null,
       sandbox_id: "sbx-db-1",
       session_id: SESSION,
       project_id: PROJECT,

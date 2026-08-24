@@ -1251,6 +1251,7 @@
     "SSEStreamOptions",
     "SSHConnectionInfo",
     "SSHSetupResult",
+    "STOP_REASONS",
     "STREAM_OBSERVATION_MAX_MS",
     "SandboxCreateProgress",
     "SandboxInfo",
@@ -1561,6 +1562,7 @@
     "StaticAppSource",
     "StepFinishPart",
     "StepStartPart",
+    "StopReason",
     "StructuredOutputError",
     "SubdomainUrlOptions",
     "SubscriptionMutationResult",
@@ -3722,7 +3724,12 @@
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
-  "./server": ["createScopedKortix", "forwardKortixRequest", "getScopedConfig", "runWithKortix"],
+  "./server": [
+    "createScopedKortix",
+    "forwardKortixRequest",
+    "getScopedConfig",
+    "runWithKortix"
+  ],
   "./internal/sync-store": [
     "Binary",
     "MessageError",
@@ -3755,7 +3762,9 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./internal/opencode-pending-store": ["useOpenCodePendingStore"],
+  "./internal/opencode-pending-store": [
+    "useOpenCodePendingStore"
+  ],
   "./internal/idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
@@ -5845,6 +5854,7 @@
     "ReviewSegment",
     "ReviewVerdict",
     "RoleAssignment",
+    "STOP_REASONS",
     "SandboxProviderTransitionState",
     "SandboxProviderTransitionView",
     "SandboxRuntimeState",
@@ -5917,6 +5927,7 @@
     "SsoGroupMapping",
     "SsoProvider",
     "StaticAppSource",
+    "StopReason",
     "SubscriptionMutationResult",
     "TemplateDetail",
     "TemplateInput",
@@ -6367,8 +6378,16 @@
     "validateToken",
     "verifyGatewayProvider"
   ],
-  "./feature-flags": ["FeatureFlags", "featureFlags", "parseFlagOverride"],
-  "./fresh-sessions": ["clearSessionFresh", "isSessionFresh", "markSessionFresh"],
+  "./feature-flags": [
+    "FeatureFlags",
+    "featureFlags",
+    "parseFlagOverride"
+  ],
+  "./fresh-sessions": [
+    "clearSessionFresh",
+    "isSessionFresh",
+    "markSessionFresh"
+  ],
   "./instance-routes": [
     "ACTIVE_INSTANCE_COOKIE",
     "INSTANCE_SCOPED_ROUTES",
@@ -6844,7 +6863,9 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./opencode-pending-store": ["useOpenCodePendingStore"],
+  "./opencode-pending-store": [
+    "useOpenCodePendingStore"
+  ],
   "./idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",

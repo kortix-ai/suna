@@ -39,7 +39,7 @@ import {
   runtimeLossVerdict,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
-import type { StopReason } from '../stop-reason';
+import { isStopReason, type StopReason } from '../stop-reason';
 import {
   RUNTIME_READINESS_CLOCK_KEYS,
   hasRuntimeReadinessClock,
@@ -617,6 +617,19 @@ export function isMissingRuntimeError(error: unknown): boolean {
   );
 }
 
+/**
+ * The recorded stop reason, or null when there isn't a valid one.
+ *
+ * Null covers three different histories on purpose — the box is still live, the
+ * row was parked before this field existed, or a path wrote something outside
+ * the catalogue — because a client can do nothing different with any of them.
+ * All three mean "no reason to show".
+ */
+function readStopReason(metadata: unknown): StopReason | null {
+  const value = (metadata as Record<string, unknown> | null)?.stopReason;
+  return isStopReason(value) ? value : null;
+}
+
 export function serializeSandboxRow(
   row: typeof sessionSandboxes.$inferSelect,
 ): ProjectSessionSandbox {
@@ -631,6 +644,11 @@ export function serializeSandboxRow(
     status: row.status,
     config: serializeSessionSandboxConfig(row.config),
     metadata: row.metadata ?? {},
+    // Promoted out of the metadata blob so a client reads a closed union
+    // instead of string-matching an untyped jsonb key. Validated on the way
+    // out: a legacy or out-of-catalogue value serializes as null rather than
+    // widening the wire type to whatever happens to be in the column.
+    stop_reason: readStopReason(row.metadata),
     last_used_at: row.lastUsedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
