@@ -12,6 +12,36 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `reconcile-on-eviction` — close the hole the IndexedDB removal named — DONE
+
+**Files:** `core/session-sync/fragment.ts` (NEW — `transcriptIsFragment`) +
+`fragment.test.ts` (4 tests) · `core/session-sync/session-sync-controller.ts`
+(`SessionSyncReason` += `eviction`) · `react/use-session-sync.ts` (subscribes
+and repairs).
+
+**What.** `5a7a43517f` removed the IndexedDB transcript mirror and said so in
+its own message: "#6146 evicts a detached session's transcript, and a session
+evicted while its agent runs comes back from SSE as a fragment; that repaint is
+gone here and no reconcile is keyed on eviction, so an evicted-then-refilled
+session can sit on a partial transcript until a reload. This PR does not address
+that; it should land with, or before, a reconcile-on-eviction fix." It landed
+without one. Reported the same day from live sessions: transcript blank or
+starting mid-conversation while the runtime held everything.
+
+**Fix.** The store already carries the exact signature. Eviction drops the
+messages AND marks the id; every authoritative re-establishment — `hydrate`,
+`clearSession`, `optimisticAdd` — clears the mark, and `applyEvent` does not. So
+messages present while the mark is still set can only have come from frames that
+arrived after the eviction: a fragment, by construction. `transcriptIsFragment`
+names that, and `useSessionSync` subscribes to the store rather than checking
+once, because the refill happens while the component is already mounted. The
+successful read disarms it — `hydrate` clears the mark.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2460 pass / 0 fail ·
+`smoke:install` passed · apps/web tsc clean, session suite 2517 pass / 0 fail.
+
+---
+
 ### 2026-08-24 — session `transcript-convergence` — the transcript must catch up, and five things stopped it — DONE
 
 **Files:** `core/session-sync/session-sync-controller.ts` (turn-end reconcile,

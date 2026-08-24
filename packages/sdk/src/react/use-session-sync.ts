@@ -15,6 +15,7 @@ import {
   resetSessionSyncControllersForSession,
   retainSessionSyncController,
 } from '../browser/session-sync/session-sync-registry';
+import { transcriptIsFragment } from '../core/session-sync/fragment';
 import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -22,6 +23,13 @@ import { useCurrentRuntime } from './use-current-runtime';
 import { canQueryOpenCodeSession } from './use-opencode-sessions';
 
 export { loadSessionRuntimeStatus, loadSessionTranscriptMessages };
+
+/** The two store slices the fragment check reads. Local so this file does not
+ *  depend on the store's full published shape. */
+interface SyncStoreShape {
+  messages: Record<string, unknown[] | undefined>;
+  wasTranscriptEvicted: (sessionID: string) => boolean;
+}
 
 type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'patch'> & {
   patch?: string;
@@ -180,6 +188,38 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     void controller.reconcile('initial');
     return release;
   }, [controller, networkEnabled, runtimeHealthy, runtimeScope, sessionId]);
+
+  // A transcript the live stream rebuilt after an eviction starts
+  // mid-conversation, and nothing else will correct it: the mount already ran,
+  // so no `initial` read is coming, and the liveness poll only turns on while
+  // the session is working. Removing the IndexedDB mirror (5a7a43517f) named
+  // this exact hole and left it open — "no reconcile is keyed on eviction …
+  // can sit on a partial transcript until a reload".
+  //
+  // Subscribed rather than checked once, because the refill happens while this
+  // component is already mounted. `hydrate` clears the mark, so the successful
+  // read is what disarms this.
+  useEffect(() => {
+    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
+    let repairing = false;
+    const check = (state: SyncStoreShape) => {
+      if (repairing) return;
+      if (
+        !transcriptIsFragment({
+          hasMessages: (state.messages[sessionId]?.length ?? 0) > 0,
+          wasEvicted: state.wasTranscriptEvicted(sessionId),
+        })
+      ) {
+        return;
+      }
+      repairing = true;
+      void controller.reconcile('eviction').finally(() => {
+        repairing = false;
+      });
+    };
+    check(useSyncStore.getState() as unknown as SyncStoreShape);
+    return useSyncStore.subscribe((state) => check(state as unknown as SyncStoreShape));
+  }, [controller, networkEnabled, sessionId]);
 
   // Coming back to the tab is a moment of MAXIMUM uncertainty, so it is a
   // moment to re-read. A backgrounded tab has its timers clamped (Chrome: about

@@ -63,6 +63,9 @@ export type SessionSyncReason =
   /** The tab became visible again. A backgrounded tab is throttled, not
    *  notified, so return is a moment to re-read rather than to assume. */
   | 'visible'
+  /** The transcript was evicted while detached and the live stream refilled it
+   *  from the middle — see `transcriptIsFragment`. */
+  | 'eviction'
   | 'manual';
 
 export interface SessionSyncTelemetryEvent {
