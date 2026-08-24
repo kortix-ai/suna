@@ -22,11 +22,13 @@
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { ErrorState } from '@/features/layout/section/error-state';
 import { ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { useStaticFilePreview } from '@kortix/sdk/react';
-import { WarningIcon } from '@phosphor-icons/react';
+import {
+  FileXIcon as FileWarning,
+  ArrowCounterClockwiseIcon as RotateCcw,
+} from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
 /**
@@ -63,20 +65,30 @@ export function HtmlPreview({
 
   // Never a dead end: the server may simply be slower than the bound, and the
   // sandbox may have been asleep. One button is the whole recovery.
+  //
+  // Deliberately the quiet hand-composed state this surface has always shown,
+  // NOT `ErrorState`. A preview that has not started yet is a wait that ran
+  // long, not a failure, and `ErrorState`'s red tile and bold headline say
+  // something louder than what happened. Keeping the original markup is also
+  // what makes this refactor invisible to the files viewer, which is the
+  // surface that already had it.
   if (status === 'unavailable') {
     return (
-      <ErrorState
-        icon={WarningIcon}
-        size="sm"
-        className={cn('h-full', className)}
-        title="Couldn't reach the preview server"
-        description="The sandbox may still be starting up."
-        action={
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={retry}>
-            Retry
-          </Button>
-        }
-      />
+      <div
+        className={cn(
+          'text-muted-foreground flex h-full flex-col items-center justify-center gap-3 px-6 text-center',
+          className,
+        )}
+      >
+        <FileWarning className="h-5 w-5 opacity-40" />
+        <p className="max-w-xs text-xs opacity-60">
+          {"Couldn't reach the preview server. The sandbox may still be starting up."}
+        </p>
+        <Button variant="outline" size="sm" onClick={retry}>
+          <RotateCcw className="h-3.5 w-3.5" />
+          Retry
+        </Button>
+      </div>
     );
   }
 
@@ -87,12 +99,12 @@ export function HtmlPreview({
     return (
       <div
         className={cn(
-          'text-muted-foreground flex h-full flex-col items-center justify-center gap-2',
+          'text-muted-foreground flex h-full flex-col items-center justify-center gap-3',
           className,
         )}
       >
-        <Loading className="size-4" />
-        <p className="text-xs">{pendingLabel}</p>
+        <Loading className="h-5 w-5 opacity-40" />
+        <p className="text-xs opacity-50">{pendingLabel}</p>
       </div>
     );
   }
