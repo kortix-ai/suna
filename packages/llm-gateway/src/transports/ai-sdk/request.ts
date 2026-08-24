@@ -87,34 +87,65 @@ function textOf(content: unknown): string {
 // the provider also depends on).
 const EMPTY_CONTENT_PLACEHOLDER = '(no content)';
 
-type UserContentPart = { type: 'text'; text: string } | { type: 'image'; image: URL | Uint8Array };
+// Images travel as AI SDK `file` parts (the SDK itself rewrites `image` parts
+// to `file` parts and flags `image` as deprecated). `mediaType` is the full
+// IANA type from the data URL, or the top-level `image` segment when the URL
+// omits it — providers resolve the subtype from the base64 signature.
+type InlineImagePart = {
+  type: 'file';
+  data: { type: 'data'; data: string } | { type: 'url'; url: URL };
+  mediaType: string;
+};
+type UserContentPart = { type: 'text'; text: string } | InlineImagePart;
 
 // A user message is "empty" for Bedrock unless it carries an image or at least
 // one non-whitespace text part.
 function nonEmptyUserContent(content: string | UserContentPart[]): string | UserContentPart[] {
   if (typeof content === 'string') return content.trim() ? content : EMPTY_CONTENT_PLACEHOLDER;
-  const hasImage = content.some((p) => p.type === 'image');
+  const hasImage = content.some((p) => p.type === 'file');
   const hasText = content.some((p) => p.type === 'text' && p.text.trim().length > 0);
   return hasImage || hasText ? content : EMPTY_CONTENT_PLACEHOLDER;
 }
 
-// Decode a `data:` URL into raw bytes suitable for inline file data. The
-// AI SDK's `convertToLanguageModelV4FilePart` converts a plain string URL to
-// `{type:'url', url: URL}`, which `@ai-sdk/amazon-bedrock` rejects with
-// `UnsupportedFunctionalityError: File URL data` — Bedrock's Converse API
-// only accepts inline (base64) image data, not URL references. Converting
-// data URLs to `Uint8Array` makes them reach the SDK as inline data, which
-// Bedrock serializes correctly as `image: { format, source: { bytes } }`.
-function decodeDataUrl(url: string): Uint8Array | URL {
-  if (!url.startsWith('data:')) return new URL(url);
+// Translate an OpenAI `image_url` into the AI SDK image part WITHOUT copying
+// or decoding the image bytes.
+//
+// A `data:` URL is handed over as tagged inline data `{type:'data', data:
+// <base64>}` plus its media type. The AI SDK's `convertToLanguageModelV4FilePart`
+// returns tagged data as-is, and both `@ai-sdk/anthropic` and
+// `@ai-sdk/amazon-bedrock` serialize a base64 STRING through
+// `convertToBase64(value)`, which is the identity for strings. The base64
+// substring therefore travels from the parsed request body to the provider
+// payload with zero decode and zero re-encode.
+//
+// The previous implementation decoded to `Uint8Array` via
+// `atob(raw).split('').map(...)` — one JS string per byte — which measured at
+// ~13x the base64 length in resident memory per image (89 MB for a 6.7 MB
+// image) and then had provider-utils re-encode the bytes through a
+// `String.fromCodePoint` concat loop. A 28 MB, 40-screenshot request went
+// through that path and OOM-killed a 512 MiB gateway (Essentia, 2026-08-22).
+//
+// Bedrock's Converse API still needs inline data rather than a URL reference
+// (`UnsupportedFunctionalityError: File URL data`), which the tagged inline
+// form satisfies. A non-data URL stays a `URL`.
+export function imageContentFromUrl(url: string): InlineImagePart {
+  const remote = (): InlineImagePart => ({
+    type: 'file',
+    data: { type: 'url', url: new URL(url) },
+    mediaType: 'image',
+  });
+  if (!url.startsWith('data:')) return remote();
   const comma = url.indexOf(',');
-  if (comma === -1) return new URL(url);
-  const raw = url.slice(comma + 1);
-  try {
-    return new Uint8Array(atob(raw).split('').map((c) => c.charCodeAt(0)));
-  } catch {
-    return new URL(url);
-  }
+  if (comma === -1) return remote();
+  const header = url.slice(5, comma); // "<mediaType>[;base64]"
+  if (!header.toLowerCase().includes(';base64')) return remote();
+  const semicolon = header.indexOf(';');
+  const mediaType = (semicolon === -1 ? header : header.slice(0, semicolon)).trim();
+  return {
+    type: 'file',
+    data: { type: 'data', data: url.slice(comma + 1) },
+    mediaType: mediaType || 'image',
+  };
 }
 
 function translateUserContent(content: unknown): string | UserContentPart[] {
@@ -125,7 +156,7 @@ function translateUserContent(content: unknown): string | UserContentPart[] {
     const part = raw as { type?: string; text?: string; image_url?: { url?: string } };
     if (part?.type === 'text') parts.push({ type: 'text', text: String(part.text ?? '') });
     else if (part?.type === 'image_url' && part.image_url?.url) {
-      parts.push({ type: 'image', image: decodeDataUrl(part.image_url.url) });
+      parts.push(imageContentFromUrl(part.image_url.url));
     }
   }
   return parts.length ? parts : textOf(content);
@@ -1175,86 +1206,5 @@ export function buildAiSdkArgs(
     providerOptions: (Object.keys(providerOptions).length ? providerOptions : undefined) as
       | Record<string, Record<string, JSONValue>>
       | undefined,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// AI-SDK-NATIVE (`POST /language-model`) gateway-side request shaping.
-//
-// The native path (language-model-handler.ts) decodes opencode's
-// `@ai-sdk/gateway` CallOptions and forwards them to `streamText` verbatim.
-// That is correct for CLIENT-SIDE shaping — thinking/reasoning, prompt-cache
-// breakpoints, temperature/top_p — which opencode already sends as
-// provider-native `providerOptions`/CallSettings.
-//
-// It is WRONG for the handful of GATEWAY-SIDE tweaks that are Kortix-proxy
-// requirements the client cannot know. Those live only on the OpenAI-compat
-// path (buildAiSdkArgs above + callUpstreamViaAiSdk in index.ts) and were
-// silently dropped natively. `applyNativeGatewayShaping` re-applies exactly
-// that set, keyed off the RESOLVED descriptor, so the two engines stay in
-// parity. It is the single source of truth for the native path; keep it in
-// lockstep with the OpenAI-compat sites named per tweak below.
-//
-// The set (mirrors the OpenAI-compat path field-for-field):
-//   1. openai-codex → providerOptions.openai.store = false. The ChatGPT
-//      subscription Responses backend 400s a body that omits `store`
-//      (`{"detail":"Store must be set to false"}`). Mirrors openAiAdapter's
-//      `if (providerName === 'openai-codex') options.store = false`. A codex
-//      descriptor resolves to @ai-sdk/openai's `.responses()` model (see
-//      aiSdkFamilyFor / needsResponsesApi), which reads providerOptions.openai.
-//   2. openai-codex → drop maxOutputTokens. The same backend 400s
-//      `max_output_tokens` outright (`{"detail":"Unsupported parameter:
-//      max_output_tokens"}`). Mirrors callUpstreamViaAiSdk's
-//      `opts.providerName === 'openai-codex' ? undefined : ...`.
-//   3. openai-compatible (OpenRouter) → merge descriptor.bodyExtras (the
-//      upstream `provider` routing pins) under the provider-name key, LAST so
-//      an upstream pin wins over a same-named client field. Mirrors
-//      buildAiSdkArgs's bodyExtras merge.
-//   4. bedrock/Nova → clamp maxOutputTokens to the Converse ceiling Nova hard-
-//      rejects above. Reuses the exact clampMaxOutputTokensForBedrock helper
-//      callUpstreamViaAiSdk uses. A no-op for every other family/model.
-//
-// `isCodexDescriptor` is the canonical codex discriminator (a codex descriptor
-// always carries BOTH provider 'openai-codex' AND kind 'openai-responses' — see
-// model.ts) and is exactly the set aiSdkFamilyFor routes to the Responses API,
-// where store/max_output_tokens matter.
-export interface NativeShapableCall {
-  providerOptions?: Record<string, Record<string, JSONValue>>;
-  maxOutputTokens?: number;
-}
-
-export function applyNativeGatewayShaping(
-  descriptor: UpstreamDescriptor,
-  call: NativeShapableCall,
-): NativeShapableCall {
-  const codex = isCodexDescriptor(descriptor);
-  const family = aiSdkFamilyFor(descriptor);
-  const providerOptions: Record<string, Record<string, JSONValue>> = { ...call.providerOptions };
-
-  // (1) Codex store:false.
-  if (codex) {
-    providerOptions.openai = { ...providerOptions.openai, store: false };
-  }
-
-  // (3) OpenRouter bodyExtras — merged last so an upstream pin wins.
-  if (family === 'openai-compatible' && descriptor.bodyExtras) {
-    const key = descriptor.provider || 'openai-compatible';
-    const extras = Object.fromEntries(
-      Object.entries(descriptor.bodyExtras).filter(([, value]) => value !== undefined),
-    ) as Record<string, JSONValue>;
-    if (Object.keys(extras).length) {
-      providerOptions[key] = { ...providerOptions[key], ...extras };
-    }
-  }
-
-  // (2) Codex drops maxOutputTokens outright; (4) Nova clamps it. The client's
-  // own cap is otherwise forwarded unchanged.
-  const maxOutputTokens = codex
-    ? undefined
-    : clampMaxOutputTokensForBedrock(call.maxOutputTokens, family, descriptor.resolvedModel);
-
-  return {
-    providerOptions: Object.keys(providerOptions).length ? providerOptions : undefined,
-    maxOutputTokens,
   };
 }

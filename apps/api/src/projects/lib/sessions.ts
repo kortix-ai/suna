@@ -30,7 +30,6 @@ import {
   type ModelSource,
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
-import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { auth, json } from '../../openapi';
 import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
@@ -50,7 +49,7 @@ import {
   sandboxFromLoadedAgents,
   workspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch, resolveCommitSha } from '../git';
+import { createRemoteSessionBranch } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 import { resolveSessionSecretGrant } from './secret-grant';
 import {
@@ -68,6 +67,7 @@ import {
 } from './compile-agent-config';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { withProjectGitAuth } from './git';
+import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
@@ -94,13 +94,11 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
-import {
-  type PreparedInitialSandboxTurn,
-  prepareInitialSandboxTurn,
-} from '../sandbox-turn-lifecycle';
+import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditAttribution } from './session-audit';
 import {
+  projectImageAllowedForSession,
   resolveSessionSandboxSlug,
   workspaceModeAllowsFullRepository,
 } from './session-sandbox-metadata';
@@ -417,8 +415,6 @@ export async function buildSessionSandboxEnvVars(input: {
   repoUrl: string;
   baseRef: string;
   agentName: string;
-  initialPrompt?: string | null;
-  initialTurn?: PreparedInitialSandboxTurn | null;
   opencodeModel?: string | null;
   /** Resolved per-project `llm_gateway` feature flag. Gateway ON →
    *  opencode is locked to the gateway and native provider keys are withheld;
@@ -431,14 +427,17 @@ export async function buildSessionSandboxEnvVars(input: {
    *  through the dev tunnel (2026-06-13). Restart/resume omit it (their branch
    *  may carry the agent's pushed commits → real fetch needed). */
   freshSession?: boolean;
-  /** The project's base-branch tip SHA, resolved server-side (no tunnel). When
-   *  it equals the image-baked scaffold's root SHA — true for a fresh project
-   *  seeded from the starter with no per-project commit — the daemon skips the
-   *  in-guest `git fetch` ENTIRELY (the baked scaffold already IS base), turning
-   *  repo materialization into a pure-local op. That fetch is a zero-object
-   *  negotiation round-trip that still hung for 34s through the flaky dev tunnel
-   *  (2026-06-13). Omitted → daemon delta-fetches as before. */
+  /** Replacement runtime must fetch the existing remote session branch once. */
+  restoreSessionBranch?: boolean;
+  /** The project's base-branch tip SHA, resolved from the API's Git mirror. */
   baseSha?: string;
+  /** Bounded exact commit delta from the API mirror. The daemon imports it on
+   *  top of the baked scaffold and verifies `baseSha` before use. */
+  gitDeltaBundleBase64?: string;
+  /** Parent commit SHA required by the thin delta bundle. */
+  gitDeltaParentSha?: string;
+  /** Raw parent commit object used when the provider changed only commit metadata. */
+  gitDeltaParentCommitBase64?: string;
   /** Project git context, so the running agent's `secrets` grant in `agents:`
    *  can be resolved and applied by IDENTIFIER — secrets the agent isn't
    *  granted are dropped from the injected env (a prompt-injected agent then
@@ -620,9 +619,6 @@ export async function buildSessionSandboxEnvVars(input: {
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,
-    // Runtime-delivered provider keys may reach the sandbox for user code.
-    // OpenCode must not receive them because it would bypass the gateway.
-    KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
     // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
     // on-demand fetches, which stall through the Kortix git proxy when its
     // partial-clone capability isn't advertised consistently — the clone then
@@ -641,23 +637,27 @@ export async function buildSessionSandboxEnvVars(input: {
     ...buildSessionRuntimeEnv({
       projectId: input.projectId,
       sessionId: input.sessionId,
-      // Universal proxy origin: when enabled, the sandbox clones via the Kortix
-      // git proxy with its own KORTIX_TOKEN — a real host credential never lands
-      // in the sandbox. The daemon's credential helper returns KORTIX_TOKEN for
-      // the proxy host. OFF → direct clone of the real repo (legacy token flow).
-      repoUrl: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
+      // Every sandbox clones through the Kortix Git proxy with KORTIX_TOKEN.
+      // Direct upstream origins are never delivered to the guest because they
+      // require exposing a provider credential to the sandbox.
+      repoUrl: proxyGitUrl(input.projectId),
       baseRef: input.baseRef,
       agentName: input.agentName,
       apiUrl: deriveKortixApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
-      initialPrompt: input.initialPrompt,
-      initialTurn: input.initialTurn,
       // Concrete session model after explicit → agent → project → account →
       // platform resolution. The sandbox uses it for the first OpenCode turn
       // and as the session's OpenCode config default.
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
       workspaceMode: input.workspaceMode,
+      fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
+      freshSession: input.freshSession,
+      restoreSessionBranch: input.restoreSessionBranch,
+      baseSha: input.baseSha,
+      gitDeltaBundleBase64: input.gitDeltaBundleBase64,
+      gitDeltaParentSha: input.gitDeltaParentSha,
+      gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -1589,9 +1589,8 @@ export async function createProjectSession(input: {
 
   setContextField('sessionId', sessionId);
 
-  // A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT and runs
-  // inside the box — it never crosses the API again, so this is the only moment
-  // it can be titled. No modelHint: the row already carries `opencode_model`.
+  // A prompt supplied at create is claimed by the session daemon. This is the
+  // earliest title source. No modelHint: the row already carries `opencode_model`.
   const titleSource = titleSourceForCreate(body);
   if (titleSource) {
     void generateSessionTitleFromFirstPrompt({
@@ -1615,17 +1614,33 @@ export async function createProjectSession(input: {
         tl.mark('git-auth');
         return gitProject;
       });
-      // Resolve the base-branch tip SHA server-side (no tunnel) so the daemon
-      // can skip the in-guest fetch when the baked scaffold already IS base.
+      // Resolve the base tip from the API's existing mirror and package its
+      // one-commit scaffold delta. This moves the small object transfer into
+      // sandbox creation and removes the slow in-guest Git negotiation.
       // Best-effort + timeout-guarded (never block create): on failure/timeout
       // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
       // with gitAuth (folded into the env-build chain, not awaited inline).
-      const baseShaPromise = Promise.race([
-        resolveCommitSha(project, baseRef).catch(() => undefined),
-        new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000)),
-      ]);
-      const envPromise = baseShaPromise
-        .then((baseSha) =>
+      let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
+      const fastBootGitHintPromise = config.KORTIX_FAST_COLD_BOOT_ENABLED
+        ? Promise.race([
+            projectWithGitAuthPromise
+              .then((projectWithGitAuth) =>
+                resolveFastBootGitHintWithCache(
+                  projectWithGitAuth,
+                  baseRef,
+                  project.metadata,
+                ),
+              )
+              .catch(() => undefined),
+            new Promise<undefined>((resolve) => {
+              fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
+            }),
+          ]).finally(() => {
+            if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
+          })
+        : Promise.resolve(undefined);
+      const envPromise = fastBootGitHintPromise
+        .then((fastBootGitHint) =>
           buildSessionSandboxEnvVars({
             accountId,
             projectId,
@@ -1634,13 +1649,14 @@ export async function createProjectSession(input: {
             repoUrl: project.repoUrl,
             baseRef,
             agentName,
-            initialPrompt,
-            initialTurn,
             opencodeModel,
             llmGatewayEnabled,
             platformMetaAgent,
             freshSession: true,
-            baseSha,
+            baseSha: fastBootGitHint?.baseSha,
+            gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
+            gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
+            gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             workspaceMode,
@@ -1705,6 +1721,7 @@ export async function createProjectSession(input: {
         projectId,
         userId,
         agentName,
+        allowProjectImage: projectImageAllowedForSession(agentName, workspaceMode),
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
         initialTurn,

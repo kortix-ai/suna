@@ -1076,9 +1076,6 @@
     "galleryTitle": "È richiesta l'autorizzazione per la raccolta di foto",
     "galleryMessage": "Abilita l'accesso alla libreria fotografica nelle impostazioni per scegliere le immagini."
   },
-  "audio": {
-    "transcriptionFailed": "Impossibile trascrivere l'audio. Per favore riprova."
-  },
   "loading": {
     "threads": "Caricamento chat...",
     "triggers": "Caricamento trigger..."

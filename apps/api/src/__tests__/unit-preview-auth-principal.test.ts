@@ -117,7 +117,6 @@ mock.module('../shared/preview-ownership', () => ({
 }));
 
 const { authenticatePreviewPrincipal, authenticatePreviewPrincipalDetailed, extractPreviewToken } = await import('../sandbox-proxy/preview-auth');
-const { previewSubdomainAuthCacheKeyForTest } = await import('../sandbox-proxy/subdomain');
 
 beforeEach(() => {
   allowedAccounts = new Set(['acct-owner']);
@@ -208,28 +207,6 @@ describe('extractPreviewToken', () => {
   test('returns null when no credential is present', () => {
     const req = new Request(u);
     expect(extractPreviewToken(req, new URL(req.url))).toBeNull();
-  });
-});
-
-describe('preview subdomain auth cache key', () => {
-  test('binds cached auth to client IP and user-agent, not only sandbox/port', () => {
-    const a = new Request('http://p3000-sbx.localhost/x', {
-      headers: { 'x-forwarded-for': '198.51.100.10', 'user-agent': 'browser-a' },
-    });
-    const b = new Request('http://p3000-sbx.localhost/x', {
-      headers: { 'x-forwarded-for': '198.51.100.11', 'user-agent': 'browser-a' },
-    });
-    const c = new Request('http://p3000-sbx.localhost/x', {
-      headers: { 'x-forwarded-for': '198.51.100.10', 'user-agent': 'browser-b' },
-    });
-
-    expect(previewSubdomainAuthCacheKeyForTest('sbx', 3000, a)).toBe('p3000-sbx|198.51.100.10|browser-a');
-    expect(previewSubdomainAuthCacheKeyForTest('sbx', 3000, b)).not.toBe(
-      previewSubdomainAuthCacheKeyForTest('sbx', 3000, a),
-    );
-    expect(previewSubdomainAuthCacheKeyForTest('sbx', 3000, c)).not.toBe(
-      previewSubdomainAuthCacheKeyForTest('sbx', 3000, a),
-    );
   });
 });
 

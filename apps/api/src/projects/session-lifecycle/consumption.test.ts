@@ -19,6 +19,28 @@ interface Row {
 }
 
 /**
+ * The id half of the real `where`, mirroring `wire-id-match.ts`'s
+ * `wireMessageIdMatches` — ALL THREE columns a wire id can be recorded in.
+ *
+ * `result.forwarded_message_id` is the one this harness (and the statement it
+ * mirrors) used to omit. `markCommandForwarded` (`store.ts:518`) writes the id
+ * the delivery ACTUALLY used there, which is not required to equal either
+ * payload id, so a row could be named by an id no payload column held and this
+ * module would never close it — the strip read `delivering` for ever.
+ *
+ * This is a MIRROR, so it can drift from the statement again. What stops that
+ * is `wire-id-match.test.ts`, which pins the compiled SQL and asserts every
+ * reader calls the one helper.
+ */
+function namesRow(row: Row, wireMessageId: string): boolean {
+  return (
+    row.payload.wireMessageId === wireMessageId ||
+    row.payload.redeliveredMessageId === wireMessageId ||
+    row.result.forwarded_message_id === wireMessageId
+  );
+}
+
+/**
  * A stand-in for the statements this module runs. `confirm` and
  * `markConsumedOnDelivery` re-express their UPDATEs' own predicates as row
  * filters, so a confirmation that forgets its `status='succeeded'` /
@@ -38,8 +60,7 @@ function harness(
         (r) =>
           r.sessionId === sessionId &&
           r.status === 'running' &&
-          (r.payload.wireMessageId === wireMessageId ||
-            r.payload.redeliveredMessageId === wireMessageId),
+          namesRow(r, wireMessageId),
       );
       for (const r of hit) {
         r.payload = { ...r.payload, consumedOnDelivery: true };
@@ -53,8 +74,7 @@ function harness(
           r.sessionId === sessionId &&
           r.status === 'succeeded' &&
           r.result.status === 'forwarded' &&
-          (r.payload.wireMessageId === wireMessageId ||
-            r.payload.redeliveredMessageId === wireMessageId),
+          namesRow(r, wireMessageId),
       );
       for (const r of hit) {
         // `|| '{"status":"delivered"}' - 'stop_paused' - 'held'`: the row is
@@ -111,8 +131,8 @@ describe('confirmInboxPromptConsumed', () => {
   });
 
   test('the RE-MINTED id of a redelivery names the same row', async () => {
-    // The same id predicate `redelivery.ts` matches on, so the two can never
-    // disagree about which row an id names.
+    // Every reader shares ONE predicate (`wire-id-match.ts`), so none of them
+    // can disagree about which row an id names.
     const { deps, confirmed } = harness([
       forwardedRow({
         payload: { text: 'hi', wireMessageId: 'msg_a', redeliveredMessageId: 'msg_b' },
@@ -120,6 +140,35 @@ describe('confirmInboxPromptConsumed', () => {
     ]);
     expect(await confirmInboxPromptConsumed('sess-1', 'msg_b', deps)).toBe('confirmed');
     expect(confirmed).toEqual(['cmd-1']);
+  });
+
+  // REGRESSION 2026-08-20. Before the predicate was single-sourced this row
+  // was invisible here: `forwarded_message_id` records the id the delivery
+  // ACTUALLY went out under, and it matches NEITHER payload id. The acceptance
+  // relay named `msg_c`, `confirm` matched no row, and the row stayed
+  // `forwarded` — the composer's strip read "delivering" until the max-age
+  // sweep force-closed it ~10 min later.
+  test('a row whose forwarded id differs from BOTH payload ids still closes', async () => {
+    const { deps, rows, confirmed } = harness([
+      forwardedRow({
+        payload: { text: 'hi', clientMessageId: 'q_1', wireMessageId: 'msg_a', redeliveredMessageId: 'msg_b' },
+        result: { status: 'forwarded', forwarded_message_id: 'msg_c' },
+      }),
+    ]);
+    expect(await confirmInboxPromptConsumed('sess-1', 'msg_c', deps)).toBe('confirmed');
+    expect(confirmed).toEqual(['cmd-1']);
+    expect(rows[0].result).toEqual({ status: 'delivered', forwarded_message_id: 'msg_c' });
+  });
+
+  test('an id NO column on the row holds still names nothing', async () => {
+    const { deps, confirmed } = harness([
+      forwardedRow({
+        payload: { text: 'hi', clientMessageId: 'q_1', wireMessageId: 'msg_a' },
+        result: { status: 'forwarded', forwarded_message_id: 'msg_c' },
+      }),
+    ]);
+    expect(await confirmInboxPromptConsumed('sess-1', 'msg_zzz', deps)).not.toBe('confirmed');
+    expect(confirmed).toEqual([]);
   });
 
   test('a QUEUED row is left alone — it has not been forwarded', async () => {

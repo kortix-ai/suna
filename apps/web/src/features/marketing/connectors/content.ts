@@ -9,7 +9,7 @@
  *
  * ACCURACY GATE — every claim below traces to shipped code. Do not soften or
  * inflate these without re-reading the source:
- *  - The sandbox carries one project-scoped token (`KORTIX_CLI_TOKEN`) and
+ *  - The sandbox carries one project-scoped token (`KORTIX_TOKEN`) and
  *    zero third-party secrets. Credentials resolve server-side in the connector
  *    gateway (`apps/api/src/connectors/gateway.ts`), which is the chokepoint every
  *    tool call goes through.
@@ -102,7 +102,7 @@ export const broker = {
   after: {
     label: 'How Kortix does it',
     title: 'One scoped token, and nothing else',
-    lines: ['KORTIX_CLI_TOKEN=kortix_pat_…'],
+    lines: ['KORTIX_TOKEN=kortix_pat_…'],
     body: 'Scoped to one project and narrowed again by what that agent is allowed to touch. Turning a connector off takes effect on the next call. Nothing in the sandbox needs rotating, because nothing in the sandbox was ever a secret of yours.',
   },
 

@@ -1,9 +1,30 @@
 import { describe, expect, test } from 'bun:test';
-import { WIRE_ID_TIME_SCALE } from '../wire-message-id';
+import { WIRE_ID_TIME_SCALE, wireIdTime } from '../wire-message-id';
+import type { PlacementTipMessage } from './forwarded-placement';
 import { type HoldSettleDeps, settleInboxHoldAfterStop } from './inbox-hold-settle';
 
 const id = (ms: number, tail: string) =>
   `msg_${((BigInt(ms) * WIRE_ID_TIME_SCALE + BigInt(1)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0')}${tail}`;
+
+/** The millisecond an id's clock encodes — what the box would have stamped as
+ *  `time.created` if it had minted that id itself. */
+const at = (messageId: string): number => Number(wireIdTime(messageId)! / WIRE_ID_TIME_SCALE);
+
+/**
+ * Fill in `time.created` for every fixture message that does not set one.
+ *
+ * These fixtures were written before the functions under test read
+ * `time.created` at all, so each one describes ORDER through the id clock
+ * only — which means an id-ordered implementation and a `time.created`-ordered
+ * one pass them identically and neither can be caught regressing. Stamping
+ * each message with the millisecond its own id already encodes keeps every
+ * existing assertion exactly as it was (the two orders agree by construction)
+ * while making the fixtures able to express a DISAGREEMENT. The tests that
+ * need one pass `created` explicitly; it wins over the fill.
+ */
+const tipOf = (messages: PlacementTipMessage[]): PlacementTipMessage[] =>
+  messages.map((m) => ({ created: at(m.id), ...m }));
+
 const T = 1_800_000_000_000;
 
 function fakeDeps(over: Partial<HoldSettleDeps> & { claimed?: number[]; tips?: any[] }) {
@@ -56,11 +77,11 @@ describe('settleInboxHoldAfterStop', () => {
   });
 
   test('an unreached forwarded prompt is removed from the box, held as queued, its turn closed', async () => {
-    const tip = [
+    const tip = tipOf([
       { id: u1, role: 'user' },
       { id: a1, role: 'assistant', parentID: u1, completed: T + 150 },
       { id: u2, role: 'user' },
-    ];
+    ]);
     const { deps, calls } = fakeDeps({
       tips: [tip],
       listStopPaused: async () => [{ commandId: 'c2', wireIds: [u2] }],
@@ -74,11 +95,11 @@ describe('settleInboxHoldAfterStop', () => {
   });
 
   test('a forwarded prompt the aborted step READ closes as delivered (runs with the next send)', async () => {
-    const tip = [
+    const tip = tipOf([
       { id: u1, role: 'user' },
       { id: u3, role: 'user' },
       { id: a3, role: 'assistant', parentID: u3, completed: T + 450 },
-    ];
+    ]);
     const { deps, calls } = fakeDeps({
       tips: [tip],
       listStopPaused: async () => [{ commandId: 'c3', wireIds: [u3] }],
@@ -90,8 +111,8 @@ describe('settleInboxHoldAfterStop', () => {
   });
 
   test('a box still mid-step after the hold (an escaped delivery restarted it) is aborted again', async () => {
-    const busyTip = [{ id: u3, role: 'user' }, { id: a3, role: 'assistant', parentID: u3, completed: null }];
-    const idleTip = [{ id: u3, role: 'user' }, { id: a3, role: 'assistant', parentID: u3, completed: T + 500 }];
+    const busyTip = tipOf([{ id: u3, role: 'user' }, { id: a3, role: 'assistant', parentID: u3, completed: null }]);
+    const idleTip = tipOf([{ id: u3, role: 'user' }, { id: a3, role: 'assistant', parentID: u3, completed: T + 500 }]);
     const { deps, calls } = fakeDeps({
       claimed: [1, 0],
       tips: [busyTip, idleTip],
@@ -104,7 +125,7 @@ describe('settleInboxHoldAfterStop', () => {
   });
 
   test('a removal that fails leaves the row stop-paused (no duplicate, no loss)', async () => {
-    const tip = [{ id: u2, role: 'user' }];
+    const tip = tipOf([{ id: u2, role: 'user' }]);
     const { deps, calls } = fakeDeps({
       tips: [tip],
       listStopPaused: async () => [{ commandId: 'c2', wireIds: [u2] }],

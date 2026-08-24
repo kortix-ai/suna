@@ -1,13 +1,33 @@
 /**
  * Placing a forwarded prompt INTO a live OpenCode turn, and proving it landed.
  *
- * OpenCode's loop decides "is the latest user message answered?" by ID ORDER:
- * at the top of every step it exits when `lastUser.id < lastAssistant.id` and
- * that assistant finished without tool calls. A user message whose id sorts
- * below an assistant message that was created BEFORE it was inserted is
- * therefore read as history the moment the running step ends — the model
- * never sees it and nothing ever answers it. The prompt is STRANDED: persisted,
- * visible in the transcript, silently dropped.
+ * HOW THE LOOP DECIDES "is the latest user message answered?" — AND THAT IT
+ * DEPENDS ON THE BOX'S OPENCODE VERSION. `opencode` is baked into the sandbox
+ * image at build time, so a session's runtime is whatever its image shipped
+ * with, and BOTH of these are live in the fleet right now:
+ *
+ *  - opencode <= 1.18.14 (every box provisioned before 2026-08-20 runs the
+ *    baked 1.17.11): ID ORDER. At the top of every step the loop exits when
+ *    `lastUser.id < lastAssistant.id` and that assistant finished without tool
+ *    calls. A user message whose id sorts below an assistant message created
+ *    BEFORE it was inserted is read as history the moment the running step
+ *    ends — the model never sees it and nothing answers it. The prompt is
+ *    STRANDED: persisted, visible in the transcript, silently dropped. This is
+ *    the failure mode everything below exists for.
+ *  - opencode >= 1.18.15 (boxes built from the 1.18.19 image): PARENT LINK.
+ *    Upstream retired id-ordering as chronology — the exit test is now
+ *    `lastAssistant.parentID === lastUser.id`, and `latest()` orders by
+ *    `time.created`. A low id no longer strands a prompt on its own.
+ *
+ * `MessageV2.page()` — the `GET /session/:id/message` read every function here
+ * consumes — has ALWAYS ordered by `time_created` (then `id` as the sub-ms
+ * tiebreak), in BOTH versions. It is only the LOOP's chronology that changed.
+ *
+ * The machinery below therefore stays: it is required on old boxes and inert
+ * on new ones (a correctly-placed id is correct under either rule). What must
+ * NOT persist is code that reads chronology out of a raw string compare on
+ * ids — see `isLaterTipMessage`, which is `time.created`-first and falls back
+ * to the id clock only when a stamp is missing.
  *
  * The drain re-mints a mid-turn prompt above the transcript's newest id, but
  * "newest" is read BEFORE the POST. The box keeps minting ids on its own clock
@@ -23,10 +43,13 @@
  *     every message we insert comes back with `time.created` stamped by the
  *     box, and we know when our POST was acknowledged, so
  *     `created − ackAt` is a lower bound on (box − api) skew (the box stamped
- *     it before we saw the ack). Lower bound on purpose: an id that lands a
- *     little LOW can only be stranded, which layer 2 repairs; an id that lands
- *     HIGH (above the assistant that will answer it) makes OpenCode run the
- *     step twice — a duplicate answer nothing can take back.
+ *     it before we saw the ack). Lower bound on purpose, and the asymmetry is
+ *     the reason: on an id-ordering box (<= 1.18.14) an id that lands a little
+ *     LOW can only be stranded, which layer 2 repairs; an id that lands HIGH
+ *     (above the assistant that will answer it) makes OpenCode run the step
+ *     twice — a duplicate answer nothing can take back. On a >= 1.18.15 box
+ *     neither direction strands, so the lift is inert there; keep the lower
+ *     bound because the fleet still contains boxes of the first kind.
  *
  *  2. PROOF — `strandedPlacement`: after the insert, one tip read answers
  *     "did this land above every assistant that predates it?" exactly. An
@@ -188,12 +211,56 @@ export function openUserAbove(
   return false;
 }
 
+/**
+ * Is `candidate` the LATER of two transcript messages?
+ *
+ * `time.created` first. The box stamps it at persistence on one clock, and it
+ * is what OpenCode itself orders the transcript by: `MessageV2.page()` runs
+ * `orderBy(desc(time_created), desc(id)).limit(n + 1)` and reverses, in every
+ * version we run. Since 1.18.15 it is also what `latest()` uses.
+ *
+ * The id clock is the FALLBACK, for a message whose stamp we could not read
+ * (an older daemon build, a parse that dropped it). It is a fallback and not
+ * the primary because a wire id is minted by the SENDER — the browser, the
+ * CLI, or this process's placement minter — while `time.created` is stamped by
+ * the box, so the two disagree whenever a prompt is deliberately placed off
+ * the box's own clock, which is exactly what `mintLivePlacement` does.
+ *
+ * A raw string `>` on the ids would happen to agree with the id clock today,
+ * because `msg_` is followed by 12 zero-padded lowercase hex digits under one
+ * fixed prefix. That is an accident of the current id format, not a contract —
+ * so nothing here compares ids as strings except as the last tiebreak, when
+ * neither a stamp nor a decodable clock is available on both sides.
+ */
+export function isLaterTipMessage(
+  candidate: PlacementTipMessage,
+  incumbent: PlacementTipMessage | null | undefined,
+): boolean {
+  if (!incumbent) return true;
+  const a =
+    typeof candidate.created === 'number' && Number.isFinite(candidate.created)
+      ? candidate.created
+      : null;
+  const b =
+    typeof incumbent.created === 'number' && Number.isFinite(incumbent.created)
+      ? incumbent.created
+      : null;
+  // Both stamped and different: the box's own clock settles it outright.
+  if (a !== null && b !== null && a !== b) return a > b;
+  // Same millisecond, or a stamp missing on either side — fall through to the
+  // id clock, which is `page()`'s own sub-millisecond tiebreak.
+  const at = wireIdTime(candidate.id);
+  const bt = wireIdTime(incumbent.id);
+  if (at !== null && bt !== null && at !== bt) return at > bt;
+  return candidate.id > incumbent.id;
+}
+
 /** Is the box mid-step — its newest assistant message still open? */
 export function tipIsBusy(tip: ReadonlyArray<PlacementTipMessage>): boolean {
   let newest: PlacementTipMessage | null = null;
   for (const m of tip) {
     if (m.role !== 'assistant') continue;
-    if (!newest || m.id > newest.id) newest = m;
+    if (isLaterTipMessage(m, newest)) newest = m;
   }
   return !!newest && (newest.completed === null || newest.completed === undefined);
 }

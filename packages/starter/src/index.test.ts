@@ -165,6 +165,19 @@ describe('getStarterFiles', () => {
     expect(byPath(files).has('kortix.yaml')).toBe(true);
   });
 
+  test('ships scheduled starter automation disabled by default', () => {
+    const manifest = byPath(getStarterFiles({ projectName: 'X', template: 'minimal' })).get(
+      'kortix.yaml',
+    );
+    expect(manifest).toBeDefined();
+    if (!manifest) throw new Error('minimal starter is missing kortix.yaml');
+    const lines = manifest.split('\n');
+    const start = lines.findIndex((line) => line.trim() === '- slug: harness-reflector');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const enabled = lines.slice(start + 1).find((line) => line.trim().startsWith('enabled:'));
+    expect(enabled?.trim()).toBe('enabled: false');
+  });
+
   test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
     // The one user-facing starter (the default) carries the domain skill kit.
     const dflt = getStarterFiles({ projectName: 'X' });
@@ -287,7 +300,6 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-connectors',
       'kortix-harness-refinement',
       'kortix-marketplace',
-      'kortix-voice',
       'kortix-memory',
       'kortix-onboarding',
       'kortix-slack',

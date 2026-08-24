@@ -4,28 +4,22 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
+import { errorToast } from '@/components/ui/toast';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
-import { QueuedPromptBubbles } from '@/features/session/turn/queued-prompt-bubbles';
+import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
+import { QueuedPromptBubbles } from '@/features/session/turn/queued-prompt-bubbles';
 import {
   attachedFilesToDataUrlParts,
   buildOptimisticPromptTextWithUploads,
 } from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
-import type { Command } from '@kortix/sdk/react';
-import {
-  readStartStash,
-  startSessionWithPrompt,
-  useRuntimeAgents,
-  useSessionPrompts,
-  writeStartStash,
-} from '@kortix/sdk/react';
-import { errorToast } from '@/components/ui/toast';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -34,6 +28,14 @@ import {
   usePendingFilesStore,
 } from '@/stores/session-composer-handoff-store';
 import type { SessionStartStage } from '@kortix/sdk';
+import type { Command } from '@kortix/sdk/react';
+import {
+  readStartStash,
+  startSessionWithPrompt,
+  useRuntimeAgents,
+  useSessionPrompts,
+  writeStartStash,
+} from '@kortix/sdk/react';
 
 const subscribeToNothing = () => () => {};
 
@@ -224,6 +226,10 @@ export function InstantSessionShell({
     [handleSend],
   );
 
+  // Keyed by the session this shell is booting, so a reload mid-boot finds the
+  // same draft the real composer will pick up once it crossfades in.
+  const draftScope = useMemo<DraftScope>(() => ({ kind: 'session', sessionId }), [sessionId]);
+
   // Defined once and slotted into either the hero position (pre-submit, inside
   // the welcome body) or the regular bottom position (post-submit thread view).
   const composerEl = (
@@ -232,6 +238,7 @@ export function InstantSessionShell({
       onCommand={handleCommand}
       sessionId={sessionId}
       projectId={projectId}
+      draftScope={draftScope}
       prefill={prefill}
       boundAgentName={boundAgentName}
       // While the computer boots after the first send the input stays fully
@@ -271,7 +278,19 @@ export function InstantSessionShell({
         )}
       />
 
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+      {/* The chat + action-panel row — the SAME one `SessionChat` renders, so the
+          conversation column is the same width on both sides of the crossfade
+          and the panel chevron is already on screen when the real chat takes
+          over. It used to be missing here entirely: the chat gained a 40px
+          in-flow column the shell did not have, and every centered thing in the
+          body — thread and composer — jumped 20px left at handover. See
+          session-body.tsx.
+
+          Gated on `submitted` because the pre-submit surface is the project-home
+          empty state, which must stay centered on the full width exactly as
+          project home draws it. Nothing crossfades out of that state; the thread
+          below is what `SessionChat` replaces. */}
+      <SessionBodyRow actionPanel={!!submitted} transient>
         {/* Empty new session → the identical project-home empty state (centered
             heading + hero composer + starter chips, setup pills at the bottom),
             so a fresh session opens onto the same surface as the project index
@@ -287,49 +306,53 @@ export function InstantSessionShell({
             />
           </div>
         )}
-        {/* Geometry is copied from SessionChat's scroll area verbatim — same
-            container padding, same max width, same inner padding. It used to run
-            `px-4 py-4` against the chat's `py-6`, which put the whole thread 8px
-            higher here and made the crossfade land with a visible nudge. */}
-        <div
-          className={cn(
-            'scrollbar-hide relative z-10 overflow-y-auto',
-            submitted ? 'h-full flex-1' : 'hidden',
-          )}
-        >
-          <div className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6">
-            {effectiveSubmission && (
-              <div className="flex min-w-0 flex-col">
-                {/* The optimistic turn, rendered by the component SessionChat
+        {/* Two nested boxes, the same pair `SessionChat` uses: an outer
+            `min-h-0 flex-1` that yields height to the docked composer beside it,
+            and the scroller itself at `h-full` inside it. Collapsing the two
+            (the shell's old shape, when the composer was not a sibling) makes
+            `h-full` resolve against the whole column and pushes the composer out
+            of the clipped row. */}
+        <div className={cn('relative z-10 min-h-0 flex-1', !submitted && 'hidden')}>
+          <div className="scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto">
+            {/* One class, imported — not "copied verbatim" as the comment here
+                used to claim. It had stopped being true: this column ran
+                `px-3 py-6 sm:px-6` against the chat's `px-7 pt-6 md:pr-4`. */}
+            <div className={SESSION_TRANSCRIPT_CLASS}>
+              {effectiveSubmission && (
+                <div className="flex min-w-0 flex-col">
+                  {/* The optimistic turn, rendered by the component SessionChat
                     also renders — not a copy of it. `deferPreview` is the one
                     difference the shell is entitled to: there is no sandbox yet,
                     so MessageAttachments paints every tile as pending. The
                     waiting row underneath says "Thinking" at every boot stage,
                     exactly as it will once the real chat takes over. */}
-                <OptimisticTurn
-                  text={buildOptimisticPromptTextWithUploads(
-                    effectiveSubmission.text,
-                    effectiveSubmission.files,
-                  )}
-                  agentNames={agentNames}
-                  onFileClick={openFileInComputer}
-                  deferPreview
-                  sessionId={sessionId}
-                />
-                {/* What was typed while the box boots, as the dimmed queued
+                  <OptimisticTurn
+                    text={buildOptimisticPromptTextWithUploads(
+                      effectiveSubmission.text,
+                      effectiveSubmission.files,
+                    )}
+                    agentNames={agentNames}
+                    onFileClick={openFileInComputer}
+                    deferPreview
+                    sessionId={sessionId}
+                  />
+                  {/* What was typed while the box boots, as the dimmed queued
                     bubbles they already are on the server — same component
                     SessionChat draws, so the crossfade changes nothing. */}
-                <QueuedPromptBubbles className="mt-3" queued={queuedBehindFirst} />
-              </div>
-            )}
+                  <QueuedPromptBubbles className="mt-3" queued={queuedBehindFirst} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Once a first message is sent the composer leaves the hero position and
-          docks at the bottom for the thread view (the same jump Perplexity makes
-          when a search becomes a thread). */}
-      {submitted ? composerEl : null}
+        {/* Once a first message is sent the composer leaves the hero position and
+            docks at the bottom for the thread view (the same jump Perplexity
+            makes when a search becomes a thread). INSIDE the body column, where
+            `SessionChat` docks its own: outside it, it centered against the full
+            width while the chat's centered against width-minus-panel. */}
+        {submitted ? composerEl : null}
+      </SessionBodyRow>
     </div>
   );
 

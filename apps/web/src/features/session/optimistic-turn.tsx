@@ -2,6 +2,8 @@
 
 import { useMemo } from 'react';
 
+import { MentionChip } from '@/features/session/mention-chip';
+import { buildMentionSegments } from '@/features/session/mention-segments';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -10,8 +12,6 @@ import {
   parseReplyContext,
   parseSessionReferences,
 } from '@/features/session/message-parsing';
-import { MentionChip } from '@/features/session/mention-chip';
-import { buildMentionSegments } from '@/features/session/mention-segments';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
 import {
   BUBBLE_SURFACE,
@@ -66,6 +66,16 @@ export function OptimisticTurn({
   deferPreview,
   /** Keys the busy indicator's dot-matrix glyph — see `SessionDotMatrix`. */
   sessionId,
+  /**
+   * Draw the waiting row under the bubble. Default true — the whole point of
+   * this component is that the bubble and its "Thinking" row arrive together.
+   *
+   * `SessionChat` turns it off in one case: the transcript has already produced
+   * a turn (with its own busy row) whose user message carries no text yet, so
+   * this stands in for the missing bubble ABOVE it. Two waiting rows would be a
+   * lie about how much is running.
+   */
+  busy = true,
   className,
 }: {
   text: string;
@@ -73,6 +83,7 @@ export function OptimisticTurn({
   onFileClick?: (path: string) => void;
   deferPreview?: boolean;
   sessionId?: string;
+  busy?: boolean;
   className?: string;
 }) {
   return (
@@ -85,7 +96,7 @@ export function OptimisticTurn({
           deferPreview={deferPreview}
         />
       </div>
-      <SessionBusyIndicator sessionId={sessionId} className="mt-6" />
+      {busy && <SessionBusyIndicator sessionId={sessionId} className="mt-6" />}
     </div>
   );
 }

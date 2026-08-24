@@ -12,9 +12,6 @@ import {
 import { buildAiSdkArgs } from './request';
 import { openAiJsonFromResult, openAiSseFromFullStream } from './sse';
 
-export { applyNativeGatewayShaping } from './request';
-export type { NativeShapableCall } from './request';
-
 export type { AiSdkFetch } from './model';
 export {
   aiSdkFamilyFor,
@@ -23,27 +20,6 @@ export {
   needsResponsesApi,
   resolveAiModel,
 } from './model';
-
-// AI-SDK-NATIVE (Vercel "AI Gateway" protocol) egress + ingress — Phase 1,
-// additive alongside the OpenAI-compat path. See sse-native.ts / index.ts flag.
-export {
-  aiGatewaySseFromFullStream,
-  billingUsageFromWire,
-  fullStreamPartHasContent,
-  wireUsageFromLanguageModelUsage,
-} from './sse-native';
-export type { FullStreamPart, NativeBillingUsage, NativeStreamCtx, WireUsage } from './sse-native';
-export {
-  AI_GATEWAY_PROTOCOL_VERSION,
-  LanguageModelRequestError,
-  decodeLanguageModelHeaders,
-  decodeLanguageModelRequest,
-} from './language-model-request';
-export type {
-  DecodedLanguageModelRequest,
-  LanguageModelHeaders,
-  LanguageModelSpecVersion,
-} from './language-model-request';
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -143,9 +119,10 @@ export function toTransportError(err: unknown, provider: string): Error {
   const e = err as {
     statusCode?: number;
     responseBody?: string;
+    responseHeaders?: Record<string, string>;
     message?: string;
     url?: string;
-    cause?: { statusCode?: number };
+    cause?: { statusCode?: number; responseHeaders?: Record<string, string> };
   };
   // A `cause`-wrapped statusCode (some AI-SDK error classes nest the original
   // API-call error there) counts the same as a top-level one.
@@ -168,7 +145,11 @@ export function toTransportError(err: unknown, provider: string): Error {
       typeof e.responseBody === 'string' && e.responseBody.trim().length > 0
         ? e.responseBody
         : (e.message ?? '');
-    return new UpstreamHttpError(statusCode, body, provider);
+    // `responseHeaders` carries the upstream's `Retry-After` on a 429/503. The
+    // pipeline relays it CLAMPED (failover.ts) — never verbatim, because
+    // OpenCode >= 1.18.17 sleeps for whatever it is told, up to 24.8 days.
+    const headers = e.responseHeaders ?? e.cause?.responseHeaders;
+    return new UpstreamHttpError(statusCode, body, provider, headers);
   }
   const message = e?.message ?? (err instanceof Error ? err.message : String(err));
   if (looksLikeTerminalAuthFailure(message)) {

@@ -1,6 +1,5 @@
 import {
   ArrowCircleUpIcon as ArrowUpCircle,
-  WaveformIcon as AudioLines,
   ShippingContainerIcon as Container,
   FlaskIcon as Flask,
   TrayIcon as Inbox,
@@ -52,7 +51,6 @@ export type ProjectSettingsSectionKey =
   | 'general'
   | 'sandbox'
   | 'review'
-  | 'voice'
   | 'feature-flags'
   | 'upgrades';
 
@@ -135,18 +133,8 @@ const REVIEW_SECTION: ProjectSettingsSection = {
   gate: 'review',
 };
 
-const VOICE_SECTION: ProjectSettingsSection = {
-  key: 'voice',
-  label: 'Voice',
-  description:
-    'Send the agent into a call. It listens, answers out loud, and keeps working while you talk.',
-  icon: AudioLines,
-  gate: 'voice',
-};
-
 export interface ProjectSettingsSectionFlags {
   reviewEnabled: boolean;
-  voiceEnabled: boolean;
 }
 
 /**
@@ -162,14 +150,13 @@ export function projectSettingsSections(
 ): readonly ProjectSettingsSection[] {
   const sections = [...STATIC_SECTIONS];
   if (flags.reviewEnabled) sections.push(REVIEW_SECTION);
-  if (flags.voiceEnabled) sections.push(VOICE_SECTION);
   sections.push(FEATURE_FLAGS_SECTION, UPGRADES_SECTION);
   return sections;
 }
 
 /** Every section, independent of any flag — for copy lookups and tests. */
 export const ALL_PROJECT_SETTINGS_SECTIONS: readonly ProjectSettingsSection[] =
-  projectSettingsSections({ reviewEnabled: true, voiceEnabled: true });
+  projectSettingsSections({ reviewEnabled: true });
 
 /**
  * The section a `?section=` value names. `general` is the default because it

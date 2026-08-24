@@ -7,6 +7,10 @@ import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/
 import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
 import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verify';
+// From its own module, not '../shared/jwt-verify': five test files replace that
+// module wholesale, and a mock cannot be allowed to change how a real failure is
+// classified.
+import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 import { syncSsoMembership } from '../iam/sso-sync';
@@ -162,9 +166,8 @@ export async function apiKeyAuth(c: Context, next: Next) {
  * pipeline (resolveAccountId, project access checks, etc.) works
  * unchanged.
  *
- * The one sandbox-token exception is the runtime clone-credential endpoint:
- * a session sandbox calls it with its sandbox-scoped KORTIX_TOKEN so it does
- * not need a second project PAT or raw Git token in env.
+ * Selected runtime routes accept a session-scoped KORTIX_TOKEN. They never
+ * return an upstream provider credential.
  */
 export async function supabaseAuth(c: Context, next: Next) {
   return resolveSupabaseAuth(c, () => applyImpersonation(c, () => withActor(c, next)));
@@ -232,7 +235,13 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     c.set('authType', 'pat');
     if (result.accountId) c.set('accountId', result.accountId);
     if (result.projectId) c.set('tokenProjectId', result.projectId);
-    if (result.sessionId) c.set('sessionId', result.sessionId);
+    if (result.sessionId) {
+      c.set('sessionId', result.sessionId);
+      // A session-scoped token is also the identity of its sandbox. Keep the
+      // route context explicit so daemon-only endpoints can accept the unified
+      // credential without treating an ordinary project PAT as a sandbox.
+      c.set('sandboxId', result.sessionId);
+    }
     if (result.tokenId) c.set('iamTokenId', result.tokenId);
     // Per-agent authorization grant (non-null only for agent-session tokens).
     // Read by requireScope() to gate Kortix CLI/API actions on top of the
@@ -254,7 +263,6 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
 
   const path = c.req.path;
   const sandboxTokenPathAllowed =
-    path.endsWith('/git/clone-credential') ||
     path.endsWith('/turn-stream') ||
     path.endsWith('/turn-question') ||
     // The seed daemon fetches the org model catalog at PARK with its sandbox
@@ -338,8 +346,9 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     return;
   }
 
-  // Local verification unavailable (JWKS not loaded yet) — fall back to network
-  if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') {
+  // Local verification reached no verdict (JWKS not loaded, unknown kid, or an
+  // algorithm this verifier does not implement) — fall back to the network.
+  if (!isInconclusiveVerifyFailure(local.reason)) {
     // Token is definitively invalid (bad signature, expired, malformed)
     auditLoginFail({ c, reason: `jwt_${local.reason}`, authType: 'jwt' });
     throw new HTTPException(401, { message: 'Invalid or expired token' });
@@ -641,8 +650,9 @@ async function resolveCombinedAuth(c: Context, next: Next) {
     return;
   }
 
-  // Token is definitively bad (bad sig, expired, malformed) — reject immediately
-  if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') {
+  // Token is definitively bad (bad sig, expired, malformed) — reject immediately.
+  // An inconclusive result falls through to the network path below instead.
+  if (!isInconclusiveVerifyFailure(local.reason)) {
     auditLoginFail({ c, reason: `jwt_${local.reason}`, authType: 'jwt' });
     throw new HTTPException(401, { message: 'Invalid or expired token' });
   }
@@ -761,7 +771,7 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   if (path === '/v1/accounts/me') return;
 
   // `/v1/skills` — the kortix-managed system skills (how Kortix itself works).
-  // This function is default-deny, and the in-sandbox `KORTIX_CLI_TOKEN` is
+  // This function is default-deny, and the in-sandbox `KORTIX_TOKEN` is
   // exactly a project+session-scoped PAT, so without this branch the ONE caller
   // these routes exist for gets a 403: every baked sandbox seeds a kortix-system
   // skill telling the agent to run `kortix skills get <name>`.
@@ -772,11 +782,14 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // authorization.
   if (path === '/v1/skills' || path.startsWith('/v1/skills/')) return;
 
-  // `/v1/runtime-assets` — the CLI binary + managed-skill overlay this deploy
-  // bakes into sandboxes. Same situation and same reasoning as `/v1/skills`
+  // `/v1/runtime-assets` — the `kortix-agent` daemon binary, the CLI binary, and
+  // the managed-skill overlay this deploy bakes into sandboxes. The prefix test
+  // covers every payload route including `/agent`, which is deliberate: the
+  // daemon converging ITSELF is the same caller with the same token as the
+  // daemon converging its CLI. Same reasoning as `/v1/skills`
   // above, and for the same single caller: the in-sandbox daemon reconciles
   // against these on every session start/restart/resume holding exactly a
-  // project+session-scoped `KORTIX_CLI_TOKEN`. A 403 here means a sandbox can
+  // project+session-scoped `KORTIX_TOKEN`. A 403 here means a sandbox can
   // never repair a stale CLI, which is the whole bug these routes exist to fix.
   // Safe to allow — the payloads are the deploy's own build artifacts, identical
   // for every caller, with no account or project data in them. Authentication,

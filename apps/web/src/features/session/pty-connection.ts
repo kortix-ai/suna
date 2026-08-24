@@ -15,8 +15,11 @@ export function deriveTerminalPanelState(input: {
    *  box) — a pending state the panel must keep waiting through, never render
    *  as a terminal error. */
   isSandboxWaking?: boolean;
+  /** A panel-local deadline elapsed while the runtime stayed pending. */
+  connectionWaitExpired?: boolean;
 }): TerminalPanelState {
   if (input.hasPty) return 'terminal';
+  if (input.connectionWaitExpired) return 'error';
   if (!input.hasServerUrl) return input.serverWaitExpired ? 'error' : 'connecting';
   if (input.isListError || input.isCreateError) {
     return input.isSandboxWaking ? 'connecting' : 'error';
@@ -25,11 +28,7 @@ export function deriveTerminalPanelState(input: {
   return 'empty';
 }
 
-export function shouldExpirePtyConnect(
-  startedAt: number,
-  now: number,
-  timeoutMs: number,
-): boolean {
+export function shouldExpirePtyConnect(startedAt: number, now: number, timeoutMs: number): boolean {
   return now - startedAt >= timeoutMs;
 }
 

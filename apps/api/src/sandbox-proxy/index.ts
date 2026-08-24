@@ -2,6 +2,7 @@ import { config, type SandboxProviderName } from '../config';
 import { combinedAuth } from '../middleware/auth';
 import { preview } from './routes/preview';
 import { getAuthToken } from './routes/auth';
+import { previewConfig } from './routes/preview-config';
 import { publicShareApp } from './routes/public-share';
 import { shareApp } from './routes/share';
 import { invalidateSandbox, loadSandbox } from './backend';
@@ -16,6 +17,10 @@ const sandboxProxyApp = makeOpenApiApp();
 // ── Cookie auth endpoint ────────────────────────────────────────────────────
 // POST /v1/p/auth — validates JWT and sets __preview_session cookie.
 sandboxProxyApp.route('/auth', getAuthToken);
+
+// ── Preview addressing ──────────────────────────────────────────────────────
+// GET /v1/p/config — the origin template clients use to build preview URLs.
+sandboxProxyApp.route('/config', previewConfig);
 
 // ── Public URL share endpoint ───────────────────────────────────────────────
 // POST /v1/p/share — returns a shareable URL for a sandbox port.

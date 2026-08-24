@@ -26,7 +26,7 @@
  *  - writes are atomic (temp + fsync + rename).
  */
 
-import { tool } from "@opencode-ai/plugin";
+import { tool } from "./lib/tool";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";

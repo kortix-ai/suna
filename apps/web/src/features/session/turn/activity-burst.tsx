@@ -652,16 +652,6 @@ function ActivityBurstImpl({
                   <ChainOfThoughtStep key={step.key}>{stepBody(step, bare)}</ChainOfThoughtStep>
                 ),
               )}
-
-              {/* The closing step. It is a step, not a footer, so `ChainOfThought`
-							    hands it `isLast` and the rail above it finally has somewhere to
-							    land — the chain reads as terminated rather than trailing off.
-							    Success is monochrome, at the same scale as every row: the cap is
-							    punctuation, and a success-green check would out-weigh the work it
-							    closes on every burst the reader opens.
-								    Failure is the one thing that earns colour here. "Done" over a
-								    burst that lost a page is a false summary of the chain it
-								    terminates, and it is the LAST line the reader sees. */}
             </ChainOfThought>
           </div>
         </ToolActivateContext.Provider>

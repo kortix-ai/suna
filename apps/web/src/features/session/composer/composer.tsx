@@ -1,6 +1,6 @@
 'use client';
 
-import { toast } from '@/lib/toast';
+import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import type { Agent, Command, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
@@ -28,8 +28,6 @@ import {
 import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
 import { resolveComposerResetOnSend } from '../composer-reset';
-import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
-import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 import {
   isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
@@ -40,6 +38,10 @@ import { ModelConnectionBar } from '../model-connection-gate';
 import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
+import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
+import type { DraftScope, StoredDraft } from './draft/composer-draft';
+import { useComposerDraft } from './draft/use-composer-draft';
+import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -52,7 +54,6 @@ import {
   readCommandChipLabel,
 } from './command-attachments';
 import {
-  appendTranscribedText,
   planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
@@ -67,7 +68,9 @@ import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, SLASH_ACTIONS, type SlashAction } from './menus/slash-actions';
+import type { SlashFile } from './menus/slash-files';
 import { createSubmitLatch } from './submit-latch';
+import type { AttachedFile, TrackedMention } from './types';
 
 /** A draft captured out of the editor at Enter time — see `createSubmitLatch`. */
 interface StashedDraft {
@@ -75,7 +78,6 @@ interface StashedDraft {
   doc: JSONContent | null;
   files: AttachedFile[];
 }
-import type { AttachedFile, TrackedMention } from './types';
 
 export interface SessionChatInputProps {
   onSend: (
@@ -137,6 +139,21 @@ export interface SessionChatInputProps {
   noAccessibleAgents?: boolean;
   commands?: Command[];
   /**
+   * The session's own files, as `/` palette rows — the Outputs card's
+   * deliverables and the Context card's reads, built by
+   * `menus/slash-files.ts`'s `sessionSlashFiles`.
+   *
+   * A prop, not a `useOptionalSessionPanel()` call inside this component,
+   * even though the panel provider does sit above every session composer.
+   * Importing that provider here would pull the entire detail-panel tree
+   * (files explorer, audit panel, previews) into this module's graph — and
+   * this composer also renders on project home and in the marketing demo,
+   * neither of which has any use for it. The host that already lives beside
+   * the panel (`session-chat.tsx`) reads the context and hands the derived
+   * list down; every other host omits it.
+   */
+  slashFiles?: SlashFile[];
+  /**
    * `split` is where the chip sat in `args` — display only. Without it every
    * consumer rebuilds the sent message as `/name` + args, so a command typed
    * mid-sentence (`explain /webapp to me`) came back reordered to the front.
@@ -152,6 +169,15 @@ export interface SessionChatInputProps {
   messages?: MessageWithParts[];
   sessionId?: string;
   projectId?: string;
+  /**
+   * Persist the unsent draft under this scope and restore it on the next
+   * mount — see `composer/draft/`. Project scope for the home hero composer
+   * (no session yet), session scope for every in-thread one.
+   *
+   * Omitted → the composer persists nothing, which is what the two
+   * marketing-demo composers rely on.
+   */
+  draftScope?: DraftScope | null;
   disabled?: boolean;
   /**
    * A line shown in a bar directly ABOVE the composer card. Used for "this
@@ -305,12 +331,12 @@ export interface SessionChatInputProps {
  */
 export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
 
-
 /** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
 const EMPTY_AGENTS: Agent[] = [];
 const EMPTY_COMMANDS: Command[] = [];
 const EMPTY_MODELS: FlatModel[] = [];
 const EMPTY_VARIANTS: string[] = [];
+const EMPTY_SLASH_FILES: SlashFile[] = [];
 
 /** Stable identities for the command-chip subscription below. */
 const NO_SUBSCRIPTION = () => {};
@@ -355,6 +381,7 @@ function ComposerImpl({
   agentSelectorLocked = false,
   noAccessibleAgents = false,
   commands = EMPTY_COMMANDS,
+  slashFiles = EMPTY_SLASH_FILES,
   onCommand,
   models = EMPTY_MODELS,
   selectedModel = null,
@@ -366,6 +393,7 @@ function ComposerImpl({
   messages,
   sessionId,
   projectId,
+  draftScope = null,
   disabled = false,
   notice = null,
   onNoticeRetry,
@@ -373,7 +401,7 @@ function ComposerImpl({
   modelRequired = false,
   modelsLoading = false,
   autoFocus,
-  placeholder = 'Ask anything...',
+  placeholder = 'Ask anything…',
   prefill = null,
   onPrefillApplied,
   attachRequestId = null,
@@ -424,6 +452,33 @@ function ComposerImpl({
     editorRef.current = handle;
     setEditorElement(handle?.getElement() ?? null);
   }, []);
+
+  /**
+   * Put a stored draft back into the live editor.
+   *
+   * `setDocumentWithoutStealingFocus`, not `setDocument`: this fires on mount,
+   * and `setDocument` force-focuses the document end — a session page would
+   * yank focus into the composer on every reload.
+   *
+   * Attachments are only seeded into an EMPTY tray. Anything already attached
+   * was added by the person in this mount and outranks a stored list. Local
+   * attachments were never storable, so nothing is restored for them.
+   */
+  const handleDraftRestore = useCallback((draft: StoredDraft) => {
+    setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
+    if (draft.files.length > 0) {
+      setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
+    }
+  }, []);
+
+  const { handleDocChange, clearSavedDraft } = useComposerDraft({
+    scope: draftScope,
+    editorRef,
+    editorReady: editorElement != null,
+    attachedFiles,
+    hasPrefill: !!prefill,
+    onRestore: handleDraftRestore,
+  });
 
   const { data: allSessions } = useRuntimeSessions();
 
@@ -816,13 +871,6 @@ function ComposerImpl({
     }
   }, [lockForQuestion]);
 
-  const handleTranscription = useCallback((transcribedText: string) => {
-    const handle = editorRef.current;
-    if (!handle) return;
-    const next = appendTranscribedText(handle.getDocument(), handle.isEmpty(), transcribedText);
-    setDocumentWithoutStealingFocus(handle, next);
-  }, []);
-
   /**
    * The model popover's open state, hoisted out of `ModelSelector` so the `/`
    * palette can open it. `focusSection` is what separates the palette's two
@@ -885,203 +933,218 @@ function ComposerImpl({
         case 'attach-file':
           fileInputRef.current?.click();
           return;
-        default:
-          // `set-scope` and `start-voice` remain no-ops: `VoiceRecorder` owns
-          // its own state with no external control, and scope lives outside
-          // this component entirely.
-          return;
       }
     },
     [cycleAgent],
   );
 
-  const dispatchSubmission = useCallback(async (stash?: StashedDraft) => {
-    // Ahead of the model check: with no agent to run it, the model this prompt
-    // would have used is not the user's problem.
-    if (agentUnavailable) {
-      toast.error(NO_AGENT_ACCESS_LABEL, { description: NO_AGENT_ACCESS_HINT });
-      return;
-    }
-    if (modelUnavailable) {
-      toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
-        description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
-      });
-      return;
-    }
-
-    // What refuses EVERY submission — a prompt, a `/` command, and a custom
-    // answer alike. `hasActiveQuestion` is deliberately not consulted here: an
-    // open question does not refuse a submission, it REROUTES it to
-    // `onCustomAnswer` further down. The command branch passes it for real,
-    // because a command is not an answer.
-    const submissionBlocker = sendBlocker({
-      hasActiveQuestion: false,
-      // The composer only knows "something is pending", not how many.
-      pendingPermissionCount: lockForApproval ? 1 : 0,
-      readOnly: disabled,
-    });
-    if (submissionBlocker) {
-      const copy = sendBlockerMessage(submissionBlocker);
-      toast.error(copy.message, copy.description ? { description: copy.description } : undefined);
-      return;
-    }
-
-    // A stashed draft was captured out of the editor (and the editor cleared)
-    // when its Enter arrived mid-send — see `createSubmitLatch`. It is
-    // submitted as captured; the live editor belongs to whatever the user
-    // typed since.
-    const draft = stash ? stash.content : editorRef.current?.getContent();
-    const filesNow = stash ? stash.files : attachedFiles;
-    const plan = planDraftSubmission({
-      commandName: draft?.commandName,
-      text: draft?.text ?? '',
-      commands: commands ?? [],
-    });
-    if (plan.kind === 'command') {
-      // A command cannot deliver the attached files, and the code below is
-      // about to clear them and revoke their object URLs. Refuse the whole
-      // submission instead — before either dispatch path and before the clear,
-      // so the direct call and the queued entry are guarded by one check
-      // rather than two that can drift. Nothing is sent, nothing is cleared,
-      // and the reason is already on screen next to the send button; the toast
-      // covers the keyboard path, which no disabled button can gate.
-      const guard = planCommandAttachments({
-        isCommand: true,
-        attachmentCount: filesNow.length,
-      });
-      if (guard.kind === 'refuse') {
-        toast.error(guard.message, { description: guard.description });
+  const dispatchSubmission = useCallback(
+    async (stash?: StashedDraft) => {
+      // Ahead of the model check: with no agent to run it, the model this prompt
+      // would have used is not the user's problem.
+      if (agentUnavailable) {
+        errorToast(NO_AGENT_ACCESS_LABEL, { description: NO_AGENT_ACCESS_HINT });
+        return;
+      }
+      if (modelUnavailable) {
+        errorToast(NO_MODEL_AVAILABLE_MESSAGE, {
+          description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
+        });
         return;
       }
 
-      // A command is REFUSED while the session is working — or while its
-      // sandbox is still waking — not queued.
-      //
-      // A PROMPT is never held here: it goes to the server-side inbox, which
-      // admits it only when the session can take it, so ordering is decided by
-      // server truth rather than by this component's read of `isBusy`, and a
-      // sleeping box just means the row is delivered a little later. A COMMAND
-      // has no such row — it is dispatched by `runCommand`, never by
-      // `POST .../prompts` — so no admission gate ever sees it, putting one on
-      // the wire mid-turn aborts the answer in progress, and dispatching one at
-      // a box that is not up is swallowed by `runCommand`'s own
-      // `runtimeActionReady` guard with no request and no error.
-      //
-      // It used to wait in a browser-local queue for that reason. That queue is
-      // gone: it lived in this tab's localStorage, so a closed tab lost it, a
-      // second tab could not see it, and its release timing was a guess at a
-      // turn boundary made from a debounced `isBusy`. A refusal keeps the draft
-      // in the editor and says when the command can run — nothing is stored,
-      // and nothing can be lost.
-      const blocker = commandBlocker({
-        hasActiveQuestion: lockForQuestion,
+      // What refuses EVERY submission — a prompt, a `/` command, and a custom
+      // answer alike. `hasActiveQuestion` is deliberately not consulted here: an
+      // open question does not refuse a submission, it REROUTES it to
+      // `onCustomAnswer` further down. The command branch passes it for real,
+      // because a command is not an answer.
+      const submissionBlocker = sendBlocker({
+        hasActiveQuestion: false,
         // The composer only knows "something is pending", not how many.
         pendingPermissionCount: lockForApproval ? 1 : 0,
         readOnly: disabled,
-        isWorking: sessionWorking ?? isBusy,
-        runtimeReady,
       });
-      if (blocker) {
-        const copy = sendBlockerMessage(blocker);
-        toast.error(copy.message, copy.description ? { description: copy.description } : undefined);
+      if (submissionBlocker) {
+        const copy = sendBlockerMessage(submissionBlocker);
+        errorToast(copy.message, copy.description ? { description: copy.description } : undefined);
         return;
       }
-      onCommand?.(plan.command, plan.args, draft?.commandSplit);
-      if (clearOnSend && !stash) {
-        editorRef.current?.clear();
-        setAttachedFiles((prev) => {
-          for (const file of prev) {
-            if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
-          }
-          return [];
+
+      // A stashed draft was captured out of the editor (and the editor cleared)
+      // when its Enter arrived mid-send — see `createSubmitLatch`. It is
+      // submitted as captured; the live editor belongs to whatever the user
+      // typed since.
+      const draft = stash ? stash.content : editorRef.current?.getContent();
+      const filesNow = stash ? stash.files : attachedFiles;
+      const plan = planDraftSubmission({
+        commandName: draft?.commandName,
+        text: draft?.text ?? '',
+        commands: commands ?? [],
+      });
+      if (plan.kind === 'command') {
+        // A command cannot deliver the attached files, and the code below is
+        // about to clear them and revoke their object URLs. Refuse the whole
+        // submission instead — before either dispatch path and before the clear,
+        // so the direct call and the queued entry are guarded by one check
+        // rather than two that can drift. Nothing is sent, nothing is cleared,
+        // and the reason is already on screen next to the send button; the toast
+        // covers the keyboard path, which no disabled button can gate.
+        const guard = planCommandAttachments({
+          isCommand: true,
+          attachmentCount: filesNow.length,
         });
-      }
-      return;
-    }
+        if (guard.kind === 'refuse') {
+          errorToast(guard.message, { description: guard.description });
+          return;
+        }
 
-    if (lockForQuestion) {
-      const trimmed = (draft?.text ?? '').trim();
-      if (trimmed && onCustomAnswer) {
-        onCustomAnswer(trimmed);
-        if (!stash) editorRef.current?.clear();
+        // A command is REFUSED while the session is working — or while its
+        // sandbox is still waking — not queued.
+        //
+        // A PROMPT is never held here: it goes to the server-side inbox, which
+        // admits it only when the session can take it, so ordering is decided by
+        // server truth rather than by this component's read of `isBusy`, and a
+        // sleeping box just means the row is delivered a little later. A COMMAND
+        // has no such row — it is dispatched by `runCommand`, never by
+        // `POST .../prompts` — so no admission gate ever sees it, putting one on
+        // the wire mid-turn aborts the answer in progress, and dispatching one at
+        // a box that is not up is swallowed by `runCommand`'s own
+        // `runtimeActionReady` guard with no request and no error.
+        //
+        // It used to wait in a browser-local queue for that reason. That queue is
+        // gone: it lived in this tab's localStorage, so a closed tab lost it, a
+        // second tab could not see it, and its release timing was a guess at a
+        // turn boundary made from a debounced `isBusy`. A refusal keeps the draft
+        // in the editor and says when the command can run — nothing is stored,
+        // and nothing can be lost.
+        const blocker = commandBlocker({
+          hasActiveQuestion: lockForQuestion,
+          // The composer only knows "something is pending", not how many.
+          pendingPermissionCount: lockForApproval ? 1 : 0,
+          readOnly: disabled,
+          isWorking: sessionWorking ?? isBusy,
+          runtimeReady,
+        });
+        if (blocker) {
+          const copy = sendBlockerMessage(blocker);
+          errorToast(
+            copy.message,
+            copy.description ? { description: copy.description } : undefined,
+          );
+          return;
+        }
+        onCommand?.(plan.command, plan.args, draft?.commandSplit);
+        // The command is on its way; the draft that produced it is spent.
+        // Deliberately NOT on either refusal path above (`guard.kind ===
+        // 'refuse'`, `blocker`) — those keep the text in the editor on
+        // purpose, so its draft has to survive with it.
+        clearSavedDraft();
+        if (clearOnSend && !stash) {
+          editorRef.current?.clear();
+          setAttachedFiles((prev) => {
+            for (const file of prev) {
+              if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
+            }
+            return [];
+          });
+        }
         return;
       }
-      if (onQuestionAction) {
-        onQuestionAction();
+
+      if (lockForQuestion) {
+        const trimmed = (draft?.text ?? '').trim();
+        if (trimmed && onCustomAnswer) {
+          onCustomAnswer(trimmed);
+          if (!stash) editorRef.current?.clear();
+          return;
+        }
+        if (onQuestionAction) {
+          onQuestionAction();
+          return;
+        }
         return;
       }
-      return;
-    }
 
-    const content = draft ?? { text: '', mentions: [] };
-    const trimmed = plan.text;
-    if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
+      const content = draft ?? { text: '', mentions: [] };
+      const trimmed = plan.text;
+      if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
 
-    const filesToSend = filesNow.length > 0 ? [...filesNow] : undefined;
-    const mentionsToSend = content.mentions.length > 0 ? [...content.mentions] : undefined;
-    const submittedDoc = stash ? stash.doc : (editorRef.current?.getDocument() ?? null);
-    const submittedIsEmpty = stash ? false : (editorRef.current?.isEmpty() ?? true);
+      const filesToSend = filesNow.length > 0 ? [...filesNow] : undefined;
+      const mentionsToSend = content.mentions.length > 0 ? [...content.mentions] : undefined;
+      const submittedDoc = stash ? stash.doc : (editorRef.current?.getDocument() ?? null);
+      const submittedIsEmpty = stash ? false : (editorRef.current?.isEmpty() ?? true);
 
-    const reset = resolveComposerResetOnSend(clearOnSend, filesNow);
-    if (reset.clear && !stash) {
-      editorRef.current?.clear();
-      attachedFilesRef.current = [];
-      setAttachedFiles([]);
-    }
-
-    try {
-      await onSend(trimmed, filesToSend, mentionsToSend);
-      for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
-    } catch {
-      const currentDoc = editorRef.current?.getDocument() ?? null;
-      const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
-      const sentFiles = filesToSend ?? [];
-
-      const plan = planFailedSendRecovery({
-        clearOnSend,
-        submittedDoc,
-        submittedIsEmpty,
-        currentDoc,
-        currentIsEmpty,
-        currentAttachedFiles: attachedFiles,
-        sentFiles,
-      });
-      if (plan?.restoreDoc) {
-        setDocumentWithoutStealingFocus(editorRef.current, plan.restoreDoc);
+      const reset = resolveComposerResetOnSend(clearOnSend, filesNow);
+      if (reset.clear && !stash) {
+        editorRef.current?.clear();
+        attachedFilesRef.current = [];
+        setAttachedFiles([]);
       }
-      if (plan) {
-        setAttachedFiles(
-          (current) =>
-            planFailedSendRecovery({
-              clearOnSend,
-              submittedDoc,
-              submittedIsEmpty,
-              currentDoc,
-              currentIsEmpty,
-              currentAttachedFiles: current,
-              sentFiles,
-            })?.attachedFiles ?? current,
-        );
+
+      try {
+        await onSend(trimmed, filesToSend, mentionsToSend);
+        for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
+        // AFTER the await, so a send that throws keeps its draft. Explicit,
+        // NOT derived from `reset.clear`: the project-home composer passes
+        // `clearOnSend={false}` because its send navigates it away
+        // (`composer-reset.ts`), so keying this off the editor clearing would
+        // strand a stale home draft forever. The catch below puts the text
+        // back in the editor, which re-saves the draft through the ordinary
+        // debounce — nothing to restore by hand.
+        clearSavedDraft();
+      } catch {
+        const currentDoc = editorRef.current?.getDocument() ?? null;
+        const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
+        const sentFiles = filesToSend ?? [];
+
+        const plan = planFailedSendRecovery({
+          clearOnSend,
+          submittedDoc,
+          submittedIsEmpty,
+          currentDoc,
+          currentIsEmpty,
+          currentAttachedFiles: attachedFiles,
+          sentFiles,
+        });
+        if (plan?.restoreDoc) {
+          setDocumentWithoutStealingFocus(editorRef.current, plan.restoreDoc);
+        }
+        if (plan) {
+          setAttachedFiles(
+            (current) =>
+              planFailedSendRecovery({
+                clearOnSend,
+                submittedDoc,
+                submittedIsEmpty,
+                currentDoc,
+                currentIsEmpty,
+                currentAttachedFiles: current,
+                sentFiles,
+              })?.attachedFiles ?? current,
+          );
+        }
       }
-    }
-  }, [
-    submitDisabled,
-    modelUnavailable,
-    agentUnavailable,
-    clearOnSend,
-    onSend,
-    isBusy,
-    sessionWorking,
-    runtimeReady,
-    disabled,
-    onCommand,
-    commands,
-    attachedFiles,
-    lockForQuestion,
-    lockForApproval,
-    onCustomAnswer,
-    onQuestionAction,
-  ]);
+    },
+    [
+      submitDisabled,
+      modelUnavailable,
+      agentUnavailable,
+      clearOnSend,
+      onSend,
+      isBusy,
+      sessionWorking,
+      runtimeReady,
+      disabled,
+      onCommand,
+      commands,
+      attachedFiles,
+      lockForQuestion,
+      lockForApproval,
+      onCustomAnswer,
+      onQuestionAction,
+      clearSavedDraft,
+    ],
+  );
 
   /**
    * One user action = one submission — without eating the next one. The whole
@@ -1207,12 +1270,15 @@ function ComposerImpl({
             shell around it kept painting as an empty sliver.
           */}
           {showQueueStrip && (
-            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-[0.3rem]  empty:hidden">
+            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-1 empty:hidden">
               {threadContext && (
                 <button
                   onClick={threadContext.onBackToParent}
                   className={cn(
-                    'text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                    // `group`, or the arrow's `group-hover:` transforms below
+                    // have no group to hover — the nudge was written and never
+                    // fired.
+                    'group text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
                   )}
                 >
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -1295,15 +1361,38 @@ function ComposerImpl({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-sidebar shadow-card border-border relative isolate z-10 w-full rounded-xl border shadow-xl',
-          'pt-3 shadow-[0_0_4px_oklch(0_0_0/0.03)] dark:shadow-md',
+          // One shadow, from the ladder. `shadow-card` is defined nowhere in
+          // `globals.css` and `shadow-xl` was dead — twMerge dropped it for the
+          // arbitrary `shadow-[…oklch…]` that followed, which was the only
+          // raw colour left in the composer.
+          'bg-sidebar border-border relative isolate z-10 w-full rounded-xl border',
+          'pt-3',
           'transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
           'motion-reduce:transition-none',
           cardClassName,
-          isDragOver && 'border-kortix-blue/80 ring-primary/40 border opacity-30 ring',
+          // NO `opacity-30` here. It used to sit on the card AND on the column
+          // inside it, and the two multiplied — 0.3 × 0.3 = 0.09 — so the whole
+          // composer, border and drop target included, went all but invisible
+          // the moment a file crossed it. The card keeps full opacity and its
+          // highlighted border; only the CONTENT dims, under the label below.
+          isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
           (replyTo || notice) && 'rounded-t-none',
         )}
       >
+        {/* What the dimmed card is asking for. Without it the drag state said
+            only "something is happening" — it never named the action or its
+            result. `pointer-events-none` so it can never eat the drop. */}
+        {isDragOver && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center"
+          >
+            <span className="text-foreground bg-sidebar/80 rounded-md px-3 py-1.5 text-sm font-medium">
+              Drop files to attach
+            </span>
+          </div>
+        )}
+
         <div
           className={cn(
             'relative z-[1] flex w-full flex-col overflow-visible',
@@ -1388,11 +1477,13 @@ function ComposerImpl({
                   disabled={editorDisabled}
                   onSubmit={handleSubmit}
                   onEmptyChange={setIsEmpty}
+                  onDocChange={handleDocChange}
                   agents={agents}
                   sessions={allSessions ?? []}
                   currentSessionId={sessionId}
                   commands={commands}
                   actions={slashActions}
+                  files={slashFiles}
                   onSelectAction={handleSelectAction}
                   slashDockSelector={`#${dockId}`}
                   onMenuOpenChange={setMenuOpen}
@@ -1449,8 +1540,6 @@ function ComposerImpl({
               // it — passing it here as well would show the gear twice.
               toolbarSlot={inlineUnderbar ? toolbarSlot : undefined}
               rewind={rewind}
-              onTranscription={handleTranscription}
-              voiceDisabled={submitDisabled || isBusy}
               isSending={isSending}
               isBusy={isBusy}
               onStop={onStop}
@@ -1512,7 +1601,7 @@ function ComposerImpl({
         would cover the menu again — they must stay unstacked.
       */}
       {slashMenuPlacement === 'below' && (
-        <div id={dockId} className="absolute top-full left-4 right-4 md:right-1 mt-3.5 z-99" />
+        <div id={dockId} className="absolute top-full right-4 left-4 z-99 mt-3.5 md:right-1" />
       )}
     </div>
   );

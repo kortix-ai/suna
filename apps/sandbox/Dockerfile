@@ -15,7 +15,7 @@
 # Three-stage build:
 #   1. `builder`     — installs the daemon's deps and runs
 #                      `bun build --compile` for the target image architecture
-#                      to produce /agent/dist/kortix-agent.
+#                      to produce dist/kortix-agent.
 #   2. `cli-builder` — assembles a minimal workspace (apps/cli + the two
 #                      `@kortix/*` packages it imports) and compiles the
 #                      `kortix` CLI to a self-contained /cli/kortix binary.
@@ -34,9 +34,19 @@ FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a02
 
 ARG TARGETARCH
 
-WORKDIR /agent
+# The daemon builds STANDALONE — its own package.json + bun.lock, no workspace
+# root. It does share ONE module with apps/api: the relay wire contract
+# (packages/api-contract/src/secret-relay.ts, dependency-free by design and
+# asserted so by blocked-headers.test.ts). That is reached through a tsconfig
+# `paths` mapping rather than a `"workspace:*"` dependency, because a workspace
+# dependency makes `bun install --frozen-lockfile` in this directory fail
+# outright ("Workspace dependency ... not found / Searched in ./*") and no
+# sandbox image can be built at all. So mirror the repo layout here and copy the
+# one package the mapping points at.
+WORKDIR /repo/apps/kortix-sandbox-agent-server
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
 RUN bun install --frozen-lockfile
+COPY packages/api-contract /repo/packages/api-contract
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN case "${TARGETARCH:-}" in \
         amd64) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \
@@ -84,7 +94,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping \
+        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \
@@ -185,7 +195,14 @@ RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-v
 RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
     && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
-    && opencode --version
+    && opencode --version \
+    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \
+    && test -x "$opencode_native" \
+    && test "$(wc -c < "$opencode_native")" -gt 50000000 \
+    && test "$("$opencode_native" --version)" = "$OPENCODE_VERSION" \
+    && ln -sfn "$opencode_native" /opt/kortix/opencode.current \
+    && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \
+    && test "$(/usr/local/bin/opencode-kortix --version)" = "$OPENCODE_VERSION"
 
 RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bun)")" \
     && BUN_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Amd64)")" \
@@ -214,16 +231,16 @@ RUN ANYDOC_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions
 RUN mkdir -p /opt/kortix/opencode-config-deps \
     && cd /opt/kortix/opencode-config-deps \
     && OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"%s","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' "${OPENCODE_VERSION}" > package.json \
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"%s","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' "${OPENCODE_VERSION}" > package.json \
     && bun install \
     && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \
     && rm -rf /tmp/opencode-deps-bundle-check
 
 USER root
-COPY --from=builder /agent/dist/kortix-agent /usr/local/bin/kortix-agent
+COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent /usr/local/bin/kortix-agent
 # The admin CLI every in-sandbox agent reaches for: `kortix cr open`,
 # `kortix secrets`, `kortix sessions`, … Pre-authenticated at runtime via the
-# project-scoped token the platform injects (KORTIX_CLI_TOKEN).
+# project-scoped token the platform injects (KORTIX_TOKEN).
 COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
 # Always-latest managed Kortix skills (kortix-cli + the kortix-* family). The
 # agent server overlays these into every session's OpenCode skills dir at boot

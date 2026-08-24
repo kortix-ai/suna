@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
 import type { Config } from './config'
@@ -155,40 +155,25 @@ async function configureSafeDirectory(target: string): Promise<void> {
   logger.info('[git] configured safe git directory', { target })
 }
 
-/** Build the `-c http.<repo-origin>/.extraheader=...` auth args for git. */
+/** Build auth args only for the Kortix Git proxy. */
 export function buildGitAuthArgs(
   repoUrl: string | undefined,
   token: string | undefined,
-  username = 'x-access-token',
 ): string[] {
-  if (!token) return []
+  if (!token || !repoUrl || !/\/v1\/git\//.test(repoUrl)) return []
 
-  let authOrigin = 'https://github.com'
-  if (repoUrl) {
-    try {
-      const parsed = new URL(repoUrl)
-      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-        authOrigin = `${parsed.protocol}//${parsed.host}`
-      }
-    } catch {
-      const scpLikeHost = repoUrl.match(/^[^@]+@([^:/]+)[:/]/)?.[1]
-      if (scpLikeHost) authOrigin = `https://${scpLikeHost}`
-    }
-  }
+  const parsed = new URL(repoUrl)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return []
+  const authOrigin = `${parsed.protocol}//${parsed.host}`
 
-  const headerValue = Buffer.from(`${username}:${token}`).toString('base64')
+  const headerValue = Buffer.from(`x-access-token:${token}`).toString('base64')
   const header = `AUTHORIZATION: basic ${headerValue}`
-  const args = ['-c', `http.${authOrigin}/.extraheader=${header}`]
-
-  // The Kortix git proxy is the sandbox's own control-plane URL. During the
-  // initial clone we do not rely on HOME-scoped credential helper config, so
-  // add a one-command fallback header that git applies to the proxy request.
-  // This is intentionally limited to /v1/git URLs: direct upstream clones keep
-  // the host-scoped header only.
-  if (repoUrl && /\/v1\/git\//.test(repoUrl)) {
-    args.push('-c', `http.extraheader=${header}`)
-  }
-  return args
+  return [
+    '-c',
+    `http.${authOrigin}/.extraheader=${header}`,
+    '-c',
+    `http.extraheader=${header}`,
+  ]
 }
 
 interface CloneCredential {
@@ -203,122 +188,31 @@ async function gitWithAuth(
   opts: { cwd?: string; timeoutMs?: number } = {},
 ): Promise<ExecResult> {
   return execGit([
-    ...buildGitAuthArgs(repoUrl, credential?.token, credential?.username),
+    ...buildGitAuthArgs(repoUrl, credential?.token),
     ...args,
   ], opts)
 }
 
-const CLONE_CRED_TIMEOUT_MS = 15_000
-const CLONE_CRED_ATTEMPTS = 4
-
-/**
- * Per-process cache for the clone-credential round-trip. `materializeRepo`
- * calls `resolveCloneCredential` twice (base clone + branch checkout) on the cold
- * path; the API token doesn't change within a single boot, so caching it
- * avoids a second control-plane round-trip over the public internet.
- * Memoize on the input shape (api+project+token) so re-keying invalidates.
- */
-let cachedCloneToken: { key: string; value: CloneCredential | undefined } | null = null
-
-/** Test-only: drop the cached clone token so a fresh fetch happens next call. */
-export function __clearCloneTokenCacheForTests(): void {
-  cachedCloneToken = null
-}
-
 async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | undefined> {
-  if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
-  // Universal proxy origin: when the repo is served by the Kortix git proxy
-  // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
-  // credential IS our own KORTIX_TOKEN — the proxy authenticates it and resolves
-  // the real upstream + host credential server-side. No clone-credential round
-  // trip, and a real GitHub token never enters the sandbox.
-  if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
-    return { username: 'x-access-token', token: cfg.sandboxToken }
-  }
-  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}`
-  if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
-
-  const rawBase = cfg.apiUrl.replace(/\/+$/, '')
-  const base = rawBase.endsWith('/v1/router')
-    ? rawBase.replace(/\/router$/, '')
-    : rawBase.endsWith('/v1')
-      ? rawBase
-      : `${rawBase}/v1`
-  const url = `${base}/projects/${encodeURIComponent(cfg.projectId)}/git/clone-credential`
-
-  // The control plane is reached over the public internet (KORTIX_API_URL).
-  // A bare fetch with no timeout/retry turns one transient blip — or a
-  // misconfigured (e.g. loopback) callback URL — into a permanent boot failure
-  // surfaced as the opaque Bun error "Unable to connect. Is the computer able to
-  // access the url?". Retry transient failures, time-box each attempt, and on
-  // exhaustion throw an error that names the URL so /kortix/health explains the
-  // real problem instead of leaking that string verbatim.
-  let lastErr: unknown
-  for (let attempt = 1; attempt <= CLONE_CRED_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${cfg.sandboxToken}`,
-          Accept: 'application/json',
-        },
-        signal: AbortSignal.timeout(CLONE_CRED_TIMEOUT_MS),
-      })
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        // 4xx (bad token / not found) won't fix itself — fail immediately.
-        if (res.status >= 400 && res.status < 500) {
-          throw new Error(`failed to fetch git clone credential (${res.status}): ${text || res.statusText}`)
-        }
-        // 5xx is potentially transient — retry.
-        throw new Error(`clone-credential ${res.status}: ${text || res.statusText}`)
-      }
-      const body = await res.json().catch(() => null) as
-        | { auth?: { username?: string | null; token?: string | null } | null }
-        | null
-      const token = body?.auth?.token?.trim()
-      const username = body?.auth?.username?.trim() || 'x-access-token'
-      const value = token ? { username, token } : undefined
-      cachedCloneToken = { key: cacheKey, value }
-      return value
-    } catch (err) {
-      lastErr = err
-      const is4xx = err instanceof Error && /\((4\d\d)\)/.test(err.message)
-      if (is4xx || attempt === CLONE_CRED_ATTEMPTS) break
-      logger.warn('[git] clone-credential fetch failed; retrying', {
-        attempt,
-        of: CLONE_CRED_ATTEMPTS,
-        url: base,
-        err: err instanceof Error ? err.message : String(err),
-      })
-      await new Promise((r) => setTimeout(r, 500 * attempt))
+  if (!cfg.repoUrl || !/\/v1\/git\//.test(cfg.repoUrl)) {
+    if (cfg.repoUrl && (cfg.repoUrl.startsWith('/') || cfg.repoUrl.startsWith('file:'))) {
+      return undefined
     }
+    throw new Error('direct Git origins are refused; KORTIX_REPO_URL must use the Kortix Git proxy')
   }
-
-  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr)
-  if (lastErr instanceof Error && /\((4\d\d)\)/.test(lastErr.message)) {
-    throw lastErr
-  }
-  throw new Error(
-    `could not reach the Kortix control plane at ${base} to fetch the git clone ` +
-    `credential after ${CLONE_CRED_ATTEMPTS} attempts — is KORTIX_API_URL publicly ` +
-    `reachable from this sandbox? (${detail})`,
-  )
+  if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
+  return { username: 'x-access-token', token: cfg.sandboxToken }
 }
 
 /**
  * Configure git so that *any* push/fetch the agent runs against the project's
  * managed remote authenticates with zero setup — the same credential the
- * daemon mints for itself at clone time.
+ * daemon receives as KORTIX_TOKEN at session start.
  *
  * Mechanism: a git credential helper pointed back at this very binary
  * (`kortix-agent git-credential`). When git needs a credential for the repo
- * host it execs the helper, which fetches a fresh push-capable token from the
- * control plane (`/git/clone-credential`) and hands git
- * `username=x-access-token` + `password=<token>`. Fetching on demand (rather
- * than baking a token into `.git/config`) means a long-running session never
- * pushes with a stale token — the exact failure mode that left an agent unable
- * to `git push origin HEAD`.
+ * host it execs the helper, which returns KORTIX_TOKEN without storing it in
+ * `.git/config`.
  *
  * Scoped to the repo's origin host so it never fires for unrelated hosts.
  */
@@ -347,8 +241,7 @@ export async function configureGitCredentialHelper(
   if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
-  const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
-    ?? 'x-access-token'
+  const username = (await resolveCloneCredential(cfg))?.username ?? 'x-access-token'
 
   const env = { HOME: home }
   // `--replace-all` keeps re-boots idempotent instead of appending duplicate
@@ -387,8 +280,7 @@ export async function configureRepoCredentialHelper(cfg: Config, target: string)
   if (!(await pathExists(`${target}/.git`))) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
-  const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
-    ?? 'x-access-token'
+  const username = (await resolveCloneCredential(cfg))?.username ?? 'x-access-token'
 
   const setHelper = await execGit(
     ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.helper`, credentialHelperSpec()],
@@ -409,9 +301,8 @@ export async function configureRepoCredentialHelper(cfg: Config, target: string)
 /**
  * Git credential-helper entrypoint (`kortix-agent git-credential <action>`).
  * Implements the read side of git's credential protocol: on `get` it resolves
- * a fresh push/clone token and writes `username`/`password` to stdout. Every
- * other action (`store`, `erase`) is a no-op — the control plane owns the
- * credential, there's nothing local to persist or forget.
+ * the session token and writes `username`/`password` to stdout. Every other
+ * action (`store`, `erase`) is a no-op. The helper persists nothing.
  */
 export async function runGitCredentialHelper(
   cfg: Config,
@@ -478,6 +369,76 @@ export async function isRepoMaterialized(target: string): Promise<boolean> {
   return pathExists(`${target}/.git`)
 }
 
+const SESSION_ADOPTION_CONFIG_KEY = 'kortix.adopted-session'
+
+/**
+ * A fresh-image hint describes only the first materialization attempt. Provider
+ * env persists across daemon restarts, so the hint cannot by itself identify a
+ * pristine image checkout. This local marker is written only after the checkout
+ * becomes this session's workspace. It lives in .git/config and never enters a
+ * commit or a newly built project image.
+ */
+async function sessionCheckoutAdoptionState(
+  target: string,
+  branchName: string | undefined,
+): Promise<{ adopted: boolean; markerMatches: boolean }> {
+  if (!branchName) return { adopted: false, markerMatches: false }
+  const marker = await execGit([
+    '-C', target, 'config', '--local', '--get', SESSION_ADOPTION_CONFIG_KEY,
+  ])
+  if (marker.code === 0 && marker.stdout.trim() === branchName) {
+    return { adopted: true, markerMatches: true }
+  }
+
+  // Rollout compatibility: sessions created before the marker shipped already
+  // have their local session branch. A pristine image cannot contain a branch
+  // named after a not-yet-created session, so this ref is also proof of adoption.
+  const sessionRef = await execGit([
+    '-C', target, 'rev-parse', '--verify', '--quiet', `refs/heads/${branchName}`,
+  ])
+  return { adopted: sessionRef.code === 0, markerMatches: false }
+}
+
+async function markSessionCheckoutAdopted(target: string, branchName: string | undefined): Promise<void> {
+  if (!branchName) return
+  const marked = await execGit([
+    '-C', target, 'config', '--local', SESSION_ADOPTION_CONFIG_KEY, branchName,
+  ])
+  if (marked.code !== 0) {
+    throw new Error(`git config ${SESSION_ADOPTION_CONFIG_KEY} failed: ${marked.stderr || marked.stdout}`)
+  }
+}
+
+async function establishBaseRefsFromBakedHead(
+  target: string,
+  base: string,
+  bakedHead: string,
+): Promise<void> {
+  const localBaseRef = `refs/heads/${base}`
+  const remoteBaseRef = `refs/remotes/origin/${base}`
+  const remoteHeadRef = 'refs/remotes/origin/HEAD'
+  const commands: Array<{ args: string[]; action: string }> = [
+    { args: ['update-ref', localBaseRef, bakedHead], action: `set ${localBaseRef}` },
+    { args: ['update-ref', remoteBaseRef, bakedHead], action: `set ${remoteBaseRef}` },
+    { args: ['symbolic-ref', remoteHeadRef, remoteBaseRef], action: `set ${remoteHeadRef}` },
+    {
+      args: ['branch', `--set-upstream-to=origin/${base}`, '--', base],
+      action: `track origin/${base} from ${base}`,
+    },
+  ]
+  for (const command of commands) {
+    const result = await execGit(['-C', target, ...command.args])
+    if (result.code !== 0) {
+      throw new Error(`failed to ${command.action}: ${result.stderr || result.stdout}`)
+    }
+  }
+  logger.info('[git] established base refs from baked checkout', {
+    target,
+    base,
+    head: bakedHead,
+  })
+}
+
 /**
  * Remove a STALE git lock before a checkout. A `.git/index.lock` left behind by
  * a git process that crashed or was killed mid-op (e.g. the daemon was OOM-killed
@@ -499,7 +460,12 @@ export async function isShallowRepo(target: string): Promise<boolean> {
   return res.code === 0 && res.stdout.trim() === 'true'
 }
 
-async function checkoutSessionBranch(
+function isMissingRemoteBranch(result: ExecResult): boolean {
+  const output = `${result.stderr}\n${result.stdout}`
+  return /couldn't find remote ref|remote ref .* not found|remote branch .* not found/i.test(output)
+}
+
+export async function checkoutSessionBranch(
   cfg: Config,
   target: string,
   branch: string,
@@ -513,8 +479,9 @@ async function checkoutSessionBranch(
   // re-truncate a complete repo.
   const depthArgs = (await isShallowRepo(target)) ? ['--depth', '1'] : []
   // Same stall-abort + hard timeout as the clone: a restored VM's RX can hang
-  // this fetch with no reset. On failure/timeout we fall through to a local
-  // branch from the base checkout (below), so the session still boots.
+  // this fetch with no reset. A replacement boot must fail closed on transport
+  // errors. Otherwise it can create a local branch from the base, mark the
+  // checkout adopted, and permanently hide existing remote session commits.
   const fetched = await gitWithAuth(credential, cfg.repoUrl, [
     '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
     '-C',
@@ -539,11 +506,21 @@ async function checkoutSessionBranch(
       logger.info('[git] checked out remote session branch', { branch })
       return
     }
+    if (cfg.sessionBranchRestore) {
+      throw new Error(
+        `failed to restore remote session branch ${branch}: ${checkout.stderr || checkout.stdout}`,
+      )
+    }
     logger.warn('[git] remote session branch checkout failed; creating local branch', {
       branch,
       stderr: checkout.stderr.slice(0, 300),
     })
   } else {
+    if (cfg.sessionBranchRestore && !isMissingRemoteBranch(fetched)) {
+      throw new Error(
+        `failed to restore remote session branch ${branch}: ${fetched.stderr || fetched.stdout}`,
+      )
+    }
     logger.info('[git] remote session branch not ready; creating local branch from base checkout', {
       branch,
       stderr: fetched.stderr.slice(0, 300),
@@ -579,12 +556,6 @@ async function checkoutLocalSessionBranch(target: string, branch: string): Promi
   // session made is force-reset away. `git checkout -B` exits 0 and prints only
   // "Switched to and reset branch", so nothing surfaces; the commits survive
   // solely in a reflog the user is never told about.
-  //
-  // The guard that was meant to prevent re-materializing the wrong content
-  // (`mismatched`, keyed on cfg.sessionFresh + cfg.baseSha) cannot help here:
-  // KORTIX_SESSION_FRESH and KORTIX_BASE_SHA have no producer left in apps/api,
-  // so it is always false and this line always runs.
-  //
   // So: only CREATE. If the ref already exists, a plain checkout moves HEAD to
   // it and cannot move the ref.
   const exists = await execGit([
@@ -698,23 +669,39 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     // the baked content IS this session's base — i.e. a fresh scaffold-rooted
     // project (baked HEAD == the server-resolved KORTIX_BASE_SHA). When it isn't
     // (an imported repo / diverged project), the baked scaffold is the WRONG
-    // content: discard it and re-materialize the real repo below. Restart/resume
-    // (no baseSha) keep the old "reuse whatever's baked" behaviour unchanged.
+    // content: discard it and re-materialize the real repo below. A fresh
+    // session with no baseSha is also unverified and must fall back. The
+    // one-time adoption marker distinguishes that pristine image checkout from
+    // this session's existing workspace on later daemon restarts. Provider env
+    // persists, so KORTIX_SESSION_FRESH alone cannot make that distinction.
     const bakedHead = (await execGit(['-C', target, 'rev-parse', 'HEAD'])).stdout.trim()
-    const mismatched = cfg.sessionFresh && !!cfg.baseSha && bakedHead !== cfg.baseSha
+    const adoption = cfg.sessionFresh || cfg.sessionBranchRestore
+      ? await sessionCheckoutAdoptionState(target, cfg.branchName)
+      : { adopted: false, markerMatches: false }
+    const restoreNeeded = !!cfg.sessionBranchRestore && !adoption.markerMatches
+    const mismatched =
+      restoreNeeded ||
+      (cfg.sessionFresh && !adoption.adopted && (!cfg.baseSha || bakedHead !== cfg.baseSha))
     if (!mismatched) {
       logger.info('[git] using baked repo checkout (warm)', { target, head: bakedHead })
       const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', cfg.repoUrl])
       if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
+      if (cfg.branchName && cfg.sessionFresh && !adoption.adopted && cfg.baseSha === bakedHead) {
+        await establishBaseRefsFromBakedHead(target, base, bakedHead)
+      }
       if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
       await configureRepoGitIdentity(cfg, target)
+      if (!adoption.markerMatches) await markSessionCheckoutAdopted(target, cfg.branchName)
       return
     }
-    logger.info('[git] baked checkout != session base; re-materializing real repo', { bakedHead, baseSha: cfg.baseSha })
+    logger.info('[git] baked checkout requires authoritative materialization', {
+      bakedHead,
+      baseSha: cfg.baseSha,
+      reason: restoreNeeded ? 'restore-session-branch' : 'base-mismatch',
+    })
     await clearDirContents(target)
   }
   {
-    const cloneCredential = await resolveCloneCredential(cfg)
     // Scaffold fast path: the image bakes the canonical starter repo at
     // /opt/kortix/scaffold.git whose root commit is SHARED with every project
     // seeded from the starter (deterministic root — comp git-backends/seed.ts).
@@ -724,16 +711,25 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     // dev tunnel, 2026-06-13). Imported repos / other starters share no
     // ancestor → the fetch degrades to a full pack (same as a clone); ANY
     // failure falls through to the battle-tested clone path below.
-    if (await tryScaffoldDeltaFetch(cfg, target, base, cloneCredential)) {
+    if (await tryScaffoldDeltaFetch(cfg, target, base)) {
       if (cfg.branchName) {
         // Fresh session → branch == base, create it LOCALLY (zero network).
         // Restart/resume → the remote branch may carry the agent's commits.
         if (cfg.sessionFresh) await checkoutLocalSessionBranch(target, cfg.branchName)
-        else await checkoutSessionBranch(cfg, target, cfg.branchName, cloneCredential)
+        else {
+          await checkoutSessionBranch(
+            cfg,
+            target,
+            cfg.branchName,
+            await resolveCloneCredential(cfg),
+          )
+        }
       }
       await configureRepoGitIdentity(cfg, target)
+      await markSessionCheckoutAdopted(target, cfg.branchName)
       return
     }
+    const cloneCredential = await resolveCloneCredential(cfg)
     const tmpTarget = await createStagePath(target, 'clone')
     await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', {
@@ -843,6 +839,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   }
 
   await configureRepoGitIdentity(cfg, target)
+  await markSessionCheckoutAdopted(target, cfg.branchName)
 }
 
 /**
@@ -884,7 +881,12 @@ export function scheduleHistoryBackfill(cfg: Config, target: string): void {
   })()
 }
 
-const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
+const DEFAULT_SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
+let scaffoldRepoPath = DEFAULT_SCAFFOLD_REPO_PATH
+
+export function __setScaffoldRepoPathForTests(path?: string): void {
+  scaffoldRepoPath = path ?? DEFAULT_SCAFFOLD_REPO_PATH
+}
 
 /**
  * Seed-only: materialize the image-baked scaffold at `target` with ZERO network,
@@ -898,12 +900,12 @@ const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
  * working tree matches what a fresh session expects.
  */
 export async function materializeScaffoldSeed(target: string, base: string): Promise<boolean> {
-  if (!existsSync(SCAFFOLD_REPO_PATH)) return false
+  if (!existsSync(scaffoldRepoPath)) return false
   const tmp = await createStagePath(target, 'seed')
   const t0 = Date.now()
   try {
     await rm(tmp, { recursive: true, force: true })
-    const cloned = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
+    const cloned = await execGit(['clone', '-q', scaffoldRepoPath, tmp])
     if (cloned.code !== 0) throw new Error(`seed scaffold clone: ${cloned.stderr}`)
     const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
     if (co.code !== 0) throw new Error(`seed checkout base: ${co.stderr}`)
@@ -959,14 +961,13 @@ async function tryScaffoldDeltaFetch(
   cfg: Config,
   target: string,
   base: string,
-  cloneCredential: CloneCredential | undefined,
 ): Promise<boolean> {
-  if (!existsSync(SCAFFOLD_REPO_PATH) || !cfg.repoUrl) return false
+  if (!existsSync(scaffoldRepoPath) || !cfg.repoUrl) return false
   const tmp = await createStagePath(target, 'scaffold')
   const t0 = Date.now()
   try {
     await rm(tmp, { recursive: true, force: true })
-    const local = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
+    const local = await execGit(['clone', '-q', scaffoldRepoPath, tmp])
     if (local.code !== 0) throw new Error(`local scaffold clone: ${local.stderr}`)
     const su = await execGit(['-C', tmp, 'remote', 'set-url', 'origin', cfg.repoUrl])
     if (su.code !== 0) throw new Error(`set-url: ${su.stderr}`)
@@ -985,6 +986,28 @@ async function tryScaffoldDeltaFetch(
       logger.info('[git] repo materialized via scaffold (zero-network: baked scaffold == base tip)', { ms: Date.now() - t0, base, head: localHead })
       return true
     }
+    if (
+      cfg.sessionFresh &&
+      cfg.baseSha &&
+      cfg.gitDeltaBundleBase64 &&
+      await applyFastBootDeltaBundle(
+        tmp,
+        base,
+        cfg.baseSha,
+        cfg.gitDeltaBundleBase64,
+        cfg.gitDeltaParentSha,
+        cfg.gitDeltaParentCommitBase64,
+      )
+    ) {
+      await swapStageIntoTarget(tmp, target)
+      logger.info('[git] repo materialized via scaffold (zero-network: API delta bundle)', {
+        ms: Date.now() - t0,
+        base,
+        head: cfg.baseSha,
+      })
+      return true
+    }
+    const cloneCredential = await resolveCloneCredential(cfg)
     const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
       '-C', tmp,
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
@@ -1002,6 +1025,78 @@ async function tryScaffoldDeltaFetch(
     })
     await rm(tmp, { recursive: true, force: true }).catch(() => {})
     return false
+  }
+}
+
+const MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES = 24 * 1024
+
+/** Import a bounded API-generated Git bundle only when it resolves to baseSha. */
+async function applyFastBootDeltaBundle(
+  repoPath: string,
+  base: string,
+  baseSha: string,
+  bundleBase64: string,
+  parentSha?: string,
+  parentCommitBase64?: string,
+): Promise<boolean> {
+  if (!/^[0-9a-f]{40}$/i.test(baseSha)) return false
+  if (
+    bundleBase64.length === 0 ||
+    bundleBase64.length > MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES ||
+    bundleBase64.length + (parentCommitBase64?.length ?? 0) > MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES ||
+    bundleBase64.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(bundleBase64)
+  ) return false
+
+  const bytes = Buffer.from(bundleBase64, 'base64')
+  if (bytes.toString('base64') !== bundleBase64) return false
+  const bundlePath = join(repoPath, '.kortix-fast-boot.bundle')
+  const parentCommitPath = join(repoPath, '.kortix-fast-boot-parent.commit')
+  try {
+    if (parentSha || parentCommitBase64) {
+      if (
+        !parentSha ||
+        !/^[0-9a-f]{40}$/i.test(parentSha) ||
+        !parentCommitBase64 ||
+        parentCommitBase64.length % 4 !== 0 ||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(parentCommitBase64)
+      ) {
+        throw new Error('incomplete or malformed parent commit payload')
+      }
+      const parentBytes = Buffer.from(parentCommitBase64, 'base64')
+      if (parentBytes.toString('base64') !== parentCommitBase64) {
+        throw new Error('non-canonical parent commit payload')
+      }
+      await writeFile(parentCommitPath, parentBytes, { mode: 0o600 })
+      const importedParent = await execGit([
+        '-C', repoPath, 'hash-object', '-t', 'commit', '-w', parentCommitPath,
+      ])
+      if (importedParent.code !== 0 || importedParent.stdout.trim() !== parentSha) {
+        throw new Error('parent commit payload does not match the expected SHA')
+      }
+      const parentTree = await execGit(['-C', repoPath, 'cat-file', '-e', `${parentSha}^{tree}`])
+      if (parentTree.code !== 0) {
+        throw new Error('parent commit tree is not present in the baked scaffold')
+      }
+    }
+    await writeFile(bundlePath, bytes, { mode: 0o600 })
+    const verified = await execGit(['-C', repoPath, 'bundle', 'verify', bundlePath])
+    if (verified.code !== 0) throw new Error(`bundle verify: ${verified.stderr}`)
+    const imported = await execGit(['-C', repoPath, 'bundle', 'unbundle', bundlePath])
+    if (imported.code !== 0) throw new Error(`bundle unbundle: ${imported.stderr}`)
+    const exists = await execGit(['-C', repoPath, 'cat-file', '-e', `${baseSha}^{commit}`])
+    if (exists.code !== 0) throw new Error('bundle does not contain the expected base commit')
+    const checkout = await execGit(['-C', repoPath, 'checkout', '-q', '-B', base, baseSha])
+    if (checkout.code !== 0) throw new Error(`checkout bundled base: ${checkout.stderr}`)
+    return true
+  } catch (error) {
+    logger.info('[git] API delta bundle unavailable; using authenticated fetch', {
+      error: error instanceof Error ? error.message.slice(0, 200) : String(error),
+    })
+    return false
+  } finally {
+    await rm(bundlePath, { force: true }).catch(() => {})
+    await rm(parentCommitPath, { force: true }).catch(() => {})
   }
 }
 

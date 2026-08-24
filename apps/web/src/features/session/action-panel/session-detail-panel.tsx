@@ -24,8 +24,8 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/u
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { useIsMobile } from '@/hooks/utils';
 import { TerminalIcon } from '@phosphor-icons/react';
-import { EasyPanel } from './easy/easy-panel';
 import { CloseButton, DetailLayer, type PersistentLayer } from './easy/detail-view';
+import { EasyPanel } from './easy/easy-panel';
 import { useOptionalSessionPanel } from './session-panel-provider';
 
 export function SessionDetailPanel() {
@@ -65,10 +65,7 @@ export function SessionDetailPanel() {
             room for a persistent absolutely positioned layer inside a bottom
             sheet. */}
         <Drawer open={terminalOpen} onOpenChange={(next) => !next && closeTerminal()}>
-          <DrawerContent
-            bar={false}
-            className="flex h-[95dvh] max-h-[95dvh] flex-col overflow-hidden p-0"
-          >
+          <DrawerContent className="flex h-[95dvh] max-h-[95dvh] flex-col overflow-hidden p-0">
             <DrawerHeader className="shrink-0 px-4 py-3 text-left">
               <DrawerTitle className="flex items-center justify-between gap-2 text-base">
                 <span className="flex items-center gap-2.5">

@@ -25,6 +25,9 @@ import {
 // there is exactly one set of type declarations in play for host code, even if
 // multiple `@opencode-ai/sdk` copies exist on disk.
 export type * from "@opencode-ai/sdk/v2/client";
+// The 1.18.x generator renamed `V2Event*` → `Event*`; those names stay public
+// here until the next @kortix/sdk major.
+export type * from "./opencode-v2-event-aliases";
 export type { OpencodeClient };
 
 import { authenticatedFetch } from "../http/auth";
@@ -223,8 +226,9 @@ export interface SystemReloadResult {
  * opencode. Slower (~8s) and it DOES end the turn in flight, but it is the only
  * client-reachable path that re-runs spawn-time setup.
  *
- * Both endpoints were verified against the pinned opencode (1.17.11) on
- * 2026-08-03 — see docs/SESSION_CONFIG_RELOAD.md.
+ * Both endpoints were verified against opencode 1.17.11 on 2026-08-03 and
+ * `/global/dispose` re-verified against the pinned 1.18.19 on 2026-08-20 —
+ * see docs/SESSION_CONFIG_RELOAD.md.
  *
  * This used to POST `/kortix/services/system/reload`, which does not exist. That
  * path falls through to opencode's SPA catch-all, so the call got `200` with an

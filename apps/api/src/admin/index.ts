@@ -26,6 +26,18 @@ export const adminApp = makeOpenApiApp<AppEnv>();
 // controls. Shape-check first so a typo is a clean 400.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Drizzle wraps the Postgres error: `e.message` is "Failed query: <sql> …" and
+// the real reason (undefined column, statement timeout, constraint) hides in
+// `e.cause`. Admin 500s must name that cause — a bare "Failed query" toast
+// sends an operator hunting through prod logs for what the response could
+// have carried.
+export function adminErrorMessage(e: unknown): string {
+  const err = e as { message?: string; cause?: { message?: string } } | null;
+  const message = err?.message || String(e);
+  const cause = err?.cause?.message;
+  return cause && !message.includes(cause) ? `${message} — cause: ${cause}` : message;
+}
+
 // Every admin route requires a logged-in platform admin.
 adminApp.use('*', supabaseAuth, requireAdmin);
 
@@ -73,6 +85,7 @@ adminApp.openapi(
     const { and, asc, desc, eq, ilike, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
       await import('drizzle-orm');
     const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
+    const { accountDisplayName } = await import('../accounts/core/app');
     // PURE resolver — no I/O, no cache, no clock of its own. It runs over the
     // row this query already selects, so the `plan` block below costs zero
     // extra queries (no N+1) and reports the same plan every server gate
@@ -96,11 +109,19 @@ adminApp.openapi(
     } = parseAdminAccountsListQuery((k: string) => c.req.query(k));
     const dir = sortDir === 'asc' ? asc : desc;
 
+    // The PRIMARY owner's email, matching how the product derives an account's
+    // identity (resolveAccountDisplayNames): the personal-account owner first
+    // (`user_id = account_id` — a personal account's id IS its creator's user
+    // id), then the earliest-joined owner. The old tiebreak was `au.email ASC`,
+    // which let a support operator added as a second owner displace the real
+    // customer whenever their address sorted first alphabetically.
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
       INNER JOIN kortix.account_members am ON am.user_id = au.id
       WHERE am.account_id = ${accounts.accountId}
-      ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC
+      ORDER BY (am.user_id = ${accounts.accountId}) DESC,
+               CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+               am.joined_at ASC, au.email ASC
       LIMIT 1)`;
     const memberCount = sql<number>`(
       SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${accounts.accountId})`;
@@ -203,6 +224,12 @@ adminApp.openapi(
       return {
         accountId: r.accountId,
         name: r.name,
+        // The name the PRODUCT shows for this account. `name` above is the raw
+        // stored column, which for old rows is a migration placeholder
+        // ('Personal' / 'User') that every customer-facing surface maps to
+        // "<owner email>'s Account" — the console must render the same thing,
+        // or an operator searching for what the customer sees finds "Personal".
+        displayName: accountDisplayName(r.name, r.ownerEmail ?? null),
         ownerEmail: r.ownerEmail ?? null,
         memberCount: Number(r.memberCount ?? 0),
         balance: r.balance ?? null,
@@ -254,7 +281,7 @@ adminApp.openapi(
 
     return c.json({ accounts: list, total: Number(total ?? 0), page, limit, summary: null });
   } catch (e: any) {
-    return c.json({ accounts: [], total: 0, page: 1, limit: 50, summary: null, error: e?.message || String(e) }, 500);
+    return c.json({ accounts: [], total: 0, page: 1, limit: 50, summary: null, error: adminErrorMessage(e) }, 500);
   }
   },
 );
@@ -295,7 +322,7 @@ adminApp.openapi(
     const users = Array.isArray(result) ? result : (result?.rows ?? []);
     return c.json({ users });
   } catch (e: any) {
-    return c.json({ users: [], error: e?.message || String(e) }, 500);
+    return c.json({ users: [], error: adminErrorMessage(e) }, 500);
   }
   },
 );
@@ -401,7 +428,7 @@ adminApp.openapi(
 
     return c.json({ ok: true, user_id: userId, account_role: role });
   } catch (e: any) {
-    return c.json({ error: e?.message || String(e) }, 500);
+    return c.json({ error: adminErrorMessage(e) }, 500);
   }
   },
 );
@@ -468,7 +495,7 @@ adminApp.openapi(
       })),
     });
   } catch (e: any) {
-    return c.json({ projects: [], error: e?.message || String(e) }, 500);
+    return c.json({ projects: [], error: adminErrorMessage(e) }, 500);
   }
   },
 );
@@ -521,11 +548,19 @@ adminApp.openapi(
       return c.json({ projects: [], total: 0, page, limit });
     }
 
+    // The PRIMARY owner's email, matching how the product derives an account's
+    // identity (resolveAccountDisplayNames): the personal-account owner first
+    // (`user_id = account_id` — a personal account's id IS its creator's user
+    // id), then the earliest-joined owner. The old tiebreak was `au.email ASC`,
+    // which let a support operator added as a second owner displace the real
+    // customer whenever their address sorted first alphabetically.
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
       INNER JOIN kortix.account_members am ON am.user_id = au.id
       WHERE am.account_id = ${accounts.accountId}
-      ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC
+      ORDER BY (am.user_id = ${accounts.accountId}) DESC,
+               CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+               am.joined_at ASC, au.email ASC
       LIMIT 1)`;
     const sessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
@@ -605,7 +640,7 @@ adminApp.openapi(
 
     return c.json({ projects: list, total: Number(total ?? 0), page, limit });
   } catch (e: any) {
-    return c.json({ projects: [], total: 0, page: 1, limit: 50, error: e?.message || String(e) }, 500);
+    return c.json({ projects: [], total: 0, page: 1, limit: 50, error: adminErrorMessage(e) }, 500);
   }
   },
 );
@@ -643,7 +678,67 @@ adminApp.openapi(
       .limit(limit);
     return c.json({ entries });
   } catch (e: any) {
-    return c.json({ entries: [], error: e?.message || String(e) }, 500);
+    return c.json({ entries: [], error: adminErrorMessage(e) }, 500);
+  }
+  },
+);
+
+// ── Live Stripe subscription ─────────────────────────────────────────────────
+// What Stripe ACTUALLY charges, rendered next to the resolved plan badge. The
+// badge alone let a stored 'pro' tier read "Team · $20/mo · grandfathered"
+// while the customer's real subscription was a $40/mo legacy machine sub.
+adminApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/accounts/{id}/subscription',
+    tags: ['admin'],
+    summary: "The account's live Stripe subscription, as Stripe reports it",
+    ...auth,
+    request: { params: z.object({ id: z.string() }) },
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Live subscription, or null when none is on file'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+  try {
+    const accountId = c.req.param('id');
+    if (!UUID_RE.test(accountId)) return c.json({ subscription: null });
+    const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
+    const account = await getCreditAccount(accountId);
+    const subscriptionId = account?.stripeSubscriptionId ?? null;
+    if (!subscriptionId) return c.json({ subscription: null });
+    const { getStripe } = await import('../shared/stripe');
+    const sub = await getStripe().subscriptions.retrieve(subscriptionId, {
+      expand: ['items.data.price.product'],
+    });
+    const item = sub.items?.data?.[0];
+    const price = item?.price;
+    const product = price?.product;
+    const unitAmount = price?.unit_amount ?? null;
+    const quantity = item?.quantity ?? 1;
+    return c.json({
+      subscription: {
+        id: sub.id,
+        status: sub.status,
+        description: sub.description ?? null,
+        productName:
+          product && typeof product === 'object' && 'name' in product ? product.name : null,
+        priceId: price?.id ?? null,
+        unitAmountUsd: unitAmount != null ? unitAmount / 100 : null,
+        quantity,
+        totalAmountUsd: unitAmount != null ? (unitAmount * quantity) / 100 : null,
+        interval: price?.recurring?.interval ?? null,
+        currency: price?.currency ?? null,
+        currentPeriodEnd: sub.current_period_end
+          ? new Date(sub.current_period_end * 1000).toISOString()
+          : null,
+        cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
+      },
+    });
+  } catch (e: any) {
+    return c.json({ subscription: null, error: adminErrorMessage(e) }, 500);
   }
   },
 );
@@ -692,7 +787,7 @@ adminApp.openapi(
     const balance = await getBalance(accountId);
     return c.json({ ok: true, balance });
   } catch (e: any) {
-    return c.json({ error: e?.message || String(e) }, 500);
+    return c.json({ error: adminErrorMessage(e) }, 500);
   }
   },
 );
@@ -739,7 +834,7 @@ adminApp.openapi(
     const balance = await getBalance(accountId);
     return c.json({ ok: true, balance });
   } catch (e: any) {
-    return c.json({ error: e?.message || String(e) }, 500);
+    return c.json({ error: adminErrorMessage(e) }, 500);
   }
   },
 );
@@ -829,7 +924,7 @@ adminApp.openapi(
 
     return c.json({ ok: true, tier });
   } catch (e: any) {
-    return c.json({ error: e?.message || String(e) }, 500);
+    return c.json({ error: adminErrorMessage(e) }, 500);
   }
   },
 );
@@ -910,7 +1005,7 @@ adminApp.openapi(
 
       return c.json({ ok: true, enabled });
     } catch (e: any) {
-      return c.json({ error: e?.message || String(e) }, 500);
+      return c.json({ error: adminErrorMessage(e) }, 500);
     }
   },
 );
@@ -985,7 +1080,7 @@ adminApp.openapi(
 
     return c.json({ ok: true, ...result });
   } catch (e: any) {
-    return c.json({ error: e?.message || String(e) }, 500);
+    return c.json({ error: adminErrorMessage(e) }, 500);
   }
   },
 );
@@ -1074,7 +1169,7 @@ adminApp.openapi(
 
       return c.json({ ok: true, trial: result.current, credit_granted: result.creditGranted });
     } catch (e: any) {
-      return c.json({ error: e?.message || String(e) }, 500);
+      return c.json({ error: adminErrorMessage(e) }, 500);
     }
   },
 );
@@ -1104,7 +1199,7 @@ adminApp.openapi(
       try {
         result = await revokeTrial(accountId);
       } catch (e: any) {
-        return c.json({ error: e?.message || String(e) }, 400);
+        return c.json({ error: adminErrorMessage(e) }, 400);
       }
 
       try {
@@ -1126,7 +1221,7 @@ adminApp.openapi(
 
       return c.json({ ok: true, trial: result.current });
     } catch (e: any) {
-      return c.json({ error: e?.message || String(e) }, 500);
+      return c.json({ error: adminErrorMessage(e) }, 500);
     }
   },
 );
@@ -1197,7 +1292,7 @@ adminApp.openapi(
 
       return c.json({ ok: true, override: body.override });
     } catch (e: any) {
-      return c.json({ error: e?.message || String(e) }, 500);
+      return c.json({ error: adminErrorMessage(e) }, 500);
     }
   },
 );
@@ -1264,7 +1359,7 @@ adminApp.openapi(
 
       return c.json({ ok: true, enabled: body.enabled });
     } catch (e: any) {
-      return c.json({ error: e?.message || String(e) }, 500);
+      return c.json({ error: adminErrorMessage(e) }, 500);
     }
   },
 );
@@ -1376,7 +1471,7 @@ adminApp.openapi(
 
       return c.json({ ok: true, overrides: stored });
     } catch (e: any) {
-      return c.json({ error: e?.message || String(e) }, 500);
+      return c.json({ error: adminErrorMessage(e) }, 500);
     }
   },
 );
@@ -1776,7 +1871,7 @@ adminApp.openapi(
         expires_at: expiresAt.toISOString(),
       });
     } catch (e: any) {
-      return c.json({ error: e?.message || String(e) }, 500);
+      return c.json({ error: adminErrorMessage(e) }, 500);
     }
   },
 );
@@ -1834,7 +1929,7 @@ adminApp.openapi(
         revoked_at: grant.revokedAt ? grant.revokedAt.toISOString() : null,
       });
     } catch (e: any) {
-      return c.json({ error: e?.message || String(e) }, 500);
+      return c.json({ error: adminErrorMessage(e) }, 500);
     }
   },
 );
@@ -1883,7 +1978,7 @@ adminApp.openapi(
         })),
       });
     } catch (e: any) {
-      return c.json({ error: e?.message || String(e) }, 500);
+      return c.json({ error: adminErrorMessage(e) }, 500);
     }
   },
 );

@@ -725,6 +725,11 @@ export function ShowContentRenderer({
           <FileContentRenderer
             filePath={sandboxPath!}
             showHeader={false}
+            // A show is a presentation of the file, not a place to edit it —
+            // same read-only CodeMirror the file explorer's preview modal and
+            // the public share view mount. Without this the card mounted a
+            // live editor whose edits went nowhere.
+            readOnly
             className="h-full"
             errorFallback={fileErrorFallback}
             onStatusChange={onStatusChange}

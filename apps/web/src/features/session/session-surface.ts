@@ -81,15 +81,31 @@ export type SessionOverlay = 'new-session-shell' | 'boot-loader';
  * Which overlay covers the chat while it cannot paint yet. The caller decides
  * WHETHER an overlay is up (it fades out on `chatReady`); this decides WHICH.
  *
- * `submittedOnShell` holds the shell in place once the user has typed into it:
- * their message is rendering there optimistically, and the moment it reaches the
- * transcript store `hasTranscript` would otherwise swap their own words out for
- * a boot spinner a beat before the chat crossfades in.
+ * `shellShowsFirstPrompt` pins the shell down while it is painting the user's
+ * own first message. Their prompt reaches the transcript store — flipping
+ * `hasTranscript` — well before the chat has crossfaded in, and without this
+ * pin the overlay swaps the bubble and its "Thinking" row for a boot spinner
+ * for the whole of that window. That is not a beat: `shouldMountSessionChat`
+ * unblocks on the same flag flip, so the spinner is up for as long as
+ * `SessionChat` takes to mount and reach its first paint. It reads as the shell
+ * vanishing and the session starting over.
+ *
+ * It is deliberately NOT `submitted`/`submittedOnShell`. This flag once meant
+ * "typed into the shell", which is only ONE of the two ways a first prompt gets
+ * here — and not the common one. Sending from the project home creates the
+ * session, POSTs the prompt as a durable inbox row, navigates, and leaves the
+ * text in `useFirstPromptPreviewStore` for the shell to draw. Same bubble on
+ * screen, same need to be pinned, but the send happened on the previous page,
+ * so the old flag was false for exactly the flow most sessions start with.
+ *
+ * The caller must not widen this to any evidence a prompt EXISTS. The
+ * start-stash can outlive the hand-off it describes; the pin is for a first
+ * prompt this shell is painting right now.
  */
 export function resolveSessionOverlay(
-  input: SessionSurfaceInput & { submittedOnShell: boolean },
+  input: SessionSurfaceInput & { shellShowsFirstPrompt: boolean },
 ): SessionOverlay {
-  if (input.submittedOnShell) return 'new-session-shell';
+  if (input.shellShowsFirstPrompt) return 'new-session-shell';
   return isNewSessionSurface(input) ? 'new-session-shell' : 'boot-loader';
 }
 

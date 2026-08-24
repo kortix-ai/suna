@@ -181,6 +181,7 @@ describe('an accepted prompt', () => {
 
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 500 });
   });
+
 });
 
 describe('clearSession', () => {

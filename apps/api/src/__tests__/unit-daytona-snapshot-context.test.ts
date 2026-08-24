@@ -179,13 +179,10 @@ describe('Daytona snapshot build context', () => {
     });
 
     expect(warmGitArchivePresentAtDaytonaBoundary).toBe(true);
-    expect(dockerfileSeen).toContain(
-      'COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar',
-    );
-    expect(dockerfileSeen).toContain(
-      'tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1',
-    );
-    expect(dockerfileSeen).not.toContain('rm -f /tmp/kortix-warm-repo-git.tar');
+    expect(dockerfileSeen).toContain('ADD kortix-warm-repo-git.tar /workspace/');
+    expect(dockerfileSeen.match(/kortix-warm-repo-git\.tar/g)).toHaveLength(1);
+    expect(dockerfileSeen).not.toContain('/tmp/kortix-warm-repo-git.tar');
+    expect(dockerfileSeen).not.toContain('tar -xf');
   }, 30_000);
 });
 

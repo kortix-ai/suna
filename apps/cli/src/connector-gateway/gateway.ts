@@ -6,12 +6,12 @@
  *
  * Two project surfaces live here:
  *   1. `@kortix/sdk`'s project Connector data plane — runs connector tool calls.
- *      It acts as the launching user via KORTIX_CLI_TOKEN. The gateway resolves
+ *      It acts as the launching user via KORTIX_TOKEN. The gateway resolves
  *      third-party credentials server-side. No secret touches the sandbox.
  *   2. The project-scoped API adapter — used for connector management
  *      (add/remove) and setup-link minting (connect / request_secret). Resolved
  *      through the same sandbox env-token host the rest of the CLI uses
- *      (`KORTIX_CLI_TOKEN` + `KORTIX_PROJECT_ID`).
+ *      (`KORTIX_TOKEN` + `KORTIX_PROJECT_ID`).
  */
 import type { ConnectorCallResult, Kortix } from '@kortix/sdk';
 import { loadAuth } from '../api/auth.ts';
@@ -25,7 +25,7 @@ import { CliError } from './io.ts';
  *
  * Resolves auth from ONE place (`activeHost()` via loadAuth), so it works
  * identically:
- *   - in-sandbox: `KORTIX_CLI_TOKEN` + `KORTIX_API_URL` are
+ *   - in-sandbox: `KORTIX_TOKEN` + `KORTIX_API_URL` are
  *     injected and win;
  *   - on a laptop: falls back to the host you `kortix login`'d.
  * The project comes from KORTIX_PROJECT_ID / `.kortix/link.json` / `--project`.
@@ -40,7 +40,7 @@ export function connectorClient(projectOverride?: string): ConnectorClient {
   const auth = loadAuth();
   if (!auth?.token) {
     throw new CliError(
-      'not authenticated — run `kortix login` (or set KORTIX_CLI_TOKEN in a sandbox).',
+      'not authenticated — run `kortix login` (or set KORTIX_TOKEN in a sandbox).',
       'MISSING_ENV',
     );
   }
@@ -59,7 +59,7 @@ export function connectorProjectContext(projectOverride?: string): { client: Api
   const auth = loadAuth();
   if (!auth?.token) {
     throw new CliError(
-      'not authenticated — KORTIX_CLI_TOKEN is missing.',
+      'not authenticated — KORTIX_TOKEN is missing.',
       'MISSING_ENV',
     );
   }

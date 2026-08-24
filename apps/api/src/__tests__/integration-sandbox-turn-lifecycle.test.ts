@@ -12,6 +12,7 @@ import { sandboxStopClaimLeaseMs } from '../projects/sandbox-deadline-policy';
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
+  adoptRuntimeSandboxTurn,
   beginSandboxTurn,
   clearSandboxTurn,
   completeSandboxTurn,
@@ -1036,5 +1037,71 @@ describe('session_turns ledger', () => {
 
     expect(await rejection('bogus', null)).toContain('session_turns_state_check');
     expect(await rejection('ended', 'exploded')).toContain('session_turns_end_reason_check');
+  });
+});
+
+describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
+  // OpenCode starts turns of its own (synthetic `<pty_exited>` wake-ups) that
+  // no control-plane prompt announced. The daemon relays `turn_begin` for
+  // them; this write is what turns that relay into `GET .../turn` truth and a
+  // deadline grant (live incident 2026-08-20, Essentia session d1b74954).
+  const SYNTH = 'msg_synthetic_pty_1';
+
+  async function readOpenBySession(): Promise<Array<Record<string, unknown>>> {
+    const result = await db.execute(sql`
+      SELECT * FROM kortix.session_turns
+       WHERE session_id = ${SESSION_ID} AND state <> 'ended'`);
+    return rows(result) as Array<Record<string, unknown>>;
+  }
+
+  test('adopts a box-initiated turn: active ledger row, activeTurns record, deadline grant', async () => {
+    const before = deadlineMs(await readRow());
+    const outcome = await adoptRuntimeSandboxTurn(SANDBOX_ID, {
+      opencodeSessionId: 'ses_root',
+      messageId: SYNTH,
+    });
+    expect(outcome).toBe('adopted');
+    const open = await readOpenBySession();
+    expect(open).toHaveLength(1);
+    expect(open[0]?.message_id).toBe(SYNTH);
+    expect(open[0]?.state).toBe('active');
+    expect(open[0]?.accepted_at).toBeTruthy();
+    const row = await readRow();
+    const turns = (row.metadata as { activeTurns?: Record<string, { messageId?: string }> })
+      .activeTurns;
+    expect(Object.values(turns ?? {}).some((turn) => turn.messageId === SYNTH)).toBe(true);
+    // acceptSandboxTurn grants the full turn deadline — hours past the
+    // fixture's 10-minute deadline. Without it a long pty-driven work phase
+    // ran on the idle tail and the reaper parked the box mid-work.
+    expect(deadlineMs(row)).toBeGreaterThan(before + 60 * 60 * 1000);
+  });
+
+  test('any open turn means authority is already held — nothing is written', async () => {
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      { token: t('already-open'), opencodeSessionId: 'ses_root', messageId: 'msg_delivered_1' },
+    );
+    const outcome = await adoptRuntimeSandboxTurn(SANDBOX_ID, {
+      opencodeSessionId: 'ses_root',
+      messageId: SYNTH,
+    });
+    expect(outcome).toBe('open_turn_exists');
+    const open = await readOpenBySession();
+    expect(open).toHaveLength(1);
+    expect(open[0]?.message_id).toBe('msg_delivered_1');
+  });
+
+  test('a message the ledger has EVER seen is refused — a late relay cannot resurrect a closed turn', async () => {
+    await db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id, message_id, state, end_reason)
+      VALUES (${t('closed')}, ${SESSION_ID}, ${SANDBOX_ID}::uuid,
+              ${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid, ${SYNTH}, 'ended', 'completed')`);
+    const outcome = await adoptRuntimeSandboxTurn(SANDBOX_ID, {
+      opencodeSessionId: 'ses_root',
+      messageId: SYNTH,
+    });
+    expect(outcome).toBe('known_message');
+    expect(await readOpenBySession()).toHaveLength(0);
   });
 });

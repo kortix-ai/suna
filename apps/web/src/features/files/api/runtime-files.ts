@@ -6,7 +6,7 @@
  * download helpers (DOM + JSZip), which consume the SDK's data ops.
  */
 import {
-  ensurePreviewSessionCookie,
+  authorizePreviewUrl,
   isInternalLocalhostUrl,
   listFiles,
   readBlob,
@@ -106,8 +106,12 @@ export async function openFileInNewTab(filePath: string): Promise<void> {
   const url = getActiveStaticFilePreviewUrl(filePath);
   if (!url || isInternalLocalhostUrl(url)) throw new RuntimeNotBoundError();
 
-  await ensurePreviewSessionCookie(url);
-  window.open(url, '_blank', 'noopener,noreferrer');
+  // Not `ensurePreviewSessionCookie`: that mints a cookie for the API host,
+  // which a preview ORIGIN never receives — the tab would open unauthenticated
+  // and land on the sign-in gate. `authorizePreviewUrl` gives whichever form
+  // this deployment serves the credential it actually accepts.
+  const authorized = await authorizePreviewUrl(url);
+  window.open(authorized, '_blank', 'noopener,noreferrer');
 }
 
 /** Download a single file to the user's machine. */

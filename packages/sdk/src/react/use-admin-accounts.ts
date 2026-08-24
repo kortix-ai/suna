@@ -99,6 +99,14 @@ export function adminAccountOverridesPath(accountId: string): string {
 export interface AdminAccount {
   accountId: string;
   name: string | null;
+  /**
+   * The name the PRODUCT shows for this account. `name` is the raw stored
+   * column, which for old rows is a migration placeholder ('Personal' /
+   * 'User') that customer-facing surfaces map to "<owner email>'s Account".
+   * Render this; keep `name` for exact-match debugging. Optional: an API
+   * older than the field omits it — fall back to `name`.
+   */
+  displayName?: string | null;
   ownerEmail: string | null;
   memberCount: number;
   balance: string | null;
@@ -608,5 +616,48 @@ export function useAdminAccountSandboxes(accountId: string | null) {
       if (response.error) throw new Error(response.error.message);
       return response.data!;
     },
+  });
+}
+
+/**
+ * The account's live Stripe subscription, exactly as Stripe reports it — what
+ * the customer is ACTUALLY charged. The resolved plan badge describes the
+ * stored tier (a legacy 'pro' row reads "Team · $20/mo · grandfathered"); the
+ * real subscription can be something else entirely (a $40/mo legacy machine
+ * sub). The detail sheet renders both so the mismatch is visible.
+ */
+export interface AdminAccountSubscription {
+  id: string;
+  status: string;
+  description: string | null;
+  productName: string | null;
+  priceId: string | null;
+  unitAmountUsd: number | null;
+  quantity: number;
+  totalAmountUsd: number | null;
+  interval: string | null;
+  currency: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+}
+
+/** Wire path of the admin live-subscription read. */
+export function adminAccountSubscriptionPath(accountId: string): string {
+  return `/admin/api/accounts/${encodeURIComponent(accountId)}/subscription`;
+}
+
+/** `subscription` is null when the account has no Stripe subscription on file. */
+export function useAdminAccountSubscription(accountId: string | null) {
+  return useQuery<{ subscription: AdminAccountSubscription | null }>({
+    queryKey: ['admin', 'accounts', accountId, 'subscription'],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const response = await backendApi.get<{ subscription: AdminAccountSubscription | null }>(
+        adminAccountSubscriptionPath(accountId!),
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    staleTime: 60_000,
   });
 }

@@ -17,7 +17,7 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping \\
+        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \\
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\
@@ -105,12 +105,19 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.19" \\
     && command -v opencode \\
-    && opencode --version
+    && opencode --version \\
+    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
+    && test -x "$opencode_native" \\
+    && test "$(wc -c < "$opencode_native")" -gt 50000000 \\
+    && test "$("$opencode_native" --version)" = "1.18.19" \\
+    && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\
+    && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
+    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.19"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup
 
 RUN case "$(uname -m)" in \\
       x86_64) bun_arch=x64; bun_sha=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f ;; \\
@@ -132,7 +139,7 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.19","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
     && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
@@ -150,7 +157,7 @@ RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && echo "opencode-config-deps: starter tool files bundle cleanly"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup instance wipe; rm -f /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup instance wipe && rm -f /tmp/kortix-opencode-warmup
 
 USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz
@@ -194,7 +201,7 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping \\
+        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \\
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\
@@ -282,12 +289,19 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.19" \\
     && command -v opencode \\
-    && opencode --version
+    && opencode --version \\
+    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
+    && test -x "$opencode_native" \\
+    && test "$(wc -c < "$opencode_native")" -gt 50000000 \\
+    && test "$("$opencode_native" --version)" = "1.18.19" \\
+    && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\
+    && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
+    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.19"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup
 
 RUN case "$(uname -m)" in \\
       x86_64) bun_arch=x64; bun_sha=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f ;; \\
@@ -309,7 +323,7 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.19","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
     && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
@@ -327,7 +341,7 @@ RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && echo "opencode-config-deps: starter tool files bundle cleanly"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup instance targeted; rm -f /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup instance targeted && rm -f /tmp/kortix-opencode-warmup
 
 USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz
@@ -372,7 +386,7 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping \\
+        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \\
         build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\
         latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\
         texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\
@@ -460,12 +474,19 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.19" \\
     && command -v opencode \\
-    && opencode --version
+    && opencode --version \\
+    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
+    && test -x "$opencode_native" \\
+    && test "$(wc -c < "$opencode_native")" -gt 50000000 \\
+    && test "$("$opencode_native" --version)" = "1.18.19" \\
+    && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\
+    && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
+    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.19"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup
 
 RUN case "$(uname -m)" in \\
       x86_64) bun_arch=x64; bun_sha=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f ;; \\
@@ -487,7 +508,7 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.19","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
     && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
@@ -499,13 +520,14 @@ RUN cd /opt/kortix/opencode-config-deps \\
 # ─── Per-project COLD warm: bake repo checkout into /workspace ──────
 # The repo was cloned with the git-host credential, origin-reset to the
 # Kortix proxy, and scrubbed of ALL auth material API-side in Suna before
-# this Dockerfile was rendered. This image only COPYs the sanitized plain
+# this Dockerfile was rendered. This image only imports sanitized plain
 # bytes — no git credential ever enters the Dockerfile, build args, image
 # history, or build logs. See PHASE 1 provider-migration hardening.
 RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/
-COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar
-RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git
+RUN rm -rf /workspace/.git
+ADD kortix-warm-repo-git.tar /workspace/
+RUN sudo chown -R kortix:kortix /workspace/.git
 RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
 COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
@@ -518,7 +540,7 @@ RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && echo "opencode-config-deps: starter tool files bundle cleanly"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup instance keep; rm -f /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup instance repo && rm -f /tmp/kortix-opencode-warmup
 
 USER root
 COPY kortix-agent.gz /tmp/kortix-agent.gz
@@ -562,13 +584,14 @@ USER kortix
 # ─── Per-project COLD warm: bake repo checkout into /workspace ──────
 # The repo was cloned with the git-host credential, origin-reset to the
 # Kortix proxy, and scrubbed of ALL auth material API-side in Suna before
-# this Dockerfile was rendered. This image only COPYs the sanitized plain
+# this Dockerfile was rendered. This image only imports sanitized plain
 # bytes — no git credential ever enters the Dockerfile, build args, image
 # history, or build logs. See PHASE 1 provider-migration hardening.
 RUN cd / && mkdir -p /workspace && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/
-COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar
-RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git
+RUN rm -rf /workspace/.git
+ADD kortix-warm-repo-git.tar /workspace/
+RUN sudo chown -R kortix:kortix /workspace/.git
 RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
 COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
@@ -581,7 +604,7 @@ RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && echo "opencode-config-deps: starter tool files bundle cleanly"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
-RUN bash /tmp/kortix-opencode-warmup instance keep; rm -f /tmp/kortix-opencode-warmup
+RUN bash /tmp/kortix-opencode-warmup instance repo && rm -f /tmp/kortix-opencode-warmup
 
 "
 `;

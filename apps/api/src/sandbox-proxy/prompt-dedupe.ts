@@ -152,9 +152,20 @@ function extractWireMessageId(body: ArrayBuffer | undefined): string | null {
  *  1. The caller's Idempotency-Key, when present (the CLI mints one UUID per
  *     logical prompt) — an explicit caller-supplied identity always wins.
  *  2. The body's wire `messageID`, when present (`/prompt_async` and
- *     `/message` from the SDK). This is the DURABLE identity: opencode itself
- *     is the arbiter of "has this already been answered?" by id order, so
- *     keying on the id — not the bytes — means a retry that reuses its id
+ *     `/message` from the SDK). This is the DURABLE identity: the id is the
+ *     one thing about a prompt that survives its body being re-serialized,
+ *     because opencode persists the user message under exactly the id the
+ *     sender supplies and refuses a second message under the same id.
+ *
+ *     The original rationale here — "opencode is the arbiter of 'has this
+ *     already been answered?' BY ID ORDER" — is no longer true everywhere:
+ *     opencode >= 1.18.15 exits its loop on
+ *     `lastAssistant.parentID === lastUser.id`, not on an id compare (boxes
+ *     baked before 2026-08-20 still run 1.17.11 and still use id order). That
+ *     change does not weaken this precedence: what matters here is that the id
+ *     is STABLE and UNIQUE per logical prompt, which holds in both versions.
+ *
+ *     Keying on the id — not the bytes — means a retry that reuses its id
  *     (submissionWireId) still collides here even if its body evolved, AND a
  *     genuinely new submission with byte-identical text (a user sending
  *     "continue" twice on purpose) never collides just because the words

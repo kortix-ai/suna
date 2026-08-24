@@ -1,5 +1,5 @@
 import { sessionLifecycleCommands } from '@kortix/db';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import type { SessionTurnEndReason } from '../sandbox-turn-lifecycle';
@@ -9,6 +9,7 @@ import {
   type SessionLifecycleCommandRow,
   withNextDeliveryAttempt,
 } from './store';
+import { wireMessageIdMatches } from './wire-id-match';
 
 /**
  * How many times one prompt may be given back to the inbox.
@@ -80,10 +81,11 @@ const liveDeps: RedeliveryDeps = {
         and(
           eq(sessionLifecycleCommands.sessionId, sessionId),
           eq(sessionLifecycleCommands.commandType, 'continue_session'),
-          or(
-            sql`${sessionLifecycleCommands.payload}->>'wireMessageId' = ${wireMessageId}`,
-            sql`${sessionLifecycleCommands.payload}->>'redeliveredMessageId' = ${wireMessageId}`,
-          ),
+          // Shared with every other reader — see `wire-id-match.ts`. Before
+          // 2026-08-20 this matched the payload only, so a turn that provably
+          // never ran was never re-queued when the delivery went out under an
+          // id only `result.forwarded_message_id` recorded.
+          wireMessageIdMatches(wireMessageId),
         ),
       )
       .orderBy(desc(sessionLifecycleCommands.createdAt))

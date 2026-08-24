@@ -69,7 +69,7 @@ async function driveMcp(token: string) {
   const proc = Bun.spawn({
     cmd: ['bun', CLI_ENTRY, 'connectors', 'mcp'],
     cwd: REPO_ROOT,
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, KORTIX_API_URL: API_URL, KORTIX_CLI_TOKEN: token },
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, KORTIX_API_URL: API_URL, KORTIX_TOKEN: token },
     stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
   });
   const reader = proc.stdout.getReader();

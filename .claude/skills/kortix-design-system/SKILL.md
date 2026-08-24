@@ -33,8 +33,8 @@ Load both before writing or reviewing UI. When Kortix rules and polish rules ove
 
 | Banned | Use instead |
 | --- | --- |
-| **`SectionCard`** (`apps/web/src/components/ui/section-card.tsx`) | `Card` (`card.tsx`), `Label` + `bg-popover rounded-md border` panel, or `Disclosure` — see `settings-view.tsx` |
-| **`List` / `ListRow`** (`apps/web/src/components/ui/list.tsx`) | `<ul className="space-y-2">` + entity row classes — see `changes-view.tsx`, `members-view.tsx` |
+| **`SectionCard`** (`apps/web/src/components/ui/section-card.tsx`) | `Card` (`card.tsx`), `Label` + `bg-popover rounded-md border` panel, or `Disclosure` — see `project-settings-page.tsx` |
+| **`List` / `ListRow`** (`apps/web/src/components/ui/list.tsx`) | `<ul className="space-y-2">` + entity row classes — see `changes-view.tsx`, `access-row.tsx` |
 | **`Dialog` / `DialogContent`** in feature code | **`Modal`** from `apps/web/src/components/ui/modal.tsx` — see `secrets-view.tsx`, `channels-view.tsx` |
 | **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `apps/web/src/components/ui/hint.tsx` |
 | **`@/lib/toast`**, raw `sonner`, `toast.custom()` | Named helpers from `apps/web/src/components/ui/toast.tsx` |
@@ -59,37 +59,42 @@ These are **mandatory** for their job. Import from the paths below; never reimpl
 | Search fields | `apps/web/src/components/ui/input-group.tsx` | `InputGroupSearch` + `InputGroupSearchInput variant="popover"` |
 | Forms in panels | `apps/web/src/components/ui/field.tsx` | `Field`, `FieldLabel`, `FieldGroup`, `FieldDescription` |
 | Empty / error states | `apps/web/src/features/layout/section/empty-state.tsx`, `error-state.tsx` | `size="sm"` in customize sections |
-| Confirm destructive | `apps/web/src/components/ui/confirm-dialog.tsx` | **Mandatory before any destructive mutation** — including `DropdownMenuItem variant="destructive"` items (see `secrets-view.tsx` delete, `gateway-keys.tsx` revoke). Only accepted alternative: the inline Cancel/confirm button swap used for channel disconnects (`channels-view.tsx`). Never mutate from a single click |
+| Confirm destructive | `apps/web/src/components/ui/confirm-dialog.tsx` | **Mandatory before any destructive mutation** — including `DropdownMenuItem variant="destructive"` items (see `secrets-view.tsx` delete, `sections/view/gateway/gateway-keys.tsx` revoke). Only accepted alternative: the inline Cancel/confirm button swap used for channel disconnects (`channels-view.tsx`). Never mutate from a single click |
 | Loading / pending spinners | `apps/web/src/components/ui/loading.tsx` | `import Loading from '@/components/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `CircleNotchIcon`, `SpinnerIcon`, or other icons |
 
 Also reach for: `Button`, `ButtonGroup`, `Input`, `Select`, `Switch`, `Skeleton`, `Tabs` / `TabsListCompact`, `Table`, `InlineMeta`, `UserAvatar`, `EntityAvatar`.
 
 ## Reference implementations — customize section views
 
-**Read the closest match before building any new screen.** All live under `apps/web/src/features/workspace/customize/sections/view/`.
+**Read the closest match before building any new screen.** Paths below are
+relative to `apps/web/src/features/workspace/` unless given in full.
 
 | File | Pattern to copy |
 | --- | --- |
-| **`section-wrapper.tsx`** (`sections/component/`) | Section shell: title left, action right, `max-w-2xl`, responsive header |
-| **`agents-view.tsx`** | Config entity list: search → `Disclosure` rows → detail panel with `Badge`, `ButtonGroup` + `Hint`, toasts |
-| **`skills-view.tsx`** | Same disclosure pattern as agents; `EmptyState` + docs link; `InfoBanner` for 403 |
-| **`commands-view.tsx`** | Disclosure trigger uses `Button variant="accent"`; otherwise identical config-entity flow |
-| **`settings-view.tsx`** | Form sections: `Label` header → `bg-popover rounded-md border px-4 py-5` panel; `Disclosure` for experimental; danger zone as neutral bordered row |
-| **`secrets-view.tsx`** | `Table` + `TabsListCompact` filters + **`Modal`** forms + `DropdownMenu` row actions |
-| **`members-view.tsx`** | Entity rows (`MEMBER_ROW`), `UserAvatar`, `InlineMeta`, underline `Tabs`, tab badge counts |
-| **`changes-view.tsx`** | Tinted `size-9` icon tiles, `Badge variant="kortix" size="xs"`, row inline actions, `TabsListCompact` |
-| **`channels-view.tsx`** | `Table` for integrations, `Modal` for connect flows, `InfoBanner` for connected state |
-| **`sandbox-view.tsx`** | Build status rows, `Badge` variants per status, nested `Disclosure` for error details |
-| **`dev-view.tsx`** | `Stepper` onboarding, command blocks, minimal bordered panels |
-| **`computers-view.tsx`** | Thin wrapper — delegates to `TunnelOverview` |
+| **`customize/sections/component/section-wrapper.tsx`** | Section shell: title left, action right, `max-w-2xl`, responsive header |
+| **`capabilities/agents/agents-page.tsx`** | Config entity list: search → rows → detail aside with `Badge`, `ButtonGroup` + `Hint`, toasts |
+| **`customize/sections/view/skills-view.tsx`** | Disclosure config-entity flow; `EmptyState` + docs link; `InfoBanner` for 403 |
+| **`capabilities/project-settings/project-settings-page.tsx`** | Form sections: `Label` header → `bg-popover rounded-md border px-4 py-5` panel; `Disclosure` for experimental; danger zone as neutral bordered row |
+| **`customize/sections/view/secrets-view.tsx`** | `Table` + `TabsListCompact` filters + **`Modal`** forms + `DropdownMenu` row actions |
+| **`shared/access/access-row.tsx`** | Entity rows, `UserAvatar`, `InlineMeta` — the single row used by every access surface |
+| **`customize/sections/view/changes-view.tsx`** | Tinted `size-9` icon tiles, `Badge variant="kortix" size="xs"`, row inline actions, `TabsListCompact` |
+| **`customize/sections/view/channels-view.tsx`** | `Table` for integrations, `Modal` for connect flows, `InfoBanner` for connected state |
+| **`customize/sections/view/dev-view.tsx`** | `Stepper` onboarding, command blocks, minimal bordered panels |
+| **`apps/web/src/features/tunnel/tunnel-overview.tsx`** | Device/computer list; the former `computers-view` delegated to it |
 
-**Shell:** `apps/web/src/features/workspace/customize/customize-panel.tsx`
+**Shells:** `capabilities/index/customize-index-page.tsx` (the customize index)
+and `capabilities/shared/capability-page-shell.tsx` (`CapabilityPageShell`) — the
+current shell for capability pages. The older `CustomizeSectionWrapper`
+(`customize/sections/component/section-wrapper.tsx`) still backs the
+`customize/sections/view/*` screens.
 
-**Other references:** tinted-icon tiles → `apps/web/src/components/projects/schedule-view.tsx`; sidebar → `project-sidebar.tsx` + `sidebar-left.tsx`.
+**Other references:** tinted-icon tiles → `apps/web/src/components/projects/schedule-view.tsx`; sidebar → `project-sidebar/project-sidebar.tsx`.
 
 ## Layout & responsiveness
 
-**Always wrap customize-style sections in `CustomizeSectionWrapper`.** Do not hand-roll the outer shell.
+**Always wrap a section in the shell its tree already uses** — `CapabilityPageShell`
+under `capabilities/`, `CustomizeSectionWrapper` under `customize/sections/view/`.
+Do not hand-roll the outer shell.
 
 Canonical pattern (from `section-wrapper.tsx`):
 
@@ -126,7 +131,7 @@ Rules:
 Every panel is a `bg-popover rounded-md border` surface. Two sanctioned ways to build one — never `SectionCard`:
 
 - **`Card`** (`apps/web/src/components/ui/card.tsx`) — the codified panel. Use it when the surface has a title/description/action header, distinct content, or a footer. Slots carry the spacing (`px-4`, `pt-5`/`pb-5`, `gap-5` between slots — the panel `px-4 py-5` rhythm); the bordered element itself has **no padding**, so flush children (tables, lists, images) sit edge-to-edge.
-- **Hand-composed `div`** — for a one-off padded block inside a section, the one-div shorthand `bg-popover rounded-md border px-4 py-5` is fine (the `settings-view.tsx` pattern). The moment the panel needs a flush child or an internal seam, move the padding onto inner sections.
+- **Hand-composed `div`** — for a one-off padded block inside a section, the one-div shorthand `bg-popover rounded-md border px-4 py-5` is fine (the `project-settings-page.tsx` pattern). The moment the panel needs a flush child or an internal seam, move the padding onto inner sections.
 
 Panels are **flat**: border, no shadow — elevation is for overlays (see *Elevation* under Tokens).
 
@@ -173,7 +178,7 @@ Panels are **flat**: border, no shadow — elevation is for overlays (see *Eleva
 </ul>
 ```
 
-Members use `py-2.5` (`MEMBER_ROW` in `members-view.tsx`). Changes/sandbox use `py-2`.
+Access rows use `py-2.5` (`shared/access/access-row.tsx`). Changes use `py-2`.
 
 ### Config entity disclosure (agents, skills, commands)
 
@@ -392,7 +397,7 @@ The ladder lives in `@theme` in `globals.css`. Each step layers a tight contact 
 </span>
 ```
 
-Use `weight="fill"` icons at `size-5` inside `size-8`/`size-9` tiles. Pair with `Badge` for text labels when needed (`changes-view.tsx`, `sandbox-view.tsx`).
+Use `weight="fill"` icons at `size-5` inside `size-8`/`size-9` tiles. Pair with `Badge` for text labels when needed (`changes-view.tsx`, `sandbox-provider-coverage.tsx`).
 
 ## Modal pattern (canonical — use `modal.tsx`)
 
@@ -427,7 +432,7 @@ Destructive confirms → `ConfirmDialog`, not a red-styled `Modal` trigger.
 
 ## Tabs pattern
 
-- **Primary section tabs:** `TabsList type="underline"` + `TabsTrigger className="w-fit flex-none"` (`members-view.tsx`, `changes-view.tsx`)
+- **Primary section tabs:** `TabsList type="underline"` + `TabsTrigger className="w-fit flex-none"` (`changes-view.tsx`, `channels-view.tsx`)
 - **Filter / status tabs:** `TabsListCompact` + `TabsTriggerCompact` (`changes-view.tsx`, `secrets-view.tsx`)
 - Tab badge count: `<Badge variant="secondary" size="sm">` inside trigger
 
@@ -460,7 +465,7 @@ For page-level loading placeholders use **`Skeleton`** (shape-matched). Use **`L
 
 ## Search + loading + empty flow
 
-Standard content block (`agents-view.tsx` pattern):
+Standard content block (`agents-page.tsx` pattern):
 
 ```tsx
 <div className="space-y-4">

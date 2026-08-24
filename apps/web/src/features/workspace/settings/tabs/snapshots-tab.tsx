@@ -259,8 +259,12 @@ function formatStartedAt(input: string | null | undefined): string {
   return startedAtFormat.format(t);
 }
 
+const EXACT_SCOPED_PROJECT_IMAGE =
+  /^kpp2-[0-9a-f]{12}-[0-9a-f]{12}-[0-9a-f]{16}-[0-9a-f]{16}$/;
+
 export function isProjectAcceleratorBuild(build: ProjectSnapshotBuild): boolean {
-  return build.snapshot_name.startsWith('kortix-ppwarm-');
+  if (build.snapshot_name.startsWith('kortix-ppwarm-')) return true;
+  return EXACT_SCOPED_PROJECT_IMAGE.test(build.snapshot_name);
 }
 
 /**

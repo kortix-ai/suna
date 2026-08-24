@@ -201,7 +201,7 @@ describe('/kortix model <id>', () => {
   });
   test('sets a valid id', async () => {
     const resp = await handleSlashCommand('model', 'anthropic/claude-opus-4-8', ctx);
-    expect(setModelCalls).toEqual(['anthropic/claude-opus-4-8']);
+    expect(setModelCalls).toEqual(['kortix/anthropic/claude-opus-4-8']);
     expect(resp.text).toContain('set to');
   });
   test('"default" clears the override', async () => {

@@ -2,11 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import {
   SESSION_SYNC_PAGE_SIZE,
+  SESSION_SYNC_TAIL_PAGE_SIZE,
   SessionSyncController,
   createHttpSessionSyncController,
   loadCompleteSessionHistory,
   type SessionSyncControllerOptions,
   type SessionSyncPage,
+  type SessionSyncReason,
+  MAX_TURN_BACKFILL_PAGES,
   type SessionSyncScheduler,
 } from './session-sync-controller';
 
@@ -47,6 +50,10 @@ function messagePage(
 function createScheduler() {
   let now = 0;
   let callback: (() => void) | undefined;
+  // Timeouts too, so the retry backoff is driven by the fake clock rather than
+  // falling through to the real one.
+  let nextTimeoutId = 2;
+  const timeouts = new Map<number, { dueAt: number; run: () => void }>();
   const scheduler: SessionSyncScheduler = {
     now: () => now,
     setInterval: (next) => {
@@ -56,11 +63,24 @@ function createScheduler() {
     clearInterval: () => {
       callback = undefined;
     },
+    setTimeout: (next, ms) => {
+      const id = nextTimeoutId++;
+      timeouts.set(id, { dueAt: now + ms, run: next });
+      return id;
+    },
+    clearTimeout: (handle) => {
+      timeouts.delete(handle as number);
+    },
   };
   return {
     scheduler,
     advance(ms: number) {
       now += ms;
+      for (const [id, timer] of [...timeouts]) {
+        if (timer.dueAt > now) continue;
+        timeouts.delete(id);
+        timer.run();
+      }
       callback?.();
     },
   };
@@ -92,7 +112,7 @@ describe('SessionSyncController', () => {
     await controller.start();
     expect(requests).toEqual([
       {
-        url: `https://runtime.example.test/session/session%2F1/message?limit=${SESSION_SYNC_PAGE_SIZE}`,
+        url: `https://runtime.example.test/session/session%2F1/message?limit=${SESSION_SYNC_TAIL_PAGE_SIZE}`,
         authorization: 'Bearer token-1',
       },
     ]);
@@ -111,6 +131,8 @@ describe('SessionSyncController', () => {
       return page(['message-1']);
     });
 
+    // `loadCompleteSessionHistory` is a full-history helper, not a first
+    // paint: nobody is watching a spinner, so it keeps the larger page.
     expect(requests).toEqual([
       { limit: SESSION_SYNC_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
@@ -121,6 +143,35 @@ describe('SessionSyncController', () => {
       'message-2',
       'message-3',
     ]);
+  });
+
+  // `MessageV2.page()` orders by `time_created` on the server, and it always
+  // did. Ids do NOT ascend with time any more (OpenCode 1.18.15 retired that
+  // invariant), so re-sorting the pages by id — `localeCompare`, no less,
+  // which is not even byte order — invented an order the server never sent.
+  // The transcript is the pages, oldest page first, each page untouched.
+  test('reassembles pages in page order, never by id — the server page IS the order', async () => {
+    const messages = await loadCompleteSessionHistory(async (request) => {
+      // Page 1 is the NEWEST tail; `before` walks backwards into history.
+      if (!request.before) return page(['msg_aa', 'msg_ab'], 'cursor-older');
+      return page(['msg_zy', 'msg_zz']);
+    });
+
+    expect(messages.map((message) => message.info.id)).toEqual([
+      'msg_zy',
+      'msg_zz',
+      'msg_aa',
+      'msg_ab',
+    ]);
+  });
+
+  test('an id repeated across overlapping pages appears exactly once, at its oldest position', async () => {
+    const messages = await loadCompleteSessionHistory(async (request) => {
+      if (!request.before) return page(['msg_b', 'msg_a'], 'cursor-older');
+      return page(['msg_c', 'msg_b']);
+    });
+
+    expect(messages.map((message) => message.info.id)).toEqual(['msg_c', 'msg_b', 'msg_a']);
   });
 
   test('loads only the newest page and exposes older pagination', async () => {
@@ -139,7 +190,7 @@ describe('SessionSyncController', () => {
     });
 
     await controller.start();
-    expect(requests).toEqual([{ limit: SESSION_SYNC_PAGE_SIZE }]);
+    expect(requests).toEqual([{ limit: SESSION_SYNC_TAIL_PAGE_SIZE }]);
     expect(controller.getSnapshot()).toMatchObject({
       freshness: 'fresh',
       hasOlder: true,
@@ -148,7 +199,7 @@ describe('SessionSyncController', () => {
 
     await controller.loadOlder();
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-older' },
     ]);
     expect(hydrated.flat().map((entry) => entry.info.id)).toEqual([
@@ -211,23 +262,31 @@ describe('SessionSyncController', () => {
       markLoaded: () => {},
     });
 
+    // The TAIL is one page — see `loadTail`. Completing the turn is what the
+    // user drives by scrolling up, and that is where the walk lives now.
     await controller.start();
+    expect(requests).toEqual([{ limit: SESSION_SYNC_TAIL_PAGE_SIZE }]);
+
+    await controller.loadOlder();
 
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
     ]);
-    expect(hydrated).toEqual([
-      [
+    // The tail paints first, then the older walk hydrates what it completed —
+    // the store merges the two, so the union is the whole turn.
+    expect(hydrated[0]).toEqual(['assistant-new-3', 'assistant-new-4']);
+    expect(new Set(hydrated.flat())).toEqual(
+      new Set([
         'user-only',
         'assistant-new-0',
         'assistant-new-1',
         'assistant-new-2',
         'assistant-new-3',
         'assistant-new-4',
-      ],
-    ]);
+      ]),
+    );
     expect(controller.getSnapshot()).toMatchObject({
       freshness: 'fresh',
       hasOlder: false,
@@ -300,7 +359,7 @@ describe('SessionSyncController', () => {
     await controller.loadOlder();
 
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-3' },
@@ -341,7 +400,7 @@ describe('SessionSyncController', () => {
       'Session history cursor repeated: cursor-1',
     );
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
     ]);
     expect(controller.getSnapshot().isLoadingOlder).toBe(false);
@@ -403,8 +462,8 @@ describe('SessionSyncController', () => {
     await controller.reconcile('manual');
 
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
     ]);
   });
 
@@ -522,7 +581,13 @@ describe('SessionSyncController', () => {
     expect('isPromptObservedBusy' in controller.getSnapshot()).toBe(false);
   });
 
-  test('marks an empty or failed initial read as loaded', async () => {
+  /**
+   * REPLACES "marks an empty or failed initial read as loaded", which encoded
+   * the bug: a failed read told the store the session was loaded, and the
+   * store's implementation of that plants an empty message list. Loading is a
+   * claim about the SESSION; a read that never landed supports no claim at all.
+   */
+  test('a start that never reaches the runtime resolves without claiming the session is empty', async () => {
     let loaded = 0;
     const controller = new SessionSyncController({
       sessionId: 'session-1',
@@ -536,11 +601,12 @@ describe('SessionSyncController', () => {
     });
 
     await expect(controller.start()).resolves.toBeUndefined();
-    expect(loaded).toBe(1);
+    expect(loaded).toBe(0);
     expect(controller.getSnapshot()).toMatchObject({
       freshness: 'error',
       hasOlder: false,
     });
+    controller.destroy();
   });
 
   test('retains the older-page cursor after a transient tail failure', async () => {
@@ -593,9 +659,9 @@ describe('SessionSyncController', () => {
     await controller.loadOlder();
 
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
     ]);
   });
@@ -621,5 +687,347 @@ describe('SessionSyncController', () => {
     await pending;
 
     expect(hydrated).toEqual([['message-newest']]);
+  });
+  /**
+   * The screenshot that started this: the runtime finished an 8-minute turn
+   * and its terminal showed the whole answer; the browser's transcript stopped
+   * mid-turn with a spinner. The turn ENDED — and turn end was exactly the
+   * moment the repair switched itself off.
+   */
+  test('the last thing a busy session does is read its own tail', async () => {
+    const clock = createScheduler();
+    const reasons: SessionSyncReason[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page([]),
+      hydrate: () => {},
+      markLoaded: () => {},
+      onTelemetry: (event) => reasons.push(event.reason),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    await controller.start();
+    reasons.length = 0;
+    controller.setBusy(true);
+    controller.setBusy(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reasons).toEqual(['turn-end']);
+  });
+
+  test('a session that was never busy does not read a tail when it stays idle', async () => {
+    const clock = createScheduler();
+    const reasons: SessionSyncReason[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page([]),
+      hydrate: () => {},
+      markLoaded: () => {},
+      onTelemetry: (event) => reasons.push(event.reason),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    await controller.start();
+    reasons.length = 0;
+    controller.setBusy(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reasons).toEqual([]);
+  });
+
+  test('destruction does not fire a turn-end read', async () => {
+    const clock = createScheduler();
+    const reasons: SessionSyncReason[] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page([]),
+      hydrate: () => {},
+      markLoaded: () => {},
+      onTelemetry: (event) => reasons.push(event.reason),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    await controller.start();
+    controller.setBusy(true);
+    reasons.length = 0;
+    controller.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reasons).toEqual([]);
+  });
+
+  /**
+   * The blank transcript, and it was eight lines away from the spinner that
+   * never ends.
+   *
+   * `markLoaded` ran in a `finally`, so a tail read that FAILED still told the
+   * store "this session is loaded" — and the registry's implementation of that
+   * plants an empty message list. A first read that lost to a waking box, a
+   * 503 from the proxy, or a flapping probe therefore RECORDED the session as
+   * having no messages. The UI then painted an empty conversation, and nothing
+   * came back for it: the mount already ran, and the liveness poll only turns
+   * on while a session is working.
+   */
+  test('a failed tail read is never recorded as an empty transcript', async () => {
+    const clock = createScheduler();
+    let loaded = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        throw new Error('sandbox waking');
+      },
+      hydrate: () => {},
+      markLoaded: () => {
+        loaded += 1;
+      },
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    await controller.reconcile('initial');
+
+    expect(loaded).toBe(0);
+    expect(controller.getSnapshot().freshness).toBe('error');
+  });
+
+  test('a successful read with no messages IS a loaded, empty session', async () => {
+    const clock = createScheduler();
+    let loaded = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page([]),
+      hydrate: () => {},
+      markLoaded: () => {
+        loaded += 1;
+      },
+      scheduler: clock.scheduler,
+    });
+
+    await controller.reconcile('initial');
+
+    expect(loaded).toBe(1);
+    expect(controller.getSnapshot().freshness).toBe('fresh');
+  });
+
+  /**
+   * And the second half: one shot was all a session ever got. The read that
+   * loses to a waking sandbox has to come back on its own, or the page waits
+   * for a health probe it does not control.
+   */
+  test('a failed read retries on its own until it lands', async () => {
+    const clock = createScheduler();
+    let attempts = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        attempts += 1;
+        if (attempts < 3) throw new Error('sandbox waking');
+        return messagePage([{ id: 'user-1', role: 'user' }]);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+    });
+
+    await controller.reconcile('initial');
+    expect(attempts).toBe(1);
+
+    for (let i = 0; i < 6 && attempts < 3; i++) {
+      clock.advance(30_000);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(attempts).toBe(3);
+    expect(controller.getSnapshot().freshness).toBe('fresh');
+  });
+
+  test('a destroyed controller stops retrying', async () => {
+    const clock = createScheduler();
+    let attempts = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        attempts += 1;
+        throw new Error('gone');
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+    });
+
+    await controller.reconcile('initial');
+    controller.destroy();
+    clock.advance(120_000);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(attempts).toBe(1);
+  });
+  /**
+   * The blank thread on a HUGE session, and every read returned 200.
+   *
+   * Measured on essentia (2026-08-24), a run with hundreds of image reads:
+   *
+   *   message?limit=50            200   8,228 kB   30.39 s
+   *   message?limit=50            200  24,460 kB   48.76 s
+   *   message?limit=50&before=..  200  20,284 kB   35.74 s
+   *   message?limit=50&before=..  200  25,125 kB   29.23 s
+   *   -> 78,097 kB transferred, finish 3.8 min, nothing on screen
+   *
+   * Fifty messages weigh megabytes because the parts carry image bytes, and the
+   * tail read used to keep walking backwards until every assistant message had
+   * its parent prompt — hydrating only when that walk ENDED.
+   *
+   * One page. Render it. However long the turn is.
+   */
+  test('the tail is exactly one request, however long the turn', async () => {
+    const hydrated: string[][] = [];
+    let pages = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        pages += 1;
+        // An orphan assistant: the old walk would have chased its prompt
+        // through the whole session before painting anything.
+        return {
+          messages: [
+            {
+              info: { id: `assistant-${pages}`, role: 'assistant', parentID: 'user-far-back' },
+              parts: [],
+            },
+          ],
+          nextCursor: `cursor-${pages}`,
+        } as unknown as SessionSyncPage;
+      },
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+    });
+
+    await controller.reconcile('initial');
+
+    expect(pages).toBe(1);
+    expect(hydrated).toEqual([['assistant-1']]);
+    // The rest stays reachable — the cursor survives for "load older".
+    expect(controller.getSnapshot().hasOlder).toBe(true);
+    controller.destroy();
+  });
+
+  test('the walk the user drives is still bounded', async () => {
+    let pages = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        pages += 1;
+        return {
+          messages: [
+            {
+              info: { id: `assistant-${pages}`, role: 'assistant', parentID: 'user-far-back' },
+              parts: [],
+            },
+          ],
+          nextCursor: `cursor-${pages}`,
+        } as unknown as SessionSyncPage;
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+    await controller.loadOlder();
+
+    // 1 tail page + at most MAX_TURN_BACKFILL_PAGES of turn completion.
+    expect(pages).toBeLessThanOrEqual(MAX_TURN_BACKFILL_PAGES + 2);
+    expect(controller.getSnapshot().hasOlder).toBe(true);
+    controller.destroy();
+  });
+
+  test('a turn that completes early stops paging', async () => {
+    let pages = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        pages += 1;
+        return pages === 1
+          ? ({
+              messages: [
+                { info: { id: 'assistant-1', role: 'assistant', parentID: 'user-1' }, parts: [] },
+              ],
+              nextCursor: 'cursor-1',
+            } as unknown as SessionSyncPage)
+          : ({
+              messages: [{ info: { id: 'user-1', role: 'user' }, parts: [] }],
+              nextCursor: undefined,
+            } as unknown as SessionSyncPage);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+    await controller.loadOlder();
+
+    expect(pages).toBe(2);
+    controller.destroy();
+  });
+  /**
+   * Time to FIRST PAINT is bytes, not messages.
+   *
+   * Measured on a heavy session (essentia, 2026-08-24 — hundreds of image reads,
+   * parts carrying base64): 50 messages weighed 8,228 kB / 24,460 kB / 20,284 kB
+   * / 25,125 kB across four reads. That is roughly 165-500 kB PER MESSAGE, so the
+   * first screen cost 8-25 MB and 30-49 s.
+   *
+   * The first page only has to fill a screen. Twenty messages is a full view plus
+   * buffer, and on that session it is ~3-10 MB instead of ~8-25 MB.
+   *
+   * Older pages keep the larger size: by then the user is scrolling deliberately,
+   * a spinner is honest, and fewer round trips is the better trade (each page
+   * costs a CORS preflight — one measured at 3.34 s).
+   */
+  test('the first page is smaller than an older page', async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return request.before ? page(['older']) : page(['newest'], 'cursor-older');
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+    expect(requests).toEqual([{ limit: SESSION_SYNC_TAIL_PAGE_SIZE }]);
+
+    await controller.loadOlder();
+    expect(requests.at(-1)).toEqual({
+      limit: SESSION_SYNC_PAGE_SIZE,
+      before: 'cursor-older',
+    });
+
+    expect(SESSION_SYNC_TAIL_PAGE_SIZE).toBeLessThan(SESSION_SYNC_PAGE_SIZE);
+    controller.destroy();
+  });
+
+  test('every reconcile reason reads the small first page, not just the initial one', async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return page(['m1']);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    for (const reason of ['initial', 'poll', 'visible', 'turn-end', 'eviction'] as const) {
+      await controller.reconcile(reason);
+    }
+
+    expect(requests.every((request) => request.limit === SESSION_SYNC_TAIL_PAGE_SIZE)).toBe(true);
+    controller.destroy();
   });
 });

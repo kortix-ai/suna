@@ -21,7 +21,7 @@ import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
   lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, worktreeAddArgs,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
-  writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
+  writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, tunnelAnswers, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
   ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS,
   killTree, stackRoots, stackPids, listenersOn, psTable, cwdTable,
@@ -98,6 +98,32 @@ function warnOnStackPressure(current: string, reg: Registry): void {
   if (live.length < CROWDED_STACKS) return;
   warn(`${live.length} other worktree stacks are already running (${live.join(', ')})`);
   sub(`each holds ~19 processes and a few GB — free them with ${pc.cyan('pnpm worktree stop --all')}`);
+}
+
+/**
+ * Two stacks on the SHARED primary Supabase share one work queue — prompt-inbox
+ * delivery, session-lifecycle commands, sandbox env sync. Whichever API instance
+ * grabs a job pushes ITS `KORTIX_URL`-derived gateway URL into the box. If that
+ * other stack's tunnel has rotted (quick tunnels do, every few hours), the next
+ * prompt it picks up dies inside OpenCode with
+ * `Cannot connect to API … <other-stack>.trycloudflare.com/v1/llm-gateway`, and
+ * nothing in THIS stack's log explains it. 2026-08-22: `mw-perf`'s dead tunnel
+ * was pushed into a `timeline-parity` box this way. Say it at start, where the
+ * decision (one stack, or `--db`) is still cheap.
+ */
+const PRIMARY_API_PORT = 8008;
+function warnOnSharedDbCrosstalk(current: string, reg: Registry): void {
+  const me = reg.slots[current];
+  if (!me || dbModeOf(me) !== 'shared') return;
+  const others = Object.entries(reg.slots)
+    .filter(([n, e]) => n !== current && dbModeOf(e) === 'shared' && portInUse(e.ports.api).inUse)
+    .map(([n, e]) => `${n} (api :${e.ports.api})`);
+  if (portInUse(PRIMARY_API_PORT).inUse) others.unshift(`primary pnpm dev (api :${PRIMARY_API_PORT})`);
+  if (others.length === 0) return;
+  warn(`${plural(others.length, 'other stack is', 'other stacks are')} live on the SAME shared DB: ${others.join(', ')}`);
+  sub('they share one work queue (prompt delivery, session lifecycle, env sync) — whichever API grabs a job pushes ITS KORTIX_URL into the sandbox;');
+  sub(`a rotted tunnel over there surfaces HERE as OpenCode "Cannot connect to API …trycloudflare.com/v1/llm-gateway" on the first prompt.`);
+  sub(`run one stack at a time (${pc.cyan('pnpm worktree stop <name>')}), or recreate this worktree with ${pc.cyan('--db')} for an isolated database.`);
 }
 
 async function stopStack(e: SlotEntry, opts: { quiet?: boolean } = {}): Promise<KillResult> {
@@ -502,6 +528,7 @@ async function cmdStart(a: Args) {
       die('the shared primary Supabase DB does not have the kortix schema. Run the primary stack once to initialize it, or recreate this worktree with `--db` for an isolated database.');
     }
     sub(`${creds.supabaseUrl} · ${creds.dbUrl}`);
+    warnOnSharedDbCrosstalk(name, reg);
   }
   step('Building runtime artifacts');
   if (await ensureRuntimeArtifacts(e.path) !== 0) die('runtime artifact build failed');
@@ -538,11 +565,58 @@ async function cmdStart(a: Args) {
   }
   console.log(pc.dim('   (Ctrl+C stops the dev servers cleanly)\n'));
 
-  const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl: tunnel?.url, stripeWebhookSecret: stripe?.secret, billing }) }, stdout: 'inherit', stderr: 'inherit' });
+  // The API's KORTIX_URL is baked at spawn, so a tunnel rotation has to
+  // respawn it — keep the spawn in a function and the handle mutable.
+  const spawnApi = (kortixUrl: string | undefined) =>
+    Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl, stripeWebhookSecret: stripe?.secret, billing, instanceId: name }) }, stdout: 'inherit', stderr: 'inherit' });
+  let api = spawnApi(tunnel?.url);
+  let apiRestarting = false;
   const gateway = Bun.spawn(['pnpm', '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });
   const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing }) }, stdout: 'inherit', stderr: 'inherit' });
   void waitForGateway(e.ports.gateway, gateway);
   let stopping = false;
+  // Quick tunnels die silently — cloudflared exits, or the URL starts answering
+  // 530 while the process lives. 2026-08-22: three deaths in one evening; each
+  // one surfaced as OpenCode "Retrying in 81s · <none>" (Cloudflare's HTML 530
+  // has no message) or "Cannot connect to API …trycloudflare.com" on the first
+  // prompt, and nothing local said why. Mirror scripts/dev-local.sh's watchdog:
+  // every 60s, if the LOCAL API is healthy but the tunnel is dead (process gone,
+  // or two consecutive probe failures), mint a new quick tunnel and respawn the
+  // API with the new KORTIX_URL. Existing boxes pick the new gateway URL up on
+  // their next prompt (env sync); their daemon callbacks stay on the old host.
+  const startTunnelWatchdog = () => {
+    if (!tunnel) return;
+    const localHealthy = () => tunnelAnswers(`http://localhost:${e.ports.api}`, '/v1/health', 2000);
+    void (async () => {
+      while (!stopping) {
+        await Bun.sleep(60_000);
+        if (stopping || !tunnel) return;
+        if (!(await localHealthy())) continue; // not the tunnel's fault
+        const procDead = tunnel.proc.exitCode !== null;
+        let dead = procDead || !(await tunnelAnswers(tunnel.url));
+        if (dead && !procDead) { await Bun.sleep(5000); dead = !(await tunnelAnswers(tunnel.url)); } // confirm, avoid a blip
+        if (!dead) continue;
+        warn(`tunnel ${tunnel.url} is DEAD (${procDead ? 'cloudflared exited' : 'URL answers no health'}) — rotating + restarting the API…`);
+        try { tunnel.proc.kill(); } catch {}
+        const next = await startTunnel(e.ports.api);
+        if (!next) { warn('tunnel rotation FAILED (cloudflared gave no URL) — will retry next minute'); continue; }
+        tunnel = next;
+        apiRestarting = true;
+        try { api.kill(); } catch {}
+        await Promise.race([api.exited, Bun.sleep(4000)]);
+        api = spawnApi(tunnel.url);
+        void watchApi();
+        apiRestarting = false;
+        ok(`tunnel rotated: KORTIX_URL → ${tunnel.url} (API restarted)`);
+      }
+    })();
+  };
+  // An API exit that WE did not cause (rotation) still tears the stack down.
+  const watchApi = async () => {
+    const mine = api;
+    await mine.exited;
+    if (!stopping && !apiRestarting && api === mine) await shutdown();
+  };
   const shutdown = async () => {
     if (stopping) return; stopping = true;
     console.log(`\n${pc.yellow('▸')} stopping…`);
@@ -568,7 +642,9 @@ async function cmdStart(a: Args) {
   };
   process.on('SIGINT', () => { void shutdown(); });
   process.on('SIGTERM', () => { void shutdown(); });
-  await Promise.race([api.exited, gateway.exited, web.exited]);
+  startTunnelWatchdog();
+  void watchApi();
+  await Promise.race([gateway.exited, web.exited]);
   await shutdown();
 }
 

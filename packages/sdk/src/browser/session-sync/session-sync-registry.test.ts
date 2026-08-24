@@ -21,6 +21,99 @@ beforeEach(() => {
   setCurrentRuntime(null);
 });
 
+/**
+ * OpenCode's OWN v1 page handling, taken over.
+ *
+ * `packages/app/src/context/server-session.ts:566-583` is their v1 branch — the
+ * same `client.session.messages({sessionID, limit, before})` call we make, the
+ * same `x-next-cursor` header — and it does three things to the response that
+ * we did not:
+ *
+ *   const items = (response.data ?? []).filter((item) => !!item?.info?.id)
+ *   session: items.map((item) => cleanMessage(item.info)).sort(compareMessages)
+ *   part:    items.map((item) => ({ id: item.info.id,
+ *              part: item.parts.filter((part) => !!part?.id).sort((a,b) => cmp(a.id,b.id)) }))
+ *
+ * with `compareMessages` ordering on `time.created + id`
+ * (`packages/app/src/utils/session-message.ts:15-21`).
+ *
+ * We passed `result.data ?? []` straight through: no filter, no sort. A single
+ * malformed row reached the renderer, which is the shape behind
+ * "TypeError: t is not iterable", and message order was whatever the wire said.
+ */
+describe('readSessionMessagePage — OpenCode v1 normalization', () => {
+  function entry(id: string, created: number, parts: unknown[] = []) {
+    return { info: { id, sessionID: 'session-1', role: 'user', time: { created } }, parts };
+  }
+
+  function clientReturning(data: unknown[]) {
+    return {
+      session: {
+        messages: async () => ({ data, response: { headers: { get: () => null } } }),
+      },
+    } as never;
+  }
+
+  test('drops a row with no message id instead of handing it to the renderer', async () => {
+    const client = clientReturning([
+      entry('m1', 1),
+      { parts: [] },
+      { info: {}, parts: [] },
+      null,
+      entry('m2', 2),
+    ]);
+
+    const result = await readSessionMessagePage(client, 'session-1', { limit: 50 });
+
+    expect(result.messages.map((m) => m.info.id)).toEqual(['m1', 'm2']);
+  });
+
+  test('drops a part with no id', async () => {
+    const client = clientReturning([
+      entry('m1', 1, [{ id: 'p2' }, { id: null }, {}, { id: 'p1' }]),
+    ]);
+
+    const result = await readSessionMessagePage(client, 'session-1', { limit: 50 });
+
+    expect(result.messages[0]!.parts.map((p) => p.id)).toEqual(['p1', 'p2']);
+  });
+
+  test('orders messages by creation time then id, not by wire order', async () => {
+    const client = clientReturning([entry('m9', 200), entry('m1', 100), entry('m5', 150)]);
+
+    const result = await readSessionMessagePage(client, 'session-1', { limit: 50 });
+
+    expect(result.messages.map((m) => m.info.id)).toEqual(['m1', 'm5', 'm9']);
+  });
+
+  test('id breaks a tie when two messages share a creation time', async () => {
+    const client = clientReturning([entry('m_b', 100), entry('m_a', 100)]);
+
+    const result = await readSessionMessagePage(client, 'session-1', { limit: 50 });
+
+    expect(result.messages.map((m) => m.info.id)).toEqual(['m_a', 'm_b']);
+  });
+
+  test('a message with no parts array survives as an empty one', async () => {
+    const client = clientReturning([{ info: { id: 'm1', time: { created: 1 } } }]);
+
+    const result = await readSessionMessagePage(client, 'session-1', { limit: 50 });
+
+    expect(result.messages[0]!.parts).toEqual([]);
+  });
+
+  test('a message with no time still sorts deterministically by id', async () => {
+    const client = clientReturning([
+      { info: { id: 'm2' }, parts: [] },
+      { info: { id: 'm1' }, parts: [] },
+    ]);
+
+    const result = await readSessionMessagePage(client, 'session-1', { limit: 50 });
+
+    expect(result.messages.map((m) => m.info.id)).toEqual(['m1', 'm2']);
+  });
+});
+
 describe('readSessionMessagePage', () => {
   test('preserves MessageWithParts and reads the legacy older-page cursor', async () => {
     const requests: unknown[] = [];
@@ -176,6 +269,40 @@ describe('session sync events', () => {
     });
 
     expect(controller.getSnapshot().freshness).toBe('fresh');
+  });
+
+  /**
+   * The starvation bug. `checkLiveness` skips whenever the last activity is
+   * newer than the poll interval, so ANY frame carrying this session's id used
+   * to postpone the repair — including frames that carry no transcript at all.
+   * A stream that keeps emitting status while dropping message parts could
+   * therefore keep the browser's transcript arbitrarily stale, forever, and
+   * the poll built to catch exactly that never ran.
+   *
+   * Only a frame that MOVES the transcript is evidence the transcript moved.
+   */
+  test('a status frame is not evidence that the transcript moved', () => {
+    const sessionId = 'session-status-only';
+    const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
+
+    for (const type of ['session.status', 'session.idle', 'permission.updated']) {
+      noteSessionSyncEvent({ type, properties: { sessionID: sessionId } });
+      expect(controller.getSnapshot().freshness).toBe('idle');
+    }
+  });
+
+  test('every frame that carries transcript content renews freshness', () => {
+    const sessionId = 'session-content';
+    for (const event of [
+      { type: 'message.updated', properties: { info: { id: 'm1', sessionID: sessionId } } },
+      { type: 'message.part.updated', properties: { part: { sessionID: sessionId } } },
+      { type: 'message.removed', properties: { sessionID: sessionId, messageID: 'm1' } },
+    ]) {
+      resetSessionSyncControllers();
+      const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
+      noteSessionSyncEvent(event);
+      expect(controller.getSnapshot().freshness).toBe('fresh');
+    }
   });
 
   test('a frame for another session never touches this one', () => {

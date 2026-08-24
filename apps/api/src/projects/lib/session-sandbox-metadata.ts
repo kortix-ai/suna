@@ -1,4 +1,5 @@
 import { WORKSPACE_MODES_V2, type WorkspaceModeV2 } from '@kortix/manifest-schema';
+import { isMetaAgentName } from '@kortix/shared';
 
 /** Read the server-owned resolved template from durable session metadata. */
 export function sandboxSlugFromSessionMetadata(metadata: unknown): string | undefined {
@@ -25,6 +26,14 @@ export function workspaceModeAllowsFullRepository(
   mode: WorkspaceModeV2 | null | undefined,
 ): boolean {
   return mode === undefined || mode === null || mode === 'branch';
+}
+
+/** A project image contains the complete repository and is unsafe otherwise. */
+export function projectImageAllowedForSession(
+  agentName: string | null | undefined,
+  workspaceMode: WorkspaceModeV2 | null | undefined,
+): boolean {
+  return !isMetaAgentName(agentName ?? '') && workspaceModeAllowsFullRepository(workspaceMode);
 }
 
 /** Apply the session sandbox precedence contract. */

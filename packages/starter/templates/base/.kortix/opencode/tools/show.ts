@@ -1,4 +1,4 @@
-import { tool } from "@opencode-ai/plugin";
+import { tool } from "./lib/tool";
 import { existsSync } from "fs";
 import { resolve } from "path";
 

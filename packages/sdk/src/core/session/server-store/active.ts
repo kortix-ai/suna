@@ -5,6 +5,7 @@ import {
   getCurrentRuntimeUrl,
 } from '../current-runtime';
 import { getBackendUrl, getDefaultSandboxUrl } from './url-helpers';
+import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../preview-options';
 
 /**
  * Active-runtime resolution, framework-free. These are the read helpers the
@@ -64,23 +65,20 @@ export function getBackendPort(): number {
 }
 
 /**
- * Subdomain URL options for the active runtime (pure-ish function).
+ * Preview URL options for the ACTIVE runtime — the ambient path, used where no
+ * session handle is in scope: `useSandboxProxy`, `proxySandboxUrl`,
+ * `buildStaticFilePreviewUrl`, the session panel's app-preview iframe.
  *
- * Always returns a valid options object — never undefined. Every provider routes
- * through the same backend preview proxy; the `apiBaseUrl` field lets
- * `rewriteLocalhostUrl` take the path-based branch on VPS/cloud deployments
- * where *.localhost DNS isn't available. The sandbox id comes from the active
- * runtime (no legacy 'kortix-sandbox' default — it masked the real cloud sandbox
- * and 403'd the preview proxy).
+ * A thin binding of the active sandbox id to `resolvePreviewOptions`, which is
+ * the single producer of a complete options bag. It deliberately assembles
+ * nothing itself: this function once did, and quietly omitted
+ * `previewUrlTemplate`, which made every ambient preview fall back to the path
+ * proxy. See preview-options.ts.
  */
-export function deriveSubdomainOpts(): {
-  sandboxId: string;
-  backendPort: number;
-  apiBaseUrl: string;
-} {
-  return {
+export function deriveSubdomainOpts(): ResolvedPreviewOptions {
+  return resolvePreviewOptions({
     sandboxId: getActiveSandboxId() || '',
     backendPort: getBackendPort(),
     apiBaseUrl: getBackendUrl(),
-  };
+  });
 }

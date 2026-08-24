@@ -137,6 +137,15 @@ export const opencodeKeys = {
   pathInfo: () => ['opencode', 'path-info', activeServerKey()] as const,
   mcpStatus: () => ['opencode', 'mcp-status', activeServerKey()] as const,
   worktrees: () => ['opencode', 'worktrees', activeServerKey()] as const,
+  /**
+   * `GET /vcs/diff` — the session's file changes. ONE key per (mode, sandbox),
+   * so the tab badge, the header chip and the diff panel share one cache entry
+   * and cannot contradict each other on screen.
+   */
+  vcsDiff: (mode: 'git' | 'branch', serverId?: string) =>
+    ['opencode', 'vcs-diff', mode, serverId ?? activeServerKey()] as const,
+  /** Prefix over every mode + sandbox — what the event stream invalidates. */
+  vcsDiffAll: () => ['opencode', 'vcs-diff'] as const,
 };
 
 export function useOpenCodeRuntimeReady() {

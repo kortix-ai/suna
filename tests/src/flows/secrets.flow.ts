@@ -136,8 +136,10 @@ flow(
       "GET /v1/projects/:projectId/secrets",
       "PUT /v1/projects/:projectId/secrets/:identifier/strategy",
       "POST /v1/projects/:projectId/secrets/:identifier/broker",
+      "POST /v1/projects/:projectId/secrets/:identifier/relay",
       "POST /v1/projects/:projectId/secrets/:identifier/grant",
       "POST /v1/projects/:projectId/secrets/sync",
+      "PATCH /v1/projects/:projectId/features",
       "GET /v1/accounts/:accountId/audit",
     ],
   },
@@ -241,6 +243,35 @@ flow(
         .has("$.consumer", "http_broker")
         .has("$.delivery_status", "available")
         .has("$.egress_policy", policy);
+    });
+
+    await ctx.step("egress delivery is refused until the secrets_egress flag is on → 403", async () => {
+      // Network enforcement is experimental and off by default. Entering egress
+      // is gated: the write path returns 403 feature_disabled until the project
+      // enables the `secrets_egress` flag. (broker/runtime/denied above are not
+      // gated — only egress is.)
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          {
+            strategy: "egress",
+            egress_policy: { rules: [{ host: "api.example.com" }], on_no_match: "deny" },
+          },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(403).body().has("$.code", "feature_disabled").has("$.feature", "secrets_egress");
+    });
+
+    await ctx.step("manager enables the experimental secrets_egress flag → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          "/v1/projects/:projectId/features",
+          { feature: "secrets_egress", enabled: true },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.experimental.secrets_egress", true);
     });
 
     await ctx.step("egress-enforced delivery stores a host-list-only policy", async () => {
@@ -365,6 +396,22 @@ flow(
       r.status(403).body().has("$.code", "session_agent_token_required");
     });
 
+    // The STREAMING sibling of the route above. It carries the same
+    // credential-spending authority, so it must refuse the same caller — an
+    // owner's user token is not a session-scoped agent token. Everything past
+    // this gate needs a real sandbox (the shim holds the CA and the session
+    // PAT), which the local profile excludes; the daemon's own shim tests and
+    // apps/api/src/__tests__/unit-project-secret-relay-route.test.ts carry the
+    // transport contract.
+    await ctx.step("streaming relay execution requires a session-scoped agent token", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/secrets/:identifier/relay", undefined, {
+          params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" },
+        });
+      r.status(403).body().has("$.code", "session_agent_token_required");
+    });
+
     await ctx.step("rotation permits runtime delivery", async () => {
       const rotate = await ctx.client
         .as(ctx.P.OWNER)
@@ -471,7 +518,12 @@ flow(
           { names: ["SEC7_TEST_KEY"] },
           { params: { projectId: p.id } },
         );
-      r.status(200).body().has("$.kind", "secret").has("$.names[0]", "SEC7_TEST_KEY").exists("$.url");
+      r.status(200)
+        .body()
+        .has("$.kind", "secret")
+        .has("$.names[0]", "SEC7_TEST_KEY")
+        .has("$.scope", "connector")
+        .exists("$.url");
       const url = r.json<{ url: string }>().url;
       token = url.split("/").pop() ?? "";
       if (!token) throw new Error(`could not extract token from mint url: ${url}`);
@@ -492,6 +544,28 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/secret-requests", {}, { params: { projectId: p.id } });
+      r.status(400);
+    });
+
+    await ctx.step("runtime delivery requires an explicit scope → 200 runtime", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secret-requests",
+          { names: ["SEC7_RUNTIME_KEY"], scope: "runtime" },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.scope", "runtime");
+    });
+
+    await ctx.step("unknown delivery scope → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secret-requests",
+          { names: ["SEC7_TEST_KEY"], scope: "surprise" },
+          { params: { projectId: p.id } },
+        );
       r.status(400);
     });
 

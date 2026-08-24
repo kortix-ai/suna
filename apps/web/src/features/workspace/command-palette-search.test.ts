@@ -199,12 +199,16 @@ describe('only user-visible text is searchable', () => {
 // ============================================================================
 
 describe('queries return the rows they name', () => {
-  test('"member" reaches the project settings row and NOT the account switcher', () => {
+  test('"member" reaches BOTH rosters and NOT the account switcher', () => {
     // The reported bug. `nav-accounts` carried `members` in its keyword bag.
-    // Members is a section of `/projects/<id>/config` now, so the row that
-    // answers is `proj-customize` rather than a derived settings row.
+    // The answer used to be `proj-customize` — the project SETTINGS row, back
+    // when its keyword bag was the concatenated vocabulary of thirteen pages.
+    // There are two real rosters and each now owns the word: the workspace one
+    // (the account hub's Access pane, pre-scoped to this workspace) and the
+    // organization one.
     const result = hits('member');
-    expect(result).toContain('nav:proj-customize');
+    expect(result).toContain('nav:proj-members');
+    expect(result).toContain('nav:account-members');
     expect(result).not.toContain('nav:nav-accounts');
     expect(hits('members')).not.toContain('nav:nav-accounts');
     // ...and the other row that DOES answer it still does.
@@ -213,20 +217,26 @@ describe('queries return the rows they name', () => {
 
   test('"customize" returns one row, not seventeen', () => {
     // 12 settings tabs + 5 navigation rows carried the legacy `project
-    // customize` tail. One row keeps the word, and it is the one that lands
-    // on the project's settings page.
+    // customize` tail. One row keeps the word, and it is the Customize INDEX
+    // — the card grid that introduces every capability tab. It used to be the
+    // Settings tab, i.e. one of the eight things that index introduces.
     expect(hits('customize')).toEqual(['nav:proj-customize']);
   });
 
-  test('"project" returns Projects and the project settings row, not every project-scoped row', () => {
-    const result = hits('project');
-    expect(result).toContain('nav:nav-projects');
-    expect(result.sort()).toEqual(['nav:nav-projects']);
+  test('"project" returns the two rows that say the word, not every project-scoped row', () => {
+    // `account-access-projects` is the account hub's "Projects" pane — the
+    // word is its own label, which is exactly the bar this file sets. Ten
+    // `proj-*` rows used to answer this by their ids.
+    expect(hits('project').sort()).toEqual([
+      'nav:account-access-projects',
+      'nav:nav-projects',
+    ]);
   });
 
   test('"proj" matches nothing by id', () => {
-    // Ten `proj-*` rows used to answer this.
-    expect(hits('proj')).toEqual(['nav:nav-projects']);
+    // Ten `proj-*` rows used to answer this. The two that survive both carry
+    // "Projects" as visible label text.
+    expect(hits('proj').sort()).toEqual(['nav:account-access-projects', 'nav:nav-projects']);
   });
 
   test('"nav" and "pref" are not queries at all', () => {
@@ -253,10 +263,13 @@ describe('queries return the rows they name', () => {
     // Every hit owns the word: the switcher, the nine "Account · X" sections,
     // "your account", "connected accounts".
     expect(result.sort()).toEqual([
+      'nav:account-access-projects',
       'nav:account-audit',
       'nav:account-billing',
       'nav:account-general',
+      'nav:account-git',
       'nav:account-groups',
+      'nav:account-help',
       'nav:account-identity',
       'nav:account-members',
       'nav:account-roles',
@@ -328,11 +341,14 @@ describe('queries return the rows they name', () => {
 
   test('"log" no longer drags Snapshots into an audit search', () => {
     expect(hits('log')).toContain('nav:account-audit');
-    // Snapshots is a section of `/projects/<id>/config` now. That row carries
-    // the word "snapshots" but deliberately NOT "logs" — the Models pane's
-    // sub-tab name — so an audit search still does not drag it in.
-    expect(hits('log')).not.toContain('nav:proj-customize');
-    expect(hits('snapshots')).toContain('nav:proj-customize');
+    // Snapshots merged into the Sandbox templates section of
+    // `/projects/<id>/config`. That row carries the word "snapshots" but
+    // deliberately NOT "logs" — nor "catalog", which is why the Models row
+    // does not carry that word either — so an audit search still does not drag
+    // either of them in.
+    expect(hits('log')).not.toContain('nav:proj-config-sandbox');
+    expect(hits('log')).not.toContain('nav:proj-models');
+    expect(hits('snapshots')).toEqual(['nav:proj-config-sandbox']);
   });
 });
 
@@ -360,9 +376,11 @@ describe('genuine synonyms still answer', () => {
     ['restart', 'nav:restart-config'],
     ['deployments', 'nav:proj-apps'],
     ['signout', 'nav:logout'],
-    // Was `settings:secrets`. Secrets is a section of
-    // `/projects/<id>/config`, so the row that answers is the page's.
-    ['env', 'nav:proj-customize'],
+    // Was `settings:secrets`, then `nav:proj-customize` while Secrets' words
+    // sat in that row's thirteen-page keyword bag. Secrets is its own
+    // capability page (`/projects/<id>/secrets`) and has had its own row since
+    // this change.
+    ['env', 'nav:proj-secrets'],
     // Was `settings:schedules` / `settings:webhooks`. Both merged into one
     // Triggers capability page, so the row that answers these queries is a
     // single registry row now.
@@ -377,6 +395,27 @@ describe('genuine synonyms still answer', () => {
     ['hotkeys', 'settings:preferences'],
     ['ledger', 'nav:account-usage'],
     ['configure', 'nav:proj-customize'],
+    // The rows this change added. Each was previously answered by
+    // `proj-customize` — the Settings page — or by nothing at all.
+    ['model', 'nav:proj-models'],
+    ['gateway', 'nav:proj-models'],
+    ['anthropic', 'nav:proj-models'],
+    ['secret', 'nav:proj-secrets'],
+    ['environment', 'nav:proj-secrets'],
+    ['slack', 'nav:proj-channels'],
+    ['agentmail', 'nav:proj-channels'],
+    ['roster', 'nav:proj-members'],
+    ['collaborators', 'nav:proj-members'],
+    ['danger', 'nav:proj-config-general'],
+    ['sandbox', 'nav:proj-config-sandbox'],
+    ['approvals', 'nav:proj-config-review'],
+    ['experimental', 'nav:proj-config-feature-flags'],
+    ['labs', 'nav:proj-config-feature-flags'],
+    ['migration', 'nav:proj-config-upgrades'],
+    ['change requests', 'nav:review-changes'],
+    ['github', 'nav:account-git'],
+    ['grants', 'nav:account-access-projects'],
+    ['permissions help', 'nav:account-help'],
   ];
 
   for (const [query, key] of KEPT) {

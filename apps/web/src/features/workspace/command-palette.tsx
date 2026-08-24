@@ -21,15 +21,30 @@ import {
   CommandList,
   CommandShortcut,
 } from '@/components/ui/command';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import { Kbd } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useWorkspaceSearch } from '@/features/files';
+import { fetchChangeRequests } from '@/features/project-files/api/change-requests';
+import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
+import { ProjectFilesProvider } from '@/features/project-files/context';
+import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
+import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
+import { DiffDialog } from '@/features/session/diff-dialog';
+import { CompactModal } from '@/features/session/header/compact-modal';
+import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
+import { flattenModels } from '@/features/session/session-chat-input';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
+import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
+import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
-  consumePendingCommandPalette,
   OPEN_COMMAND_PALETTE_EVENT,
+  consumePendingCommandPalette,
 } from '@/features/workspace/open-command-palette';
 import {
   sessionLastActivityAt,
@@ -43,69 +58,21 @@ import {
 } from '@/features/workspace/settings-palette-items';
 import {
   DEFAULT_SETTINGS_TAB,
-  resolveSettingsOverlayHref,
   type SettingsTab,
+  resolveSettingsOverlayHref,
 } from '@/features/workspace/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
-import { cn } from '@/lib/utils';
-import { useChatSendStore } from '@/stores/chat-send-store';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import {
-  type KortixAccount,
-  type KortixProject,
-  type ProjectSession,
-  getProjectDetail,
-  listAccounts,
-  listProjectSessions,
-  listProjectsForAccount,
-  systemReload,
-} from '@kortix/sdk';
-import { featureFlags } from '@kortix/sdk/feature-flags';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { contract, qk, useRuntimeAgents, useRuntimeProviders } from '@kortix/sdk/react';
-import {
-  ArrowDownIcon as ArrowDown,
-  ArrowUpIcon as ArrowUp,
-  RobotIcon as Bot,
-  CheckIcon as Check,
-  CaretRightIcon as ChevronRight,
-  ArrowElbowDownLeftIcon as CornerDownLeft,
-  CpuIcon as Cpu,
-  FileTextIcon as FileText,
-  GitBranchIcon as FolderGit2,
-  GlobeIcon as Globe,
-  HashIcon as Hash,
-  ChatCircleIcon as MessageCircle,
-  SidebarSimpleIcon as PanelLeftClose,
-  SidebarSimpleIcon as PanelLeftIcon,
-  MagnifyingGlassIcon as Search,
-  MinusIcon as Minus,
-  TextAlignLeftIcon as TextAlignLeft,
-} from '@phosphor-icons/react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
-import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { Kbd } from '@/components/ui/kbd';
-import { TextShimmer } from '@/components/ui/text-shimmer';
-import { useWorkspaceSearch } from '@/features/files';
-import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
-import { DiffDialog } from '@/features/session/diff-dialog';
-import { CompactModal } from '@/features/session/header/compact-modal';
-import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
-import { flattenModels } from '@/features/session/session-chat-input';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
+import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { createClient } from '@/lib/supabase/client';
 import { track } from '@/lib/track';
+import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
+import { cn } from '@/lib/utils';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
@@ -117,24 +84,72 @@ import {
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
+import { useChatSendStore } from '@/stores/chat-send-store';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
+import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import {
-  useUserPreferencesStore,
-  type ConversationDensity,
-} from '@/stores/user-preferences-store';
+import { type ConversationDensity, useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
-import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 import {
+  type FeatureFlagKey,
+  type KortixAccount,
+  type KortixProject,
+  type ProjectDetail,
+  type ProjectSession,
+  getProject,
+  getProjectDetail,
+  listAccounts,
+  listProjectSessions,
+  listProjectsForAccount,
+  systemReload,
+  updateFeatureFlag,
+} from '@kortix/sdk';
+import { featureFlags } from '@kortix/sdk/feature-flags';
+import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import {
+  contract,
+  invalidateProject,
+  qk,
+  refreshProjectProviderState,
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
+  useRuntimeAgents,
   useRuntimeMessages,
+  useRuntimeProviders,
 } from '@kortix/sdk/react';
 import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
-import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
+import {
+  ArrowDownIcon as ArrowDown,
+  ArrowUpIcon as ArrowUp,
+  RobotIcon as Bot,
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  ArrowElbowDownLeftIcon as CornerDownLeft,
+  CpuIcon as Cpu,
+  GitDiffIcon as FileDiff,
+  FileTextIcon as FileText,
+  FlaskIcon as Flask,
+  GitBranchIcon as FolderGit2,
+  GlobeIcon as Globe,
+  HashIcon as Hash,
+  ChatCircleIcon as MessageCircle,
+  MinusIcon as Minus,
+  SidebarSimpleIcon as PanelLeftClose,
+  SidebarSimpleIcon as PanelLeftIcon,
+  MagnifyingGlassIcon as Search,
+  TextAlignLeftIcon as TextAlignLeft,
+  UsersIcon as UsersSolid,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
+import { useParams, usePathname, useRouter } from 'next/navigation';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 type PalettePage =
   | 'root'
@@ -145,7 +160,9 @@ type PalettePage =
   | 'accounts'
   | 'sessions'
   | 'files'
-  | 'density';
+  | 'density'
+  | 'changes'
+  | 'flags';
 
 function sanitizeCmdkValue(value: string): string {
   return value
@@ -222,11 +239,21 @@ export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>
   shortcuts: 'preferences',
 };
 
-const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
+export const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   'nav-projects': 'projects',
   'nav-accounts': 'accounts',
   'proj-sessions': 'sessions',
   'conversation-density': 'density',
+  // "Review changes" lists this workspace's OPEN change requests in-palette;
+  // picking one opens its detail dialog. The registry row is `kind: 'action'`
+  // and its `reviewChanges` handler is the fallback for the same reason
+  // `conversation-density`'s is — if this entry is ever removed the row still
+  // opens the picker instead of dead-ending.
+  'review-changes': 'changes',
+  // "Settings · Feature flags" lists every experimental feature with its
+  // stability and its switch, so a flag can be found and flipped by name
+  // without three navigations. The row's href is the routed fallback.
+  'proj-config-feature-flags': 'flags',
 };
 
 /**
@@ -450,6 +477,255 @@ function MessagesPage({
   );
 }
 
+/**
+ * The 'changes' page — this workspace's OPEN change requests, listed by number
+ * and title, each opening its own detail dialog.
+ *
+ * **Why it reads the list itself instead of `useChangeRequests`.** That hook
+ * takes its project id from `ProjectFilesContext`, and the palette mounts
+ * outside every provider that supplies one (`AppHeader` and `ProjectShell`
+ * both render it as a sibling of the file explorer, not inside it). Wrapping
+ * the whole palette in a `ProjectFilesProvider` to satisfy one page would put
+ * the file feature's context on every route the palette mounts on. Reading
+ * `fetchChangeRequests` directly under the SAME query key the hook uses
+ * (`changeRequestKeys.list`) costs nothing extra: the sidebar pill's cache
+ * entry is reused when it is mounted, and populated for it when it is not.
+ *
+ * The detail dialog DOES need the context (it resolves the project id for the
+ * manifest filename and every mutation), so it — and only it — is wrapped, in
+ * `CommandPalette` below.
+ */
+function ChangeRequestsPage({
+  projectId,
+  query,
+  onSelect,
+}: {
+  projectId: string;
+  query: string;
+  onSelect: (crId: string) => void;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: changeRequestKeys.list(projectId, 'open'),
+    queryFn: () => fetchChangeRequests(projectId, 'open'),
+    staleTime: 5_000,
+  });
+
+  const changeRequests = useMemo(() => {
+    const all = data?.change_requests ?? [];
+    const q = query.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((cr) =>
+      `#${cr.number} ${cr.title} ${cr.base_ref} ${cr.head_ref}`.toLowerCase().includes(q),
+    );
+  }, [data?.change_requests, query]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-10">
+        <TextShimmer>Loading change requests…</TextShimmer>
+      </div>
+    );
+  }
+
+  if (changeRequests.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
+          <FileDiff className="text-muted-foreground size-4" />
+        </div>
+        <span className="text-muted-foreground/60 text-sm">
+          {query.trim() ? `No change requests matching "${query.trim()}"` : 'Nothing to review'}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <CommandGroup heading={`Open change requests`} forceMount>
+      {changeRequests.map((cr) => (
+        <CommandItem
+          key={cr.cr_id}
+          value={sanitizeCmdkValue(`change request ${cr.number} ${cr.title} ${cr.base_ref}`)}
+          onSelect={() => onSelect(cr.cr_id)}
+        >
+          <span className="text-muted-foreground shrink-0 font-mono text-sm tabular-nums">
+            #{cr.number}
+          </span>
+          <span className="flex-1 truncate text-sm">{cr.title}</span>
+          <span className="text-muted-foreground/40 max-w-[140px] shrink-0 truncate font-mono text-xs">
+            {cr.base_ref}
+          </span>
+        </CommandItem>
+      ))}
+    </CommandGroup>
+  );
+}
+
+/**
+ * The 'flags' page — every experimental feature this deployment exposes for
+ * the current workspace, by name, with its stability and its switch.
+ *
+ * Same data, same route, same permission gate as the Feature flags section of
+ * `/projects/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
+ * summary's `experimental_features`, `PATCH /projects/:id/features` through
+ * `updateFeatureFlag`, and `PROJECT_CUSTOMIZE_WRITE`. Two doors onto one
+ * behaviour, not a second implementation of it — the cache writes below are
+ * the same set that tab performs, so the flag-gated rail, sidebar and palette
+ * rows all re-resolve together either way.
+ *
+ * **Why toggling here rather than linking there.** Every other flag surface
+ * costs three navigations to answer "is Voice on for this workspace?". The
+ * flags are also the one settings list whose ROWS are what people search for
+ * ("warm sessions", "llm_gateway" out of a changelog) — a single row pointing
+ * at a page they then have to search again is the defect this whole change
+ * exists to remove. Selecting a row when the permission probe denies (or is
+ * still in flight) navigates to the section instead of failing silently.
+ */
+function FeatureFlagsPage({
+  projectId,
+  query,
+  onNavigate,
+}: {
+  projectId: string;
+  query: string;
+  onNavigate: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const projectQuery = useQuery({
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId),
+    ...contract('config'),
+  });
+
+  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // Fail-closed while the probe is in flight — the same rule `ExperimentalTab`
+  // applies, so a slow probe never offers a toggle the server would reject.
+  const canEdit = !writeCap.isLoading && writeCap.allowed === true;
+
+  const [pendingValues, setPendingValues] = useState<Record<string, boolean>>({});
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ key, next }: { key: FeatureFlagKey; next: boolean }) =>
+      updateFeatureFlag(projectId, key, next),
+    onSettled: (_data, _error, variables) => {
+      setPendingValues((prev) => {
+        if (!(variables.key in prev)) return prev;
+        const next = { ...prev };
+        delete next[variables.key];
+        return next;
+      });
+    },
+    onSuccess: (updated, variables) => {
+      queryClient.setQueryData(qk.project.summary(projectId), updated);
+      queryClient.setQueryData<ProjectDetail | undefined>(
+        qk.project.detail(projectId),
+        (current) => (current ? { ...current, project: updated } : current),
+      );
+      void invalidateProject(queryClient, projectId);
+      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+      if (variables.key === 'llm_gateway') {
+        refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
+      }
+      successToast(`${variables.key} ${variables.next ? 'enabled' : 'disabled'}`);
+    },
+    onError: (error: Error, variables) => {
+      errorToast(error.message || `Failed to update ${variables.key}`);
+    },
+  });
+
+  const features = useMemo(() => {
+    const available = (projectQuery.data?.experimental_features ?? []).filter((f) => f.available);
+    const withPending = available.map((f) => ({
+      ...f,
+      enabled: pendingValues[f.key] ?? f.enabled,
+    }));
+    const q = query.trim().toLowerCase();
+    if (!q) return withPending;
+    // Matches `key` as well as `name`/`description`, for the same reason
+    // `filterFeatures` in experimental-tab.tsx does: flags get turned on from
+    // docs and changelogs that name the raw key (`llm_gateway`).
+    return withPending.filter(
+      (f) =>
+        f.name.toLowerCase().includes(q) ||
+        f.key.toLowerCase().includes(q) ||
+        (f.description ?? '').toLowerCase().includes(q),
+    );
+  }, [projectQuery.data?.experimental_features, pendingValues, query]);
+
+  if (projectQuery.isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-10">
+        <TextShimmer>Loading feature flags…</TextShimmer>
+      </div>
+    );
+  }
+
+  if (features.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
+          <Flask className="text-muted-foreground size-4" />
+        </div>
+        <span className="text-muted-foreground/60 text-sm">
+          {query.trim()
+            ? `No feature matching "${query.trim()}"`
+            : 'This deployment exposes no feature flags'}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <CommandGroup heading="Feature flags" forceMount>
+      {features.map((feature) => {
+        const pending = feature.key in pendingValues;
+        return (
+          <CommandItem
+            key={feature.key}
+            value={sanitizeCmdkValue(`flag ${feature.name} ${feature.key} ${feature.description}`)}
+            onSelect={() => {
+              if (!canEdit) {
+                onNavigate();
+                return;
+              }
+              setPendingValues((prev) => ({ ...prev, [feature.key]: !feature.enabled }));
+              toggleMutation.mutate({
+                key: feature.key as FeatureFlagKey,
+                next: !feature.enabled,
+              });
+            }}
+          >
+            <Flask className="text-muted-foreground size-4 shrink-0" />
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <span className="truncate text-sm">{feature.name}</span>
+              <span className="text-muted-foreground/40 truncate font-mono text-xs">
+                {feature.key}
+              </span>
+            </div>
+            {feature.stability !== 'stable' && (
+              <Badge variant="kortix" size="sm" className="shrink-0">
+                {feature.stability}
+              </Badge>
+            )}
+            {pending ? (
+              <Loading className="text-muted-foreground size-3.5 shrink-0" />
+            ) : (
+              <span
+                className={cn(
+                  'shrink-0 text-xs font-medium tabular-nums',
+                  feature.enabled ? 'text-primary/70' : 'text-muted-foreground/40',
+                )}
+              >
+                {feature.enabled ? 'On' : 'Off'}
+              </span>
+            )}
+          </CommandItem>
+        );
+      })}
+    </CommandGroup>
+  );
+}
+
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -458,6 +734,8 @@ export function CommandPalette() {
   const [isCreating, setIsCreating] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
+  /** The change request whose detail dialog is open, picked on the 'changes' page. */
+  const [selectedCrId, setSelectedCrId] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [backScale, setBackScale] = useState(false);
   const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -530,6 +808,21 @@ export function CommandPalette() {
     ...contract('config'),
   });
   const inviteMembersAccountId = useSettingsAccountId(paletteProjectDetail?.project?.account_id);
+  /**
+   * The open change requests, for the count on the "Review changes" row.
+   *
+   * Same query key the sidebar pill and the 'changes' page use
+   * (`changeRequestKeys.list`), so the three share one cache entry and one
+   * request. `enabled` on `open` keeps it off every route the palette merely
+   * mounts on.
+   */
+  const { data: openChangeRequests } = useQuery({
+    queryKey: changeRequestKeys.list(projectId ?? '', 'open'),
+    queryFn: () => fetchChangeRequests(projectId!, 'open'),
+    enabled: open && !!projectId,
+    staleTime: 5_000,
+  });
+  const openChangeRequestCount = openChangeRequests?.change_requests.length ?? 0;
   const sendToSession = useChatSendStore((state) => state.sendToSession);
   const currentProjectSession = projectSessionsList?.find(
     (session) => session.session_id === currentSessionId,
@@ -714,14 +1007,7 @@ export function CommandPalette() {
       result.push(href === item.href ? item : { ...item, href });
     }
     return result;
-  }, [
-    billingEnabled,
-    currentSessionId,
-    projectId,
-    selectedAccountId,
-    sidebarCtx,
-    projectFlags,
-  ]);
+  }, [billingEnabled, currentSessionId, projectId, selectedAccountId, sidebarCtx, projectFlags]);
 
   const filteredNavItems = useMemo(() => {
     if (!hasQuery) return allPaletteItems;
@@ -1196,7 +1482,9 @@ export function CommandPalette() {
   }, [detectedUrl, buildProxyUrl, subdomainOpts, close]);
 
   const handleToggleSidebar = useCallback(() => {
-    sidebarCtx?.toggleSidebar();
+    // Reached by keyboard, from a palette the user is already typing in — the
+    // panel must be there the moment the palette closes, not 240ms later.
+    sidebarCtx?.toggleSidebar({ instant: true });
     close();
   }, [sidebarCtx, close]);
 
@@ -1355,10 +1643,74 @@ export function CommandPalette() {
    * for it.
    */
   const handleInviteMembers = useCallback(() => {
-    if (!projectId || !inviteMembersAccountId) return;
-    router.push(`/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`);
+    if (!projectId) return;
+    // The account id comes from `paletteProjectDetail`, whose query is only
+    // `enabled` once the palette opens — so on the FIRST ⌘K it can still be in
+    // flight, and this used to return silently and leave the palette sitting
+    // open with nothing having happened. `/projects/<id>/members` exists to
+    // redirect to exactly this destination (it resolves the account id itself
+    // and appends the same `&project=` scoping), so the unresolved case costs
+    // one extra hop instead of the click doing nothing.
+    router.push(
+      inviteMembersAccountId
+        ? `/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`
+        : `/projects/${projectId}/members`,
+    );
     close();
   }, [close, projectId, inviteMembersAccountId, router]);
+
+  /**
+   * "Workspace members" — the same destination `handleInviteMembers` reaches,
+   * from the other half of the vocabulary. The account hub's Access pane
+   * scoped to this workspace IS the workspace roster: `/projects/<id>/members`
+   * exists only to redirect here (see that route), so linking it directly
+   * would cost a second navigation and paint the capabilities shell first.
+   *
+   * Two rows, one URL, deliberately: "invite" is a verb a person types when
+   * they want to add someone, "members" is a noun they type when they want to
+   * see who is already there. Both are true of this pane, and neither query
+   * had a correct answer before — "member" returned the project SETTINGS row
+   * and the organization roster, never the workspace one.
+   */
+  const handleOpenProjectMembers = handleInviteMembers;
+
+  const handleReviewChanges = useCallback(() => {
+    goToPage('changes');
+  }, [goToPage]);
+
+  /**
+   * Picking a change request off the 'changes' page. The palette closes so the
+   * detail dialog owns the screen, and `reopenPaletteRef` brings it back on
+   * the SAME page when the dialog closes — reviewing two change requests in a
+   * row is the normal case, and dropping back to `root` would make the second
+   * one cost a fresh search.
+   */
+  const handleSelectChangeRequest = useCallback(
+    (crId: string) => {
+      reopenPaletteRef.current = true;
+      close();
+      setSelectedCrId(crId);
+    },
+    [close],
+  );
+
+  const handleCloseChangeRequest = useCallback(() => {
+    setSelectedCrId(null);
+    if (!reopenPaletteRef.current) return;
+    reopenPaletteRef.current = false;
+    setOpen(true);
+    // After `setOpen(true)`, because the close already ran the effect that
+    // resets `page` to 'root'.
+    setPage('changes');
+    triggerBackScale();
+  }, [triggerBackScale]);
+
+  /** The 'flags' page's fallback when the caller may not write feature flags. */
+  const handleOpenFeatureFlagsSection = useCallback(() => {
+    if (!projectId) return;
+    router.push(`/projects/${projectId}/config?section=feature-flags`);
+    close();
+  }, [close, projectId, router]);
 
   const handleOverlayClose = useCallback(
     (set: (open: boolean) => void) => (overlayOpen: boolean) => {
@@ -1428,6 +1780,10 @@ export function CommandPalette() {
       compactSession: handleCompactSession,
       viewChanges: handleViewChanges,
       inviteMembers: handleInviteMembers,
+      openProjectMembers: handleOpenProjectMembers,
+      // Fallback only: SUBMENU_PAGE_BY_ID intercepts `review-changes` before
+      // the action branch runs — same arrangement as `conversationDensity`.
+      reviewChanges: handleReviewChanges,
       toggleSidebar: handleToggleSidebar,
       togglePanelMode: handleTogglePanelMode,
       // Fallback only: SUBMENU_PAGE_BY_ID intercepts `activity-density`
@@ -1451,6 +1807,8 @@ export function CommandPalette() {
       handleCompactSession,
       handleViewChanges,
       handleInviteMembers,
+      handleOpenProjectMembers,
+      handleReviewChanges,
       handleToggleSidebar,
       handleTogglePanelMode,
       goToPage,
@@ -1572,7 +1930,10 @@ export function CommandPalette() {
     if (page === 'accounts') return filteredAccountsList.length;
     if (page === 'sessions') return filteredProjectSessionsList.length;
     if (page === 'density') return filteredDensityOptions.length;
-    if (page === 'messages') return 0;
+    // 0, like 'messages': these pages fetch and filter their own rows, so the
+    // count lives inside them (the 'changes' group heading carries it) rather
+    // than being lifted here only to be recomputed.
+    if (page === 'messages' || page === 'changes' || page === 'flags') return 0;
     if (!hasQuery) return 0;
     return (
       filteredNavItems.length +
@@ -1606,6 +1967,8 @@ export function CommandPalette() {
     if (page === 'accounts') return 'Search accounts...';
     if (page === 'sessions') return 'Search sessions...';
     if (page === 'density') return 'Choose conversation density...';
+    if (page === 'changes') return 'Search change requests...';
+    if (page === 'flags') return 'Search feature flags...';
     return 'Search commands, sessions...';
   }, [page]);
 
@@ -1618,6 +1981,8 @@ export function CommandPalette() {
     if (page === 'accounts') return 'Switch Account';
     if (page === 'sessions') return 'Open Session';
     if (page === 'density') return 'Conversation Density';
+    if (page === 'changes') return 'Review changes';
+    if (page === 'flags') return 'Feature flags';
     return null;
   }, [page]);
 
@@ -1682,6 +2047,11 @@ export function CommandPalette() {
                                   <DisplayIcon className="size-4" />
                                 )}
                                 <span className="flex-1">{displayLabel}</span>
+                                {item.id === 'review-changes' && openChangeRequestCount > 0 && (
+                                  <span className="text-muted-foreground/40 text-xs tabular-nums">
+                                    {openChangeRequestCount}
+                                  </span>
+                                )}
                                 {item.shortcut && (
                                   <CommandShortcut>{item.shortcut}</CommandShortcut>
                                 )}
@@ -1890,6 +2260,11 @@ export function CommandPalette() {
                                 <SidebarIcon className="size-4" />
                               )}
                               <span className="flex-1">{displayLabel}</span>
+                              {item.id === 'review-changes' && openChangeRequestCount > 0 && (
+                                <span className="text-muted-foreground/40 text-xs tabular-nums">
+                                  {openChangeRequestCount}
+                                </span>
+                              )}
                               {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
                               {(isActiveTheme || isActiveWallpaper) && (
                                 <span className="text-primary/60 text-xs font-medium">Active</span>
@@ -2169,8 +2544,12 @@ export function CommandPalette() {
                   <CommandGroup
                     key={group.providerID}
                     heading={
-                      <span className="inline-flex items-center gap-1.5">
-                        <ProviderLogo providerID={group.providerID} size="small" />
+                      <span className="inline-flex items-center gap-2">
+                        {/* `xs`, not `small`: a group heading is one line of
+                            13px text, and the 32px tiled logo it used to carry
+                            was 2.5× its cap height — it read as a row of its
+                            own rather than a label on the rows below. */}
+                        <ProviderLogo providerID={group.providerID} size="xs" />
                         {group.providerName}
                       </span>
                     }
@@ -2190,21 +2569,29 @@ export function CommandPalette() {
                         >
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                             <span className="truncate text-sm">{model.modelName}</span>
-                            <span className="text-muted-foreground/40 truncate font-mono text-xs">
-                              {model.modelID}
-                            </span>
+                            {/* Only when it says something the name does not —
+                                see `modelIdAddsInformation`. Printed on every
+                                row, it was the display name again in
+                                kebab-case, and it doubled the height of a list
+                                that is scanned by name. */}
+                            {modelIdAddsInformation(model.modelName, model.modelID) && (
+                              <span className="text-muted-foreground/40 truncate font-mono text-xs">
+                                {model.modelID}
+                              </span>
+                            )}
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
-                            {model.capabilities?.reasoning && (
-                              <Badge variant="kortix" size="sm">
-                                reasoning
-                              </Badge>
-                            )}
-                            {model.capabilities?.vision && (
-                              <Badge variant="kortix" size="sm">
-                                vision
-                              </Badge>
-                            )}
+                            {/* Icons, not word badges. Two `reasoning`/`vision`
+                                pills competed with the model name for the eye
+                                on every row that had them, and the palette is
+                                scanned by name. Same component the model
+                                catalog in Customize uses, so a capability
+                                looks the same wherever it is shown. */}
+                            <ModelCapabilityIcons
+                              reasoning={model.capabilities?.reasoning}
+                              toolCall={model.capabilities?.toolcall}
+                              vision={model.capabilities?.vision}
+                            />
                             {isActive && <Check className="text-primary h-3.5 w-3.5" />}
                           </div>
                         </CommandItem>
@@ -2360,6 +2747,22 @@ export function CommandPalette() {
                 onSelect={handleJumpToMessage}
               />
             )}
+
+            {page === 'changes' && projectId && (
+              <ChangeRequestsPage
+                projectId={projectId}
+                query={query}
+                onSelect={handleSelectChangeRequest}
+              />
+            )}
+
+            {page === 'flags' && projectId && (
+              <FeatureFlagsPage
+                projectId={projectId}
+                query={query}
+                onNavigate={handleOpenFeatureFlagsSection}
+              />
+            )}
           </CommandList>
         </FadedScrollArea>
 
@@ -2405,6 +2808,15 @@ export function CommandPalette() {
             onOpenChange={handleOverlayClose(setDiffOpen)}
           />
         </>
+      )}
+
+      {/* The one consumer of `ProjectFilesContext` in this file — see
+          `ChangeRequestsPage`'s header for why the list does not need it and
+          this does. */}
+      {projectId && (
+        <ProjectFilesProvider value={{ projectId, ref: '' }}>
+          <ChangeRequestDetailDialog crId={selectedCrId} onClose={handleCloseChangeRequest} />
+        </ProjectFilesProvider>
       )}
 
       <AlertDialog open={logoutConfirmOpen} onOpenChange={handleOverlayClose(setLogoutConfirmOpen)}>

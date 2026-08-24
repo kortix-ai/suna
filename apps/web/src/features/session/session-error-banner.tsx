@@ -15,10 +15,9 @@ import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-st
 import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
 import {
-  WarningCircleIcon as AlertCircle,
-  CreditCardIcon as CreditCard,
+  CreditCardIcon,
+  LightningIcon,
   WarningCircleIcon,
-  LightningIcon as Zap,
 } from '@phosphor-icons/react';
 
 // ============================================================================
@@ -65,11 +64,11 @@ function UsageLimitCard({ errorText, className }: { errorText: string; className
   return (
     <Checkpoint className={className}>
       <CheckpointIcon>
-        <Zap className="size-4 shrink-0" />
+        <LightningIcon className="size-4 shrink-0" />
       </CheckpointIcon>
       <CheckpointLabel className="overflow-visible whitespace-normal">{errorText}</CheckpointLabel>
       <CheckpointTrigger onClick={openBilling}>
-        <Zap className="size-3" />
+        <LightningIcon className="size-3" />
         Upgrade plan
       </CheckpointTrigger>
     </Checkpoint>
@@ -103,11 +102,11 @@ function InsufficientCreditsCard({
   return (
     <Checkpoint className={className}>
       <CheckpointIcon>
-        <CreditCard className="size-4 shrink-0" />
+        <CreditCardIcon className="size-4 shrink-0" />
       </CheckpointIcon>
       <CheckpointLabel className="overflow-visible whitespace-normal">{label}</CheckpointLabel>
       <CheckpointTrigger onClick={openBilling}>
-        <Zap className="size-3" />
+        <LightningIcon className="size-3" />
         {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}
       </CheckpointTrigger>
       <CheckpointTrigger variant="outline" onClick={openBilling}>
@@ -288,7 +287,7 @@ export function TurnErrorDisplay({
     <div className={className}>
       <Checkpoint>
         <CheckpointIcon>
-          <AlertCircle className="text-muted-foreground size-4 shrink-0" />
+          <WarningCircleIcon className="text-muted-foreground size-4 shrink-0" />
         </CheckpointIcon>
         <CheckpointLabel className="overflow-visible whitespace-normal">{label}</CheckpointLabel>
       </Checkpoint>
@@ -327,7 +326,7 @@ export function SessionRetryDisplay({
         </ItemMedia>
         <ItemContent>
           <ItemTitle className="tabular-nums">
-            {title}
+            {title}{' '}
             <span className="text-muted-foreground font-normal">#{attempt}</span>
           </ItemTitle>
           <ItemDescription className={cn('text-pretty', !details && 'line-clamp-2')}>

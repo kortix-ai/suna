@@ -24,7 +24,6 @@ import {
   getSessionPreviewCandidates,
   getSessionTranscript,
   getSessionTurn,
-  getVoiceTranscript,
   listProjectSessions,
   listSessionPrompts,
   listSessionPublicShares,
@@ -253,7 +252,11 @@ test('ensureWarmProjectSession marks a freshly-created session fresh (reused: fa
 test('ensureWarmProjectSession forwards exclude_session_id in the request body when given', async () => {
   nextResponse = {
     status: 200,
-    body: { session: { session_id: 'WARM-2' }, reused: false, workspace_refresh: { status: 'skipped' } },
+    body: {
+      session: { session_id: 'WARM-2' },
+      reused: false,
+      workspace_refresh: { status: 'skipped' },
+    },
   };
   await ensureWarmProjectSession('P1', { excludeSessionId: 'JUST-TAKEN-1' });
   expect(last().body).toEqual({ exclude_session_id: 'JUST-TAKEN-1' });
@@ -262,7 +265,11 @@ test('ensureWarmProjectSession forwards exclude_session_id in the request body w
 test('ensureWarmProjectSession omits exclude_session_id when not given', async () => {
   nextResponse = {
     status: 200,
-    body: { session: { session_id: 'WARM-3' }, reused: false, workspace_refresh: { status: 'skipped' } },
+    body: {
+      session: { session_id: 'WARM-3' },
+      reused: false,
+      workspace_refresh: { status: 'skipped' },
+    },
   };
   await ensureWarmProjectSession('P1', {});
   expect(last().body).toEqual({});
@@ -373,7 +380,13 @@ test('getSessionAudit can poll approvals without refetching historical events', 
 test('getSessionTranscript builds the query string from limit/chars options', async () => {
   nextResponse = {
     status: 200,
-    body: { available: true, reason: null, opencode_session_id: 'ocs-1', message_count: 0, messages: [] },
+    body: {
+      available: true,
+      reason: null,
+      opencode_session_id: 'ocs-1',
+      message_count: 0,
+      messages: [],
+    },
   };
   await getSessionTranscript('P1', 'S1', { limit: 5, chars: 200 });
   expect(last().url).toContain('/projects/P1/sessions/S1/transcript?limit=5&chars=200');
@@ -471,19 +484,6 @@ test('getSessionTurn distinguishes a session that never ran a turn', async () =>
 test('getSessionTurn throws on a failed request', async () => {
   nextResponse = { status: 404, body: { error: 'Not found' } };
   expect(getSessionTurn('P1', 'S1')).rejects.toThrow();
-});
-
-test('getVoiceTranscript hits GET .../voice-transcript and builds the query string from cursor/limit', async () => {
-  nextResponse = {
-    status: 200,
-    body: { session_id: 'S1', call_id: 'S1', live: true, cursor: 3, count: 0, turns: [] },
-  };
-  await getVoiceTranscript('P1', 'S1', { cursor: 12, limit: 50 });
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/voice-transcript?cursor=12&limit=50');
-  expect(last().method).toBe('GET');
-
-  await getVoiceTranscript('P1', 'S1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/voice-transcript');
 });
 
 test('updateProjectSession PATCHes the name/metadata input', async () => {
@@ -666,18 +666,20 @@ function reloadStreamResponse(frames: string[], status = 200): Response {
 
 test('reloadProjectSessionConfigStream requests SSE and reports each server phase', async () => {
   const events: unknown[] = [];
-  const fetchStub = mock(async (_url: unknown, opts: { body?: string; headers?: HeadersInit } = {}) => {
-    expect(JSON.parse(opts.body ?? '{}')).toEqual({ refresh_repo: false });
-    expect(new Headers(opts.headers).get('accept')).toBe('text/event-stream');
-    return reloadStreamResponse([
-      ': heartbeat\n',
-      'data: {"type":"phase","phase":"checking-session"}\n\n',
-      'data: {"type":"phase","phase":"compiling-config"}\n\n',
-      'data: {"type":"phase","phase":"applying-config"}\n\n',
-      'data: {"type":"phase","phase":"confirming-config"}\n\n',
-      'data: {"type":"done","result":{"applied":true,"previous_etag":"a","etag":"b","repo_refreshed":false,"commit_sha":null,"agent_files":"not-requested","detail":"Reloaded"}}\n\n',
-    ]);
-  });
+  const fetchStub = mock(
+    async (_url: unknown, opts: { body?: string; headers?: HeadersInit } = {}) => {
+      expect(JSON.parse(opts.body ?? '{}')).toEqual({ refresh_repo: false });
+      expect(new Headers(opts.headers).get('accept')).toBe('text/event-stream');
+      return reloadStreamResponse([
+        ': heartbeat\n',
+        'data: {"type":"phase","phase":"checking-session"}\n\n',
+        'data: {"type":"phase","phase":"compiling-config"}\n\n',
+        'data: {"type":"phase","phase":"applying-config"}\n\n',
+        'data: {"type":"phase","phase":"confirming-config"}\n\n',
+        'data: {"type":"done","result":{"applied":true,"previous_etag":"a","etag":"b","repo_refreshed":false,"commit_sha":null,"agent_files":"not-requested","detail":"Reloaded"}}\n\n',
+      ]);
+    },
+  );
 
   const result = await reloadProjectSessionConfigStream(
     'P1',
@@ -716,13 +718,9 @@ test('reloadProjectSessionConfigStream preserves busy status, code, and reason',
     ]),
   );
 
-  const error = await reloadProjectSessionConfigStream(
-    'P1',
-    'S1',
-    {},
-    () => {},
-    { fetch: fetchStub as unknown as typeof fetch },
-  ).then(
+  const error = await reloadProjectSessionConfigStream('P1', 'S1', {}, () => {}, {
+    fetch: fetchStub as unknown as typeof fetch,
+  }).then(
     () => null,
     (value: unknown) => value as { status?: number; code?: string; data?: { reason?: string } },
   );

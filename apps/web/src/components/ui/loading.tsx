@@ -1,3 +1,4 @@
+import { STATUS_RING } from '@/components/ui/status-ring';
 import { cn } from '@/lib/utils';
 
 /**
@@ -7,8 +8,27 @@ import { cn } from '@/lib/utils';
  *              whole wheel advancing one spoke at a time rather than sweeping
  *              continuously. It holds up better than `orbit` at small sizes and
  *              beside text, because there is no thin arc head to lose track of.
+ * - `ring`   — `orbit`'s motion on the shared status geometry (`STATUS_RING`): the
+ *              SAME circle the `pending` status icon draws, so a todo starting
+ *              work does not swap to a fatter, larger disc. Reach for it
+ *              wherever a spinner sits in a column beside static status glyphs;
+ *              `orbit` stays the default everywhere else.
  */
-type LoadingVariant = 'orbit' | 'spokes';
+type LoadingVariant = 'orbit' | 'spokes' | 'ring';
+
+/**
+ * `spinner-dash` is written against the `orbit` circle: its keyframes step
+ * `stroke-dashoffset` through 58 → 14 → 58 against a hard-coded
+ * `stroke-dasharray: 62.83`, which is 2πr for orbit's r=10.
+ *
+ * `pathLength` is what lets a DIFFERENT circle reuse those numbers verbatim.
+ * It re-scales a path's own length to the value given, so declaring 62.83 on
+ * the r=6.3 ring (real circumference 39.58) makes every dash number in the CSS
+ * mean the same FRACTION of the ring it meant on orbit. Same breathing arc,
+ * same cadence, a third of the stroke weight — and no second keyframe block to
+ * keep in sync.
+ */
+const RING_PATH_LENGTH = 62.83;
 
 const SPOKE_COUNT = 8;
 /** Leading spoke is opaque, each one behind it a step fainter — that ramp IS
@@ -24,6 +44,40 @@ const Loading = ({
 }) => {
   const base =
     'text-foreground in-[button]:text-background in-data-[slot=button]:text-background in-[button.bg-transparent]:text-foreground in-[[data-slot=button].bg-transparent]:text-foreground in-[button.bg-secondary]:text-foreground! in-[[data-slot=button].bg-secondary]:text-foreground! size-4';
+
+  if (variant === 'ring') {
+    return (
+      <svg
+        className={cn(base, 'animate-spinner-orbit', className)}
+        viewBox={`0 0 ${STATUS_RING.BOX} ${STATUS_RING.BOX}`}
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        {/* Track. Held at the same 25% as `orbit`'s, so the arc reads as the
+            lit part of a ring rather than as a lone worm on empty space. */}
+        <circle
+          className="opacity-25"
+          cx={STATUS_RING.CENTER}
+          cy={STATUS_RING.CENTER}
+          r={STATUS_RING.RADIUS}
+          stroke="currentColor"
+          strokeWidth={STATUS_RING.STROKE}
+          pathLength={RING_PATH_LENGTH}
+        />
+        <circle
+          className="animate-spinner-dash"
+          cx={STATUS_RING.CENTER}
+          cy={STATUS_RING.CENTER}
+          r={STATUS_RING.RADIUS}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={STATUS_RING.STROKE}
+          strokeLinecap="round"
+          pathLength={RING_PATH_LENGTH}
+        />
+      </svg>
+    );
+  }
 
   if (variant === 'spokes') {
     return (

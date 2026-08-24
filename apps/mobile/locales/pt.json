@@ -1076,9 +1076,6 @@
     "galleryTitle": "Permissão da biblioteca de fotos necessária",
     "galleryMessage": "Ative o acesso à biblioteca de fotos em suas configurações para escolher imagens."
   },
-  "audio": {
-    "transcriptionFailed": "Falha ao transcrever o áudio. Por favor, tente novamente."
-  },
   "loading": {
     "threads": "Carregando bate-papos...",
     "triggers": "Carregando gatilhos..."

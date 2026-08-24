@@ -241,7 +241,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'channels',
     title: 'Kortix Channels',
     description:
-      'Connect Slack or Microsoft Teams to a Kortix project and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email and voice are in preview.',
+      'Connect Slack or Microsoft Teams to a Kortix project and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email is in preview.',
     htmlPath: '/channels',
     markdownPath: '/markdown/channels.md',
   },

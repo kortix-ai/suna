@@ -9,7 +9,7 @@ const JSON_HEADERS = { 'content-type': 'application/json' };
 const PROJECT_ID = '00000000-0000-4000-a000-0000000000aa';
 const ENV_KEYS = [
   'KORTIX_CONFIG_FILE',
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
 ];

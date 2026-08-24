@@ -2,11 +2,42 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   canMountSessionChat,
-  canShowSessionChat,
   findInitialSessionPin,
   gatedRuntimeError,
   resolveSessionContentState,
+  runtimeErrorPresentation,
+  sessionErrorSurfaceReady,
 } from './session-load-state';
+
+describe('runtimeErrorPresentation', () => {
+  const runtimeError = { status: 503, message: 'sandbox not ready' };
+
+  test('keeps a resolved conversation mounted and presents recovery inline', () => {
+    expect(
+      runtimeErrorPresentation({
+        chatSessionId: 'ses_root',
+        runtimeError,
+        runtimeBootError: 'daemon unavailable',
+      }),
+    ).toEqual({ replaceSession: false, inlineRecovery: true });
+  });
+
+  test('uses the full error surface when no conversation can render', () => {
+    expect(
+      runtimeErrorPresentation({ chatSessionId: null, runtimeError, runtimeBootError: null }),
+    ).toEqual({ replaceSession: true, inlineRecovery: false });
+  });
+
+  test('renders no recovery state when runtime errors are absent', () => {
+    expect(
+      runtimeErrorPresentation({
+        chatSessionId: 'ses_root',
+        runtimeError: null,
+        runtimeBootError: null,
+      }),
+    ).toEqual({ replaceSession: false, inlineRecovery: false });
+  });
+});
 
 describe('session load state', () => {
   test('uses the authorized project-session list as an initial transcript pin', () => {
@@ -40,13 +71,13 @@ describe('session load state', () => {
     ).toBe(false);
   });
 
-  test('shows the chat as soon as a transcript pin is available', () => {
+  test('a transcript pin alone does not end the boot shell', () => {
+    expect(sessionErrorSurfaceReady({ runtimeError: null, runtimeBootError: null })).toBe(false);
+  });
+
+  test('a settled runtime error ends the boot shell so the card can be read', () => {
     expect(
-      canShowSessionChat({
-        chatSessionId: 'opencode-cached',
-        runtimeError: null,
-        runtimeBootError: null,
-      }),
+      sessionErrorSurfaceReady({ runtimeError: new Error('gone'), runtimeBootError: null }),
     ).toBe(true);
   });
 
@@ -127,5 +158,64 @@ describe('session load state', () => {
   test('stays null with no runtime error, regardless of phase', () => {
     expect(gatedRuntimeError({ phase: 'ready', runtimeError: null })).toBeNull();
     expect(gatedRuntimeError({ phase: 'starting', runtimeError: null })).toBeNull();
+  });
+});
+
+describe('resolveSessionContentState — the transcript read, not the session object', () => {
+  const base = {
+    runtimeReady: true,
+    sessionFetched: true,
+    hasRuntimeSession: true,
+    hasMessages: false,
+    hasOptimisticPrompt: false,
+  };
+
+  /**
+   * The blank thread. The session GET is small and lands first; the message
+   * read is the big one and is the one that loses to a waking box. Treating the
+   * first as proof of the second rendered a full shell — header, composer,
+   * empty thread — over a session with a long history.
+   */
+  test('a session object with no transcript read yet is still loading', () => {
+    expect(resolveSessionContentState({ ...base, transcriptLoaded: false })).toEqual({
+      isNotFound: false,
+      isDataLoading: true,
+    });
+  });
+
+  test('a session that really has no messages renders its composer', () => {
+    expect(resolveSessionContentState({ ...base, transcriptLoaded: true })).toEqual({
+      isNotFound: false,
+      isDataLoading: false,
+    });
+  });
+
+  test('messages on screen are never hidden by a pending read', () => {
+    expect(
+      resolveSessionContentState({ ...base, hasMessages: true, transcriptLoaded: false }),
+    ).toEqual({ isNotFound: false, isDataLoading: false });
+  });
+
+  test('an optimistic prompt is content too, read or no read', () => {
+    expect(
+      resolveSessionContentState({ ...base, hasOptimisticPrompt: true, transcriptLoaded: false }),
+    ).toEqual({ isNotFound: false, isDataLoading: false });
+  });
+
+  test('a caller that does not track the read keeps the old rule', () => {
+    expect(resolveSessionContentState(base)).toEqual({
+      isNotFound: false,
+      isDataLoading: false,
+    });
+  });
+
+  test('not-found still wins — there is no session to wait for', () => {
+    expect(
+      resolveSessionContentState({
+        ...base,
+        hasRuntimeSession: false,
+        transcriptLoaded: false,
+      }),
+    ).toEqual({ isNotFound: true, isDataLoading: false });
   });
 });

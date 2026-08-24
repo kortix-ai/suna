@@ -77,32 +77,36 @@ describe('project Customize sidebar entry (the routed one)', () => {
     expect(fnSource('ProjectCustomizeNavItem')).toContain('useCapabilityTab(projectId)');
   });
 
-  test('probes every tab in TAB_PREFERENCE', () => {
-    // useProjectCan is a hook, so it cannot be called from a loop that
-    // short-circuits — the probes are written out one per tab. A tab added to
-    // TAB_PREFERENCE without its own probe line reads as permanently denied,
-    // and the row silently stops offering it.
+  test('probes every tab in TAB_PREFERENCE, in ONE batched request', () => {
+    // The probes used to be written out one `useProjectCan` per tab — seven
+    // hooks, and on the wire seven `GET …/effective?action=…` plus seven CORS
+    // preflights on every project page open, for one sidebar row (measured,
+    // essentia 2026-08-24). They now go through `useCans`, which sends the
+    // list to `effective:batch` and answers all of them from one response.
+    // The list is derived from TAB_PREFERENCE itself, so a tab added there is
+    // probed by construction — the old "forgot the probe line" failure mode
+    // is gone with the lines.
     // (Not fnSource(): useCapabilityTab is module-private, not exported.)
     const hookStart = SOURCE.indexOf('function useCapabilityTab');
     expect(hookStart).toBeGreaterThan(-1);
 
-    // The literal runs from the declaration to the hook that consumes it. Do
-    // NOT cut on the first `];` — the type annotation itself ends
-    // `CapabilityTab['key'];`, which lands inside the annotation and matched
-    // zero entries.
     const preference = SOURCE.slice(SOURCE.indexOf('const TAB_PREFERENCE'), hookStart);
     const tabCount = (preference.match(/key: '/g) ?? []).length;
+    expect(tabCount).toBe(CAPABILITY_TABS.length);
+
+    // The batch list is the preference list, verbatim.
+    expect(SOURCE).toContain('const TAB_ACTIONS = TAB_PREFERENCE.map((tab) => tab.action);');
 
     const hook = SOURCE.slice(hookStart, SOURCE.indexOf('\n}', hookStart));
-    const probeCount = (hook.match(/useProjectCan\(/g) ?? []).length;
-
-    expect(tabCount).toBe(CAPABILITY_TABS.length);
-    expect(probeCount).toBe(tabCount);
+    expect((hook.match(/useCans\(/g) ?? []).length).toBe(1);
+    expect(hook).toContain('useCans({ projectId }, TAB_ACTIONS)');
+    // And no single probes crept back in.
+    expect((hook.match(/useProjectCan\(/g) ?? []).length).toBe(0);
   });
 
   test('stays visible while a probe is loading', () => {
     // Optimistic until an explicit deny — same rule as ProjectFilesNavItem.
-    expect(SOURCE).toContain('p.allowed || p.isLoading');
+    expect(SOURCE).toContain('probe.allowed || probe.isLoading');
   });
 
   test('is gated on project.customize.read, on top of the per-tab read leaves', () => {

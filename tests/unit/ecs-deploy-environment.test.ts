@@ -55,7 +55,7 @@ describe('ECS task environment overrides', () => {
     ).toThrow();
   });
 
-  it('enables create-time secret arming on the dev API deployment', () => {
+  it('stages kpp2 off by default and requires an explicit full activation deploy', () => {
     const workflow = readFileSync(resolve(root, '.github/workflows/deploy-dev.yml'), 'utf8');
     const deployScript = readFileSync(resolve(root, 'infra/scripts/ecs-deploy.sh'), 'utf8');
     const snapshotBuilder = readFileSync(
@@ -71,9 +71,26 @@ describe('ECS task environment overrides', () => {
       'utf8',
     );
 
-    expect(apiDeploy).toContain(
-      `KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"true"}'`,
-    );
+    // Assert the KEY is staged off, not the exact serialization of the whole object.
+    // Pinning the full JSON made this test fail the moment the preview work
+    // added KORTIX_PREVIEW_BASE_DOMAIN alongside it — a correct config change
+    // read as a regression. What this test is here to protect is that dev's API
+    // task carries the explicit rollback value during rollout one. A manual
+    // full deploy is the only path that can enable it after rollout checks.
+    const overrides = apiDeploy.match(/KORTIX_ECS_ENV_OVERRIDES: >-\n\s+(\{.*\})/)?.[1];
+    expect(overrides).toBeDefined();
+    expect(JSON.parse(overrides!)).toMatchObject({
+      KORTIX_FAST_COLD_BOOT_ENABLED:
+        "${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && 'true' || 'false' }}",
+    });
+    expect(workflow).toContain('enable_fast_cold_boot:')
+    const activationInput = workflow.slice(
+      workflow.indexOf('enable_fast_cold_boot:'),
+      workflow.indexOf('# Cancel a superseded deploy'),
+    )
+    expect(activationInput).toContain('default: false')
+    expect(workflow).toContain("inputs.enable_fast_cold_boot && inputs.surface != 'all'")
+    expect(workflow).toContain('Activation requires surface=all')
     const apiFilter = workflow.slice(
       workflow.indexOf('            api:'),
       workflow.indexOf('            gateway:'),

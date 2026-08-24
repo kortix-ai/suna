@@ -29,6 +29,16 @@ for _arg in "$@"; do
   esac
 done
 
+# Instance identity for BACKGROUND work on the shared local Supabase. Worktrees
+# (`pnpm worktree`, scripts/worktree/lib/launch-env.ts) export their worktree
+# name; this primary stack is `primary`. With it set, the lifecycle drain hands
+# back commands whose sandbox another instance provisioned, env-sync fan-outs
+# skip foreign boxes, and the box reaper leaves them alone — so this stack's
+# quick-tunnel URL never lands in a worktree's sandbox (2026-08-22 incidents).
+# Launcher-only: deployed environments never set it (one KORTIX_URL) and every
+# scope check is then a no-op. See apps/api/src/projects/instance-scope.ts.
+export KORTIX_INSTANCE_ID="${KORTIX_INSTANCE_ID:-primary}"
+
 load_local_env() {
   # pnpm --filter runs each package from its own directory, where Bun/Next may
   # auto-load package .env files. Be explicit here: use the app env files for
@@ -221,7 +231,14 @@ start_tunnel_watchdog() {
       printf '%s' "$newurl" > "$TUNNEL_URL_FILE"
       touch "$TUNNEL_URL_FILE.rotated"
       echo "[dev] ✅ tunnel rotated: KORTIX_URL=$newurl (API restarting)"
-      pkill -f 'bun run --hot src/index.ts' 2>/dev/null || true
+      # Match on the script path ONLY. `pnpm --filter kortix-api dev` runs
+      # `dotenvx run … -- bun --no-env-file run --hot src/index.ts`, so the
+      # old `bun run --hot …` pattern stopped matching when #6260 inserted
+      # `--no-env-file` (2026-08-10). pkill -f matches a SUBSTRING of the
+      # full command line and exits 1 silently, so rotation printed
+      # "API restarting" while restarting nothing — every sandbox created
+      # after a rotation got a dead KORTIX_URL callback.
+      pkill -f -- '--hot src/index.ts' 2>/dev/null || true
     done
   ) &
   WATCHDOG_PID=$!

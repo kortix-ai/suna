@@ -13,7 +13,11 @@
 
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
+import {
+  platinumJson,
+  platinumJsonResponse,
+  isPlatinumConfigured,
+} from '../../shared/platinum';
 import {
   stageAgentBinaryGz,
   DEFAULT_CPU,
@@ -44,6 +48,7 @@ import {
   retryAfterMsFromError,
 } from './platinum-poll-classify';
 import { config } from '../../config';
+import { materializePlatinumTemplate } from './platinum-materialize';
 
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
@@ -52,6 +57,13 @@ const BUILD_ATTEMPTS = 3;
 const UPLOAD_ATTEMPTS = 3;
 const UPLOAD_MIN_TIMEOUT_MS = 10 * 60_000;
 const UPLOAD_TIMEOUT_MS_PER_GIB = 60_000;
+
+async function materializeReadyTemplate(externalId: string) {
+  return materializePlatinumTemplate(externalId, {
+    enabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
+    request: (path, init) => platinumJsonResponse(path, init),
+  });
+}
 // Platinum's POST /v1/templates/from-build hard-caps size_mb at this value (see
 // platinum apps/api/src/api/templates.ts ORG_MAX_SIZE_MB + the from-build zod).
 // The build ext4 is a FLOOR Platinum grows-to-fit, so clamping the build ceiling
@@ -202,6 +214,21 @@ interface PlatinumTemplate {
 }
 
 /**
+ * Narrow Platinum API dependency used by template discovery and the adapter.
+ * The production default delegates to the shared config-bound client. Tests can
+ * inject an isolated client without mutating process-wide environment state.
+ */
+export interface PlatinumClient {
+  isConfigured(): boolean;
+  json<T>(path: string, init?: RequestInit): Promise<T>;
+}
+
+const productionPlatinumClient: PlatinumClient = {
+  isConfigured: () => isPlatinumConfigured(),
+  json: <T>(path: string, init: RequestInit = {}) => platinumJson<T>(path, init),
+};
+
+/**
  * FIX-C: the template LIST endpoint (GET /v1/templates) is paginated (≤50 rows,
  * created_at DESC — see the module header). Reading only the first page turned an
  * older-but-live template on a >50-template org into a FALSE ABSENT → a needless
@@ -225,8 +252,11 @@ const TEMPLATES_PAGE_SIZE = 50;
  *  an exhausted/absent list. */
 const TEMPLATES_MAX_PAGES = 40; // 40 * 50 = 2000 templates
 
-async function fetchTemplatePage(offset: number): Promise<PlatinumTemplate[]> {
-  const rows = await platinumJson<PlatinumTemplate[]>(
+async function fetchTemplatePage(
+  offset: number,
+  client: PlatinumClient,
+): Promise<PlatinumTemplate[]> {
+  const rows = await client.json<PlatinumTemplate[]>(
     `/v1/templates?limit=${TEMPLATES_PAGE_SIZE}&offset=${offset}`,
   );
   if (!Array.isArray(rows)) {
@@ -248,13 +278,14 @@ async function fetchTemplatePage(offset: number): Promise<PlatinumTemplate[]> {
  */
 async function paginateTemplates<R>(
   onPage: (page: PlatinumTemplate[], all: PlatinumTemplate[]) => R | undefined,
+  client: PlatinumClient = productionPlatinumClient,
 ): Promise<{ early: R | undefined; all: PlatinumTemplate[] }> {
   const all: PlatinumTemplate[] = [];
   const seen = new Set<string>();
   for (let page = 0; page < TEMPLATES_MAX_PAGES; page++) {
     let rows: PlatinumTemplate[];
     try {
-      rows = await fetchTemplatePage(page * TEMPLATES_PAGE_SIZE);
+      rows = await fetchTemplatePage(page * TEMPLATES_PAGE_SIZE, client);
     } catch (err) {
       // Preserve the 401/403 signature end to end (getSnapshotState rethrows it;
       // the transition classifier recognizes it as permanent). Everything else is
@@ -280,8 +311,10 @@ async function paginateTemplates<R>(
 /** Full paginated template list. Throws PlatinumTemplateListingError on a page
  *  error / cap-hit — a partial or failed listing is NEVER returned as a shorter
  *  (falsely-complete) list. */
-async function fetchAllTemplates(): Promise<PlatinumTemplate[]> {
-  const { all } = await paginateTemplates(() => undefined);
+async function fetchAllTemplates(
+  client: PlatinumClient = productionPlatinumClient,
+): Promise<PlatinumTemplate[]> {
+  const { all } = await paginateTemplates(() => undefined, client);
   return all;
 }
 
@@ -296,8 +329,14 @@ const observeTemplates = shortLivedObservation(
  * absent"; a listing FAILURE throws PlatinumTemplateListingError (or the raw
  * 401/403) — callers must NOT treat that as absent.
  */
-export async function findTemplateByName(name: string): Promise<PlatinumTemplate | null> {
-  const { early } = await paginateTemplates<PlatinumTemplate>((page) => page.find((t) => t.name === name));
+export async function findTemplateByName(
+  name: string,
+  client: PlatinumClient = productionPlatinumClient,
+): Promise<PlatinumTemplate | null> {
+  const { early } = await paginateTemplates<PlatinumTemplate>(
+    (page) => page.find((t) => t.name === name),
+    client,
+  );
   return early ?? null;
 }
 
@@ -311,9 +350,12 @@ export async function findTemplateByName(name: string): Promise<PlatinumTemplate
  * as "not ready yet", same as any other not-yet-ready state, and let the
  * caller's deadline (not this single lookup) decide when to give up.
  */
-async function findTemplateById(id: string): Promise<PlatinumTemplate | null> {
+async function findTemplateById(
+  id: string,
+  client: PlatinumClient = productionPlatinumClient,
+): Promise<PlatinumTemplate | null> {
   try {
-    return await platinumJson<PlatinumTemplate>(`/v1/templates/${id}`);
+    return await client.json<PlatinumTemplate>(`/v1/templates/${id}`);
   } catch (err) {
     if (/ -> 404(?:\s|$)/.test(err instanceof Error ? err.message : String(err))) return null;
     throw err;
@@ -347,7 +389,12 @@ function pollBackoffMs(streak: number): number {
  * (defense against an idempotent-adopt returning a different template).
  * Standalone (not a class method) so it's directly unit-testable.
  */
-export async function waitForActive(name: string, tap?: BuildLogTap, id?: string): Promise<void> {
+export async function waitForActive(
+  name: string,
+  tap?: BuildLogTap,
+  id?: string,
+  client: PlatinumClient = productionPlatinumClient,
+): Promise<void> {
   const deadline = Date.now() + ACTIVATE_DEADLINE_MS;
   let last = 'unknown';
   let transientStreak = 0;
@@ -363,7 +410,7 @@ export async function waitForActive(name: string, tap?: BuildLogTap, id?: string
     try {
       // findTemplateById returns null ONLY on an explicit 404 (not-visible-yet);
       // every other transport/HTTP error propagates here to be classified.
-      tpl = id ? await findTemplateById(id) : await findTemplateByName(name);
+      tpl = id ? await findTemplateById(id, client) : await findTemplateByName(name, client);
       transientStreak = 0;
     } catch (err) {
       const cls = classifyPlatinumPollError(err);
@@ -533,11 +580,56 @@ export class UploadUrlRejectedError extends Error {
   }
 }
 
-class PlatinumAdapter implements SandboxProviderAdapter {
+const MALFORMED_BUILD_CAPACITY =
+  'Malformed Platinum template build capacity: expected integer values with 0 <= templates.used <= templates.cap and templates.cap >= 1';
+const MISSING_ATOMIC_ADMISSION =
+  'Platinum template builds require the atomic template admission capability';
+
+function parseSnapshotBuildCapacity(body: unknown): { used: number; cap: number } {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error(MALFORMED_BUILD_CAPACITY);
+  }
+  const templates = (body as Record<string, unknown>).templates;
+  if (!templates || typeof templates !== 'object' || Array.isArray(templates)) {
+    throw new Error(MALFORMED_BUILD_CAPACITY);
+  }
+  const { used, cap, atomicAdmission } = templates as Record<string, unknown>;
+  if (
+    typeof used !== 'number' ||
+    typeof cap !== 'number' ||
+    !Number.isSafeInteger(used) ||
+    !Number.isSafeInteger(cap) ||
+    used < 0 ||
+    cap < 1 ||
+    used > cap
+  ) {
+    throw new Error(MALFORMED_BUILD_CAPACITY);
+  }
+  if (atomicAdmission !== true) {
+    throw new Error(MISSING_ATOMIC_ADMISSION);
+  }
+  return { used, cap };
+}
+
+export class PlatinumAdapter implements SandboxProviderAdapter {
   readonly id = 'platinum' as const;
 
+  constructor(
+    private readonly materializeTemplate: (
+      externalId: string,
+    ) => Promise<unknown> = materializeReadyTemplate,
+    private readonly isPreparationEnabled: () => boolean = () =>
+      config.KORTIX_FAST_COLD_BOOT_ENABLED,
+    private readonly client: PlatinumClient = productionPlatinumClient,
+  ) {}
+
   isConfigured(): boolean {
-    return isPlatinumConfigured();
+    return this.client.isConfigured();
+  }
+
+  async getSnapshotBuildCapacity(): Promise<{ used: number; cap: number }> {
+    const body = await this.client.json<unknown>('/v1/auth/orgs/quota', { method: 'GET' });
+    return parseSnapshotBuildCapacity(body);
   }
 
   async buildSnapshot(input: BuildableTemplate, tap?: BuildLogTap): Promise<BuildSnapshotResult> {
@@ -600,7 +692,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       // uploadWithRetry re-presigns + retries on a transient S3 408/timeout/5xx
       // (see its doc comment) — context_s3_key below is whichever attempt won.
       const context_s3_key = await uploadWithRetry(
-        () => platinumJson<{ upload_url: string; context_s3_key: string }>(
+        () => this.client.json<{ upload_url: string; context_s3_key: string }>(
           '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
         ),
         tarPath,
@@ -608,7 +700,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
 
       const diskGb = Math.min(input.spec.diskGb ?? DEFAULT_DISK_GB, SANDBOX_SPEC_LIMITS.disk.max);
 
-      const registered = await platinumJson<PlatinumTemplate>('/v1/templates/from-build', {
+      const registered = await this.client.json<PlatinumTemplate>('/v1/templates/from-build', {
         method: 'POST',
         body: JSON.stringify({
           name: input.snapshotName,
@@ -635,7 +727,13 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       // PHASE 2 EXACT ID: from-build MUST hand back a non-empty template id. We
       // poll THAT id (never the truncated name list) — see waitForActive.
       const externalId = requireExternalTemplateId(registered?.id, `from-build for ${input.snapshotName}`);
-      await waitForActive(input.snapshotName, tap, externalId);
+      await waitForActive(input.snapshotName, tap, externalId, this.client);
+      await this.materializeTemplate(externalId).catch((error) => {
+        console.warn(
+          `[snapshots] platinum materialize ${externalId}: fail-open guard caught ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
       // FIX-B: hand the EXACT proven id back to the caller (ppwarm → transition
       // runner) — no name-list re-derivation downstream.
       return { externalTemplateId: externalId };
@@ -667,7 +765,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     try {
       // uploadWithRetry — streamed + retried on transient S3 failure; see buildOnce.
       const context_s3_key = await uploadWithRetry(
-        () => platinumJson<{ upload_url: string; context_s3_key: string }>(
+        () => this.client.json<{ upload_url: string; context_s3_key: string }>(
           '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
         ),
         gzPath,
@@ -677,7 +775,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       // path is OURS to specify (Platinum is file-agnostic); /usr/local/bin/kortix-agent
       // is where our runtime layer (dockerfile-layer.ts) installs it. mode 0100755 =
       // executable (debugfs `write` lands 0644 otherwise).
-      const patched = await platinumJson<PlatinumTemplate>('/v1/templates/from-patch', {
+      const patched = await this.client.json<PlatinumTemplate>('/v1/templates/from-patch', {
         method: 'POST',
         body: JSON.stringify({
           name: newSnapshotName,
@@ -688,7 +786,13 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       // PHASE 2 EXACT ID: from-patch MUST return a non-empty id — poll it, never
       // the name list.
       const externalId = requireExternalTemplateId(patched?.id, `from-patch for ${newSnapshotName}`);
-      await waitForActive(newSnapshotName, undefined, externalId);
+      await waitForActive(newSnapshotName, undefined, externalId, this.client);
+      await this.materializeTemplate(externalId).catch((error) => {
+        console.warn(
+          `[snapshots] platinum materialize ${externalId}: fail-open guard caught ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
       // FIX-B: return the exact patched-template id (same contract as buildSnapshot).
       return { externalTemplateId: externalId };
     } finally {
@@ -698,9 +802,9 @@ class PlatinumAdapter implements SandboxProviderAdapter {
   }
 
   async getSnapshotState(snapshotName: string): Promise<ProviderState> {
-    if (!isPlatinumConfigured()) return 'missing';
+    if (!this.client.isConfigured()) return 'missing';
     try {
-      const template = await findTemplateByName(snapshotName);
+      const template = await findTemplateByName(snapshotName, this.client);
       return template ? normalizeExistingProviderState(template.state) : 'missing';
     } catch (err) {
       // See isPlatinumAuthFailure's doc comment: a dead/revoked key must
@@ -709,6 +813,38 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       if (isPlatinumAuthFailure(err)) throw err;
       return 'unknown';
     }
+  }
+
+  async findFirstActiveSnapshot(names: readonly string[]): Promise<string | null> {
+    if (!this.client.isConfigured() || names.length === 0) return null;
+    const priorities = new Map(names.map((name, index) => [name, index]));
+    let bestIndex: number | null = null;
+    const { early } = await paginateTemplates<string>(
+      (page) => {
+        for (const template of page) {
+          const index = template.name ? priorities.get(template.name) : undefined;
+          if (
+            index !== undefined &&
+            normalizeExistingProviderState(template.state) === 'active' &&
+            (bestIndex === null || index < bestIndex)
+          ) {
+            bestIndex = index;
+          }
+        }
+        // No later page can improve on the caller's first candidate.
+        return bestIndex === 0 ? names[0] : undefined;
+      },
+      this.client,
+    );
+    return early ?? (bestIndex === null ? null : names[bestIndex]!);
+  }
+
+  async prepareSnapshot(snapshotName: string): Promise<void> {
+    if (!this.isPreparationEnabled() || !this.client.isConfigured()) return;
+    const template = await findTemplateByName(snapshotName, this.client);
+    if (!template || normalizeExistingProviderState(template.state) !== 'active') return;
+    const externalId = requireExternalTemplateId(template.id, `template lookup for ${snapshotName}`);
+    await this.materializeTemplate(externalId);
   }
 
   /**
@@ -722,9 +858,9 @@ class PlatinumAdapter implements SandboxProviderAdapter {
    * transition record + reconciler re-verification.
    */
   async getSnapshotExternalId(snapshotName: string): Promise<string | null> {
-    if (!isPlatinumConfigured()) return null;
+    if (!this.client.isConfigured()) return null;
     try {
-      const template = await findTemplateByName(snapshotName);
+      const template = await findTemplateByName(snapshotName, this.client);
       return template?.id ?? null;
     } catch {
       return null;
@@ -741,10 +877,10 @@ class PlatinumAdapter implements SandboxProviderAdapter {
    * re-verify an activated transition against its recorded id.
    */
   async getSnapshotStateByExternalId(externalId: string): Promise<ProviderState> {
-    if (!isPlatinumConfigured()) return 'missing';
+    if (!this.client.isConfigured()) return 'missing';
     if (!externalId || externalId.trim() === '') return 'missing';
     try {
-      const template = await findTemplateById(externalId);
+      const template = await findTemplateById(externalId, this.client);
       return template ? normalizeExistingProviderState(template.state) : 'missing';
     } catch (err) {
       if (isPlatinumAuthFailure(err)) throw err;
@@ -753,17 +889,20 @@ class PlatinumAdapter implements SandboxProviderAdapter {
   }
 
   async deleteSnapshot(snapshotName: string): Promise<void> {
-    if (!isPlatinumConfigured()) return;
+    if (!this.client.isConfigured()) return;
     observeTemplates.invalidate();
     try {
-      const tpl = await findTemplateByName(snapshotName);
-      if (!tpl) return;
-      await platinumJson(`/v1/templates/${tpl.id}`, { method: 'DELETE' });
-    } catch (err) {
-      // A lookup/delete race is equivalent to already gone. Provider outages
-      // must propagate so fan-out reports this provider as failed.
-      if (!/ -> 404(?:\s|$)/.test(err instanceof Error ? err.message : String(err))) {
-        throw err;
+      const matches = (await fetchAllTemplates(this.client)).filter((template) => template.name === snapshotName);
+      for (const template of matches) {
+        try {
+          await this.client.json(`/v1/templates/${template.id}`, { method: 'DELETE' });
+        } catch (err) {
+          // A lookup/delete race is equivalent to already gone. Provider
+          // outages must propagate so fan-out reports this provider as failed.
+          if (!/ -> 404(?:\s|$)/.test(err instanceof Error ? err.message : String(err))) {
+            throw err;
+          }
+        }
       }
     } finally {
       observeTemplates.invalidate();
@@ -771,12 +910,12 @@ class PlatinumAdapter implements SandboxProviderAdapter {
   }
 
   async listSnapshots(): Promise<Array<{ name: string }>> {
-    if (!isPlatinumConfigured()) return [];
+    if (!this.client.isConfigured()) return [];
     // FIX-C: walk the FULL paginated list — the reaper needs every superseded
     // ppwarm image, not just the first 50 (created_at DESC), or an older tip past
     // page 1 lingers forever. A listing FAILURE throws (never returns a truncated
     // list the caller would mistake for "these are all the templates").
-    return (await fetchAllTemplates())
+    return (await fetchAllTemplates(this.client))
       .map((template) => template.name)
       .filter((name): name is string => !!name)
       .map((name) => ({ name }));

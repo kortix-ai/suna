@@ -49,15 +49,15 @@ import {
   CaretDownIcon,
   CodeSimpleIcon as Code2,
   FileArrowDownIcon as FileDown,
-  FolderOpenIcon as FolderOpen,
-  GlobeIcon as Globe,
+  FolderSimpleIcon,
+  GlobeSimpleIcon,
   StackIcon as Layers,
   SidebarSimpleIcon as PanelLeft,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
   SquareIcon as Square,
-  TerminalWindowIcon as SquareTerminal,
+  TerminalIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -72,9 +72,9 @@ const DEV_TOOLS: {
   label: string;
   Icon: React.ComponentType<{ className?: string }>;
 }[] = [
-  { view: 'terminal', label: 'Terminal', Icon: SquareTerminal },
-  { view: 'browser', label: 'Browser', Icon: Globe },
-  { view: 'files', label: 'Files', Icon: FolderOpen },
+  { view: 'terminal', label: 'Terminal', Icon: TerminalIcon },
+  { view: 'browser', label: 'Browser', Icon: GlobeSimpleIcon },
+  { view: 'files', label: 'Files', Icon: FolderSimpleIcon },
 ];
 
 interface SessionSiteHeaderProps {

@@ -41,6 +41,7 @@ async function runProviderCase(input: {
       KORTIX_NO_UPDATE_CHECK: '1',
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       KORTIX_CONFIG_FILE: join(directory, 'config.json'),
+      KORTIX_TOKEN: undefined,
       NO_COLOR: '1',
       FORCE_COLOR: '0',
     },

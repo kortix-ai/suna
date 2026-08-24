@@ -200,7 +200,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
   });
 
   test('an LLM-gateway mode flip still asks for a reload', async () => {
-    // Toggling this changes the daemon-side KORTIX_LLM_API_KEY / BASE_URL /
+    // Toggling this changes the daemon-side KORTIX_TOKEN / BASE_URL /
     // OPENCODE_DENY_ENV triple — the "gateway URL, model tokens/keys" case
     // named directly in the task.
     await prompt();

@@ -15,7 +15,7 @@ Based on the result, follow the **Fillable Fields** or **Non-Fillable Fields** p
 2. Spawn one subagent per form — each follows this workflow independently
 3. Each subagent reads data from files and fills its assigned form end-to-end
 
-If you need to fill multiple forms, delegate to subagents immediately. Do NOT attempt to fill them all sequentially — it is slow and error-prone.
+If you are the top-level agent with multiple forms, delegate to subagents immediately rather than filling them all sequentially. If you are already a subagent, fill your assigned form yourself — subagents cannot spawn further subagents (the runtime rejects nested spawns).
 
 ---
 

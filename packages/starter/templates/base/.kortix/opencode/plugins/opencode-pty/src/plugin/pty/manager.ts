@@ -1,6 +1,6 @@
-import type { OpencodeClient } from '@opencode-ai/sdk'
 import { accessSync, constants } from 'node:fs'
 import { delimiter, join } from 'node:path'
+import type { PluginClient } from '../types.ts'
 import { RingBuffer } from './buffer.ts'
 import { SessionLifecycleManager } from './session-lifecycle.ts'
 import type { PTYSession, PTYSessionInfo, ReadResult, SearchResult, SpawnOptions } from './types.ts'
@@ -55,7 +55,7 @@ function notifyRawOutput(session: PTYSessionInfo, rawData: string): void {
   }
 }
 
-let _client: OpencodeClient | null = null
+let _client: PluginClient | null = null
 let _directory = process.cwd()
 let _httpBase = 'http://127.0.0.1:4096'
 let _wsBase = 'ws://127.0.0.1:4096'
@@ -128,7 +128,7 @@ class PTYManager {
   private sessions = new Map<string, PTYSession>()
   private localSessions = new SessionLifecycleManager()
 
-  init(client: OpencodeClient, serverUrl?: URL, directory?: string): void {
+  init(client: PluginClient, serverUrl?: URL, directory?: string): void {
     _client = client
     if (directory) _directory = directory
     _httpBase = normalizeBase(serverUrl, 'http')

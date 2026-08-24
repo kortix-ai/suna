@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { planAnchorMessageId } from './plan-anchor';
+import { chatPlanAnchorId, planAnchorMessageId, planBelongsToChat } from './plan-anchor';
+import type { PlanSurfaceState } from './plan-anchor';
 
 type Msg = Parameters<typeof planAnchorMessageId>[0][number];
 
@@ -91,5 +92,85 @@ describe('planAnchorMessageId', () => {
 
     // No user message owned that write, so the fallback (last user) applies.
     expect(planAnchorMessageId(messages)).toBe('u1');
+  });
+});
+
+/**
+ * "Exactly one plan surface" — the rule `PlanPanelCard` and the transcript
+ * card both obey, through `usePlanInChat`.
+ *
+ * The desktop cases below pin a PRODUCT decision, not a bug fix. An earlier
+ * version handed the plan back to the transcript whenever the panel column was
+ * off screen (collapsed, covered by a detail panel, Advanced mode). That is
+ * deliberately gone: on desktop the plan lives in the Easy panel and nowhere
+ * else, so it never hops surfaces as the user toggles a panel or opens a file.
+ * A test here failing after someone re-adds a visibility branch is the point.
+ */
+describe('planBelongsToChat', () => {
+  test('desktop: the Easy panel owns the plan', () => {
+    expect(planBelongsToChat({ isMobile: false })).toBe(false);
+  });
+
+  test('mobile: the transcript owns the plan', () => {
+    // Structural, not a fallback — under 768px `session-action-panel-column`
+    // returns null, so no panel column exists at any time.
+    expect(planBelongsToChat({ isMobile: true })).toBe(true);
+  });
+
+  test('the surface is decided by viewport ALONE — panel state cannot move it', () => {
+    // The guard against re-adding a `panelOpen` / `detailOpen` / `panelMode`
+    // branch: extra state on the input must not change the answer, because a
+    // collapsed or covered panel on desktop is a hidden plan ON PURPOSE.
+    const withPanelHidden = {
+      isMobile: false,
+      panelOpen: false,
+      detailOpen: true,
+      panelMode: 'advanced',
+    } as PlanSurfaceState;
+
+    expect(planBelongsToChat(withPanelHidden)).toBe(false);
+  });
+
+  test('exactly one surface draws the plan at each width', () => {
+    // Never both (one live checklist rendered twice), never neither (a session
+    // that shows no plan at all).
+    for (const isMobile of [false, true]) {
+      const chatDraws = planBelongsToChat({ isMobile });
+      const panelDraws = !chatDraws;
+      expect(chatDraws !== panelDraws).toBe(true);
+    }
+  });
+});
+
+/**
+ * The transcript half. `chatPlanAnchorId` only asks WHICH turn once
+ * `planBelongsToChat` has said the chat is drawing it at all.
+ */
+describe('chatPlanAnchorId', () => {
+  const messages = [user('u1'), assistant('a1', ['todowrite']), user('u2')];
+
+  test('the panel owns the plan: no turn claims it', () => {
+    // Null matches no message id, so every `ownsPlan` downstream is false and
+    // the user bubble's column cap relaxes back to `max-w-[80%]` with it.
+    expect(chatPlanAnchorId(messages, false)).toBeNull();
+  });
+
+  test('the chat owns the plan: the same anchor as before the panel existed', () => {
+    expect(chatPlanAnchorId(messages, true)).toBe('u1');
+    expect(chatPlanAnchorId(messages, true)).toBe(planAnchorMessageId(messages));
+  });
+
+  test('no transcript yet is null either way', () => {
+    expect(chatPlanAnchorId(null, true)).toBeNull();
+    expect(chatPlanAnchorId(undefined, true)).toBeNull();
+    expect(chatPlanAnchorId([], true)).toBeNull();
+  });
+
+  test('the scan is skipped entirely when the panel owns the plan', () => {
+    // The gate wraps the walk rather than sitting beside it: on a long session
+    // `planAnchorMessageId` inspects every part of every message, and that is
+    // work with no consumer while the panel is drawing.
+    const huge = Array.from({ length: 500 }, (_, i) => user(`u${i}`));
+    expect(chatPlanAnchorId(huge, false)).toBeNull();
   });
 });

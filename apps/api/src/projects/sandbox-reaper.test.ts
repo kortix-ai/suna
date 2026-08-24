@@ -190,13 +190,15 @@ const visitStamps = () => updateCalls.filter(isVisitStamp);
 // `mock.module` is process-global in bun, so a factory returning only `{ config }`
 // strips every other named export (e.g. SANDBOX_VERSION) for every sibling suite
 // in the same process — which is what made this whole directory unrunnable.
-mock.module('../config', () =>
-  mockConfigModule({
-    KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
-    KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
-    ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
-  }),
-);
+// Hoisted so a test can flip `KORTIX_INSTANCE_ID` at call time (the
+// instance-scope helper reads config per call, never at import).
+const reaperConfigModule = mockConfigModule({
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
+  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
+  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
+});
+const reaperConfig = reaperConfigModule.config as Record<string, unknown>;
+mock.module('../config', () => reaperConfigModule);
 
 mock.module('../shared/db', () => ({
   db: {
@@ -759,6 +761,69 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     ).toBe(true);
   });
 
+  test('INSTANCE SCOPE: a box stamped by ANOTHER API instance is never probed or stopped here', async () => {
+    // Shared local DB (projects/instance-scope.ts): instance A must never stop
+    // instance B's boxes, however expired they look from here.
+    reaperConfig.KORTIX_INSTANCE_ID = 'wt-a';
+    try {
+      candidates = [
+        candidate({
+          deadlineAt: new Date(NOW.getTime() - 1),
+          metadata: { instanceId: 'primary' },
+        }),
+      ];
+      statusByExternal['ext-1'] = 'running';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(statusCalls).toEqual([]);
+      expect(stops).toEqual([]);
+      expect(r.stopped).toBe(0);
+      expect(
+        updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+      ).toBe(false);
+    } finally {
+      delete reaperConfig.KORTIX_INSTANCE_ID;
+    }
+  });
+
+  test('INSTANCE SCOPE: own-stamped and legacy (unstamped) boxes are reaped as before', async () => {
+    reaperConfig.KORTIX_INSTANCE_ID = 'wt-a';
+    try {
+      candidates = [
+        candidate({ deadlineAt: new Date(NOW.getTime() - 1), metadata: { instanceId: 'wt-a' } }),
+        candidate({
+          sandboxId: 'sb-2',
+          sessionId: 'sess-2',
+          externalId: 'ext-2',
+          deadlineAt: new Date(NOW.getTime() - 1),
+          metadata: null,
+        }),
+      ];
+      statusByExternal['ext-1'] = 'running';
+      statusByExternal['ext-2'] = 'running';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(stops.sort()).toEqual(['ext-1', 'ext-2']);
+      expect(r.stopped).toBe(2);
+    } finally {
+      delete reaperConfig.KORTIX_INSTANCE_ID;
+    }
+  });
+
+  test('INSTANCE SCOPE off (unset): a foreign-looking stamp changes nothing', async () => {
+    candidates = [
+      candidate({ deadlineAt: new Date(NOW.getTime() - 1), metadata: { instanceId: 'primary' } }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(stops).toEqual(['ext-1']);
+    expect(r.stopped).toBe(1);
+  });
+
   test('a box with an observed turn SURVIVES — its deadline is still ahead', async () => {
     candidates = [candidate({ deadlineAt: new Date(NOW.getTime() + 4 * HOUR) })];
     statusByExternal['ext-1'] = 'running';
@@ -1181,10 +1246,19 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     ]);
   });
 
-  test('a JUST-ACCEPTED record is not orphaned yet, whatever the daemon says', async () => {
+  test('a JUST-ACCEPTED record is not orphaned yet — and its clear DEFERS, never swallows', async () => {
     // "User message on record, no assistant message, root idle" is also what
     // the moments between OpenCode ACKing a prompt and starting it look like.
     // Redelivering into that window runs the user's prompt twice.
+    //
+    // EXPECTATION CHANGED 2026-08-20 (live incident, Essentia session
+    // d1b74954): this used to CLEAR the record while skipping the redelivery.
+    // Clearing deletes the record — the only thing that can ever trigger the
+    // redelivery — so a terminal observation landing inside the age floor was
+    // a one-shot race that swallowed the prompt for good (cleared `unknown` at
+    // age 27s, 3s under the floor, never answered). Now the young orphan
+    // DEFERS: nothing is cleared, nothing is redelivered, and the next pass
+    // (~20s later) decides with the age check satisfied.
     candidates = [
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
@@ -1205,7 +1279,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     await reapAndReconcileSandboxes(NOW);
 
-    expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'active-token' }]);
+    expect(clearedTurnCalls).toEqual([]);
     expect(promptRedeliveries).toEqual([]);
   });
 
@@ -2382,9 +2456,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     ).toBe(true);
   });
 
-  test('a second stopped read one pass later parks the box exactly as before', async () => {
+  test('a stopped read after the confirmation window parks the box', async () => {
+    // Was "one pass later" (20s), which parked under the old 15s window. The
+    // window is now 60s — sized to outlast a real provider transition after one
+    // parked a healthy box mid-turn on 2026-08-21 — so a genuine park takes a
+    // few passes instead of one. Same behaviour, later: the marker must be
+    // older than MIDTURN_STOP_CONFIRMATION_MS, not merely older than a pass.
     candidates = [
-      midTurnCandidate({}, { pendingStopObservedAtMs: NOW.getTime() - 20_000 }),
+      midTurnCandidate({}, { pendingStopObservedAtMs: NOW.getTime() - 90_000 }),
     ];
     statusByExternal['ext-1'] = 'stopped';
 
@@ -2395,6 +2474,38 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(pausedCompute).toEqual(['sb-1']);
     // The park still settles the turns it erases authority for.
     expect(ledgerSettleStatements.some((s) => s.includes('runtime_gone'))).toBe(true);
+  });
+
+  test('a stopped read INSIDE the window does not park — the turn survives', async () => {
+    // The 2026-08-21 shape exactly: a second stopped read 20s after the first,
+    // while the provider was still transitioning. Under the old window this
+    // parked the box and settled a live turn `runtime_gone`; the box reported
+    // running ten seconds later.
+    // Future deadline on purpose: with an expired one the box parks under the
+    // deadline rule and this would assert nothing about the stop guard.
+    candidates = [
+      midTurnCandidate(
+        { deadlineAt: new Date(NOW.getTime() + HOUR) },
+        { pendingStopObservedAtMs: NOW.getTime() - 20_000 },
+      ),
+    ];
+    statusByExternal['ext-1'] = 'stopped';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    // Not reconciled and not paused IS "the turn survives": the park is the only
+    // thing in this path that erases turn authority and settles `runtime_gone`.
+    // Asserting on the ledger statements directly would be wrong here — other
+    // lanes in the same pass settle unrelated boxes, so that log says nothing
+    // about THIS candidate.
+    expect(r.reconciled).toBe(0);
+    expect(pausedCompute).toEqual([]);
+    // The suspicion is kept, not discarded: a genuine stop still parks later.
+    expect(
+      rowUpdates().some((c) =>
+        describeSql(c.updates.metadata).includes('pendingStopObservedAtMs'),
+      ),
+    ).toBe(true);
   });
 
   test('a running read between the two clears the pending marker', async () => {

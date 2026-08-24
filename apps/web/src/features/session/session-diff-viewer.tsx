@@ -3,11 +3,16 @@
 import { useTranslations } from 'next-intl';
 
 import { DiffView } from '@/components/diff/diff-view';
+import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat, STATUS_TEXT, StatusBadge } from '@/components/ui/status';
-import { useRuntimeMessages, useRuntimeSessionDiff } from '@kortix/sdk/react';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { useSessionChanges } from '@/features/session/session-changes-shared';
 import { cn } from '@/lib/utils';
-import type { ApplyPatchFile, FileDiff } from '@/ui/types';
+import type { FileDiff } from '@/ui/types';
 import {
   CaretDownIcon as ChevronDown,
   CaretRightIcon as ChevronRight,
@@ -92,7 +97,7 @@ function FileDiffCard({
     : '';
 
   return (
-    <div className="border-border/50 bg-card overflow-hidden rounded-2xl border">
+    <div className="border-border/50 bg-card overflow-hidden rounded-md border">
       {/* File header */}
       <button
         onClick={() => hasDiffContent && setExpanded(!expanded)}
@@ -157,12 +162,14 @@ function DiffSummaryBar({
   onViewModeChange,
   isFullscreen,
   onToggleFullscreen,
+  reserveCloseGutter,
 }: {
   diffs: FileDiff[];
   viewMode: 'unified' | 'split';
   onViewModeChange: (mode: 'unified' | 'split') => void;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  reserveCloseGutter?: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const totals = useMemo(() => {
@@ -181,70 +188,104 @@ function DiffSummaryBar({
     return { additions, deletions, added, deleted, modified };
   }, [diffs]);
 
+  const unifiedLabel = tHardcodedUi.raw(
+    'componentsSessionSessionDiffViewer.line186JsxAttrTitleUnifiedView',
+  );
+  const splitLabel = tHardcodedUi.raw(
+    'componentsSessionSessionDiffViewer.line198JsxAttrTitleSideBySideView',
+  );
+  const fullscreenLabel = isFullscreen ? 'Exit fullscreen' : 'Fullscreen';
+
   return (
-    <div className="border-border/40 bg-muted/20 flex w-full items-center gap-3 border-b px-4 py-2.5 pr-12">
+    <div
+      className={cn(
+        'border-border/40 bg-muted/20 flex w-full items-center gap-3 border-b px-4 py-2.5',
+        // Only the modal mount has a floating close button to clear.
+        reserveCloseGutter && 'pr-14',
+      )}
+    >
       <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
         {diffs.length} {diffs.length === 1 ? 'file' : 'files'} changed
       </span>
-      <div className="flex shrink-0 items-center gap-2 text-xs whitespace-nowrap">
+      <div className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap">
         {totals.added > 0 && (
-          <span className={cn('flex items-center gap-1', STATUS_TEXT.success)}>
+          <span className={cn('flex items-center gap-1 tabular-nums', STATUS_TEXT.success)}>
             <FilePlus2 className="size-3" /> {totals.added}
           </span>
         )}
         {totals.modified > 0 && (
-          <span className={cn('flex items-center gap-1', STATUS_TEXT.info)}>
+          <span className={cn('flex items-center gap-1 tabular-nums', STATUS_TEXT.info)}>
             <FileEdit className="size-3" /> {totals.modified}
           </span>
         )}
         {totals.deleted > 0 && (
-          <span className={cn('flex items-center gap-1', STATUS_TEXT.destructive)}>
+          <span className={cn('flex items-center gap-1 tabular-nums', STATUS_TEXT.destructive)}>
             <FileX2 className="size-3" /> {totals.deleted}
           </span>
         )}
         <span className="text-muted-foreground/50 mx-1">|</span>
-        <DiffStat additions={totals.additions} deletions={totals.deletions} />
+        <DiffStat
+          additions={totals.additions}
+          deletions={totals.deletions}
+          className="tabular-nums"
+        />
 
-        {/* View mode toggle */}
+        {/* View mode toggle — a two-state group, so each control reports its
+            own pressed state instead of relying on colour alone. */}
         <span className="text-muted-foreground/50 mx-1">|</span>
-        <button
-          onClick={() => onViewModeChange('unified')}
-          className={cn(
-            'cursor-pointer rounded p-1 transition-colors',
-            viewMode === 'unified'
-              ? 'text-foreground bg-muted/60'
-              : 'text-muted-foreground/50 hover:text-muted-foreground',
-          )}
-          title={tHardcodedUi.raw(
-            'componentsSessionSessionDiffViewer.line186JsxAttrTitleUnifiedView',
-          )}
-        >
-          <Rows2 className="size-3.5" />
-        </button>
-        <button
-          onClick={() => onViewModeChange('split')}
-          className={cn(
-            'cursor-pointer rounded p-1 transition-colors',
-            viewMode === 'split'
-              ? 'text-foreground bg-muted/60'
-              : 'text-muted-foreground/50 hover:text-muted-foreground',
-          )}
-          title={tHardcodedUi.raw(
-            'componentsSessionSessionDiffViewer.line198JsxAttrTitleSideBySideView',
-          )}
-        >
-          <Columns2 className="size-3.5" />
-        </button>
+        <Hint label={unifiedLabel} side="bottom">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={unifiedLabel}
+            aria-pressed={viewMode === 'unified'}
+            onClick={() => onViewModeChange('unified')}
+            className={cn(
+              'active:scale-[0.96]',
+              viewMode === 'unified'
+                ? 'text-foreground bg-muted/60'
+                : 'text-muted-foreground/70 hover:text-foreground',
+            )}
+          >
+            <Rows2 className="size-3.5" />
+          </Button>
+        </Hint>
+        <Hint label={splitLabel} side="bottom">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={splitLabel}
+            aria-pressed={viewMode === 'split'}
+            onClick={() => onViewModeChange('split')}
+            className={cn(
+              'active:scale-[0.96]',
+              viewMode === 'split'
+                ? 'text-foreground bg-muted/60'
+                : 'text-muted-foreground/70 hover:text-foreground',
+            )}
+          >
+            <Columns2 className="size-3.5" />
+          </Button>
+        </Hint>
 
         {/* Fullscreen toggle */}
         {onToggleFullscreen && (
-          <button
-            onClick={onToggleFullscreen}
-            className="text-muted-foreground/50 hover:text-muted-foreground cursor-pointer rounded p-1 transition-colors"
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          >
-            {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-          </button>
+          <Hint label={fullscreenLabel} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={fullscreenLabel}
+              aria-pressed={!!isFullscreen}
+              onClick={onToggleFullscreen}
+              className="text-muted-foreground/70 hover:text-foreground active:scale-[0.96]"
+            >
+              {isFullscreen ? (
+                <Minimize2 className="size-3.5" />
+              ) : (
+                <Maximize2 className="size-3.5" />
+              )}
+            </Button>
+          </Hint>
         )}
       </div>
     </div>
@@ -252,175 +293,96 @@ function DiffSummaryBar({
 }
 
 // ============================================================================
-// Extract diffs from message tool parts (fallback)
-// ============================================================================
-
-const EDIT_TOOLS = new Set(['edit', 'morph_edit']);
-const PATCH_TOOLS = new Set(['apply_patch']);
-
-function extractDiffsFromMessages(
-  messages: Array<{ info: { role: string }; parts: Array<any> }> | undefined,
-): FileDiff[] {
-  if (!messages) return [];
-
-  // Track last known state per file so we can build the cumulative diff
-  const fileMap = new Map<string, { before: string; after: string }>();
-
-  for (const msg of messages) {
-    for (const part of msg.parts) {
-      if (part.type !== 'tool') continue;
-      const state = part.state;
-      if (!state || (state.status !== 'completed' && state.status !== 'running')) continue;
-
-      const toolName: string = part.tool ?? '';
-      const input = state.input ?? {};
-      const metadata = (state.metadata as Record<string, unknown>) ?? {};
-
-      if (EDIT_TOOLS.has(toolName)) {
-        const filePath = (input.filePath as string) || '';
-        if (!filePath) continue;
-        const filediff = metadata.filediff as Record<string, unknown> | undefined;
-        const before = (filediff?.before as string) ?? (input.oldString as string) ?? '';
-        const after = (filediff?.after as string) ?? (input.newString as string) ?? '';
-        if (!before && !after) continue;
-
-        const existing = fileMap.get(filePath);
-        if (existing) {
-          existing.after = after;
-        } else {
-          fileMap.set(filePath, { before, after });
-        }
-      } else if (PATCH_TOOLS.has(toolName)) {
-        const files = (Array.isArray(metadata.files) ? metadata.files : []) as ApplyPatchFile[];
-        for (const file of files) {
-          const filePath = file.filePath || file.relativePath || '';
-          if (!filePath) continue;
-          const before = file.before ?? '';
-          const after = file.after ?? '';
-          if (!before && !after) continue;
-
-          const existing = fileMap.get(filePath);
-          if (existing) {
-            existing.after = after;
-          } else {
-            fileMap.set(filePath, { before, after });
-          }
-        }
-      }
-    }
-  }
-
-  const result: FileDiff[] = [];
-  for (const [file, { before, after }] of fileMap) {
-    const beforeLines = before.split('\n');
-    const afterLines = after.split('\n');
-    let additions = 0;
-    let deletions = 0;
-
-    const beforeSet = new Set(beforeLines);
-    const afterSet = new Set(afterLines);
-    for (const line of afterLines) {
-      if (!beforeSet.has(line)) additions++;
-    }
-    for (const line of beforeLines) {
-      if (!afterSet.has(line)) deletions++;
-    }
-
-    let status: 'added' | 'deleted' | 'modified' = 'modified';
-    if (!before) status = 'added';
-    else if (!after) status = 'deleted';
-
-    result.push({ file, before, after, additions, deletions, status });
-  }
-
-  return result;
-}
-
-// ============================================================================
 // Main SessionDiffViewer
 // ============================================================================
 
 interface SessionDiffViewerProps {
-  sessionId: string;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /**
+   * True only where the viewer renders under a floating close button — the
+   * modal mount ({@link DiffDialog}). The side-panel mount has no such button,
+   * and reserving the gutter there left the toolbar floating 56px short of the
+   * right edge.
+   */
+  reserveCloseGutter?: boolean;
+}
+
+/** Shared header for the non-content states, so all three stay identical. */
+function DiffPanelHeader({ reserveCloseGutter }: { reserveCloseGutter?: boolean }) {
+  return (
+    <div
+      className={cn(
+        'border-border/40 flex items-center gap-2 border-b px-5 py-4',
+        reserveCloseGutter && 'pr-14',
+      )}
+    >
+      <GitCompareArrows className="text-muted-foreground/40 size-4" />
+      <span className="text-muted-foreground text-xs font-medium">Changes</span>
+    </div>
+  );
 }
 
 export function SessionDiffViewer({
-  sessionId,
   isFullscreen,
   onToggleFullscreen,
+  reserveCloseGutter,
 }: SessionDiffViewerProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: apiDiffs, isLoading, error } = useRuntimeSessionDiff(sessionId);
-  const { data: messages } = useRuntimeMessages(sessionId);
+  // The SAME query the tab badge and the header chip count. One array, one key
+  // — the body can no longer say "no changes" under a badge reading 32.
+  const { files: diffs, isPending, error, refetch } = useSessionChanges();
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
 
-  // Fall back to extracting diffs from tool part metadata when the API returns empty
-  const messageDiffs = useMemo(() => extractDiffsFromMessages(messages as any), [messages]);
-
-  const diffs = apiDiffs && apiDiffs.length > 0 ? apiDiffs : messageDiffs;
-
-  if (isLoading) {
+  // A DISABLED query is not an empty result. While the sandbox boots, nothing
+  // has been asked yet, so the honest state is "loading", not "no changes yet".
+  if (isPending) {
     return (
       <div className="flex h-full flex-col">
-        <div className="border-border/40 flex items-center gap-2 border-b px-5 py-4 pr-12">
-          <GitCompareArrows className="text-muted-foreground/40 size-4" />
-          <span className="text-muted-foreground text-xs font-medium">Changes</span>
-        </div>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 px-5">
-                <div className="bg-muted/30 h-3 w-3 animate-pulse rounded" />
-                <div
-                  className="bg-muted/20 h-3 animate-pulse rounded"
-                  style={{ width: 120 + i * 40 }}
-                />
-              </div>
-            ))}
-          </div>
+        <DiffPanelHeader reserveCloseGutter={reserveCloseGutter} />
+        {/* Shape-matched to the file rows below and anchored to the top, so
+            content does not jump up from the middle of the pane on load. */}
+        <div className="min-h-0 flex-1 space-y-2 p-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full py-0" />
+          ))}
         </div>
       </div>
     );
   }
 
-  if (error && diffs.length === 0) {
+  if (error) {
     return (
       <div className="flex h-full flex-col">
-        <div className="border-border/40 flex items-center gap-2 border-b px-5 py-4 pr-12">
-          <GitCompareArrows className="text-muted-foreground/40 size-4" />
-          <span className="text-muted-foreground text-xs font-medium">Changes</span>
-        </div>
-        <div className="flex flex-1 items-center justify-center px-6 text-center">
-          <p className="text-muted-foreground text-xs">
-            {tHardcodedUi.raw(
-              'componentsSessionSessionDiffViewer.line355JsxTextFailedToLoadChanges',
-            )}
-          </p>
-        </div>
+        <DiffPanelHeader reserveCloseGutter={reserveCloseGutter} />
+        <ErrorState
+          size="sm"
+          className="min-h-0 flex-1"
+          title={tHardcodedUi.raw(
+            'componentsSessionSessionDiffViewer.line355JsxTextFailedToLoadChanges',
+          )}
+          action={
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
       </div>
     );
   }
 
-  if (!diffs || diffs.length === 0) {
+  if (diffs.length === 0) {
     return (
       <div className="flex h-full flex-col">
-        <div className="border-border/40 flex items-center gap-2 border-b px-5 py-4 pr-12">
-          <GitCompareArrows className="text-muted-foreground/40 size-4" />
-          <span className="text-muted-foreground text-xs font-medium">Changes</span>
-        </div>
-        <div className="flex min-h-[200px] flex-1 flex-col items-center justify-center px-6 py-12 text-center">
-          <FileCode2 className="text-muted-foreground/20 mb-4 size-10" />
-          <p className="text-muted-foreground text-base">
-            {tHardcodedUi.raw('componentsSessionSessionDiffViewer.line370JsxTextNoChangesYet')}
-          </p>
-          <p className="text-muted-foreground/50 mt-1.5 text-sm">
-            {tHardcodedUi.raw(
-              'componentsSessionSessionDiffViewer.line372JsxTextFileChangesWillAppearHereAsTheSession',
-            )}
-          </p>
-        </div>
+        <DiffPanelHeader reserveCloseGutter={reserveCloseGutter} />
+        <EmptyState
+          icon={FileCode2}
+          className="min-h-0 flex-1"
+          title={tHardcodedUi.raw('componentsSessionSessionDiffViewer.line370JsxTextNoChangesYet')}
+          description={tHardcodedUi.raw(
+            'componentsSessionSessionDiffViewer.line372JsxTextFileChangesWillAppearHereAsTheSession',
+          )}
+        />
       </div>
     );
   }
@@ -433,6 +395,7 @@ export function SessionDiffViewer({
         onViewModeChange={setViewMode}
         isFullscreen={isFullscreen}
         onToggleFullscreen={onToggleFullscreen}
+        reserveCloseGutter={reserveCloseGutter}
       />
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-2 p-3">

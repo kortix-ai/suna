@@ -10,7 +10,8 @@
  *
  * Text goes to `FileViewer`, which owns the toolbar. The states that have no
  * text — loading, failed, images, binaries — still need a name and a way out,
- * so they get the same bar from `PreviewShell`.
+ * so they get the same bar from `PreviewShell`. Both bars build their actions
+ * with `ViewerActions`, which is the only reason the two cannot drift.
  */
 
 import { Button } from '@/components/ui/button';
@@ -24,33 +25,25 @@ import {
   getFileCategory,
   isUsableIntrinsicSize,
 } from '@/features/file-viewer';
-import { isBrowserViewable } from '@/features/files/api/runtime-files';
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
-import {
-  useIsExpanded,
-  useKortixComputerStore,
-  useToggleExpanded,
-} from '@/stores/kortix-computer-store';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
-import {
-  CheckIcon as Check,
-  CopyIcon as Copy,
-  FileXIcon as FileWarning,
-  ArrowsOutSimpleIcon as Maximize2,
-  ChatIcon as MessageSquarePlus,
-  ArrowsInSimpleIcon as Minimize2,
-  PresentationIcon as Presentation,
-} from '@phosphor-icons/react';
-import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { FileXIcon as FileWarning, PresentationIcon as Presentation } from '@phosphor-icons/react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
-import { DownloadButton, FileViewer, OpenInNewTabButton, isSvg } from './file-viewer';
-import { type ShareContext, ShareFileButton } from './viewer-actions';
+import { FileViewer, isSvg } from './file-viewer';
+import {
+  PanelWidthButton,
+  type ShareContext,
+  ViewerActions,
+  type ViewerCopy,
+  fileShareInput,
+} from './viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -67,10 +60,11 @@ const getSandboxAliveSnapshot = () => {
 
 /**
  * The toolbar for every state that isn't text. Same shape and same actions as
- * `FileViewer`'s, minus Copy — there is nothing to copy, except where a caller
- * hands one in via `actions` (the binary-image branch: copying the image
- * itself). Without this, a file that fails to load would strand the user in a
- * pane with no title and no exit.
+ * `FileViewer`'s — the difference is only what the split button's primary can
+ * be: most of these states have no content a clipboard could hold, so `Copy`
+ * gives way to `Copy link` (see `ViewerActions`). The binary-image branch is
+ * the exception and hands one in via `copy`. Without this shell, a file that
+ * fails to load would strand the user in a pane with no title and no exit.
  */
 function PreviewShell({
   name,
@@ -78,9 +72,8 @@ function PreviewShell({
   path,
   shareContext,
   onClose,
-  onAskForChanges,
   onPresent,
-  actions,
+  copy,
   children,
 }: {
   /** The display name shown in the toolbar text — a human title when one
@@ -96,27 +89,22 @@ function PreviewShell({
    *  rather than shown disabled (W4). */
   shareContext?: ShareContext;
   onClose: () => void;
-  /** Seeds the composer with a starter line about this file and closes the
-   *  detail (W12). Omitted entirely (not disabled) where there's no session
-   *  composer to hand it to. */
-  onAskForChanges?: () => void;
   /** Opens this deck full-screen in the fullscreen presentation viewer (W14).
    *  Present, not download-then-view: the deck already renders live off the
    *  sandbox. Omitted entirely (not disabled) for anything that isn't a
    *  presentation_gen deck. */
   onPresent?: () => void;
-  /** Extra toolbar controls specific to one preview state — rendered before
-   *  Download, after the "ask for changes" control. */
-  actions?: React.ReactNode;
+  /** The clipboard action for the one preview state that has one — the
+   *  binary-image branch, copying the picture itself. Omitted everywhere else,
+   *  which promotes `Copy link` to the split button's primary. */
+  copy?: ViewerCopy;
   children: React.ReactNode;
 }) {
-  const isExpanded = useIsExpanded();
-  const toggleExpanded = useToggleExpanded();
   const isMobile = useIsMobile();
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2.5 py-2.5">
         <span className="flex min-w-0 items-center gap-2.5">
           <DetailSidebarToggle className="size-7" />
           <span className="flex size-5 shrink-0 items-center justify-center">
@@ -124,7 +112,10 @@ function PreviewShell({
           </span>
           <span className="text-foreground truncate text-sm font-medium">{name}</span>
         </span>
-        <span className="flex shrink-0 items-center gap-0.5">
+        <span className="flex shrink-0 items-center gap-1">
+          {/* Present is not a way of taking the deck with you — it changes what
+              you are looking at — so it stays its own control rather than
+              joining the split button's menu. */}
           {onPresent && (
             <Hint label="Present" side="bottom">
               <Button
@@ -138,42 +129,13 @@ function PreviewShell({
               </Button>
             </Hint>
           )}
-          {onAskForChanges && (
-            <Hint label="Ask for changes" side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Ask for changes"
-                onClick={onAskForChanges}
-                className="size-7 active:scale-[0.96]"
-              >
-                <MessageSquarePlus className="size-3.5" />
-              </Button>
-            </Hint>
-          )}
-          {isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
-          {actions}
-          <ShareFileButton shareContext={shareContext} path={path} fileName={fileName} />
-          <DownloadButton path={path} fileName={fileName} />
-          {/* The store flip is a no-op on mobile — the drawer never reads
-              `isExpanded` — so the control was dead weight there. */}
-          {!isMobile && (
-            <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={toggleExpanded}
-                aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
-                className="size-7 active:scale-[0.96]"
-              >
-                {isExpanded ? (
-                  <Minimize2 className="size-3.5" />
-                ) : (
-                  <Maximize2 className="size-3.5" />
-                )}
-              </Button>
-            </Hint>
-          )}
+          <ViewerActions
+            copy={copy}
+            shareContext={shareContext}
+            shareInput={fileShareInput(path, fileName)}
+            download={{ path, fileName }}
+          />
+          <PanelWidthButton isMobile={isMobile} />
           <CloseButton onClose={onClose} />
         </span>
       </div>
@@ -183,78 +145,39 @@ function PreviewShell({
 }
 
 /**
- * Copy-to-clipboard for the binary-image preview — a sibling to Download, not
- * a replacement: Download saves the file, this puts the pixels on the
- * clipboard for pasting straight into a doc or chat. Feature-detected rather
- * than always shown: `ClipboardItem` is missing on older browsers, and an
- * omitted control beats a disabled one with no explanation (W4). Silent on
- * failure (e.g. clipboard permission denied) — matches the rest of this
- * panel's copy affordances, which just don't confirm rather than surfacing an
- * error toast for a low-stakes action.
+ * Put the picture itself on the clipboard — a sibling to Download, not a
+ * replacement: Download saves the file, this pastes the pixels straight into a
+ * doc or chat.
+ *
+ * Browsers only accept `image/png` in a `ClipboardItem` reliably, so anything
+ * else is redrawn through a canvas first. Throwing is the signal for "did not
+ * copy": `ViewerActions` catches it and simply withholds the confirmation,
+ * which is how the rest of this panel treats a denied clipboard permission.
  */
-function CopyImageButton({ mimeType, base64 }: { mimeType: string; base64: string }) {
-  const [copied, setCopied] = useState(false);
-  const reduce = useReducedMotion();
-  if (typeof ClipboardItem === 'undefined') return null;
+async function copyImageToClipboard(mimeType: string, base64: string): Promise<void> {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  let blob: Blob = new Blob([bytes], { type: mimeType });
+  if (mimeType !== 'image/png') {
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+    blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png'),
+    );
+  }
+  await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+  track('image_copied');
+}
 
-  const handleCopy = async () => {
-    try {
-      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-      // Browsers only accept image/png in ClipboardItem reliably; convert via canvas
-      // when the source is another format.
-      let blob: Blob = new Blob([bytes], { type: mimeType });
-      if (mimeType !== 'image/png') {
-        const bitmap = await createImageBitmap(blob);
-        const canvas = document.createElement('canvas');
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
-        blob = await new Promise<Blob>((resolve, reject) =>
-          canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png'),
-        );
-      }
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      track('image_copied');
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard permission denied — the button simply doesn't confirm.
-    }
-  };
-
-  return (
-    <Hint label={copied ? 'Copied' : 'Copy image'} side="bottom">
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="Copy image"
-        onClick={() => void handleCopy()}
-        className="size-7 active:scale-[0.96]"
-      >
-        {/* One box, two icons, cross-faded — the design system's icon-swap rule
-            (`kortix-design-system` → "Button icon-swap"): scale 0.25 → 1,
-            opacity 0 → 1, blur 4px → 0 on a `bounce: 0` spring. A hard
-            `{copied ? … : …}` swap blinked one glyph out and another in, which
-            on a 28px control reads as a flicker rather than a confirmation.
-            `initial={false}` keeps the toolbar still on first paint, and
-            reduced motion collapses the spring to a state change. */}
-        <span className="relative inline-flex size-3.5 shrink-0 items-center justify-center">
-          <AnimatePresence initial={false} mode="popLayout">
-            <m.span
-              key={copied ? 'check' : 'copy'}
-              initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-              animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-              exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-              transition={reduce ? { duration: 0 } : { type: 'spring', duration: 0.3, bounce: 0 }}
-              className="absolute inset-0 inline-flex items-center justify-center"
-            >
-              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-            </m.span>
-          </AnimatePresence>
-        </span>
-      </Button>
-    </Hint>
-  );
+/**
+ * `ClipboardItem` is missing on older browsers (and during SSR). Feature-detect
+ * rather than offer a `Copy` that can only fail — without it the split button
+ * falls back to `Copy link`, which every browser can do (W4).
+ */
+function canCopyImages(): boolean {
+  return typeof ClipboardItem !== 'undefined';
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
@@ -354,7 +277,6 @@ export function FilePreview({
   fileName = name,
   shareContext,
   onClose,
-  onAskForChanges,
   onPresent,
 }: {
   path: string;
@@ -371,10 +293,6 @@ export function FilePreview({
   /** The detail layer's header is suppressed for files — the viewer's toolbar
    *  owns the name and the close, so there is one bar instead of two. */
   onClose: () => void;
-  /** Seeds the composer with a starter line about this file and closes the
-   *  detail (W12). Omitted entirely (not disabled) where there's no session
-   *  composer to hand it to. */
-  onAskForChanges?: () => void;
   /** Opens this deck full-screen in the presentation viewer (W14). Omitted
    *  entirely (not disabled) for anything that isn't a presentation_gen deck. */
   onPresent?: () => void;
@@ -438,7 +356,6 @@ export function FilePreview({
         fileName={fileName}
         path={path}
         onClose={onClose}
-        onAskForChanges={onAskForChanges}
         onPresent={onPresent}
       >
         <FileSourceProvider value={workspaceFileSource}>
@@ -477,7 +394,6 @@ export function FilePreview({
         fileName={fileName}
         path={path}
         onClose={onClose}
-        onAskForChanges={onAskForChanges}
         onPresent={onPresent}
       >
         <Centered>
@@ -495,7 +411,6 @@ export function FilePreview({
         fileName={fileName}
         path={path}
         onClose={onClose}
-        onAskForChanges={onAskForChanges}
         onPresent={onPresent}
       >
         <Centered>
@@ -531,9 +446,15 @@ export function FilePreview({
         fileName={fileName}
         path={path}
         onClose={onClose}
-        onAskForChanges={onAskForChanges}
         onPresent={onPresent}
-        actions={isImage && <CopyImageButton mimeType={data.mimeType!} base64={data.content} />}
+        copy={
+          isImage && canCopyImages()
+            ? {
+                run: () => copyImageToClipboard(data.mimeType!, data.content),
+                ariaLabel: 'Copy image',
+              }
+            : undefined
+        }
       >
         {isImage ? (
           <div className="flex items-start justify-center">
@@ -570,7 +491,6 @@ export function FilePreview({
       path={path}
       shareContext={shareContext}
       onClose={onClose}
-      onAskForChanges={onAskForChanges}
     />
   );
 }

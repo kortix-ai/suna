@@ -3,6 +3,7 @@
 .kortix/opencode/sessions/
 .kortix/opencode/log/
 .kortix/opencode/cache/
+.kortix/opencode/package-lock.json
 node_modules/
 .env
 .env.local

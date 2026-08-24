@@ -42,8 +42,6 @@ function render(
             projectId={undefined}
             toolbarSlot={toolbarSlot}
             rewind={rewind}
-            onTranscription={noop}
-            voiceDisabled={false}
             isSending={false}
             isBusy={false}
             stopDisabled={false}
@@ -125,12 +123,16 @@ describe('ComposerToolbar — send is refused with no accessible agent', () => {
       submitDisabled: true,
       agentUnavailable: true,
     });
-    const button = /<button[^>]*aria-label="No agents available to you[^"]*"[^>]*>/.exec(html)?.[0];
+    // The control's NAME stays "Send message" in every state — a screen reader
+    // that hears "No agents available to you" and nothing else has lost what
+    // the button DOES. The reason rides `title` (and the tooltip) instead.
+    const button = /<button[^>]*aria-label="Send message"[^>]*>/.exec(html)?.[0];
 
     expect(button).toBeDefined();
     expect(button).toMatch(/\sdisabled=""/);
     // The exact line the agent picker's tooltip carries — one reason, one
     // wording, on both controls.
+    expect(button).toContain('No agents available to you');
     expect(html).toContain('No agents available to you — ask a manager for access');
   });
 });

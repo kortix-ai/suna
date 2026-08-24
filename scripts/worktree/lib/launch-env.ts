@@ -11,6 +11,12 @@ export interface ApiLaunchOpts {
   stripeWebhookSecret?: string;
   /** Expose billing routes without requiring live Stripe webhook forwarding. */
   billing?: boolean;
+  /** This stack's identity for instance-scoped background work (the worktree
+   *  name). Worktrees share the primary Supabase by default, so the lifecycle
+   *  queue / env-sync / box reaper are one queue across every running API;
+   *  `KORTIX_INSTANCE_ID` is what keeps one stack's (possibly dead) tunnel URL
+   *  out of another stack's sandboxes. See apps/api/src/projects/instance-scope.ts. */
+  instanceId?: string;
 }
 
 export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {}): Record<string, string> {
@@ -21,6 +27,7 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     KORTIX_APPS_LOCAL: 'true',
     KORTIX_APPS_LOCAL_PORT: String(ports.api),
     KORTIX_URL: opts.kortixUrl || `http://localhost:${ports.api}`,
+    ...(opts.instanceId ? { KORTIX_INSTANCE_ID: opts.instanceId } : {}),
     NEXT_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     KORTIX_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     BACKEND_URL: `http://localhost:${ports.api}/v1`,

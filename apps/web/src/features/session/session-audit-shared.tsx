@@ -98,6 +98,12 @@ interface UseSessionAuditOptions {
   refetchInterval?: number | false;
   /** Suppress the global error toast (for the always-mounted header nudge). */
   silent?: boolean;
+  /**
+   * Rows to ask for. The panel reads the timeline and wants the full 1000; the
+   * badge only counts pending approvals, which the server returns most-recent
+   * first, so 100 is plenty and ten times less to serialise every 15 s.
+   */
+  limit?: number;
 }
 
 export function useSessionAudit(
@@ -110,7 +116,7 @@ export function useSessionAudit(
     queryKey: sessionAuditKey(projectId, sessionId),
     // `enabled` guards presence, so the `?? ''` fallbacks are never exercised.
     queryFn: () =>
-      getSessionAudit(projectId ?? '', sessionId ?? '', 1000, {
+      getSessionAudit(projectId ?? '', sessionId ?? '', options?.limit ?? 1000, {
         showErrors: !options?.silent,
         includeEvents: false,
       }),

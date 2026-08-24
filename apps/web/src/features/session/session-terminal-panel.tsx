@@ -3,16 +3,21 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
 import {
   deriveTerminalPanelState,
   shouldAutoReplaceTerminal,
 } from '@/features/session/pty-connection';
-import { isSandboxNotReadyError } from '@kortix/sdk';
-import { useCreatePty, useRuntimePtyList, type Pty } from '@kortix/sdk/react';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
+import { useBoundedRuntimeWait } from '@/features/session/use-bounded-runtime-wait';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { requestRuntimeReconnect } from '@kortix/sdk/react';
+import { isSandboxNotReadyError } from '@kortix/sdk';
+import {
+  requestRuntimeReconnect,
+  useCreatePty,
+  useRuntimePtyList,
+  useRuntimeStore,
+  type Pty,
+} from '@kortix/sdk/react';
 import { PlusIcon as Plus, TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -143,9 +148,9 @@ export function SessionTerminalPanel({
   const retryTerminal = useCallback(() => {
     ensuringRef.current = false;
     createPty.reset();
+    setServerRetryAttempt((attempt) => attempt + 1);
     if (!serverUrl) {
       requestRuntimeReconnect();
-      setServerRetryAttempt((attempt) => attempt + 1);
       return;
     }
     if (isListError) {
@@ -161,6 +166,10 @@ export function SessionTerminalPanel({
   const sandboxWaking =
     (isListError && isSandboxNotReadyError(listError)) ||
     (createPty.isError && isSandboxNotReadyError(createPty.error));
+  const terminalWaitExpired = useBoundedRuntimeWait(
+    !pty && (!serverUrl || isLoading || createPty.isPending || sandboxWaking),
+    serverRetryAttempt,
+  );
 
   const retryTerminalRef = useRef<() => void>(() => {});
   useEffect(() => {
@@ -185,6 +194,7 @@ export function SessionTerminalPanel({
     isCreateError: createPty.isError,
     isEnsuring: ensuringRef.current,
     isSandboxWaking: sandboxWaking,
+    connectionWaitExpired: terminalWaitExpired,
   });
 
   let content: React.ReactNode;
@@ -240,7 +250,7 @@ export function SessionTerminalPanel({
   }
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#0f0f14]">
+    <div className="bg-terminal-surface flex h-full w-full flex-col">
       {projectSessionId && <SessionTerminalConnectBar projectSessionId={projectSessionId} />}
       <div className="relative min-h-0 flex-1">{content}</div>
     </div>

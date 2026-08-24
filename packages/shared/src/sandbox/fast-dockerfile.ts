@@ -74,6 +74,13 @@ RUN case "$(uname -m)" in \
  && test "$(npm --version)" = "${NPM_VERSION}" \
  && HOME=/home/kortix pnpm add --global --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
  && test "$(opencode --version)" = "${OPENCODE_VERSION}" \
+ && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \
+ && test -x "$opencode_native" \
+ && test "$(wc -c < "$opencode_native")" -gt 50000000 \
+ && test "$("$opencode_native" --version)" = "${OPENCODE_VERSION}" \
+ && ln -sfn "$opencode_native" /opt/kortix/opencode.current \
+ && ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \
+ && test "$(/usr/local/bin/opencode-kortix --version)" = "${OPENCODE_VERSION}" \
  && ln -sf "$(command -v node)" /usr/local/bin/node \
  && chown -R kortix:kortix /home/kortix
 
@@ -107,12 +114,23 @@ RUN mkdir -p /opt/kortix/opencode-config-deps
 COPY --chown=kortix:kortix ${options.opencodeConfigPath}/package.json ${options.opencodeConfigPath}/bun.lock /opt/kortix/opencode-config-deps/
 RUN cd /opt/kortix/opencode-config-deps \
  && /home/kortix/.bun/bin/bun install --frozen-lockfile \
- && /home/kortix/.bun/bin/bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-check \
- && rm -rf /tmp/opencode-deps-check
+ && test -d node_modules/zod \
+ && test ! -e node_modules/@opencode-ai/plugin \
+ && test ! -e node_modules/effect \
+ && test ! -e node_modules/@mendable/firecrawl-js \
+ && test ! -e node_modules/@tavily/core \
+ && test ! -e node_modules/replicate
 
 COPY --chown=kortix:kortix ${options.opencodeWarmupScriptPath} /tmp/kortix-opencode-warmup
 RUN sudo -u kortix env HOME=/home/kortix PATH="${'$'}{PATH}" \
       bash /tmp/kortix-opencode-warmup migration
+
+COPY --chown=kortix:kortix ${options.scaffoldPath}/ /opt/kortix/scaffold.git/
+RUN sudo -u kortix env HOME=/home/kortix PATH="${'$'}{PATH}" \
+      git clone -q /opt/kortix/scaffold.git /workspace \
+ && printf '%s\\n' \
+      '{"name":"kortix-opencode-config","version":"0.0.0","lockfileVersion":3,"requires":true,"kortixOpenCodeInstallSentinel":1,"packages":{"":{"dependencies":{"@opencode-ai/plugin":"*","zod":"4.1.8"}}}}' \
+      | sudo -u kortix tee /workspace/.kortix/opencode/package-lock.json >/dev/null
 
 COPY --chown=kortix:kortix ${options.opencodeConfigPath}/ /ephemeral/kortix-master/opencode/
 COPY --chown=kortix:kortix ${options.opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/
@@ -122,12 +140,13 @@ RUN cd /opt/kortix/warm-config/.kortix/opencode \
  && /home/kortix/.bun/bin/bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \
  && rm -rf /tmp/opencode-tools-bundle-check
 RUN sudo -u kortix env HOME=/home/kortix PATH="${'$'}{PATH}" \
-      bash /tmp/kortix-opencode-warmup instance wipe \
+      bash /tmp/kortix-opencode-warmup instance keep \
+ && test -z "$(sudo -u kortix env HOME=/home/kortix git -C /workspace status --porcelain --untracked-files=no)" \
+ && test "$(sudo -u kortix env HOME=/home/kortix git -C /workspace rev-parse HEAD)" = "$(sudo -u kortix env HOME=/home/kortix git --git-dir=/opt/kortix/scaffold.git rev-parse HEAD)" \
  && rm -f /tmp/kortix-opencode-warmup
 COPY --chown=kortix:kortix ${options.catalogPath} /opt/kortix/llm-catalog.json
 COPY --chown=kortix:kortix ${options.managedSkillsPath}/ /opt/kortix/managed-skills/
 COPY --chown=kortix:kortix ${options.runtimeVersionsPath} /opt/kortix/runtime-versions.json
-COPY --chown=kortix:kortix ${options.scaffoldPath}/ /opt/kortix/scaffold.git/
 COPY --chown=kortix:kortix ${options.lazyToolsPath}/ /opt/kortix/lazy-tools/
 COPY ${options.machineDocPath} /MACHINE.md
 COPY ${options.entrypointScriptPath} /usr/local/bin/kortix-entrypoint

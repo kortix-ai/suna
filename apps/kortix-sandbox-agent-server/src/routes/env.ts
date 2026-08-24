@@ -9,17 +9,7 @@ import { requiresRespawn, type Opencode } from '../opencode'
 import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
-  'KORTIX_LLM_API_KEY',
   'KORTIX_LLM_BASE_URL',
-  // Selects opencode's provider transport (buildKortixProvider): on -> @ai-sdk/gateway
-  // (native /language-model, lossless passthrough), off -> @ai-sdk/openai-compatible.
-  // opencode reads it when it builds its config at spawn, so a live toggle takes
-  // effect on the next opencode restart.
-  'KORTIX_LLM_AI_SDK_NATIVE',
-  // Gateway-only: the provider-key names opencode must never see. Flipped with the
-  // mode so a live toggle to DIRECT clears it (native BYOK keys reach opencode) and
-  // a toggle to GATEWAY restores the strip on the next opencode restart.
-  'KORTIX_OPENCODE_DENY_ENV',
   // The session's model. opencode reads this when it builds its config at spawn
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
@@ -95,29 +85,23 @@ function setOpencodeRuntimeEnv(next: Record<string, string | null>): { changed: 
   return { changed: changedNames.length > 0, names: changedNames.sort() }
 }
 
-function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknown): { changed: boolean; names: string[] } {
+function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boolean; names: string[] } {
   if (enabled === undefined) return { changed: false, names: [] }
   if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
   if (!enabled) {
     return setOpencodeRuntimeEnv({
-      KORTIX_LLM_API_KEY: null,
       KORTIX_LLM_BASE_URL: null,
-      // DIRECT/BYOK: stop withholding native provider keys from opencode.
-      KORTIX_OPENCODE_DENY_ENV: null,
     })
   }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
     throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')
   }
-  const token = process.env.KORTIX_CLI_TOKEN
+  const token = process.env.KORTIX_TOKEN
   if (!token) {
-    throw new Error('KORTIX_CLI_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
+    throw new Error('KORTIX_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
   }
   return setOpencodeRuntimeEnv({
-    KORTIX_LLM_API_KEY: token,
     KORTIX_LLM_BASE_URL: baseUrl,
-    // GATEWAY: restore the strip (names supplied by the API) on the next restart.
-    KORTIX_OPENCODE_DENY_ENV: typeof denyEnv === 'string' ? denyEnv : '',
   })
 }
 
@@ -179,7 +163,7 @@ export function createEnvRouter(
         // revoked boot secret before it sources agent-env.sh.
         reconcileProjectEnv(process.env, projectEnv)
         const opencodeEnv = applyOpencodeRuntimeEnv(body.opencodeEnv)
-        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl, body.llmGatewayDenyEnv)
+        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl)
         // null when no reload was needed at all; otherwise how it was applied.
         let reloadOutcome: 'disposed' | 'restarted' | 'kept-old' | null = null
         // Whether applying the config interrupted work someone was waiting on.
@@ -222,7 +206,8 @@ export function createEnvRouter(
         if (body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
           // reloadConfig, not restart: opencode re-reads its config file in
           // place via /global/dispose in ~51ms, against ~8s for a respawn
-          // (measured on the pinned 1.17.11). It falls back to a restart on its
+          // (measured on 1.17.11, dispose re-verified on the pinned 1.18.19).
+          // It falls back to a restart on its
           // own if dispose is unavailable, so this is never less correct — only
           // faster, and it does not sever an in-flight turn when dispose wins.
           // Some values are consumed by `spawnChild` OUTSIDE the config file —

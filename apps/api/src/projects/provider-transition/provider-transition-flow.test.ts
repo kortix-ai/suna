@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq, ne } from 'drizzle-orm';
 import { createDb, accounts, projects, sandboxTemplates, type Database } from '@kortix/db';
-import { perProjectWarmImageName } from '../../snapshots/ppwarm-names';
+import {
+  perProjectWarmImageName,
+  scopedPerProjectWarmImageName,
+} from '../../snapshots/ppwarm-names';
 import {
   providerTransitionMetricsSnapshot,
   resetProviderTransitionMetricsForTest,
@@ -68,6 +71,8 @@ interface FakeWorld {
    *  from the name-list `externalIds` lookup, so a test can prove the runner
    *  consumes the build-returned id and never silently re-derives it by name. */
   buildReturnsExternalId: string | null;
+  archiveProjectDuringBuild: boolean;
+  deletedSnapshots: string[];
 }
 
 function makeWorld(identity: ResolvedPrepIdentity): FakeWorld {
@@ -84,6 +89,8 @@ function makeWorld(identity: ResolvedPrepIdentity): FakeWorld {
     byIdState: null,
     byIdCalls: [],
     buildReturnsExternalId: null,
+    archiveProjectDuringBuild: false,
+    deletedSnapshots: [],
   };
 }
 
@@ -99,7 +106,9 @@ function makeDeps(world: FakeWorld, now: () => Date = () => new Date()): Transit
           return (world.state.get(name) ?? 'missing') as never;
         },
         getSnapshotExternalId: async (name: string) => world.externalIds.get(name) ?? null,
-        deleteSnapshot: async () => {},
+        deleteSnapshot: async (name: string) => {
+          world.deletedSnapshots.push(name);
+        },
       };
       // Only expose the by-id verifier when a test opts in — otherwise the method
       // is ABSENT and the runner uses the name-based fallback (unchanged path).
@@ -118,13 +127,19 @@ function makeDeps(world: FakeWorld, now: () => Date = () => new Date()): Transit
       world.buildCount += 1;
       if (world.ensureBehavior === 'throw_permanent') throw new Error('HTTP 401 Unauthorized: bad platinum key');
       if (world.ensureBehavior === 'throw_transient') throw new Error('ETIMEDOUT talking to platinum');
-      const name = world.currentIdentity.snapshotName;
+      const name = opts.snapshotName ?? world.currentIdentity.snapshotName;
       if (world.ensureBehavior === 'activate') {
         world.state.set(name, 'active');
         // The name-list lookup id (getSnapshotExternalId). Seeded only when a test
         // hasn't already put a DIFFERENT (stale) id there — so a FIX-B test can
         // prove the runner consumes the BUILD-returned id, not this name-lookup one.
         if (!world.externalIds.has(name)) world.externalIds.set(name, `tpl_${name.slice(-8)}`);
+      }
+      if (world.archiveProjectDuringBuild) {
+        await db
+          .update(projects)
+          .set({ status: 'archived' })
+          .where(eq(projects.projectId, _project.projectId));
       }
       // Models Platinum's async build: from-build registers a build and returns,
       // but the provider still reports `building` well past this drive.
@@ -222,6 +237,28 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     const routing = await readActiveRouting(db, projectId);
     expect(routing?.activeProvider).toBe('platinum');
     expect(routing?.activeExternalTemplateId).toBe('tpl_preexisting');
+  });
+
+  test('an archive racing a completed build cannot activate and deletes only that image', async () => {
+    const projectId = await freshProject();
+    const id = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const world = makeWorld(id);
+    world.archiveProjectDuringBuild = true;
+    const res = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...id },
+    });
+
+    const outcome = await driveProviderTransition(makeDeps(world), res.row.transitionId);
+
+    expect(outcome).toBe('gone');
+    expect((await readActiveRouting(db, projectId))?.activeProvider).toBeNull();
+    expect(world.deletedSnapshots).toEqual([id.snapshotName]);
+    expect(await getTransition(db, res.row.transitionId)).toMatchObject({
+      status: 'failed',
+      errorClass: 'gone',
+    });
   });
 
   test('a permanent build failure leaves the SOURCE active and dead-letters', async () => {
@@ -534,6 +571,118 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     expect(outcome2).toBe('activated');
     expect(world.buildCount).toBe(1);
     expect((await readActiveRouting(db, projectId))?.activeProvider).toBe('platinum');
+  });
+
+  test('FAST false→true adopts a READY prebuild under its persisted snapshot name', async () => {
+    const projectId = await freshProject();
+    const beforeFast = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const afterFast = {
+      ...beforeFast,
+      snapshotName: scopedPerProjectWarmImageName(
+        '1'.repeat(12),
+        projectId,
+        beforeFast.commitSha,
+        beforeFast.baseRuntimeIdentity,
+        'default',
+      ),
+    };
+    const world = makeWorld(afterFast);
+    world.state.set(beforeFast.snapshotName, 'active');
+    world.externalIds.set(beforeFast.snapshotName, 'tpl_before_fast');
+
+    const prebuild = await insertPrebuildTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...beforeFast },
+    });
+    await updateTransition(db, prebuild.row.transitionId, {
+      status: 'ready',
+      readyAt: new Date(Date.now() - 60_000),
+    });
+    const adopted = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...afterFast },
+    });
+
+    expect(adopted.adopted).toBe(true);
+    expect(adopted.row.snapshotName).toBe(beforeFast.snapshotName);
+    expect(await driveProviderTransition(makeDeps(world), adopted.row.transitionId)).toBe(
+      'activated',
+    );
+    expect(world.buildCount).toBe(0);
+    expect(await readActiveRouting(db, projectId)).toMatchObject({
+      activeProvider: 'platinum',
+      activeExternalTemplateId: 'tpl_before_fast',
+      activeSnapshotName: beforeFast.snapshotName,
+    });
+  });
+
+  test('FAST false→true resumes a BUILDING transition under its persisted snapshot name', async () => {
+    const projectId = await freshProject();
+    const beforeFast = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const afterFast = {
+      ...beforeFast,
+      snapshotName: scopedPerProjectWarmImageName(
+        '1'.repeat(12),
+        projectId,
+        beforeFast.commitSha,
+        beforeFast.baseRuntimeIdentity,
+        'default',
+      ),
+    };
+    const world = makeWorld(afterFast);
+    world.state.set(beforeFast.snapshotName, 'building');
+    world.ensureBehavior = 'throw_permanent';
+    const reserved = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...beforeFast },
+    });
+    await updateTransition(db, reserved.row.transitionId, {
+      status: 'building',
+      startedAt: new Date(),
+    });
+
+    expect(await driveProviderTransition(makeDeps(world), reserved.row.transitionId)).toBe(
+      'waiting',
+    );
+    expect(world.buildCount).toBe(0);
+    expect((await getTransition(db, reserved.row.transitionId))?.snapshotName).toBe(
+      beforeFast.snapshotName,
+    );
+  });
+
+  test('FAST false→true builds a missing image under its persisted snapshot name', async () => {
+    const projectId = await freshProject();
+    const beforeFast = identity(projectId, 'commit-a', 'kortix-default-r1');
+    const afterFast = {
+      ...beforeFast,
+      snapshotName: scopedPerProjectWarmImageName(
+        '1'.repeat(12),
+        projectId,
+        beforeFast.commitSha,
+        beforeFast.baseRuntimeIdentity,
+        'default',
+      ),
+    };
+    const world = makeWorld(afterFast);
+    const reserved = await reserveSwitchTransition(db, {
+      accountId,
+      sourceProvider: 'daytona',
+      identity: { projectId, targetProvider: 'platinum', ...beforeFast },
+    });
+
+    expect(await driveProviderTransition(makeDeps(world), reserved.row.transitionId)).toBe(
+      'activated',
+    );
+    expect(world.buildCount).toBe(1);
+    expect(world.state.get(beforeFast.snapshotName)).toBe('active');
+    expect(world.state.has(afterFast.snapshotName)).toBe(false);
+    expect(await readActiveRouting(db, projectId)).toMatchObject({
+      activeProvider: 'platinum',
+      activeSnapshotName: beforeFast.snapshotName,
+    });
   });
 
   // ── FIX 2: BUILDING≠FAILURE completed — reset-on-healthy + wall-clock ────────

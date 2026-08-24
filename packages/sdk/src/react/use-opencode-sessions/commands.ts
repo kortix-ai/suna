@@ -4,12 +4,24 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import type { Command } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_COMMANDS } from './shared';
+import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } from './shared';
 
 // ============================================================================
 // Command Hooks
 // ============================================================================
 
+/**
+ * The session's slash commands.
+ *
+ * Always resolves an ARRAY. `GET /command` is typed `Command[]`, but a runtime
+ * or proxy that answers with an object body used to hand that value straight
+ * to the render, where `for (const cmd of commands)` threw
+ * `TypeError: t is not iterable` and killed the whole session view (dev,
+ * 2026-08-23). `asRuntimeList` normalizes the response and `cachedRuntimeList`
+ * treats a corrupt localStorage placeholder as a miss, so every consumer
+ * (`detectCommandFromText`, the slash menu, command attachments) can iterate
+ * the result unconditionally.
+ */
 export function useOpenCodeCommands() {
   const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Command[]>({
@@ -17,11 +29,11 @@ export function useOpenCodeCommands() {
     queryFn: async () => {
       const client = getClient();
       const result = await client.command.list();
-      const commands = unwrap(result);
+      const commands = asRuntimeList<Command>(unwrap(result));
       setLSCache(LS_COMMANDS, commands);
       return commands;
     },
-    placeholderData: () => getLSCache<Command[]>(LS_COMMANDS),
+    placeholderData: () => cachedRuntimeList<Command>(LS_COMMANDS),
     enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,

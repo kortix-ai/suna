@@ -59,7 +59,19 @@ export async function withTokenRetry(
 	return token;
 }
 
-export const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
+/**
+ * A HANG detector, not a throughput limit.
+ *
+ * 30s was both, and the second role broke sessions: a transcript page that was
+ * 7-19 MB of inline attachment bytes took 23-30 s to arrive and was killed at
+ * exactly 30.00 s — then retried, and killed again, forever (essentia,
+ * 2026-08-24, network panel: five reads in a row at 29.23-30.08 s). The bytes
+ * are gone now (`stripInlineAttachmentBytes`), which is the real fix; this
+ * ceiling is raised so the next large-but-legitimate response is not
+ * manufactured into a failure by the client that asked for it. A wedged
+ * sandbox is still caught — apps/api's own proxy budget is 50 s.
+ */
+export const DEFAULT_FETCH_TIMEOUT_MS = 120_000;
 
 /**
  * The one long-lived streaming call reached through the auth fetch injection

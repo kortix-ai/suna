@@ -26,13 +26,18 @@ import type { FeatureFlagKey } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   AlarmIcon as AlarmClock,
+  ArrowCircleUpIcon as ArrowUpCircle,
   SquaresFourIcon as Blocks,
   RobotIcon as Bot,
   CalendarIcon as Calendar,
+  ChatCircleIcon as ChatCircle,
   GearSixIcon as CogOne,
   CoinsIcon as Coins,
   CompassIcon as Compass,
+  ShippingContainerIcon as Container,
+  CpuIcon as Cpu,
   CreditCardIcon as CreditCardSolid,
+  FlaskIcon as Flask,
   GitBranchIcon as FolderGit2,
   FolderOpenIcon as FolderOpen,
   GitDiffIcon as GitCompareArrows,
@@ -40,11 +45,13 @@ import {
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
+  LockKeyIcon as LockKey,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
   SidebarSimpleIcon as PanelLeftClose,
   PlugIcon as Plug,
   PlusIcon as Plus,
+  QuestionIcon as QuestionMark,
   ArrowClockwiseIcon as RefreshCw,
   ScrollIcon as ScrollText,
   MagnifyingGlassIcon as Search,
@@ -53,6 +60,7 @@ import {
   TextAlignLeftIcon as TextAlignLeft,
   TerminalWindowIcon as Terminal,
   TerminalWindowIcon as TerminalSquare,
+  TrayIcon as Tray,
   UserPlusIcon as UserPlus,
   UsersIcon as UsersSolid,
   ImagesSquareIcon as WallpaperIcon,
@@ -77,7 +85,12 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
  */
 export type MenuItemKind =
-  'navigate' | 'action' | 'settings' | 'theme' | 'wallpaper' | 'sandboxService';
+  | 'navigate'
+  | 'action'
+  | 'settings'
+  | 'theme'
+  | 'wallpaper'
+  | 'sandboxService';
 
 export type SettingsTabId =
   | 'general'
@@ -252,6 +265,27 @@ export const menuRegistry: MenuItemDef[] = [
     actionId: 'viewChanges',
     requiresSession: true,
   },
+  {
+    id: 'review-changes',
+    label: 'Review changes',
+    icon: GitCompareArrows,
+    group: 'actions',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    // Opens the in-palette list of OPEN change requests
+    // (`SUBMENU_PAGE_BY_ID` -> the 'changes' page), the same set the sidebar's
+    // green "Review changes" pill lists in its popover, and picking one opens
+    // that CR's detail dialog. The pill is the only surface that offered them
+    // and it hides itself at zero — so with the sidebar collapsed, or with no
+    // open CR yet, there was no way to ask "what is waiting on me?" at all.
+    //
+    // `requiresProject`, not `requiresSession`: a change request belongs to
+    // the workspace, not to the session that produced it.
+    actionId: 'reviewChanges',
+    requiresProject: true,
+    keywords:
+      'review changes change requests cr diff pull request merge open pending approve waiting',
+  },
   // NOTE: distinct id/actionId from the legacy 'open-terminal' entry below
   // (which spawns a standalone workspace PTY tab and is hidden from the
   // palette via LEGACY_PALETTE_HIDDEN in command-palette.tsx) — this one
@@ -385,6 +419,21 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'accounts teams organizations switch manage',
   },
   {
+    id: 'proj-home',
+    label: 'Home',
+    icon: Compass,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // `/projects/<id>` — the workspace's own landing page (`ProjectHome`), the
+    // composer plus the setup tiles. Every OTHER page under `/projects/<id>`
+    // had a palette row and this one did not, so the only way back to it was
+    // the sidebar's workspace name.
+    href: '/projects/{projectId}',
+    requiresProject: true,
+    keywords: 'home overview landing start composer ask',
+  },
+  {
     id: 'proj-sessions',
     label: 'Open Session',
     icon: MessagesSquare,
@@ -401,71 +450,58 @@ export const menuRegistry: MenuItemDef[] = [
     // Projects return eight unrelated rows.
     keywords: 'sessions runs threads conversations open',
   },
+  // ──────────────────────────────────────────────────────────────────────────
+  // CUSTOMIZE — one row per capability tab, one row per Settings section.
+  //
+  // This block used to be a SINGLE row (`proj-customize`, label "Settings")
+  // whose keyword bag was the concatenated vocabulary of thirteen destinations:
+  // "models llm gateway ... secrets env ... members team ... snapshots builds
+  // ... voice call ... feature flags". One row for thirteen pages is why typing
+  // "model" opened project Settings instead of the Models page — the only row
+  // that owned the word went to `/config`, and the page that IS models had no
+  // registry entry at all. Models, Secrets, Channels and Members had graduated
+  // into their own routes months earlier (`capability-tab-routes.ts`) and never
+  // got rows; the six `/config` sections were never separately addressable.
+  //
+  // Rule from here on: a destination the user can reach is a row. Where a
+  // destination is a `?section=` of one page rather than a route of its own,
+  // the row still exists — the query pre-selects the section, so the rows land
+  // in different places and the "thirteen links to one URL" objection does not
+  // apply. `menu-registry-destinations.test.ts` pins one row per
+  // `CAPABILITY_TABS` key and one per `ProjectSettingsSectionKey`, so a new
+  // tab or section cannot ship unreachable from ⌘K again.
   {
     id: 'proj-customize',
-    label: 'Settings',
+    label: 'Customize',
     icon: SlidersHorizontal,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // The project's own configuration — thirteen sections of the Customize
-    // bar's Settings tab. This used to be `/projects/{projectId}/settings/
-    // general`, the same content when it was still an overlay tab; the bare
-    // `/settings` before that, which resolved to `{ tab: undefined }`
-    // (resolveSettingsOverlayHref) and landed somewhere different on every
-    // click. A section-less `/config` opens the default section, `general`,
-    // which is exactly where the old href went.
-    href: '/projects/{projectId}/config',
+    // The index/hub, NOT `/config`. `/customize` renders `CustomizeIndexPage`,
+    // a card grid over every tab below — which is what the word "customize"
+    // now names, since each tab it introduces has its own row. Before this
+    // change the word led to the Settings tab, one of the eight things the hub
+    // introduces.
+    href: '/projects/{projectId}/customize',
     requiresProject: true,
-    // 'agents' and 'skills' were deliberately dropped: both graduated out of
-    // the overlay into their own palette entries (proj-agents, proj-skills).
-    // Keeping the words here made this bare Customize entry match those
-    // queries too and — since filteredNavItems preserves registry declaration
-    // order rather than ranking by relevance — it listed ahead of the real
-    // Agents/Skills entries. 'commands' is dropped for a different reason:
-    // the Instructions tab that hosted them no longer exists, so there is
-    // nothing for the query to lead to. 'project settings' went the same way
-    // when the per-tab entries moved to `settings-palette-items.ts`: the
-    // derived Workspace › General row carries those words now, and leaving
-    // them here would list this generic door ahead of the named tab.
-    //
-    // The inverse leak has been closed too: five sibling rows (proj-agents,
-    // proj-skills, proj-connectors, proj-connectors-policies, proj-invite)
-    // used to end in the legacy tail 'project customize', so "customize"
-    // returned six rows. Only this one keeps the word — it is the row that
-    // lands where "customize" means something.
-    //
-    // The long tail is the combined bag of the thirteen settings tabs that
-    // moved here from the overlay's rail (`settings-palette-items.ts` no
-    // longer carries any of them, and its `Record<SettingsTab, …>` enforces
-    // that). One row, like `proj-triggers`, rather than thirteen rows onto one
-    // page: a section is not separately routable, so thirteen rows would be
-    // thirteen links to the same URL.
+    keywords: 'customize configure setup capabilities overview hub',
+  },
+  {
+    id: 'proj-models',
+    label: 'Models',
+    icon: Cpu,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/models',
+    requiresProject: true,
+    // The reported bug's row. `llm gateway providers budgets anthropic openai
+    // openrouter` came off `proj-customize`'s bag, where they pointed at
+    // `/config`. 'catalog' is deliberately NOT here: it contains "log", and
+    // `command-palette-search.test.ts` pins that an audit-log search does not
+    // drag unrelated rows in.
     keywords:
-      'settings customize configure general workspace rename delete danger zone members team access collaborators people invite secrets env environment variables channels slack email agentmail inbox repositories git repository github provider clone branch models llm gateway providers budgets anthropic openai openrouter sandbox templates image runtime machine snapshots builds marketplace store install templates review center approvals voice call spoken livekit feature flags experimental beta labs toggles upgrades upgrade migrate migration manifest runner',
-  },
-  {
-    id: 'proj-files',
-    label: 'Files',
-    icon: FolderOpen,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/files',
-    requiresProject: true,
-    keywords: 'files repository drive browser explorer',
-  },
-  {
-    id: 'proj-apps',
-    label: 'Apps',
-    icon: Globe,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/apps',
-    requiresProject: true,
-    requiresFlag: 'apps',
-    keywords: 'apps deploy deployments serverless docker static hosting urls',
+      'models model llm gateway providers provider budgets limits anthropic openai openrouter claude gpt gemini reasoning byok',
   },
   {
     id: 'proj-agents',
@@ -492,6 +528,13 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     keywords: 'skills abilities',
   },
+  // Agents and Skills are declared BEFORE Connectors here, unlike the tab bar
+  // order in `CAPABILITY_TABS`. Declaration order is the palette's tie-break
+  // (`filteredNavItems` maps in registry order), and the Channels row carries
+  // the keyword `agentmail` — a product name it genuinely owns, but one that
+  // contains the substring "agent". With Channels declared first, the query
+  // "agent" listed it above the row that IS the Agents page. Ordering is free;
+  // dropping a real synonym is not.
   {
     id: 'proj-connectors',
     label: 'Connectors',
@@ -505,6 +548,22 @@ export const menuRegistry: MenuItemDef[] = [
     // one-word query for that page returned Connectors as well. 'connector' /
     // 'connectors' / 'connections' still cover everything this row is called.
     keywords: 'connectors connections pipedream mcp openapi postman collections connector',
+  },
+  {
+    id: 'proj-channels',
+    label: 'Channels',
+    icon: ChatCircle,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // Channels is a SCOPE of the Connectors page, not a route
+    // (`channelsHref` in `capability-tab-routes.ts`). The row exists anyway:
+    // "slack" and "inbox" are words people type, and the scope query lands
+    // them on the inbound half rather than the outbound one.
+    // 'connections' stays off this bag — it names `proj-connectors`.
+    href: '/projects/{projectId}/connectors?scope=channels',
+    requiresProject: true,
+    keywords: 'channels channel slack teams discord email agentmail inbox inbound messaging',
   },
   {
     id: 'proj-connectors-policies',
@@ -539,6 +598,130 @@ export const menuRegistry: MenuItemDef[] = [
     // The combined bag both retired rows carried, so neither query goes dark.
     keywords:
       'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring',
+  },
+  {
+    id: 'proj-secrets',
+    label: 'Secrets',
+    icon: LockKey,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/secrets',
+    requiresProject: true,
+    keywords: 'secrets secret env environment variables credentials vault egress store',
+  },
+  {
+    id: 'proj-members',
+    label: 'Workspace members',
+    icon: UsersSolid,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    // An ACTION, not a navigate row: the destination is the OWNING account's
+    // Access pane scoped back to this workspace
+    // (`/accounts/<acct>?tab=access-projects&project=<id>`), and the account
+    // id is a field on the project detail — a network read the registry
+    // cannot do. `openProjectMembers` in command-palette.tsx resolves it, the
+    // same way `inviteMembers` does. `/projects/<id>/members` still resolves
+    // and redirects to the same place, but routing through it costs a second
+    // navigation and paints the capabilities shell first.
+    actionId: 'openProjectMembers',
+    requiresProject: true,
+    // The roster half. 'invite' belongs to `proj-invite`, the verb row.
+    keywords:
+      'members member workspace access collaborators people teammates roster who can see permissions grant share seats',
+  },
+  {
+    id: 'proj-files',
+    label: 'Files',
+    icon: FolderOpen,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/files',
+    requiresProject: true,
+    keywords: 'files repository drive browser explorer',
+  },
+  {
+    id: 'proj-apps',
+    label: 'Apps',
+    icon: Globe,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/apps',
+    requiresProject: true,
+    requiresFlag: 'apps',
+    keywords: 'apps deploy deployments serverless docker static hosting urls',
+  },
+  {
+    id: 'proj-config-general',
+    label: 'Settings · General',
+    icon: CogOne,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // `projectSettingsSectionHref(id, 'general')` — the default section
+    // carries no query, so this is the bare `/config` the old `proj-customize`
+    // row pointed at. Same destination, honest label.
+    href: '/projects/{projectId}/config',
+    requiresProject: true,
+    keywords:
+      'settings general workspace rename delete danger zone name description git repo repository github clone branch remote',
+  },
+  {
+    id: 'proj-config-sandbox',
+    label: 'Settings · Sandbox templates',
+    icon: Container,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/config?section=sandbox',
+    requiresProject: true,
+    // Snapshots merged into this section — a snapshot is a sandbox template's
+    // build history — so both vocabularies answer here.
+    keywords: 'sandbox templates template image runtime machine snapshots builds recipe container',
+  },
+  {
+    id: 'proj-config-review',
+    label: 'Settings · Review',
+    icon: Tray,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/config?section=review',
+    requiresProject: true,
+    // Same gate the section itself carries (`REVIEW_SECTION` is pushed only
+    // when `reviewEnabled`), so the row cannot outlive the pane.
+    requiresFlag: 'review_center',
+    keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
+  },
+  {
+    id: 'proj-config-feature-flags',
+    label: 'Settings · Feature flags',
+    icon: Flask,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/config?section=feature-flags',
+    requiresProject: true,
+    // Selecting this opens the in-palette flag list (`SUBMENU_PAGE_BY_ID` in
+    // command-palette.tsx), which names and toggles each experimental feature
+    // without leaving ⌘K; the href is the routed fallback for surfaces that
+    // consume this registry without that picker — same arrangement as
+    // `proj-sessions` and `nav-accounts`.
+    keywords: 'feature flags experimental beta labs toggles switches early access',
+  },
+  {
+    id: 'proj-config-upgrades',
+    label: 'Settings · Upgrades',
+    icon: ArrowUpCircle,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/config?section=upgrades',
+    requiresProject: true,
+    keywords: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
   },
   {
     id: 'proj-invite',
@@ -869,6 +1052,36 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'usage credits ledger transactions history purchases receipts spend consumption',
   },
   {
+    id: 'account-access-projects',
+    // The account page's Access rail calls this pane "Projects". The label
+    // keeps that name and the `Account · ` prefix every sibling carries, so
+    // the row promises exactly what the destination shows.
+    //
+    // This is the WORKSPACE-level roster, as distinct from `account-members`
+    // above (the organization-level one): Members answers "who is in this
+    // account", this answers "which workspaces can they open, and with what
+    // agents". Both were reachable from the palette as one word — "members" —
+    // which returned the organization list only. `proj-members` is the same
+    // pane pre-scoped to the workspace you are standing in.
+    label: 'Account · Projects',
+    icon: FolderOpen,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/accounts/{accountId}?tab=access-projects',
+    keywords: 'workspace access grants who can open repositories per workspace membership',
+  },
+  {
+    id: 'account-git',
+    label: 'Account · Git',
+    icon: FolderGit2,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/accounts/{accountId}?tab=git',
+    keywords: 'git github app installation repositories connect clone remote host provider',
+  },
+  {
     id: 'account-groups',
     label: 'Account · Groups',
     icon: UsersSolid,
@@ -907,6 +1120,19 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/accounts/{accountId}?tab=audit',
     keywords: 'audit log logs events history trail compliance',
+  },
+  {
+    id: 'account-help',
+    label: 'Account · Permissions help',
+    icon: QuestionMark,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // The old `PermissionsHelpPopover`, promoted to a linkable pane. It is
+    // reference copy — no data, no mutations — and is the only pane in the
+    // Access rail nothing linked to from outside the page.
+    href: '/accounts/{accountId}?tab=help',
+    keywords: 'permissions help what does mean reference explain owner admin member viewer',
   },
   {
     id: 'account-tokens',
@@ -965,18 +1191,20 @@ export const menuRegistry: MenuItemDef[] = [
   // WALLPAPERS — derived from the appearance-tab list; typing a wallpaper's
   // name (Dither, Grain, Silk, …) in the palette applies it directly.
   // ──────────────────────────────────────────────────────────────────────────
-  ...WALLPAPERS.map((wp): MenuItemDef => ({
-    id: `wallpaper-${wp.id}`,
-    label: `Appearance · ${wp.name}`,
-    icon: WallpaperIcon,
-    group: 'wallpaper',
-    showIn: ['commandPalette'],
-    kind: 'wallpaper',
-    wallpaperValue: wp.id,
-    keywords: `wallpaper wallpapers background appearance ${wp.id}${
-      wp.type === 'shader' ? ' shader shaders animated' : ''
-    }`,
-  })),
+  ...WALLPAPERS.map(
+    (wp): MenuItemDef => ({
+      id: `wallpaper-${wp.id}`,
+      label: `Appearance · ${wp.name}`,
+      icon: WallpaperIcon,
+      group: 'wallpaper',
+      showIn: ['commandPalette'],
+      kind: 'wallpaper',
+      wallpaperValue: wp.id,
+      keywords: `wallpaper wallpapers background appearance ${wp.id}${
+        wp.type === 'shader' ? ' shader shaders animated' : ''
+      }`,
+    }),
+  ),
 
   // ──────────────────────────────────────────────────────────────────────────
   // VIEW

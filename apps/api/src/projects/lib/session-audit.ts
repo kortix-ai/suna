@@ -33,7 +33,7 @@ function authoritativeSource(input: SessionCreatedAuditInput, actor: AuditActorT
   const invocation = input.invocationSource ?? '';
   if (invocation.startsWith('trigger:')) return 'automation';
   if (invocation.startsWith('system:')) return 'system';
-  if (['slack', 'email', 'telegram', 'teams', 'voice', 'admin'].includes(invocation)) {
+  if (['slack', 'email', 'telegram', 'teams', 'admin'].includes(invocation)) {
     return invocation;
   }
   if (input.origin === 'trigger' || input.origin === 'schedule') return 'automation';

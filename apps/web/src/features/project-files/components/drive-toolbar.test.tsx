@@ -3,7 +3,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { DriveNewMenuItems, DriveToolbar, hasWriteActions } from './drive-toolbar';
+import { DriveNewMenu, DriveNewMenuItems, DrivePathBar, hasWriteActions } from './drive-toolbar';
 
 /**
  * `apps/web` has no jsdom/happy-dom and no `@testing-library/react` (see
@@ -16,33 +16,28 @@ import { DriveNewMenuItems, DriveToolbar, hasWriteActions } from './drive-toolba
  * `FolderDriveMenuItems` — so they can be rendered and driven without a live
  * Radix portal (portal content is absent from static markup).
  */
-function renderToolbar(props: Partial<Parameters<typeof DriveToolbar>[0]> = {}) {
+function render(node: ReactNode) {
   // Every label under test is literal English in the component. next-intl only
   // supplies `title`/placeholder copy here, so missing-message and
   // server-render fallbacks are swallowed rather than dragging a 644 KB
   // catalogue into the run.
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-      <DriveToolbar onDownloadDir={() => {}} onRefresh={() => {}} {...props} />
+      {node}
     </NextIntlClientProvider>,
   );
 }
 
-describe('DriveToolbar write actions', () => {
-  test('a writable source gets a New menu trigger in the toolbar', () => {
-    const html = renderToolbar({
-      onUpload: () => {},
-      onNewFile: () => {},
-      onNewFolder: () => {},
-    });
+describe('DriveNewMenu write actions', () => {
+  test('a writable source gets a New menu trigger', () => {
+    const html = render(
+      <DriveNewMenu onUpload={() => {}} onNewFile={() => {}} onNewFolder={() => {}} />,
+    );
     expect(html).toContain('>New</button>');
   });
 
-  test('a read-only source sees no write control', () => {
-    const html = renderToolbar();
-    expect(html).not.toContain('>New</button>');
-    // The read-only toolbar still renders — this is not an empty-string pass.
-    expect(html).toContain('workspace');
+  test('a read-only source sees no write control at all', () => {
+    expect(render(<DriveNewMenu />)).toBe('');
   });
 
   test('the gate needs all three handlers — a half-wired menu never renders', () => {
@@ -51,7 +46,31 @@ describe('DriveToolbar write actions', () => {
     expect(hasWriteActions({ onUpload: noop, onNewFile: noop })).toBe(false);
     expect(hasWriteActions({ onUpload: noop })).toBe(false);
     expect(hasWriteActions({})).toBe(false);
-    expect(renderToolbar({ onUpload: () => {} })).not.toContain('>New</button>');
+    expect(render(<DriveNewMenu onUpload={() => {}} />)).toBe('');
+  });
+
+  test('the compact trigger keeps an accessible name once the label is gone', () => {
+    const html = render(
+      <DriveNewMenu compact onUpload={() => {}} onNewFile={() => {}} onNewFolder={() => {}} />,
+    );
+    expect(html).toContain('aria-label="New"');
+    expect(html).not.toContain('>New</button>');
+  });
+});
+
+describe('DrivePathBar', () => {
+  test('inline mode always shows a root crumb, and takes the host label', () => {
+    expect(render(<DrivePathBar />)).toContain('workspace');
+    expect(render(<DrivePathBar rootLabel="Files" />)).toContain('Files');
+  });
+
+  /**
+   * The whole reason the strip is separable: at the root it has nothing to
+   * say, and a bordered bar carrying one word is exactly the chrome this
+   * redesign removed. `/workspace` IS the root.
+   */
+  test('row mode renders nothing at the root', () => {
+    expect(render(<DrivePathBar as="row" />)).toBe('');
   });
 });
 

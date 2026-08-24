@@ -13,7 +13,9 @@ Reach for this skill for repo-shaped requests: implement, fix, refactor, make te
 
 Kortix gives you two delegation paths. Choosing the right one is the whole game.
 
-**The `explore` subagent — cheap, read-only recon.** When you need a fast answer about a codebase ("where is auth handled", "what calls this function", "does this repo use Vite or Webpack") and you do *not* need to change anything, invoke the read-only `explore` subagent via the `task` tool or an `@explore` mention. It searches and reports a conclusion instead of dumping files into your context. Use `scout` instead when the answer lives in an external dependency you'd need to pull source for.
+**The `explore` subagent — cheap, read-only recon.** When you need a fast answer about a codebase ("where is auth handled", "what calls this function", "does this repo use Vite or Webpack") and you do *not* need to change anything, invoke the read-only `explore` subagent via the `task` tool or an `@explore` mention. It searches and reports a conclusion instead of dumping files into your context. This works the same way when the answer lives in an external dependency — point `explore` at the vendored source or have it pull the package first.
+
+**Only the top-level agent can fan out.** If you are already running as a subagent, the `task` tool is not available to you one level down — the runtime rejects nested spawns with "Subagent depth limit reached". Do the recon yourself with `grep`/`glob`/`read` and report your conclusion. Background sessions are *not* subject to this: a Kortix session is its own sandbox, so spawning one is always allowed.
 
 **A background session — the real worktree.** When the task is to *change* code — implement, fix, refactor, run a test suite, push a branch, open a PR — spawn a background session with the Kortix sessions flow (`session_start_background`, or `session_spawn` for parallel work). Each session is its own isolated VM sandbox with full tooling, so it can install, build, run, and commit without touching your environment. Read results back with `session_read`. This is the equivalent of handing the job to a dedicated coding agent.
 

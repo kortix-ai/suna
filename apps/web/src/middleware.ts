@@ -13,6 +13,10 @@ import {
   resolveDefaultLandingPath,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
+import {
+  resolveMiddlewareIdentity,
+  type MiddlewareUser,
+} from '@/lib/supabase/middleware-identity';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
@@ -98,7 +102,6 @@ const PUBLIC_ROUTES = [
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated
   '/a1o', // "All in one" — WebGL stack-layer cube landing page, public, unauthenticated
-  '/voice', // Direct join page for a live voice call — token-gated, MUST load with no login
   ...locales.flatMap((locale) =>
     MARKETING_ROUTES.map((route) => `/${locale}${route === '/' ? '' : route}`),
   ),
@@ -453,31 +456,32 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // Fetch user ONCE and reuse for auth checks.
-  // IMPORTANT: Skip getUser() for auth routes — the auth page handles its
-  // own session client-side. Calling getUser() here can trigger a server-side
-  // token refresh that consumes the refresh token (GoTrue refresh tokens are
-  // single-use). The updated cookie is set on the response, but if the browser
-  // does a client-side navigation (router.push) instead of a full page load,
-  // the Set-Cookie header may not be processed, leaving the browser with a
-  // stale (revoked) refresh token → "Refresh Token Not Found" on the next request.
-  let user: { id: string; user_metadata?: { locale?: string } } | null = null;
+  // Resolve the identity ONCE and reuse it for every auth check below.
+  //
+  // The common path verifies the access token's ES256 signature in-process
+  // (see lib/supabase/middleware-identity.ts) instead of round-tripping
+  // GoTrue, so a client-side navigation no longer pays an edge -> Supabase hop
+  // before its RSC payload can start. getUser() still runs for what cannot be
+  // settled locally.
+  //
+  // IMPORTANT: Skip the lookup entirely for auth routes — the auth page
+  // handles its own session client-side. Resolving here can trigger a
+  // server-side token refresh that consumes the refresh token (GoTrue refresh
+  // tokens are single-use). The updated cookie is set on the response, but if
+  // the browser does a client-side navigation (router.push) instead of a full
+  // page load, the Set-Cookie header may not be processed, leaving the browser
+  // with a stale (revoked) refresh token → "Refresh Token Not Found" on the
+  // next request. Local verification also shrinks that window: the fast path
+  // never refreshes.
+  let user: MiddlewareUser | null = null;
   let authError: Error | null = null;
 
   const isAuthRoute = pathname === '/auth' || pathname.startsWith('/auth/');
 
   if (!isAuthRoute) {
-    try {
-      const {
-        data: { user: fetchedUser },
-        error: fetchedError,
-      } = await supabase.auth.getUser();
-      user = fetchedUser;
-      authError = fetchedError as Error | null;
-    } catch (error) {
-      // User might not be authenticated, continue
-      authError = error as Error;
-    }
+    const identity = await resolveMiddlewareIdentity(supabase.auth);
+    user = identity.user;
+    authError = identity.authError;
   }
 
   // Self-heal a stale/rotated session. A refresh token that's invalid or

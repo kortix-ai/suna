@@ -128,17 +128,19 @@ export function ProviderLogo({
   providerID: string;
   name?: string;
   className?: string;
-  size?: 'small' | 'default' | 'large';
+  size?: 'xs' | 'small' | 'default' | 'large';
 }) {
   const iconDef = PROVIDER_ICON_MAP[providerID];
 
   const sizeClasses = {
+    xs: 'size-4',
     small: 'size-8',
     default: 'size-9',
     large: 'size-11',
   };
 
   const iconSizes = {
+    xs: 16,
     small: 20,
     default: 22,
     large: 24,
@@ -147,7 +149,13 @@ export function ProviderLogo({
   return (
     <span
       className={cn(
-        'bg-muted flex shrink-0 items-center justify-center rounded-md',
+        'flex shrink-0 items-center justify-center',
+        // `xs` is the INLINE size — a bare mark sitting on a line of text (a
+        // command-palette group heading), not a chip. The tile is what makes
+        // the other sizes read as an avatar, and at 16px a tile around a 12px
+        // mark is all frame and no logo. The initials fallback keeps its tile
+        // at every size: two bare letters at 9px read as debris, not a logo.
+        iconDef?.src && size === 'xs' ? 'bg-transparent' : 'bg-muted rounded-md',
         sizeClasses[size],
         className,
       )}
@@ -161,14 +169,17 @@ export function ProviderLogo({
           height={iconSizes[size]}
           className={cn(
             'object-contain dark:invert',
-            iconDef.src === '/kortix-symbol.svg' && 'size-3',
+            // The Kortix mark is drawn edge-to-edge with no built-in padding,
+            // so inside a tile it needs its own inset to match the other
+            // logos' optical size. At `xs` there is no tile to inset from.
+            iconDef.src === '/kortix-symbol.svg' && (size === 'xs' ? 'size-3.5' : 'size-3'),
           )}
         />
       ) : (
         <span
           className={cn(
             'font-semibold tracking-wide text-zinc-600 uppercase dark:text-zinc-300',
-            size === 'small' ? 'text-xs' : size === 'large' ? 'text-xs' : 'text-xs',
+            size === 'xs' ? 'text-[9px]' : 'text-xs',
           )}
         >
           {initialsFor(providerID, name)}

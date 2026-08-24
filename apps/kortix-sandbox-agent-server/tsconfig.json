@@ -15,7 +15,27 @@
     "verbatimModuleSyntax": false,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    // The relay wire contract is SHARED with apps/api, not copied — a base64
+    // codec is far too risky to duplicate (blocked-headers.test.ts exists
+    // because a hand copy of ten strings drifted and broke every deployed
+    // daemon).
+    //
+    // It is reached through a tsconfig path and NOT through a package.json
+    // dependency, deliberately. This app is built STANDALONE: apps/sandbox/
+    // Dockerfile copies only its own package.json + bun.lock into the builder
+    // stage, and .github/workflows/ci.yml runs `bun install --frozen-lockfile`
+    // with this directory as the working directory. A `"workspace:*"` entry
+    // makes both of those fail outright — reproduced: `error: Workspace
+    // dependency "@kortix/api-contract" not found / Searched in "./*"`, exit 1,
+    // which red-lines the sandbox-agent-build job AND stops any new sandbox
+    // image from being produced. A path mapping costs no lockfile entry and is
+    // honoured by `bun run`, `bun test` and `bun build --compile` (verified).
+    // The Dockerfile places packages/api-contract at the matching relative
+    // path.
+    "paths": {
+      "@kortix/api-contract/*": ["../../packages/api-contract/src/*"]
+    }
   },
   "include": ["src/**/*.ts"]
 }

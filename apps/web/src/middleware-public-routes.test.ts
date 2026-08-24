@@ -11,7 +11,7 @@ test('/review is not public — the Review Center ships flag-gated inside Custom
 });
 
 test('token-gated entry points stay public', () => {
-  for (const route of ["'/secret-intake'", "'/connect'", "'/voice'", "'/share'"]) {
+  for (const route of ["'/secret-intake'", "'/connect'", "'/share'"]) {
     expect(publicRoutes).toContain(route);
   }
 });

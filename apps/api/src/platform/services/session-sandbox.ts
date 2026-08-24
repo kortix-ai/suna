@@ -18,7 +18,6 @@ import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 import { db } from '../../shared/db';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
-import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import {
@@ -28,7 +27,10 @@ import {
   type ProvisionResult,
   type ProviderName,
 } from '../providers';
-import { readActiveRouting } from '../../projects/provider-transition/provider-transition-store';
+import {
+  readActiveRouting,
+  type ActiveRouting,
+} from '../../projects/provider-transition/provider-transition-store';
 import {
   buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,
@@ -44,6 +46,7 @@ import {
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
+import { deleteProjectSandboxImage } from '../../snapshots/project-image-delete';
 import { config } from '../../config';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
@@ -58,6 +61,7 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
+import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
@@ -129,20 +133,19 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
 
 /**
  * Resolve the agent's grant from the manifest's `[[agents]]` overlay, then mint
- * the per-session connector/CLI account token carrying it. Best-effort: a manifest
- * hiccup yields a null grant (full access, capped at the user by the route's own
- * role check) and a mint failure yields null — neither bricks a session. The
- * grant is read from the default branch, so any `[[agents]]` change activates
- * only via a merged CR.
+ * the per-session account token carrying it. Grant resolution is fail-closed:
+ * an unreadable manifest stops provisioning instead of minting an unrestricted
+ * credential. The grant is read from the default branch, so any `[[agents]]`
+ * change activates only through a merged change request.
  */
-async function mintConnectorToken(opts: {
+async function mintSessionToken(opts: {
   accountId: string;
   userId: string;
   projectId: string;
   sandboxId: string;
   agentName: string;
   gitProject: GitBackedProject;
-}): Promise<string | null> {
+}): Promise<string> {
   const platformMetaAgent = isMetaAgentName(opts.agentName);
   // The reserved coordinator uses a platform-owned full project grant. It acts
   // as the launching user and never resolves through a project-declared agent
@@ -151,16 +154,11 @@ async function mintConnectorToken(opts: {
     ? [platformMetaAgentGrant(), null]
     : await Promise.all([
         // Resolve the per-session grant AND the agent's standing-identity
-        // service account in parallel. The SA resolution is FAIL-SAFE: on error
+        // service account in parallel. Grant resolution must throw on failure.
+        // The SA resolution is FAIL-SAFE: on error
         // we mint without a service_account_id, which is the legacy behavior
         // (authorize as the user ∩ grant). It never widens authority.
-        resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
-          console.warn(
-            `[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`,
-            err,
-          );
-          return null;
-        }),
+        resolveAgentGrant(opts.agentName, opts.gitProject),
         ensureAgentServiceAccount({
           accountId: opts.accountId,
           projectId: opts.projectId,
@@ -173,23 +171,19 @@ async function mintConnectorToken(opts: {
           return null;
         }),
       ]);
-  try {
-    const tok = await createAccountToken({
-      accountId: opts.accountId,
-      userId: opts.userId,
-      projectId: opts.projectId,
-      // session_id == sandbox_id by construction — lets the LLM gateway attribute
-      // usage_events to this session (the reaper's reliable activity signal).
-      sessionId: opts.sandboxId,
-      name: `Connector Session ${opts.sandboxId.slice(0, 8)}`,
-      agentGrant,
-      serviceAccountId,
-    });
-    return tok.secretKey;
-  } catch (err) {
-    console.warn(`[session-sandbox] failed to mint connector token for ${opts.projectId}:`, err);
-    return null;
-  }
+  const tok = await createAccountToken({
+    accountId: opts.accountId,
+    userId: opts.userId,
+    projectId: opts.projectId,
+    // session_id == sandbox_id by construction. This is the sandbox's one
+    // Kortix credential. Every API surface derives its narrower authority from
+    // these claims and the route's own authorization gate.
+    sessionId: opts.sandboxId,
+    name: `Session ${opts.sandboxId.slice(0, 8)}`,
+    agentGrant,
+    serviceAccountId,
+  });
+  return tok.secretKey;
 }
 
 /**
@@ -217,6 +211,8 @@ export function fastColdBootEnabled(): boolean {
  *   - the kill-switch is ON,
  *   - the provider actually supports id-boot (Platinum; others are name-only),
  *   - a non-empty pinned id exists, AND
+ *   - the activation records an image name that exactly matches the resolved
+ *     image name, AND
  *   - MANDATORY provider-match: the pin belongs to the provider it was activated
  *     for — `routing.activeProvider === providerName`. This is what makes a
  *     rollback safe: a project reverted to Daytona with a leftover Platinum id
@@ -226,10 +222,15 @@ export function fastColdBootEnabled(): boolean {
  */
 export function decideSessionBoot(input: {
   killSwitchOn: boolean;
-  routing: { activeProvider: string | null; activeExternalTemplateId: string | null } | null;
+  routing: Pick<
+    ActiveRouting,
+    'activeProvider' | 'activeExternalTemplateId' | 'activeSnapshotName'
+  > | null;
   providerName: string;
   providerSupportsIdBoot: boolean;
   imageIsDefault?: boolean;
+  imageIsProjectImage?: boolean;
+  imageSnapshotName?: string;
   disabledForSession?: boolean;
 }): { bootByTemplateId: string | null } {
   const {
@@ -238,14 +239,27 @@ export function decideSessionBoot(input: {
     providerName,
     providerSupportsIdBoot,
     imageIsDefault = true,
+    imageSnapshotName,
     disabledForSession,
   } = input;
-  if (disabledForSession || !killSwitchOn || !providerSupportsIdBoot || !imageIsDefault) {
+  if (
+    disabledForSession ||
+    !killSwitchOn ||
+    !providerSupportsIdBoot ||
+    !imageIsDefault
+  ) {
     return { bootByTemplateId: null };
   }
   const pinnedId = routing?.activeExternalTemplateId ?? null;
   if (!pinnedId) return { bootByTemplateId: null };
   if (routing?.activeProvider !== providerName) return { bootByTemplateId: null }; // provider-match
+  if (
+    !routing.activeSnapshotName ||
+    !imageSnapshotName ||
+    routing.activeSnapshotName !== imageSnapshotName
+  ) {
+    return { bootByTemplateId: null };
+  }
   return { bootByTemplateId: pinnedId };
 }
 
@@ -288,6 +302,8 @@ export async function provisionSessionSandbox(opts: {
   initialTurn?: PreparedInitialSandboxTurn | null;
   /** Project metadata, used for per-project experimental gates. */
   projectMetadata?: unknown;
+  /** False for meta/read/runtime sessions that may not receive repository bytes. */
+  allowProjectImage?: boolean;
   /**
    * Extra env vars injected into the sandbox at provider create-time. These
    * land in the Daytona snapshot's environment so its boot script can read
@@ -347,6 +363,7 @@ export async function provisionSessionSandbox(opts: {
           accountId,
           source: 'session-start',
           provider: targetProvider,
+          allowProjectImage: opts.allowProjectImage,
         });
 
   // Kick image resolution off NOW, in parallel with the token round-trip below.
@@ -390,6 +407,9 @@ export async function provisionSessionSandbox(opts: {
         config: {},
         metadata: {
           ...(opts.metadata ?? {}),
+          // Instance scope for background work on a shared DB — see
+          // projects/instance-scope.ts. `{}` when KORTIX_INSTANCE_ID is unset.
+          ...instanceStampMetadata(),
           ...(opts.initialTurn
             ? {
                 activeTurns: {
@@ -422,7 +442,7 @@ export async function provisionSessionSandbox(opts: {
         // out. Consume their authorization marker atomically so at most one
         // allocator can claim the row and call provider.create(). New code never
         // creates this marker because established identities are fail-closed.
-        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt'`,
+        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt') || ${JSON.stringify(instanceStampMetadata())}::jsonb`,
         updatedAt: new Date(),
       })
       .where(
@@ -436,17 +456,12 @@ export async function provisionSessionSandbox(opts: {
       .returning();
   };
 
-  const [sandboxRows, sandboxKey, connectorToken, gatewayEntitled] = await Promise.all([
+  const [sandboxRows, sessionToken, gatewayEntitled] = await Promise.all([
     createOrClaimSandboxRow(),
-    createApiKey({
-      sandboxId,
-      accountId,
-      title: 'Sandbox Token',
-      type: 'sandbox',
-    }),
-    // Resolve the per-agent grant from kortix.yaml's `agents:` overlay and mint
-    // the connector/CLI account token carrying it (best-effort — see helper).
-    mintConnectorToken({
+    // Resolve the per-agent grant and mint the sole sandbox credential. Token
+    // minting is fail-closed: a sandbox without its session identity cannot
+    // securely reach any Kortix service.
+    mintSessionToken({
       accountId,
       userId,
       projectId,
@@ -494,8 +509,7 @@ export async function provisionSessionSandbox(opts: {
   // accountEntitledToLlmGateway gates on the resolved TIER, not billing_model,
   // so legacy paying customers are no longer wrongly stripped to the Zen-only
   // catalog. Per-request affordability stays in the gateway's own billing gate.
-  const gatewayLlmKey: string | null =
-    llmGatewayEnabled && gatewayEntitled ? connectorToken : null;
+  const gatewayEnabled = llmGatewayEnabled && gatewayEntitled;
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -510,41 +524,11 @@ export async function provisionSessionSandbox(opts: {
     location,
     envVars: {
       ...(opts.extraEnvVars ?? {}),
-      // ── Sandbox token model — TWO credentials, two principals ──────────────
-      // 1) The SANDBOX credential (`kortix_sb_…`): the daemon's identity. It is
-      //    the HMAC key the API signs `X-Kortix-User-Context` with (the daemon
-      //    verifies it) AND the bearer for the 3 sandbox-identity routes
-      //    (/git/clone-credential, /turn-stream, /turn-question). It carries NO
-      //    user identity, so project-scoped routes reject it. Injected under the
-      //    self-documenting `KORTIX_SANDBOX_TOKEN`; `KORTIX_TOKEN` is kept as a
-      //    back-compat alias for daemons baked before the rename.
-      // 2) The SESSION credential (`kortix_pat_…`, `connectorToken`): acts AS the
-      //    launching user, scoped by the agent grant. It backs the Connector
-      //    gateway AND the in-sandbox `kortix` CLI. Injected under
-      //    `KORTIX_CLI_TOKEN`.
-      // The agent never needs the sandbox credential — see apps/cli config.ts
-      // (activeHost() resolves only the session token).
-      KORTIX_SANDBOX_TOKEN: sandboxKey.secretKey,
-      KORTIX_TOKEN: sandboxKey.secretKey,
-      ...(connectorToken
-        ? { KORTIX_CLI_TOKEN: connectorToken }
-        : {}),
-      ...(gatewayLlmKey
-        ? {
-            KORTIX_LLM_API_KEY: gatewayLlmKey,
-            KORTIX_LLM_BASE_URL: llmBaseUrl,
-          }
-        : {}),
-      // AI-SDK-native transport toggle. When the operator enables the native
-      // gateway path (`GATEWAY_AI_SDK_NATIVE`, one switch for both the gateway
-      // mount and this injection), tell the daemon's `buildKortixProvider` to
-      // select `@ai-sdk/gateway` (native `/language-model`) instead of
-      // `@ai-sdk/openai-compatible`. Allowlisted in the daemon's env route
-      // (OPENCODE_RUNTIME_ENV_NAMES). Inert without the KORTIX_LLM_* pair above:
-      // `buildKortixProvider` runs only when the gateway provider is mounted, so
-      // a session on native BYOK ignores it. When the flag is OFF this key is
-      // absent — byte-identical to the pre-flag env.
-      ...(config.aiSdkNative ? { KORTIX_LLM_AI_SDK_NATIVE: 'true' } : {}),
+      // One sandbox, one session-scoped Kortix credential. Provider, connector,
+      // executor and Git credentials stay server-side. The route being called
+      // determines what this token may do.
+      KORTIX_TOKEN: sessionToken,
+      ...(gatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
@@ -575,12 +559,13 @@ export async function provisionSessionSandbox(opts: {
       contentHash: string;
       isDefault: boolean;
       runtimeProfile?: 'standard' | 'fast' | 'meta';
+      isProjectImage?: boolean;
     } | null = null;
-    // FIX-A: the project's ACTIVATED routing pin (provider + exact template id),
-    // read once, best-effort — a DB hiccup yields null → name-boot. Set
+    // FIX-A: the project's ACTIVATED routing pin (provider + exact template id
+    // and image name), read once, best-effort — a DB hiccup yields null → name-boot. Set
     // `idBootDisabled` once a definitive GC'd-pin 404 forces this session down to
     // a name-boot, so the retry never re-attempts the dead pin.
-    let activeRouting: { activeProvider: string | null; activeExternalTemplateId: string | null } | null = null;
+    let activeRouting: ActiveRouting | null = null;
     try {
       activeRouting = await readActiveRouting(db, projectId);
     } catch (routingErr) {
@@ -634,6 +619,7 @@ export async function provisionSessionSandbox(opts: {
         contentHash: image.contentHash,
         isDefault: image.isDefault,
         runtimeProfile: image.runtimeProfile,
+        isProjectImage: image.isProjectImage,
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
@@ -656,7 +642,13 @@ export async function provisionSessionSandbox(opts: {
         // profile has its own content-addressed name and must never boot that
         // standard pin by mistake.
         imageIsDefault: image.isDefault && image.runtimeProfile !== 'fast',
-        disabledForSession: idBootDisabled,
+        imageIsProjectImage: image.isProjectImage,
+        imageSnapshotName: image.snapshotName,
+        disabledForSession:
+          idBootDisabled ||
+          opts.allowProjectImage === false ||
+          (config.KORTIX_FAST_COLD_BOOT_CONFIGURED &&
+            !config.KORTIX_FAST_COLD_BOOT_ENABLED),
       });
       if (bootDecision.bootByTemplateId) {
         console.log(
@@ -888,7 +880,7 @@ export async function provisionSessionSandbox(opts: {
           attempts,
           lastProvisionMaxAttempts,
         ),
-        config: { serviceKey: sandboxKey.secretKey, llmGatewayEnabled: !!gatewayLlmKey },
+        config: { serviceKey: sessionToken, llmGatewayEnabled: gatewayEnabled },
         lastUsedAt: new Date(),
         updatedAt: new Date(),
       };
@@ -988,7 +980,10 @@ export async function provisionSessionSandbox(opts: {
       // and retry once. Capped at one heal per session start.
       if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
-        await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug, provider: providerName }).catch((err) =>
+        const imageDelete = imageInfo.isProjectImage
+          ? deleteProjectSandboxImage(imageInfo.snapshotName, providerName)
+          : deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug, provider: providerName });
+        await imageDelete.catch((err) =>
           console.warn(
             `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,
             err,

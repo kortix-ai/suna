@@ -153,7 +153,7 @@ dim "project" "$PROJECT_ID"
 
 # ───────────────────────────────────────────────────────────────────────────
 
-export KORTIX_CLI_TOKEN="$PAT_SECRET"
+export KORTIX_TOKEN="$PAT_SECRET"
 export KORTIX_API_URL="$API_URL"
 export KORTIX_PROJECT_ID="$PROJECT_ID"
 

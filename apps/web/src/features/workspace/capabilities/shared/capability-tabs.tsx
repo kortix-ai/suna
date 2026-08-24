@@ -104,7 +104,11 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
 
   return (
     <Link
-      href={`/accounts/${accountId}?tab=access-projects&project=${projectId}`}
+      /* `from=customize` is what earns the project panel a "Back to Customize"
+         breadcrumb instead of the hub's own "All projects". This link is the
+         ONLY way that marker gets set, so the panel can rely on there being a
+         Customize entry in history to go back to. */
+      href={`/accounts/${accountId}?tab=access-projects&project=${projectId}&from=customize`}
       prefetch={false}
       className="text-muted-foreground hover:text-foreground ml-auto flex w-fit flex-none items-center gap-1 px-1 py-3 text-sm font-medium whitespace-nowrap transition-colors"
     >

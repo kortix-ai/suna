@@ -94,6 +94,43 @@ merge_environment_overrides() {
   '
 }
 
+gateway_target_for_env() {
+  case "$1" in
+    dev) printf '%s' 'https://gateway-dev-ecs-fargate.kortix.com' ;;
+    staging) printf '%s' 'https://gateway-staging-ecs-fargate.kortix.com' ;;
+    prod) printf '%s' 'https://gateway-ecs-fargate.kortix.com' ;;
+    prod-use2-shadow) printf '%s' 'https://gateway-use2-shadow.kortix.com' ;;
+    *) echo "unknown gateway environment: $1" >&2; return 2 ;;
+  esac
+}
+
+fast_cold_boot_requires_atomic_admission() {
+  local overrides_json="${1:-}" secret_json="${2:-}"
+  local enabled providers
+  [ -n "$overrides_json" ] || overrides_json='{}'
+  [ -n "$secret_json" ] || secret_json='{}'
+  if ! enabled="$(printf '%s' "$overrides_json" | jq -er '.KORTIX_FAST_COLD_BOOT_ENABLED // "false"')"; then
+    echo 'refusing deployment: malformed KORTIX_ECS_ENV_OVERRIDES JSON' >&2
+    return 2
+  fi
+  [ "$enabled" = "true" ] || return 1
+  if ! providers="$(printf '%s' "$secret_json" | jq -er '.ALLOWED_SANDBOX_PROVIDERS // "" | ascii_downcase')"; then
+    echo 'refusing FAST cold boot activation: malformed environment secret JSON' >&2
+    return 2
+  fi
+  printf '%s' "$providers" | grep -Eq '(^|[[:space:],])platinum([[:space:],]|$)'
+}
+
+validate_platinum_atomic_admission() {
+  local quota_json="${1:-}"
+  [ -n "$quota_json" ] || quota_json='{}'
+  if printf '%s' "$quota_json" | jq -e '.templates.atomicAdmission == true' >/dev/null 2>&1; then
+    return 0
+  fi
+  echo 'refusing FAST cold boot activation: Platinum does not advertise atomic template admission' >&2
+  return 1
+}
+
 # Allow sourcing for tests: `KORTIX_ECS_DEPLOY_LIB=1 source ecs-deploy.sh`.
 if [ "${KORTIX_ECS_DEPLOY_LIB:-}" = "1" ]; then
   # shellcheck disable=SC2317 # `exit` is the non-sourced fallback for `return`
@@ -186,6 +223,36 @@ SECRET_VALUE="$(aws secretsmanager get-secret-value --region "$REGION" \
   --secret-id "$SECRET_ARN" --query 'SecretString' --output text)"
 KEYCOUNT="$(printf '%s' "$SECRET_VALUE" | jq 'if type == "object" and all(.[]; type == "string") then length else error("secret must be a JSON object of strings") end')"
 [ "$KEYCOUNT" -gt 0 ] || { echo "blob $SECRET_NAME has 0 keys — refusing to deploy" >&2; exit 1; }
+
+FAST_OVERRIDES_JSON="${KORTIX_ECS_ENV_OVERRIDES:-}"
+[ -n "$FAST_OVERRIDES_JSON" ] || FAST_OVERRIDES_JSON='{}'
+FAST_CAPABILITY_REQUIRED=0
+fast_cold_boot_requires_atomic_admission "$FAST_OVERRIDES_JSON" "$SECRET_VALUE" || FAST_CAPABILITY_REQUIRED=$?
+if [ "$FAST_CAPABILITY_REQUIRED" -eq 2 ]; then
+  exit 1
+elif [ "$FAST_CAPABILITY_REQUIRED" -eq 0 ]; then
+  PLATINUM_URL="$(printf '%s' "$SECRET_VALUE" | jq -r '.PLATINUM_API_URL // empty')"
+  PLATINUM_KEY="$(printf '%s' "$SECRET_VALUE" | jq -r '.PLATINUM_API_KEY // empty')"
+  case "$PLATINUM_URL" in
+    https://*) ;;
+    *) echo 'refusing FAST cold boot activation: PLATINUM_API_URL must use https' >&2; exit 1 ;;
+  esac
+  [ -n "$PLATINUM_KEY" ] || { echo 'refusing FAST cold boot activation: PLATINUM_API_KEY is missing' >&2; exit 1; }
+
+  FAST_HEADER_FILE="$(mktemp)"
+  cleanup_fast_header() { rm -f -- "$FAST_HEADER_FILE"; }
+  trap cleanup_fast_header EXIT
+  chmod 600 "$FAST_HEADER_FILE"
+  printf 'Authorization: Bearer %s\n' "$PLATINUM_KEY" > "$FAST_HEADER_FILE"
+  PLATINUM_QUOTA="$(curl --silent --show-error --fail --connect-timeout 10 --max-time 30 \
+    --header "@$FAST_HEADER_FILE" "$PLATINUM_URL/v1/auth/orgs/quota")"
+  cleanup_fast_header
+  trap - EXIT
+  unset PLATINUM_KEY
+  validate_platinum_atomic_admission "$PLATINUM_QUOTA"
+  unset PLATINUM_QUOTA
+  echo '▶ verified Platinum atomic template admission for FAST cold boot'
+fi
 unset SECRET_VALUE
 SECRETS_JSON="$(jq -cn --arg arn "$SECRET_ARN" '[{name: "KORTIX_ENV_JSON", valueFrom: $arn}]')"
 echo "▶ wired $KEYCOUNT environment values through KORTIX_ENV_JSON from $SECRET_NAME"
@@ -200,6 +267,11 @@ CURRENT_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
 
 ENVIRONMENT_OVERRIDES_JSON="${KORTIX_ECS_ENV_OVERRIDES:-}"
 [ -n "$ENVIRONMENT_OVERRIDES_JSON" ] || ENVIRONMENT_OVERRIDES_JSON='{}'
+if [ "$SVC_KIND" = "api" ]; then
+  GATEWAY_TARGET="$(gateway_target_for_env "$ENV")"
+  ENVIRONMENT_OVERRIDES_JSON="$(printf '%s' "$ENVIRONMENT_OVERRIDES_JSON" | jq -c \
+    --arg target "$GATEWAY_TARGET" '. + {LLM_GATEWAY_PROXY_TARGET: $target}')"
+fi
 CURRENT_ENVIRONMENT_JSON="$(printf '%s' "$CURRENT_TD_JSON" | jq -c --arg c "$CONTAINER" \
   '[.containerDefinitions[] | select(.name == $c) | (.environment // [])][0] // []')"
 MERGED_ENVIRONMENT_JSON="$(merge_environment_overrides "$CURRENT_ENVIRONMENT_JSON" "$ENVIRONMENT_OVERRIDES_JSON")"

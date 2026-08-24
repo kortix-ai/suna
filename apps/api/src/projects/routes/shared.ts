@@ -22,6 +22,7 @@ import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
+  projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
   workspaceModeFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
@@ -347,6 +348,10 @@ export async function allocateRuntimeOnOpen(
     providerName,
     baseRef: session.baseRef ?? loaded.row.defaultBranch,
     agentName: session.agentName ?? 'default',
+    allowProjectImage: projectImageAllowedForSession(
+      session.agentName,
+      workspaceModeFromSessionMetadata(session.metadata),
+    ),
     sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
     runtimeMetadata,
     sessionMetadata,
@@ -364,6 +369,7 @@ export async function allocateRuntimeOnOpen(
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+        restoreSessionBranch: true,
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
     beforeActive: rehydrate
@@ -393,6 +399,18 @@ export type {
  * `external_id` — the same id the preview proxy's `loadSandbox()` looks up — so
  * the client never has to know the proxy URL scheme. This is the one place the
  * per-session runtime URL is shaped; the SDK consumes it opaquely.
+ */
+/**
+ * The CONTROL transport address for a session's runtime: the OpenCode/daemon
+ * REST channel, always the path proxy.
+ *
+ * This is deliberately NOT a preview origin and must never be used to build
+ * one. It is called per turn by programmatic clients holding a bearer token;
+ * resolving it through an origin would make every such request re-establish a
+ * host-scoped session (a non-indexed sandbox-label lookup) and would put turn
+ * delivery behind wildcard DNS, the certificate pack and the edge Worker.
+ * Browser-facing URLs come from `previewOriginFor` / `previewUrlTemplate`
+ * instead — see sandbox-proxy/preview-hosts.ts.
  */
 export function sessionRuntimeUrlPath(externalId: string): string {
   return `/p/${externalId}/8000`;

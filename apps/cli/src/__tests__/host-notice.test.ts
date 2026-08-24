@@ -8,7 +8,7 @@ import { renderContext, renderHostNotice } from '../host-notice.ts';
 import { clearTokenIdentityCache } from '../api/token-identity.ts';
 
 const ENV_KEYS = [
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -123,7 +123,7 @@ describe('host notice', () => {
     });
     try {
       process.env.KORTIX_API_URL = 'https://dev-api.kortix.com/v1';
-      process.env.KORTIX_CLI_TOKEN = 'kortix_pat_project';
+      process.env.KORTIX_TOKEN = 'kortix_pat_project';
       process.env.KORTIX_PROJECT_ID = 'proj_123';
 
       const notice = renderHostNotice(['whoami']);
@@ -174,7 +174,7 @@ describe('host notice', () => {
     });
     try {
       process.env.KORTIX_API_URL = 'https://api.kortix.com/v1';
-      process.env.KORTIX_CLI_TOKEN = 'kortix_pat_session';
+      process.env.KORTIX_TOKEN = 'kortix_pat_session';
       process.env.KORTIX_PROJECT_ID = 'proj_123';
       process.env.KORTIX_SESSION_ID = 'sess_123';
 
@@ -203,7 +203,7 @@ describe('host notice', () => {
     );
     try {
       process.env.KORTIX_API_URL = 'https://sandbox-api.kortix.test/v1';
-      process.env.KORTIX_CLI_TOKEN = 'kortix_pat_project';
+      process.env.KORTIX_TOKEN = 'kortix_pat_project';
 
       const notice = renderHostNotice(['whoami', '--host', 'customdev']);
       expect(notice).toContain('host customdev');
@@ -226,7 +226,7 @@ describe('host notice', () => {
     const projectDir = enterLinkedProject('cloud', 'acct_3b1fc472', 'proj_508bccdd');
     try {
       process.env.KORTIX_API_URL = 'https://api.kortix.com';
-      process.env.KORTIX_CLI_TOKEN = 'kortix_pat_session';
+      process.env.KORTIX_TOKEN = 'kortix_pat_session';
       process.env.KORTIX_SESSION_ID = 'sess_ea985b87';
 
       const notice = renderHostNotice(['sessions', 'restart', 'sess_ea985b87']);
@@ -247,7 +247,7 @@ describe('host notice', () => {
     const projectDir = enterLinkedProject('cloud', 'acct_3b1fc472', 'proj_508bccdd');
     try {
       process.env.KORTIX_API_URL = 'https://api.kortix.com';
-      process.env.KORTIX_CLI_TOKEN = 'kortix_pat_session';
+      process.env.KORTIX_TOKEN = 'kortix_pat_session';
       process.env.KORTIX_SESSION_ID = 'sess_ea985b87';
       seedTokenIdentity('kortix_pat_session', 'osp-vision-route-agent');
 
@@ -268,7 +268,7 @@ describe('host notice', () => {
     const configDir = writeConfig(LOGGED_OUT_CLOUD);
     try {
       process.env.KORTIX_API_URL = 'https://api.kortix.com';
-      process.env.KORTIX_CLI_TOKEN = 'kortix_pat_session';
+      process.env.KORTIX_TOKEN = 'kortix_pat_session';
       process.env.KORTIX_SESSION_ID = 'sess_ea985b87';
 
       const notice = renderHostNotice(['sessions', 'ls']);

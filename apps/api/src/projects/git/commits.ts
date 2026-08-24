@@ -2,6 +2,9 @@
 // LOG_FORMAT, parseLogStdout, decodeStatusChar) used by branches.ts and
 // merge.ts as well.
 
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { validateRef, validateSha } from '../git-ref';
 import { normalizeTreePath, refreshMirror, runGit } from './mirror';
 import type {
@@ -16,6 +19,7 @@ import type {
 
 export const FIELD_SEP = '';
 export const RECORD_SEP = '';
+export const MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES = 24 * 1024;
 export const LOG_FORMAT = [
   '%H',
   '%h',
@@ -100,6 +104,94 @@ export async function resolveCommitSha(project: GitBackedProject, ref?: string):
     throw new Error(`Unexpected git rev-parse output for ${treeRef}: ${sha}`);
   }
   return sha;
+}
+
+export interface FastBootGitHint {
+  baseSha: string;
+  gitDeltaBundleBase64?: string;
+  gitDeltaParentSha?: string;
+  gitDeltaParentCommitBase64?: string;
+}
+
+/**
+ * Build a bundle containing only a branch tip's single commit above its first
+ * parent. The sandbox image already owns the parent scaffold, so this payload
+ * supplies the exact remote commit without an in-sandbox fetch.
+ */
+export async function buildSingleParentDeltaBundle(
+  repoPath: string,
+  ref: string,
+): Promise<{
+  baseSha: string;
+  parentSha: string;
+  parentCommitBase64: string;
+  bundleBase64: string;
+} | null> {
+  const treeRef = validateRef(ref);
+  const revision = await runGit(
+    ['rev-list', '--parents', '-n', '1', treeRef],
+    repoPath,
+    false,
+  );
+  const [baseSha, ...parents] = revision.stdout.trim().split(/\s+/);
+  if (!baseSha || !/^[0-9a-f]{40}$/.test(baseSha) || parents.length !== 1) return null;
+  const parentSha = parents[0]!;
+  const parentCommitBase64 = Buffer.from(
+    (await runGit(['cat-file', 'commit', parentSha], repoPath, false)).stdout,
+  ).toString('base64');
+  const temp = await mkdtemp(join(tmpdir(), 'kortix-fast-boot-bundle-'));
+  const bundlePath = join(temp, 'delta.bundle');
+  try {
+    await runGit(
+      ['bundle', 'create', bundlePath, `refs/heads/${treeRef}`, `^${parentSha}`],
+      repoPath,
+      false,
+    );
+    const bundleBase64 = (await readFile(bundlePath)).toString('base64');
+    if (
+      Buffer.byteLength(bundleBase64 + parentCommitBase64, 'utf8') >
+      MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES
+    ) {
+      return null;
+    }
+    return { baseSha, parentSha, parentCommitBase64, bundleBase64 };
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+}
+
+/** Resolve the base tip and attach a bounded local-mirror delta when possible. */
+export async function resolveFastBootGitHint(
+  project: GitBackedProject,
+  ref?: string,
+  forceRefresh = false,
+): Promise<FastBootGitHint> {
+  const treeRef = validateRef(ref || project.defaultBranch);
+  const repoPath = await refreshMirror(project, forceRefresh);
+  const baseSha = (
+    await runGit(['rev-parse', '--verify', `${treeRef}^{commit}`], repoPath, false)
+  ).stdout.trim();
+  if (!/^[0-9a-f]{40}$/.test(baseSha)) {
+    throw new Error(`Unexpected git rev-parse output for ${treeRef}: ${baseSha}`);
+  }
+  try {
+    const delta = await buildSingleParentDeltaBundle(repoPath, treeRef);
+    return delta?.baseSha === baseSha
+      ? {
+          baseSha,
+          gitDeltaBundleBase64: delta.bundleBase64,
+          gitDeltaParentSha: delta.parentSha,
+          gitDeltaParentCommitBase64: delta.parentCommitBase64,
+        }
+      : { baseSha };
+  } catch (error) {
+    console.warn('[git] fast-boot delta bundle unavailable', {
+      projectId: project.projectId,
+      ref: treeRef,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { baseSha };
+  }
 }
 
 export async function listCommits(

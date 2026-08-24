@@ -10,27 +10,15 @@ const BASE_INPUT = {
   apiUrl: 'https://api.kortix.test/v1',
 };
 
-describe('buildSessionRuntimeEnv — daemon-delivered initial turn', () => {
-  test('injects the control-plane token and message identity only with an initial prompt', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      initialPrompt: 'Work for longer than the idle timeout.',
-      initialTurn: { token: 'turn-token', messageId: 'msg_initial' },
-    });
+describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
+  test('never injects the prompt or turn-ledger identity', () => {
+    const env = buildSessionRuntimeEnv(BASE_INPUT);
 
-    expect(env.KORTIX_INITIAL_TURN_TOKEN).toBe('turn-token');
-    expect(env.KORTIX_INITIAL_TURN_MESSAGE_ID).toBe('msg_initial');
-  });
-
-  test('does not inject orphan lifecycle authority without an initial prompt', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      initialTurn: { token: 'turn-token', messageId: 'msg_initial' },
-    });
-
+    expect(env).not.toHaveProperty('KORTIX_INITIAL_PROMPT');
     expect(env).not.toHaveProperty('KORTIX_INITIAL_TURN_TOKEN');
     expect(env).not.toHaveProperty('KORTIX_INITIAL_TURN_MESSAGE_ID');
   });
+
 });
 
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
@@ -112,5 +100,132 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
       expect(env.KORTIX_BASE_REF).toBe(BASE_INPUT.baseRef);
       expect(env.KORTIX_BRANCH_NAME).toBe(BASE_INPUT.sessionId);
     }
+  });
+});
+
+describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
+  test('marks replacement runtimes for remote session-branch restoration', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      restoreSessionBranch: true,
+    });
+
+    expect(env.KORTIX_SESSION_BRANCH_RESTORE).toBe('1');
+    expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
+  });
+
+  test('does not emit branch-restore authority for repository-free workspaces', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      workspaceMode: 'runtime',
+      restoreSessionBranch: true,
+    });
+
+    expect(env).not.toHaveProperty('KORTIX_SESSION_BRANCH_RESTORE');
+  });
+
+  test('sends fresh-session and base-tip hints when the experiment is enabled', () => {
+    const baseSha = 'a'.repeat(40);
+    const gitDeltaBundleBase64 = 'R0lUIEJVTkRMRQ==';
+    const gitDeltaParentSha = 'b'.repeat(40);
+    const gitDeltaParentCommitBase64 = 'dHJlZSBkZWFkYmVlZgo=';
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      fastColdBootEnabled: true,
+      freshSession: true,
+      baseSha,
+      gitDeltaBundleBase64,
+      gitDeltaParentSha,
+      gitDeltaParentCommitBase64,
+    });
+
+    expect(env.KORTIX_SESSION_FRESH).toBe('1');
+    expect(env.KORTIX_BASE_SHA).toBe(baseSha);
+    expect(env.KORTIX_GIT_DELTA_BUNDLE_BASE64).toBe(gitDeltaBundleBase64);
+    expect(env.KORTIX_GIT_DELTA_PARENT_SHA).toBe(gitDeltaParentSha);
+    expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe(gitDeltaParentCommitBase64);
+  });
+
+  test('omits both hints when the experiment is disabled', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      fastColdBootEnabled: false,
+      freshSession: true,
+      baseSha: 'a'.repeat(40),
+      gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
+      gitDeltaParentSha: 'b'.repeat(40),
+      gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
+    });
+
+    expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
+    expect(env).not.toHaveProperty('KORTIX_BASE_SHA');
+    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
+    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_SHA');
+    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64');
+  });
+
+  test('omits both hints for resumed and non-repository sessions', () => {
+    for (const env of [
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        fastColdBootEnabled: true,
+        freshSession: false,
+        baseSha: 'a'.repeat(40),
+        gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
+        gitDeltaParentSha: 'b'.repeat(40),
+        gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
+      }),
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        workspaceMode: 'runtime',
+        fastColdBootEnabled: true,
+        freshSession: true,
+        baseSha: 'a'.repeat(40),
+        gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
+        gitDeltaParentSha: 'b'.repeat(40),
+        gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
+      }),
+    ]) {
+      expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
+      expect(env).not.toHaveProperty('KORTIX_BASE_SHA');
+      expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
+      expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_SHA');
+      expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64');
+    }
+  });
+});
+
+describe('buildSessionRuntimeEnv — OpenCode executable prefetch', () => {
+  test('enables prefetch through the single fast cold boot flag', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      fastColdBootEnabled: true,
+      freshSession: false,
+    });
+
+    expect(env.KORTIX_OPENCODE_BINARY_PREFETCH).toBe('1');
+    expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
+  });
+
+  test('omits prefetch when the fast cold boot flag is disabled', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      fastColdBootEnabled: false,
+      freshSession: true,
+    });
+
+    expect(env).not.toHaveProperty('KORTIX_OPENCODE_BINARY_PREFETCH');
+  });
+
+  test('keeps prefetch enabled for runtime-only sessions', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      workspaceMode: 'runtime',
+      fastColdBootEnabled: true,
+      freshSession: true,
+    });
+
+    expect(env.KORTIX_OPENCODE_BINARY_PREFETCH).toBe('1');
+    expect(env).not.toHaveProperty('KORTIX_REPO_URL');
   });
 });

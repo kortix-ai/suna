@@ -383,7 +383,10 @@ describe('portUnreachableResponse carries hop attribution', () => {
     const res = portUnreachableResponse({
       port: 8000,
       status: 502,
-      origin: 'https://app.kortix.test',
+      // The web app — the ONLY cross-origin caller a preview answers now. An
+      // arbitrary origin gets no headers at all (see previewCorsHeaders), which
+      // is what makes the ambient preview cookie safe.
+      origin: 'http://localhost:3000',
       incomingHeaders: jsonHeaders,
       reason: 'sandbox upstream unreachable',
       hop: 'daemon',

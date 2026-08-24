@@ -130,6 +130,13 @@ export async function runProviders(argv: string[]): Promise<number> {
     process.stdout.write(LOGIN_HELP);
     return 0;
   }
+  // The root help promises `kortix providers <subcommand> --help`. Only
+  // login/oauth own dedicated help text (handled above); every other
+  // subcommand would otherwise treat `--help` as an ordinary positional arg.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let enterpriseFlag: string | undefined;

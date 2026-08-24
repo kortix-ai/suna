@@ -10,21 +10,9 @@ import {
 } from '../opencode-audit-relay';
 
 describe('OpenCode canonical audit relay', () => {
-  test('uses the sandbox credential and never the session PAT', () => {
-    expect(
-      auditRelayToken({
-        KORTIX_SANDBOX_TOKEN: 'kortix_sb_authoritative',
-        KORTIX_TOKEN: 'kortix_sb_legacy',
-        KORTIX_CLI_TOKEN: 'kortix_pat_must_not_be_used',
-      }),
-    ).toBe('kortix_sb_authoritative');
-    expect(
-      auditRelayToken({
-        KORTIX_SANDBOX_TOKEN: undefined,
-        KORTIX_TOKEN: 'kortix_sb_legacy',
-        KORTIX_CLI_TOKEN: 'kortix_pat_must_not_be_used',
-      }),
-    ).toBe('kortix_sb_legacy');
+  test('uses the single session credential', () => {
+    expect(auditRelayToken({ KORTIX_TOKEN: 'kortix_pat_session' })).toBe('kortix_pat_session');
+    expect(auditRelayToken({})).toBeNull();
   });
 
   test('uses deterministic ids and never forwards prompts, credentials, or raw output', () => {

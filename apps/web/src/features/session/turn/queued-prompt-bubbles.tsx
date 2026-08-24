@@ -16,7 +16,7 @@
  * while the queue is HELD by a stop (the only way out of a hold — otherwise a
  * stopped queue is indistinguishable from a broken one); retry on a failed
  * row. The transcript's own pending bubble renders the same controls in its
- * hover meta row (`SessionTurn` → `UserMessage` `leadingActions`).
+ * hover meta row (`SessionTurn` → `UserMessageActions` via `leadingActions`).
  */
 
 import { Button } from '@/components/ui/button';
@@ -83,7 +83,9 @@ function Action({
         size="icon-xs"
         aria-label={label}
         onClick={onClick}
-        className={cn(destructive && 'hover:text-destructive')}
+        // 24px visible, 40px target — the queued-prompt row packs several of
+        // these side by side.
+        className={cn('hit-area-2', destructive && 'hover:text-destructive')}
       >
         {children}
       </Button>
@@ -171,9 +173,10 @@ export function QueuedPromptActions({
 }
 
 /**
- * The one way OUT of the queue, in a FIXED spot: beside the bubble, never in
- * the meta row — the timestamp and copy control appear and resize there, and
- * an X that jumps around is an X nobody can aim at (review feedback).
+ * The one way OUT of the queue. Transcript turns render this in
+ * `UserMessageActions` (hover row, same home as send-now / retry / copy).
+ * The standalone queued list still sits it in a reserved column beside the
+ * bubble — that list has no timestamp/copy row to collide with.
  */
 export function RemoveFromQueueButton({
   id,
@@ -296,11 +299,7 @@ function QueuedBubble({
           />
         </div>
       </div>
-      {/* The status word sits SNUG under the bubble, aligned to its edge —
-          it is what explains the dim, so it is always readable, and it must
-          read as the bubble's caption, not a free-floating label. `pr-7`
-          keeps it flush with the bubble (the reserved actions column). */}
-      <div className="flex w-full items-center justify-end pr-7">
+      <div className="flex w-full items-center justify-end">
         <QueuedPromptStatus state={state} lastError={row.lastError} />
       </div>
     </div>

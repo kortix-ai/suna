@@ -1,7 +1,8 @@
 import { createHash, createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { SESSION_SECRETS_ALLOWLIST_MAX_KEYS } from '@kortix/api-contract';
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
-import { projectSecrets, projectSessionSecretHandles, projectSessions, projects } from '@kortix/db';
+import { connectors, projectSecrets, projectSessionSecretHandles, projectSessions, projects } from '@kortix/db';
+import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
 import { config } from '../config';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
@@ -121,6 +122,7 @@ export async function writeSharedProjectSecret(input: {
 }): Promise<void> {
   const now = new Date();
   const identifier = input.identifier ?? input.name;
+  const serverSide = input.scope === 'connector';
   await db
     .insert(projectSecrets)
     .values({
@@ -128,7 +130,10 @@ export async function writeSharedProjectSecret(input: {
       identifier,
       name: input.name,
       valueEnc: encryptProjectSecret(input.projectId, input.value),
-      scope: input.scope ?? 'runtime',
+      scope: serverSide ? 'connector' : 'runtime',
+      strategy: serverSide ? 'broker' : 'runtime',
+      consumer: serverSide ? 'connector' : 'sandbox',
+      strategyLocked: serverSide,
       createdBy: input.createdBy ?? null,
       updatedAt: now,
     })
@@ -138,9 +143,40 @@ export async function writeSharedProjectSecret(input: {
       set: {
         name: input.name,
         valueEnc: encryptProjectSecret(input.projectId, input.value),
+        ...(serverSide
+          ? {
+              scope: 'connector' as const,
+              strategy: 'broker' as const,
+              consumer: 'connector' as const,
+              strategyLocked: true,
+            }
+          : {}),
         updatedAt: now,
       },
     });
+}
+
+/** Lock a legacy runtime secret to the server-side connector boundary. */
+export async function confineSharedProjectSecretToConnector(
+  projectId: string,
+  identifier: string,
+): Promise<void> {
+  await db
+    .update(projectSecrets)
+    .set({
+      scope: 'connector',
+      strategy: 'broker',
+      consumer: 'connector',
+      strategyLocked: true,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.identifier, identifier),
+        isNull(projectSecrets.ownerUserId),
+      ),
+    );
 }
 
 /**
@@ -569,6 +605,13 @@ export async function materializeSecretDelivery(
 ): Promise<void> {
   for (const row of rows) {
     if (!(row.key in env)) continue;
+    // Model credentials are service credentials. A legacy `runtime` row must
+    // not override that platform boundary. The LLM gateway resolves the value
+    // server-side after authenticating the session token.
+    if (isGatewayManagedEnv(row.key)) {
+      delete env[row.key];
+      continue;
+    }
     const delivery = resolveSecretDelivery({
       identifier: row.identifier,
       strategy: row.strategy,
@@ -751,7 +794,18 @@ export async function listProjectSecretsSnapshotForUser(
   capabilitiesJson: string;
 }> {
   const rows = await listResolvedProjectSecrets(projectId, userId);
-  const { env, selected } = resolveGrantedSecretSelection(rows, grantEnv);
+  const boundConnectorIdentifiers = new Set(
+    (
+      await db
+        .select({ identifier: connectors.authSecret })
+        .from(connectors)
+        .where(eq(connectors.projectId, projectId))
+    )
+      .map((row) => row.identifier)
+      .filter((identifier): identifier is string => Boolean(identifier)),
+  );
+  const sandboxRows = rows.filter((row) => !boundConnectorIdentifiers.has(row.identifier));
+  const { env, selected } = resolveGrantedSecretSelection(sandboxRows, grantEnv);
   await materializeSecretDelivery(selected, env, {
     sessionId: sessionId ?? null,
     grantEnv,
@@ -823,11 +877,39 @@ export interface ProjectSecretConsumerValue {
   value: string;
 }
 
-export async function projectSecretIsConfiguredForConsumer(input: {
+type ServerSecretConsumer = Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'>;
+
+export type ProjectSecretConsumerConfigurationStatus =
+  | 'configured'
+  | 'missing'
+  | 'inactive'
+  | 'delivery_mismatch';
+
+function secretPolicyAllowsConsumer(
+  row: {
+    scope: string;
+    strategy: SecretStrategy;
+    consumer: SecretConsumer | null;
+  },
+  consumer: ServerSecretConsumer,
+): boolean {
+  return consumer === 'connector'
+    ? (row.strategy === 'broker' && row.consumer === 'connector') ||
+        (row.scope === 'connector' &&
+          (row.consumer === 'connector' || row.consumer === 'sandbox'))
+    : row.strategy === 'broker' && row.consumer === consumer;
+}
+
+/**
+ * Read whether a named shared secret can cross one server-consumer boundary.
+ * This does not decrypt the value. Callers can distinguish a missing secret
+ * from an existing secret whose delivery policy denies the consumer.
+ */
+export async function getProjectSecretConsumerConfigurationStatus(input: {
   projectId: string;
   name: string;
-  consumer: Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'>;
-}): Promise<boolean> {
+  consumer: ServerSecretConsumer;
+}): Promise<ProjectSecretConsumerConfigurationStatus> {
   const normalizedName = input.name.trim().toUpperCase();
   const rows = await db
     .select({
@@ -844,14 +926,20 @@ export async function projectSecretIsConfiguredForConsumer(input: {
         isNull(projectSecrets.ownerUserId),
       ),
     );
-  return rows.some(
-    (row) =>
-      row.active &&
-      (input.consumer === 'connector'
-        ? row.scope === 'connector' ||
-          (row.strategy === 'broker' && row.consumer === 'connector')
-        : row.strategy === 'broker' && row.consumer === input.consumer),
-  );
+  if (rows.length === 0) return 'missing';
+  if (rows.some((row) => row.active && secretPolicyAllowsConsumer(row, input.consumer))) {
+    return 'configured';
+  }
+  if (rows.some((row) => row.active)) return 'delivery_mismatch';
+  return 'inactive';
+}
+
+export async function projectSecretIsConfiguredForConsumer(input: {
+  projectId: string;
+  name: string;
+  consumer: ServerSecretConsumer;
+}): Promise<boolean> {
+  return (await getProjectSecretConsumerConfigurationStatus(input)) === 'configured';
 }
 
 export async function listProjectSecretNamesForConsumer(input: {
@@ -896,12 +984,7 @@ export async function listProjectSecretNamesForConsumer(input: {
     const selected = slot.personal?.active ? slot.personal : slot.shared;
     if (!selected?.active || selected.name.toUpperCase().startsWith('KORTIX_')) continue;
     const policy = slot.shared ?? selected;
-    const configured =
-      input.consumer === 'connector'
-        ? (policy.strategy === 'broker' && policy.consumer === 'connector') ||
-          (policy.scope === 'connector' &&
-            (policy.consumer === 'connector' || policy.consumer === 'sandbox'))
-        : policy.strategy === 'broker' && policy.consumer === input.consumer;
+    const configured = secretPolicyAllowsConsumer(policy, input.consumer);
     if (configured) names.add(selected.name.toUpperCase());
   }
   return [...names].sort();
@@ -992,13 +1075,7 @@ async function resolveProjectSecretValuesForConsumer(
 
   const resolved: ProjectSecretConsumerValue[] = [];
   for (const { row, policyRow } of selectedRows) {
-    const allowed =
-      row.active &&
-      (input.consumer === 'connector'
-        ? (policyRow.strategy === 'broker' && policyRow.consumer === 'connector') ||
-          (policyRow.scope === 'connector' &&
-            (policyRow.consumer === 'connector' || policyRow.consumer === 'sandbox'))
-        : policyRow.strategy === 'broker' && policyRow.consumer === input.consumer);
+    const allowed = row.active && secretPolicyAllowsConsumer(policyRow, input.consumer);
     if (!allowed) {
       await recordAuditEvent({
         accountId,

@@ -1107,8 +1107,8 @@ export async function fireGitTrigger(input: {
 
 export function summarizeTriggerPayload(payload: Record<string, unknown>): Record<string, unknown> {
   // Strip the rendered body from session metadata — sessions already get the
-  // prompt as KORTIX_INITIAL_PROMPT, and we don't want huge payloads in
-  // postgres jsonb.
+  // prompt through the authenticated first-turn claim, and we don't want a
+  // second copy in trigger metadata.
   const { rendered_body: _r, ...rest } = payload as Record<string, unknown>;
   return rest;
 }

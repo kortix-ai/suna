@@ -113,7 +113,7 @@ describe('AppHostingProvider', () => {
       envVars: { KORTIX_APPD_TOKEN: appControlToken('runtime-1', secret) },
     });
     expect(creates[0].autoStopInterval).toBeUndefined();
-    expect(creates[0].envVars.KORTIX_SANDBOX_TOKEN).toBeUndefined();
+    expect(creates[0].envVars.KORTIX_TOKEN).toBeUndefined();
     expect(result.controlTokenHash).toBe(
       appControlTokenHash(appControlToken('runtime-1', secret)),
     );

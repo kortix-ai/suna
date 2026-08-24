@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 
 function setTestEnv(name: string, value: string): void {
   if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {
@@ -18,9 +19,17 @@ setTestEnv('DAYTONA_TARGET', 'test-target');
 setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 
-const { warmBakeCooldownGate, warmBakeScopeId, perProjectWarmEligible, DEFAULT_SANDBOX_SLUG } = await import(
-  '../snapshots/builder'
-);
+const {
+  warmBakeCooldownGate,
+  releaseWarmBakeCooldown,
+  warmBakeScopeId,
+  claimFastWarmBuildProviderSlot,
+  releaseFastWarmBuildProviderSlot,
+  perProjectColdImageEnabled,
+  perProjectWarmReapEnabled,
+  perProjectWarmEligible,
+  DEFAULT_SANDBOX_SLUG,
+} = await import('../snapshots/builder');
 const { computeTemplateIdentity, resolveUserDockerfile } = await import('../snapshots/templates');
 const { warmBuildSlug, templateSlugFromBuildSlug } = await import('../snapshots/ppwarm-names');
 const templatesModule = await import('../snapshots/templates');
@@ -29,6 +38,83 @@ type GitBackedProject = Parameters<typeof computeTemplateIdentity>[0];
 
 const PROJECT = '2d34b9f0-0000-0000-0000-000000000000';
 const COOLDOWN = 10 * 60 * 1000;
+
+describe('perProjectColdImageEnabled', () => {
+  test.each([
+    { legacyWarm: false, fastColdBoot: false, fastConfigured: false, expected: false },
+    { legacyWarm: true, fastColdBoot: false, fastConfigured: false, expected: true },
+    { legacyWarm: false, fastColdBoot: true, fastConfigured: true, expected: true },
+    { legacyWarm: true, fastColdBoot: true, fastConfigured: true, expected: true },
+    { legacyWarm: false, fastColdBoot: false, fastConfigured: true, expected: false },
+    { legacyWarm: true, fastColdBoot: false, fastConfigured: true, expected: false },
+  ])(
+    'legacyWarm=$legacyWarm fastColdBoot=$fastColdBoot fastConfigured=$fastConfigured returns $expected',
+    ({ legacyWarm, fastColdBoot, fastConfigured, expected }) => {
+      expect(
+        perProjectColdImageEnabled({
+          KORTIX_WARM_SNAPSHOT_ENABLED: legacyWarm,
+          KORTIX_FAST_COLD_BOOT_ENABLED: fastColdBoot,
+          KORTIX_FAST_COLD_BOOT_CONFIGURED: fastConfigured,
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  test('gates both the session lookup and managed-push prebake', () => {
+    const source = readFileSync(new URL('../snapshots/builder.ts', import.meta.url), 'utf8');
+    const sessionLookup = source.slice(
+      source.indexOf('export async function ensureSandboxImage'),
+      source.indexOf('// Trust-the-row fast path'),
+    );
+    const pushPrebake = source.slice(
+      source.indexOf('export async function kickProjectWarmPrebake'),
+      source.indexOf('async function prebakeForProvider'),
+    );
+
+    expect(sessionLookup).toContain('perProjectColdImageEnabled()');
+    expect(sessionLookup).toContain('opts.allowProjectImage !== false');
+    expect(sessionLookup).toContain('routedProjectImageReadCandidates(');
+    expect(sessionLookup).toContain('isProjectImage: true');
+    expect(pushPrebake).toContain('if (!perProjectColdImageEnabled()) return;');
+    expect(sessionLookup).not.toContain('config.KORTIX_WARM_SNAPSHOT_ENABLED');
+    expect(pushPrebake).not.toContain('config.KORTIX_WARM_SNAPSHOT_ENABLED');
+  });
+});
+
+describe('perProjectWarmReapEnabled', () => {
+  test('preserves legacy cleanup, enables scoped FAST cleanup, and honors rollback', () => {
+    expect(
+      perProjectWarmReapEnabled({
+        KORTIX_FAST_COLD_BOOT_CONFIGURED: false,
+        KORTIX_FAST_COLD_BOOT_ENABLED: false,
+      }),
+    ).toBe(true);
+    expect(
+      perProjectWarmReapEnabled({
+        KORTIX_FAST_COLD_BOOT_CONFIGURED: true,
+        KORTIX_FAST_COLD_BOOT_ENABLED: true,
+      }),
+    ).toBe(true);
+    expect(
+      perProjectWarmReapEnabled({
+        KORTIX_FAST_COLD_BOOT_CONFIGURED: true,
+        KORTIX_FAST_COLD_BOOT_ENABLED: false,
+      }),
+    ).toBe(false);
+  });
+
+  test('guards the provider-wide listing before any ppwarm target is selected', () => {
+    const source = readFileSync(new URL('../snapshots/builder.ts', import.meta.url), 'utf8');
+    const reap = source.slice(
+      source.indexOf('async function reapOldPerProjectWarm'),
+      source.indexOf('\n}', source.indexOf('async function reapOldPerProjectWarm')) + 2,
+    );
+    expect(reap).toContain('if (!perProjectWarmReapEnabled()) return;');
+    expect(reap.indexOf('if (!perProjectWarmReapEnabled()) return;')).toBeLessThan(
+      reap.indexOf('provider.listSnapshots()'),
+    );
+  });
+});
 
 const FAKE_PROJECT: GitBackedProject = {
   projectId: PROJECT,
@@ -86,6 +172,15 @@ describe('warmBakeCooldownGate — per-(project, provider) bake pacing', () => {
     expect(registry.get(`${PROJECT}:daytona`)).toBe(0);
   });
 
+  test('an admission denial releases the kick so the next attempt can retry immediately', () => {
+    const registry = new Map<string, number>();
+    expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
+
+    releaseWarmBakeCooldown(PROJECT, 'daytona', registry);
+
+    expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: 1, cooldownMs: COOLDOWN, registry })).toBe(true);
+  });
+
   test('providers cool down independently — parity fan-out is paced per provider, not globally', () => {
     const registry = new Map<string, number>();
     expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
@@ -136,23 +231,99 @@ describe('warmBakeScopeId — per-(project, template) pacing scope', () => {
   });
 });
 
-describe('perProjectWarmEligible — read-side warm-image gate', () => {
-  test('the shared default template is eligible on every provider', () => {
-    expect(perProjectWarmEligible({ isShared: true }, 'daytona')).toBe(true);
-    expect(perProjectWarmEligible({ isShared: true }, 'platinum')).toBe(true);
-    expect(perProjectWarmEligible({ isShared: true }, 'e2b')).toBe(true);
+describe('FAST optional provider build slot', () => {
+  test('admits one optional build per provider and releases it for the next project', () => {
+    const registry = new Set<string>();
+    expect(claimFastWarmBuildProviderSlot('platinum', true, registry)).toBe(true);
+    expect(claimFastWarmBuildProviderSlot('platinum', true, registry)).toBe(false);
+    expect(claimFastWarmBuildProviderSlot('daytona', true, registry)).toBe(true);
+    releaseFastWarmBuildProviderSlot('platinum', true, registry);
+    expect(claimFastWarmBuildProviderSlot('platinum', true, registry)).toBe(true);
   });
 
-  test('a custom template is eligible on platinum (the default allowlist)', () => {
-    expect(perProjectWarmEligible({ isShared: false }, 'platinum')).toBe(true);
+  test('does not throttle the legacy rollout or required direct builds', () => {
+    const registry = new Set(['platinum']);
+    expect(claimFastWarmBuildProviderSlot('platinum', false, registry)).toBe(true);
+    releaseFastWarmBuildProviderSlot('platinum', false, registry);
+    expect(registry).toEqual(new Set(['platinum']));
+  });
+
+  test('gates only the optional background path before its direct build call', () => {
+    const source = readFileSync(new URL('../snapshots/builder.ts', import.meta.url), 'utf8');
+    const background = source.slice(
+      source.indexOf('function kickBackgroundWarmBuild'),
+      source.indexOf('export function kickProjectWarmPrebake'),
+    );
+    const direct = source.slice(
+      source.indexOf('export async function ensurePerProjectWarmImage'),
+      source.indexOf('export function shouldAttemptWarmFromBase'),
+    );
+    expect(background).toContain('assessFastProjectImageBuildAdmission(');
+    expect(background.indexOf('assessFastProjectImageBuildAdmission(')).toBeLessThan(
+      background.indexOf('await ensurePerProjectWarmImage('),
+    );
+    const deniedAdmission = background.slice(
+      background.indexOf('if (!admission.allowed)'),
+      background.indexOf('const result = await ensurePerProjectWarmImage('),
+    );
+    expect(deniedAdmission).toContain('releaseWarmBakeCooldown(scopedProjectId, opts.provider)');
+    expect(background).toContain('inflightBackgroundBuilds.delete(key)');
+    expect(background).toContain('inflightWarmBakesByProject.delete(projectKey)');
+    expect(background).toContain('releaseFastWarmBuildProviderSlot(opts.provider, fastEnabled)');
+    expect(direct).not.toContain('assessFastProjectImageBuildAdmission(');
+    expect(direct).not.toContain('claimFastWarmBuildProviderSlot(');
+  });
+});
+
+describe('perProjectWarmEligible — read-side warm-image gate', () => {
+  test('the shared default template is eligible on every provider', () => {
+    const fastOnly = { KORTIX_WARM_SNAPSHOT_ENABLED: false };
+    expect(perProjectWarmEligible({ isShared: true }, 'daytona', fastOnly)).toBe(true);
+    expect(perProjectWarmEligible({ isShared: true }, 'platinum', fastOnly)).toBe(true);
+    expect(perProjectWarmEligible({ isShared: true }, 'e2b', fastOnly)).toBe(true);
+  });
+
+  test('the FAST experiment cannot create a custom-template project image', () => {
+    expect(
+      perProjectWarmEligible(
+        { isShared: false },
+        'platinum',
+        { KORTIX_WARM_SNAPSHOT_ENABLED: false },
+      ),
+    ).toBe(false);
+  });
+
+  test('the legacy WARM flag keeps custom-template project images on an allowlisted provider', () => {
+    expect(
+      perProjectWarmEligible(
+        { isShared: false },
+        'platinum',
+        { KORTIX_WARM_SNAPSHOT_ENABLED: true },
+        (provider) => provider === 'platinum',
+      ),
+    ).toBe(true);
   });
 
   test('a custom template is NOT eligible on daytona by default — the 66% Daytona hit-rate path is untouched', () => {
-    expect(perProjectWarmEligible({ isShared: false }, 'daytona')).toBe(false);
+    expect(
+      perProjectWarmEligible(
+        { isShared: false },
+        'daytona',
+        { KORTIX_WARM_SNAPSHOT_ENABLED: true },
+        (provider) => provider === 'platinum',
+      ),
+    ).toBe(false);
   });
 
   test('a custom template is NOT eligible on an unlisted provider', () => {
-    expect(perProjectWarmEligible({ isShared: false }, 'e2b')).toBe(false);
+    expect(
+      perProjectWarmEligible(
+        { isShared: false },
+        'e2b',
+        { KORTIX_WARM_SNAPSHOT_ENABLED: true },
+        (provider) => provider === 'platinum',
+      ),
+    ).toBe(false);
   });
 });
 

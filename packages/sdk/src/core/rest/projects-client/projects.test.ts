@@ -692,11 +692,9 @@ describe('provisionProjectStream', () => {
     const frame = 'data: {"type":"done","project":{"project_id":"p1","name":"suna-web"}}\n\n';
     const splitPoint = frame.indexOf('"project_id"') + 5; // land inside the JSON body
 
-    const project = await provisionProjectStream(
-      { name: 'x' },
-      () => {},
-      { fetch: stubStreamingFetch([frame.slice(0, splitPoint), frame.slice(splitPoint)]) },
-    );
+    const project = await provisionProjectStream({ name: 'x' }, () => {}, {
+      fetch: stubStreamingFetch([frame.slice(0, splitPoint), frame.slice(splitPoint)]),
+    });
 
     expect(project.project_id).toBe('p1');
     expect(project.name).toBe('suna-web');
@@ -713,11 +711,9 @@ describe('provisionProjectStream', () => {
     const emojiByteOffset = new TextEncoder().encode(frame.slice(0, frame.indexOf('🚀'))).length;
     const splitPoint = emojiByteOffset + 2; // split the 4-byte emoji sequence in half
 
-    const project = await provisionProjectStream(
-      { name: 'x' },
-      () => {},
-      { fetch: stubStreamingFetch([bytes.slice(0, splitPoint), bytes.slice(splitPoint)]) },
-    );
+    const project = await provisionProjectStream({ name: 'x' }, () => {}, {
+      fetch: stubStreamingFetch([bytes.slice(0, splitPoint), bytes.slice(splitPoint)]),
+    });
 
     expect(project.name).toBe(name);
   });
@@ -751,11 +747,9 @@ describe('provisionProjectStream', () => {
     const third = Math.ceil(frame.length / 3);
     const chunks = [frame.slice(0, third), frame.slice(third, third * 2), frame.slice(third * 2)];
 
-    const project = await provisionProjectStream(
-      { name: 'x' },
-      () => {},
-      { fetch: stubStreamingFetch(chunks) },
-    );
+    const project = await provisionProjectStream({ name: 'x' }, () => {}, {
+      fetch: stubStreamingFetch(chunks),
+    });
 
     expect(project.project_id).toBe('p1');
     expect(project.name).toBe('suna-web');
@@ -782,9 +776,9 @@ describe('provisionProjectStream', () => {
         { status: 200, headers: { 'content-type': 'text/event-stream' } },
       );
 
-    await expect(
-      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub }),
-    ).rejects.toThrow('provisionProjectStream: received an unparseable SSE frame');
+    await expect(provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub })).rejects.toThrow(
+      'provisionProjectStream: received an unparseable SSE frame',
+    );
 
     expect(cancelled).toBe(true);
   });
@@ -801,9 +795,9 @@ describe('provisionProjectStream', () => {
         headers: { 'content-type': 'application/json' },
       });
 
-    await expect(
-      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub }),
-    ).rejects.toThrow('Owner or admin role required');
+    await expect(provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub })).rejects.toThrow(
+      'Owner or admin role required',
+    );
   });
 
   // ── Final-review FIX 1 ───────────────────────────────────────────────────
@@ -936,8 +930,8 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'meta_agent',
     'monitors',
     'review_center',
+    'secrets_egress',
     'teams',
-    'voice',
     'warm_sessions',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
@@ -1001,7 +995,7 @@ test('updateFeatureFlag PATCHes the canonical /features route', async () => {
 });
 
 test('updateFeatureFlag puts an explicit null enabled on the wire, not an absent key', async () => {
-  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'voice', null));
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'review_center', null));
 
   // Both halves matter: `parsed.enabled === null` alone passes when the key was
   // dropped; `'enabled' in parsed` alone passes when the value was rewritten.

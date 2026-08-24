@@ -198,3 +198,40 @@ describe('MarkdownCode — inline code', () => {
     expect(markup).not.toContain('role="button"');
   });
 });
+
+// ─── Children are not always a bare string ──────────────────────────────────
+// The parser hands `code` a plain string, but anything in the render path may
+// replace it with an element — `wrapChildrenWithPaths` did, for every fence
+// whose body held a file path. `String(children)` then produced the literal
+// `[object Object]`: Shiki highlighted it, the copy button copied it, and the
+// Mermaid/KaTeX routing stopped recognising its own content.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('MarkdownCode with wrapped children', () => {
+  test('reads the math out of a wrapping element', () => {
+    const markup = render({ className: 'language-latex', children: <span>E = mc^2</span> });
+
+    expect(markup).toContain('katex-math-block');
+    expect(markup).not.toContain('[object Object]');
+    expect(markup).toContain('E = mc^2');
+  });
+
+  test('still recognises mermaid content behind a wrapping element', () => {
+    const markup = render({ children: <span>{'sequenceDiagram\n  A->>B: hi'}</span> });
+
+    expect(markup).toBe('');
+  });
+
+  test('still detects a fenced block by its newline behind a wrapping element', () => {
+    const markup = render({ children: <span>{'cd ~/UnrealEngine\n./Setup.sh\n'}</span> });
+
+    expect(markup).toContain(CARD);
+    expect(markup).not.toContain('[object Object]');
+  });
+
+  test('inline code keeps its file affordance behind a wrapping element', () => {
+    const markup = render({ children: <span>docs/readme.md</span> });
+
+    expect(markup).toContain('Click to preview docs/readme.md');
+  });
+});

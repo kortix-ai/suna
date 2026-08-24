@@ -44,6 +44,11 @@ type OpencodeEventHandlers = {
   // filtering down to the root turn.
   onSessionIdle?: (sessionID: string) => void
   onSessionError?: (sessionID: string, error?: OpencodeTurnError) => void
+  // Fired on every `session.status` frame. `busy`/`retry` for the root is the
+  // one signal that exists for BOX-INITIATED turns (OpenCode's synthetic
+  // `<pty_exited>` wake-ups start a turn no control-plane prompt announced) —
+  // the turn-begin relay hangs off it.
+  onSessionStatus?: (sessionID: string, statusType: string) => void
   // Fired every time the /event SSE (re)subscribes successfully. Used to
   // reconcile a turn that finished BEFORE the subscription was live: a fast
   // boot could reach session.idle inside the gap between prompt_async and the
@@ -225,6 +230,15 @@ export function dispatch(
     const req = event.properties as QuestionRequest
     if (req?.id && req?.sessionID && Array.isArray(req.questions)) {
       handlers.onQuestionAsked(req)
+    }
+    return
+  }
+  if (event.type === 'session.status' && handlers.onSessionStatus) {
+    const props = event.properties as
+      | { sessionID?: string; status?: { type?: string } }
+      | undefined
+    if (props?.sessionID && typeof props.status?.type === 'string') {
+      handlers.onSessionStatus(props.sessionID, props.status.type)
     }
     return
   }

@@ -23,8 +23,8 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
-import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
   CalendarIcon as Calendar,
@@ -478,7 +478,7 @@ export function SqliteRenderer({
         setHasUnsavedChanges(true);
         refreshTableMeta();
       } catch (e: unknown) {
-        toast.error(`Update failed: ${(e as Error)?.message || 'Unknown error'}`);
+        errorToast(`Update failed: ${(e as Error)?.message || 'Unknown error'}`);
         // Revert the cell
         event.node.setDataValue(colName, oldValue);
       }
@@ -539,9 +539,9 @@ export function SqliteRenderer({
       setDataVersion((v) => v + 1);
       refreshTableMeta();
       setExpandedCell(null);
-      toast.success('Cell updated');
+      successToast('Cell updated');
     } catch (e: unknown) {
-      toast.error(`Update failed: ${(e as Error)?.message || 'Unknown error'}`);
+      errorToast(`Update failed: ${(e as Error)?.message || 'Unknown error'}`);
     }
   }, [
     selectedTable,
@@ -596,9 +596,9 @@ export function SqliteRenderer({
       setHasUnsavedChanges(true);
       setDataVersion((v) => v + 1);
       refreshTableMeta();
-      toast.success('Row added');
+      successToast('Row added');
     } catch (e: unknown) {
-      toast.error(`Insert failed: ${(e as Error)?.message || 'Unknown error'}`);
+      errorToast(`Insert failed: ${(e as Error)?.message || 'Unknown error'}`);
     }
   }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly]);
 
@@ -610,7 +610,7 @@ export function SqliteRenderer({
 
     const selectedRows = api.getSelectedRows();
     if (selectedRows.length === 0) {
-      toast.error('No rows selected — click a row first');
+      errorToast('No rows selected — click a row first');
       return;
     }
 
@@ -635,7 +635,7 @@ export function SqliteRenderer({
       setHasUnsavedChanges(true);
       setDataVersion((v) => v + 1);
       refreshTableMeta();
-      toast.success(`${deleted} row${deleted !== 1 ? 's' : ''} deleted`);
+      successToast(`${deleted} row${deleted !== 1 ? 's' : ''} deleted`);
     }
   }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly]);
 
@@ -653,9 +653,9 @@ export function SqliteRenderer({
       const { uploadFile } = await import('@/features/files/api/runtime-files');
       await uploadFile(file, parentPath || undefined);
       setHasUnsavedChanges(false);
-      toast.success('Database saved');
+      successToast('Database saved');
     } catch (e: unknown) {
-      toast.error(`Save failed: ${(e as Error)?.message || 'Unknown error'}`);
+      errorToast(`Save failed: ${(e as Error)?.message || 'Unknown error'}`);
     } finally {
       setIsSaving(false);
     }
@@ -702,7 +702,7 @@ export function SqliteRenderer({
         if (firstTable) setSelectedTable(firstTable);
         setDataVersion((v) => v + 1);
         setIsLoading(false);
-        toast.success('Changes discarded');
+        successToast('Changes discarded');
       } catch (e: unknown) {
         setError((e as Error)?.message || 'Reload failed');
         setIsLoading(false);

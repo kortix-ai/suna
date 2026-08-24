@@ -209,11 +209,24 @@ export function AgentSelector({
         >
           {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
           <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
-          <CaretDownIcon className={cn('size-3', open && 'rotate-180')} />
+          <CaretDownIcon
+            className={cn(
+              'size-3 transition-transform duration-200 ease-out',
+              open && 'rotate-180',
+            )}
+          />
         </Button>
       </CommandPopoverTrigger>
 
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
+      {/* `min(...)`, not a hard `300px`: on a 320px viewport a fixed 300px
+          popover plus the trigger's own inset pushed the panel off-screen.
+          Same shape `mention-menu.tsx` uses. */}
+      <CommandPopoverContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        className="w-[min(300px,calc(100vw-1.5rem))]"
+      >
         {/*
           A search field over four agents is a control that costs a row of
           chrome to save nobody any time — the whole list is already on screen

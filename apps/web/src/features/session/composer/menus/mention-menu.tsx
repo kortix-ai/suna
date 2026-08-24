@@ -34,16 +34,25 @@ export function MentionMenu({
    *  highlight honest: what you point at is what Enter takes. */
   onHover?: (row: MenuRow) => void;
 }) {
-  if (!sections.length && !loading) return null;
+  // A query that matches nothing keeps the card, with one dead row saying so.
+  // Returning `null` made the menu DISAPPEAR mid-word — indistinguishable from
+  // the menu having closed, and one backspace brought it back from nowhere.
+  if (!sections.length && !loading) {
+    return (
+      <MenuCard className="w-[min(26rem,calc(100vw-1.5rem))] rounded-lg">
+        <p role="status" className="text-muted-foreground px-3 py-2.5 text-sm">
+          No matches
+        </p>
+      </MenuCard>
+    );
+  }
 
   return (
-    // `rounded-xl` (12px) with `p-1.5` (6px) padding and `rounded-md` (6px)
-    // rows — concentric, 6 + 6 = 12. It was `rounded-md` on the card AND on
-    // the rows, which is the same radius on parent and child: the rows'
-    // corners visibly cut inside the card's at the four extremes.
-    //
-    // 12px, not the `/` menu's 16px: this one floats at the caret and is half
-    // the width, so it should read as lighter than the docked palette.
+    // `rounded-lg` (8px) — the cap `menu-shell.tsx` documents for app
+    // containers, and the same radius the `/` palette uses, so the two menus
+    // read as one system. It was `rounded-md` on the card AND on the rows,
+    // which is the same radius on parent and child: the rows' corners visibly
+    // cut inside the card's at the four extremes.
     <MenuCard className="w-[min(26rem,calc(100vw-1.5rem))] rounded-lg">
       <div
         role="listbox"

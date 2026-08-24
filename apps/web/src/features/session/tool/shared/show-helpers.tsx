@@ -26,18 +26,12 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarGroup,
-  AvatarGroupCount,
-  AvatarImage,
-} from '@/components/ui/avatar';
 import { STATUS_BORDER } from '@/components/ui/status';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react';
 import {
   WarningIcon as AlertTriangle,
+  ArrowClockwiseIcon,
   CodeSimpleIcon as Code2,
   ArrowSquareOutIcon as ExternalLink,
   FileCodeIcon as FileCode,
@@ -53,7 +47,6 @@ import {
   FileXlsIcon as FileXls,
   FileZipIcon as FileZip,
   GlobeIcon as Globe,
-  ArrowClockwiseIcon as GrRefresh,
   ImageIcon,
   ArrowsOutSimpleIcon as Maximize2,
   MusicNotesIcon as Music,
@@ -145,67 +138,6 @@ export function showFileTypeIcon(type: string, path?: string, className = 'size-
   const TypeIcon = SHOW_TYPE_FILE_ICONS[type];
   if (TypeIcon) return <TypeIcon className={cn(className, 'shrink-0')} />;
   return showTypeIcon(type, className);
-}
-
-/** Thumbnail source for an image item — only direct http(s) URLs; sandbox
- *  paths need an authed blob fetch, too heavy for a header glyph. */
-function showItemImageSrc(item: Pick<ShowCarouselItem, 'type' | 'url'>): string | null {
-  if (item.type !== 'image' || !item.url) return null;
-  return safeHttpUrl(item.url);
-}
-
-const SHOW_HEADER_MAX_AVATARS = 3;
-
-/** Stacked file-type avatars for a multi-item show header: one avatar per
- *  item (carousel order), image thumbnails when available, "+N" overflow.
- *  The ring fakes a cutout, so it must match the card surface (`bg-secondary`),
- *  not `bg-background`. */
-export function ShowHeaderAvatars({ items }: { items: ShowCarouselItem[] }) {
-  const visible = items.slice(0, SHOW_HEADER_MAX_AVATARS);
-  const overflow = items.length - visible.length;
-  return (
-    <AvatarGroup className="shrink-0 -space-x-1.5 *:data-[slot=avatar]:ring-secondary">
-      {visible.map((item) => {
-        const src = showItemImageSrc(item);
-        return (
-          <Avatar
-            key={`${item.type}:${item.path ?? item.url ?? item.title ?? ''}`}
-            size="sm"
-            className=""
-          >
-            {src ? <AvatarImage src={src} alt={item.title || ''} /> : null}
-            <AvatarFallback className='bg-background'>{showFileTypeIcon(item.type, item.path, 'size-3.5')}</AvatarFallback>
-          </Avatar>
-        );
-      })}
-      {overflow > 0 ? (
-        <AvatarGroupCount className="text-xs ring-secondary">+{overflow}</AvatarGroupCount>
-      ) : null}
-    </AvatarGroup>
-  );
-}
-
-/** Single-item show header glyph: a real thumbnail for an image with a
- *  direct URL, otherwise the format-specific file icon. */
-export function ShowHeaderIcon({
-  type,
-  path,
-  url,
-  title,
-}: {
-  type: string;
-  path?: string;
-  url?: string;
-  title?: string;
-}) {
-  const src = showItemImageSrc({ type, url });
-  if (!src) return showFileTypeIcon(type, path);
-  return (
-    <Avatar size="sm" className="ring-border shrink-0 ring-1">
-      <AvatarImage src={src} alt={title || ''} />
-      <AvatarFallback>{showFileTypeIcon(type, path, 'size-3.5')}</AvatarFallback>
-    </Avatar>
-  );
 }
 
 export function useShowOpenInTab(props: {
@@ -354,7 +286,7 @@ export function ShowFileActions({
           aria-label="Refresh"
           className="active:scale-[0.96]"
         >
-          <GrRefresh className={cn('size-4', refreshing && 'animate-spinner-spin')} />
+          <ArrowClockwiseIcon className={cn('size-4', refreshing && 'animate-spinner-spin')} />
         </Button>
       </Hint>
 

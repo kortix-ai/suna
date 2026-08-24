@@ -182,6 +182,24 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 ));
 DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displayName;
 
+/**
+ * The label column of a radio row.
+ *
+ * `flex-1` is what pushes the check to the row's far edge — but the span used
+ * to stop there, i.e. it was a BLOCK. Tailwind's Preflight sets
+ * `svg { display: block }`, so any radio row with a leading icon rendered the
+ * icon on its own line above the label. Every other row component
+ * (`Item`, `CheckboxItem`, `SubTrigger`) escapes this because `MENU_ROW_BASE`
+ * makes the row itself the flex container and their children are direct
+ * children of it; only `RadioItem` interposes this wrapper.
+ *
+ * Two consumers had already worked around it by hand-wrapping their children
+ * in exactly this class (`user-menu-shared.tsx`, `reasoning-effort-selector.tsx`)
+ * — the workaround is now the component's job. `gap-2` matches `MENU_ROW_BASE`
+ * so an icon+label pair is spaced identically whichever row type holds it.
+ */
+const RADIO_LABEL = 'flex min-w-0 flex-1 items-center gap-2';
+
 const DropdownMenuRadioItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>,
   // `size` used to be 'default' | 'sm' | 'lg' here while every sibling row used
@@ -219,11 +237,11 @@ const DropdownMenuRadioItem = React.forwardRef<
       {side === 'left' ? (
         <>
           {indicator}
-          <span className="min-w-0 flex-1">{children}</span>
+          <span className={RADIO_LABEL}>{children}</span>
         </>
       ) : (
         <>
-          <span className="min-w-0 flex-1">{children}</span>
+          <span className={RADIO_LABEL}>{children}</span>
           {indicator}
         </>
       )}

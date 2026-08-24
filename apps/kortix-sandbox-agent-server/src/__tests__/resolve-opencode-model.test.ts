@@ -4,27 +4,21 @@ import { buildInitialPromptBody, resolveOpencodeModel } from '../main'
 
 const ORIGINAL_MODEL = process.env.KORTIX_OPENCODE_MODEL
 const ORIGINAL_LLM_BASE_URL = process.env.KORTIX_LLM_BASE_URL
-const ORIGINAL_LLM_API_KEY = process.env.KORTIX_LLM_API_KEY
+const ORIGINAL_LLM_API_KEY = process.env.KORTIX_TOKEN
 const ORIGINAL_LLM_PROXY_URL = process.env.KORTIX_LLM_PROXY_URL
 const ORIGINAL_AGENT = process.env.KORTIX_AGENT_NAME
-const ORIGINAL_INITIAL_TURN_MESSAGE_ID = process.env.KORTIX_INITIAL_TURN_MESSAGE_ID
 
 afterEach(() => {
   if (ORIGINAL_MODEL === undefined) delete process.env.KORTIX_OPENCODE_MODEL
   else process.env.KORTIX_OPENCODE_MODEL = ORIGINAL_MODEL
   if (ORIGINAL_LLM_BASE_URL === undefined) delete process.env.KORTIX_LLM_BASE_URL
   else process.env.KORTIX_LLM_BASE_URL = ORIGINAL_LLM_BASE_URL
-  if (ORIGINAL_LLM_API_KEY === undefined) delete process.env.KORTIX_LLM_API_KEY
-  else process.env.KORTIX_LLM_API_KEY = ORIGINAL_LLM_API_KEY
+  if (ORIGINAL_LLM_API_KEY === undefined) delete process.env.KORTIX_TOKEN
+  else process.env.KORTIX_TOKEN = ORIGINAL_LLM_API_KEY
   if (ORIGINAL_LLM_PROXY_URL === undefined) delete process.env.KORTIX_LLM_PROXY_URL
   else process.env.KORTIX_LLM_PROXY_URL = ORIGINAL_LLM_PROXY_URL
   if (ORIGINAL_AGENT === undefined) delete process.env.KORTIX_AGENT_NAME
   else process.env.KORTIX_AGENT_NAME = ORIGINAL_AGENT
-  if (ORIGINAL_INITIAL_TURN_MESSAGE_ID === undefined) {
-    delete process.env.KORTIX_INITIAL_TURN_MESSAGE_ID
-  } else {
-    process.env.KORTIX_INITIAL_TURN_MESSAGE_ID = ORIGINAL_INITIAL_TURN_MESSAGE_ID
-  }
 })
 
 describe('resolveOpencodeModel', () => {
@@ -57,7 +51,7 @@ describe('resolveOpencodeModel', () => {
 
   test('routes a Codex wire model through the Kortix provider in gateway mode', () => {
     process.env.KORTIX_LLM_BASE_URL = 'https://api.kortix.test/v1/llm'
-    process.env.KORTIX_LLM_API_KEY = 'test-key'
+    process.env.KORTIX_TOKEN = 'test-key'
     process.env.KORTIX_OPENCODE_MODEL = 'codex/gpt-5.6-sol'
 
     expect(resolveOpencodeModel()).toEqual({
@@ -68,7 +62,7 @@ describe('resolveOpencodeModel', () => {
 
   test('routes a BYOK wire model through the Kortix provider in gateway mode', () => {
     process.env.KORTIX_LLM_BASE_URL = 'https://api.kortix.test/v1/llm'
-    process.env.KORTIX_LLM_API_KEY = 'test-key'
+    process.env.KORTIX_TOKEN = 'test-key'
     process.env.KORTIX_OPENCODE_MODEL = 'anthropic/claude-sonnet-4-6'
 
     expect(resolveOpencodeModel()).toEqual({
@@ -128,9 +122,7 @@ describe('buildInitialPromptBody', () => {
   test('uses the control-plane message identity for the daemon-delivered turn', () => {
     delete process.env.KORTIX_OPENCODE_MODEL
     process.env.KORTIX_AGENT_NAME = 'default'
-    process.env.KORTIX_INITIAL_TURN_MESSAGE_ID = 'msg_initial_turn'
-
-    expect(buildInitialPromptBody('Run for 90 seconds.')).toEqual({
+    expect(buildInitialPromptBody('Run for 90 seconds.', 'msg_initial_turn')).toEqual({
       messageID: 'msg_initial_turn',
       parts: [{ type: 'text', text: 'Run for 90 seconds.' }],
     })

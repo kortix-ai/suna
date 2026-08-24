@@ -103,8 +103,19 @@ function isSandboxNotRunningBody(status: number, text: string): boolean {
   }
 }
 
-/** GET/POST JSON. Throws `platinum <method> <path> -> <status> <body>` on non-2xx. */
-export async function platinumJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+export type PlatinumJsonResponse<T> = {
+  status: number;
+  body: T;
+};
+
+/**
+ * GET/POST JSON while preserving the successful HTTP status. Non-2xx behavior
+ * stays identical to platinumJson(), including typed stopped-sandbox errors.
+ */
+export async function platinumJsonResponse<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<PlatinumJsonResponse<T>> {
   const res = await platinumFetch(path, init);
   const text = await res.text();
   if (!res.ok) {
@@ -123,5 +134,13 @@ export async function platinumJson<T>(path: string, init: RequestInit = {}): Pro
     }
     throw new Error(`platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}${suffix}`);
   }
-  return (text ? JSON.parse(text) : {}) as T;
+  return {
+    status: res.status,
+    body: (text ? JSON.parse(text) : {}) as T,
+  };
+}
+
+/** GET/POST JSON. Throws `platinum <method> <path> -> <status> <body>` on non-2xx. */
+export async function platinumJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return (await platinumJsonResponse<T>(path, init)).body;
 }

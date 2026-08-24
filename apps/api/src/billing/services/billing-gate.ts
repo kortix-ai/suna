@@ -114,11 +114,13 @@ export async function checkBillingActive(
 
   if (!billingStateAllowsRun(state)) return blockedResult(state, snapshot, billingModel);
 
-  // A PAYING per-seat subscription isn't wallet-gated at all — no admission
-  // hold, no floor. This is the branch that makes `per_seat` + `active` + a
-  // $0.0099 wallet a RUNNABLE account, which is why `can_run` on account-state
-  // must be derived from this same state machine (see account-state.ts) rather
-  // than from a bare wallet-floor check that contradicts it.
+  // A PAYING subscription isn't wallet-gated at all — no admission hold, no
+  // floor, on ANY billing model. This is the branch that makes an `active`
+  // subscription + a $0.0099 wallet a RUNNABLE account (per-seat, credit
+  // plan, or a legacy machine sub alike), which is why `can_run` on
+  // account-state must be derived from this same state machine (see
+  // account-state.ts) rather than from a bare wallet-floor check that
+  // contradicts it.
   //
   // It calls the SAME predicate `resolveBillingState` used above. This used to
   // be a locally-written `isPerSeatAccount && hasLiveSubscription`, which

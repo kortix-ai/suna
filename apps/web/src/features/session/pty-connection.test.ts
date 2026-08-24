@@ -9,17 +9,27 @@ import {
 
 describe('classifyPtyClose', () => {
   test('replaces a daemon-side PTY that no longer exists even when the proxy reports code 1000', () => {
-    expect(classifyPtyClose({ code: 1000, reason: 'pty not found', hadError: false })).toBe('replace');
+    expect(classifyPtyClose({ code: 1000, reason: 'pty not found', hadError: false })).toBe(
+      'replace',
+    );
   });
 
   test('reconnects transport failures regardless of proxy close-code normalization', () => {
-    expect(classifyPtyClose({ code: 1000, reason: 'upstream error', hadError: true })).toBe('reconnect');
-    expect(classifyPtyClose({ code: 1011, reason: 'upstream error', hadError: true })).toBe('reconnect');
-    expect(classifyPtyClose({ code: 1000, reason: 'idle timeout', hadError: false })).toBe('reconnect');
+    expect(classifyPtyClose({ code: 1000, reason: 'upstream error', hadError: true })).toBe(
+      'reconnect',
+    );
+    expect(classifyPtyClose({ code: 1011, reason: 'upstream error', hadError: true })).toBe(
+      'reconnect',
+    );
+    expect(classifyPtyClose({ code: 1000, reason: 'idle timeout', hadError: false })).toBe(
+      'reconnect',
+    );
   });
 
   test('leaves an intentional shell exit ended', () => {
-    expect(classifyPtyClose({ code: 1000, reason: 'pty exited (0)', hadError: false })).toBe('ended');
+    expect(classifyPtyClose({ code: 1000, reason: 'pty exited (0)', hadError: false })).toBe(
+      'ended',
+    );
   });
 });
 
@@ -70,6 +80,17 @@ describe('deriveTerminalPanelState', () => {
     expect(
       deriveTerminalPanelState({ ...readyInput, isCreateError: true, isSandboxWaking: true }),
     ).toBe('connecting');
+  });
+
+  test('turns a prolonged readiness wait into a local retry state', () => {
+    expect(
+      deriveTerminalPanelState({
+        ...readyInput,
+        isListError: true,
+        isSandboxWaking: true,
+        connectionWaitExpired: true,
+      }),
+    ).toBe('error');
   });
 
   test('keeps an existing terminal visible during background query failures', () => {

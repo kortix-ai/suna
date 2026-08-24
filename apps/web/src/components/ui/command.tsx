@@ -40,12 +40,25 @@ function CommandDialog({
   children,
   className,
   showCloseButton = true,
+  shouldFilter,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string;
   description?: string;
   className?: string;
   showCloseButton?: boolean;
+  /**
+   * Forwarded to cmdk's root. Pass `false` when the caller has already
+   * filtered its own rows AND wants to decide their order — cmdk's sort pass
+   * returns early on this flag, so nothing re-appends nodes behind the
+   * caller's back. See `features/workspace/palette-ranking.ts` for the two
+   * cmdk 0.2.1 defects that make owning the order necessary rather than
+   * merely preferable.
+   *
+   * Left `undefined` by default, so every existing consumer keeps cmdk's
+   * built-in filtering unchanged.
+   */
+  shouldFilter?: boolean;
 }) {
   return (
     <Dialog {...props}>
@@ -58,7 +71,10 @@ function CommandDialog({
         hideCloseButton={!showCloseButton}
         overlayClassName="bg-black/40 backdrop-blur-[1px]"
       >
-        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground bg-popover **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12">
+        <Command
+          shouldFilter={shouldFilter}
+          className="[&_[cmdk-group-heading]]:text-muted-foreground bg-popover **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12"
+        >
           {children}
         </Command>
       </DialogContent>

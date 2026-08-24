@@ -8,7 +8,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 
 import { Badge } from '@/components/ui/badge';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -20,7 +19,6 @@ import { useReviewSessionSummary } from '@/features/review-center/hooks/use-revi
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
 import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
-import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { ExperimentalTab } from '@/features/workspace/settings/tabs/experimental-tab';
 import { GeneralTab } from '@/features/workspace/settings/tabs/general-tab';
 import { SandboxTab } from '@/features/workspace/settings/tabs/sandbox-tab';
@@ -79,14 +77,19 @@ import {
  * `Advanced`) are gone; see `project-settings-sections.ts`'s "One flat list,
  * no headings". Do not reintroduce those headings.
  *
- * **The desktop rail's SHELL matches the account settings page's**
- * (`app/(app)/accounts/[id]/page.tsx`'s `<aside>`): an identity header
- * (`EntityAvatar` + name + one-line summary) above the nav, and the nav
- * itself rendered as one unlabeled group in that page's `NAV_GROUPS` dialect
- * — same row classes, same icon size, same active/hover treatment. It is
- * still ONE list under the hood (`sections.map`, a single `TabsList`); mobile
- * keeps the separate horizontal tab strip, unchanged, since it has no rail to
- * match shells with.
+ * **The desktop rail's rows are the account settings page's**
+ * (`app/(app)/accounts/[id]/page.tsx`'s `<aside>`): the nav renders as one
+ * unlabeled group in that page's `NAV_GROUPS` dialect — same row classes, same
+ * icon size, same active/hover treatment. It is ONE list under the hood
+ * (`sections.map`, a single `TabsList`); mobile keeps the separate horizontal
+ * tab strip, unchanged, since it has no rail to match rows with.
+ *
+ * **No identity header.** An `EntityAvatar` + project name sat above the nav,
+ * mirroring the account rail's. On the account page that block is the only
+ * place the account is named; here the app sidebar already carries this
+ * project's avatar and name two columns to the left, at the same `md` size, so
+ * the rail said it twice. Removed 2026-08-23 on Jay's call — and it was the
+ * only thing removed: the `border-r` beside it stays.
  *
  * **The section lives in the URL, not in a store.** `?section=<key>` is
  * shareable, survives a reload, and is what `settings-tabs.ts`'s `GRADUATED`
@@ -110,21 +113,6 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   const project = detail.data?.project;
-  const gitConnection = detail.data?.git_connection;
-  // The rail header's one-line summary, under the project name — the same
-  // slot the account rail fills with a member count (`accounts/[id]/page.tsx`'s
-  // `<aside>` header). A project has no member count of its own here (Members
-  // graduated to the account hub), so this reaches for the next most
-  // identifying fact: the repo it's connected to, or its archived status when
-  // there is no repo. Neither is shown while the project itself is still
-  // loading, matching the account rail's `!membersQuery.isLoading` guard.
-  const projectSummary = !detail.isLoading
-    ? gitConnection?.repo_owner && gitConnection?.repo_name
-      ? `${gitConnection.repo_owner}/${gitConnection.repo_name}`
-      : project?.status === 'archived'
-        ? 'Archived'
-        : undefined
-    : undefined;
 
   const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS, {
     accountId: project?.account_id,
@@ -139,19 +127,15 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
       ),
     [caps],
   );
-  const projectCan = useCallback(
-    (action: ProjectAction) => caps[action]?.allowed === true,
-    [caps],
-  );
+  const projectCan = useCallback((action: ProjectAction) => caps[action]?.allowed === true, [caps]);
 
-  const voiceEnabled = project?.experimental?.voice ?? false;
   const reviewEnabled = project?.experimental?.review_center ?? false;
 
   const sections = useMemo(() => {
-    const all = projectSettingsSections({ reviewEnabled, voiceEnabled });
+    const all = projectSettingsSections({ reviewEnabled });
     if (!capsResolved) return all;
     return all.filter((s) => isCustomizeSectionVisible(s.gate, projectCan));
-  }, [reviewEnabled, voiceEnabled, capsResolved, projectCan]);
+  }, [reviewEnabled, capsResolved, projectCan]);
 
   const requested = parseProjectSettingsSection(searchParams.get('section'));
   // A section named in the URL but hidden (flag off, or an explicit permission
@@ -228,30 +212,14 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
             </FadedScrollArea>
           </nav>
         ) : (
+          /* No identity header — and that is the ONLY change to this rail. It
+             named the project a SECOND time: the app sidebar already carries
+             this project's avatar and name two columns to the left, at the
+             same `md` size. Everything else is untouched — the 230px column,
+             the `border-r`, its own scroller, `py-4`, the `Tabs` vertical
+             list. */
           <section className="bg-background flex min-h-0 flex-col overflow-y-auto border-r py-4">
-            <div className="min-h-0 flex-1 space-y-4 px-2.5">
-              {/* Identity header — same treatment as the account settings
-                  rail's avatar + name + one-line summary block
-                  (`accounts/[id]/page.tsx`'s `<aside>` header): `EntityAvatar`
-                  size `md`, `gap-2.5`, `text-sm font-medium` name over a
-                  `text-xs text-muted-foreground` summary line. */}
-              <div className="flex min-w-0 items-center gap-2.5 px-1">
-                <EntityAvatar
-                  label={project?.name || 'Project'}
-                  emoji={project?.icon}
-                  glyph={project?.icon_glyph}
-                  size="md"
-                />
-                <div className="min-w-0">
-                  <p className="text-foreground truncate text-sm font-medium">
-                    {project?.name || 'Project'}
-                  </p>
-                  {projectSummary ? (
-                    <p className="text-muted-foreground truncate text-xs">{projectSummary}</p>
-                  ) : null}
-                </div>
-              </div>
-
+            <div className="min-h-0 flex-1 px-2.5">
               <nav aria-label="Project settings" className="space-y-0.5">
                 {/* ONE unlabeled nav group — the account rail's own
                     precedent for a cluster with nothing to split into (its
@@ -335,7 +303,11 @@ function SectionTrigger({
         <Icon className="size-4 shrink-0" />
         <span className={cn(!horizontal && 'truncate')}>{section.label}</span>
         {showCount ? (
-          <Badge variant="kortix" size="xs" className={cn('tabular-nums', !horizontal && 'ml-auto')}>
+          <Badge
+            variant="kortix"
+            size="xs"
+            className={cn('tabular-nums', !horizontal && 'ml-auto')}
+          >
             {count}
           </Badge>
         ) : attention ? (
@@ -380,8 +352,6 @@ function ProjectSettingsSectionPane({
       );
     case 'review':
       return <ReviewView projectId={projectId} />;
-    case 'voice':
-      return <VoiceView projectId={projectId} />;
     case 'feature-flags':
       return <ExperimentalTab projectId={projectId} />;
     case 'upgrades':

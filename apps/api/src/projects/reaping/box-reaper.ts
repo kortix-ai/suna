@@ -37,6 +37,7 @@ import { markComputeSessionAlive } from '../../billing/services/compute-metering
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { REAP_CONCURRENCY } from '../reaper-constants';
+import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
 import { turnDeliveryGraceMs, turnGrantMs } from '../sandbox-deadline-policy';
@@ -223,6 +224,11 @@ export async function reapAndReconcileSandboxes(
   const worker = async () => {
     while (cursor < rows.length) {
       const row = rows[cursor++];
+      // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): instance A
+      // never probes or stops a box instance B provisioned. Sits beside the
+      // provider-level `kortix.env` filter in listManagedRunningSandboxes.
+      // No-op when KORTIX_INSTANCE_ID is unset.
+      if (!sandboxBelongsToThisInstance(row.metadata)) continue;
       try {
         const provider = getProvider(row.provider);
         const providerStatus: SandboxStatus = await provider.getStatus(row.externalId);
@@ -402,6 +408,27 @@ export async function reapAndReconcileSandboxes(
               } else if (observation === 'active') {
                 observedActiveTokens.push(turn.token);
               } else if (observation === 'terminal') {
+                // A YOUNG orphaned prompt DEFERS the clear instead of paying
+                // for it with the prompt's life. Clearing deletes the record,
+                // and the record is the ONLY thing that can ever trigger the
+                // orphan redelivery below — so a terminal observation landing
+                // inside ORPHANED_PROMPT_MIN_AGE_MS was a one-shot race that
+                // silently swallowed the prompt: observed live 2026-08-20
+                // (Essentia session d1b74954, prompt cleared `unknown` at age
+                // 27s, 3s under the floor, never answered). The next pass runs
+                // ~20s later; by then the age check passes and the redelivery
+                // fires, or the prompt got answered and the observation says
+                // so. The deferral is bounded by the floor itself.
+                const orphanAgeMs =
+                  turn.startedAtMs === null ? null : now.getTime() - turn.startedAtMs;
+                if (
+                  orphanedPrompt &&
+                  !huskFinalized &&
+                  orphanAgeMs !== null &&
+                  orphanAgeMs < ORPHANED_PROMPT_MIN_AGE_MS
+                ) {
+                  continue;
+                }
                 // Terminal evidence removes the record, whatever the finalizer
                 // managed to close. Holding the record to retry an unreadable
                 // finalize would keep the box's four-hour turn grant instead of

@@ -4,11 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useSendReferralEmails } from '@/hooks/referrals/use-referrals';
-import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { CheckIcon as Check, EnvelopeIcon as Mail, XIcon as X } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import * as React from 'react';
+import { errorToast } from '../ui/toast';
 
 interface ReferralEmailProps {
   className?: string;
@@ -40,17 +40,17 @@ export function ReferralEmailInvitation({ className }: ReferralEmailProps) {
     if (!trimmedEmail) return;
 
     if (emails.length >= MAX_EMAILS) {
-      toast.error(`Maximum ${MAX_EMAILS} emails allowed`);
+      errorToast(`Maximum ${MAX_EMAILS} emails allowed`);
       return;
     }
 
     if (!isValidEmail(trimmedEmail)) {
-      toast.error('Please enter a valid email address');
+      errorToast('Please enter a valid email address');
       return;
     }
 
     if (emails.some((e) => e.email === trimmedEmail)) {
-      toast.error('Email already added');
+      errorToast('Email already added');
       return;
     }
 

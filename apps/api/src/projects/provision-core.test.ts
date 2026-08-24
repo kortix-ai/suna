@@ -40,7 +40,7 @@ describe('provision phases', () => {
     expect(fnStart).toBeGreaterThan(-1);
 
     const emitValidating = source.indexOf("emit('validating')", fnStart);
-    const providerCheck = source.indexOf('MANAGED_GIT_PROVIDER', fnStart);
+    const providerCheck = source.indexOf('defaultManagedProviderId()', fnStart);
     const nameCheck = source.indexOf("name is required", fnStart);
     expect(emitValidating).toBeGreaterThan(-1);
     expect(providerCheck).toBeGreaterThan(-1);
@@ -110,5 +110,17 @@ describe('provision phases', () => {
     expect(fnBody).not.toContain('c.json(');
     expect(fnBody).toContain('return {');
     expect((fnBody.match(/status:\s*201/g) ?? []).length).toBeGreaterThan(0);
+  });
+
+  test('precomputes the Git hint after a verified seed only when fast boot is enabled', async () => {
+    const source = await coreSource();
+    const seedState = source.indexOf('const verifiedSeedState');
+    const gate = source.indexOf('if (config.KORTIX_FAST_COLD_BOOT_ENABLED');
+    const precompute = source.indexOf('resolveFastBootGitHintWithCache(', gate);
+    expect(seedState).toBeGreaterThan(-1);
+    expect(gate).toBeGreaterThan(seedState);
+    expect(precompute).toBeGreaterThan(gate);
+    expect(source.slice(gate, precompute)).toContain('writeUpstream');
+    expect(source).toContain('FAST_BOOT_SEED_HINT_TIMEOUT_MS = 8_000');
   });
 });

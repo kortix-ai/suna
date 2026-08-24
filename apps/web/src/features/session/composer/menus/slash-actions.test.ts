@@ -59,7 +59,7 @@ describe('controlToOpenFor', () => {
   });
 
   test('every other action opens nothing', () => {
-    for (const id of ['switch-agent', 'attach-file', 'start-voice', 'set-scope'] as const) {
+    for (const id of ['switch-agent', 'attach-file'] as const) {
       expect(controlToOpenFor(id)).toBeNull();
     }
   });

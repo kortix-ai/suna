@@ -2,7 +2,6 @@ export type UpstreamErrorKind =
   | 'http'
   | 'network'
   | 'timeout'
-  | 'circuit_open'
   | 'client_abort'
   | 'misconfigured';
 
@@ -34,14 +33,6 @@ export class NetworkError extends Error {
   ) {
     super(message);
     this.name = 'NetworkError';
-  }
-}
-
-export class CircuitOpenError extends Error {
-  readonly kind: UpstreamErrorKind = 'circuit_open';
-  constructor(readonly provider: string) {
-    super(`circuit open for upstream "${provider}"`);
-    this.name = 'CircuitOpenError';
   }
 }
 
@@ -79,6 +70,14 @@ export class UpstreamHttpError extends Error {
     readonly status: number,
     readonly body: string,
     readonly provider?: string,
+    /**
+     * The upstream response headers, lower-cased, when the transport captured
+     * them (`APICallError.responseHeaders`). Only `retry-after` is read today —
+     * the pipeline relays it to the client CLAMPED (see
+     * `clampRetryAfterSeconds`), because OpenCode >= 1.18.17 obeys a
+     * `Retry-After` verbatim up to 24.8 days.
+     */
+    readonly headers?: Record<string, string>,
   ) {
     super(`upstream HTTP ${status}`);
     this.name = 'UpstreamHttpError';
@@ -148,7 +147,6 @@ export function looksLikeTerminalAuthFailure(message: string | undefined | null)
 }
 
 export function defaultIsRetryable(err: unknown): boolean {
-  if (err instanceof CircuitOpenError) return false;
   if (err instanceof ClientAbortError) return false;
   // A misconfigured descriptor (missing/invalid baseUrl) never becomes usable
   // on retry — it's a resolution-time defect, not a transient host condition.

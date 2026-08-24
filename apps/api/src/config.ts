@@ -144,6 +144,21 @@ const envSchema = z.object({
   // `preview` = ephemeral per-PR API on EKS (shares the dev data plane, never
   // migrates it, workers off, allows preview frontends in CORS). See ensure-schema.ts + the CORS block in index.ts.
   INTERNAL_KORTIX_ENV: z.enum(['dev', 'staging', 'prod', 'preview']).optional().default('dev'),
+  // Instance scope for BACKGROUND work on a shared database (local dev only:
+  // worktrees + the primary `pnpm dev` share one Supabase, so the lifecycle
+  // queue, env-sync fan-outs and the box reaper are one queue across every
+  // running API). Set by the launchers (`scripts/dev-local.sh` → `primary`,
+  // `scripts/worktree/lib/launch-env.ts` → the worktree name). Unset in every
+  // deployed environment → every scope check is a no-op.
+  // See projects/instance-scope.ts.
+  KORTIX_INSTANCE_ID: z.string().trim().optional(),
+
+  // Wildcard domain every preview ORIGIN sits under
+  // (`{env}-p{port}-{sandbox}.{domain}`). Unset on managed cloud, where it is
+  // derived as `p.<registrable domain of KORTIX_URL>`; set it on a self-host
+  // whose DNS does not fit that shape. A deployment with neither keeps previews
+  // on the path proxy. See sandbox-proxy/preview-hosts.ts.
+  KORTIX_PREVIEW_BASE_DOMAIN: optStr,
   // Master switch: turns on real billing (Stripe + credit ledger), makes
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
@@ -163,6 +178,39 @@ const envSchema = z.object({
    * off-sandbox token use`.
    */
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: optBoolTrue,
+
+  // ── Streaming secret relay (POST /v1/projects/:id/secrets/:id/relay) ──────
+  //
+  // The kill switch. `false` makes /relay answer 503 `relay_disabled` with no
+  // image rebuild; the in-guest shim probes once at construction, so NEW
+  // sessions fall back to the permanent buffered /broker route immediately.
+  // In-flight relay-mode sessions get a 503 per request and the agent retries —
+  // the honest, documented limitation of a construction-time probe. The
+  // alternative (a capability header on every request) costs a round trip per
+  // relayed request and still cannot un-consume a body already streamed.
+  KORTIX_SECRET_RELAY_STREAM_ENABLED: optBoolTrue,
+  /** Websocket relay, gated separately so it can roll out behind the HTTP leg. */
+  KORTIX_RELAY_WS_ENABLED: optBoolTrue,
+  // Byte budgets. These are a RESOURCE guard, not a product limit: 1 GiB is
+  // 1024x the legacy request cap and 205x the response cap — effectively
+  // uncapped for any real API call — but it stops one runaway sandbox.
+  //
+  // They are MANDATORY because Bun applies NO inbound flow control. Measured on
+  // bun 1.3.14: a 200 MiB body into a 50 ms/chunk consumer produced 12 chunks,
+  // one of them 23,003,148 bytes, and +113.6 MiB RSS. Neither documented lever
+  // helps — `getReader({mode:'byob'})` throws (it needs a
+  // ReadableByteStreamController) and `pipeTo` with
+  // `CountQueuingStrategy({highWaterMark:1})` is byte-for-byte identical to
+  // manual reads. The counter in the read loop is the ONLY guard that exists.
+  // 0 = unlimited, for self-host operators who want no ceiling at all.
+  KORTIX_RELAY_MAX_REQUEST_BYTES: optInt(1_073_741_824),
+  KORTIX_RELAY_MAX_RESPONSE_BYTES: optInt(1_073_741_824),
+  // Time to the upstream's RESPONSE HEADERS, not to completion. The legacy
+  // broker's flat 30 s `REQUEST_TIMEOUT_MS` cannot become a total-duration
+  // timeout here or every SSE stream would die at 30 s.
+  KORTIX_RELAY_HEADERS_TIMEOUT_MS: optInt(30_000),
+  // IDLE on the upstream response socket — never a total duration. 0 = off.
+  KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: optInt(600_000),
   // Kortix-owned session titles: the moment a session's first prompt text is
   // known server-side (at create when it carries one, else on the first HTTP
   // prompt), generate the title ourselves via the internal LLM gateway instead
@@ -224,7 +272,10 @@ const envSchema = z.object({
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
-  // ('github' default). The GitHub backend creates repos under
+  // ('github' default). `code-storage` is RETIRED here and is refused by
+  // `defaultManagedProviderId()` — a deployed bundle that still names it
+  // provisions on github and logs a warning. Existing code.storage repos keep
+  // resolving through their own connection row. The GitHub backend creates repos under
   // MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App
   // installed there (MANAGED_GIT_GITHUB_INSTALL_ID). Reuses KORTIX_GITHUB_APP_*
   // for the App JWT. Each backend's isConfigured() checks its own vars, so
@@ -238,8 +289,10 @@ const envSchema = z.object({
   // collaborator). Leave blank to use the App installation instead.
   MANAGED_GIT_GITHUB_TOKEN: optStr,
   // Second managed backend: code.storage (Pierre), a headless git-hosting API
-  // (https://code.storage/docs). Select it with MANAGED_GIT_PROVIDER=code-storage
-  // — inert (isConfigured() false) until org + private key are both set.
+  // (https://code.storage/docs). RETIRED as a provisioning target — it can no
+  // longer be selected with MANAGED_GIT_PROVIDER. These credentials stay
+  // because EXISTING projects still clone, fetch and push their repos through
+  // it; clearing them breaks those projects, not new ones.
   // CODE_STORAGE_ORG: your code.storage organization identifier — doubles as
   // the JWT `iss` claim and (unless overridden) the git-remote/API host prefix.
   CODE_STORAGE_ORG: optStr,
@@ -255,12 +308,6 @@ const envSchema = z.object({
   // Git remote host for clone/push URLs. Defaults to `<CODE_STORAGE_ORG>.code.storage`
   // when blank.
   CODE_STORAGE_GIT_HOST: optStr,
-  // When true, runtime clients (sandbox + `kortix` CLI) use the Kortix git
-  // proxy as their git origin (auth = KORTIX_TOKEN) instead of the real host —
-  // so a real GitHub credential never reaches a sandbox. Requires a
-  // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
-  // OFF leaves the direct clone-credential token flow untouched).
-  KORTIX_GIT_PROXY: optBoolFalse,
   // ── Pause / resume tuning ─────────────────────────────────────────────────
   // The sandbox idle→stop / stop→archive / →delete intervals live below as
   // KORTIX_SANDBOX_AUTOSTOP_MINUTES / AUTOARCHIVE_MINUTES / AUTODELETE_MINUTES
@@ -362,16 +409,6 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
-  // AI-SDK-native gateway ingress (`POST /v1/llm/language-model`, Vercel "AI
-  // Gateway" protocol). SAME env name the standalone gateway reads
-  // (apps/llm-gateway config `GATEWAY_AI_SDK_NATIVE`), so one operator switch
-  // turns on BOTH the standalone gateway AND this in-process mount. When ON:
-  // (1) the in-process gateway is created with `aiSdkNative` so
-  // `gateway.languageModel` serves instead of 404ing, and (2) every session gets
-  // `KORTIX_LLM_AI_SDK_NATIVE=true` injected so the daemon's `buildKortixProvider`
-  // selects `@ai-sdk/gateway`. Default ON — native is the default everywhere;
-  // set GATEWAY_AI_SDK_NATIVE=0 to fall back to the OpenAI-compatible path.
-  GATEWAY_AI_SDK_NATIVE: optBoolTrue,
   // CLOUD-ONLY. Whether KORTIX's own managed model lineup exists on this
   // deployment. The lineup routes through Kortix's shared Bedrock, AsterLab,
   // and OpenRouter credentials. Kortix bills each route as platform credits.
@@ -489,19 +526,20 @@ const envSchema = z.object({
   // bakes. Provider transitions still prepare their target image explicitly.
   // Default OFF keeps the session path on one shared image per provider.
   KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
-  // Experimental shared slim image. It keeps only the session-critical
-  // runtime in the cold image and installs browser/document tool packs on first
-  // use. Default OFF is the rollback path; no database state changes.
-  KORTIX_FAST_COLD_BOOT_ENABLED: optBoolFalse,
-  // Per-provider allowlist for per-project warm images of CUSTOM (non-default-
-  // slug) templates — see `perProjectWarmEligible` in builder.ts. Defaults to
-  // 'platinum' only: Platinum's per-project templates warm-miss 100% of the
-  // time today (`template.isShared` used to gate this off entirely), while
-  // Daytona's shared-default warm path already hits 66% and its quota-gc
-  // cache-floor math (quota-gc-select.ts) has not been re-measured for real
-  // Daytona custom-template counts. Comma-separated, same syntax and parser as
-  // ALLOWED_SANDBOX_PROVIDERS; a provider listed here that isn't itself in
-  // ALLOWED_SANDBOX_PROVIDERS is a no-op (intersected below).
+  // One kill switch for additive cold-boot accelerators. It keeps the standard
+  // runtime image and every tool. It enables local Git hints, native OpenCode
+  // binary prefetch, Platinum rootfs materialization, and stopped per-project
+  // images with the exact repository tip baked into /workspace. It never keeps
+  // a sandbox or OpenCode process running. An explicit false also disables the
+  // legacy session per-project image path. An unset value preserves the legacy
+  // KORTIX_WARM_SNAPSHOT_ENABLED rollout while leaving new accelerators off.
+  KORTIX_FAST_COLD_BOOT_ENABLED: optBoolUnset,
+  // Per-provider allowlist for legacy WARM project images of CUSTOM
+  // (non-default-slug) templates. The FAST experiment never uses this
+  // allowlist; it creates project images only for the shared default template.
+  // Defaults to 'platinum'. Comma-separated, with the same syntax and parser as
+  // ALLOWED_SANDBOX_PROVIDERS. A provider that is not globally enabled is a
+  // no-op because the lists are intersected below.
   KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS: optStrDefault('platinum'),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
@@ -966,10 +1004,20 @@ export const config = {
 
   // ─── Internal Deployment Controls ─────────────────────────────────────────
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
+  // Empty string reads as unset: the launchers always export the var, and a
+  // blank value must not turn into an instance called "".
+  KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
+  KORTIX_PREVIEW_BASE_DOMAIN: env.KORTIX_PREVIEW_BASE_DOMAIN,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
+  KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
+  KORTIX_RELAY_WS_ENABLED: env.KORTIX_RELAY_WS_ENABLED,
+  KORTIX_RELAY_MAX_REQUEST_BYTES: env.KORTIX_RELAY_MAX_REQUEST_BYTES,
+  KORTIX_RELAY_MAX_RESPONSE_BYTES: env.KORTIX_RELAY_MAX_RESPONSE_BYTES,
+  KORTIX_RELAY_HEADERS_TIMEOUT_MS: env.KORTIX_RELAY_HEADERS_TIMEOUT_MS,
+  KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
@@ -1020,7 +1068,6 @@ export const config = {
   CODE_STORAGE_PRIVATE_KEY: env.CODE_STORAGE_PRIVATE_KEY,
   CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,
   CODE_STORAGE_GIT_HOST: env.CODE_STORAGE_GIT_HOST,
-  KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
@@ -1057,10 +1104,6 @@ export const config = {
   ASTER_API_KEY: env.ASTER_API_KEY,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
-  // Single API-side switch for the AI-SDK-native gateway path — read from env
-  // `GATEWAY_AI_SDK_NATIVE`. Consumed by wire.ts (in-process gateway options +
-  // /language-model mount) and session-sandbox.ts (per-session env injection).
-  aiSdkNative: env.GATEWAY_AI_SDK_NATIVE,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.
   KORTIX_MANAGED_PROVIDER_ENABLED:
@@ -1104,7 +1147,8 @@ export const config = {
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
-  KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED,
+  KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
+  KORTIX_FAST_COLD_BOOT_CONFIGURED: env.KORTIX_FAST_COLD_BOOT_ENABLED !== undefined,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
@@ -1286,10 +1330,9 @@ export const config = {
   },
 
   /**
-   * True iff `provider` is allowlisted to warm-bake per-project images for
-   * CUSTOM (non-default-slug) templates — see `perProjectWarmEligible` in
-   * builder.ts. Already intersected with ALLOWED_SANDBOX_PROVIDERS at parse
-   * time, so this alone is the full gate.
+   * True iff `provider` is allowlisted for the legacy WARM custom-template
+   * project-image path. `perProjectWarmEligible` also requires the legacy flag.
+   * The list is already intersected with ALLOWED_SANDBOX_PROVIDERS.
    */
   isCustomTemplateWarmEligible(provider: SandboxProviderName): boolean {
     return this.KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS.includes(provider);

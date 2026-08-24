@@ -340,6 +340,10 @@ mock.module('../config', () => ({
   SANDBOX_VERSION: 'test-version',
   config: {
     isDaytonaEnabled: () => true,
+    // The preview CORS allowlist reads this. Set to the SAME value as the real
+    // config default, because this file's collaborators resolve a mix of the
+    // mocked and the real module — a disagreement here reads as a CORS bug.
+    FRONTEND_URL: 'http://localhost:3000',
   },
 }));
 
@@ -900,7 +904,6 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
-      llmGatewayDenyEnv: '',
       llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
       opencodeEnv: {},
@@ -1342,25 +1345,35 @@ describe('Preview proxy: forwarding', () => {
 });
 
 describe('Preview proxy: CORS', () => {
-  test('sets CORS headers when Origin is present', async () => {
+  test('sets CORS headers for the web app, and for nobody else', async () => {
+    // A preview's credential is an ambient SameSite=None cookie, so echoing an
+    // arbitrary Origin back with Allow-Credentials would let ANY site read a
+    // signed-in user's preview. Only the configured frontend is answered.
     mockFetchResponses = [{ status: 200, body: 'OK' }];
     const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
-      headers: { Authorization: 'Bearer test', Origin: 'https://app.kortix.com' },
+    const allowed = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test', Origin: 'http://localhost:3000' },
     });
-    expect(res.headers.get('access-control-allow-origin')).toBe('https://app.kortix.com');
-    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
+    expect(allowed.headers.get('access-control-allow-credentials')).toBe('true');
+
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const stranger = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test', Origin: 'https://evil.example' },
+    });
+    expect(stranger.headers.get('access-control-allow-origin')).toBeNull();
+    expect(stranger.headers.get('access-control-allow-credentials')).toBeNull();
   });
 
   test('sets CORS headers on proxy-generated sandbox auth errors', async () => {
     mockFetchResponses = [{ status: 401, body: 'bad signed context' }];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/global/event`, {
-      headers: { Authorization: 'Bearer test', Origin: 'https://dev.kortix.com' },
+      headers: { Authorization: 'Bearer test', Origin: 'http://localhost:3000' },
     });
 
     expect(res.status).toBe(502);
-    expect(res.headers.get('access-control-allow-origin')).toBe('https://dev.kortix.com');
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');
   });
 

@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import type { KortixSendError, KortixSendErrorConnector } from '@kortix/sdk/react';
-import { PlugIcon as Plug } from '@phosphor-icons/react';
+import { PlugIcon } from '@phosphor-icons/react';
 
 export interface ConnectorNoticeCopy {
   /** "Gmail" · "Gmail and Slack" · "Gmail, Slack and Notion". */
@@ -78,7 +78,7 @@ export function ConnectorRequiredNotice({
     <div className={cn('bg-popover rounded-md border px-4 py-3.5', className)}>
       <div className="flex items-start gap-3">
         <div className="bg-kortix-orange/10 grid size-9 shrink-0 place-items-center rounded-sm">
-          <Plug className="text-kortix-orange size-4" weight="bold" />
+          <PlugIcon className="text-kortix-orange size-4" weight="fill" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-foreground text-sm font-medium">
@@ -103,7 +103,7 @@ export function ConnectorRequiredNotice({
                 })
               }
             >
-              <Plug className="size-3.5 shrink-0" weight="bold" />
+              <PlugIcon className="size-3.5 shrink-0" />
               {connectable.length === 1 ? `Connect ${connectable[0].name}` : 'Connect accounts'}
             </Button>
           ) : (

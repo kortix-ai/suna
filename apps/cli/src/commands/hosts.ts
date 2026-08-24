@@ -122,6 +122,14 @@ export async function runHosts(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
+  // The root help promises `kortix hosts <subcommand> --help`. login/logout/
+  // whoami own their own help text (LOGIN_HELP / LOGOUT_HELP / WHOAMI_HELP)
+  // and parse the flag themselves, so the fallback must not swallow it.
+  const OWNS_HELP = new Set(['login', 'logout', 'whoami']);
+  if ((rest.includes('-h') || rest.includes('--help')) && !OWNS_HELP.has(sub)) {
+    process.stdout.write(HELP);
+    return 0;
+  }
 
   switch (sub) {
     case 'ls':

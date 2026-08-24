@@ -16,6 +16,15 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { createPeekController } from '@/components/ui/sidebar-peek';
+import {
+  SIDEBAR_MAX_WIDTH_PX,
+  SIDEBAR_MIN_WIDTH_PX,
+  SIDEBAR_WIDTH_COOKIE_NAME,
+  SIDEBAR_WIDTH_PX,
+  clampSidebarWidth,
+  maxSidebarWidth,
+  parseSidebarWidthCookie,
+} from '@/components/ui/sidebar-width';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -28,6 +37,30 @@ const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '1.6rem';
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
 
+/**
+ * How long the panel keeps its DOCKED geometry after the sidebar collapses.
+ * Mirrors `duration-[240ms]` on the container below — the timer has to outlast
+ * the transform it covers, or the flyout geometry lands while the panel is
+ * still on screen and you see the pop this whole mechanism exists to remove.
+ * One number, two places, asserted against each other in `sidebar.test.tsx`.
+ */
+const SIDEBAR_UNDOCK_MS = 240;
+
+/** Keyboard resize step on the rail. Shift multiplies it. */
+const SIDEBAR_RESIZE_STEP_PX = 16;
+const SIDEBAR_RESIZE_STEP_COARSE_PX = 64;
+
+/**
+ * How a toggle was triggered. Either state it (`{ instant: true }`) or hand the
+ * click event straight through — a click synthesized by Enter/Space reports
+ * `detail === 0`, so `onClick={toggleSidebar}` makes every keyboard-activated
+ * toggle instant for free.
+ */
+export type SidebarToggleOptions = { instant?: boolean; detail?: number };
+
+const resolveInstant = (options?: SidebarToggleOptions) =>
+  options?.instant ?? options?.detail === 0;
+
 type SidebarContextProps = {
   state: 'expanded' | 'collapsed';
   open: boolean;
@@ -35,7 +68,12 @@ type SidebarContextProps = {
   openMobile: boolean;
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
-  toggleSidebar: () => void;
+  toggleSidebar: (options?: SidebarToggleOptions) => void;
+  /**
+   * True for the frames covering a toggle that must not animate. Set by every
+   * keyboard-initiated toggle; see the note on `toggleSidebar` above.
+   */
+  instantToggle: boolean;
   /** Collapsed-only hover flyout: the sidebar floats over the content while
    *  the pointer is near the left edge or on the panel itself. `open` stays
    *  false the whole time, so a toggle click while peeking docks it open. */
@@ -46,6 +84,16 @@ type SidebarContextProps = {
    *  its content portals outside the panel, so hovering it would otherwise
    *  collapse the flyout. Balanced: `holdPeek(true)` on open, `false` on close. */
   holdPeek: (held: boolean) => void;
+  /** Current docked width in px — the resolved value of `--sidebar-width`. */
+  width: number;
+  /** Clamp, apply, and persist a new width. One render, one cookie write. */
+  setWidth: (width: number) => void;
+  /**
+   * Paint a width straight onto the wrapper's CSS variable, with no React
+   * render. Used for the duration of a rail drag; `setWidth` then commits the
+   * final value once on pointer-up.
+   */
+  previewWidth: (width: number) => void;
 };
 
 export const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -103,9 +151,37 @@ function SidebarProvider({
   );
 
   // Helper to toggle the sidebar.
-  const toggleSidebar = React.useCallback(() => {
-    return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
-  }, [isMobile, setOpen, setOpenMobile]);
+  //
+  // ⌘B — and any Enter/Space activation of a toggle button — is a
+  // keyboard-initiated action on a surface the user hits many times a day, and
+  // those get NO motion. The frequency rule is not about the number of
+  // milliseconds; it is about the hand expecting the panel to already be there
+  // when the fingers come off the keys.
+  const [instantToggle, setInstantToggle] = React.useState(false);
+  const toggleSidebar = React.useCallback(
+    (options?: SidebarToggleOptions) => {
+      setInstantToggle(resolveInstant(options));
+      return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
+    },
+    [isMobile, setOpen, setOpenMobile],
+  );
+
+  // Release the instant flag once the browser has painted the snapped frame, so
+  // the NEXT pointer-driven toggle animates again. Double rAF, not a timeout: a
+  // `setTimeout(0)` can land before the paint, which would re-declare the
+  // transition while the transform is still mid-change and animate the very
+  // toggle that asked not to be animated.
+  React.useEffect(() => {
+    if (!instantToggle) return;
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setInstantToggle(false));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [instantToggle]);
 
   // Edge-peek flyout state — hover intent lives in a plain controller so the
   // open/close delays are testable without React or wall-clock timers.
@@ -132,12 +208,59 @@ function SidebarProvider({
     [peekController],
   );
 
+  // ── Resizable width ────────────────────────────────────────────────────
+  // `null` means "use the default"; a number is the user's persisted choice.
+  // Read straight out of the cookie in the initializer so a resized sidebar
+  // never paints at 256px first and then jumps — the wrapper below carries
+  // `suppressHydrationWarning` because that read makes the client's first
+  // style attribute legitimately differ from the server's.
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
+  const [width, setWidthState] = React.useState<number | null>(() =>
+    typeof document === 'undefined' ? null : parseSidebarWidthCookie(document.cookie),
+  );
+
+  const setWidth = React.useCallback((next: number) => {
+    const clamped = clampSidebarWidth(next, window.innerWidth);
+    // Write the committed value to the node BEFORE the state update, and never
+    // clear the override. A drag leaves an inline `--sidebar-width` on the
+    // wrapper; removing it here would paint one frame at the default 16rem if
+    // React defers the re-render past the next paint. Writing the same value
+    // React is about to render makes the hand-off unobservable.
+    wrapperRef.current?.style.setProperty('--sidebar-width', `${clamped}px`);
+    setWidthState(clamped);
+    document.cookie = `${SIDEBAR_WIDTH_COOKIE_NAME}=${clamped}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+  }, []);
+
+  // Live drag feedback without a React render per pointermove. The gap and the
+  // panel both size off this one variable, so writing it on the wrapper node
+  // IS the update. (Custom properties inherit, so this does cost a style
+  // recalc down the tree — acceptable for a drag the user is watching, and the
+  // reason it is not used for anything else.)
+  const previewWidth = React.useCallback((next: number) => {
+    wrapperRef.current?.style.setProperty('--sidebar-width', `${next}px`);
+  }, []);
+
+  // The ratio cap is a live rule, not a write-time one: a stored 416px must
+  // not survive the window being dragged down to 900px. Runs once on mount too,
+  // which is what re-clamps a value persisted at a wider viewport.
+  React.useEffect(() => {
+    const capToViewport = () =>
+      setWidthState((current) => {
+        if (current === null) return current;
+        const capped = Math.min(current, maxSidebarWidth(window.innerWidth));
+        return capped === current ? current : capped;
+      });
+    capToViewport();
+    window.addEventListener('resize', capToViewport);
+    return () => window.removeEventListener('resize', capToViewport);
+  }, []);
+
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        toggleSidebar();
+        toggleSidebar({ instant: true });
       }
     };
 
@@ -158,10 +281,14 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      instantToggle,
       peek,
       peekEnter,
       peekLeave,
       holdPeek,
+      width: width ?? SIDEBAR_WIDTH_PX,
+      setWidth,
+      previewWidth,
     }),
     [
       state,
@@ -171,10 +298,14 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      instantToggle,
       peek,
       peekEnter,
       peekLeave,
       holdPeek,
+      width,
+      setWidth,
+      previewWidth,
     ],
   );
 
@@ -183,9 +314,10 @@ function SidebarProvider({
       <TooltipProvider delayDuration={0}>
         <div
           data-slot="sidebar-wrapper"
+          suppressHydrationWarning
           style={
             {
-              '--sidebar-width': SIDEBAR_WIDTH,
+              '--sidebar-width': width === null ? SIDEBAR_WIDTH : `${width}px`,
               '--sidebar-width-icon': SIDEBAR_WIDTH_ICON,
               ...style,
             } as React.CSSProperties
@@ -195,6 +327,7 @@ function SidebarProvider({
             className,
           )}
           {...props}
+          ref={wrapperRef}
         >
           {children}
         </div>
@@ -215,9 +348,40 @@ function Sidebar({
   variant?: 'sidebar' | 'floating' | 'inset';
   collapsible?: 'offcanvas' | 'icon' | 'none';
 }) {
-  const { isMobile, state, openMobile, setOpenMobile, peek, peekEnter, peekLeave } = useSidebar();
-  const peekable = collapsible === 'offcanvas' && side === 'left' && state === 'collapsed';
+  const { isMobile, state, openMobile, setOpenMobile, peek, peekEnter, peekLeave, instantToggle } =
+    useSidebar();
+  const slides = collapsible === 'offcanvas' && side === 'left';
+  const peekable = slides && state === 'collapsed';
   const peeking = peekable && peek;
+
+  // `undocking` is the transient frame-window right after a collapse, during
+  // which the panel is still on screen and sliding out. It is derived DURING
+  // RENDER, not in an effect: an effect would commit one frame in the flyout
+  // geometry first, and that single frame is exactly the pop the user reads as
+  // "it just disappeared". React re-renders from this before it paints.
+  const [renderedState, setRenderedState] = React.useState(state);
+  const [collapseStarted, setCollapseStarted] = React.useState(false);
+  if (renderedState !== state) {
+    setRenderedState(state);
+    // An instant toggle skips the undocking window entirely — there is no
+    // slide for the docked geometry to survive.
+    setCollapseStarted(slides && state === 'collapsed' && !instantToggle);
+  }
+  React.useEffect(() => {
+    if (!collapseStarted) return;
+    const id = setTimeout(() => setCollapseStarted(false), SIDEBAR_UNDOCK_MS);
+    return () => clearTimeout(id);
+  }, [collapseStarted]);
+
+  // A hover on the edge strip mid-collapse wins: the user asked for the panel
+  // back before it finished leaving, so hand it to the flyout.
+  const undocking = collapseStarted && !peek;
+  // The two boxes the panel can occupy. Docked and undocking share the flush
+  // full-height one; parked and peeking share the inset flyout card.
+  const flyout = peekable && !undocking;
+  // Everything that is not "on screen at rest" parks at the same transform, so
+  // the parked → undocking hand-off changes no value and starts no animation.
+  const offscreen = state === 'collapsed' && !peeking;
 
   if (collapsible === 'none') {
     return (
@@ -287,39 +451,86 @@ function Sidebar({
       />
       <div
         data-slot="sidebar-container"
+        data-motion={
+          slides
+            ? state === 'expanded'
+              ? 'docked'
+              : undocking
+                ? 'undocking'
+                : peeking
+                  ? 'peeking'
+                  : 'parked'
+            : undefined
+        }
         onPointerEnter={peekable ? peekEnter : undefined}
         onPointerLeave={peekable ? peekLeave : undefined}
         className={cn(
           'fixed z-10 hidden w-(--sidebar-width) md:flex',
-          // Peek-capable: the panel keeps one static position (flyout
-          // geometry, below the shell's top-left toggle) and hides by
-          // translating off-screen — hidden ↔ flyout is a compositor-only
-          // transform slide, perfectly horizontal. The extra 2rem keeps the
-          // shadow off-screen while parked. z-40 for the whole collapsed
-          // lifecycle so the exit slide stays above the content headers.
-          // Timing is asymmetric per CSS rules — the destination state's
-          // duration governs, so enter runs 280ms and exit 220ms (~80%),
-          // both on the iOS drawer curve.
+          // ─────────────────────────────────────────────────────────────────
+          // THE RULE, and it governs every branch below:
+          //   layout resolves in one frame; only `transform` is ever animated.
           //
-          // The transition lives HERE, not on the base, and covers transform
-          // only. Two consequences, both deliberate:
-          //   1. Docking (collapsed → expanded) lands on the branch below,
-          //      which declares no transition at all — and a transition is
-          //      read off the destination style, so top/bottom/left/width and
-          //      the h-auto → h-svh swap all snap in one frame. Those are
-          //      layout properties; gliding them was the whole jank, and the
-          //      height could never transition anyway, so it snapped mid-glide.
-          //   2. Undocking still slides: geometry snaps to the flyout card,
-          //      then transform carries it off-screen in 220ms on the
-          //      compositor. That is the cue for where the panel went — the
-          //      left edge is where hovering brings it back.
-          peekable
+          // The content pane reclaims (or gives up) its 16rem in a single
+          // reflow at t=0. That reflow is free to be visible only because it
+          // happens UNDER this panel: at t=0 the panel still covers the exact
+          // strip the pane just grew into, so the collapse reads as the panel
+          // sliding off and uncovering content that was already there. On the
+          // way back the strip it uncovers is `bg-sidebar` on a `bg-sidebar`
+          // wrapper, so the band ahead of the incoming panel is seamless and
+          // only the panel's CONTENT appears to slide in.
+          //
+          // Corollary — geometry only ever changes while the panel is
+          // off-screen. Docked and undocking share the flush, full-height,
+          // square box; parked and peeking share the inset flyout card. The
+          // swap between the two therefore always lands on a frame where the
+          // panel is fully translated out of view. This is what the previous
+          // revision could not do: it swapped geometry at t=0, in full view,
+          // and the resulting pop is why collapsing read as instant even
+          // though a 220ms slide was running underneath it.
+          //
+          // OPENING IS NOT ANIMATED, from any trigger. A transition is read off
+          // the destination style, so the docked branch simply declares none
+          // and the panel, its contents, and the reflowed content pane all
+          // land on the same frame. Sliding the panel in looked considered and
+          // was not: the wrapper behind it is already `bg-sidebar`, so the
+          // background arrived instantly while the panel's CONTENT trailed
+          // 300ms behind it, and the whole open read as laggy.
+          //
+          // Timing on the branches that DO animate is asymmetric: undocking
+          // 240ms, peek-in 260ms, peek-out 200ms, all on the iOS sheet curve.
+          // ─────────────────────────────────────────────────────────────────
+          slides
             ? cn(
-                'top-13 bottom-2 left-2 z-40 h-auto',
-                'transition-transform ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform motion-reduce:transition-none',
-                peeking
-                  ? 'translate-x-0 duration-[280ms]'
-                  : '-translate-x-[calc(100%+2rem)] duration-[220ms]',
+                // Above the content headers for the whole collapsed
+                // lifecycle, so the exit slide is never clipped by one.
+                state === 'collapsed' && 'z-40',
+                // The radius is declared on BOTH boxes on purpose. The card
+                // itself is `sidebar-inner`; this outer box only positions and
+                // transforms it — but `className` from the consumer lands
+                // HERE, and a consumer that paints a background on it (the
+                // project sidebar passed `bg-sidebar`) fills a square behind a
+                // round card, which shows as four corner tabs sticking out
+                // past the arc. Matching the radius clips that paint to the
+                // same shape. No `overflow-hidden` — that would eat the card's
+                // `shadow-xl`.
+                flyout ? 'top-13 bottom-2 left-2 h-auto rounded-lg' : 'inset-y-0 left-0 h-svh',
+                state === 'expanded'
+                  ? 'translate-x-0'
+                  : cn(
+                      'transition-transform ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform motion-reduce:transition-none',
+                      offscreen
+                        ? cn(
+                            // The extra 2rem parks the card's shadow off-screen too.
+                            '-translate-x-[calc(100%+2rem)]',
+                            undocking ? 'duration-[240ms]' : 'duration-[200ms]',
+                          )
+                        : 'translate-x-0 duration-[260ms]',
+                      // ⌘B and Enter/Space collapse with no motion at all.
+                      // Last in the `cn` on purpose: twMerge keeps the final
+                      // `duration-*` in a class list, so this overrides
+                      // whichever duration the branch above chose.
+                      instantToggle && 'duration-0',
+                    ),
               )
             : side === 'left'
               ? 'inset-y-0 left-0 h-svh group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
@@ -337,16 +548,16 @@ function Sidebar({
           data-slot="sidebar-inner"
           className={cn(
             'bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm',
-            // Gated on peekable (not peeking) so hidden ↔ flyout swaps no
-            // styles at all — the panel slides in and out as a rigid card.
+            // Gated on `flyout`, not on `peekable`: parked ↔ peeking swaps no
+            // styles at all (the card slides in and out rigid), and the
+            // undocking panel keeps the flush docked chrome so its exit is a
+            // pure horizontal slide with no radius/shadow appearing mid-flight.
             // border-border, not border-sidebar-border: the sidebar token is
             // pure white in dark mode and reads as a glowing edge.
             //
-            // No transition on the radius/shadow: peekable only flips at the
-            // dock moment, so this was purely the dock morph's fourth
-            // concurrent timeline. It now snaps with the geometry above, in
-            // the same frame.
-            peekable && 'border-border overflow-hidden rounded-lg border shadow-xl',
+            // No transition on the radius/shadow — same corollary as above,
+            // they only ever change while the panel is off-screen.
+            flyout && 'border-border overflow-hidden rounded-lg border shadow-xl',
           )}
         >
           {children}
@@ -368,7 +579,9 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       className={cn(className)}
       onClick={(event) => {
         onClick?.(event);
-        toggleSidebar();
+        // Pass the event through: Enter/Space activation reports `detail === 0`
+        // and collapses with no motion, a real click animates.
+        toggleSidebar(event);
       }}
       {...props}
     >
@@ -400,28 +613,137 @@ function SidebarEdgePeek({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
-function SidebarRail({ className, ...props }: React.ComponentProps<'button'>) {
-  const { toggleSidebar } = useSidebar();
+/**
+ * Drag handle on the panel's trailing edge — the sidebar's only resize
+ * affordance.
+ *
+ * Resize ONLY. It used to toggle the sidebar on click, which put a second
+ * collapse control on an edge that already reads as a resizer (it has shipped
+ * a `col-resize` cursor the whole time) while the real one sits in the panel
+ * header next to ⌘B. One edge, one job.
+ *
+ * Renders nothing while collapsed. There is nothing to resize, the strip is
+ * translated off-screen with the panel anyway, and that edge belongs to
+ * {@link SidebarEdgePeek} in the collapsed state.
+ *
+ * The drag writes `--sidebar-width` straight to the wrapper node and only
+ * commits to React state on pointer-up: one render per drag instead of one per
+ * pointermove. Width IS a layout property, so the content pane genuinely
+ * reflows per frame here — that is the point of a resize, and it is the one
+ * place in this file where per-frame layout is correct.
+ */
+function SidebarRail({ className, ...props }: React.ComponentProps<'div'>) {
+  const { state, width, setWidth, previewWidth } = useSidebar();
+  const [resizing, setResizing] = React.useState(false);
+  const drag = React.useRef<{ startX: number; startWidth: number; next: number } | null>(null);
+  const frame = React.useRef<number | null>(null);
+
+  const stopDrag = React.useCallback(
+    (commit: boolean) => {
+      const active = drag.current;
+      drag.current = null;
+      if (frame.current !== null) {
+        cancelAnimationFrame(frame.current);
+        frame.current = null;
+      }
+      document.documentElement.removeAttribute('data-sidebar-resizing');
+      setResizing(false);
+      if (active) setWidth(commit ? active.next : active.startWidth);
+    },
+    [setWidth],
+  );
+
+  // Escape cancels a drag in flight and puts the width back. Bound to the
+  // window, not the handle: the pointer is captured, so the handle is not
+  // necessarily what has keyboard focus.
+  React.useEffect(() => {
+    if (!resizing) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') stopDrag(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [resizing, stopDrag]);
+
+  // Unmounting mid-drag (collapse via ⌘B while dragging) must not leave the
+  // global resize cursor latched on <html>.
+  React.useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      document.documentElement.removeAttribute('data-sidebar-resizing');
+    },
+    [],
+  );
+
+  const nudge = (delta: number) => setWidth(width + delta);
+
+  if (state === 'collapsed') return null;
 
   return (
-    <button
+    <div
       data-sidebar="rail"
       data-slot="sidebar-rail"
-      aria-label="Toggle Sidebar"
-      tabIndex={-1}
-      onClick={toggleSidebar}
-      title="Toggle Sidebar"
+      data-resizing={resizing ? '' : undefined}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      aria-valuenow={width}
+      aria-valuemin={SIDEBAR_MIN_WIDTH_PX}
+      aria-valuemax={SIDEBAR_MAX_WIDTH_PX}
+      tabIndex={0}
+      title="Drag to resize — double-click to reset"
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = { startX: event.clientX, startWidth: width, next: width };
+        document.documentElement.setAttribute('data-sidebar-resizing', '');
+        setResizing(true);
+      }}
+      onPointerMove={(event) => {
+        const active = drag.current;
+        if (!active) return;
+        active.next = clampSidebarWidth(
+          active.startWidth + (event.clientX - active.startX),
+          window.innerWidth,
+        );
+        // One paint per frame, whatever rate the pointer reports at.
+        if (frame.current === null) {
+          frame.current = requestAnimationFrame(() => {
+            frame.current = null;
+            if (drag.current) previewWidth(drag.current.next);
+          });
+        }
+      }}
+      onPointerUp={() => stopDrag(true)}
+      onPointerCancel={() => stopDrag(false)}
+      onDoubleClick={() => setWidth(SIDEBAR_WIDTH_PX)}
+      onKeyDown={(event) => {
+        const step = event.shiftKey ? SIDEBAR_RESIZE_STEP_COARSE_PX : SIDEBAR_RESIZE_STEP_PX;
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          nudge(-step);
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault();
+          nudge(step);
+        } else if (event.key === 'Home') {
+          event.preventDefault();
+          setWidth(SIDEBAR_WIDTH_PX);
+        }
+      }}
       className={cn(
-        'absolute inset-y-0 z-20 hidden h-[calc(100dvh-44px)] w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex',
-        'after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 after:opacity-0 after:transition-opacity',
-        'hover:after:bg-sidebar-border hover:after:opacity-100',
+        'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 cursor-col-resize touch-none outline-none select-none group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex',
+        // The hairline is a pseudo-element so the 16px hit area stays 16px
+        // (well over the 8px a pointer needs) while the visible line stays 2px.
+        // Opacity only — a width/position transition here would animate layout
+        // on hover, on an element that sits over the content pane.
+        'after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 after:opacity-0',
+        'after:bg-sidebar-border after:transition-opacity after:duration-150 after:ease-out',
+        'hover:after:opacity-100 focus-visible:after:opacity-100 data-[resizing]:after:opacity-100',
+        // Tapered top and bottom so the line reads as a seam, not a border.
         'after:[clip-path:polygon(calc(50%-0.0625rem)_0%,calc(50%+0.0625rem)_0%,calc(50%+0.125rem)_50%,calc(50%+0.0625rem)_100%,calc(50%-0.0625rem)_100%,calc(50%-0.125rem)_50%)]',
         'after:[mask-image:linear-gradient(to_bottom,transparent,black_15%,black_85%,transparent)]',
-        'in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize',
-        '[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize',
-        'hover:group-data-[collapsible=offcanvas]:bg-sidebar group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full',
-        '[[data-side=left][data-collapsible=offcanvas]_&]:-right-2',
-        '[[data-side=right][data-collapsible=offcanvas]_&]:-left-2',
+        'motion-reduce:after:transition-none',
         className,
       )}
       {...props}

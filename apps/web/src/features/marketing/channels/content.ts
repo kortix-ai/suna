@@ -65,7 +65,7 @@ export const hero = {
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
   ctaSecondaryHref: '/docs/connect/slack',
-  microline: 'Slack today · Teams, email and voice behind a switch',
+  microline: 'Slack today · Teams and email behind a switch',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
     { k: 'Live today', v: 'Slack', visual: 'presence' },
@@ -102,13 +102,6 @@ export const surfaces = {
       name: 'Email',
       state: 'Experimental',
       body: 'A project inbox, so a message to an address starts a session and a reply continues it. Opt in per project under Customize → Feature flags. Real, and not finished.',
-    },
-    {
-      id: 'voice',
-      icon: 'Kortix',
-      name: 'Voice',
-      state: 'Experimental',
-      body: 'A realtime call the agent speaks in. Same per-project opt-in. It spawns a room and shares the link — it does not dial into a meeting you already started.',
     },
   ],
   notChannels: {

@@ -1,24 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-function setTestEnv(name: string, value: string): void {
-  if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {
-    process.env[name] = value;
-  }
-}
-
-setTestEnv('DATABASE_URL', 'postgres://postgres:postgres@127.0.0.1:54322/postgres');
-setTestEnv('SUPABASE_URL', 'http://127.0.0.1:54321');
-setTestEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role');
-setTestEnv('API_KEY_SECRET', 'test-api-key-secret');
-setTestEnv('TUNNEL_SIGNING_SECRET', 'test-tunnel-signing-secret');
-setTestEnv('ALLOWED_SANDBOX_PROVIDERS', 'platinum');
-setTestEnv('KORTIX_URL', 'https://api.example.test');
-setTestEnv('FRONTEND_URL', 'http://localhost:3000');
-setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
-setTestEnv('PLATINUM_API_URL', 'https://platinum.test');
-setTestEnv('PLATINUM_API_KEY', 'pt_live_testkey');
-
-const { findTemplateByName, PlatinumTemplateListingError, platinumProvider } = await import('./platinum');
+const {
+  findTemplateByName: findTemplateByNameWithDefaults,
+  PlatinumAdapter,
+  PlatinumTemplateListingError,
+} = await import('./platinum');
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -29,6 +15,24 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
+const testClient = {
+  isConfigured: () => true,
+  async json<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const response = await globalThis.fetch(`https://platinum.test${path}`, init);
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(
+        `platinum ${init.method ?? 'GET'} ${path} -> ${response.status} ${text.slice(0, 300)}`,
+      );
+    }
+    return (text ? JSON.parse(text) : {}) as T;
+  },
+};
+
+const platinumProvider = new PlatinumAdapter(undefined, undefined, testClient);
+const findTemplateByName = (name: string) =>
+  findTemplateByNameWithDefaults(name, testClient);
+
 /** Parse `?offset=` off a /v1/templates request URL (default 0). */
 function offsetOf(input: RequestInfo | URL): number {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
@@ -37,6 +41,10 @@ function offsetOf(input: RequestInfo | URL): number {
 
 function tpl(name: string): { id: string; name: string; state: string } {
   return { id: `id-${name}`, name, state: 'ready' };
+}
+
+function namedTpl(id: string, name: string): { id: string; name: string; state: string } {
+  return { id, name, state: 'ready' };
 }
 
 describe('FIX-C — findTemplateByName paginates the /v1/templates list', () => {
@@ -141,5 +149,148 @@ describe('FIX-C — listSnapshots returns the FULL paginated set', () => {
     expect(names).toHaveLength(52);
     expect(names).toContain('kortix-ppwarm-old-a');
     expect(names).toContain('kortix-ppwarm-old-b');
+  });
+});
+
+describe('findFirstActiveSnapshot', () => {
+  test('stops after page one when the highest-priority candidate is active', async () => {
+    const scoped = 'kpp2-scoped';
+    const page0 = [tpl(scoped), ...Array.from({ length: 49 }, (_, i) => tpl(`filler-${i}`))];
+    const requests: number[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requests.push(offsetOf(input));
+      return jsonResponse(page0);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      platinumProvider.findFirstActiveSnapshot([scoped, 'unscoped', 'legacy']),
+    ).resolves.toBe(scoped);
+    expect(requests).toEqual([0]);
+  });
+
+  test('selects the highest-priority active candidate after one complete pagination pass', async () => {
+    const scoped = 'kortix-ppwarm-scoped';
+    const unscoped = 'kortix-ppwarm-unscoped';
+    const legacy = 'kortix-ppwarm-legacy';
+    const page0 = [tpl(unscoped), ...Array.from({ length: 49 }, (_, i) => tpl(`filler-${i}`))];
+    const page1 = [tpl(scoped), tpl(legacy)];
+    const requests: number[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const offset = offsetOf(input);
+      requests.push(offset);
+      return jsonResponse(offset === 0 ? page0 : page1);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      platinumProvider.findFirstActiveSnapshot([scoped, unscoped, legacy]),
+    ).resolves.toBe(scoped);
+    expect(requests).toEqual([0, 50]);
+  });
+
+  test('checks every candidate with one listing pass when only the lowest-priority name exists', async () => {
+    const scoped = 'kortix-ppwarm-scoped';
+    const unscoped = 'kortix-ppwarm-unscoped';
+    const legacy = 'kortix-ppwarm-legacy';
+    const page0 = Array.from({ length: 50 }, (_, i) => tpl(`filler-${i}`));
+    const page1 = [tpl(legacy)];
+    const requests: number[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const offset = offsetOf(input);
+      requests.push(offset);
+      return jsonResponse(offset === 0 ? page0 : page1);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      platinumProvider.findFirstActiveSnapshot([scoped, unscoped, legacy]),
+    ).resolves.toBe(legacy);
+    expect(requests).toEqual([0, 50]);
+  });
+});
+
+describe('deleteSnapshot removes every exact-name Platinum template', () => {
+  test('deletes exact-name duplicates across every page', async () => {
+    const target = 'kortix-ppwarm-project';
+    const page0 = [
+      namedTpl('duplicate-new', target),
+      ...Array.from({ length: 49 }, (_, i) => tpl(`filler-${i}`)),
+    ];
+    const page1 = [namedTpl('duplicate-old', target), tpl('unrelated')];
+    const offsets: number[] = [];
+    const deleted: string[] = [];
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+      if (init?.method === 'DELETE') {
+        deleted.push(new URL(url).pathname.split('/').at(-1) ?? '');
+        return jsonResponse({});
+      }
+      offsets.push(offsetOf(input));
+      return jsonResponse(offsetOf(input) === 0 ? page0 : page1);
+    }) as unknown as typeof fetch;
+
+    await platinumProvider.deleteSnapshot(target);
+
+    expect(offsets).toEqual([0, 50]);
+    expect(deleted).toEqual(['duplicate-new', 'duplicate-old']);
+  });
+
+  test('does not issue a delete when the exact name is absent', async () => {
+    let deletes = 0;
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'DELETE') deletes += 1;
+      return jsonResponse([tpl('unrelated')]);
+    }) as unknown as typeof fetch;
+
+    await expect(platinumProvider.deleteSnapshot('kortix-ppwarm-absent')).resolves.toBeUndefined();
+    expect(deletes).toBe(0);
+  });
+
+  test('ignores per-template 404 races and continues deleting duplicates', async () => {
+    const target = 'kortix-ppwarm-racing';
+    const deleted: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+      const id = new URL(url).pathname.split('/').at(-1) ?? '';
+      if (init?.method === 'DELETE') {
+        deleted.push(id);
+        return id === 'already-gone' ? jsonResponse({ error: 'not found' }, 404) : jsonResponse({});
+      }
+      return jsonResponse([
+        namedTpl('already-gone', target),
+        namedTpl('still-live', target),
+      ]);
+    }) as unknown as typeof fetch;
+
+    await expect(platinumProvider.deleteSnapshot(target)).resolves.toBeUndefined();
+    expect(deleted).toEqual(['already-gone', 'still-live']);
+  });
+
+  test('propagates a later listing failure without deleting a partial match', async () => {
+    const target = 'kortix-ppwarm-partial';
+    const page0 = [
+      namedTpl('partial-match', target),
+      ...Array.from({ length: 49 }, (_, i) => tpl(`filler-${i}`)),
+    ];
+    let deletes = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        deletes += 1;
+        return jsonResponse({});
+      }
+      return offsetOf(input) === 0 ? jsonResponse(page0) : jsonResponse({ error: 'unavailable' }, 503);
+    }) as unknown as typeof fetch;
+
+    await expect(platinumProvider.deleteSnapshot(target)).rejects.toBeInstanceOf(PlatinumTemplateListingError);
+    expect(deletes).toBe(0);
+  });
+
+  test('propagates non-404 deletion failures', async () => {
+    const target = 'kortix-ppwarm-delete-failure';
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === 'DELETE'
+        ? jsonResponse({ error: 'unavailable' }, 503)
+        : jsonResponse([namedTpl('delete-failure', target)])) as unknown as typeof fetch;
+
+    await expect(platinumProvider.deleteSnapshot(target)).rejects.toThrow(/503/);
   });
 });

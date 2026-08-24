@@ -551,6 +551,10 @@
       "path": "/v1/admin/api/accounts/:id/session-limit"
     },
     {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/subscription"
+    },
+    {
       "method": "POST",
       "path": "/v1/admin/api/accounts/:id/tier"
     },
@@ -936,6 +940,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/edge/tls-check"
+    },
+    {
+      "method": "GET",
       "path": "/v1/generation"
     },
     {
@@ -1057,6 +1065,10 @@
     {
       "method": "POST",
       "path": "/v1/p/auth"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/p/config"
     },
     {
       "method": "GET",
@@ -1371,10 +1383,6 @@
       "path": "/v1/projects/:projectId/channels/email/mode"
     },
     {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/channels/meet/name"
-    },
-    {
       "method": "POST",
       "path": "/v1/projects/:projectId/channels/slack/bind-thread"
     },
@@ -1659,10 +1667,6 @@
       "path": "/v1/projects/:projectId/git-token"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/git/clone-credential"
-    },
-    {
       "method": "POST",
       "path": "/v1/projects/:projectId/git/collaborators"
     },
@@ -1831,6 +1835,10 @@
       "path": "/v1/projects/:projectId/secrets/:identifier/grant"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/secrets/:identifier/relay"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/secrets/:identifier/strategy"
     },
@@ -1885,10 +1893,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/config"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
     },
     {
       "method": "PUT",
@@ -1977,10 +1981,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/voice-transcript"
     },
     {
       "method": "POST",
@@ -2115,14 +2115,6 @@
       "path": "/v1/public/session-shares/:shareId/messages"
     },
     {
-      "method": "GET",
-      "path": "/v1/public/voice-join/:token"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/public/voice-join/:token/transcript"
-    },
-    {
       "method": "POST",
       "path": "/v1/router/chat/completions"
     },
@@ -2145,6 +2137,14 @@
     {
       "method": "POST",
       "path": "/v1/router/web-search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/agent"
+    },
+    {
+      "method": "HEAD",
+      "path": "/v1/runtime-assets/agent"
     },
     {
       "method": "GET",

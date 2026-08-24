@@ -58,7 +58,6 @@ import {
   relayTurnQuestion,
   relayTurnStep,
 } from '../../channels/turn-relay';
-import { setProjectBotName } from '../../channels/voice-identity';
 import { config } from '../../config';
 import {
   resolveConnectionCredentialValue,
@@ -80,6 +79,7 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
+import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
@@ -150,6 +150,7 @@ import {
   triggersPausedForProject,
   upsertTriggerInManifest,
 } from '../lib/triggers';
+import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { listProjectSecretNamesForConsumer } from '../secrets';
@@ -165,6 +166,7 @@ import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-tur
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
+  adoptRuntimeSandboxTurn,
   completeSandboxTurn,
 } from '../sandbox-turn-lifecycle';
 
@@ -425,10 +427,7 @@ projectsApp.openapi(
         connectorConfig: connectors.config,
       })
       .from(connectorConnections)
-      .innerJoin(
-        connectors,
-        eq(connectors.connectorId, connectorConnections.connectorId),
-      )
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
       .where(eq(connectorConnections.projectId, projectId));
     return c.json({
       connections: rows
@@ -499,10 +498,7 @@ projectsApp.openapi(
         status: connectorConnections.status,
       })
       .from(connectorConnections)
-      .innerJoin(
-        connectors,
-        eq(connectors.connectorId, connectorConnections.connectorId),
-      )
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
       .where(eq(connectorConnections.projectId, projectId));
     return c.json({
       connections: rows.map((row) => ({
@@ -550,10 +546,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     if (c.get('authType') === 'service_account') {
-      return c.json(
-        { error: 'Only human members can reconcile user connections' },
-        403,
-      );
+      return c.json({ error: 'Only human members can reconcile user connections' }, 403);
     }
     const body = await readBody(c);
     const connectorAlias = canonicalConnectorAlias(
@@ -653,10 +646,7 @@ projectsApp.openapi(
     const connectorAlias = canonicalConnectorAlias(requestedAlias);
     const ownerType = typeof body.owner_type === 'string' ? body.owner_type : 'external';
     if (ownerType === 'member' && c.get('authType') === 'service_account') {
-      return c.json(
-        { error: 'Only human members can reconcile user connections' },
-        403,
-      );
+      return c.json({ error: 'Only human members can reconcile user connections' }, 403);
     }
     // Backwards-compatible manager path: a submitted member owner is always
     // rewritten to the caller. Managers may create their own member connection,
@@ -1130,6 +1120,13 @@ projectsApp.openapi(
 
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ('error' in draft) return c.json({ error: draft.error }, 400);
+    if (draft.type === 'webhook' && draft.secretEnv) {
+      const configurationError = await validateWebhookSecretConfiguration({
+        projectId,
+        secretEnv: draft.secretEnv,
+      });
+      if (configurationError) return c.json(configurationError, 409);
+    }
     const parsedAccess =
       body.session_access === undefined
         ? { ok: true as const, access: PRIVATE_TRIGGER_SESSION_ACCESS }
@@ -1330,6 +1327,15 @@ projectsApp.openapi(
         if (patchesKey && !patchesMode) delete base.session_mode;
         const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
         if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+        if (draft.type === 'webhook' && draft.secretEnv) {
+          const configurationError = await validateWebhookSecretConfiguration({
+            projectId,
+            secretEnv: draft.secretEnv,
+          });
+          if (configurationError) {
+            return { ok: false, status: 409, ...configurationError };
+          }
+        }
         effectivePinnedSessionId = draft.pinnedSessionId;
 
         // A `pinned` trigger may only target a session that belongs to THIS project.
@@ -1360,7 +1366,14 @@ projectsApp.openapi(
       },
     );
     if (!result.ok) {
-      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
+      return c.json(
+        {
+          error: result.error,
+          ...(result.code ? { code: result.code } : {}),
+          ...(result.remediation ? { remediation: result.remediation } : {}),
+        },
+        result.status as 400 | 404 | 409 | 502,
+      );
     }
     if (touchesManifest) {
       if (!committedManifest) throw new Error('trigger update completed without a manifest');
@@ -2356,10 +2369,8 @@ projectsApp.openapi(
     // Two valid callers: a project/session-scoped PAT (dashboard, operator, or
     // in-sandbox agent CLI) and the session sandbox's own service credential.
     // Each is scoped back to this projectId before a turn event is accepted.
-    const authType = (c as any).get('authType') as string | undefined;
-    const apiKeyType = (c as any).get('apiKeyType') as string | undefined;
     let authenticatedSandboxId: string | null = null;
-    if (authType === 'apiKey' && apiKeyType === 'sandbox') {
+    if (isSessionSandboxCredential(c)) {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
@@ -2415,9 +2426,13 @@ projectsApp.openapi(
       }
     }
 
+    let authenticatedSandboxMetadata: unknown = null;
     if (authenticatedSandboxId) {
       const [ownedSession] = await db
-        .select({ sessionId: sessionSandboxes.sessionId })
+        .select({
+          sessionId: sessionSandboxes.sessionId,
+          metadata: sessionSandboxes.metadata,
+        })
         .from(sessionSandboxes)
         .where(
           and(
@@ -2429,6 +2444,7 @@ projectsApp.openapi(
         .limit(1);
       if (!ownedSession)
         return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+      authenticatedSandboxMetadata = ownedSession.metadata;
     }
 
     // session_id is caller-supplied — scope it back to :projectId so a caller
@@ -2453,6 +2469,43 @@ projectsApp.openapi(
     // Coordinator-spawned worker: its idle tail is minutes, not the default
     // grace — the box wakes on demand when the coordinator returns to it.
     const childSession = typeof turnStreamMetadata.spawned_by_session === 'string';
+
+    // The daemon claims its first prompt through the session-bound credential.
+    // No prompt or turn-ledger identifier belongs in the VM environment.
+    if (body.kind === 'initial_turn_claim') {
+      if (!authenticatedSandboxId) {
+        return c.json({ error: 'initial_turn_claim requires a sandbox token' }, 403);
+      }
+      const sandboxMetadata = (authenticatedSandboxMetadata ?? {}) as Record<string, unknown>;
+      const activeTurns =
+        sandboxMetadata.activeTurns &&
+        typeof sandboxMetadata.activeTurns === 'object' &&
+        !Array.isArray(sandboxMetadata.activeTurns)
+          ? (sandboxMetadata.activeTurns as Record<string, unknown>)
+          : {};
+      const delivering = Object.entries(activeTurns).find(([, value]) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        return (value as Record<string, unknown>).state === 'delivering';
+      });
+      const prompt =
+        typeof turnStreamMetadata.initial_prompt === 'string'
+          ? turnStreamMetadata.initial_prompt.trim()
+          : '';
+      if (!prompt || !delivering) return c.json({ ok: true, initial_turn: null });
+      const [turnToken, rawTurn] = delivering;
+      const messageId = (rawTurn as Record<string, unknown>).messageId;
+      if (typeof messageId !== 'string' || !messageId.trim()) {
+        return c.json({ ok: true, initial_turn: null });
+      }
+      return c.json({
+        ok: true,
+        initial_turn: {
+          prompt,
+          turn_token: turnToken,
+          message_id: messageId,
+        },
+      });
+    }
 
     // A daemon restart can discover that the pre-created initial message was
     // never delivered because it reused a root with older messages. Remove only
@@ -2493,6 +2546,28 @@ projectsApp.openapi(
         messageId,
       });
       return c.json({ ok });
+    }
+
+    // A BOX-INITIATED turn: the daemon observed the root go busy on a user
+    // message the control plane never delivered (OpenCode's synthetic
+    // `<pty_exited>` wake-ups). Adopt it into the ledger so `GET .../turn`
+    // reports the running turn and the deadline grant covers it. Idempotent —
+    // see adoptRuntimeSandboxTurn; requires the sandbox credential like every
+    // upward lifecycle transition.
+    if (body.kind === 'turn_begin') {
+      if (!authenticatedSandboxId) {
+        return c.json({ error: 'turn_begin requires a sandbox token' }, 403);
+      }
+      const opencodeSessionId = body.opencode_session_id?.trim();
+      const messageId = body.turn_message_id?.trim();
+      if (!opencodeSessionId || !messageId) {
+        return c.json({ error: 'opencode_session_id and turn_message_id are required' }, 400);
+      }
+      const outcome = await adoptRuntimeSandboxTurn(authenticatedSandboxId, {
+        opencodeSessionId,
+        messageId,
+      });
+      return c.json({ ok: outcome === 'adopted' || outcome === 'open_turn_exists', outcome });
     }
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
@@ -2572,12 +2647,14 @@ projectsApp.openapi(
       }
       // Second-chance auto-title: create-time generation is a single in-memory
       // best-effort call, and a session whose only prompt was baked in-guest
-      // (`KORTIX_INITIAL_PROMPT`) never crosses a titling hook again. Turn end
+      // (the server-claimed initial prompt) never crosses a titling hook again. Turn end
       // is the natural retry point — the generator is idempotent (needsTitle +
       // CAS) so an already-titled session is a cheap no-op. The stored
       // `title_source` outranks the supplied text inside the generator.
-      const titleRetrySource = [turnStreamMetadata.title_source, turnStreamMetadata.initial_prompt]
-        .find((v): v is string => typeof v === 'string' && v.trim().length > 0);
+      const titleRetrySource = [
+        turnStreamMetadata.title_source,
+        turnStreamMetadata.initial_prompt,
+      ].find((v): v is string => typeof v === 'string' && v.trim().length > 0);
       if (titleRetrySource && turnStreamSession.createdBy) {
         void generateSessionTitleFromFirstPrompt({
           projectId,
@@ -2758,8 +2835,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     // Same dual auth as turn-stream: the in-sandbox agent's sandbox token (scoped
     // back to this project) or a project/session-scoped user PAT.
-    const authType = (c as any).get('authType') as string | undefined;
-    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    if (isSessionSandboxCredential(c)) {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
@@ -2841,43 +2917,6 @@ projectsApp.openapi(
   },
 );
 
-// PUT /v1/projects/:projectId/channels/meet/name — set the bot's display name.
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/channels/meet/name',
-    tags: ['channels'],
-    summary: 'PUT /:projectId/channels/meet/name',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.object({ ok: z.boolean(), bot_name: z.string() }).passthrough(), 'Saved'),
-      ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate (setting the bot
-    // name is project customization). The built-in manager role holds the leaf.
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-    const body = await readBody(c);
-    const name = String(body.name ?? body.bot_name ?? '');
-    const saved = await setProjectBotName(projectId, name);
-    return c.json({ ok: true, bot_name: saved });
-  },
-);
-
 // GET /v1/projects/:projectId/llm-catalog
 // Server-side source of truth for the gateway model catalog. The seed daemon
 // fetches it at PARK with a sandbox token so the no-restart warm-fork bakes the
@@ -2904,13 +2943,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const authType = c.get('authType') as string | undefined;
-    const apiKeyType = c.get('apiKeyType') as string | undefined;
     const accountId = c.get('accountId') as string | undefined;
     const sandboxId = c.get('sandboxId') as string | undefined;
     let projectMetadata: unknown;
     let ownerAccountId: string | undefined;
-    if (authType === 'apiKey' && apiKeyType === 'sandbox' && accountId && sandboxId) {
+    if (isSessionSandboxCredential(c) && accountId && sandboxId) {
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId })
         .from(sessionSandboxes)
@@ -3392,8 +3429,7 @@ projectsApp.openapi(
     // Null for a human caller.
     let callerSandboxSessionId: string | null = null;
 
-    const authType = (c as any).get('authType') as string | undefined;
-    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    if (isSessionSandboxCredential(c)) {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
@@ -3588,7 +3624,12 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(
+      loaded,
+      sessionId,
+      c.get('sessionId') ?? null,
+      callerKortixSessionId(c),
+    );
     if (!visible) return c.json({ error: 'Not found' }, 404);
     return c.json({ question: await getOpenQuestion(sessionId) });
   },
@@ -3627,7 +3668,12 @@ projectsApp.openapi(
     // of the session — the same bar the question relay itself uses.
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(
+      loaded,
+      sessionId,
+      c.get('sessionId') ?? null,
+      callerKortixSessionId(c),
+    );
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const body = await readBody(c);

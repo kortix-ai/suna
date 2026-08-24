@@ -192,3 +192,57 @@ describe('classifyEvent — non-mention routing is unchanged', () => {
     expect(cls).toBe('ignore');
   });
 });
+
+// ─── THE 2026-08-20 WRONG-BOT REPLY ──────────────────────────────────────────
+//
+// A user typed `@Kortix hey man` in a channel that also contains the "Incident
+// reporter" bot, and Incident reporter answered:
+//
+//   mentioned bot    U0B7QL26690  (Kortix)
+//   bot that replied U0B5W5XN49Y  (Incident reporter)
+//   session created  inside kortix-incident-reporter
+//
+// Two Kortix-platform apps in one workspace, each with its own BYO webhook at
+// /slack/events/{projectId}. classifyEvent accepted EVERY app_mention on the
+// strength of its type alone, so whichever project the callback landed on
+// answered — while the plain-`message` branch had checked botUserId all along.
+// The same event, arriving as the other Slack event type, routed correctly.
+describe('classifyEvent — an app_mention addressed to a DIFFERENT bot', () => {
+  const mention = (text: string) => ({ type: 'app_mention', text }) as any;
+
+  test('THE FIX: app_mention naming another workspace bot → ignore', async () => {
+    const cls = await classifyEvent('T1', mention('<@U0B7QL26690> hey man'), 'U0B5W5XN49Y');
+    expect(cls).toBe('ignore');
+  });
+
+  test('the bot that WAS mentioned still answers', async () => {
+    const cls = await classifyEvent('T1', mention('<@U0B7QL26690> hey man'), 'U0B7QL26690');
+    expect(cls).toBe('mention');
+  });
+
+  test('mentioned alongside another bot → still ours to answer', async () => {
+    const cls = await classifyEvent('T1', mention('<@U0B7QL26690> <@B1> both of you'), BOT);
+    expect(cls).toBe('mention');
+  });
+
+  // Slack also renders mentions as <@U123|display-name>. A gate that only knows
+  // the bare form fails CLOSED on this one — the bot goes silent on a real
+  // mention, which is #6590's failure wearing a different hat.
+  test('the <@ID|label> render is still a mention, not silence', async () => {
+    const cls = await classifyEvent('T1', mention('<@B1|kortix> hey'), BOT);
+    expect(cls).toBe('mention');
+  });
+
+  // A BYO app that has never run link-bot has no recorded bot id. Refusing those
+  // would take every such workspace offline to fix a two-bot workspace's
+  // routing, so the gate fails open and says so in the log.
+  test('unknown bot id → still a mention (fail open, not a silent workspace)', async () => {
+    const cls = await classifyEvent('T1', mention('<@U0B7QL26690> hey man'), null);
+    expect(cls).toBe('mention');
+  });
+
+  test('an empty mention of OUR bot is still ours (the help-text path)', async () => {
+    const cls = await classifyEvent('T1', mention('<@B1>'), BOT);
+    expect(cls).toBe('mention');
+  });
+});

@@ -278,7 +278,7 @@ describe('isSandboxAuthored — provenance is decided by the CREDENTIAL', () => 
   });
 
   // ═══ THE SECOND CREDENTIAL ═══ every box also carries a session-scoped
-  // kortix_pat_ (`KORTIX_CLI_TOKEN`). Its auth branch never
+  // kortix_pat_ (`KORTIX_TOKEN`). Its auth branch never
   // sets apiKeyType, so a gate keyed on TYPE ALONE failed open on the path-based
   // proxy edge — the one the in-box CLI actually uses.
   test('a SESSION-SCOPED credential is the box even though apiKeyType is unset', () => {

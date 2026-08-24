@@ -1,9 +1,9 @@
 /**
  * The measured facts `tryDisposeReload` is built on.
  *
- * All three were established on 2026-08-03 by running the pinned opencode
- * (opencode-ai@1.17.11, the exact build the sandbox image installs) locally and
- * probing it:
+ * All three were established on 2026-08-03 against opencode-ai@1.17.11 and
+ * re-probed on 2026-08-20 against opencode-ai@1.18.19 (the exact build the
+ * sandbox image installs) locally:
  *
  *   1. `POST /global/dispose` re-reads the config FILE from disk, in-process —
  *      same pid, ~51ms. A respawn is ~8s.
@@ -74,11 +74,7 @@ describe('tryDisposeReload', () => {
     expect(body).toContain('catch')
   })
 
-  test('a deny-list change forces a respawn — dispose cannot re-run env shaping', () => {
-    // KORTIX_OPENCODE_DENY_ENV is not IN the config file. `withoutDeniedProviderEnv`
-    // strips native provider keys when the child is SPAWNED, so disposing after a
-    // gateway-mode toggle leaves those keys exactly as they were — routing around
-    // the gateway's budgets and logging, or failing to restore BYOK.
+  test('the env route passes credential-carrier changes to the respawn gate', () => {
     const ENV_ROUTE = readFileSync(join(import.meta.dir, '..', 'routes', 'env.ts'), 'utf8')
     // The route used to inline `opencodeEnvNames.includes('KORTIX_OPENCODE_DENY_ENV')`.
     // The invariant is unchanged; the mechanism moved into `requiresRespawn`,
@@ -132,10 +128,6 @@ describe('requiresRespawn', () => {
     expect(requiresRespawn(['OPENCODE_AUTH_JSON'])).toBe(true)
   })
 
-  test('the deny-list still forces one — dispose cannot re-shape the child env', () => {
-    expect(requiresRespawn(['KORTIX_OPENCODE_DENY_ENV'])).toBe(true)
-  })
-
   test('an ordinary secret takes the fast path', () => {
     // ~51ms vs ~8s, and it does not sever an in-flight turn. Respawning for
     // every secret would make the fast path pointless.
@@ -152,10 +144,8 @@ describe('requiresRespawn', () => {
     // discovering it when a user reports stale credentials.
     const SPAWN_SRC = OPENCODE_SRC.split('async function spawnChild(')[1]?.split('\n  }\n')[0] ?? ''
     expect(SPAWN_SRC).toContain('materializeOpencodeAuth(env)')
-    expect(SPAWN_SRC).toContain('withoutDeniedProviderEnv(env)')
     expect([...RESPAWN_REQUIRED_ENV_NAMES].sort()).toEqual([
       'CODEX_AUTH_JSON',
-      'KORTIX_OPENCODE_DENY_ENV',
       'KORTIX_SECRET_CAPABILITIES',
       'OPENCODE_AUTH_JSON',
     ])

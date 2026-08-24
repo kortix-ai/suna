@@ -206,7 +206,7 @@ export function resetForServerSwitch() {
 		// (use-opencode-events) AND message sync (use-session-sync) both gate on this
 		// same `healthy` flag, so seeding null left the FE UNSUBSCRIBED until the
 		// ~350ms client health poll flipped it green — by which point the server-side
-		// first turn (KORTIX_INITIAL_PROMPT, delivered during boot) had accumulated
+		// first turn (claimed from the API and delivered during boot) had accumulated
 		// and bulk-rendered AT ONCE instead of streaming. healthy=true subscribes at
 		// the switch, so part.updated events render token-by-token, and also reclaims
 		// the redundant health RTT. The 350ms poller still runs and self-corrects to

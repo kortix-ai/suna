@@ -7,7 +7,7 @@ process.env.SUPABASE_URL = 'http://supabase.test';
 process.env.FRONTEND_URL = 'https://app.example.com';
 process.env.KORTIX_APPS_BASE_DOMAIN = 'apps.acme.com';
 
-const { appTlsCheckStatus, createAppEdgeApp } = await import('./edge');
+const { appTlsCheckStatus } = await import('./edge');
 
 const ROUTE_KEY = 'aaaaaaaaaaaaaaaa';
 const VALID_HOST = `dev-store-${ROUTE_KEY}.apps.acme.com`;
@@ -37,30 +37,3 @@ describe('appTlsCheckStatus (on-demand-TLS gate decision)', () => {
   });
 });
 
-describe('GET /tls-check (Caddy on_demand_tls ask endpoint)', () => {
-  let app: ReturnType<typeof createAppEdgeApp>;
-  beforeEach(() => {
-    app = createAppEdgeApp(appExists);
-  });
-
-  test('200 + {ok:true} for a valid App host', async () => {
-    const res = await app.request(`/tls-check?domain=${VALID_HOST}`);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
-  });
-
-  test('403 for a bogus hostname', async () => {
-    const res = await app.request('/tls-check?domain=evil.example.com');
-    expect(res.status).toBe(403);
-  });
-
-  test('404 for an App-shaped host with no matching App', async () => {
-    const res = await app.request(`/tls-check?domain=${UNKNOWN_HOST}`);
-    expect(res.status).toBe(404);
-  });
-
-  test('403 when the domain query param is absent', async () => {
-    const res = await app.request('/tls-check');
-    expect(res.status).toBe(403);
-  });
-});

@@ -1,16 +1,17 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 
 import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
   isSettingsTabAllowed,
 } from '@/features/workspace/settings/settings-panel';
-import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
 import {
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TABS,
   resolveSettingsOverlayHref,
   type SettingsTab,
 } from '@/features/workspace/settings/settings-tabs';
+import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
 import { getItemsForSurface } from '@/lib/menu-registry';
 import { LEGACY_SETTINGS_TAB_MAP } from './command-palette';
 import {
@@ -236,40 +237,52 @@ describe('search terms carried across from the removed registry entries', () => 
   });
 
   /**
-   * The thirteen project-configuration sections left the derived settings
-   * list for `/projects/<id>/config`. That page has ONE routable URL per
-   * section but only one registry row (`proj-customize`) — a section is a
-   * query param, not a page, so thirteen rows would be thirteen links to one
-   * destination. Its keyword bag therefore has to answer every word those
-   * thirteen rows used to answer, the same way `proj-triggers` absorbed
-   * Schedules' and Webhooks' bags.
+   * The thirteen project-configuration sections left the derived settings list
+   * for `/projects/<id>/config` and, for a while, ALL of their vocabulary was
+   * absorbed into one row (`proj-customize`) on the reasoning that a section
+   * is a query param rather than a page.
+   *
+   * That reasoning produced the reported bug. Four of the thirteen were not
+   * `?section=` values at all — Models, Secrets, Channels and Members had
+   * graduated into their own routes (`capability-tab-routes.ts`) — so "model"
+   * reached a row whose href is `/config`, and the page that IS models could
+   * not be reached from ⌘K by any query. The remaining six ARE query params,
+   * but `?section=` still lands in a different place per section, so a row
+   * each is a row per destination, not thirteen links to one URL.
+   *
+   * Each word below therefore has to reach the row that OWNS it. The
+   * assertion is per-word rather than per-row on purpose: it is the query the
+   * user types, and it is what regressed.
    */
-  test('the project settings row answers the queries its thirteen settings rows did', () => {
-    const item = paletteItems.find((entry) => entry.id === 'proj-customize');
-    expect(item).toBeDefined();
-    const haystack = `${item!.label} ${item!.keywords ?? ''}`.toLowerCase();
-    for (const word of [
-      'secrets',
-      'env',
-      'git',
-      'github',
-      'members',
-      'collaborators',
-      'slack',
-      'agentmail',
-      'llm',
-      'openrouter',
-      'marketplace',
-      'approvals',
-      'livekit',
-      'templates',
-      'snapshots',
-      'feature flags',
-      'upgrades',
-      'danger zone',
-      'customize',
-    ]) {
-      expect(haystack).toContain(word);
+  test('each retained vocabulary reaches the row that owns it', () => {
+    const OWNER: ReadonlyArray<[string, string]> = [
+      ['secrets', 'proj-secrets'],
+      ['env', 'proj-secrets'],
+      ['members', 'proj-members'],
+      ['collaborators', 'proj-members'],
+      ['slack', 'proj-channels'],
+      ['agentmail', 'proj-channels'],
+      ['llm', 'proj-models'],
+      ['openrouter', 'proj-models'],
+      ['git', 'proj-config-general'],
+      ['github', 'proj-config-general'],
+      ['danger zone', 'proj-config-general'],
+      ['templates', 'proj-config-sandbox'],
+      ['snapshots', 'proj-config-sandbox'],
+      ['approvals', 'proj-config-review'],
+      ['feature flags', 'proj-config-feature-flags'],
+      ['upgrades', 'proj-config-upgrades'],
+      ['customize', 'proj-customize'],
+    ];
+    for (const [query, id] of OWNER) {
+      const item = paletteItems.find((entry) => entry.id === id);
+      expect({ query, id, found: Boolean(item) }).toEqual({ query, id, found: true });
+      const haystack = `${item!.label} ${item!.keywords ?? ''}`.toLowerCase();
+      expect({ query, id, answers: haystack.includes(query) }).toEqual({
+        query,
+        id,
+        answers: true,
+      });
     }
   });
 
@@ -303,7 +316,6 @@ describe('search terms carried across from the removed registry entries', () => 
   //     Settings section) and Workspace > General (now a project config
   //     section). Neither is a settings tab, so there is no longer a pair to
   //     tell apart in this rail.
-
 });
 
 /**
@@ -328,32 +340,50 @@ describe('the registry no longer carries palette settings destinations', () => {
     expect(resolved.map((entry) => entry.id).sort()).toEqual([]);
   });
 
-  test('proj-customize points at the project settings page, not the overlay', () => {
+  test('proj-customize points at the Customize index, and General at the config page', () => {
     // A bare `/projects/{id}/settings` resolved to `{ tab: undefined }`, and
     // `openSettings(undefined)` keeps whatever was last open — so one entry
     // landed somewhere different on every click. It named `/settings/general`
-    // after that, until General became a section of the config page. A
-    // section-less `/config` opens that same default section.
+    // after that, then `/config` once General became a config section.
+    //
+    // `/config` is now `proj-config-general`'s href, under its own honest
+    // label ("Settings · General"). `proj-customize` keeps the WORD customize
+    // and takes the index page it names — the card grid over every capability
+    // tab, each of which has its own row.
     const customize = paletteItems.find((item) => item.id === 'proj-customize');
-    expect(customize?.href).toBe('/projects/{projectId}/config');
+    expect(customize?.href).toBe('/projects/{projectId}/customize');
     expect(customize?.kind).toBe('navigate');
     expect(customize?.requiresProject).toBe(true);
-    // Must NOT be claimed by the overlay resolver, or the click would open a
-    // tab instead of navigating.
+
+    const general = paletteItems.find((item) => item.id === 'proj-config-general');
+    expect(general?.href).toBe('/projects/{projectId}/config');
+    expect(general?.requiresProject).toBe(true);
+
+    // Neither may be claimed by the overlay resolver, or the click would open
+    // a tab instead of navigating.
     expect(resolveSettingsOverlayHref(customize!.href!).opensOverlay).toBe(false);
+    expect(resolveSettingsOverlayHref(general!.href!).opensOverlay).toBe(false);
   });
 
   test('the removed per-tab entries are gone from every surface, not just the palette', () => {
+    // `proj-secrets`, `proj-members` and `proj-channels` are NOT in this list
+    // any more, and their absence is the point of this change. They were
+    // removed here as SETTINGS TABS (`/settings/secrets`, opened through the
+    // overlay); they came back as CAPABILITY PAGES with their own routes
+    // (`/projects/<id>/secrets`, the account Access pane, `?scope=channels`),
+    // which the derived settings list structurally cannot produce — the same
+    // arrangement `proj-triggers` and the `account-*` rows use. What must stay
+    // gone is a row that opens the OVERLAY on a tab that no longer exists; the
+    // "no commandPalette entry uses kind: 'settings'" case above pins that,
+    // and `menu-registry-destinations.test.ts` pins that each of these hrefs
+    // is a real destination.
     for (const id of [
-      'proj-secrets',
       'proj-git',
       'proj-sandbox',
       'proj-marketplace',
       'proj-llm',
       'proj-review',
       'proj-voice',
-      'proj-members',
-      'proj-channels',
       'pref-appearance',
       'pref-sounds',
       'pref-shortcuts',
@@ -459,5 +489,41 @@ describe('LEGACY_SETTINGS_TAB_MAP', () => {
     expect(SETTINGS_TABS as readonly string[]).not.toContain('referrals');
     expect(LEGACY_SETTINGS_TAB_MAP.referrals).toBeUndefined();
     expect(paletteItems.find((item) => item.id === 'account-referrals')).toBeUndefined();
+  });
+});
+
+/**
+ * The model page's chrome. It cannot be rendered here — the palette pulls in
+ * the whole workspace tree — so this reads the source. Every assertion below
+ * is mutation-checked: flip the thing it names and it fails.
+ */
+describe('command palette — model list chrome', () => {
+  const source = readFileSync(new URL('./command-palette.tsx', import.meta.url), 'utf8');
+  const modelsPage = source.slice(
+    source.indexOf("{page === 'models' && ("),
+    source.indexOf("{page === 'files' &&"),
+  );
+
+  test('the models page block was located', () => {
+    // Guards the two slice indices above — a rename here would otherwise leave
+    // every assertion below running against an empty string, passing forever.
+    expect(modelsPage.length).toBeGreaterThan(500);
+  });
+
+  test('the provider group heading carries the inline logo, not the avatar tile', () => {
+    // `small` is a 32px tile against 13px heading text.
+    expect(modelsPage).toContain('<ProviderLogo providerID={group.providerID} size="xs" />');
+  });
+
+  test('capabilities are icons, not word badges', () => {
+    // `reasoning` / `vision` pills competed with the model name on every row,
+    // in a list that is scanned by name.
+    expect(modelsPage).toContain('<ModelCapabilityIcons');
+    expect(modelsPage).not.toMatch(/<Badge[^>]*>\s*reasoning/);
+    expect(modelsPage).not.toMatch(/<Badge[^>]*>\s*vision/);
+  });
+
+  test('the raw model ID is gated on saying something the name does not', () => {
+    expect(modelsPage).toContain('modelIdAddsInformation(model.modelName, model.modelID)');
   });
 });

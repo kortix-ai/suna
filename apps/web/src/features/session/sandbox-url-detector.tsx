@@ -6,7 +6,7 @@ import { UnifiedMarkdown } from '@/components/markdown';
 import { CopyButton } from '@/components/markdown/copy-button';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import Loading from '@/components/ui/loading';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
@@ -126,7 +126,7 @@ function InlineIframePreview({ proxyUrl, port }: { proxyUrl: string; port: numbe
   return (
     <div
       className={cn(
-        'border-border/50 mt-2 overflow-hidden rounded-2xl border transition-colors duration-200',
+        'border-border/50 mt-2 overflow-hidden rounded-md border transition-colors duration-200',
         expanded ? 'h-[480px]' : 'h-[280px]',
       )}
     >
@@ -136,28 +136,26 @@ function InlineIframePreview({ proxyUrl, port }: { proxyUrl: string; port: numbe
           <Globe className="text-muted-foreground/50 h-3 w-3 shrink-0" />
           <span className="text-muted-foreground truncate font-mono text-xs">localhost:{port}</span>
         </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={handleRefresh}
-              className="hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground rounded p-1 transition-colors"
-            >
-              <RefreshCw className={cn('h-3 w-3', isLoading && 'animate-spin')} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">Refresh</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground rounded p-1 transition-colors"
-            >
-              {expanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">{expanded ? 'Collapse' : 'Expand'}</TooltipContent>
-        </Tooltip>
+        <Hint side="top" label="Refresh preview">
+          <button
+            type="button"
+            onClick={handleRefresh}
+            aria-label="Refresh preview"
+            className="hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground hit-area-2 rounded p-1 transition-colors active:scale-[0.96]"
+          >
+            <RefreshCw className={cn('size-3', isLoading && 'animate-spinner-spin')} />
+          </button>
+        </Hint>
+        <Hint side="top" label={expanded ? 'Collapse preview' : 'Expand preview'}>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-label={expanded ? 'Collapse preview' : 'Expand preview'}
+            className="hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground hit-area-2 rounded p-1 transition-colors active:scale-[0.96]"
+          >
+            {expanded ? <Minimize2 className="size-3" /> : <Maximize2 className="size-3" />}
+          </button>
+        </Hint>
       </div>
 
       {/* Iframe — only render once auth token is ready */}
@@ -165,7 +163,7 @@ function InlineIframePreview({ proxyUrl, port }: { proxyUrl: string; port: numbe
         {(isLoading || !isAuthReady) && (
           <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
             <div className="text-muted-foreground flex items-center gap-2">
-              <RefreshCw className="h-4 w-4 animate-spin" />
+              <Loading className="size-4 shrink-0" />
               <span className="text-xs">{!isAuthReady ? 'Authenticating...' : 'Loading...'}</span>
             </div>
           </div>

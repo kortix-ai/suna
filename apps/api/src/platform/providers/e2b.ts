@@ -105,7 +105,7 @@ function validateRuntimeEnv(value: unknown, externalId: string): Record<string, 
     envs[key] = item;
   }
   const workloadType = envs.KORTIX_WORKLOAD_TYPE === 'app' ? 'app' : 'session';
-  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_SANDBOX_TOKEN';
+  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_TOKEN';
   if (!envs[required]) {
     throw new Error(`[e2b] sandbox ${externalId} persisted runtime environment has no ${required}`);
   }

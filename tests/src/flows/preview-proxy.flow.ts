@@ -7,6 +7,7 @@
  *   - GET     /v1/p/share         combinedAuth → list share links for a sandbox
  *   - POST    /v1/p/share         combinedAuth → create a share link
  *   - DELETE  /v1/p/share/:token  combinedAuth → revoke a share link
+ *   - GET     /v1/p/config        public preview-addressing configuration
  *
  * /v1/p/auth validates the Authorization Bearer (kortix_ token OR Supabase JWT)
  * and on success sets the cookie. Missing/invalid → 401. We do NOT fabricate a
@@ -85,6 +86,28 @@ flow(
         .as(ctx.P.OWNER)
         .del("/v1/p/share/:token", { params: { token: "bogus-token" }, query: { sandbox_id: bogusSandbox } });
       r.status([200, 400, 403, 404]);
+    });
+  },
+);
+
+flow(
+  "PRX-3",
+  { domain: "preview-proxy", tags: ["smoke"], routes: ["GET /v1/p/config"] },
+  async (ctx) => {
+    await ctx.step("GET /p/config is public and returns the preview origin contract", async () => {
+      const response = await ctx.client.as(ctx.P.ANON).get("/v1/p/config");
+      response.status(200);
+      const payload = response.json<{ preview_url_template?: string | null }>();
+      if (!("preview_url_template" in payload)) {
+        throw new Error("preview configuration omitted preview_url_template");
+      }
+      const template = payload.preview_url_template;
+      if (template === undefined) {
+        throw new Error("preview_url_template is undefined");
+      }
+      if (template !== null && (!template.includes("{port}") || !template.includes("{sandbox}"))) {
+        throw new Error(`preview_url_template lacks required slots: ${template}`);
+      }
     });
   },
 );

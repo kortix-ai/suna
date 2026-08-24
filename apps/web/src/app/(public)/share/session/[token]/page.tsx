@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { getAuthToken } from '@/lib/auth-token';
+import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { getEnv } from '@/lib/env-config';
 import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
 import { PublicFileShareView } from './public-file-share-view';
@@ -72,13 +73,23 @@ export default function PublicSessionSharePage() {
   const origin = apiOrigin();
   const iframeSrc = useMemo(() => {
     if (!meta?.share) return '';
-    // Prefer the path-based proxy on the same origin we just fetched metadata
-    // from — it always resolves. `public_url` is a fallback for older responses.
+    // Prefer `public_url`: when this deployment serves preview origins it is the
+    // shared app's OWN origin, which is the only form where the app's
+    // root-absolute links, fetch() calls and WebSockets work. The API falls back
+    // to the path-proxy URL there when it has no preview domain, so this is
+    // always at least as good as composing `proxy_path` ourselves — which stays
+    // as the last resort for an older API that sends no `public_url`.
+    if (meta.share.public_url) return meta.share.public_url;
     if (meta.share.proxy_path && origin) return `${origin}${meta.share.proxy_path}`;
-    return meta.share.public_url || '';
+    return '';
   }, [meta, origin]);
   const fileSrc = useMemo(() => {
     if (!meta?.share || meta.share.resource_type !== 'file') return '';
+    // Prefer the shared file's own origin. A shared file is author-controlled
+    // content, and HTML or SVG carries script — rendering it on the API origin
+    // gives it the same principal as /v1/p/…. `public_url` is that origin when
+    // the deployment serves one, and the path form otherwise.
+    if (meta.share.public_url) return meta.share.public_url;
     if (!meta.share.proxy_path || !origin) return '';
     return `${origin}${meta.share.proxy_path}`;
   }, [meta, origin]);
@@ -308,9 +319,13 @@ export default function PublicSessionSharePage() {
             title={title}
             src={iframeSrc}
             className={SHARE_PREVIEW_IFRAME_CLASS}
-            sandbox={tI18nHardcoded.raw(
-              'autoAppPublicShareSessionTokenPageJsxAttrSandboxAllow2840c013',
-            )}
+            // A sandbox attribute is a token list the browser parses, not copy.
+            // Sent through i18n it was translated — Spanish shipped
+            // "permitir-mismo-origen", German comma-separated — and an
+            // unrecognized token list means MAXIMALLY restrictive: no scripts,
+            // no same-origin. Every shared preview was a dead blank frame in
+            // seven of eight locales.
+            sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
           />
         )}
       </section>

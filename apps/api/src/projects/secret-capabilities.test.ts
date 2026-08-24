@@ -224,13 +224,18 @@ describe('buildSecretCapabilities describes egress-enforced delivery', () => {
     const json = JSON.stringify(built());
     expect(json).not.toContain(NEVER_LEAKS);
     expect(json).not.toContain('{{secret}}');
-    expect(json).not.toContain('Bearer');
-    // The legacy injection slot is an implementation detail of the relay; an
-    // agent that can read the shape of the header starts assembling one.
-    expect(json).not.toContain('authorization');
     // `bindingAlias` in ../secrets/network-boundary.ts derives a stable
     // attachment name from the secret id. The guest must not see that either.
     expect(json).not.toContain(row.secretId.replace(/-/g, ''));
+    // The network CAPABILITY object reveals no injection header shape — an agent
+    // that could read where a credential auto-attaches would start assembling
+    // one. Scoped to the capabilities: the usage NOTES do name
+    // `Authorization: Bearer $VAR` as generic guidance (that is where an agent
+    // SHOULD put the handle), which carries no per-secret config.
+    const capabilities = JSON.stringify(built().capabilities);
+    expect(capabilities).not.toContain('Bearer');
+    expect(capabilities).not.toContain('authorization');
+    expect(capabilities).not.toContain('{{secret}}');
   });
 
   test('states the handle, the substitution, the [REDACTED] echo and the fallback', () => {

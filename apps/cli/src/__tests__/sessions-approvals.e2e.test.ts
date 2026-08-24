@@ -13,7 +13,7 @@ const PROXY_ID = 'external-approvals';
 
 const ENV_KEYS = [
   'KORTIX_CONFIG_FILE',
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',

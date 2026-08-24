@@ -11,6 +11,7 @@ import { textToParagraphs } from '../composer-logic';
 import { createMentionSuggestion } from '../menus/mention-controller';
 import type { SlashAction } from '../menus/slash-actions';
 import { SLASH_ACTIONS } from '../menus/slash-actions';
+import type { SlashFile } from '../menus/slash-files';
 import { createSlashSuggestion } from '../menus/slash-controller';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
@@ -120,6 +121,22 @@ export interface ComposerEditorProps {
    * whole reason the toolbar stops re-rendering per keystroke.
    */
   onEmptyChange: (isEmpty: boolean) => void;
+  /**
+   * Fires on EVERY document change, unthrottled, with the live ProseMirror
+   * JSON. The host debounces and persists it — see
+   * `draft/use-composer-draft.ts`. Deliberately separate from
+   * `onEmptyChange`, which fires only on the empty<->non-empty boundary: a
+   * draft saver wired to that would persist the first character and nothing
+   * after it.
+   *
+   * `isEmpty` rides along rather than being re-derived by the host from `doc`.
+   * `editor.isEmpty` is the canonical definition of an empty composer, and it
+   * is read here from the live editor in the same tick as the snapshot. A host
+   * that instead called `handle.isEmpty()` later — on an unmount flush, say —
+   * would be reading an editor React had already destroyed, because child
+   * effects clean up before parent effects.
+   */
+  onDocChange?: (doc: JSONContent, isEmpty: boolean) => void;
 
   /** `@` mention menu data sources — see `menus/mention-controller.ts`. */
   agents?: Agent[];
@@ -162,6 +179,14 @@ export interface ComposerEditorProps {
    * Pass `[]` to suppress the menu completely in that state.
    */
   actions?: SlashAction[];
+  /**
+   * The session's own files — what the Outputs and Context cards hold, as
+   * `menus/slash-files.ts`'s `sessionSlashFiles` derives them. They render as
+   * the `/` palette's Outputs and Context sections, and picking one inserts
+   * the same file mention the `@` menu inserts. Omitted (or empty) outside a
+   * session, where both sections simply do not appear.
+   */
+  files?: SlashFile[];
 
   /**
    * Fires on the false<->true boundary of "is EITHER the `@` or the `/`
@@ -191,6 +216,36 @@ export function trackEmptyBoundary(onEmptyChange: (isEmpty: boolean) => void) {
       wasEmpty = isEmptyNow;
       onEmptyChange(isEmptyNow);
     }
+  };
+}
+
+/**
+ * The editor's single `onUpdate`, composing the boundary tracker with a
+ * per-change document snapshot.
+ *
+ * These two have deliberately different cadences and must not be merged.
+ * `onEmptyChange` fires only on the empty<->non-empty boundary — that is what
+ * stops the toolbar re-rendering per keystroke, and it is asserted directly in
+ * this file's tests. `onDocChange` has to see EVERY change, because a draft
+ * saver that only heard about boundaries would persist the first character and
+ * nothing after it.
+ *
+ * The cost of that per-keystroke callback is one `editor.getJSON()` plus one
+ * `setTimeout` reset in the host's debounce (`draft/use-composer-draft.ts`).
+ * The host sets no React state, so nothing here re-renders.
+ *
+ * Exported, like its two neighbours, so the exact production wiring can be
+ * driven against a real headless `@tiptap/core` Editor in
+ * composer-editor.test.ts rather than a stand-in.
+ */
+export function createUpdateHandler(
+  onEmptyChange: (isEmpty: boolean) => void,
+  onDocChange: (doc: JSONContent, isEmpty: boolean) => void,
+) {
+  const trackEmpty = trackEmptyBoundary(onEmptyChange);
+  return ({ editor }: { editor: Pick<Editor, 'isEmpty' | 'getJSON'> }) => {
+    trackEmpty({ editor });
+    onDocChange(editor.getJSON() as JSONContent, editor.isEmpty);
   };
 }
 
@@ -282,6 +337,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       autoFocus,
       onSubmit,
       onEmptyChange,
+      onDocChange,
       agents,
       sessions,
       currentSessionId,
@@ -289,6 +345,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       onSelectCommand,
       onSelectAction,
       actions,
+      files,
       slashDockSelector,
       onMenuOpenChange,
     },
@@ -301,9 +358,13 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     // stale. Applied to every value a stable, memoized-once closure below
     // needs to read fresh: onEmptyChange, onSubmit, disabled, placeholder.
     const onEmptyChangeRef = useRef(onEmptyChange);
+    const onDocChangeRef = useRef(onDocChange);
     useEffect(() => {
       onEmptyChangeRef.current = onEmptyChange;
     }, [onEmptyChange]);
+    useEffect(() => {
+      onDocChangeRef.current = onDocChange;
+    }, [onDocChange]);
 
     const onSubmitRef = useRef(onSubmit);
     useEffect(() => {
@@ -354,6 +415,16 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     useEffect(() => {
       actionsRef.current = actions ?? SLASH_ACTIONS;
     }, [actions]);
+
+    // Same live-getter reasoning again, and it matters MORE here than for any
+    // ref above: this list grows while the user watches. The agent finishes a
+    // file mid-turn, the panel re-derives, and the very next `/` must already
+    // offer it — a value closed over at editor construction would offer the
+    // session's files as they were when the tab was opened, forever.
+    const filesRef = useRef(files ?? []);
+    useEffect(() => {
+      filesRef.current = files ?? [];
+    }, [files]);
 
     const onSelectCommandRef = useRef(onSelectCommand);
     useEffect(() => {
@@ -433,7 +504,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     );
 
     const handleUpdate = useMemo(
-      () => trackEmptyBoundary((isEmpty) => onEmptyChangeRef.current(isEmpty)),
+      () =>
+        createUpdateHandler(
+          (isEmpty) => onEmptyChangeRef.current(isEmpty),
+          (doc, isEmpty) => onDocChangeRef.current?.(doc, isEmpty),
+        ),
       [],
     );
 
@@ -480,6 +555,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           createSlashSuggestion({
             getCommands: () => commandsRef.current,
             getActions: () => actionsRef.current,
+            getFiles: () => filesRef.current,
             // NOT read through a ref, unlike every getter around it. This is
             // frozen at construction on purpose: it is a per-instance
             // selector string that identifies this composer's dock element
@@ -518,15 +594,15 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * looks right instead. It still grows with the text past this
            * floor.
            *
-           * The `vh` caps are the reference's, verbatim, including the fact
-           * that the middle band is the SHORTEST. Tailwind emits base → sm →
-           * lg in that order, so the effective ladder is: below 640px 45vh,
-           * 640–1023px 25vh, 1024px and up 40vh. That is a strange curve, and
-           * it is deliberate to keep it here rather than "fix" it silently —
-           * change the `sm:` step if the tablet cap turns out to be wrong.
+           * The `vh` cap ladder used to be 45vh / **25vh** / 40vh — the middle
+           * band, 640–1023px, was the SHORTEST of the three, so a tablet or a
+           * narrow desktop window capped the draft at barely a quarter of the
+           * viewport while a phone got 45%. That was carried over verbatim from
+           * a reference and left in place with a note inviting this change. The
+           * curve is now monotonic: 45vh below 640px (a phone keyboard eats the
+           * rest of the screen anyway), 40vh above it.
            */
-          class:
-            'outline-none min-h-[3.5em] max-h-[45vh] sm:max-h-[25vh] lg:max-h-[40vh] overflow-y-auto',
+          class: 'outline-none min-h-[1.7em] max-h-[45vh] sm:max-h-[40vh] overflow-y-auto',
         },
         handleKeyDown,
       },
@@ -568,7 +644,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       <EditorContent
         editor={editor}
         className={cn(
-          'kortix-composer-editor w-full text-[15px] sm:text-[14px]',
+          // `text-base` (16px) on mobile, NOT 15px: iOS Safari force-zooms the
+          // page on focus for any input under 16px, and the composer is the one
+          // field on the screen. `sm:text-sm` above 640px, which is the size
+          // `globals.css`'s slash-trigger rule already documents.
+          'kortix-composer-editor w-full text-base sm:text-sm',
           disabled && 'opacity-50',
         )}
       />

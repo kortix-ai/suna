@@ -490,8 +490,7 @@
             "enum": [
               "slack",
               "teams",
-              "email",
-              "voice"
+              "email"
             ]
           },
           "credential": {},
@@ -605,22 +604,6 @@
               "properties": {
                 "slug": {
                   "const": "kortix_email"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "provider": {
-                  "const": "channel"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "slug": {
-                  "const": "kortix_voice"
                 }
               }
             },

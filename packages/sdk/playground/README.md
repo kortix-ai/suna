@@ -64,7 +64,6 @@ Stack must be up (`pnpm dev` from the repo root; `curl localhost:8008/v1/health`
   how to run its domain's mutations deliberately.
 - **Stripe flows** (checkout, portal, purchase, cancel) — real billing.
 - **`accountInvites.accept/decline`** — needs a real invite token for another user.
-- **`transcribe()`** — needs an audio file.
 - **`session.abort()`** — racy to assert deterministically; exercise by hand.
 - **React hooks (`@kortix/sdk/react`)** — needs a React host; see
   `apps/whitelabel-demo`.

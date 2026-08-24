@@ -33,7 +33,7 @@ async function runCli(args: string[]) {
     NO_COLOR: '1',
     FORCE_COLOR: '0',
   };
-  for (const key of ['KORTIX_API_URL', 'KORTIX_CLI_TOKEN', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN']) {
+  for (const key of ['KORTIX_API_URL', 'KORTIX_TOKEN', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN']) {
     delete env[key];
   }
   const child = Bun.spawn({

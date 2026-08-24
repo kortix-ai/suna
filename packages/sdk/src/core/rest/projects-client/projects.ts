@@ -28,13 +28,13 @@ export type FeatureFlagKey =
   | 'connectors_api_discover'
   | 'agentmail_email'
   | 'teams'
-  | 'voice'
   | 'llm_gateway'
   | 'review_center'
   | 'meta_agent'
   | 'apps'
   | 'monitors'
-  | 'warm_sessions';
+  | 'warm_sessions'
+  | 'secrets_egress';
 
 /**
  * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
@@ -47,13 +47,13 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'connectors_api_discover',
   'agentmail_email',
   'teams',
-  'voice',
   'llm_gateway',
   'review_center',
   'meta_agent',
   'apps',
   'monitors',
   'warm_sessions',
+  'secrets_egress',
 ] as const;
 
 /**
@@ -602,10 +602,9 @@ function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
     // production nothing to go on — no mention of provisionProjectStream, no
     // mention that this came from an SSE frame, no sight of what the frame
     // actually contained.
-    throw new Error(
-      `provisionProjectStream: received an unparseable SSE frame (${excerpt})`,
-      { cause },
-    );
+    throw new Error(`provisionProjectStream: received an unparseable SSE frame (${excerpt})`, {
+      cause,
+    });
   }
 }
 
@@ -666,7 +665,10 @@ export async function provisionProjectStream(
   );
 
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string; code?: string } | null;
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      code?: string;
+    } | null;
     // A REAL `ApiError`, not a bare `Error` — see the `ProvisionStreamEvent`
     // doc comment above. `apps/web`'s `messageFor`/`isRetryableError` read
     // `.status`/`.code` off whatever `provisionProject`/`provisionProjectStream`

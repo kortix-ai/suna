@@ -867,7 +867,7 @@ async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
  * Deliver the composer's first prompt into a session's OpenCode root, once it
  * exists. Web parity: the project home stashes the prompt and sends it after the
  * session connects rather than passing `initial_prompt` to createProjectSession
- * (the boot-time KORTIX_INITIAL_PROMPT path can leave OpenCode perpetually
+ * (the boot-time first-turn path can leave OpenCode perpetually
  * not-ready). Fire-and-forget — SessionPage's sync surfaces the message/reply.
  */
 async function sendOpencodePrompt(

@@ -134,10 +134,35 @@ test('an App card shows the App, not a stock glyph standing in for it', () => {
   // filled because that is what a media control looks like — an unrelated
   // control failing a card assertion is the assertion being wrong, not the UI.
   expect(view).not.toContain('size-9');
-  // Status is the house dot, and the host loses the scheme every App shares.
+  // Status is the house dot.
   expect(view).toContain("dot: live ? 'bg-kortix-green'");
-  expect(view).toContain('{appHost(app.url)}');
-  expect(view).not.toContain('{app.url}</p>');
+});
+
+test('a card caption is the App\'s name and its state — not its hostname', () => {
+  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+  const card = view.slice(view.indexOf('function AppCard('), view.indexOf('function AppDetailModal('));
+
+  // Every App's URL is the same `<key>.apps.<domain>` shape, so a column of
+  // them differs only in a random token nobody reads or types — a third of the
+  // caption's height spent on noise, on the surface whose job is to show the
+  // App. Neither the derived host nor the raw URL belongs on a tile.
+  expect(card).not.toContain('appHost(');
+  expect(card).not.toContain('{app.url}');
+  expect(card).not.toContain('font-mono');
+
+  // The caption is ONE row now, not a stack — a leftover `space-y` wrapper
+  // would keep reserving the line the host used to occupy.
+  expect(card).toContain('className="mt-3 flex items-center gap-2"');
+  expect(card).not.toContain('mt-3 space-y-1');
+
+  // …and the skeleton loses its second bar with it, or the grid shifts the
+  // moment real data lands.
+  const skeleton = view.slice(view.indexOf('function AppGridSkeleton('));
+  expect(skeleton.slice(0, skeleton.indexOf('\n}'))).not.toContain('space-y-1');
+
+  // The URL is not gone from the product — the detail layer still names it on
+  // the control that opens the App.
+  expect(view).toContain('appHost(app.url)');
 });
 
 test('the Apps row matches the row contract of the group it sits in', () => {
@@ -266,10 +291,18 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
   const card = view.slice(view.indexOf('function AppCard('), view.indexOf('function AppDetailModal('));
 
-  // Four tall tiles across at full width, stepping down to one on a phone —
-  // and the skeleton uses the SAME grid so nothing reflows when data lands.
-  const GRID = 'grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
-  expect(view.match(new RegExp(GRID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))).toHaveLength(2);
+  // The grid's column count is the reader's choice now, so the gap belongs to
+  // the page and the columns come from `APP_GRID_DENSITY`. The skeleton takes
+  // the SAME class string so nothing reflows when data lands.
+  const GRID = "cn('grid gap-x-6 gap-y-8', columns)";
+  expect(view.split(GRID)).toHaveLength(3);
+  expect(view).not.toContain('xl:grid-cols-4"');
+
+  // The gallery column is sized for the default density: two 16:9 tiles inside
+  // a 1280px cap are ~600px wide, which is where a scaled-down desktop layout
+  // is still readable. `max-w-5xl` is what produced 230px tiles.
+  expect(view).toContain('max-w-7xl flex-col px-4 py-6 pb-20');
+  expect(view).not.toContain('max-w-5xl flex-col');
 
   // The thumbnail is the only bordered surface; the caption is page text under
   // it, not the inside of a panel. The old card was one `bg-popover` panel with
@@ -277,7 +310,7 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   expect(card).toContain('relative overflow-hidden rounded-lg border');
   expect(card).not.toContain('bg-popover');
   expect(card).not.toContain('border-b');
-  expect(card).toContain('className="mt-3 space-y-1"');
+  expect(card).toContain('className="mt-3 flex items-center gap-2"');
 
   // Still exactly one control per card — a hover overflow button inside the
   // card button would be invalid HTML and a nested hit area.

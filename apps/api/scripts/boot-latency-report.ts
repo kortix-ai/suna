@@ -29,6 +29,10 @@
  *   BOOT_JSON     "1" to emit JSON on stdout instead of the table.
  */
 import { SQL } from 'bun';
+import {
+  aggregateTelemetryImages,
+  type TelemetryImageRefRow,
+} from './boot-image-kind';
 
 const DB_URL = process.env.BOOT_DB_URL ?? '';
 const DAYS = Number(process.env.BOOT_DAYS ?? 14);
@@ -118,21 +122,15 @@ async function main() {
   // Warm-image hit rate. This is the number that makes or breaks any statement
   // about the clone: a warm hit means the repo was baked in and there was no
   // clone at all.
-  const images = (await sql`
+  const imageRefs = (await sql`
     select provider::text as provider,
-      case
-        when metadata->'runtimeArtifact'->>'providerArtifactRef' like 'kortix-ppwarm-%' then 'warm-hit'
-        when metadata->'runtimeArtifact'->>'providerArtifactRef' like 'kortix-default-%' then 'cold-shared-default'
-        when metadata->'runtimeArtifact'->>'providerArtifactRef' like 'kortix-tpl-%' then 'cold-per-project-template'
-        when metadata->'runtimeArtifact'->>'providerArtifactRef' is null then 'unknown'
-        else 'other'
-      end as image_kind,
+      metadata->'runtimeArtifact'->>'providerArtifactRef' as image_ref,
       count(*)::int as n
     from kortix.session_sandboxes
     where created_at > now() - (${DAYS} || ' days')::interval
     group by 1, 2
-    order by 1, 3 desc
-  `) as Array<{ provider: string; image_kind: string; n: number }>;
+  `) as TelemetryImageRefRow[];
+  const images = aggregateTelemetryImages(imageRefs);
 
   if (AS_JSON) {
     console.log(JSON.stringify({ days: DAYS, totals, stages, images }, null, 1));
