@@ -40,7 +40,8 @@ let resolveCalls: Array<{ port: number; transport?: string; path?: string }> = [
 
 mock.module('../platform/providers', () => ({
   ...realProviders,
-  getProvider: () => ({
+  getProvider: (provider: string) => ({
+    ingressCacheTtlMs: provider === 'e2b' ? 0 : undefined,
     async resolveIngress(_externalId: string, request: { port: number; transport?: string; path?: string }) {
       resolveCalls.push(request);
       const isPty = request.transport === 'websocket' && request.path?.includes('/pty/');
@@ -78,6 +79,16 @@ describe('resolveSandboxIngress cache key — http', () => {
     const second = await resolveSandboxIngress(record, { port: 8000, transport: 'http', path: '/bar' });
     expect(resolveCalls.length).toBe(1);
     expect(second).toEqual(first);
+  });
+
+  test('E2B ingress bypasses the outer cache so rotated traffic tokens can refresh', async () => {
+    resolveCalls = [];
+    const record = { ...BASE_RECORD, provider: 'e2b', externalId: 'ext-e2b-token-rotation' };
+
+    await resolveSandboxIngress(record, { port: 8000, transport: 'http', path: '/foo' });
+    await resolveSandboxIngress(record, { port: 8000, transport: 'http', path: '/bar' });
+
+    expect(resolveCalls.length).toBe(2);
   });
 });
 

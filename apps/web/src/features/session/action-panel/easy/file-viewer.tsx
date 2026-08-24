@@ -29,6 +29,7 @@ import {
 } from '@/components/markdown/markdown-frontmatter';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
+import { HtmlPreview } from '@/features/file-viewer';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
@@ -124,7 +125,11 @@ export function FileViewer({
   onClose?: () => void;
   className?: string;
 }) {
-  const html = isHtml(fileName);
+  // Previewable only WITH a path. The preview is the file served by the
+  // sandbox's static file server (see `HtmlPreview`), so with nothing on disk
+  // to serve there is no rendered form — and therefore no second view to
+  // toggle to. `FilePreview` always passes one.
+  const html = isHtml(fileName) && !!path;
   const svg = isSvg(fileName);
   const markdown = isMarkdown(fileName);
   // The files whose rendered form and source are both worth seeing — the ones
@@ -199,6 +204,7 @@ export function FileViewer({
         <FileBody
           content={content}
           fileName={fileName}
+          path={path}
           html={html}
           svg={svg}
           markdown={markdown}
@@ -239,6 +245,7 @@ function useSvgObjectUrl(content: string, enabled: boolean): string | null {
 function FileBody({
   content,
   fileName,
+  path,
   html,
   svg,
   markdown,
@@ -246,6 +253,7 @@ function FileBody({
 }: {
   content: string;
   fileName: string;
+  path?: string;
   html: boolean;
   svg: boolean;
   markdown: boolean;
@@ -256,25 +264,24 @@ function FileBody({
   // The rendered page IS the document: it owns the pane edge to edge, and its
   // own <body> sets whatever margin it wants. Padding it would frame someone
   // else's page inside ours.
-  if (html && view === 'preview') {
-    return (
-      // `sandbox` with no allow-* tokens: the page renders, but its scripts,
-      // forms and navigation are inert. This is agent-authored HTML being shown
-      // inside the app — it renders as a document, never as code that runs here.
-      <iframe
-        title={fileName}
-        srcDoc={content}
-        sandbox=""
-        className="bg-background block h-full w-full border-0"
-      />
-    );
+  //
+  // Served by the sandbox's own static file server, never handed to the frame
+  // as `srcDoc`. `srcDoc` gives the document no URL, so `./style.css`,
+  // `img/logo.png` and `app.js` have nothing to resolve against: a page written
+  // as a page arrived as unstyled text, with its scripts inert on top of it.
+  // `HtmlPreview` owns the whole exchange, and is the same component the files
+  // viewer uses — one answer to "what does an HTML file look like".
+  if (html && path && view === 'preview') {
+    return <HtmlPreview path={path} fileName={fileName} />;
   }
 
-  // The same inertness bargain HTML strikes with `sandbox=""`, made a different
-  // way: an SVG loaded through `<img>` renders in the browser's secure static
-  // mode — no script execution, no external fetches, no interactivity. That
-  // matters here because an agent wrote this file, and `isBrowserViewable`
-  // already refuses to open SVG in a real tab for exactly that reason.
+  // SVG stays inline, and stays inert: loaded through `<img>` it renders in the
+  // browser's secure static mode — no script execution, no external fetches, no
+  // interactivity. That matters here because an agent wrote this file, and
+  // `isBrowserViewable` already refuses to open SVG in a real tab for exactly
+  // that reason. HTML earns a real browser (see `HtmlPreview`) because a page
+  // without its scripts is a screenshot; an SVG without its scripts is the
+  // picture, whole.
   //
   // Everything else — zoom, pan, wheel, fit-to-screen, the % reset readout — is
   // `ImageRenderer`'s, unchanged. The backdrop swatches are the one thing it

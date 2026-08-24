@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Provider traffic credentials need a cross-replica refresh bound (2026-08-24)
+
+**When:** caching a provider handle that carries a private ingress token. Bound
+the cache lifetime and refresh it with single-flight connection work. A resume
+can rotate the token in one API replica while every other replica retains the
+old handle indefinitely. *Incident:* an Essentia E2B guest was locally ready in
+12.9 seconds, but `/start` failed because another API replica used its stale
+traffic token and received repeated `502 port not ready` responses.
+*Enforcer:* E2B ingress rotation and concurrent-refresh tests.
+
 ### A deliberate runtime failure park must require explicit restart (2026-08-24)
 
 **When:** returning a stopped sandbox after `runtime_boot_failed` or

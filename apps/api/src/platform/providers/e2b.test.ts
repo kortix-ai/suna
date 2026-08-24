@@ -149,7 +149,8 @@ mock.module('../service-key', () => ({
 }));
 
 const { config } = await import('../../config');
-const { E2BProvider, E2B_RUNNING_STATUS_CACHE_TTL_MS } = await import('./e2b');
+const { E2BProvider, E2B_INGRESS_HANDLE_TTL_MS, E2B_RUNNING_STATUS_CACHE_TTL_MS } =
+  await import('./e2b');
 const { getProvider } = await import('./index');
 
 beforeEach(() => {
@@ -596,6 +597,169 @@ describe('E2B provider lifecycle', () => {
       headers: { 'e2b-traffic-access-token': 'traffic-private' },
       effectivePort: 3000,
     });
+  });
+
+  test('ingress refreshes the private traffic token after the bounded cache window', async () => {
+    const originalNow = Date.now;
+    let now = 1_000;
+    Date.now = () => now;
+    let connects = 0;
+    connectFactory = (sandboxId) => {
+      connects += 1;
+      return fakeSandbox(sandboxId, `traffic-${connects}`);
+    };
+    try {
+      const provider = new E2BProvider();
+      const first = await provider.resolveIngress('sb-ingress-rotation', {
+        port: 8000,
+        transport: 'http',
+      });
+      now += 1_000;
+      const cached = await provider.resolveIngress('sb-ingress-rotation', {
+        port: 8000,
+        transport: 'http',
+      });
+      now += 5_000;
+      const refreshed = await provider.resolveIngress('sb-ingress-rotation', {
+        port: 8000,
+        transport: 'http',
+      });
+
+      expect(E2B_INGRESS_HANDLE_TTL_MS).toBe(5_000);
+      expect(first.headers).toEqual({ 'e2b-traffic-access-token': 'traffic-1' });
+      expect(cached.headers).toEqual({ 'e2b-traffic-access-token': 'traffic-1' });
+      expect(refreshed.headers).toEqual({ 'e2b-traffic-access-token': 'traffic-2' });
+      expect(connects).toBe(2);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  test('concurrent ingress refreshes share one E2B connect', async () => {
+    let finishConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    let connects = 0;
+    connectFactory = async (sandboxId) => {
+      connects += 1;
+      await connectGate;
+      return fakeSandbox(sandboxId, 'traffic-single-flight');
+    };
+    const provider = new E2BProvider();
+
+    const first = provider.resolveIngress('sb-ingress-single-flight', {
+      port: 8000,
+      transport: 'http',
+    });
+    const second = provider.resolveIngress('sb-ingress-single-flight', {
+      port: 8000,
+      transport: 'http',
+    });
+    for (let attempt = 0; attempt < 10 && connects === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+
+    expect(connects).toBe(1);
+    finishConnect();
+    expect(await Promise.all([first, second])).toEqual([
+      expect.objectContaining({
+        headers: { 'e2b-traffic-access-token': 'traffic-single-flight' },
+      }),
+      expect.objectContaining({
+        headers: { 'e2b-traffic-access-token': 'traffic-single-flight' },
+      }),
+    ]);
+  });
+
+  test('a start and concurrent ingress refresh share one E2B connect', async () => {
+    let finishConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    let connects = 0;
+    connectFactory = async (sandboxId) => {
+      connects += 1;
+      await connectGate;
+      return fakeSandbox(sandboxId, 'traffic-start-single-flight');
+    };
+    const provider = new E2BProvider();
+
+    const starting = provider.start('sb-start-ingress-single-flight');
+    const ingress = provider.resolveIngress('sb-start-ingress-single-flight', {
+      port: 8000,
+      transport: 'http',
+    });
+    await Promise.resolve();
+
+    expect(connects).toBe(1);
+    finishConnect();
+    await starting;
+    expect(await ingress).toMatchObject({
+      headers: { 'e2b-traffic-access-token': 'traffic-start-single-flight' },
+    });
+  });
+
+  test('an ingress refresh and later start share one E2B connect', async () => {
+    let finishConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    let connects = 0;
+    connectFactory = async (sandboxId) => {
+      connects += 1;
+      await connectGate;
+      return fakeSandbox(sandboxId, 'traffic-ingress-first-single-flight');
+    };
+    const provider = new E2BProvider();
+
+    const ingress = provider.resolveIngress('sb-ingress-start-single-flight', {
+      port: 8000,
+      transport: 'http',
+    });
+    for (let attempt = 0; attempt < 10 && connects === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+    const starting = provider.start('sb-ingress-start-single-flight');
+
+    expect(connects).toBe(1);
+    finishConnect();
+    await starting;
+    expect(await ingress).toMatchObject({
+      headers: { 'e2b-traffic-access-token': 'traffic-ingress-first-single-flight' },
+    });
+  });
+
+  test('a cold start begins the ingress TTL after runtime readiness', async () => {
+    let now = 1_000;
+    let connects = 0;
+    connectFactory = (sandboxId) => {
+      connects += 1;
+      const sandbox = fakeSandbox(sandboxId, 'traffic-ready-ttl');
+      const run = sandbox.commands.run;
+      sandbox.commands.run = async (command, opts) => {
+        const result = await run(command, opts);
+        if (command.includes('/kortix/health')) now += E2B_INGRESS_HANDLE_TTL_MS + 1;
+        return result;
+      };
+      return sandbox;
+    };
+    const provider = new E2BProvider(25_000, 25_000, 25_000, () => now);
+
+    await provider.start('sb-ready-ttl');
+    await provider.resolveIngress('sb-ready-ttl', { port: 8000, transport: 'http' });
+
+    expect(connects).toBe(1);
+  });
+
+  test('ingress refresh never resumes a provider-paused sandbox', async () => {
+    infoState = 'paused';
+    const provider = new E2BProvider();
+
+    await expect(
+      provider.resolveIngress('sb-paused-ingress', { port: 8000, transport: 'http' }),
+    ).rejects.toThrow('is not running');
+    expect(connected).toHaveLength(0);
   });
 
   test('ingress fails closed rather than exposing a tokenless private URL', async () => {

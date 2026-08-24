@@ -12,6 +12,38 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `html-preview` — an HTML file is served, never injected — DONE
+
+**Files:** `core/session/static-file-preview.ts` (NEW: `staticFilePreviewTargets`,
+`shouldRetryStaticFileHealth`, `STATIC_FILE_HEALTH_RETRY_MS`,
+`STATIC_FILE_HEALTH_MAX_ATTEMPTS`) + `static-file-preview.test.ts` (NEW, 7 tests) ·
+`react/use-static-file-preview.ts` (NEW: `useStaticFilePreview`) ·
+`react/index.ts` (+1 barrel line) · both public-surface snapshots.
+**Public surface: additive only** — `useStaticFilePreview` plus the
+`StaticFilePreview` / `StaticFilePreviewStatus` types on `./react`.
+
+**What.** Reported from dev: "any html … renders the html directly in browser
+hence things dont work". The session panel's file viewer framed an HTML file
+with `srcDoc`, which gives the document no URL at all — so `./style.css`,
+`img/logo.png` and `app.js` had nothing to resolve against and every page
+arrived as unstyled text. `sandbox=""` made its scripts inert on top of that.
+The sandbox already ships the server that fixes it (static file server, port
+3211); only the files viewer was wired to it, and it had hand-rolled the wiring.
+
+**Fix.** One hook owns reaching that server — proxied `/open?path=…` URL, the
+preview session, a bounded liveness wait, and a `retry`. Two things it does that
+the hand-rolled copy did not: it reads `useActiveSandboxProxyContext()` rather
+than freezing `deriveSubdomainOpts()` on mount (the documented `sandboxId: ''`
+freeze), and `staticFilePreviewTargets` returns `null` until a sandbox binds
+instead of addressing `http://localhost:3211` — the VIEWER's own machine, which
+a probe can answer `200` for. The probe is `probePreviewPort`, so `401/403` reads
+as our auth gate catching up rather than a dead sandbox.
+
+**Gates:** `typecheck` clean (both projects) · `bun test` 2443 pass / 0 fail ·
+`smoke:install` passed.
+
+---
+
 ### 2026-08-24 — session `session-open-overfetch` — one read where there were three, one entry where there were two — DONE
 
 **Files (SDK):** `core/session-sync/session-sync-controller.ts` (tail 20 -> 50,
