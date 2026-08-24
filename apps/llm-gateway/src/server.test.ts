@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 process.env.KORTIX_API_URL = process.env.KORTIX_API_URL ?? 'https://api.test.invalid';
 process.env.GATEWAY_INTERNAL_TOKEN = process.env.GATEWAY_INTERNAL_TOKEN ?? 'test-internal-token';
 
-const { buildServer } = await import('./server');
+const { buildServer, cloudflareSafe, UPSTREAM_STATUS_HEADER } = await import('./server');
 
 // Piece B: `POST /v1/messages` (+ the `/v1/llm/messages` and `/v1/openai/messages`
 // aliases, mirroring the `/v1/chat/completions` alias namespaces) must be
@@ -142,10 +142,6 @@ describe('standalone gateway inference routes', () => {
 });
 
 describe('cloudflareSafe', () => {
-  const { cloudflareSafe, UPSTREAM_STATUS_HEADER } = require('./server') as typeof import(
-    './server',
-  );
-
   test('maps a JSON 502 to 503, keeps the original status in header and body, sets retry-after', async () => {
     const res = await cloudflareSafe(
       new Response(
