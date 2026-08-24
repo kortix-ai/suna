@@ -151,4 +151,76 @@ describe('simple gateway pipeline', () => {
     expect(sse.headers.get('content-type')).toBe('text/event-stream');
     expect(await sse.text()).toContain('[DONE]');
   });
+
+  test('the acceptance deadline NEVER aborts a stream that outlives it (#6473 regression)', async () => {
+    // A long-running turn: headers arrive instantly, tokens keep flowing far
+    // past the acceptance budget. The old implementation handed
+    // AbortSignal.timeout to the fetch, which governs the whole response —
+    // killing every turn longer than the budget with "timeout of 90000ms".
+    const enc = new TextEncoder();
+    const response = await handleChatCompletions(
+      {
+        hooks: hooks([], []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async (_input, init) =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              async start(c) {
+                for (let i = 0; i < 6; i += 1) {
+                  if (init.signal?.aborted) {
+                    c.error(new Error('aborted by gateway'));
+                    return;
+                  }
+                  c.enqueue(enc.encode(`data: {"choices":[{"delta":{"content":"t${i}"}}]}\n\n`));
+                  await new Promise((resolve) => setTimeout(resolve, 25));
+                }
+                c.enqueue(enc.encode('data: [DONE]\n\n'));
+                c.close();
+              },
+            }),
+            { headers: { 'content-type': 'text/event-stream' } },
+          ),
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'm', messages: [], stream: true }),
+      },
+    );
+    expect(response.status).toBe(200);
+    const text = await response.text(); // total stream time ~150ms >> 30ms budget
+    expect(text).toContain('t5');
+    expect(text).toContain('[DONE]');
+  });
+
+  test('no gateway deadline exists: a dead provider ends only when the client aborts', async () => {
+    // Removed 2026-08-24, the same day it was added — every gateway-side
+    // timer here has eventually killed a legitimate long turn. The contract
+    // is abort-forwarding instead: the client's abort must reach the
+    // in-flight upstream call and end the dispatch (freeing the admission
+    // lease), and a hang here would mean it does not.
+    const client = new AbortController();
+    const pending = handleChatCompletions(
+      {
+        hooks: hooks([], []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: (_input, init) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+          }),
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'm', messages: [], stream: true }),
+        signal: client.signal,
+      },
+    );
+    setTimeout(() => client.abort(new DOMException('client gave up', 'AbortError')), 30);
+    const response = await Promise.race([
+      pending,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('dispatch did not end after client abort')), 2_000),
+      ),
+    ]);
+    expect(response.status).toBeGreaterThanOrEqual(400);
+  });
 });
