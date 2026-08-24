@@ -148,7 +148,7 @@ jobs:
             echo "::error::NACL_AUDIT_ROLE_ARN is unset - the admin-port audit cannot run."
             exit 1
           fi
-      - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: ${{ vars.NACL_AUDIT_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
@@ -195,7 +195,7 @@ jobs:
             echo "::error::CLOUDFLARE_API_TOKEN is unset - every environments/* plan will fail to authenticate."
             exit 1
           fi
-      - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: ${{ vars.TF_PLAN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}

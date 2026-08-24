@@ -48,7 +48,7 @@ jobs:
             kortix-*) ;;
             *) echo "::error::refusing non-kortix service '${{ inputs.service }}'"; exit 1 ;;
           esac
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
           aws-region: ${{ inputs.region }}
