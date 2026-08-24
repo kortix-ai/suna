@@ -25,6 +25,13 @@ export interface UseModelDefaults {
   data: ModelDefaultsResponse | undefined;
   isLoading: boolean;
   isUpdating: boolean;
+  /**
+   * The project's `llm_gateway` flag. False ⇒ the model-defaults chain does
+   * not exist for this project (native OpenCode mode): `data` never loads,
+   * and UIs must hide every set/clear affordance — the write routes answer
+   * 404 llm_gateway_disabled.
+   */
+  llmGatewayEnabled: boolean;
   accountDefault: ModelKey | undefined;
   agentDefaults: Record<string, ModelKey>;
   projectDefault: ModelKey | undefined;
@@ -197,6 +204,7 @@ export function useModelDefaults(
     data,
     isLoading,
     isUpdating: setMutation.isPending || clearMutation.isPending,
+    llmGatewayEnabled: gateway.enabled,
     accountDefault,
     agentDefaults,
     projectDefault,
