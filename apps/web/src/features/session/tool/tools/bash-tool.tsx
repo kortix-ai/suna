@@ -33,7 +33,7 @@ import {
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
 import { shellExitCode, stripAnsi } from '@/ui';
-import { CodeSimpleIcon } from '@phosphor-icons/react';
+import { TerminalIcon } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
 
 /** The row title never runs past this; a trigger is one line, not a sentence. */
@@ -261,7 +261,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<CodeSimpleIcon className="size-4 shrink-0" />}
+      icon={<TerminalIcon className="size-4 shrink-0" />}
       trigger={
         isStalePending ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">

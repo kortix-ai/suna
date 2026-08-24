@@ -3,7 +3,7 @@
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { useFeatureFlag } from '@kortix/sdk/react';
-import { GlobeIcon } from '@phosphor-icons/react';
+import { AppWindowIcon, GlobeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
@@ -42,7 +42,7 @@ export function ProjectAppsNavItem() {
           {/* shrink-0 so the glyph keeps its box when the label is long or the
               sidebar is narrow — the sibling rows wrap their icons the same way. */}
           <span className="shrink-0">
-            <GlobeIcon />
+            <AppWindowIcon />
           </span>
           Apps
         </Link>

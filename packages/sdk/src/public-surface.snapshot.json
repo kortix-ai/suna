@@ -481,6 +481,7 @@
     "listChangeRequests",
     "listChannelBindings",
     "listColumns",
+    "listConnectToolkits",
     "listConnections",
     "listConnectorTools",
     "listConnectors",
@@ -1271,8 +1272,18 @@
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
-  "./server": ["createScopedKortix", "forwardKortixRequest", "getScopedConfig", "runWithKortix"],
-  "./internal/sync-store": ["Binary", "ascendingId", "sameSessionStatus", "useSyncStore"],
+  "./server": [
+    "createScopedKortix",
+    "forwardKortixRequest",
+    "getScopedConfig",
+    "runWithKortix"
+  ],
+  "./internal/sync-store": [
+    "Binary",
+    "ascendingId",
+    "sameSessionStatus",
+    "useSyncStore"
+  ],
   "./internal/server-store": [
     "deriveSubdomainOpts",
     "getActiveDbSandboxId",
@@ -1295,7 +1306,9 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./internal/opencode-pending-store": ["useOpenCodePendingStore"],
+  "./internal/opencode-pending-store": [
+    "useOpenCodePendingStore"
+  ],
   "./internal/idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
@@ -1650,6 +1663,7 @@
     "listBillingTransactions",
     "listChangeRequests",
     "listChannelBindings",
+    "listConnectToolkits",
     "listConnections",
     "listConnectorTools",
     "listConnectors",
@@ -1847,8 +1861,15 @@
     "validateToken",
     "verifyGatewayProvider"
   ],
-  "./feature-flags": ["featureFlags", "parseFlagOverride"],
-  "./fresh-sessions": ["clearSessionFresh", "isSessionFresh", "markSessionFresh"],
+  "./feature-flags": [
+    "featureFlags",
+    "parseFlagOverride"
+  ],
+  "./fresh-sessions": [
+    "clearSessionFresh",
+    "isSessionFresh",
+    "markSessionFresh"
+  ],
   "./instance-routes": [
     "ACTIVE_INSTANCE_COOKIE",
     "INSTANCE_SCOPED_ROUTES",
@@ -1946,7 +1967,11 @@
     "submitSecretSetupLink",
     "triggerSandboxUpdate"
   ],
-  "./event-stream": ["heartbeatGapEvent", "narrowChatEvent", "openEventStream"],
+  "./event-stream": [
+    "heartbeatGapEvent",
+    "narrowChatEvent",
+    "openEventStream"
+  ],
   "./files": [
     "SANDBOX_FS_ROOTS",
     "copyFile",
@@ -2135,7 +2160,12 @@
     "turnHasSteps",
     "unwrapError"
   ],
-  "./sync-store": ["Binary", "ascendingId", "sameSessionStatus", "useSyncStore"],
+  "./sync-store": [
+    "Binary",
+    "ascendingId",
+    "sameSessionStatus",
+    "useSyncStore"
+  ],
   "./server-store": [
     "deriveSubdomainOpts",
     "getActiveDbSandboxId",
@@ -2158,7 +2188,9 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./opencode-pending-store": ["useOpenCodePendingStore"],
+  "./opencode-pending-store": [
+    "useOpenCodePendingStore"
+  ],
   "./idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",

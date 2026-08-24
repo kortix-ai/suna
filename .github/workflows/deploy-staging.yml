@@ -152,6 +152,7 @@ jobs:
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           STAGING_SUPABASE_JWT_SECRET: ${{ secrets.STAGING_SUPABASE_JWT_SECRET }}
           STAGING_KORTIX_ADMIN_API_KEY: ${{ secrets.STAGING_KORTIX_ADMIN_API_KEY }}
+          STAGING_COMPOSIO_API_KEY: ${{ secrets.STAGING_COMPOSIO_API_KEY }}
         run: |
           set -euo pipefail
 
@@ -209,6 +210,8 @@ jobs:
             --arg service "$service" \
             --arg jwt "$jwt" \
             --arg admin "$STAGING_KORTIX_ADMIN_API_KEY" \
+            --arg composio "$STAGING_COMPOSIO_API_KEY" \
+            --argjson stagingSecretExists "$staging_secret_exists" \
             --arg frontend "https://${WEB_HOST}" \
             --arg api "https://${PUBLIC_API_HOST}" \
             --arg gateway "https://${GATEWAY_HOST}/v1/llm" \
@@ -248,7 +251,12 @@ jobs:
               # release-gate API client budgets are far larger. Prod keeps
               # the 25s default (co-regional DB).
               REQUEST_DEADLINE_MS: "55000"
-            }')"
+            }
+            | if ($composio == "" or $composio == "-") then
+                if $stagingSecretExists then . else del(.COMPOSIO_API_KEY) end
+              else
+                .COMPOSIO_API_KEY = $composio
+              end')"
 
           if [ "$staging_secret_exists" = true ]; then
             aws secretsmanager put-secret-value \

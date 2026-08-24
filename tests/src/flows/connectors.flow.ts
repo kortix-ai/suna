@@ -5,6 +5,19 @@
  * spec/end-to-end.md §24). Maps to spec §24 (CONN-1..5, 7-9, 12-14).
  */
 import { flow } from '../core/flow';
+import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
+
+function parseCliJson<T>(result: CliResult, action: string): T {
+  throwIfCliInfraFailure(result, action);
+  if (result.exitCode !== 0) {
+    throw new Error(`${action} exited ${result.exitCode}: ${result.all}`);
+  }
+  try {
+    return JSON.parse(result.stdout) as T;
+  } catch {
+    throw new Error(`${action} returned invalid JSON: ${result.stdout}\n${result.stderr}`);
+  }
+}
 
 flow(
   'CONN-1',
@@ -872,6 +885,380 @@ flow(
             params: { projectId: p.id, connectionId: unknown },
           });
         r.status(404);
+      }
+    });
+  },
+);
+
+flow(
+  'CONN-24',
+  {
+    domain: 'connectors',
+    serial: true,
+    timeoutMs: 240_000,
+    routes: [
+      'GET /v1/connectors/connect-status',
+      'GET /v1/connectors/projects/:projectId/connect/toolkits',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
+      'POST /v1/connectors/projects/:projectId/connectors/:slug/connect',
+      'POST /v1/connectors/projects/:projectId/connectors/:slug/connect/finalize',
+      'GET /v1/connectors/projects/:projectId/catalog',
+      'POST /v1/connectors/projects/:projectId/call',
+      'POST /v1/accounts/:accountId/audit/reconcile',
+      'GET /v1/projects/:projectId/audit',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const p = await team.project({ managedGit: true });
+    const cliPat = await ctx.fixtures.pat({ name: ctx.fixtures.name('composio-cli') });
+    const slug = `ke2e-composio-${Date.now().toString(36)}`;
+    const otherSlug = `${slug}-other`;
+    const toolkit = 'composio_search';
+    const action = 'duck_duck_go';
+    let composioConfigured = false;
+    let connectionId = '';
+    let requestId: string | undefined;
+
+    await ctx.step('deployment status reports the exact configured connect providers without starting OAuth', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/connectors/connect-status');
+      r.status(200).body().exists('$.configured');
+      const status = r.json<{
+        configured: boolean;
+        provider: string | null;
+        providers?: string[];
+      }>();
+      if (!('provider' in status)) throw new Error('connect-status omitted the provider key');
+      const providers = status.providers ?? (status.provider ? [status.provider] : []);
+      if (!Array.isArray(providers) || providers.some((provider) => typeof provider !== 'string')) {
+        throw new Error('connect-status providers must be an array of strings');
+      }
+      if (status.configured !== (providers.length > 0)) {
+        throw new Error(`connect-status configured=${status.configured} disagrees with providers=${providers.join(',')}`);
+      }
+      if (status.provider !== (providers[0] ?? null)) {
+        throw new Error(`connect-status provider=${status.provider} is not the first configured provider`);
+      }
+      composioConfigured = providers.includes('composio');
+    });
+
+    await ctx.step('configured toolkit catalog exposes Composio, while missing config fails closed', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/connect/toolkits', {
+          params: { projectId: p.id },
+          query: { q: 'search', limit: '20' },
+        });
+      if (!composioConfigured) {
+        r.status([200, 501]);
+        if (r.statusCode === 200 && r.json<{ provider?: string }>().provider === 'composio') {
+          throw new Error('toolkit catalog returned Composio while connect-status omitted it');
+        }
+        return;
+      }
+      r.status(200).body().exists('$.items').exists('$.totalPages');
+      const body = r.json<{
+        items: Array<{ slug?: string; name?: string; isNoAuth?: boolean }>;
+      }>();
+      if (
+        !body.items.some(
+          (item) => item.slug === toolkit && item.name === 'Composio Search' && item.isNoAuth === true,
+        )
+      ) {
+        throw new Error(`Composio toolkit catalog omitted ${toolkit}: ${JSON.stringify(body.items.slice(0, 10))}`);
+      }
+    });
+
+    await ctx.step('Composio category filtering is provider-side and returns the complete category', async () => {
+      if (!composioConfigured) return;
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/connect/toolkits', {
+          params: { projectId: p.id },
+          query: { category: 'developer-tools', limit: '20' },
+        });
+      r.status(200)
+        .body()
+        .has('$.provider', 'composio')
+        .has('$.hasMore', false)
+        .exists('$.toolkits');
+      const body = r.json<{
+        toolkits: Array<{ slug?: string; categories?: string[] }>;
+        total?: number;
+      }>();
+      if (body.total !== body.toolkits.length) {
+        throw new Error(`category total ${body.total} did not match ${body.toolkits.length} returned toolkits`);
+      }
+      if (!body.toolkits.some((item) => item.slug === toolkit)) {
+        throw new Error(`developer-tools category omitted ${toolkit}`);
+      }
+      if (body.toolkits.some((item) => !item.categories?.includes('developer-tools'))) {
+        throw new Error('Composio returned an item outside the requested developer-tools category');
+      }
+    });
+
+    await ctx.step('declare a no-auth Composio toolkit without storing the platform key in project config', async () => {
+      const created = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug, provider: 'composio', app: toolkit, auth: { type: 'none' } },
+          { params: { projectId: p.id } },
+        );
+      created.status(200).body().has('$.ok', true);
+
+      const configResponse = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/connectors/:slug/config', {
+          params: { projectId: p.id, slug },
+        });
+      configResponse.status(200)
+        .body()
+        .has('$.provider', 'composio')
+        .has('$.app', toolkit)
+        .has('$.auth.type', 'none');
+      const config = configResponse.json<Record<string, unknown>>();
+      if ('apiKey' in config || 'api_key' in config || 'credential' in config) {
+        throw new Error(`Composio project config exposed a platform credential field: ${JSON.stringify(config)}`);
+      }
+    });
+
+    await ctx.step('connect creates the stable default connection, or reports missing Composio config', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/connectors/:slug/connect',
+          { success_redirect_uri: 'kortix://connect/success', error_redirect_uri: 'kortix://connect/error' },
+          { params: { projectId: p.id, slug } },
+        );
+      if (!composioConfigured) {
+        r.status([404, 501]).body().exists('$.error');
+        return;
+      }
+      r.status(200)
+        .body()
+        .has('$.provider', 'composio')
+        .has('$.app', toolkit)
+        .has('$.connected', true)
+        .has('$.isNoAuth', true)
+        .exists('$.sessionId')
+        .exists('$.connectionId');
+      const body = r.json<{
+        connectUrl?: string | null;
+        requestId?: string;
+        sessionId: string;
+        connectionId: string;
+      }>();
+      if (body.connectUrl) throw new Error(`no-auth toolkit returned an OAuth URL: ${body.connectUrl}`);
+      if (!body.sessionId.startsWith('trs_')) throw new Error(`unexpected Composio session id: ${body.sessionId}`);
+      connectionId = body.connectionId;
+      requestId = body.requestId;
+    });
+
+    if (!composioConfigured) {
+      await ctx.step('finalize also fails closed when the server has no Composio key', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(
+            '/v1/connectors/projects/:projectId/connectors/:slug/connect/finalize',
+            {},
+            { params: { projectId: p.id, slug } },
+          );
+        r.status([404, 501]).body().exists('$.error');
+      });
+
+      await ctx.step('wrong tenant is rejected before missing-provider lookup', async () => {
+        for (const op of ['connect', 'connect/finalize'] as const) {
+          const r = await ctx.client
+            .as(ctx.P.NONMEMBER)
+            .post(`/v1/connectors/projects/:projectId/connectors/:slug/${op}`, {}, {
+              params: { projectId: p.id, slug },
+            });
+          r.status(403);
+        }
+      });
+      return;
+    }
+
+    await ctx.step('finalize confirms the same no-auth connection identity', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/connectors/:slug/connect/finalize',
+          {
+            connection_id: connectionId,
+            ...(requestId ? { request_id: requestId } : {}),
+          },
+          { params: { projectId: p.id, slug } },
+        );
+      r.status(200)
+        .body()
+        .has('$.provider', 'composio')
+        .has('$.connected', true)
+        .has('$.connectionId', connectionId)
+        .has('$.isNoAuth', true);
+    });
+
+    let otherConnectionId = '';
+    await ctx.step('a connection from another connector cannot finalize this connector', async () => {
+      const created = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/connectors',
+          { slug: otherSlug, provider: 'composio', app: toolkit, auth: { type: 'none' } },
+          { params: { projectId: p.id } },
+        );
+      created.status(200).body().has('$.ok', true);
+      const connected = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/connectors/:slug/connect',
+          {},
+          { params: { projectId: p.id, slug: otherSlug } },
+        );
+      connected.status(200).body().exists('$.connectionId');
+      otherConnectionId = connected.json<{ connectionId: string }>().connectionId;
+      if (otherConnectionId === connectionId) throw new Error('distinct connectors reused one connection id');
+
+      const wrong = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/connectors/:slug/connect/finalize',
+          { connection_id: otherConnectionId },
+          { params: { projectId: p.id, slug } },
+        );
+      wrong.status(404).body().exists('$.error');
+    });
+
+    await ctx.step('project REST catalog exposes the connected no-auth action', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/catalog', { params: { projectId: p.id } });
+      r.status(200).body().exists('$.connectors');
+      const connectors = r.json<{
+        connectors: Array<{ slug: string; provider: string; actions: Array<{ path: string }> }>;
+      }>().connectors;
+      const connector = connectors.find((item) => item.slug === slug);
+      if (!connector) throw new Error(`REST catalog omitted connected Composio connector ${slug}`);
+      if (connector.provider !== 'composio') throw new Error(`REST catalog returned provider ${connector.provider}`);
+      if (!connector.actions.some((item) => item.path === action)) {
+        throw new Error(`REST catalog omitted ${slug}.${action}`);
+      }
+    });
+
+    let restLogId = '';
+    await ctx.step('REST call executes the real provider and returns the provider log id', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/call',
+          { connector: slug, action, args: { query: 'Kortix' } },
+          { params: { projectId: p.id }, timeoutMs: 60_000 },
+        );
+      r.status(200)
+        .body()
+        .has('$.ok', true)
+        .has('$.data.provider', 'composio')
+        .exists('$.data.logId')
+        .exists('$.data.requestId')
+        .exists('$.data.sessionId')
+        .exists('$.data.result');
+      const data = r.json<{
+        data: { logId: string; requestId: string; sessionId: string; result: unknown };
+      }>().data;
+      if (data.logId !== data.requestId) {
+        throw new Error(`provider logId ${data.logId} differs from requestId ${data.requestId}`);
+      }
+      restLogId = data.logId;
+    });
+
+    await ctx.step('real CLI lists and calls the same Composio action through project routes', async () => {
+      const cli = new CliSandbox('composio');
+      const env = {
+        KORTIX_TOKEN: cliPat,
+        KORTIX_PROJECT_ID: p.id,
+        KORTIX_API_URL: ctx.env.apiUrl,
+      };
+      try {
+        const listed = parseCliJson<{
+          connectors: Array<{ slug: string; provider: string; actions: Array<{ path: string }> }>;
+        }>(await cli.run(['connectors', 'ls', '--json'], { env }), 'kortix connectors ls');
+        const connector = listed.connectors.find((item) => item.slug === slug);
+        if (!connector) throw new Error(`CLI catalog omitted ${slug}`);
+        if (connector.provider !== 'composio') throw new Error(`CLI catalog returned provider ${connector.provider}`);
+        if (!connector.actions.some((item) => item.path === action)) {
+          throw new Error(`CLI catalog omitted ${slug}.${action}`);
+        }
+
+        const called = parseCliJson<{
+          ok: boolean;
+          data: { provider: string; logId: string; requestId: string; result: unknown };
+        }>(
+          await cli.run(['connectors', 'call', `${slug}.${action}`, JSON.stringify({ query: 'Kortix' })], {
+            env,
+            timeoutMs: 60_000,
+          }),
+          'kortix connectors call',
+        );
+        if (called.ok !== true) throw new Error(`CLI call did not report success: ${JSON.stringify(called)}`);
+        if (called.data.provider !== 'composio') throw new Error(`CLI call returned provider ${called.data.provider}`);
+        if (!called.data.logId || called.data.logId !== called.data.requestId) {
+          throw new Error(`CLI call returned invalid provider log id: ${JSON.stringify(called.data)}`);
+        }
+        if (called.data.logId === restLogId) throw new Error('REST and CLI calls unexpectedly reused one provider log id');
+      } finally {
+        cli.dispose();
+      }
+    });
+
+    await ctx.step('canonical audit readback contains both successful provider calls', async () => {
+      const reconciled = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/accounts/:accountId/audit/reconcile', undefined, {
+          params: { accountId: team.id },
+          query: { limit: '100' },
+        });
+      reconciled.status(200).body().exists('$.inserted').exists('$.complete');
+
+      const audit = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/audit', {
+        params: { projectId: p.id },
+        query: {
+          action: `connector.${slug}.${action}`,
+          resource_type: 'connector_call',
+          outcome: 'success',
+          limit: '10',
+        },
+      });
+      audit.status(200).body().exists('$.events');
+      const events = audit.json<{
+        events: Array<{
+          action: string;
+          outcome: string;
+          resource_type: string;
+          source_ledger: string | null;
+        }>;
+      }>().events;
+      const matching = events.filter(
+        (event) =>
+          event.action === `connector.${slug}.${action}` &&
+          event.outcome === 'success' &&
+          event.resource_type === 'connector_call' &&
+          event.source_ledger === 'connector_calls',
+      );
+      if (matching.length < 2) {
+        throw new Error(`audit readback contained ${matching.length} matching calls, expected REST + CLI`);
+      }
+    });
+
+    await ctx.step('wrong tenant cannot connect or finalize another project connector', async () => {
+      for (const op of ['connect', 'connect/finalize'] as const) {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .post(`/v1/connectors/projects/:projectId/connectors/:slug/${op}`, {}, {
+            params: { projectId: p.id, slug },
+          });
+        r.status(403);
       }
     });
   },

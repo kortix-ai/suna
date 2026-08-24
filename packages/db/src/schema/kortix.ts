@@ -4824,6 +4824,7 @@ export const accountSsoGroupMappings = kortixSchema.table(
  */
 export const connectorProviderEnum = kortixSchema.enum('connector_provider', [
   'pipedream',
+  'composio',
   'mcp',
   'openapi',
   'postman',

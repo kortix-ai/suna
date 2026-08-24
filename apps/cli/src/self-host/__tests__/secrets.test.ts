@@ -41,6 +41,12 @@ describe('secrets-registry pure helpers', () => {
     expect(openrouter.configured).toBe(false);
     expect(openrouter.masked).toBe('');
 
+    const connectorsGroup = groups.find((g) => g.category === 'connectors')!;
+    const composio = connectorsGroup.rows.find((r) => r.key === 'COMPOSIO_API_KEY')!;
+    expect(composio.configured).toBe(false);
+    expect(composio.required).toBe(false);
+    expect(composio.kind).toBe('operator');
+
     const internalGroup = groups.find((g) => g.category === 'internal_tokens')!;
     const gatewayToken = internalGroup.rows.find((r) => r.key === 'GATEWAY_INTERNAL_TOKEN')!;
     expect(gatewayToken.kind).toBe('generated');
@@ -66,6 +72,7 @@ describe('secrets-registry pure helpers', () => {
     expect(services).toContain('kortix-api');
 
     expect(servicesForKeys(['NOT_A_REAL_KEY'])).toEqual(['kortix-api']);
+    expect(servicesForKeys(['COMPOSIO_API_KEY'])).toEqual(['kortix-api']);
     expect(servicesForKeys([])).toEqual([]);
   });
 

@@ -25,7 +25,7 @@ import {
   PlugIcon as Plug,
   MagnifyingGlassIcon as Search,
   SparkleIcon as Sparkles,
-  TerminalWindowIcon as Terminal,
+  TerminalIcon as Terminal,
   MagicWandIcon as Wand2,
   WrenchIcon as Wrench,
   LightningIcon as Zap,

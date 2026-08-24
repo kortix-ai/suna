@@ -149,6 +149,7 @@ variable "api_secrets" {
     MANAGED_GIT_GITHUB_TOKEN        = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:MANAGED_GIT_GITHUB_TOKEN::"
     OPENAI_API_KEY                  = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:OPENAI_API_KEY::"
     OPENROUTER_API_KEY              = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:OPENROUTER_API_KEY::"
+    COMPOSIO_API_KEY                = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:COMPOSIO_API_KEY::"
     PIPEDREAM_CLIENT_ID             = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:PIPEDREAM_CLIENT_ID::"
     PIPEDREAM_CLIENT_SECRET         = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:PIPEDREAM_CLIENT_SECRET::"
     PIPEDREAM_ENVIRONMENT           = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:PIPEDREAM_ENVIRONMENT::"

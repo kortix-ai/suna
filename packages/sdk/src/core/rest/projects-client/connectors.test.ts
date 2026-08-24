@@ -17,6 +17,7 @@ import {
   getDiscoverConnector,
   listAllConnections,
   listConnections,
+  listConnectToolkits,
   listConnectors,
   listDiscoverConnectors,
   listPipedreamApps,
@@ -300,6 +301,43 @@ const postmanDraftTypecheck: import('./connectors').ConnectorDraftInput = {
   authorization_strategy: 'user',
 };
 void postmanDraftTypecheck;
+
+const composioConnectResultTypecheck: import('./connectors').ConnectorConnectResult = {
+  provider: 'composio',
+  app: 'notion',
+  connectUrl: 'https://connect.example.test/notion',
+  requestId: 'request-1',
+  sessionId: 'session-1',
+  connectionId: 'connection-1',
+};
+const composioFinalizeResultTypecheck: import('./connectors').ConnectorFinalizeResult = {
+  provider: 'composio',
+  connected: true,
+  accountId: 'account-1',
+  connectionId: 'connection-1',
+};
+const composioStatusTypecheck: import('./connectors').ConnectorConnectStatus = {
+  configured: true,
+  provider: 'composio',
+  providers: ['composio', 'pipedream'],
+};
+const composioToolkitPageTypecheck: import('./connectors').ConnectToolkitsPage = {
+  provider: 'composio',
+  toolkits: [
+    {
+      slug: 'gmail',
+      name: 'Gmail',
+      logo: null,
+      isNoAuth: false,
+      connected: false,
+    },
+  ],
+  hasMore: false,
+};
+void composioConnectResultTypecheck;
+void composioFinalizeResultTypecheck;
+void composioStatusTypecheck;
+void composioToolkitPageTypecheck;
 
 test('listConnectors GETs the project connectors list', async () => {
   nextResponse = {
@@ -605,6 +643,42 @@ test('listPipedreamApps GETs with no query string when no optional params are gi
   expect(last().url).toContain('/connectors/projects/P1/pipedream/apps');
   expect(last().url).not.toContain('?');
   expect(last().method).toBe('GET');
+});
+
+test('listConnectToolkits GETs the Composio-first toolkit catalog with pagination', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [
+        {
+          slug: 'gmail',
+          name: 'Gmail',
+          logo: 'https://cdn.example.test/gmail.svg',
+          isNoAuth: false,
+          connected: false,
+        },
+      ],
+      cursor: 'cursor-2',
+      totalPages: 2,
+    },
+  };
+
+  const result = await listConnectToolkits('P1', {
+    q: 'mail',
+    category: 'productivity',
+    cursor: 'cursor-1',
+    limit: 24,
+  });
+
+  expect(last().url).toContain('/connectors/projects/P1/connect/toolkits?');
+  expect(last().url).toContain('q=mail');
+  expect(last().url).toContain('category=productivity');
+  expect(last().url).toContain('cursor=cursor-1');
+  expect(last().url).toContain('limit=24');
+  expect(result.provider).toBe('composio');
+  expect(result.toolkits[0]?.slug).toBe('gmail');
+  expect(result.nextCursor).toBe('cursor-2');
+  expect(result.hasMore).toBe(true);
 });
 
 test('listPipedreamApps GETs with q + cursor as query params when given', async () => {

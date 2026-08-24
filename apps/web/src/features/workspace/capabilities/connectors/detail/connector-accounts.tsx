@@ -9,6 +9,7 @@ import {
   ConnectionSection,
   ConnectionsList,
 } from '@/features/workspace/customize/sections/connectors-view';
+import { isManagedConnectorProvider } from '../provider-label';
 import { ComputerConnectorAccount } from './computer-connector-account';
 
 export interface ConnectorAccountsProps {
@@ -49,12 +50,12 @@ export function ConnectorAccounts({
   onStartSession,
   onSetCredential,
 }: ConnectorAccountsProps) {
-  const isPipedream = connector.provider === 'pipedream';
+  const isManagedProvider = isManagedConnectorProvider(connector.provider);
   const isChannel = connector.provider === 'channel';
   const isComputer = connector.provider === 'computer';
   const usesProjectAuthorization = connector.authorizationStrategy === 'project';
   const showRoster =
-    isPipedream && canManageConnections && connector.authorizationStrategy === 'user';
+    isManagedProvider && canManageConnections && connector.authorizationStrategy === 'user';
 
   if (isComputer) {
     return (
@@ -67,7 +68,7 @@ export function ConnectorAccounts({
     );
   }
 
-  if (isPipedream) {
+  if (isManagedProvider) {
     return (
       <div className="space-y-5">
         <ConnectionsList

@@ -63,6 +63,30 @@ connectors:
     expect(specs[0]).toMatchObject({ app: 'slack', account: 'slack' });
   });
 
+  test('composio — app + account uses connected-account auth', () => {
+    const { specs, errors } = parseAndExtract(`
+connectors:
+  - slug: github-work
+    provider: composio
+    app: github
+    account: work
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]).toMatchObject({
+      slug: 'github-work',
+      provider: 'composio',
+      app: 'github',
+      account: 'work',
+      auth: { type: 'none' },
+      authAuto: false,
+    });
+    expect(connectorSpecToTomlEntry(specs[0]!)).toMatchObject({
+      provider: 'composio',
+      app: 'github',
+      account: 'work',
+    });
+  });
+
   test('openapi by URL with bearer auth', () => {
     const { specs, errors } = parseAndExtract(`
 connectors:
@@ -857,6 +881,7 @@ describe('connectors: — runtime parser ⇄ schema gate provider agreement', ()
 
   const cases: Array<{ name: string; body: string; accept: boolean }> = [
     { name: 'pipedream', accept: true, body: `connectors:\n  - slug: c\n    provider: pipedream\n    app: gmail` },
+    { name: 'composio', accept: true, body: `connectors:\n  - slug: c\n    provider: composio\n    app: github` },
     { name: 'mcp', accept: true, body: `connectors:\n  - slug: c\n    provider: mcp\n    url: https://e.com` },
     { name: 'openapi', accept: true, body: `connectors:\n  - slug: c\n    provider: openapi\n    spec: https://e.com/o.json` },
     { name: 'postman', accept: true, body: `connectors:\n  - slug: c\n    provider: postman\n    spec: https://github.com/acme/apis` },

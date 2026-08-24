@@ -79,10 +79,15 @@ export const uncoveredAllow: AllowEntry[] = [
 
 export const externalRoutes: AllowEntry[] = [
   { method: "GET", path: "/v1/llm/models", reason: "llm-gateway standalone service (gateway-*.kortix.com), not in the main API manifest" },
+  { method: "GET", path: "/v1/llm/health", reason: "main-API bridge into the llm-gateway wildcard mount; exercised by GW-1b but not emitted by the static route manifest" },
+  { method: "GET", path: "/v1/llm/v1/models", reason: "main-API llm-gateway compatibility alias mounted behind the dynamic /v1/llm bridge" },
   { method: "GET", path: "/v1/models", reason: "llm-gateway model-catalog alias" },
   { method: "GET", path: "/v1/openai/models", reason: "llm-gateway OpenAI-compat catalog alias" },
   { method: "POST", path: "/v1/chat/completions", reason: "llm-gateway chat completions" },
   { method: "POST", path: "/v1/llm/chat/completions", reason: "llm-gateway chat completions alias" },
+  { method: "POST", path: "/v1/llm/v1/chat/completions", reason: "main-API llm-gateway OpenAI compatibility alias mounted behind the dynamic /v1/llm bridge" },
+  { method: "POST", path: "/v1/llm/messages", reason: "main-API bridge into the llm-gateway Anthropic Messages ingress" },
+  { method: "POST", path: "/v1/llm/v1/messages", reason: "main-API llm-gateway Anthropic compatibility alias mounted behind the dynamic /v1/llm bridge" },
   { method: "POST", path: "/v1/openai/chat/completions", reason: "llm-gateway OpenAI-compat chat alias" },
   { method: "POST", path: "/v1/messages", reason: "llm-gateway standalone service Anthropic-Messages ingress" },
   { method: "POST", path: "/v1/openai/messages", reason: "llm-gateway standalone service Anthropic-Messages ingress, OpenAI-compat-namespace alias" },

@@ -61,7 +61,7 @@ import { ConnectorBrowse } from '@/features/workspace/capabilities/connectors/ca
 import { ALL_CATEGORIES } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
 import {
   useCatalog,
-  usePipedreamStatus,
+  useConnectProviderStatus,
 } from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
@@ -379,8 +379,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // page renders exactly as it always has: the overwhelming majority of
   // deployments do have Pipedream, and removing two tabs for a beat on every
   // load to spare a minority one is the wrong trade.
-  const pipedreamStatus = usePipedreamStatus(!discoverEnabled);
-  const catalogueAvailable = discoverEnabled || pipedreamStatus !== 'absent';
+  const connectStatus = useConnectProviderStatus(!discoverEnabled);
+  const catalogueAvailable = discoverEnabled || connectStatus.state !== 'absent';
 
   const authorizationQueryKeys = useMemo(
     () => connectorConnectionQueryKeys(projectId),

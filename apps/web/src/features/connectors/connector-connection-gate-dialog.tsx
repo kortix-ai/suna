@@ -3,7 +3,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { qk } from '@kortix/sdk/react';
 import { CheckIcon as Check, LockIcon as Lock, UsersIcon as Users } from '@phosphor-icons/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ export function ConnectorConnectionGateContent({
   pendingId,
   canManageProjectConnections,
   onConnect,
+  renderConnectAction,
   onCancel,
 }: {
   connections: ConnectorGateConnection[];
@@ -35,6 +36,11 @@ export function ConnectorConnectionGateContent({
   pendingId: string | null;
   canManageProjectConnections: boolean;
   onConnect: (connection: ConnectorGateConnection) => void;
+  renderConnectAction?: (
+    connection: ConnectorGateConnection,
+    pending: boolean,
+    disabled: boolean,
+  ) => ReactNode;
   onCancel: () => void;
 }) {
   return (
@@ -89,6 +95,8 @@ export function ConnectorConnectionGateContent({
                   <Users className="size-3" />
                   Manager required
                 </Badge>
+              ) : renderConnectAction ? (
+                renderConnectAction(connection, pending, pendingId !== null)
               ) : (
                 <Button
                   size="sm"
@@ -119,13 +127,15 @@ export function ConnectorConnectionGateContent({
 function ConnectorConnectionAction({
   projectId,
   connection,
-  active,
+  pending,
+  disabled,
   onPending,
   onConnected,
 }: {
   projectId: string;
   connection: ConnectorGateConnection;
-  active: boolean;
+  pending: boolean;
+  disabled: boolean;
   onPending: (id: string | null) => void;
   onConnected: (id: string) => void;
 }) {
@@ -133,17 +143,23 @@ function ConnectorConnectionAction({
   const member = usePipedreamConnectMember(projectId, connection.slug, connected);
   const project = usePipedreamConnectProject(projectId, connection.slug, connected);
   const mutation = connection.authorization_strategy === 'user' ? member : project;
-  const startedRef = useRef(false);
 
-  useEffect(() => {
-    if (!active || startedRef.current) return;
-    startedRef.current = true;
-    mutation.mutate(undefined, {
-      onSettled: () => onPending(null),
-    });
-  }, [active, mutation, onPending]);
-
-  return null;
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="shrink-0 gap-1.5"
+      onClick={() => {
+        onPending(connection.id);
+        mutation.mutate(undefined, { onSettled: () => onPending(null) });
+      }}
+      disabled={disabled}
+      aria-label={`Connect ${connection.name}`}
+    >
+      {pending ? <Loading className="size-3.5" /> : <Lock className="size-3.5" />}
+      Connect
+    </Button>
+  );
 }
 
 /**
@@ -195,11 +211,6 @@ export function ConnectorConnectionGateDialog() {
     run?.();
   }, [closeConnectorGate, connectedIds, connectorConnections, isOpen, projectId, queryClient, retry]);
 
-  const activeConnection =
-    pendingId === null
-      ? null
-      : (connectorConnections.find((connection) => connection.id === pendingId) ?? null);
-
   return (
     <Modal open={isOpen} onOpenChange={(open) => !open && closeConnectorGate()}>
       <ModalContent className="lg:max-w-lg">
@@ -209,17 +220,21 @@ export function ConnectorConnectionGateDialog() {
           pendingId={pendingId}
           canManageProjectConnections={canManageProjectConnections}
           onConnect={(connection) => setPendingId(connection.id)}
+          renderConnectAction={(connection, pending, disabled) =>
+            projectId ? (
+              <ConnectorConnectionAction
+                key={connection.id}
+                projectId={projectId}
+                connection={connection}
+                pending={pending}
+                disabled={disabled}
+                onPending={setPendingId}
+                onConnected={handleConnected}
+              />
+            ) : null
+          }
           onCancel={closeConnectorGate}
         />
-        {activeConnection && projectId ? (
-          <ConnectorConnectionAction
-            projectId={projectId}
-            connection={activeConnection}
-            active
-            onPending={setPendingId}
-            onConnected={handleConnected}
-          />
-        ) : null}
       </ModalContent>
     </Modal>
   );

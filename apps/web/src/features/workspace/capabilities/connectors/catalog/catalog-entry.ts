@@ -37,7 +37,10 @@ interface CatalogEntryFields {
  */
 export type CatalogEntry =
   | (CatalogEntryFields & { source: 'discover'; connector: DiscoverConnector })
-  | (CatalogEntryFields & { source: 'easy-connect'; app: PipedreamApp })
+  | (CatalogEntryFields & {
+      source: 'easy-connect';
+      app: PipedreamApp & { provider?: 'composio' | 'pipedream' };
+    })
   | (CatalogEntryFields & { source: 'computer' });
 
 /** Native platform provider. The tunnel fleet is its account directory. */
@@ -69,7 +72,9 @@ export function catalogEntryFromDiscover(connector: DiscoverConnector): CatalogE
   };
 }
 
-export function catalogEntryFromEasyConnect(app: PipedreamApp): CatalogEntry {
+export function catalogEntryFromEasyConnect(
+  app: PipedreamApp & { provider?: 'composio' | 'pipedream' },
+): CatalogEntry {
   return {
     source: 'easy-connect',
     app,

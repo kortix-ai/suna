@@ -36,6 +36,7 @@ export function connectorConfig(
   const base: Record<string, unknown> = (() => {
     switch (spec.provider) {
       case 'pipedream':
+      case 'composio':
         return { app: spec.app, account: spec.account };
       case 'mcp':
         return { url: spec.url, transport: spec.transport, auth };

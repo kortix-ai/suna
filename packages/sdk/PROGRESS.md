@@ -38,6 +38,15 @@ fail · `smoke:install` passed. Shippable: YES.
 
 ---
 
+### 2026-08-24 — session `composio-connect-link-types` — generic connector authorization results — DONE
+
+**Files:** `core/rest/projects-client/connectors.ts` + test and both public-surface snapshots.
+**Public surface:** additive `ConnectorConnect*`, `ConnectorFinalizeResult`,
+`ConnectToolkit*`, and `listConnectToolkits`; `AdminConnector.provider` adds `composio`.
+**Gates:** typecheck; 45 connector tests; both public-surface snapshot tests.
+
+---
+
 ### 2026-08-24 — session `html-preview` — an HTML file is served, never injected — DONE
 
 **Files:** `core/session/static-file-preview.ts` (NEW: `staticFilePreviewTargets`,

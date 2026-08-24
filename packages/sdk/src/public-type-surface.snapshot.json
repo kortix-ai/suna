@@ -198,6 +198,9 @@
     "ConflictError",
     "ConnectEmailInput",
     "ConnectSlackInput",
+    "ConnectToolkit",
+    "ConnectToolkitsPage",
+    "ConnectToolkitsQuery",
     "Connection",
     "ConnectionConnectInput",
     "ConnectionCredentialInfo",
@@ -214,8 +217,12 @@
     "ConnectorCallResult",
     "ConnectorCatalogEntry",
     "ConnectorConfig",
+    "ConnectorConnectProvider",
+    "ConnectorConnectResult",
+    "ConnectorConnectStatus",
     "ConnectorDraftInput",
     "ConnectorEffectivePolicy",
+    "ConnectorFinalizeResult",
     "ConnectorPolicyAction",
     "ConnectorPolicyRule",
     "ConnectorPolicySource",
@@ -2696,6 +2703,7 @@
     "listChangeRequests",
     "listChannelBindings",
     "listColumns",
+    "listConnectToolkits",
     "listConnections",
     "listConnectorTools",
     "listConnectors",
@@ -3722,7 +3730,12 @@
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
-  "./server": ["createScopedKortix", "forwardKortixRequest", "getScopedConfig", "runWithKortix"],
+  "./server": [
+    "createScopedKortix",
+    "forwardKortixRequest",
+    "getScopedConfig",
+    "runWithKortix"
+  ],
   "./internal/sync-store": [
     "Binary",
     "MessageError",
@@ -3755,7 +3768,9 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./internal/opencode-pending-store": ["useOpenCodePendingStore"],
+  "./internal/opencode-pending-store": [
+    "useOpenCodePendingStore"
+  ],
   "./internal/idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
@@ -5533,6 +5548,9 @@
     "ConfirmCheckoutSessionResult",
     "ConnectEmailInput",
     "ConnectSlackInput",
+    "ConnectToolkit",
+    "ConnectToolkitsPage",
+    "ConnectToolkitsQuery",
     "Connection",
     "ConnectionConnectInput",
     "ConnectionCredentialInput",
@@ -5546,8 +5564,12 @@
     "ConnectorCallResult",
     "ConnectorCatalogEntry",
     "ConnectorConfig",
+    "ConnectorConnectProvider",
+    "ConnectorConnectResult",
+    "ConnectorConnectStatus",
     "ConnectorDraftInput",
     "ConnectorEffectivePolicy",
+    "ConnectorFinalizeResult",
     "ConnectorPolicyAction",
     "ConnectorPolicyRule",
     "ConnectorPolicySource",
@@ -6170,6 +6192,7 @@
     "listBillingTransactions",
     "listChangeRequests",
     "listChannelBindings",
+    "listConnectToolkits",
     "listConnections",
     "listConnectorTools",
     "listConnectors",
@@ -6367,8 +6390,16 @@
     "validateToken",
     "verifyGatewayProvider"
   ],
-  "./feature-flags": ["FeatureFlags", "featureFlags", "parseFlagOverride"],
-  "./fresh-sessions": ["clearSessionFresh", "isSessionFresh", "markSessionFresh"],
+  "./feature-flags": [
+    "FeatureFlags",
+    "featureFlags",
+    "parseFlagOverride"
+  ],
+  "./fresh-sessions": [
+    "clearSessionFresh",
+    "isSessionFresh",
+    "markSessionFresh"
+  ],
   "./instance-routes": [
     "ACTIVE_INSTANCE_COOKIE",
     "INSTANCE_SCOPED_ROUTES",
@@ -6844,7 +6875,9 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./opencode-pending-store": ["useOpenCodePendingStore"],
+  "./opencode-pending-store": [
+    "useOpenCodePendingStore"
+  ],
   "./idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
