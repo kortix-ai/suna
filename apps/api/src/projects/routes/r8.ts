@@ -30,6 +30,7 @@ import {
   assertProjectCapability,
   loadProjectForUser,
   loadVisibleSession,
+  sessionIsTombstoned,
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { assertAgentScope } from '../../iam/agent-scope';
@@ -107,6 +108,10 @@ projectsApp.openapi(
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     stl.mark('session-loaded');
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    // A deleted session must not answer `stage: "stopped"` — that reads as
+    // restartable and the UI offers a Restart that can never work. 404, the
+    // same answer the read-by-id gives (see sessionIsTombstoned).
+    if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
     // resumes a hibernated box days later. The session's stored `agent_name`
@@ -207,6 +212,9 @@ projectsApp.openapi(
     // Restart is reserved for the session owner or an account owner/admin.
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    // Same tombstone rule as /start: a deleted session's restart used to 202
+    // and silently do nothing the UI could see.
+    if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageLifecycle) {
       return c.json(
         {

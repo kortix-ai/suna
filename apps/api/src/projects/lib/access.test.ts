@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   callerHasManagerStanding,
   isAdminBypassEligible,
+  sessionIsTombstoned,
   shouldApplyAdminBypass,
   viewerManagerStanding,
 } from './access';
@@ -121,5 +122,30 @@ describe('isAdminBypassEligible', () => {
     expect(
       isAdminBypassEligible({ action: 'read', isServiceAccount: false, bypassHeaderPresent: false }),
     ).toBe(false);
+  });
+});
+
+describe('sessionIsTombstoned — a deleted session refuses every runtime verb', () => {
+  test('a string deletedAt tombstones the row', () => {
+    expect(
+      sessionIsTombstoned({ metadata: { deletedAt: '2026-08-24T14:18:56.979Z' } }),
+    ).toBe(true);
+  });
+
+  test('a live session is not tombstoned', () => {
+    expect(sessionIsTombstoned({ metadata: { warm: true } })).toBe(false);
+    expect(sessionIsTombstoned({ metadata: null })).toBe(false);
+    expect(sessionIsTombstoned({ metadata: undefined })).toBe(false);
+  });
+
+  test('a non-string deletedAt does not tombstone — only the server stamp counts', () => {
+    expect(sessionIsTombstoned({ metadata: { deletedAt: 1787580000000 } })).toBe(false);
+    expect(sessionIsTombstoned({ metadata: { deletedAt: null } })).toBe(false);
+  });
+
+  test('the /start and /restart handlers both ask it after loadVisibleSession', async () => {
+    const src = await Bun.file(new URL('../routes/r8.ts', import.meta.url)).text();
+    const occurrences = src.split('sessionIsTombstoned(visible.row)').length - 1;
+    expect(occurrences).toBe(2);
   });
 });
