@@ -20,6 +20,7 @@
  *   • a four-line `InfoBanner` paragraph re-explaining branches. One line.
  */
 
+import { ArrowRightIcon } from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useRef } from 'react';
 
@@ -185,7 +186,9 @@ export function SessionChangesHeader({
   const baseRef = useSessionBaseRef(projectId, gitSessionId);
 
   // Short, stable handle for this version — the session id is its identity.
-  const shortVersionId = gitSessionId ? gitSessionId.slice(0, 8) : '—';
+  // Absent only off-route; the chip is skipped entirely rather than showing a
+  // placeholder, which would leave an arrow pointing out of nothing.
+  const shortVersionId = gitSessionId?.slice(0, 8);
   const { asking, openChangeRequest } = useOpenChangeRequest(chatSessionId, baseRef);
 
   const hasChanges = changedCount > 0;
@@ -208,11 +211,29 @@ export function SessionChangesHeader({
         )}
       </div>
 
-      <p className="text-muted-foreground px-2 pb-2 text-xs text-pretty">
-        Version <span className="text-foreground/80 font-mono">{shortVersionId}</span> — edits stay
-        out of <span className="text-foreground/80 font-mono">{baseRef}</span> until you propose
-        them for review.
-      </p>
+      {/* Where this work lives and where it is going, as two chips and an
+          arrow. It was a wrapping sentence with two monospace words buried in
+          prose ("Version fe280d38 — edits stay out of main until you propose
+          them for review"), which spent two lines restating what the button
+          above it already offers. The names are names, so they are `Badge`s;
+          the only thing left for words is the part neither chip can show. */}
+      <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2.5">
+        {shortVersionId && (
+          <>
+            <Badge variant="outline" size="sm" className="font-mono">
+              {shortVersionId}
+            </Badge>
+            <ArrowRightIcon aria-hidden className="text-muted-foreground/40 size-3 shrink-0" />
+            {/* The arrow is decorative, so the relationship needs saying once
+                for anyone who cannot see it. */}
+            <span className="sr-only">into</span>
+          </>
+        )}
+        <Badge variant="outline" size="sm" className="max-w-32 min-w-0 font-mono">
+          <span className="truncate">{baseRef}</span>
+        </Badge>
+        <span className="text-muted-foreground text-xs">not applied yet</span>
+      </div>
     </div>
   );
 }

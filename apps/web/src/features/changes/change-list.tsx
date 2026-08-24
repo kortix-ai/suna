@@ -16,18 +16,14 @@
  * was the same four facts said four times.
  */
 
+import { DiffView } from '@/components/diff/diff-view';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
-import { DiffView } from '@/components/diff/diff-view';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_DOT } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
-import {
-  CaretRightIcon,
-  ColumnsIcon,
-  RowsIcon,
-} from '@phosphor-icons/react';
+import { CaretRightIcon, ColumnsIcon, RowsIcon } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
 
 import {
@@ -167,21 +163,39 @@ function ChangeRow({
           <div
             title={`${kind.label} — ${entry.path}`}
             className={cn(
-              'group hover:bg-muted/40 flex min-h-10 w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors',
+              'group/trigger hover:bg-muted/40 flex min-h-10 w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors',
               'focus-visible:ring-kortix-base outline-none focus-visible:ring-[0.6px]',
             )}
           >
-            <CaretRightIcon
-              className="text-muted-foreground/40 size-3 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/row:rotate-90"
-              aria-hidden
-            />
-            {/* Tone carries "what happened"; the word rides along for screen
-                readers and the row title. A dot plus `+n −m` says it without
-                spending a chip and an icon on the same fact. */}
-            <span
-              className={cn('size-1.5 shrink-0 rounded-full', STATUS_DOT[kind.tone])}
-              aria-hidden
-            />
+            {/* One 14px slot holding both glyphs, so the swap shifts nothing.
+                At rest the dot says what happened to the file; the caret is
+                the affordance, and an affordance only has to be there when
+                you are reaching for it.
+
+                The reveal hangs off `group/trigger` — THIS row — not off
+                `group/row`, which is the whole disclosure: hovering an
+                expanded diff would otherwise keep its own caret lit. The
+                rotation still reads `group/row`, because open/closed is the
+                disclosure's state, not the row's. */}
+            <span className="relative inline-flex size-3.5 shrink-0 items-center justify-center">
+              <span
+                aria-hidden
+                className={cn(
+                  'absolute inset-0 m-auto size-1.5 rounded-full transition-opacity duration-150 ease-out',
+                  'group-hover/trigger:opacity-0 group-focus-visible/trigger:opacity-0',
+                  STATUS_DOT[kind.tone],
+                )}
+              />
+              <CaretRightIcon
+                aria-hidden
+                className={cn(
+                  'text-muted-foreground absolute inset-0 size-3.5 opacity-0',
+                  'transition-[opacity,rotate] duration-150 ease-out',
+                  'group-hover/trigger:opacity-100 group-focus-visible/trigger:opacity-100',
+                  'group-data-[state=open]/row:rotate-90',
+                )}
+              />
+            </span>
             <span className="sr-only">{kind.label}:</span>
             <span className="text-foreground min-w-0 shrink truncate text-sm">{name}</span>
             {dir && (

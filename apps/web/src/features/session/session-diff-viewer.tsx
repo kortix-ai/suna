@@ -27,8 +27,6 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
 import {
   ChangeList,
   ChangeSummary,
@@ -39,13 +37,11 @@ import {
   type ChangeEntry,
   type DiffLayout,
 } from '@/features/changes';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useSessionChanges } from '@/features/session/session-changes-shared';
 import { cn } from '@/lib/utils';
-import {
-  ArrowsInSimpleIcon,
-  ArrowsOutSimpleIcon,
-  FileDashedIcon,
-} from '@phosphor-icons/react';
+import { ArrowsInSimpleIcon, ArrowsOutSimpleIcon, FileDashedIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
 interface SessionDiffViewerProps {
@@ -78,7 +74,7 @@ export function SessionDiffViewer({
     return (
       // Shape-matched to the rows below and anchored to the top, so content
       // does not jump up from the middle of the pane on load.
-      <div className="space-y-2 p-3">
+      <div className="space-y-2 p-2">
         <Skeleton className="h-4 w-28" />
         <div className="space-y-px pt-1">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -120,7 +116,7 @@ export function SessionDiffViewer({
 
   return (
     <ScrollArea className="h-full">
-      <div className="space-y-2 p-3">
+      <div className="space-y-2 p-2">
         <div className={cn('flex items-center gap-1.5', reserveCloseGutter && 'pr-11')}>
           <ChangeSummary entries={entries} className="min-w-0 flex-1" />
           <ExpandAllButton allExpanded={allExpanded} onToggle={toggleAll} />
@@ -144,7 +140,12 @@ export function SessionDiffViewer({
             </Hint>
           )}
         </div>
-        <ChangeList entries={entries} layout={layout} expanded={expanded} onRowOpenChange={setRow} />
+        <ChangeList
+          entries={entries}
+          layout={layout}
+          expanded={expanded}
+          onRowOpenChange={setRow}
+        />
       </div>
     </ScrollArea>
   );
