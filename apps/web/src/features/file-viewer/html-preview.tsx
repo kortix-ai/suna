@@ -29,6 +29,20 @@ import { useStaticFilePreview } from '@kortix/sdk/react';
 import { WarningIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
+/**
+ * The frame fills its region edge to edge, and paints WHITE behind the
+ * document — not `bg-background`.
+ *
+ * An iframe whose document sets no background of its own is transparent, so the
+ * app's surface shows through it. In dark mode that puts an agent's black body
+ * text on a near-black sheet and the page reads as blank. White is also simply
+ * what a browser would show for the same file, which is the whole promise of a
+ * preview. Same reasoning, same value as `SHARE_FILE_IFRAME_CLASS`, which
+ * carries the identical note — a page that DOES set a background still paints
+ * its own over this.
+ */
+export const HTML_PREVIEW_IFRAME_CLASS = 'block h-full w-full border-0 bg-white';
+
 export function HtmlPreview({
   path,
   fileName,
@@ -93,7 +107,7 @@ export function HtmlPreview({
       key={path}
       src={url}
       title={fileName}
-      className={cn('bg-background block h-full w-full border-0', className)}
+      className={cn(HTML_PREVIEW_IFRAME_CLASS, className)}
       sandbox={ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX}
     />
   );
