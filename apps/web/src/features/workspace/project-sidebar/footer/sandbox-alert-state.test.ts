@@ -5,7 +5,7 @@ import {
   describeFailedBuild,
   formatSandboxProviders,
   resolveSandboxAlertSeverity,
-  sandboxHealthIsActive,
+  sandboxHealthRefetchInterval,
   selectCurrentSandboxFailure,
 } from './sandbox-alert-state';
 
@@ -140,13 +140,21 @@ describe('selectCurrentSandboxFailure', () => {
   });
 });
 
-describe('sandboxHealthIsActive', () => {
-  test('polls fast only while something is in motion or broken', () => {
-    expect(sandboxHealthIsActive(health({ status: status({ state: 'building' }) }))).toBe(true);
-    expect(sandboxHealthIsActive(health({ status: status({ state: 'blocked' }) }))).toBe(true);
-    expect(sandboxHealthIsActive(health({ status: status({ state: 'degraded' }) }))).toBe(true);
-    expect(sandboxHealthIsActive(health({ status: status({ state: 'ready' }) }))).toBe(false);
-    expect(sandboxHealthIsActive(health({}))).toBe(false);
+describe('sandboxHealthRefetchInterval', () => {
+  test('polls fast only while a build is moving', () => {
+    expect(sandboxHealthRefetchInterval(health({ status: status({ state: 'building' }) }))).toBe(
+      8_000,
+    );
+    expect(sandboxHealthRefetchInterval(health({ status: status({ state: 'blocked' }) }))).toBe(
+      30_000,
+    );
+    expect(sandboxHealthRefetchInterval(health({ status: status({ state: 'degraded' }) }))).toBe(
+      30_000,
+    );
+    expect(sandboxHealthRefetchInterval(health({ status: status({ state: 'ready' }) }))).toBe(
+      120_000,
+    );
+    expect(sandboxHealthRefetchInterval(undefined)).toBe(30_000);
   });
 });
 

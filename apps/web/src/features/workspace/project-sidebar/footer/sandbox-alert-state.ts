@@ -54,10 +54,15 @@ export function resolveSandboxAlertSeverity(
   }
 }
 
-/** Poll fast while something is in motion or broken; idle otherwise. */
-export function sandboxHealthIsActive(health: ProjectSandboxHealth | null | undefined): boolean {
+/** Poll fast only while a build can advance without user action. */
+export function sandboxHealthRefetchInterval(
+  health: ProjectSandboxHealth | null | undefined,
+): number {
   const state = selectSandboxStatus(health)?.state;
-  return state === 'building' || state === 'blocked' || state === 'degraded';
+  if (!health || state === undefined) return 30_000;
+  if (state === 'building') return 8_000;
+  if (state === 'blocked' || state === 'degraded') return 30_000;
+  return 120_000;
 }
 
 const PROVIDER_LABEL: Record<string, string> = {

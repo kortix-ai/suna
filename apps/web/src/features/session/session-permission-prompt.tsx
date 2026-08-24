@@ -20,20 +20,21 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useRuntimeConfig, useUpdateRuntimeConfig } from '@kortix/sdk/react';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectPageCans } from '@/lib/use-project-can';
+import { cn } from '@/lib/utils';
+import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
 import {
   allowAllPermissionsForSession,
   resetSessionPermissions,
+  useRuntimeConfig,
+  useRuntimePendingStore,
+  useUpdateRuntimeConfig,
 } from '@kortix/sdk/react';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
-import { useRuntimePendingStore } from '@kortix/sdk/react';
-import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
 import {
   CaretDownIcon,
-  ShieldCheckIcon as ShieldCheck,
   ShieldWarningIcon as ShieldAlert,
+  ShieldCheckIcon as ShieldCheck,
 } from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -122,7 +123,7 @@ export function SessionPermissionPrompt({
   // on plain /sessions/[id], `id` IS the session, so no config surface.
   const params = useParams<{ id?: string; sessionId?: string }>();
   const projectId = params?.sessionId ? params.id : undefined;
-  const canWriteConfig = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  const canWriteConfig = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE];
 
   const autoApprove = useRuntimePendingStore((s) => !!s.autoApproveAllSessions[sessionId]);
   const setAutoApproveAll = useRuntimePendingStore((s) => s.setAutoApproveAll);
@@ -331,9 +332,7 @@ export function SessionPermissionPrompt({
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'always')}
                 >
-                  <PendingLabel pending={busy === `${p.id}:always`}>
-                    Allow for session
-                  </PendingLabel>
+                  <PendingLabel pending={busy === `${p.id}:always`}>Allow for session</PendingLabel>
                 </Button>
                 <Button
                   size="xs"

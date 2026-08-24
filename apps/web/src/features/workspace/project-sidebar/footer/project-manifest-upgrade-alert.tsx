@@ -35,7 +35,7 @@ import {
   SidebarAlertText,
 } from '@/features/workspace/project-sidebar/footer/sidebar-alert';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectPageCans } from '@/lib/use-project-can';
 import { ArrowCircleUpIcon as ArrowUpCircle } from '@phosphor-icons/react';
 
 /** Presentational shell — no data fetching, so every state renders under
@@ -87,7 +87,7 @@ export function ProjectManifestUpgradeAlertView({
 
 export function ProjectManifestUpgradeAlert({ projectId }: { projectId: string }) {
   const { version } = useProjectManifestVersion(projectId);
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
+  const canWrite = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
   const migrate = useMigrateToV2(projectId);
 
   return (

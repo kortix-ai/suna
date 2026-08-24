@@ -76,8 +76,7 @@ export function SessionApprovalPrompt() {
     id: string;
     sessionId: string;
   }>();
-  // Poll faster while the callback decision is pending.
-  const { data } = useSessionAudit(projectId, projectSessionId, { refetchInterval: 5_000 });
+  const { data } = useSessionAudit(projectId, projectSessionId);
   const resolve = useResolveApproval(projectId, projectSessionId);
 
   const [expanded, setExpanded] = useState<string | null>(null);
