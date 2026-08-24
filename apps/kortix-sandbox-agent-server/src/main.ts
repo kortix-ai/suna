@@ -2884,10 +2884,16 @@ export function resolveOpencodeModel(): { providerID: string; modelID: string } 
     return modelID ? { providerID: 'kortix', modelID } : undefined
   }
   if (LEGACY_OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
-  const slash = raw.indexOf('/')
-  if (slash <= 0 || slash === raw.length - 1) return undefined
-  const providerID = raw.slice(0, slash)
-  const modelID = raw.slice(slash + 1)
+  // A pin stored while the gateway was ON can survive a live toggle to native
+  // mode. `kortix/<provider>/<model>` (a nested BYOK/codex wire ref) strips to
+  // the native ref it wraps; a bare `kortix/<managed-id>` has no native
+  // provider to map onto, so it is dropped and OpenCode's default applies —
+  // never a prompt against the nonexistent `kortix` provider.
+  const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
+  const slash = ref.indexOf('/')
+  if (slash <= 0 || slash === ref.length - 1) return undefined
+  const providerID = ref.slice(0, slash)
+  const modelID = ref.slice(slash + 1)
   return { providerID, modelID }
 }
 

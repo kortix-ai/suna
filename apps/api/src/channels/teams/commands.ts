@@ -2,6 +2,7 @@ import { config } from '../../config';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
+import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
 import { toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
 import { channelModelContext } from '../slack/model-gate';
 import {
@@ -194,6 +195,16 @@ async function buildModelsCard(ctx: ReturnType<typeof teamsChannelCtx>) {
   if (!gate) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
   const selection = await currentChannelSelection(ctx);
   const current = selection?.opencodeModel ?? null;
+  // Native mode: no gateway picker catalog — the channel model is a native
+  // `provider/model` ref set directly.
+  if (!gate.llmGatewayEnabled) {
+    return buildNoticeCard(
+      current
+        ? `This conversation uses \`${current}\`. This project runs native OpenCode models (LLM gateway off) — set any connected provider's model with \`/model provider/model\`, or \`/model default\` to reset.`
+        : 'This conversation uses the project default (resolved by OpenCode in the sandbox). This project runs native OpenCode models (LLM gateway off) — set any connected provider\'s model with `/model provider/model`, e.g. `/model anthropic/claude-sonnet-4-6`.',
+      '🧠',
+    );
+  }
   const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
 
   const { models, projectDefault } = await listPickerModels({
@@ -232,6 +243,16 @@ async function setModel(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   if (id.toLowerCase() === 'default') {
     await setChannelModel(ctx, null);
     return buildNoticeCard('Model reset to the project default.');
+  }
+  // Native mode (gateway off): no gateway catalog — accept a native
+  // `provider/model` ref verbatim.
+  if (!gate.llmGatewayEnabled) {
+    const nativeShapeError = validateNativeOpencodeModelRef(id);
+    if (nativeShapeError) {
+      return buildNoticeCard(`\`${id}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`, e.g. \`anthropic/claude-sonnet-4-6\`.`);
+    }
+    await setChannelModel(ctx, id);
+    return buildNoticeCard(`Model set to \`${id}\`. New sessions will use it.`);
   }
   const servable = await isModelServableForAccount({
     userId: gate.ownerUserId,

@@ -164,6 +164,42 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Native-mode counterpart of {@link normalizeGatewayModelRefs}: a `kortix/…`
+ * ref left behind by a gateway→native toggle (compiled agent config, repo
+ * config, model prefs) names a provider that does not exist off-gateway.
+ * `kortix/<provider>/<model>` unwraps to the native ref; a bare
+ * `kortix/<managed-id>` is DELETED so opencode's own default applies instead
+ * of every turn dying on ModelNotFound.
+ */
+function normalizeNativeModelRefs(config: Record<string, unknown>): void {
+  const nativize = (ref: string): string | undefined => {
+    if (!ref.startsWith('kortix/')) return ref
+    const inner = ref.slice('kortix/'.length)
+    const slash = inner.indexOf('/')
+    if (slash <= 0 || slash === inner.length - 1) return undefined
+    return inner
+  }
+  for (const key of ['model', 'small_model'] as const) {
+    if (typeof config[key] === 'string' && config[key].trim()) {
+      const next = nativize((config[key] as string).trim())
+      if (next === undefined) delete config[key]
+      else config[key] = next
+    }
+  }
+  const agents = config.agent
+  if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return
+  for (const value of Object.values(agents)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const agent = value as Record<string, unknown>
+    if (typeof agent.model === 'string' && agent.model.trim()) {
+      const next = nativize(agent.model.trim())
+      if (next === undefined) delete agent.model
+      else agent.model = next
+    }
+  }
+}
+
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
 // opencode at spawn. It MERGES over the repo's own opencode config and has four
 // independent contributors, any of which may apply:
@@ -234,9 +270,35 @@ export async function buildOpencodeConfigContent(
     opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
       ? opts.secretCapabilitiesInstructionPath
       : null
+  // Native mode (no gateway): the session's model pin still has to reach
+  // opencode's config — without an explicit `model`, opencode's default is
+  // catalog-order-dependent (Provider.defaultModel walks the models.dev map in
+  // file order). `kortix/<a>/<b>` strips to the native ref it wraps (a pin
+  // stored while the gateway was on); a bare `kortix/<managed-id>` has no
+  // native provider and is ignored.
+  const nativeSessionModel = (() => {
+    if (hasLlmGateway) return undefined
+    const raw = env.KORTIX_OPENCODE_MODEL?.trim()
+    if (!raw) return undefined
+    const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
+    const slash = ref.indexOf('/')
+    if (slash <= 0 || slash === ref.length - 1) return undefined
+    return ref
+  })()
+
+  // Returning undefined hands the raw OPENCODE_CONFIG_CONTENT straight to
+  // opencode — fine, unless native mode must first scrub `kortix/…` refs out
+  // of it (a config authored or baked while the gateway was on).
+  const nativeScrubNeeded =
+    !hasLlmGateway &&
+    typeof env.OPENCODE_CONFIG_CONTENT === 'string' &&
+    env.OPENCODE_CONFIG_CONTENT.includes('"kortix/')
+
   if (
     !hasConnectorMcp &&
     !hasLlmGateway &&
+    !nativeSessionModel &&
+    !nativeScrubNeeded &&
     !isSlackSession &&
     !hasCompiledAgentConfig &&
     !injectedSkillsDir &&
@@ -388,6 +450,16 @@ export async function buildOpencodeConfigContent(
     // and BYOK handling. Free models are managed gateway models too, so the
     // selector has one stable catalog before the sandbox has booted.
     out.enabled_providers = ['kortix']
+  } else {
+    // Native mode: opencode connects providers itself from the API keys in its
+    // process env (the project's model-credential secrets, delivered because
+    // the gateway is off). Scrub any `kortix/…` refs a gateway→native toggle
+    // left in the base config, then layer in the session pin; provider config,
+    // catalog, and small_model stay fully opencode-native.
+    normalizeNativeModelRefs(out)
+    if (nativeSessionModel && (!('model' in out) || typeof out.model !== 'string')) {
+      out.model = nativeSessionModel
+    }
   }
 
   // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread

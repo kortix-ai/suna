@@ -72,11 +72,13 @@ const BOOT_ONLY_KORTIX_ENV_NAMES = new Set([
   // connector token is a new session, not a live push.
   'KORTIX_API_URL',
   'KORTIX_TOKEN',
-  // Warm-fork proxy-mode flags. Daemon-injected at boot so a warm seed's
+  // Warm-fork proxy-mode flag. Daemon-injected at boot so a warm seed's
   // provider config is session-independent; never posted by the API — see
   // buildOpencodeConfigContent's comment on `llmProxyUrl`/`connectorProxyUrl`.
+  // (KORTIX_LLM_PROXY_URL moved to OPENCODE_RUNTIME_ENV_NAMES: a live
+  // gateway→native toggle must be able to CLEAR it, because a set proxy URL
+  // reads as "gateway on" in hasKortixLlmGateway.)
   'KORTIX_CONNECTORS_PROXY_URL',
-  'KORTIX_LLM_PROXY_URL',
   // Local catalog-file override; operator/dev-only, not an API-driven field.
   'KORTIX_LLM_CATALOG_FILE',
   // Manual operator debug toggle (checked against `process.env` directly, not

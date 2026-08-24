@@ -48,6 +48,9 @@ let modelGate: unknown = {
   accountId: 'a1',
   ownerUserId: 'u1',
   freeManagedOnly: false,
+  // These cases exercise the GATEWAY picker/servability path; native mode
+  // (flag off) has its own cases.
+  llmGatewayEnabled: true,
 };
 mock.module('../channels/slack/model-gate', () => ({
   // The gate follows the binding: an unbound channel has no project.

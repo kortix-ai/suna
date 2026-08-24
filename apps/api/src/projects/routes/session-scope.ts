@@ -20,9 +20,10 @@ import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape } from '../lib/session-model-change';
+import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape, validateNativeOpencodeModelRef } from '../lib/session-model-change';
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
@@ -648,28 +649,40 @@ projectsApp.openapi(
       return c.json({ error: stateError.message, code: stateError.code }, 409);
     }
 
-    // Same servability gate as create — otherwise this endpoint becomes the very
-    // back door the PATCH guard just closed.
+    // Same two-path gate as create — otherwise this endpoint becomes the very
+    // back door the PATCH guard just closed. Gateway ON: the gateway resolver
+    // validates servability and the pin is stored as `kortix/<wire>`. Gateway
+    // OFF: OpenCode owns the catalog, so only the native `provider/model`
+    // shape is enforced and the pin is stored verbatim.
     const trimmed = requested.trim();
-    const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
-    const servable = await isModelServableForAccount({
-      userId: loaded.userId,
-      accountId: loaded.row.accountId,
-      projectId,
-      freeModelsOnly,
-      model: trimmed,
-    });
-    if (!servable) {
-      return c.json(
-        {
-          error: `Model "${trimmed}" is not available for this account`,
-          code: 'INVALID_SESSION_MODEL',
-        },
-        400,
-      );
+    const llmGatewayEnabled = projectLlmGatewayEnabled(loaded.row.metadata);
+    let nextModel: string;
+    if (!llmGatewayEnabled) {
+      const nativeShapeError = validateNativeOpencodeModelRef(trimmed);
+      if (nativeShapeError) {
+        return c.json({ error: nativeShapeError.message, code: nativeShapeError.code }, 400);
+      }
+      nextModel = trimmed;
+    } else {
+      const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
+      const servable = await isModelServableForAccount({
+        userId: loaded.userId,
+        accountId: loaded.row.accountId,
+        projectId,
+        freeModelsOnly,
+        model: trimmed,
+      });
+      if (!servable) {
+        return c.json(
+          {
+            error: `Model "${trimmed}" is not available for this account`,
+            code: 'INVALID_SESSION_MODEL',
+          },
+          400,
+        );
+      }
+      nextModel = toOpencodeModelRef(trimmed);
     }
-
-    const nextModel = toOpencodeModelRef(trimmed);
     // The session model lives in metadata, not a column (sessions.ts:1102) —
     // which is precisely why the PATCH metadata back door was dangerous.
     const currentMetadata = (visible.row.metadata ?? {}) as Record<string, unknown>;

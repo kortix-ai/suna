@@ -36,7 +36,7 @@ mock.module('../selection', () => ({
   setChannelModel: mock(async () => true),
 }));
 
-let gate: any = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false };
+let gate: any = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false, llmGatewayEnabled: true };
 mock.module('../model-gate', () => ({ channelModelContext: async () => gate }));
 
 mock.module('../../../llm-gateway/models/picker', () => ({
@@ -85,7 +85,7 @@ function actionIds(resp: any): string[] {
 beforeEach(() => {
   dbResults = [];
   selection = { projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null };
-  gate = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false };
+  gate = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false, llmGatewayEnabled: true };
   servable = true;
   setChannelModel.mockClear();
 });
