@@ -48,6 +48,10 @@ function messagePage(
 function createScheduler() {
   let now = 0;
   let callback: (() => void) | undefined;
+  // Timeouts too, so the retry backoff is driven by the fake clock rather than
+  // falling through to the real one.
+  let nextTimeoutId = 2;
+  const timeouts = new Map<number, { dueAt: number; run: () => void }>();
   const scheduler: SessionSyncScheduler = {
     now: () => now,
     setInterval: (next) => {
@@ -57,11 +61,24 @@ function createScheduler() {
     clearInterval: () => {
       callback = undefined;
     },
+    setTimeout: (next, ms) => {
+      const id = nextTimeoutId++;
+      timeouts.set(id, { dueAt: now + ms, run: next });
+      return id;
+    },
+    clearTimeout: (handle) => {
+      timeouts.delete(handle as number);
+    },
   };
   return {
     scheduler,
     advance(ms: number) {
       now += ms;
+      for (const [id, timer] of [...timeouts]) {
+        if (timer.dueAt > now) continue;
+        timeouts.delete(id);
+        timer.run();
+      }
       callback?.();
     },
   };
@@ -552,7 +569,13 @@ describe('SessionSyncController', () => {
     expect('isPromptObservedBusy' in controller.getSnapshot()).toBe(false);
   });
 
-  test('marks an empty or failed initial read as loaded', async () => {
+  /**
+   * REPLACES "marks an empty or failed initial read as loaded", which encoded
+   * the bug: a failed read told the store the session was loaded, and the
+   * store's implementation of that plants an empty message list. Loading is a
+   * claim about the SESSION; a read that never landed supports no claim at all.
+   */
+  test('a start that never reaches the runtime resolves without claiming the session is empty', async () => {
     let loaded = 0;
     const controller = new SessionSyncController({
       sessionId: 'session-1',
@@ -566,11 +589,12 @@ describe('SessionSyncController', () => {
     });
 
     await expect(controller.start()).resolves.toBeUndefined();
-    expect(loaded).toBe(1);
+    expect(loaded).toBe(0);
     expect(controller.getSnapshot()).toMatchObject({
       freshness: 'error',
       hasOlder: false,
     });
+    controller.destroy();
   });
 
   test('retains the older-page cursor after a transient tail failure', async () => {
@@ -721,5 +745,112 @@ describe('SessionSyncController', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(reasons).toEqual([]);
+  });
+
+  /**
+   * The blank transcript, and it was eight lines away from the spinner that
+   * never ends.
+   *
+   * `markLoaded` ran in a `finally`, so a tail read that FAILED still told the
+   * store "this session is loaded" — and the registry's implementation of that
+   * plants an empty message list. A first read that lost to a waking box, a
+   * 503 from the proxy, or a flapping probe therefore RECORDED the session as
+   * having no messages. The UI then painted an empty conversation, and nothing
+   * came back for it: the mount already ran, and the liveness poll only turns
+   * on while a session is working.
+   */
+  test('a failed tail read is never recorded as an empty transcript', async () => {
+    const clock = createScheduler();
+    let loaded = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        throw new Error('sandbox waking');
+      },
+      hydrate: () => {},
+      markLoaded: () => {
+        loaded += 1;
+      },
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    await controller.reconcile('initial');
+
+    expect(loaded).toBe(0);
+    expect(controller.getSnapshot().freshness).toBe('error');
+  });
+
+  test('a successful read with no messages IS a loaded, empty session', async () => {
+    const clock = createScheduler();
+    let loaded = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page([]),
+      hydrate: () => {},
+      markLoaded: () => {
+        loaded += 1;
+      },
+      scheduler: clock.scheduler,
+    });
+
+    await controller.reconcile('initial');
+
+    expect(loaded).toBe(1);
+    expect(controller.getSnapshot().freshness).toBe('fresh');
+  });
+
+  /**
+   * And the second half: one shot was all a session ever got. The read that
+   * loses to a waking sandbox has to come back on its own, or the page waits
+   * for a health probe it does not control.
+   */
+  test('a failed read retries on its own until it lands', async () => {
+    const clock = createScheduler();
+    let attempts = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        attempts += 1;
+        if (attempts < 3) throw new Error('sandbox waking');
+        return messagePage([{ id: 'user-1', role: 'user' }]);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+    });
+
+    await controller.reconcile('initial');
+    expect(attempts).toBe(1);
+
+    for (let i = 0; i < 6 && attempts < 3; i++) {
+      clock.advance(30_000);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(attempts).toBe(3);
+    expect(controller.getSnapshot().freshness).toBe('fresh');
+  });
+
+  test('a destroyed controller stops retrying', async () => {
+    const clock = createScheduler();
+    let attempts = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        attempts += 1;
+        throw new Error('gone');
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+    });
+
+    await controller.reconcile('initial');
+    controller.destroy();
+    clock.advance(120_000);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(attempts).toBe(1);
   });
 });

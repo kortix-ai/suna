@@ -173,21 +173,29 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // `reconcile('initial')` below, which is now the only thing that fills the
   // transcript. If the blank wake is worth solving again, it needs a mirror
   // whose freshness test reads the MESSAGE, not its shape.
+  // ASK AS SOON AS WE KNOW WHICH SANDBOX — not when a probe agrees.
+  //
+  // This read used to wait for `runtimeHealthy === true`, and that one
+  // condition is what hung the session page. `resolveSessionContentState` keeps
+  // the web app on its "Waking the agent" loader while there are no messages,
+  // and this read is the only thing that produces messages. So the page's ONLY
+  // exit was a health probe — the least reliable signal in the system — and a
+  // box that was up while failing its probe showed a spinner over a session
+  // that could have been read the whole time. The sidebar, reading the session
+  // list instead, showed the same session as live: one page, two answers.
+  //
+  // The read IS the liveness check. If the runtime is not up the request fails
+  // and the controller retries with backoff until it lands, so readiness
+  // becomes a byproduct of asking for what we wanted anyway.
   useEffect(() => {
-    if (
-      !networkEnabled ||
-      !canQueryOpenCodeSession(sessionId) ||
-      !runtimeHealthy ||
-      runtimeScope === 'none'
-    )
-      return;
+    if (!networkEnabled || !canQueryOpenCodeSession(sessionId) || runtimeScope === 'none') return;
     resetSessionSyncControllersForSession(sessionId, runtimeScope);
     const release = retainSessionSyncController(sessionId, runtimeScope);
-    // The ONLY thing that fills the transcript now. One bounded tail, so events
+    // The ONLY thing that fills the transcript. One bounded tail, so events
     // produced while this route was inactive are not skipped.
     void controller.reconcile('initial');
     return release;
-  }, [controller, networkEnabled, runtimeHealthy, runtimeScope, sessionId]);
+  }, [controller, networkEnabled, runtimeScope, sessionId]);
 
   // A transcript the live stream rebuilt after an eviction starts
   // mid-conversation, and nothing else will correct it: the mount already ran,

@@ -12,6 +12,45 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `read-is-the-liveness-check` — a session page must never wait on a probe — DONE
+
+**Files:** `core/session-sync/session-sync-controller.ts` (`markLoaded` on
+SUCCESS only; `scheduleTailRetry` with backoff; destroy cancels it) + tests
+(+4, one replaced) · `react/use-session-sync.ts` (the initial read no longer
+waits for `runtimeHealthy`).
+
+**What.** Two screenshots, same page: the SIDEBAR showed a session live with a
+green dot while the MAIN PANE sat on "Waking the agent — this is taking longer
+than usual". Elsewhere, a session opened completely blank while its runtime
+terminal held the whole conversation.
+
+One mechanism under both. `resolveSessionContentState` keeps the web app on its
+loader while there are no messages, and exactly one thing produces messages:
+`reconcile('initial')`. That read was gated on `runtimeHealthy === true`. So the
+page's only exit from the loader was a health probe — and a box that is up while
+failing its probe (loaded, mid-turn, slow) shows a spinner over a session that
+could have been read the whole time. The sidebar reads the session list instead,
+which is why one page gave two answers.
+
+The blank came from the same function, eight lines away. `markLoaded` ran in a
+`finally`, so a read that FAILED still told the store the session was loaded —
+and the store plants an empty message list for that. A first read losing to a
+waking box therefore RECORDED "this session has no messages", the UI painted an
+empty conversation, and nothing came back: the mount had run, and the liveness
+poll only turns on while a session is working.
+
+**Fix.** `markLoaded` on success only — a successful read of zero messages is a
+fact about the session, a failed read is a fact about nothing. Failures schedule
+a retry with backoff (1s -> 15s cap) until one lands. And the read no longer
+waits for the probe: it starts as soon as the sandbox is known, because THE READ
+IS THE LIVENESS CHECK. Readiness is a byproduct of asking for what we wanted
+anyway, not a precondition for asking.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2464 pass / 0 fail ·
+apps/web tsc clean, session suite 2517 pass / 0 fail.
+
+---
+
 ### 2026-08-24 — session `reconcile-on-eviction` — close the hole the IndexedDB removal named — DONE
 
 **Files:** `core/session-sync/fragment.ts` (NEW — `transcriptIsFragment`) +

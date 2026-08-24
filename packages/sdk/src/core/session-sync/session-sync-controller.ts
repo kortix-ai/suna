@@ -10,6 +10,11 @@ import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
  * fully loaded and never pull at all, while a long one still opens bounded
  * instead of dragging its entire history over the sandbox proxy.
  */
+/** First retry delay after a failed tail read. */
+const TAIL_RETRY_BASE_MS = 1_000;
+/** Ceiling for the retry backoff — a box that comes back is picked up within it. */
+const TAIL_RETRY_MAX_MS = 15_000;
+
 export const SESSION_SYNC_PAGE_SIZE = 50;
 
 export type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'stale' | 'error';
@@ -230,6 +235,9 @@ export class SessionSyncController {
   private readonly options: SessionSyncControllerOptions;
   private readonly scheduler: SessionSyncScheduler;
   private readonly livenessIntervalMs: number;
+  /** Consecutive failed tail reads, for the retry backoff. Reset by success. */
+  private retryAttempt = 0;
+  private tailRetryTimer: unknown;
   private snapshot: SessionSyncSnapshot = {
     freshness: 'idle',
     hasOlder: false,
@@ -343,6 +351,10 @@ export class SessionSyncController {
     // torn down must not start a request it can never hydrate.
     this.destroyed = true;
     this.stopLivenessTimer();
+    if (this.tailRetryTimer !== undefined) {
+      this.cancelTimer(this.tailRetryTimer);
+      this.tailRetryTimer = undefined;
+    }
     this.listeners.clear();
   }
 
@@ -357,13 +369,49 @@ export class SessionSyncController {
         this.setCursor(page.nextCursor);
       }
       this.update({ freshness: 'fresh' });
+      // SUCCESS ONLY. `markLoaded` used to sit in a `finally`, so a read that
+      // FAILED still told the store this session was loaded — and the store's
+      // implementation of that plants an empty message list. A first read that
+      // lost to a waking box, a 503 from the proxy, or a flapping probe was
+      // therefore RECORDED as "this session has no messages", and the UI
+      // painted an empty conversation over a session that had plenty. Nothing
+      // came back for it either: the mount had already run, and the liveness
+      // poll only turns on while a session is working.
+      //
+      // A successful read of zero messages still marks loaded — that is a fact
+      // about the session. A failed read is not a fact about anything.
+      this.options.markLoaded();
+      this.retryAttempt = 0;
     } catch {
-      if (!this.destroyed) {
-        this.update({ freshness: 'error' });
-      }
-    } finally {
-      if (!this.destroyed) this.options.markLoaded();
+      if (this.destroyed) return;
+      this.update({ freshness: 'error' });
+      this.scheduleTailRetry(reason);
     }
+  }
+
+  /**
+   * Come back for a read that lost.
+   *
+   * Without this a session got exactly ONE chance to load, and whether it took
+   * it depended on a race with the sandbox's boot. Losing that race left the
+   * page on "Waking the agent" with no exit but the health probe — the least
+   * reliable signal in the system — or a manual reload.
+   *
+   * Backoff so a genuinely dead box costs little, capped so a box that comes
+   * back is picked up promptly.
+   */
+  private scheduleTailRetry(reason: SessionSyncReason): void {
+    if (this.destroyed || this.tailRetryTimer !== undefined) return;
+    const delay = Math.min(
+      TAIL_RETRY_BASE_MS * 2 ** this.retryAttempt,
+      TAIL_RETRY_MAX_MS,
+    );
+    this.retryAttempt += 1;
+    this.tailRetryTimer = this.startTimer(() => {
+      this.tailRetryTimer = undefined;
+      if (this.destroyed) return;
+      void this.reconcile(reason);
+    }, delay);
   }
 
   private async loadPage(
