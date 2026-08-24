@@ -19,18 +19,17 @@
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import Loading from '@/components/ui/loading';
 import { Modal, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   ChangeList,
   ChangeSummary,
-  diffViewportClass,
   DiffLayoutToggle,
   ExpandAllButton,
+  diffViewportClass,
   entryFromCommitFile,
   fileCount,
   proposedChangeTimeline,
@@ -39,6 +38,7 @@ import {
   type ChangeEntry,
   type DiffLayout,
 } from '@/features/changes';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import {
   ArrowCounterClockwiseIcon,
@@ -121,9 +121,13 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
     (Error & { code?: string; data?: { issues?: ManifestIssue[]; conflicts?: string[] } }) | null;
   const isCurrentError = mergeMutation.variables === crId;
   const manifestIssues =
-    mergeError?.code === 'MANIFEST_INVALID' && isCurrentError ? (mergeError.data?.issues ?? []) : null;
+    mergeError?.code === 'MANIFEST_INVALID' && isCurrentError
+      ? (mergeError.data?.issues ?? [])
+      : null;
   const mergeErrorConflicts =
-    mergeError?.code === 'MERGE_CONFLICT' && isCurrentError ? (mergeError.data?.conflicts ?? []) : null;
+    mergeError?.code === 'MERGE_CONFLICT' && isCurrentError
+      ? (mergeError.data?.conflicts ?? [])
+      : null;
 
   const previewHasConflicts = Boolean(
     cr?.status === 'open' && preview && !preview.is_up_to_date && !preview.can_merge,
@@ -191,7 +195,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
 
   return (
     <Modal open={open} onOpenChange={(v) => !v && onClose()}>
-      <ModalContent className="flex h-[94dvh] max-h-[94dvh] min-h-0 w-full flex-col gap-0 space-y-0 overflow-hidden p-0 lg:h-[86vh] lg:max-h-[86vh] lg:min-h-[86vh] lg:max-w-3xl">
+      <ModalContent className="flex h-[94dvh] max-h-[94dvh] min-h-0 w-full flex-col gap-0 space-y-0 overflow-hidden p-0 lg:h-[90vh] lg:max-h-[90vh] lg:min-h-[90vh] lg:max-w-5xl">
         {/* ---------------------------------------------------------------
             Header: the title, then one line of context. The proposal number
             and the version it lands in live in that line as plain text —
@@ -374,7 +378,6 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     live one for the same problem. */}
                 {blocked ? (
                   <Button
-                    variant="blue"
                     onClick={handleFixWithAgent}
                     disabled={isStartingRecovery}
                     className="ml-auto min-w-36 active:scale-[0.96]"
@@ -382,7 +385,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     {isStartingRecovery ? (
                       <Loading className="size-4 shrink-0" />
                     ) : (
-                      <SparkleIcon className="size-4" />
+                      <SparkleIcon weight="fill" className="size-4" />
                     )}
                     {isStartingRecovery ? 'Starting…' : 'Fix with agent'}
                   </Button>
