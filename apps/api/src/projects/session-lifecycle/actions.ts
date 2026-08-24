@@ -31,7 +31,9 @@ import { invalidateProviderCache } from '../../sandbox-proxy';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
+  parkEstablishedRuntime,
   preserveEstablishedRuntime,
+  runtimeLossVerdict,
   retireUnmaterializedRuntime,
   RUNTIME_IDENTITY_ERROR,
   RUNTIME_IDENTITY_UNAVAILABLE,
@@ -611,11 +613,40 @@ export async function restartSession(input: {
               () => null,
             );
           } else {
-            await preserveEstablishedRuntime(
-              claim.row,
-              'restart_missing_runtime',
-              'restart_failed',
-            ).catch(() => null);
+            // Incident 2026-08-14: a loss verdict requires a fresh, definitive
+            // provider `removed` — nothing else may reach the terminal "computer
+            // was lost" state. Neither condition that got us here is evidence of
+            // one. `isMissingRuntimeError` is a message heuristic that matches
+            // any error whose text merely contains "not found", and
+            // `recoverInPlace` is OPTIONAL: `?.` yields `undefined` for a
+            // provider that does not implement it, which is indistinguishable
+            // here from a provider that tried and failed. The sibling restart
+            // paths above both gate on `getStatus() === 'removed'` before they
+            // preserve; this one is reached from a catch block and did not, so
+            // an unrelated "not found" thrown mid-restart reported a live box as
+            // lost — unrecoverable and non-retriable to the user, a false
+            // `runtime.lost` page, and the box left running because only a park
+            // stops it. Ask the provider, then let the shared gate decide.
+            const status = await (async () => {
+              try {
+                return await provider.getStatus(externalId);
+              } catch {
+                return 'unknown' as const;
+              }
+            })();
+            if (runtimeLossVerdict(status) === 'preserve') {
+              await preserveEstablishedRuntime(
+                claim.row,
+                'restart_missing_runtime',
+                'restart_failed',
+              ).catch(() => null);
+            } else {
+              await parkEstablishedRuntime(
+                claim.row,
+                'restart_missing_runtime',
+                'restart_failed',
+              ).catch(() => null);
+            }
           }
           return;
         }
