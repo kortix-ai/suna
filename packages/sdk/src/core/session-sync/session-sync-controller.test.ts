@@ -8,6 +8,7 @@ import {
   type SessionSyncControllerOptions,
   type SessionSyncPage,
   type SessionSyncReason,
+  MAX_TURN_BACKFILL_PAGES,
   type SessionSyncScheduler,
 } from './session-sync-controller';
 
@@ -265,15 +266,17 @@ describe('SessionSyncController', () => {
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
     ]);
-    expect(hydrated).toEqual([
-      [
-        'user-only',
-        'assistant-new-0',
-        'assistant-new-1',
-        'assistant-new-2',
-        'assistant-new-3',
-        'assistant-new-4',
-      ],
+    // The first page paints IMMEDIATELY and each backfill page repaints on top
+    // of it — a long turn fills in front of the user instead of withholding
+    // everything until the walk ends. What matters is where it lands.
+    expect(hydrated[0]).toEqual(['assistant-new-3', 'assistant-new-4']);
+    expect(hydrated.at(-1)).toEqual([
+      'user-only',
+      'assistant-new-0',
+      'assistant-new-1',
+      'assistant-new-2',
+      'assistant-new-3',
+      'assistant-new-4',
     ]);
     expect(controller.getSnapshot()).toMatchObject({
       freshness: 'fresh',
@@ -852,5 +855,103 @@ describe('SessionSyncController', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(attempts).toBe(1);
+  });
+  /**
+   * The blank thread on a HUGE session, and the read returned 200 the whole
+   * time.
+   *
+   * `loadCompleteTurn` walks BACKWARDS 50 messages at a time until every
+   * assistant message has its parent user message, and `hydrate` used to run
+   * only after that walk finished. A session whose last turn is thousands of
+   * messages — the ArcGIS run: hundreds of image reads, 463K tokens — therefore
+   * painted NOTHING for as many sequential round trips as the turn was long,
+   * each one proxied through the sandbox. Minutes of empty thread over a
+   * successful read.
+   *
+   * Paint what arrived, then keep filling.
+   */
+  test('the first page paints before the turn is complete', async () => {
+    const hydrated: string[][] = [];
+    let pages = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        pages += 1;
+        // Every page is an orphan assistant, so the walk never satisfies itself.
+        return {
+          messages: [
+            {
+              info: { id: `assistant-${pages}`, role: 'assistant', parentID: 'user-far-back' },
+              parts: [],
+            },
+          ],
+          nextCursor: `cursor-${pages}`,
+        } as unknown as SessionSyncPage;
+      },
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+    });
+
+    await controller.reconcile('initial');
+
+    expect(hydrated.length).toBeGreaterThan(1);
+    expect(hydrated[0]).toEqual(['assistant-1']);
+    controller.destroy();
+  });
+
+  test('the backward walk is bounded — a pathological turn cannot page forever', async () => {
+    let pages = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        pages += 1;
+        return {
+          messages: [
+            {
+              info: { id: `assistant-${pages}`, role: 'assistant', parentID: 'user-far-back' },
+              parts: [],
+            },
+          ],
+          nextCursor: `cursor-${pages}`,
+        } as unknown as SessionSyncPage;
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    await controller.reconcile('initial');
+
+    expect(pages).toBeLessThanOrEqual(MAX_TURN_BACKFILL_PAGES + 1);
+    // The rest stays reachable: the cursor survives for "load older".
+    expect(controller.getSnapshot().hasOlder).toBe(true);
+    controller.destroy();
+  });
+
+  test('a turn that completes early stops paging', async () => {
+    let pages = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        pages += 1;
+        return pages === 1
+          ? ({
+              messages: [
+                { info: { id: 'assistant-1', role: 'assistant', parentID: 'user-1' }, parts: [] },
+              ],
+              nextCursor: 'cursor-1',
+            } as unknown as SessionSyncPage)
+          : ({
+              messages: [{ info: { id: 'user-1', role: 'user' }, parts: [] }],
+              nextCursor: undefined,
+            } as unknown as SessionSyncPage);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    await controller.reconcile('initial');
+
+    expect(pages).toBe(2);
+    controller.destroy();
   });
 });

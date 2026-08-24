@@ -17,6 +17,22 @@ const TAIL_RETRY_MAX_MS = 15_000;
 
 export const SESSION_SYNC_PAGE_SIZE = 50;
 
+/**
+ * How far back the tail read will walk to complete a turn before it stops and
+ * leaves the rest to "load older".
+ *
+ * The walk exists so an assistant message is not rendered above its own prompt.
+ * It had no ceiling, and a session whose last turn is thousands of messages —
+ * an agent run with hundreds of tool calls — therefore paged the WHOLE session
+ * 50 at a time, serially, through the sandbox proxy, before painting anything.
+ * The read returns 200 the entire time, which is why this looked like a bug in
+ * rendering rather than in loading.
+ *
+ * 10 pages = 500 messages, far past any honest turn, and the cursor survives so
+ * nothing becomes unreachable.
+ */
+export const MAX_TURN_BACKFILL_PAGES = 10;
+
 export type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'stale' | 'error';
 
 export interface SessionSyncMessage {
@@ -361,10 +377,21 @@ export class SessionSyncController {
   private async loadTail(reason: SessionSyncReason): Promise<void> {
     try {
       const firstPage = await this.loadPage('tail', reason);
-      const page = await this.loadCompleteTurn(firstPage, 'tail', reason);
       if (this.destroyed) return;
-      this.rememberUserMessages(page.messages);
-      this.options.hydrate(page.messages);
+      // PAINT WHAT ARRIVED, then keep filling. Hydration used to wait for the
+      // whole backward walk below, so a long turn showed an empty thread for as
+      // many round trips as the turn was long.
+      this.rememberUserMessages(firstPage.messages);
+      this.options.hydrate(firstPage.messages);
+      // Each backfill page repaints as it lands, so the final set is already on
+      // screen when the walk ends — no closing hydrate, and a single-page tail
+      // hydrates exactly once.
+      const page = await this.loadCompleteTurn(firstPage, 'tail', reason, undefined, (partial) => {
+        if (this.destroyed) return;
+        this.rememberUserMessages(partial);
+        this.options.hydrate(partial);
+      });
+      if (this.destroyed) return;
       if (!this.olderHistoryStarted) {
         this.setCursor(page.nextCursor);
       }
@@ -455,11 +482,13 @@ export class SessionSyncController {
     operation: 'tail' | 'older',
     reason: SessionSyncReason,
     initialCursor?: string,
+    onPage?: (messagesSoFar: SessionSyncMessage[]) => void,
   ): Promise<SessionSyncPage> {
     const messages = [...firstPage.messages];
     const knownUserMessageIds = new Set(this.knownUserMessageIds);
     const seenCursors = new Set(initialCursor ? [initialCursor] : []);
     let cursor = firstPage.nextCursor;
+    let pagesRead = 0;
 
     for (const message of firstPage.messages) {
       if (message.info.role === 'user') {
@@ -469,6 +498,9 @@ export class SessionSyncController {
 
     while (
       cursor &&
+      // BOUNDED. Without a ceiling a turn of a few thousand messages paged the
+      // whole session before anything rendered — see MAX_TURN_BACKFILL_PAGES.
+      pagesRead < MAX_TURN_BACKFILL_PAGES &&
       messages.some(
         (message) =>
           message.info.role === 'assistant' &&
@@ -481,6 +513,8 @@ export class SessionSyncController {
       }
       seenCursors.add(cursor);
       const page = await this.loadPage(operation, reason, cursor);
+      if (this.destroyed) return { messages, nextCursor: cursor };
+      pagesRead += 1;
       messages.unshift(...page.messages);
       for (const message of page.messages) {
         if (message.info.role === 'user') {
@@ -489,6 +523,9 @@ export class SessionSyncController {
       }
 
       cursor = page.nextCursor;
+      // Repaint as each page lands, so a long turn fills in front of the user
+      // instead of withholding everything until the walk ends.
+      onPage?.([...messages]);
     }
 
     return { messages, nextCursor: cursor };

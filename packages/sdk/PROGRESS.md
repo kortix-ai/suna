@@ -54,7 +54,18 @@ empty thread — over a long history. It now takes `transcriptLoaded` (the sync
 hook's `isLoading`, which flips only when an authoritative read lands) and waits
 for the read rather than for the metadata.
 
-**Gates:** `typecheck` clean (both projects) · `pnpm test` 2464 pass / 0 fail ·
+**And the blank thread whose read returned 200.** `loadCompleteTurn` walks
+BACKWARDS 50 messages at a time until every assistant message has its parent
+user message, and `hydrate` ran only after that walk finished. A session whose
+last turn is thousands of messages — an agent run with hundreds of tool calls,
+463K tokens — therefore paged the WHOLE session serially through the sandbox
+proxy before painting one pixel. The read succeeds the entire time, which is
+exactly why it read as a rendering bug. Now the first page paints immediately,
+each backfill page repaints on top of it, and the walk is bounded to
+`MAX_TURN_BACKFILL_PAGES` (10 = 500 messages) with the cursor preserved so
+"load older" still reaches the rest.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2467 pass / 0 fail ·
 apps/web tsc clean, session suite 2523 pass / 0 fail.
 
 ---
