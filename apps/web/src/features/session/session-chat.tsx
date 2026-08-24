@@ -60,10 +60,10 @@ import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
 import { resolveWorkingTurn } from './turn/working-turn';
 
+import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
-import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import {
@@ -100,6 +100,8 @@ import { uploadFile } from '@/features/files/api/runtime-files';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
+import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
+import { usePlanInChat } from '@/features/session/plan-surface';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
@@ -108,7 +110,6 @@ import {
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
-import { usePlanInChat } from '@/features/session/plan-surface';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
@@ -131,7 +132,6 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import {
   useAttachRequest,
@@ -220,17 +220,17 @@ import {
   useSessionWorking,
   useSessionWorkingStore,
 } from '@kortix/sdk/react';
+import { useReloadForensics } from './reload-forensics';
 import { CodeBlockEndpoints, SandboxUrlDetector } from './sandbox-url-detector';
 import {
   resolveLastTurnWorking,
   serverHoldsOpenTurn,
   sessionComposerReadiness,
 } from './session-composer-readiness';
-import { useReadinessSettling } from './use-readiness-settling';
-import { useReloadForensics } from './reload-forensics';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
 import { olderAutoloadExhausted, shouldLoadOlderHistory } from './session-older-autoload';
+import { useReadinessSettling } from './use-readiness-settling';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -859,8 +859,7 @@ function SessionTurnImpl({
   const queueActionId = queueRemovalId ?? queueRow?.prompt_id ?? null;
   const showQueueActions =
     Boolean(queueActionId) &&
-    (Boolean(queueRemovalId) ||
-      Boolean(queueRow && queueState && queueState !== 'interrupted'));
+    (Boolean(queueRemovalId) || Boolean(queueRow && queueState && queueState !== 'interrupted'));
 
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;
@@ -2078,7 +2077,6 @@ export function SessionChat({
   const { data: approvalAudit } = useSessionAudit(
     projectId ?? approvalRouteParams.id,
     approvalRouteParams.sessionId,
-    { refetchInterval: 5_000 },
   );
   const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
   const { data: commands } = useRuntimeCommands();
@@ -2715,8 +2713,7 @@ export function SessionChat({
         // dead-end string is why this looked like the button simply never
         // worked.
         const status = (error as { status?: number } | null)?.status;
-        const detail =
-          error instanceof Error && error.message.trim() ? error.message.trim() : null;
+        const detail = error instanceof Error && error.message.trim() ? error.message.trim() : null;
         errorToast(
           status === 409
             ? (detail ?? 'The agent is already answering that prompt')

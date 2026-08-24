@@ -22,6 +22,7 @@ import {
   provisioningFailurePresentation,
 } from '@/features/session/provisioning-failure';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
+import { useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
@@ -50,7 +51,6 @@ import {
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
-import { projectSessionsRefetchInterval } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
@@ -70,7 +70,6 @@ import {
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
-  type ProjectSession,
   formatRuntimeError,
   getProjectDetail,
   listProjectSessions,
@@ -138,6 +137,9 @@ export default function ProjectSessionPage() {
  * unrepresentable: switching sessions remounts, and a remount cannot half-apply.
  */
 function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  // Stable route-level owner. Runtime identity handoffs remount the chat, so a
+  // poll timer inside chat produces overlapping audit schedules.
+  useSessionAudit(projectId, sessionId, { poll: true, silent: true, limit: 100 });
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
@@ -177,20 +179,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: !!user && !!projectId,
-    // This query feeds the session HEADER's title. It had no interval at all,
-    // so it never refetched — the header was only ever correct because it
-    // shares this cache entry with the sidebar's list, and went stale the
-    // moment the sidebar was unmounted or had stopped polling. The name is
-    // written server-side seconds AFTER the first prompt with no event to
-    // announce it (see `sessionTitleHasLanded`), so a query that never
-    // refetches can never show it.
-    //
-    // `hasOpenSession: true` unconditionally: this route IS an open session.
-    refetchInterval: (query) =>
-      projectSessionsRefetchInterval({
-        sessions: query.state.data as ProjectSession[] | undefined,
-        hasOpenSession: true,
-      }),
+    // The always-mounted sidebar owns title/status polling for this shared key.
+    // A second observer timer here produced independent list requests between
+    // the sidebar's polls during long turns.
     refetchOnWindowFocus: false,
     ...contract('inventory'),
   });

@@ -8,7 +8,7 @@ import { useCallback } from 'react';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectPageCans } from '@/lib/use-project-can';
 
 /**
  * Top-level Files entry. Hidden when the caller lacks `project.file.read`: that
@@ -35,7 +35,7 @@ export function ProjectFilesNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const canReadFiles = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
+  const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
   const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
 
   const handleClick = useCallback(() => {

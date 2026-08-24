@@ -11,8 +11,7 @@ import {
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { useCans } from '@/lib/use-permission';
+import { useProjectPageCans } from '@/lib/use-project-can';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 /**
@@ -75,9 +74,6 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   { key: 'config', action: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
 ];
 
-/** The probe list, fixed and in preference order, so the batch key is stable. */
-const TAB_ACTIONS = TAB_PREFERENCE.map((tab) => tab.action);
-
 /**
  * First tab the caller may open, or null when every one of them is an explicit
  * deny. Optimistic while a probe loads — same rule as ProjectFilesNavItem: the
@@ -92,7 +88,7 @@ function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] |
   // preflight — fourteen round trips on every project page open, for a
   // sidebar row. `useCans` sends the list to `effective:batch` and answers all
   // seven from one response; the order below is still the preference order.
-  const results = useCans({ projectId }, TAB_ACTIONS);
+  const results = useProjectPageCans(projectId);
   const hit = TAB_PREFERENCE.findIndex((tab) => {
     const probe = results[tab.action];
     return !!probe && (probe.allowed || probe.isLoading);
@@ -178,7 +174,8 @@ export function ProjectCustomizeNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const canCustomize = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ);
+  const caps = useProjectPageCans(projectId);
+  const canCustomize = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ];
   const tab = useCapabilityTab(projectId);
   // Active on the index itself (`/customize`, no deeper segment) AND on any
   // capability tab it links out to — the row should stay lit while browsing
@@ -232,4 +229,3 @@ export function ProjectCustomizeNavItem() {
     </SidebarMenuItem>
   );
 }
-

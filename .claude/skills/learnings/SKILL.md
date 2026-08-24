@@ -21,6 +21,23 @@ linked, not inlined.
 
 ## Register
 
+### One React Query key needs one poll owner (2026-08-24)
+
+**When:** mounting the same query through several session-page components. Give
+exactly one stable route-level observer a `refetchInterval`; make every other
+observer a cache reader with `refetchOnMount: false`. In-flight deduplication
+does not merge independent timers or late stale mounts. *Incident:* five audit
+observers produced 9 requests during one Essentia session load.
+*Enforcer:* `session-audit-shared.test.ts` pins one owner and cache-reader mounts.
+
+### Browser idle is not network idle (2026-08-24)
+
+**When:** deferring a large non-critical request. Do not use
+`requestIdleCallback` as a first-paint network gate; network waits create idle
+main-thread windows immediately. Fetch at the user-demand boundary instead.
+*Incident:* an idle callback started the 4.07 MB LLM catalog during every
+session open. *Enforcer:* `llm-catalog-demand-loading.test.ts` bans layout boot.
+
 ### A successful surface deploy must not inherit skipped unrelated ancestors (2026-08-24)
 
 **When:** chaining Dev deployment, canonical verification, and self-host channel
@@ -2253,4 +2270,3 @@ and `detail`), not a generic "unreachable".
 *Incident:* dev, found while verifying the gateway passthrough work above.
 Enforcement: `worker.test.mjs` origin-passthrough tests; `wire.ts` proxy
 error envelope.
-

@@ -77,7 +77,7 @@ describe('project Customize sidebar entry (the routed one)', () => {
     expect(fnSource('ProjectCustomizeNavItem')).toContain('useCapabilityTab(projectId)');
   });
 
-  test('probes every tab in TAB_PREFERENCE, in ONE batched request', () => {
+  test('reads every tab from the shared project-page batch', () => {
     // The probes used to be written out one `useProjectCan` per tab — seven
     // hooks, and on the wire seven `GET …/effective?action=…` plus seven CORS
     // preflights on every project page open, for one sidebar row (measured,
@@ -94,12 +94,9 @@ describe('project Customize sidebar entry (the routed one)', () => {
     const tabCount = (preference.match(/key: '/g) ?? []).length;
     expect(tabCount).toBe(CAPABILITY_TABS.length);
 
-    // The batch list is the preference list, verbatim.
-    expect(SOURCE).toContain('const TAB_ACTIONS = TAB_PREFERENCE.map((tab) => tab.action);');
-
     const hook = SOURCE.slice(hookStart, SOURCE.indexOf('\n}', hookStart));
-    expect((hook.match(/useCans\(/g) ?? []).length).toBe(1);
-    expect(hook).toContain('useCans({ projectId }, TAB_ACTIONS)');
+    expect((hook.match(/useProjectPageCans\(/g) ?? []).length).toBe(1);
+    expect(hook).toContain('useProjectPageCans(projectId)');
     // And no single probes crept back in.
     expect((hook.match(/useProjectCan\(/g) ?? []).length).toBe(0);
   });
@@ -123,7 +120,8 @@ describe('project Customize sidebar entry (the routed one)', () => {
     // `false`, never while loading.
     const navItem = fnSource('ProjectCustomizeNavItem');
 
-    expect(navItem).toContain('useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ)');
+    expect(navItem).toContain('useProjectPageCans(projectId)');
+    expect(navItem).toContain('caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]');
     expect(navItem).toContain('if (canCustomize.allowed === false) return null;');
   });
 
