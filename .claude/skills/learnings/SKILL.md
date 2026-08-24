@@ -2270,7 +2270,6 @@ and `detail`), not a generic "unreachable".
 *Incident:* dev, found while verifying the gateway passthrough work above.
 Enforcement: `worker.test.mjs` origin-passthrough tests; `wire.ts` proxy
 error envelope.
-<<<<<<< HEAD
 
 ## Shedding load only works if you also stop the upload
 
@@ -2302,7 +2301,3 @@ leak); the 60x27 MiB overload that killed the container now peaks at 827 MiB
 and stays healthy. Enforcement: `read-bounded-body.test.ts` abort cases,
 `memory-envelope.test.ts` backpressure case.
 
-||||||| 0727e9aa42
-
-=======
->>>>>>> origin/main
