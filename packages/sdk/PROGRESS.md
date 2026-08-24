@@ -12,6 +12,47 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `opencode-v1-normalization` — take over OpenCode's own v1 page handling — DONE
+
+**Files:** `browser/session-sync/session-sync-registry.ts` (`readSessionMessagePage`
+filters + sorts) + tests (+6).
+
+**What.** We make the same v1 call OpenCode's own client makes —
+`client.session.messages({sessionID, limit, before})`, cursor from the
+`x-next-cursor` header — and then did none of what they do with the response.
+Theirs (`packages/app/src/context/server-session.ts:566-583`):
+
+```ts
+const items = (response.data ?? []).filter((item) => !!item?.info?.id)
+session: items.map((item) => cleanMessage(item.info)).sort(compareMessages)
+part:    items.map((item) => ({ id: item.info.id,
+           part: item.parts.filter((part) => !!part?.id).sort((a,b) => cmp(a.id,b.id)) }))
+```
+
+with `compareMessages` keyed on `time.created + id`
+(`packages/app/src/utils/session-message.ts:15-21`).
+
+Ours was `messages: result.data ?? []`. No filter, so a malformed row reached
+the renderer — the shape behind "TypeError: t is not iterable". No sort, so
+transcript order was whatever the wire said.
+
+**Also settled by measurement, so nobody re-opens it.** The v2/durable surface
+(`/api/session/{id}/history`, `/api/session/{id}/event?after=`) is present in
+the SDK we already pin AND answers 200 through our proxy — but it is EMPTY for
+sessions our runtime produces, because we prompt through v1
+(`core/client/kortix.ts:1145`). Measured on a real 2-day-old session:
+v1 `/session/{id}/message?limit=5` -> 15,429 bytes / 5 messages;
+v2 `/api/session/{id}/message?limit=5&order=desc` -> 50 bytes / 0 messages;
+v2 `/history` -> 0 events. Migrating reads to v2 would blank every existing
+session. v2 also caps `limit` at 100 (400 above it). Do not migrate reads
+without migrating writes, and note that existing sessions have no v2 history at
+all.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2481 pass / 0 fail ·
+apps/web tsc clean, session suite 2523 pass / 0 fail.
+
+---
+
 ### 2026-08-24 — session `read-is-the-liveness-check` — a session page must never wait on a probe — DONE
 
 **Files:** `core/session-sync/session-sync-controller.ts` (`markLoaded` on

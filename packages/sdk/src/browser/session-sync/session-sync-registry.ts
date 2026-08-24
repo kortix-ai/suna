@@ -71,6 +71,44 @@ function findExistingSessionEntry(
   return match;
 }
 
+/** Lexicographic compare, as upstream's `cmp` (`server-session.ts:28`). */
+function cmp(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * A transcript's canonical order, taken from OpenCode's `compareMessages`
+ * (`packages/app/src/utils/session-message.ts:15-21`): the key is
+ * `time.created + id`, so creation time leads and the id breaks ties.
+ *
+ * Sorting on the id alone is not equivalent — two messages created a
+ * millisecond apart can carry ids that sort the other way — and taking the
+ * wire order on trust is not equivalent either, which is what we did.
+ */
+function messageKey(info: { id: string; time?: { created?: number } }): string {
+  return `${info.time?.created ?? 0}${info.id}`;
+}
+
+/**
+ * One page of a session's messages, normalized the way OpenCode's own client
+ * normalizes it.
+ *
+ * Their v1 branch (`packages/app/src/context/server-session.ts:566-583`) makes
+ * the same call we do — `client.session.messages({sessionID, limit, before})`,
+ * cursor from the `x-next-cursor` header — and then does three things we did
+ * not:
+ *
+ *   1. `.filter((item) => !!item?.info?.id)` — a row without a message id is
+ *      dropped, not rendered. We passed `result.data ?? []` straight through,
+ *      so one malformed row reached the renderer. That is the shape behind
+ *      "TypeError: t is not iterable".
+ *   2. `.sort(compareMessages)` — deterministic transcript order rather than
+ *      whatever the wire happened to say.
+ *   3. `item.parts.filter((part) => !!part?.id).sort(byId)` — same treatment
+ *      for parts.
+ *
+ * Cheap, and it means nothing downstream has to be defensive about shape again.
+ */
 export async function readSessionMessagePage(
   client: SessionMessageClient,
   sessionId: string,
@@ -81,8 +119,19 @@ export async function readSessionMessagePage(
     limit: request.limit,
     ...(request.before ? { before: request.before } : {}),
   });
+  const items = (Array.isArray(result.data) ? result.data : []).filter(
+    (item): item is { info: Message; parts: Part[] } =>
+      !!item && typeof item === 'object' && !!(item as { info?: { id?: unknown } }).info?.id,
+  );
   return {
-    messages: result.data ?? [],
+    messages: items
+      .map((item) => ({
+        info: item.info,
+        parts: (Array.isArray(item.parts) ? item.parts : [])
+          .filter((part) => !!part?.id)
+          .sort((a, b) => cmp(a.id, b.id)),
+      }))
+      .sort((a, b) => cmp(messageKey(a.info), messageKey(b.info))),
     nextCursor: result.response?.headers.get('x-next-cursor') || undefined,
   };
 }
