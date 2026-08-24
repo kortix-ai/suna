@@ -2113,3 +2113,71 @@ link with unreadable health performs no install and no restart.
 *Incident:* old session disks remained in `runtimeReady=false` after a runtime
 upgrade because OpenCode convergence reported `opencode did not report its
 version` on every start.
+
+## A transcript list must never carry attachment bytes
+
+2026-08-24. On a self-host, sessions with hundreds of agent image reads stopped
+rendering. Every file part carried its whole file as a `data:` url, so
+`GET /session/:id/message?limit=20` weighed 7–19 MB. The SDK's 30 s fetch
+deadline killed the read at exactly 30.00 s, the tail retry re-issued it, and
+the browser downloaded tens of megabytes for a screen that never painted. The
+same read answered inside the sandbox in 276 ms; the bytes leaving the sandbox
+were the entire cost.
+
+**The rule.** The message list carries a *reference* to an attachment — type,
+mime, filename, id — never its bytes. Bytes are served per part, on demand,
+`immutable` with a strong ETag. Strip at the daemon (the source) AND at the
+API proxy (for sandboxes on an older daemon image); a reference is not a
+`data:` url, so the two passes compose.
+
+**The enforcement.** `kortix-sandbox-agent-server/src/__tests__/attachment-strip.test.ts`
+drives the real Hono app end to end: the list carries the reference, the part
+endpoint returns the exact bytes, 304 on ETag, 404 on unknown, and the
+single-message read is NOT stripped. `apps/api/src/sandbox-proxy/inline-attachments.test.ts`
+pins the pure transform, including "unrecognised payload passes through
+untouched" — the strip runs on every response on that path and must never be
+the reason a read fails.
+
+*Incident:* essentia `5306fd8d`, five consecutive reads at 29.23–30.08 s,
+78 MB transferred, nothing rendered. PR #6829.
+
+## A wake budget is a deadline, not an attempt count
+
+2026-08-24. Auto-resume was three attempts spaced 1500 ms — about three
+seconds — and a self-host's E2B resume takes 8.0–8.8 s. Every healthy sleeping
+box ran out of budget mid-wake, and the page replaced its loader with
+"session <id> is stopped — open a new session to continue" moments before the
+same box came up. Users read it as "all my sessions are broken".
+
+**The rule.** Anything that waits for a machine to boot is bounded by a
+deadline measured from the first observation of the resumable box, never by
+how many times we asked. A count describes our retry spacing, not the machine.
+
+**The enforcement.** `apps/web/src/features/session/session-resume.test.ts`
+asserts `AUTO_RESUME_WINDOW_MS >= 60_000` and that a null clock is
+"just started", not "expired".
+
+*Incident:* essentia, every stopped session, 2026-08-24. PR #6827.
+
+## Sandbox-isolation guards read the agent binding, never the caller's session id
+
+2026-08-24. 43 `backend`-origin sessions in one project were listed in the
+sidebar and every `/start` answered 404. `isSessionTargetVisibleToCaller`
+narrowed on `callerSessionId`, which `resolveSupabaseAuth` sets to the
+Supabase LOGIN session id for every signed-in human — non-null, and never a
+Kortix session id — so every human failed the sibling check meant for sandbox
+credentials. The same regression had already been fixed for the
+manager-override gate and documented in its test; the remedy was not carried
+to this guard.
+
+**The rule.** A guard that asks "is this caller a session-bound credential"
+reads `boundCredentialSessionId` (`callerKortixSessionId(c)`: null for a
+browser JWT, the real id for anything bound). `callerSessionId` cannot answer
+that question.
+
+**The enforcement.** `apps/api/src/__tests__/unit-connector-share.test.ts`
+pins a human with a login session id passing, a sibling sandbox credential
+still blocked, and the own-session credential still allowed.
+
+*Incident:* essentia project `e7170bf8`, origin counts user 568 / backend 43.
+PR #6828.
