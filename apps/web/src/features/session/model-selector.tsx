@@ -18,7 +18,8 @@ import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, type ProviderListResponse } from '@kortix/sdk/react';
+import { contract, qk, useModelStore, type ProviderListResponse } from '@kortix/sdk/react';
+import { modelInDefaultView } from './model-picker-default-view';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -418,6 +419,11 @@ export function ModelSelector({
     }
   }, [open]);
 
+  // The store's visibility rule (newest per family + flagships + user pins)
+  // curates the NO-SEARCH view for native providers — the client twin of the
+  // `enabled` stamping `/model-picker` gives gateway catalogs. See
+  // modelInDefaultView.
+  const pickerModelStore = useModelStore(baseModels);
   const visibleModels = useMemo(() => {
     const q = search.toLowerCase();
     return baseModels
@@ -427,10 +433,15 @@ export function ModelSelector({
           (!q ||
             (m.modelName || '').toLowerCase().includes(q) ||
             (m.modelID || '').toLowerCase().includes(q) ||
-            (m.providerName || '').toLowerCase().includes(q)),
+            (m.providerName || '').toLowerCase().includes(q)) &&
+          modelInDefaultView(m, {
+            search,
+            isStoreVisible: pickerModelStore.isVisible,
+            selected: selectedModel,
+          }),
       )
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [baseModels, search]);
+  }, [baseModels, search, pickerModelStore.isVisible, selectedModel]);
 
   /** Is there anything to pick AT ALL, ignoring the search box? The empty
    *  state below branches on this: "no models match your search" and "you have
