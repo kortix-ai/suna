@@ -32,6 +32,7 @@ import {
   sessionErrorSurfaceReady,
 } from '@/features/session/session-load-state';
 import {
+  AUTO_RESUME_WINDOW_MS,
   isAutoResuming,
   isRuntimeIdentityUnavailable,
   isSandboxResumable,
@@ -245,7 +246,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // the resume path and wakes the box. So: re-issue /start ourselves a few times
   // (what the refresh did) before ever surfacing a manual control.
   const sandboxResumable = isSandboxResumable(sandbox);
-  const MAX_AUTO_RESUME = 3;
   const [resumeAttempts, setResumeAttempts] = useState(0);
   // ONE restart behavior for every card on this route: optimistic exit from the
   // terminal state, a real pending state, and a SURFACED failure.
@@ -297,21 +297,36 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       errorToast('Could not copy the prompt.');
     }
   };
+  // When THIS wake started. Stamped the first time we see a resumable box and
+  // cleared the moment it stops being one, so the window measures one wake
+  // rather than the age of the tab.
+  const [resumeStartedAt, setResumeStartedAt] = useState<number | null>(null);
   useEffect(() => {
-    if (!sandboxResumable || resumeAttempts >= MAX_AUTO_RESUME) return;
-    // First attempt fires immediately (match the refresh); back off after that.
+    if (!sandboxResumable) {
+      setResumeStartedAt(null);
+      return;
+    }
+    setResumeStartedAt((at) => at ?? Date.now());
+  }, [sandboxResumable]);
+  const resumeElapsedMs = resumeStartedAt === null ? null : Date.now() - resumeStartedAt;
+  useEffect(() => {
+    if (!sandboxResumable) return;
+    if (resumeStartedAt !== null && Date.now() - resumeStartedAt >= AUTO_RESUME_WINDOW_MS) return;
+    // First attempt fires immediately (match the refresh); back off after that,
+    // and keep re-asking for as long as the wake window allows. The budget is
+    // the WINDOW, not the attempt count — see `AUTO_RESUME_WINDOW_MS`.
     const t = setTimeout(
       () => {
         setResumeAttempts((n) => n + 1);
         queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
       },
-      resumeAttempts === 0 ? 0 : 1500,
+      resumeAttempts === 0 ? 0 : Math.min(1500 * 2 ** Math.min(resumeAttempts - 1, 3), 8000),
     );
     return () => clearTimeout(t);
-  }, [sandboxResumable, resumeAttempts, projectId, sessionId, queryClient]);
-  // While we still have auto-resume attempts left, a resumable box is "waking",
-  // not "dead" — render the boot loader, never the dead-end card.
-  const autoResuming = isAutoResuming(sandbox, resumeAttempts, MAX_AUTO_RESUME);
+  }, [sandboxResumable, resumeAttempts, resumeStartedAt, projectId, sessionId, queryClient]);
+  // Inside the wake window a resumable box is "waking", not "dead" — render the
+  // boot loader, never the dead-end card.
+  const autoResuming = isAutoResuming(sandbox, { elapsedMs: resumeElapsedMs });
 
   // Belt-and-suspenders: clear the legacy active-instance cookie once on mount for
   // this route so no later navigation can be hijacked onto a stale sandbox.
