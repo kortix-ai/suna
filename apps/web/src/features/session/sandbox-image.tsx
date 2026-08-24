@@ -3,8 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useFileContent } from '@/features/files/hooks/use-file-content';
-import { authenticatedFetch, isSandboxNotReadyError } from '@kortix/sdk';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { fetchAttachmentPart, isAttachmentPartRef, isSandboxNotReadyError } from '@kortix/sdk';
 import { ImagePreview } from '@/features/session/image-preview';
 import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useState } from 'react';
@@ -29,24 +28,8 @@ function isLocalSandboxFilePath(value: string): boolean {
  * SandboxImage's markup, which hardcodes an 80px minimum on its loading and
  * error states and so cannot be used at thumbnail size.
  */
-/**
- * An attachment whose BYTES live behind the sandbox daemon's part endpoint.
- *
- * The transcript no longer inlines file bytes — `stripInlineAttachmentBytes`
- * (daemon + API proxy) swaps every oversized `data:` url for this path, so a
- * session with hundreds of image reads lists in kilobytes. The bytes are
- * fetched here, per part, when the row is on screen, through the same
- * authenticated runtime fetch every other sandbox read uses.
- */
-export function isAttachmentPartRef(value: string): boolean {
-  return typeof value === 'string' && value.startsWith('/kortix/part/');
-}
-
 function useAttachmentPartBlobUrl(src: string): { url: string | null; loading: boolean } {
   const isRef = isAttachmentPartRef(src);
-  // The same runtime base every other sandbox read in this app resolves
-  // against — the ref is a daemon path, so it is relative to this.
-  const base = useRuntimeStore((s) => s.getActiveServerUrl());
   const [state, setState] = useState<{ src: string; url: string | null; loading: boolean }>({
     src: '',
     url: null,
@@ -59,10 +42,7 @@ function useAttachmentPartBlobUrl(src: string): { url: string | null; loading: b
     let objectUrl: string | null = null;
     void (async () => {
       try {
-        if (!base) throw new Error('runtime url not bound');
-        const res = await authenticatedFetch(`${base}${src}`);
-        if (!res.ok) throw new Error(`part fetch ${res.status}`);
-        const blob = await res.blob();
+        const blob = await fetchAttachmentPart(src);
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
         setState({ src, url: objectUrl, loading: false });
@@ -74,7 +54,7 @@ function useAttachmentPartBlobUrl(src: string): { url: string | null; loading: b
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [base, isRef, src]);
+  }, [isRef, src]);
 
   if (!isRef) return { url: null, loading: false };
   return state.src === src ? { url: state.url, loading: state.loading } : { url: null, loading: true };

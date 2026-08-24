@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isAttachmentPartRef } from './sandbox-image';
+import { isAttachmentPartRef } from '@kortix/sdk';
 
 /**
  * A part reference is a DAEMON path (`/kortix/part/…`), produced by
