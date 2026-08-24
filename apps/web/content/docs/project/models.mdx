@@ -10,8 +10,23 @@ explains managed models vs. your own provider key (BYOK), how Kortix picks a
 model automatically, and two billing gotchas to know.
 
 This page applies to projects with the LLM Gateway on. LLM Gateway is an
-experimental [feature flag](/docs/feature-flags), and it is on by default for
-cloud projects. Check or toggle it in Settings → Experimental.
+experimental [feature flag](/docs/feature-flags), and it is **off by
+default** — turn it on in Settings → Experimental (operators can default a
+whole deployment on with `LLM_GATEWAY_DEFAULT_ENABLED`).
+
+With the flag off, the project runs **native OpenCode model management**:
+
+- Your provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `OPENROUTER_API_KEY`, …) are injected into the sandbox as ordinary env
+  vars — add them on the Model settings page or as
+  [secrets](/docs/project/secrets). OpenCode connects each provider from its
+  key automatically.
+- Model ids are OpenCode's native `provider/model` refs, like
+  `anthropic/claude-opus-4-8`. Managed bare ids and `kortix/…` refs do not
+  exist off-gateway.
+- The gateway surfaces on this page — managed models, the model-defaults
+  chain, budgets, logs — do not apply; OpenCode resolves the default model in
+  the sandbox.
 
 ## Managed models and BYOK
 

@@ -19,6 +19,7 @@ import {
   wireToModelKey,
 } from './use-model-store';
 import { qk } from './query-keys';
+import { useProjectLlmGatewayEnabled } from './use-project-llm-gateway';
 
 export interface UseModelDefaults {
   data: ModelDefaultsResponse | undefined;
@@ -56,10 +57,14 @@ export function useModelDefaults(
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ['model-defaults', projectId], [projectId]);
 
+  // The model-defaults chain is a GATEWAY concept: with the project's
+  // llm_gateway flag off the route answers 404 llm_gateway_disabled and
+  // OpenCode resolves the default model in the sandbox — never fetch.
+  const gateway = useProjectLlmGatewayEnabled(projectId);
   const { data, isLoading } = useQuery({
     queryKey,
     queryFn: () => getModelDefaults(projectId as string),
-    enabled: !!projectId,
+    enabled: !!projectId && gateway.enabled,
     staleTime: 30_000,
   });
 

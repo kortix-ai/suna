@@ -112,6 +112,60 @@ describe('flattenModels — gateway `provider` + `reasoning_options` pass-throug
   });
 });
 
+// Native mode (project `llm_gateway` flag OFF): the session runtime serves
+// OpenCode's own connected providers (`anthropic`, `openrouter`, `opencode`,
+// …) and the synthetic `kortix` provider does not exist. `flattenModels` must
+// flatten those — the gateway-only allowlist applies only in gateway mode, or
+// the composer has ZERO models off-gateway and refuses to send.
+describe('flattenModels — native mode (llm_gateway off)', () => {
+  const nativeList = {
+    connected: ['anthropic', 'opencode'],
+    all: [
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        source: 'env',
+        models: {
+          'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', reasoning: true, tool_call: true },
+        },
+      },
+      {
+        id: 'opencode',
+        name: 'OpenCode',
+        source: 'custom',
+        models: { 'big-pickle': { name: 'Big Pickle' } },
+      },
+      // A disconnected provider must not flatten even in native mode.
+      { id: 'openai', name: 'OpenAI', source: 'env', models: { 'gpt-5.2': { name: 'GPT-5.2' } } },
+    ],
+  } as unknown as ProviderListResponse;
+
+  test('native mode flattens connected native providers', () => {
+    const flat = flattenModels(nativeList, { providerMode: 'native' });
+    expect(flat.map((m) => `${m.providerID}/${m.modelID}`).sort()).toEqual([
+      'anthropic/claude-sonnet-4-6',
+      'opencode/big-pickle',
+    ]);
+  });
+
+  test('native mode still never renders the synthetic kortix provider', () => {
+    const withStaleKortix = {
+      connected: ['anthropic', 'kortix'],
+      all: [
+        ...(nativeList.all ?? []),
+        { id: 'kortix', name: 'Kortix', source: 'custom', models: { 'glm-5.2': { name: 'GLM' } } },
+      ],
+    } as unknown as ProviderListResponse;
+    const flat = flattenModels(withStaleKortix, { providerMode: 'native' });
+    expect(flat.some((m) => m.providerID === 'kortix')).toBe(false);
+    expect(flat.some((m) => m.providerID === 'anthropic')).toBe(true);
+  });
+
+  test('default (gateway) mode still drops native providers entirely', () => {
+    expect(flattenModels(nativeList)).toEqual([]);
+  });
+});
+
 // `enabled` is the server's per-project enablement answer (`/model-picker`).
 // Every consumer that asks "may this key be offered/resolved?" must go through
 // isOfferedModel — a second, client-local visibility heuristic is exactly what

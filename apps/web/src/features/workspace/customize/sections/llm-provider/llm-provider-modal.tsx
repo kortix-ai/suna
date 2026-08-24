@@ -51,14 +51,20 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import {
+  isNativeLlmTab,
   isQuickLlmTab,
   LlmSections,
   LlmTabStrip,
   MODELS_PAGE_DESCRIPTION,
   MODELS_PAGE_TITLE,
+  NATIVE_LLM_TABS,
   ProjectDefaultPicker,
   QUICK_LLM_TABS,
 } from '@/features/workspace/customize/sections/gateway-view';
+import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { useState } from 'react';
 import type { ActiveTab, ProjectProviderModalProps } from './types';
 import { pickInitialTab } from './utils';
@@ -121,6 +127,21 @@ function ProviderModalBody({
 }) {
   const [tab, setTab] = useState<ActiveTab>(() => pickInitialTab(defaultTab));
 
+  // Mode fork: a NATIVE project (llm_gateway off) gets key intake only —
+  // Providers + Custom, no Models tab (the /model-picker catalog behind it
+  // 404s off-gateway) and no project-default picker (the model-defaults chain
+  // is a gateway concept; OpenCode resolves the default in the sandbox).
+  // Shares qk.project.detail with the shell, so no extra request.
+  const detailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    enabled: open,
+    ...contract('config'),
+  });
+  const llmGatewayEnabled = isLlmGatewayEnabled(detailQuery.data?.project);
+  const effectiveTab: ActiveTab =
+    llmGatewayEnabled || isNativeLlmTab(tab) ? tab : 'providers';
+
   return (
     <>
       {/* The page's header, in a dialog: heading and description on the left,
@@ -132,13 +153,13 @@ function ProviderModalBody({
           <ModalTitle className="text-base font-medium">{MODELS_PAGE_TITLE}</ModalTitle>
           <ModalDescription>{MODELS_PAGE_DESCRIPTION}</ModalDescription>
         </div>
-        {canWrite ? <ProjectDefaultPicker projectId={projectId} /> : null}
+        {canWrite && llmGatewayEnabled ? <ProjectDefaultPicker projectId={projectId} /> : null}
       </ModalHeader>
 
       <div className="shrink-0 px-5 pt-5 pb-4">
         <LlmTabStrip
-          value={tab}
-          tabs={QUICK_LLM_TABS}
+          value={effectiveTab}
+          tabs={llmGatewayEnabled ? QUICK_LLM_TABS : NATIVE_LLM_TABS}
           onValueChange={(next) => {
             if (isQuickLlmTab(next)) setTab(next);
           }}
@@ -152,7 +173,7 @@ function ProviderModalBody({
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
         <LlmSections
           projectId={projectId}
-          tab={tab}
+          tab={effectiveTab}
           onTabChange={(next) => {
             if (isQuickLlmTab(next)) setTab(next);
           }}

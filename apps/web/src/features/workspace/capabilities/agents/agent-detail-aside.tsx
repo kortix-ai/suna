@@ -28,12 +28,14 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
+  getProjectDetail,
   listConnectors,
   listProjectResourceGrants,
   listProjectSecrets,
   type ProjectConfigSummary,
   setAgentScope,
 } from '@kortix/sdk';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { contract, qk, useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
 import { CheckIcon as Check, UserIcon as User, UsersIcon as Users } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -143,9 +145,20 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
   // asserts — not "is this person a manager".
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
+  // Per-agent model pins live in the GATEWAY model-defaults chain. A native
+  // project (llm_gateway off) has no such chain — the agent's model comes
+  // from its own frontmatter/manifest and OpenCode resolves it in the
+  // sandbox — and the write route 404s, so the card hides entirely.
+  const detailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
+  const llmGatewayEnabled = isLlmGatewayEnabled(detailQuery.data?.project);
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const defaults = useModelDefaults(projectId);
+  if (!llmGatewayEnabled) return null;
   const explicit = defaults.agentDefaults[agentName] ?? null;
   const resolved = defaults.resolveDefaultFor(agentName) ?? null;
 

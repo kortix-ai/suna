@@ -2337,13 +2337,17 @@ export function SessionChat({
     pendingPromptHandled.current = true;
     clearStartStash(sessionId);
     if (stash.agent) localAgentSet(stash.agent);
-    if (
-      stash.model &&
+    // The seed and the legacy replay share ONE validity check. A stash written
+    // under the other provider mode (e.g. a `kortix` pick from before the
+    // project's llm_gateway flag flipped off) must neither seed the store nor
+    // ride the legacy prompt — it names a provider this session does not have.
+    const stashModelValid =
+      !!stash.model &&
       localModelList.some(
         (m) => m.providerID === stash.model!.providerID && m.modelID === stash.model!.modelID,
       ) &&
-      localModelVisible(stash.model as ModelKey)
-    ) {
+      localModelVisible(stash.model as ModelKey);
+    if (stashModelValid) {
       localModelSet(stash.model as ModelKey, { autoSeed: true });
     }
     if (stash.variant) localVariantSet(stash.variant);
@@ -2353,7 +2357,7 @@ export function SessionChat({
         parts: [{ type: 'text', text: legacyPrompt }],
         overrides: {
           ...(stash.agent ? { agent: stash.agent } : {}),
-          ...(stash.model ? { model: stash.model } : {}),
+          ...(stashModelValid ? { model: stash.model } : {}),
           ...(stash.variant ? { variant: stash.variant } : {}),
         },
       }).catch((error) => {

@@ -12,6 +12,32 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `llm-gateway-off` — native-mode (flag off) model path — DONE
+
+**Files:** `react/model-flatten.ts` (`flattenModels` gains optional
+`{ providerMode: 'gateway' | 'native' }` — native flattens OpenCode's own
+connected providers, still never the synthetic `kortix`) + tests ·
+`react/use-opencode-local.ts` (passes the resolved mode) ·
+`react/use-project-llm-gateway.ts` (NEW, internal: `useProjectLlmGatewayEnabled`
++ pure `projectDetailLlmGatewayEnabled`) + tests · `react/use-model-defaults.ts`,
+`react/use-project-models.ts`, `react/use-gateway-routing-policy.ts` (all three
+gateway-only queries now gate on the project's `llm_gateway` flag instead of
+firing guaranteed `404 llm_gateway_disabled`).
+**Public surface: additive only** — a new OPTIONAL second parameter on the
+exported `flattenModels`; no new barrel exports (`use-project-llm-gateway` is
+internal).
+
+**What.** The platform's `llm_gateway` flag now defaults OFF (native OpenCode
+model management: provider keys injected into the sandbox, native
+`provider/model` refs). `flattenModels` hard-dropped every non-`kortix`
+provider, so a native project's composer had ZERO models and refused to send;
+the three gateway queries 404'd on every session page.
+
+**Gates:** `typecheck` clean (both projects) · `bun run test` 2504 pass / 0
+fail · `smoke:install` passed. Shippable: YES.
+
+---
+
 ### 2026-08-24 — session `html-preview` — an HTML file is served, never injected — DONE
 
 **Files:** `core/session/static-file-preview.ts` (NEW: `staticFilePreviewTargets`,
