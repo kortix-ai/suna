@@ -12,6 +12,37 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `strip-attachment-bytes` — the transcript stops shipping file bytes — DONE
+
+**Files (SDK):** `platform/auth-core.ts` (`DEFAULT_FETCH_TIMEOUT_MS` 30s -> 120s, with
+the reason written on it). Everything else lives outside the SDK: the strip
+itself is `stripInlineAttachmentBytes` in BOTH `apps/kortix-sandbox-agent-server`
+(daemon proxy + new `GET /kortix/part/:sid/:mid/:pid`) and
+`apps/api/src/sandbox-proxy` (second pass for sandboxes on an older daemon), and
+`apps/web/.../sandbox-image.tsx` resolves the new `/kortix/part/…` reference
+through the same authenticated runtime fetch as every other sandbox read.
+
+**What.** On a real session (essentia, hundreds of image reads) the transcript
+list at `limit=20` weighed 7-19 MB because every file part carried its whole
+file as a `data:` url. The browser's 30 s fetch deadline killed five reads in a
+row at 29.23-30.08 s, and the tail retry re-issued the whole thing — "downloading
+more and more data" with nothing rendered. The same read answered in-VM in
+276 ms. The bytes leaving the sandbox were the entire cost.
+
+**Fix.** The list leaves without the bytes: oversized `data:` urls become a
+reference to the daemon's part endpoint, fetched per part when the row is on
+screen, `immutable` + ETag so it is asked once ever. Daemon e2e: a list with one
+image went from 21,870 saved bytes to a 367-byte body. The fetch timeout is
+raised so a large-but-legitimate response is no longer manufactured into a
+failure by the client that asked for it; the API's own 50 s proxy budget still
+bounds a wedged box.
+
+**Gates:** sdk typecheck clean · `pnpm test` 2483 pass / 0 fail · daemon
+841 tests exit 0 (+6 e2e) · api proxy 44 pass / 0 fail · web tsc + eslint clean,
+session suite 2527 pass / 0 fail.
+
+---
+
 ### 2026-08-24 — session `opencode-v1-normalization` — take over OpenCode's own v1 page handling — DONE
 
 **Files:** `browser/session-sync/session-sync-registry.ts` (`readSessionMessagePage`
