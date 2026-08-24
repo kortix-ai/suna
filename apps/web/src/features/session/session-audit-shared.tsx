@@ -94,10 +94,20 @@ export function isPendingAction(a: SessionAuditAction): boolean {
 interface UseSessionAuditOptions {
   /** Skip the query entirely (e.g. not the active session / missing ids). */
   enabled?: boolean;
-  /** Poll cadence in ms — pending items resolve out-of-band. Default 20s. */
-  refetchInterval?: number | false;
+  /** Own the one audit poll timer for this session. Cache readers leave this off. */
+  poll?: boolean;
   /** Suppress the global error toast (for the always-mounted header nudge). */
   silent?: boolean;
+  /**
+   * Rows to ask for. The panel reads the timeline and wants the full 1000; the
+   * badge only counts pending approvals, which the server returns most-recent
+   * first, so 100 is plenty and ten times less to serialise every 15 s.
+   */
+  limit?: number;
+}
+
+export function sessionAuditPollMs(data: Pick<SessionAudit, 'actions'> | undefined): number {
+  return data?.actions.some(isPendingAction) ? 5_000 : SESSION_AUDIT_REFETCH_MS;
 }
 
 export function useSessionAudit(
@@ -110,13 +120,14 @@ export function useSessionAudit(
     queryKey: sessionAuditKey(projectId, sessionId),
     // `enabled` guards presence, so the `?? ''` fallbacks are never exercised.
     queryFn: () =>
-      getSessionAudit(projectId ?? '', sessionId ?? '', 1000, {
+      getSessionAudit(projectId ?? '', sessionId ?? '', options?.limit ?? 1000, {
         showErrors: !options?.silent,
         includeEvents: false,
       }),
     enabled,
     staleTime: 10_000,
-    refetchInterval: options?.refetchInterval ?? SESSION_AUDIT_REFETCH_MS,
+    refetchOnMount: options?.poll ? true : false,
+    refetchInterval: options?.poll ? (query) => sessionAuditPollMs(query.state.data) : false,
   });
 }
 

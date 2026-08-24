@@ -16,6 +16,7 @@ import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { isKortixAppUrl } from '@/features/session/kortix-app-url';
+import { useSharedPreview, useSharedPreviewDestination } from '@/features/session/shared-preview';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -93,9 +94,8 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   const updateTabMetadata = useTabStore((s) => s.openTab);
   const recents = useBrowserRecentsStore((s) => s.recents);
   const addRecent = useBrowserRecentsStore((s) => s.addRecent);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
+  const [standaloneIsLoading, setIsLoading] = useState(true);
+  const [standaloneHasError, setHasError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   // Set when the address bar gets something that isn't a sandbox port, so we
   // can flag it inline instead of attempting to browse it.
@@ -144,6 +144,14 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
     () => proxyUrl(rawPreviewUrl) ?? rawPreviewUrl,
     [proxyUrl, rawPreviewUrl],
   );
+  const sharedPreview = useSharedPreview(proxiedPreviewUrl);
+  const [sharedDestination, setSharedDestination] = useState<HTMLDivElement | null>(null);
+  const focusSharedPreview = useSharedPreviewDestination(
+    sharedPreview ? proxiedPreviewUrl : '',
+    sharedDestination,
+  );
+  const isLoading = sharedPreview?.isLoading ?? standaloneIsLoading;
+  const hasError = sharedPreview?.hasError ?? standaloneHasError;
 
   // Navigation history
   const [history, setHistory] = useState<string[]>(() => [proxiedPreviewUrl].filter(Boolean));
@@ -152,7 +160,8 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   // Inject auth token for cloud preview proxy URLs.
   // Returns null while auth is in progress — the landing state below renders
   // until the token is ready.
-  const previewUrl = useAuthenticatedPreviewUrl(proxiedPreviewUrl);
+  const standalonePreviewUrl = useAuthenticatedPreviewUrl(sharedPreview ? '' : proxiedPreviewUrl);
+  const previewUrl = sharedPreview?.previewUrl ?? standalonePreviewUrl;
 
   useEffect(() => {
     if (!proxiedPreviewUrl) return;
@@ -186,10 +195,14 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   }, []);
 
   const handleRefresh = useCallback(() => {
+    if (sharedPreview) {
+      sharedPreview.handleRefresh();
+      return;
+    }
     setIsLoading(true);
     setHasError(false);
     setRefreshKey((k) => k + 1);
-  }, []);
+  }, [sharedPreview]);
 
   const handleLoad = useCallback(() => {
     clearLoadTimeout();
@@ -428,13 +441,13 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   // Fallback: if onLoad doesn't fire within 5s, dismiss the loading state.
   // Cross-origin iframes frequently fail to fire onLoad events.
   useEffect(() => {
-    if (!isLoading) return;
+    if (sharedPreview || !isLoading) return;
     clearLoadTimeout();
     loadTimeoutRef.current = setTimeout(() => {
       setIsLoading(false);
     }, 5000);
     return clearLoadTimeout;
-  }, [isLoading, refreshKey, clearLoadTimeout]);
+  }, [sharedPreview, isLoading, refreshKey, clearLoadTimeout]);
 
   // At rest the bar always shows the full URL; the overlay below re-renders it
   // with the hostname highlighted (an input can't mix text colors).
@@ -658,16 +671,25 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
             />
           )}
 
-          <iframe
-            key={refreshKey}
-            ref={iframeRef}
-            src={previewUrl}
-            title={isExternalBrowsing ? `Browse: ${originalUrl}` : `Preview :${port}`}
-            className="h-full w-full border-0"
-            sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
-            onLoad={handleLoad}
-            onError={handleError}
-          />
+          {sharedPreview ? (
+            <div
+              ref={setSharedDestination}
+              tabIndex={0}
+              aria-label="Preview content"
+              onFocus={focusSharedPreview}
+              className="h-full w-full"
+            />
+          ) : (
+            <iframe
+              key={refreshKey}
+              src={previewUrl}
+              title={isExternalBrowsing ? `Browse: ${originalUrl}` : `Preview :${port}`}
+              className="h-full w-full border-0"
+              sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
+              onLoad={handleLoad}
+              onError={handleError}
+            />
+          )}
         </div>
       ) : (
         /* Landing — recent URLs when we have them, helper copy otherwise */

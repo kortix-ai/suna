@@ -173,6 +173,8 @@ export const SessionLayout = memo(function SessionLayout({
   const { data: auditData } = useSessionAudit(projectId, projectSessionId, {
     enabled: !transient && !booting && !!projectId && !!projectSessionId,
     silent: true,
+    // A badge, not a timeline: pending approvals are recent by construction.
+    limit: 100,
   });
   const auditPendingCount = (auditData?.actions ?? []).filter(isPendingAction).length;
 

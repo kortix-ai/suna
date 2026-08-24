@@ -338,19 +338,21 @@ flow(
     });
 
     await ctx.step(
-      'unauthenticated resolution of the file token → 200/503, and carries no public_url',
+      'unauthenticated resolution of the file token → 200/503 with its public origin URL',
       async () => {
         const r = await ctx.client
           .as(ctx.P.ANON)
           .get('/v1/p/public-share/:token', { params: { token: fileToken } });
         r.status([200, 503]);
         if (r.statusCode === 200) {
-          // `public_url` is populated only for preview shares — a file share is
-          // reached through its proxy_path, never a bare origin URL.
-          r.body()
-            .has('$.share.resource_type', 'file')
-            .has('$.share.public_url', null)
-            .has('$.share.file_path', '/workspace/README.md');
+          r.body().has('$.share.resource_type', 'file').has('$.share.file_path', '/workspace/README.md');
+          const publicUrl = new URL(r.json<any>().share.public_url);
+          if (publicUrl.protocol !== 'https:' || publicUrl.pathname !== '/open') {
+            throw new Error(`file share returned an invalid public_url: ${publicUrl}`);
+          }
+          if (publicUrl.searchParams.get('public_share') !== fileToken) {
+            throw new Error('file share public_url does not carry its public token');
+          }
         }
       },
     );

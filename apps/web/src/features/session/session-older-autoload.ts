@@ -11,6 +11,17 @@ export interface OlderHistoryAutoloadState {
   /** Pages this session has already pulled AUTOMATICALLY. Absent counts as
    *  none — a fresh session, not an exhausted one. */
   autoLoadedPages?: number;
+  /**
+   * The reader has scrolled the transcript UP at least once.
+   *
+   * Without this the sentinel fired on mount: with the first page smaller than
+   * the viewport its top edge is inside the 400px margin before anyone
+   * touches anything, so a session open cost three reads instead of one
+   * (`message?limit=20` + two `before=` pages, measured on a real session).
+   * History is pulled when a reader reaches for it, not because the page is
+   * short. Absent counts as "not yet".
+   */
+  readerScrolledUp?: boolean;
 }
 
 /**
@@ -49,6 +60,7 @@ export function olderAutoloadExhausted(state: {
  *  after a failure the transcript falls back to an explicit retry affordance. */
 export function shouldLoadOlderHistory(state: OlderHistoryAutoloadState): boolean {
   return (
+    state.readerScrolledUp === true &&
     state.isIntersecting &&
     state.hasOlder &&
     !state.isLoadingOlder &&

@@ -10,7 +10,59 @@ import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
  * fully loaded and never pull at all, while a long one still opens bounded
  * instead of dragging its entire history over the sandbox proxy.
  */
-export const SESSION_SYNC_PAGE_SIZE = 50;
+/** First retry delay after a failed tail read. */
+const TAIL_RETRY_BASE_MS = 1_000;
+/** Ceiling for the retry backoff — a box that comes back is picked up within it. */
+const TAIL_RETRY_MAX_MS = 15_000;
+
+export const SESSION_SYNC_PAGE_SIZE = 100;
+
+/**
+ * The FIRST page — the one the user waits on.
+ *
+ * Time to first paint is bytes, not messages. Measured on a heavy session
+ * (essentia, 2026-08-24, a run with hundreds of image reads whose parts carried
+ * base64 — BEFORE the attachment bytes were stripped from the list):
+ *
+ *   message?limit=50   ->   8,228 kB   30.39 s
+ *   message?limit=50   ->  24,460 kB   48.76 s
+ *   message?limit=50   ->  20,284 kB   35.74 s
+ *   message?limit=50   ->  25,125 kB   29.23 s
+ *
+ * That was 165-500 kB PER MESSAGE, and it drove the first page down to 20.
+ * With the bytes gone (`stripInlineAttachmentBytes`, same session, same day)
+ * a message is ~2-7 kB: `limit=20` measured 132 kB, an older page of 50
+ * measured 345-420 kB. At that weight a small first page is a false economy —
+ * on a normal viewport 20 messages do not fill the screen, so the top sentinel
+ * pulled two more pages before the reader touched anything, and three round
+ * trips (each paying a CORS preflight, one measured at 3.34 s) replaced one.
+ *
+ * Fifty fills the view. Older pages go to a hundred: by then the reader is
+ * scrolling deliberately, a spinner is honest, and fewer round trips wins.
+ *
+ * NOTE this is not what fixed the blank transcript. That was structural:
+ * `hydrate` ran only after a multi-page backward walk, so NOTHING rendered at
+ * any page size — a smaller limit would have meant MORE sequential round trips
+ * before that single paint, and a longer blank. The walk is gone (see
+ * `loadTail`); this only makes the first paint lighter.
+ */
+export const SESSION_SYNC_TAIL_PAGE_SIZE = 50;
+
+/**
+ * How far back the tail read will walk to complete a turn before it stops and
+ * leaves the rest to "load older".
+ *
+ * The walk exists so an assistant message is not rendered above its own prompt.
+ * It had no ceiling, and a session whose last turn is thousands of messages —
+ * an agent run with hundreds of tool calls — therefore paged the WHOLE session
+ * 50 at a time, serially, through the sandbox proxy, before painting anything.
+ * The read returns 200 the entire time, which is why this looked like a bug in
+ * rendering rather than in loading.
+ *
+ * 10 pages = 500 messages, far past any honest turn, and the cursor survives so
+ * nothing becomes unreachable.
+ */
+export const MAX_TURN_BACKFILL_PAGES = 10;
 
 export type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'stale' | 'error';
 
@@ -63,6 +115,9 @@ export type SessionSyncReason =
   /** The tab became visible again. A backgrounded tab is throttled, not
    *  notified, so return is a moment to re-read rather than to assume. */
   | 'visible'
+  /** The transcript was evicted while detached and the live stream refilled it
+   *  from the middle — see `transcriptIsFragment`. */
+  | 'eviction'
   | 'manual';
 
 export interface SessionSyncTelemetryEvent {
@@ -227,6 +282,9 @@ export class SessionSyncController {
   private readonly options: SessionSyncControllerOptions;
   private readonly scheduler: SessionSyncScheduler;
   private readonly livenessIntervalMs: number;
+  /** Consecutive failed tail reads, for the retry backoff. Reset by success. */
+  private retryAttempt = 0;
+  private tailRetryTimer: unknown;
   private snapshot: SessionSyncSnapshot = {
     freshness: 'idle',
     hasOlder: false,
@@ -340,13 +398,39 @@ export class SessionSyncController {
     // torn down must not start a request it can never hydrate.
     this.destroyed = true;
     this.stopLivenessTimer();
+    if (this.tailRetryTimer !== undefined) {
+      this.cancelTimer(this.tailRetryTimer);
+      this.tailRetryTimer = undefined;
+    }
     this.listeners.clear();
   }
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
     try {
-      const firstPage = await this.loadPage('tail', reason);
-      const page = await this.loadCompleteTurn(firstPage, 'tail', reason);
+      // ONE PAGE. Render it. This is what OpenCode's own client does, and the
+      // reason we now do it too is measured:
+      //
+      //   message?limit=50            200   8,228 kB   30.39 s
+      //   message?limit=50            200  24,460 kB   48.76 s
+      //   message?limit=50&before=..  200  20,284 kB   35.74 s
+      //   message?limit=50&before=..  200  25,125 kB   29.23 s
+      //   -> 78,097 kB transferred, finish 3.8 min, NOTHING on screen
+      //
+      // (essentia, 2026-08-24, a run with hundreds of image reads: fifty
+      // messages weigh 8-25 MB because the parts carry the image bytes.)
+      //
+      // There used to be a backward WALK here that kept fetching pages until
+      // every assistant message had its parent user message in hand, so an
+      // assistant reply could never render above its own prompt — and `hydrate`
+      // ran only after the walk finished. On a long turn that walk is the whole
+      // session, serially, through the sandbox proxy, with an empty thread the
+      // entire time. A cosmetic guarantee at the top edge of the window is not
+      // worth minutes of blank screen.
+      //
+      // The window may therefore start on an assistant message whose prompt is
+      // one page up. That is exactly what OpenCode shows, and `loadOlder` —
+      // which the user drives — still completes the turn when they scroll.
+      const page = await this.loadPage('tail', reason);
       if (this.destroyed) return;
       this.rememberUserMessages(page.messages);
       this.options.hydrate(page.messages);
@@ -354,13 +438,49 @@ export class SessionSyncController {
         this.setCursor(page.nextCursor);
       }
       this.update({ freshness: 'fresh' });
+      // SUCCESS ONLY. `markLoaded` used to sit in a `finally`, so a read that
+      // FAILED still told the store this session was loaded — and the store's
+      // implementation of that plants an empty message list. A first read that
+      // lost to a waking box, a 503 from the proxy, or a flapping probe was
+      // therefore RECORDED as "this session has no messages", and the UI
+      // painted an empty conversation over a session that had plenty. Nothing
+      // came back for it either: the mount had already run, and the liveness
+      // poll only turns on while a session is working.
+      //
+      // A successful read of zero messages still marks loaded — that is a fact
+      // about the session. A failed read is not a fact about anything.
+      this.options.markLoaded();
+      this.retryAttempt = 0;
     } catch {
-      if (!this.destroyed) {
-        this.update({ freshness: 'error' });
-      }
-    } finally {
-      if (!this.destroyed) this.options.markLoaded();
+      if (this.destroyed) return;
+      this.update({ freshness: 'error' });
+      this.scheduleTailRetry(reason);
     }
+  }
+
+  /**
+   * Come back for a read that lost.
+   *
+   * Without this a session got exactly ONE chance to load, and whether it took
+   * it depended on a race with the sandbox's boot. Losing that race left the
+   * page on "Waking the agent" with no exit but the health probe — the least
+   * reliable signal in the system — or a manual reload.
+   *
+   * Backoff so a genuinely dead box costs little, capped so a box that comes
+   * back is picked up promptly.
+   */
+  private scheduleTailRetry(reason: SessionSyncReason): void {
+    if (this.destroyed || this.tailRetryTimer !== undefined) return;
+    const delay = Math.min(
+      TAIL_RETRY_BASE_MS * 2 ** this.retryAttempt,
+      TAIL_RETRY_MAX_MS,
+    );
+    this.retryAttempt += 1;
+    this.tailRetryTimer = this.startTimer(() => {
+      this.tailRetryTimer = undefined;
+      if (this.destroyed) return;
+      void this.reconcile(reason);
+    }, delay);
   }
 
   private async loadPage(
@@ -371,7 +491,9 @@ export class SessionSyncController {
     const startedAt = this.scheduler.now();
     try {
       const page = await this.options.loadPage({
-        limit: SESSION_SYNC_PAGE_SIZE,
+        // The tail is what someone is waiting for; an older page is what they
+        // asked for. Different budgets — see SESSION_SYNC_TAIL_PAGE_SIZE.
+        limit: operation === 'tail' ? SESSION_SYNC_TAIL_PAGE_SIZE : SESSION_SYNC_PAGE_SIZE,
         ...(before ? { before } : {}),
       });
       this.options.onTelemetry?.({
@@ -404,11 +526,13 @@ export class SessionSyncController {
     operation: 'tail' | 'older',
     reason: SessionSyncReason,
     initialCursor?: string,
+    onPage?: (messagesSoFar: SessionSyncMessage[]) => void,
   ): Promise<SessionSyncPage> {
     const messages = [...firstPage.messages];
     const knownUserMessageIds = new Set(this.knownUserMessageIds);
     const seenCursors = new Set(initialCursor ? [initialCursor] : []);
     let cursor = firstPage.nextCursor;
+    let pagesRead = 0;
 
     for (const message of firstPage.messages) {
       if (message.info.role === 'user') {
@@ -418,6 +542,9 @@ export class SessionSyncController {
 
     while (
       cursor &&
+      // BOUNDED. Without a ceiling a turn of a few thousand messages paged the
+      // whole session before anything rendered — see MAX_TURN_BACKFILL_PAGES.
+      pagesRead < MAX_TURN_BACKFILL_PAGES &&
       messages.some(
         (message) =>
           message.info.role === 'assistant' &&
@@ -430,6 +557,8 @@ export class SessionSyncController {
       }
       seenCursors.add(cursor);
       const page = await this.loadPage(operation, reason, cursor);
+      if (this.destroyed) return { messages, nextCursor: cursor };
+      pagesRead += 1;
       messages.unshift(...page.messages);
       for (const message of page.messages) {
         if (message.info.role === 'user') {
@@ -438,6 +567,9 @@ export class SessionSyncController {
       }
 
       cursor = page.nextCursor;
+      // Repaint as each page lands, so a long turn fills in front of the user
+      // instead of withholding everything until the walk ends.
+      onPage?.([...messages]);
     }
 
     return { messages, nextCursor: cursor };

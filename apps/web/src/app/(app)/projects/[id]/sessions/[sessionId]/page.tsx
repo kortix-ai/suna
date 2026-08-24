@@ -22,6 +22,7 @@ import {
   provisioningFailurePresentation,
 } from '@/features/session/provisioning-failure';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
+import { useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
@@ -32,6 +33,7 @@ import {
   sessionErrorSurfaceReady,
 } from '@/features/session/session-load-state';
 import {
+  AUTO_RESUME_WINDOW_MS,
   isAutoResuming,
   isRuntimeIdentityUnavailable,
   isSandboxResumable,
@@ -49,7 +51,6 @@ import {
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
-import { projectSessionsRefetchInterval } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
@@ -69,7 +70,6 @@ import {
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
-  type ProjectSession,
   formatRuntimeError,
   getProjectDetail,
   listProjectSessions,
@@ -137,6 +137,9 @@ export default function ProjectSessionPage() {
  * unrepresentable: switching sessions remounts, and a remount cannot half-apply.
  */
 function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  // Stable route-level owner. Runtime identity handoffs remount the chat, so a
+  // poll timer inside chat produces overlapping audit schedules.
+  useSessionAudit(projectId, sessionId, { poll: true, silent: true, limit: 100 });
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
@@ -176,20 +179,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: !!user && !!projectId,
-    // This query feeds the session HEADER's title. It had no interval at all,
-    // so it never refetched — the header was only ever correct because it
-    // shares this cache entry with the sidebar's list, and went stale the
-    // moment the sidebar was unmounted or had stopped polling. The name is
-    // written server-side seconds AFTER the first prompt with no event to
-    // announce it (see `sessionTitleHasLanded`), so a query that never
-    // refetches can never show it.
-    //
-    // `hasOpenSession: true` unconditionally: this route IS an open session.
-    refetchInterval: (query) =>
-      projectSessionsRefetchInterval({
-        sessions: query.state.data as ProjectSession[] | undefined,
-        hasOpenSession: true,
-      }),
+    // The always-mounted sidebar owns title/status polling for this shared key.
+    // A second observer timer here produced independent list requests between
+    // the sidebar's polls during long turns.
     refetchOnWindowFocus: false,
     ...contract('inventory'),
   });
@@ -245,7 +237,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // the resume path and wakes the box. So: re-issue /start ourselves a few times
   // (what the refresh did) before ever surfacing a manual control.
   const sandboxResumable = isSandboxResumable(sandbox);
-  const MAX_AUTO_RESUME = 3;
   const [resumeAttempts, setResumeAttempts] = useState(0);
   // ONE restart behavior for every card on this route: optimistic exit from the
   // terminal state, a real pending state, and a SURFACED failure.
@@ -297,21 +288,36 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       errorToast('Could not copy the prompt.');
     }
   };
+  // When THIS wake started. Stamped the first time we see a resumable box and
+  // cleared the moment it stops being one, so the window measures one wake
+  // rather than the age of the tab.
+  const [resumeStartedAt, setResumeStartedAt] = useState<number | null>(null);
   useEffect(() => {
-    if (!sandboxResumable || resumeAttempts >= MAX_AUTO_RESUME) return;
-    // First attempt fires immediately (match the refresh); back off after that.
+    if (!sandboxResumable) {
+      setResumeStartedAt(null);
+      return;
+    }
+    setResumeStartedAt((at) => at ?? Date.now());
+  }, [sandboxResumable]);
+  const resumeElapsedMs = resumeStartedAt === null ? null : Date.now() - resumeStartedAt;
+  useEffect(() => {
+    if (!sandboxResumable) return;
+    if (resumeStartedAt !== null && Date.now() - resumeStartedAt >= AUTO_RESUME_WINDOW_MS) return;
+    // First attempt fires immediately (match the refresh); back off after that,
+    // and keep re-asking for as long as the wake window allows. The budget is
+    // the WINDOW, not the attempt count — see `AUTO_RESUME_WINDOW_MS`.
     const t = setTimeout(
       () => {
         setResumeAttempts((n) => n + 1);
         queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
       },
-      resumeAttempts === 0 ? 0 : 1500,
+      resumeAttempts === 0 ? 0 : Math.min(1500 * 2 ** Math.min(resumeAttempts - 1, 3), 8000),
     );
     return () => clearTimeout(t);
-  }, [sandboxResumable, resumeAttempts, projectId, sessionId, queryClient]);
-  // While we still have auto-resume attempts left, a resumable box is "waking",
-  // not "dead" — render the boot loader, never the dead-end card.
-  const autoResuming = isAutoResuming(sandbox, resumeAttempts, MAX_AUTO_RESUME);
+  }, [sandboxResumable, resumeAttempts, resumeStartedAt, projectId, sessionId, queryClient]);
+  // Inside the wake window a resumable box is "waking", not "dead" — render the
+  // boot loader, never the dead-end card.
+  const autoResuming = isAutoResuming(sandbox, { elapsedMs: resumeElapsedMs });
 
   // Belt-and-suspenders: clear the legacy active-instance cookie once on mount for
   // this route so no later navigation can be hijacked onto a stale sandbox.

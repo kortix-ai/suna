@@ -78,6 +78,12 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
         const { done, value } = next.value;
         pendingRead = null;
         if (done) {
+          // Flush the decoder and the scanner's carry: a provider whose last
+          // line has no trailing newline keeps its usage frame in the carry,
+          // and without this that turn is billed as zero tokens.
+          const trailing = decoder.decode();
+          if (trailing) scanner.push(trailing);
+          scanner.finish();
           await settle();
           controller.close();
           return;

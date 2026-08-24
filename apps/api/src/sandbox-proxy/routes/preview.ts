@@ -1,3 +1,4 @@
+import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -1557,6 +1558,53 @@ export async function forwardToSandbox(
           exposed ? `${exposed}, ${EFFECTIVE_MESSAGE_ID_HEADER}` : EFFECTIVE_MESSAGE_ID_HEADER,
         );
       }
+      // The transcript list leaves the API WITHOUT its attachment bytes.
+      //
+      // The daemon strips these too (kortix-sandbox-agent-server/src/proxy.ts)
+      // and that is the right home. This second pass exists for every sandbox
+      // still running an older daemon image — a self-host does not rebuild
+      // its templates on our schedule, and the read that motivated this
+      // (20 messages = 7-19 MB, dying on a 30s browser deadline, retried
+      // forever) was on exactly such a box. Idempotent by construction: a
+      // reference is not a `data:` url, so a list the daemon already stripped
+      // passes through with zero work.
+      const listMatch =
+        method === 'GET' && upstream.ok
+          ? /^\/session\/([^/]+)\/message\/?$/.exec(remainingPath)
+          : null;
+      if (
+        listMatch &&
+        (upstream.headers.get('content-type') ?? '').includes('application/json')
+      ) {
+        const sessionID = decodeURIComponent(listMatch[1] ?? '');
+        const text = await upstream.text();
+        let body = text;
+        try {
+          const stripped = stripInlineAttachmentBytes(
+            JSON.parse(text),
+            (messageID, partID) =>
+              `/kortix/part/${encodeURIComponent(sessionID)}/${encodeURIComponent(messageID)}/${encodeURIComponent(partID)}`,
+          );
+          if (stripped.stripped > 0) {
+            body = JSON.stringify(stripped.value);
+            console.info(
+              `[PREVIEW] stripped ${stripped.stripped} inline attachment part(s), ${stripped.savedBytes} bytes, from ${sandboxId} ${remainingPath}`,
+            );
+          }
+        } catch {
+          // Not the JSON we expected — pass it through untouched. This path
+          // must never be the reason a transcript read fails.
+        }
+        respHeaders.delete('content-length');
+        respHeaders.delete('content-encoding');
+        respHeaders.set('content-type', 'application/json; charset=utf-8');
+        return new Response(body, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: respHeaders,
+        });
+      }
+
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,

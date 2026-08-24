@@ -11,30 +11,32 @@ import {
   getRequiredConnectorConnections,
   resolveCreateFailure,
 } from '@/hooks/projects/new-session-failure';
+import {
+  NEW_SESSION_GUARD_MAX_MS,
+  hasLandedOnNewSession,
+  useNewSessionGuardStore,
+} from '@/hooks/projects/new-session-guard';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import {
+  createWarmSession,
   primeTakenWarmSession,
+  tabIsVisible,
   takeWarmSessionEntry,
 } from '@/hooks/projects/use-warm-project-session';
 import {
   reconcileSessionsAfterCreate,
   seedAdoptedWarmSession,
 } from '@/hooks/projects/warm-session-seed';
-import {
-  NEW_SESSION_GUARD_MAX_MS,
-  hasLandedOnNewSession,
-  useNewSessionGuardStore,
-} from '@/hooks/projects/new-session-guard';
 import { isBillingEnabled } from '@/lib/config';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
   createProjectSession,
   getProjectSessionScope,
+  setProjectSessionScope,
   type PendingSessionPrompt,
   type ProjectSession,
   type SessionConnectorBindingsInput,
-  setProjectSessionScope,
 } from '@kortix/sdk';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { prefetchSessionStart, qk } from '@kortix/sdk/react';
@@ -127,9 +129,12 @@ export function useNewProjectSession(projectId: string | undefined) {
     if (!projectId) return;
     if (hasLandedOnNewSession(pendingMap, projectId, pathname)) release();
   }, [pendingMap, projectId, pathname, release]);
-  useEffect(() => () => {
-    if (releaseTimerRef.current) clearTimeout(releaseTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (releaseTimerRef.current) clearTimeout(releaseTimerRef.current);
+    },
+    [],
+  );
 
   const startSession = useCallback(
     (opts?: NewProjectSessionOpts) => {
@@ -177,7 +182,11 @@ export function useNewProjectSession(projectId: string | undefined) {
       // null whenever there is nothing suitable, so the create path below stays
       // the authority on billing, the session cap and connector requirements.
       const takeOrCreateSession = async () => {
-        const warm = takeWarmSessionEntry(projectId, { create: opts?.create });
+        const warm = takeWarmSessionEntry(projectId, {
+          create: opts?.create,
+          // Replenish after /start, not beside the claim and /start requests.
+          replenish: false,
+        });
         if (warm) {
           // The first prompt is a DURABLE inbox row, never a client-side
           // replay (the start stash carries picks only — see the producers).
@@ -245,6 +254,13 @@ export function useNewProjectSession(projectId: string | undefined) {
           // For an adopted warm session this is also the call that drops the
           // server's `metadata.warm` marker (apps/api/.../routes/r8.ts).
           const started = prefetchSessionStart(queryClient, projectId, sessionId);
+          if (adoptedWarmSession) {
+            const replenish = () => {
+              if (!tabIsVisible()) return;
+              void createWarmSession(projectId, undefined, { excludeSessionId: sessionId });
+            };
+            void started.then(replenish, replenish);
+          }
           // Warm adoption defers the list reconcile until that /start settles,
           // so the refetch cannot observe the row still marker-hidden and wipe
           // the seed above — see reconcileSessionsAfterCreate.
@@ -257,32 +273,31 @@ export function useNewProjectSession(projectId: string | undefined) {
           opts?.onNavigate?.(sessionId);
           router.push(`/projects/${projectId}/sessions/${sessionId}`);
         },
-      })
-        .catch((err) => {
-          const code = (err as { code?: string })?.code;
-          const action = resolveCreateFailure(code);
-          if (action === 'upgrade') {
-            openUpgradeDialog({ reason: 'subscription_required', accountId });
-          } else if (action === 'connect') {
-            const connectorConnections = getRequiredConnectorConnections(err);
-            if (projectId && connectorConnections) {
-              openConnectorGate({
-                projectId,
-                connectorConnections,
-                retry: () => startRef.current(opts),
-              });
-            } else {
-              errorToast(err instanceof Error ? err.message : 'Failed to start session');
-            }
-          } else if (action === 'toast') {
+      }).catch((err) => {
+        const code = (err as { code?: string })?.code;
+        const action = resolveCreateFailure(code);
+        if (action === 'upgrade') {
+          openUpgradeDialog({ reason: 'subscription_required', accountId });
+        } else if (action === 'connect') {
+          const connectorConnections = getRequiredConnectorConnections(err);
+          if (projectId && connectorConnections) {
+            openConnectorGate({
+              projectId,
+              connectorConnections,
+              retry: () => startRef.current(opts),
+            });
+          } else {
             errorToast(err instanceof Error ? err.message : 'Failed to start session');
           }
-          // 'silent': the global 429 handler already surfaced the session cap.
-          // No navigation happened, so release the claim now — the user stays
-          // where they are and must be able to try again immediately.
-          release();
-          opts?.onError?.();
-        });
+        } else if (action === 'toast') {
+          errorToast(err instanceof Error ? err.message : 'Failed to start session');
+        }
+        // 'silent': the global 429 handler already surfaced the session cap.
+        // No navigation happened, so release the claim now — the user stays
+        // where they are and must be able to try again immediately.
+        release();
+        opts?.onError?.();
+      });
     },
     [
       projectId,

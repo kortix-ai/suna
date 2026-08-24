@@ -25,6 +25,8 @@ let timeoutRenewals: Array<{
 let staticPauses: Array<{ sandboxId: string; opts: Record<string, unknown> }> = [];
 let killed: string[] = [];
 let infoState: 'running' | 'paused' | 'missing' = 'running';
+let infoReads = 0;
+let infoFactory: () => void | Promise<void> = () => {};
 let listed: Array<{ sandboxId: string; startedAt: Date | null }> = [];
 let listOpts: Record<string, unknown> | undefined;
 let connectFactory: (sandboxId: string) => FakeSandbox | Promise<FakeSandbox> = (sandboxId) =>
@@ -116,6 +118,8 @@ class FakeSandboxApi {
   }
 
   static async getInfo() {
+    infoReads += 1;
+    await infoFactory();
     if (infoState === 'missing') throw new FakeSandboxNotFoundError('sandbox not found');
     return { state: infoState };
   }
@@ -145,7 +149,7 @@ mock.module('../service-key', () => ({
 }));
 
 const { config } = await import('../../config');
-const { E2BProvider } = await import('./e2b');
+const { E2BProvider, E2B_RUNNING_STATUS_CACHE_TTL_MS } = await import('./e2b');
 const { getProvider } = await import('./index');
 
 beforeEach(() => {
@@ -156,6 +160,8 @@ beforeEach(() => {
   staticPauses = [];
   killed = [];
   infoState = 'running';
+  infoReads = 0;
+  infoFactory = () => {};
   listed = [];
   listOpts = undefined;
   connectFactory = (sandboxId) => fakeSandbox(sandboxId);
@@ -613,6 +619,70 @@ describe('E2B provider lifecycle', () => {
       throw new FakeSandboxNotFoundError('sandbox not found');
     };
     await expect(provider.remove('sb-remove')).resolves.toBeUndefined();
+  });
+
+  test('a confirmed running status is cached across the session-start polling interval', async () => {
+    const provider = new E2BProvider();
+
+    expect(await provider.getStatus('sb-running-cache')).toBe('running');
+    expect(await provider.getStatus('sb-running-cache')).toBe('running');
+
+    expect(infoReads).toBe(1);
+    expect(E2B_RUNNING_STATUS_CACHE_TTL_MS).toBeGreaterThan(1_500);
+  });
+
+  test('an explicit stop invalidates the confirmed-running status cache', async () => {
+    const provider = new E2BProvider();
+    expect(await provider.getStatus('sb-running-then-stopped')).toBe('running');
+
+    await provider.stop('sb-running-then-stopped');
+    infoState = 'paused';
+
+    expect(await provider.getStatus('sb-running-then-stopped')).toBe('stopped');
+    expect(infoReads).toBe(2);
+  });
+
+  test('a status read started before stop cannot repopulate the running cache after stop', async () => {
+    let finishInfo!: () => void;
+    const infoGate = new Promise<void>((resolve) => {
+      finishInfo = resolve;
+    });
+    infoFactory = () => infoGate;
+    const provider = new E2BProvider();
+
+    const staleRead = provider.getStatus('sb-stop-race');
+    await Promise.resolve();
+    await provider.stop('sb-stop-race');
+    finishInfo();
+    expect(await staleRead).toBe('running');
+
+    infoFactory = () => {};
+    infoState = 'paused';
+
+    expect(await provider.getStatus('sb-stop-race')).toBe('stopped');
+    expect(infoReads).toBe(2);
+  });
+
+  test('a start that finishes after stop cannot repopulate the running cache', async () => {
+    let finishConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    connectFactory = async (sandboxId) => {
+      await connectGate;
+      return fakeSandbox(sandboxId);
+    };
+    const provider = new E2BProvider();
+
+    const starting = provider.start('sb-start-stop-race');
+    await Promise.resolve();
+    await provider.stop('sb-start-stop-race');
+    finishConnect();
+    await starting;
+    infoState = 'paused';
+
+    expect(await provider.getStatus('sb-start-stop-race')).toBe('stopped');
+    expect(infoReads).toBe(1);
   });
 
   test('permanent removal rejects within its outer timeout when the E2B SDK never settles', async () => {

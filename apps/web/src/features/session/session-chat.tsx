@@ -60,10 +60,10 @@ import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
 import { resolveWorkingTurn } from './turn/working-turn';
 
+import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
-import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import {
@@ -100,6 +100,8 @@ import { uploadFile } from '@/features/files/api/runtime-files';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
+import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
+import { usePlanInChat } from '@/features/session/plan-surface';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
@@ -108,7 +110,6 @@ import {
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
-import { usePlanInChat } from '@/features/session/plan-surface';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
@@ -131,7 +132,6 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import {
   useAttachRequest,
@@ -220,17 +220,17 @@ import {
   useSessionWorking,
   useSessionWorkingStore,
 } from '@kortix/sdk/react';
+import { useReloadForensics } from './reload-forensics';
 import { CodeBlockEndpoints, SandboxUrlDetector } from './sandbox-url-detector';
 import {
   resolveLastTurnWorking,
   serverHoldsOpenTurn,
   sessionComposerReadiness,
 } from './session-composer-readiness';
-import { useReadinessSettling } from './use-readiness-settling';
-import { useReloadForensics } from './reload-forensics';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
 import { olderAutoloadExhausted, shouldLoadOlderHistory } from './session-older-autoload';
+import { useReadinessSettling } from './use-readiness-settling';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -859,8 +859,7 @@ function SessionTurnImpl({
   const queueActionId = queueRemovalId ?? queueRow?.prompt_id ?? null;
   const showQueueActions =
     Boolean(queueActionId) &&
-    (Boolean(queueRemovalId) ||
-      Boolean(queueRow && queueState && queueState !== 'interrupted'));
+    (Boolean(queueRemovalId) || Boolean(queueRow && queueState && queueState !== 'interrupted'));
 
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;
@@ -2016,8 +2015,18 @@ export function SessionChat({
   }, []);
 
   // Dismiss popup on scroll
-  const handleChatScroll = useCallback(() => {
+  // Set the first time the reader scrolls the transcript UP, and read by the
+  // older-history sentinel: history loads when someone reaches for it, never
+  // because the first page happened to be shorter than the viewport.
+  const readerScrolledUpRef = useRef(false);
+  const lastScrollTopRef = useRef<number | null>(null);
+  const handleChatScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     setSelectionPopup(null);
+    const top = event.currentTarget.scrollTop;
+    if (lastScrollTopRef.current !== null && top < lastScrollTopRef.current) {
+      readerScrolledUpRef.current = true;
+    }
+    lastScrollTopRef.current = top;
   }, []);
 
   // When user clicks "Reply" in the popup
@@ -2068,7 +2077,6 @@ export function SessionChat({
   const { data: approvalAudit } = useSessionAudit(
     projectId ?? approvalRouteParams.id,
     approvalRouteParams.sessionId,
-    { refetchInterval: 5_000 },
   );
   const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
   const { data: commands } = useRuntimeCommands();
@@ -2705,8 +2713,7 @@ export function SessionChat({
         // dead-end string is why this looked like the button simply never
         // worked.
         const status = (error as { status?: number } | null)?.status;
-        const detail =
-          error instanceof Error && error.message.trim() ? error.message.trim() : null;
+        const detail = error instanceof Error && error.message.trim() ? error.message.trim() : null;
         errorToast(
           status === 409
             ? (detail ?? 'The agent is already answering that prompt')
@@ -2849,6 +2856,7 @@ export function SessionChat({
             isLoadingOlder,
             lastPullFailed: olderPullFailed,
             autoLoadedPages,
+            readerScrolledUp: readerScrolledUpRef.current,
           })
         ) {
           setAutoLoadedPages((pages) => pages + 1);
@@ -4487,6 +4495,11 @@ export function SessionChat({
     // compact "starting" loader for a frame or two before the real chat
     // appeared: the flicker, mid-crossfade.
     hasOptimisticPrompt: promptInbox.prompts.length > 0 || firstPromptPreview !== null,
+    // The session OBJECT arriving is not the transcript arriving — they are two
+    // different requests, and the message read is the one that loses to a
+    // waking box. Without this the shell rendered over an unread session and
+    // the user saw an empty conversation instead of a wait.
+    transcriptLoaded: !syncMessagesLoading,
   });
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still

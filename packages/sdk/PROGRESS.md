@@ -44,6 +44,206 @@ as our auth gate catching up rather than a dead sandbox.
 
 ---
 
+### 2026-08-24 — session `session-open-overfetch` — one read where there were three, one entry where there were two — DONE
+
+**Files (SDK):** `core/session-sync/session-sync-controller.ts` (tail 20 -> 50,
+older 50 -> 100 — the bytes are gone, so a page is ~2-7 kB a message) ·
+`react/use-opencode-sessions/agents.ts` (its `/detail` read goes through the
+canonical `qk.project.detail` entry via `fetchQuery` instead of a private
+fetch) · `react/use-opencode-sessions/providers.ts` (its `/model-picker` read
+goes through `qk.project.modelPicker` the same way). Web/API changes in the
+same PR: history autoload only after the reader scrolls up; the audit badge no
+longer drains the audit write queue and asks for 100 rows not 1000; the sidebar
+probes seven IAM leaves in one `effective:batch`; the 4 MB provider catalog
+bootstrap waits for idle.
+
+**What.** A HAR of one cold session open on a self-host (322 requests,
+7.35 MB) after the attachment strip: `message?limit=20` + two `before=` pages
+fired on mount because 20 stripped messages do not fill a viewport and the top
+sentinel sat inside its 400px margin; `/detail` and `/model-picker` each fetched
+twice, concurrently, from hooks calling the fetcher directly under their own
+keys; `/audit?limit=1000` 503'd at the 25 s deadline twice because the badge
+poll awaited a bulk INSERT it never reads; seven sidebar probes = fourteen
+round trips; and `llm-catalog/providers` was 4 MB, 55 % of the page, for a
+Customize surface nobody had opened.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` (below) · apps/web
+tsc + eslint clean, session + sidebar suites green · apps/api tsc clean,
+project-audit tests green.
+
+---
+
+### 2026-08-24 — session `strip-attachment-bytes` — the transcript stops shipping file bytes — DONE
+
+**Files (SDK):** `platform/auth-core.ts` (`DEFAULT_FETCH_TIMEOUT_MS` 30s -> 120s, with
+the reason written on it). Everything else lives outside the SDK: the strip
+itself is `stripInlineAttachmentBytes` in BOTH `apps/kortix-sandbox-agent-server`
+(daemon proxy + new `GET /kortix/part/:sid/:mid/:pid`) and
+`apps/api/src/sandbox-proxy` (second pass for sandboxes on an older daemon), and
+`apps/web/.../sandbox-image.tsx` resolves the new `/kortix/part/…` reference
+through the same authenticated runtime fetch as every other sandbox read.
+
+**What.** On a real session (essentia, hundreds of image reads) the transcript
+list at `limit=20` weighed 7-19 MB because every file part carried its whole
+file as a `data:` url. The browser's 30 s fetch deadline killed five reads in a
+row at 29.23-30.08 s, and the tail retry re-issued the whole thing — "downloading
+more and more data" with nothing rendered. The same read answered in-VM in
+276 ms. The bytes leaving the sandbox were the entire cost.
+
+**Fix.** The list leaves without the bytes: oversized `data:` urls become a
+reference to the daemon's part endpoint, fetched per part when the row is on
+screen, `immutable` + ETag so it is asked once ever. Daemon e2e: a list with one
+image went from 21,870 saved bytes to a 367-byte body. The fetch timeout is
+raised so a large-but-legitimate response is no longer manufactured into a
+failure by the client that asked for it; the API's own 50 s proxy budget still
+bounds a wedged box.
+
+**Gates:** sdk typecheck clean · `pnpm test` 2483 pass / 0 fail · daemon
+841 tests exit 0 (+6 e2e) · api proxy 44 pass / 0 fail · web tsc + eslint clean,
+session suite 2527 pass / 0 fail.
+
+---
+
+### 2026-08-24 — session `opencode-v1-normalization` — take over OpenCode's own v1 page handling — DONE
+
+**Files:** `browser/session-sync/session-sync-registry.ts` (`readSessionMessagePage`
+filters + sorts) + tests (+6).
+
+**What.** We make the same v1 call OpenCode's own client makes —
+`client.session.messages({sessionID, limit, before})`, cursor from the
+`x-next-cursor` header — and then did none of what they do with the response.
+Theirs (`packages/app/src/context/server-session.ts:566-583`):
+
+```ts
+const items = (response.data ?? []).filter((item) => !!item?.info?.id)
+session: items.map((item) => cleanMessage(item.info)).sort(compareMessages)
+part:    items.map((item) => ({ id: item.info.id,
+           part: item.parts.filter((part) => !!part?.id).sort((a,b) => cmp(a.id,b.id)) }))
+```
+
+with `compareMessages` keyed on `time.created + id`
+(`packages/app/src/utils/session-message.ts:15-21`).
+
+Ours was `messages: result.data ?? []`. No filter, so a malformed row reached
+the renderer — the shape behind "TypeError: t is not iterable". No sort, so
+transcript order was whatever the wire said.
+
+**Also settled by measurement, so nobody re-opens it.** The v2/durable surface
+(`/api/session/{id}/history`, `/api/session/{id}/event?after=`) is present in
+the SDK we already pin AND answers 200 through our proxy — but it is EMPTY for
+sessions our runtime produces, because we prompt through v1
+(`core/client/kortix.ts:1145`). Measured on a real 2-day-old session:
+v1 `/session/{id}/message?limit=5` -> 15,429 bytes / 5 messages;
+v2 `/api/session/{id}/message?limit=5&order=desc` -> 50 bytes / 0 messages;
+v2 `/history` -> 0 events. Migrating reads to v2 would blank every existing
+session. v2 also caps `limit` at 100 (400 above it). Do not migrate reads
+without migrating writes, and note that existing sessions have no v2 history at
+all.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2481 pass / 0 fail ·
+apps/web tsc clean, session suite 2523 pass / 0 fail.
+
+---
+
+### 2026-08-24 — session `read-is-the-liveness-check` — a session page must never wait on a probe — DONE
+
+**Files:** `core/session-sync/session-sync-controller.ts` (`markLoaded` on
+SUCCESS only; `scheduleTailRetry` with backoff; destroy cancels it) + tests
+(+4, one replaced) · `react/use-session-sync.ts` (the initial read no longer
+waits for `runtimeHealthy`).
+
+**What.** Two screenshots, same page: the SIDEBAR showed a session live with a
+green dot while the MAIN PANE sat on "Waking the agent — this is taking longer
+than usual". Elsewhere, a session opened completely blank while its runtime
+terminal held the whole conversation.
+
+One mechanism under both. `resolveSessionContentState` keeps the web app on its
+loader while there are no messages, and exactly one thing produces messages:
+`reconcile('initial')`. That read was gated on `runtimeHealthy === true`. So the
+page's only exit from the loader was a health probe — and a box that is up while
+failing its probe (loaded, mid-turn, slow) shows a spinner over a session that
+could have been read the whole time. The sidebar reads the session list instead,
+which is why one page gave two answers.
+
+The blank came from the same function, eight lines away. `markLoaded` ran in a
+`finally`, so a read that FAILED still told the store the session was loaded —
+and the store plants an empty message list for that. A first read losing to a
+waking box therefore RECORDED "this session has no messages", the UI painted an
+empty conversation, and nothing came back: the mount had run, and the liveness
+poll only turns on while a session is working.
+
+**Fix.** `markLoaded` on success only — a successful read of zero messages is a
+fact about the session, a failed read is a fact about nothing. Failures schedule
+a retry with backoff (1s -> 15s cap) until one lands. And the read no longer
+waits for the probe: it starts as soon as the sandbox is known, because THE READ
+IS THE LIVENESS CHECK. Readiness is a byproduct of asking for what we wanted
+anyway, not a precondition for asking.
+
+**And the last blank.** The session OBJECT arriving is not the transcript
+arriving — two different requests, and the message read is the one that loses.
+`resolveSessionContentState` treated the first as proof of the second, so a
+session whose read had not landed rendered the full shell — header, composer,
+empty thread — over a long history. It now takes `transcriptLoaded` (the sync
+hook's `isLoading`, which flips only when an authoritative read lands) and waits
+for the read rather than for the metadata.
+
+**And the blank thread whose reads ALL returned 200.** Measured from the
+network panel (essentia, a run with hundreds of image reads):
+
+```
+message?limit=50            200   8,228 kB   30.39 s
+message?limit=50            200  24,460 kB   48.76 s
+message?limit=50&before=..  200  20,284 kB   35.74 s
+message?limit=50&before=..  200  25,125 kB   29.23 s
+-> 78,097 kB transferred, finish 3.8 min, NOTHING on screen
+```
+
+Fifty messages weigh 8-25 MB because the parts carry image bytes. The tail read
+kept walking backwards until every assistant message had its parent prompt in
+hand — so an assistant reply could never render above its own prompt — and
+`hydrate` ran only when that walk ENDED. On a long turn the walk is the whole
+session, serially, through the sandbox proxy.
+
+The tail is now ONE page, rendered — what OpenCode's own client does. The window
+may start on an assistant whose prompt is a page up; that is what OpenCode shows
+too, and `loadOlder` (user-driven) still completes the turn, bounded by
+`MAX_TURN_BACKFILL_PAGES`.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2467 pass / 0 fail ·
+apps/web tsc clean, session suite 2523 pass / 0 fail.
+
+---
+
+### 2026-08-24 — session `reconcile-on-eviction` — close the hole the IndexedDB removal named — DONE
+
+**Files:** `core/session-sync/fragment.ts` (NEW — `transcriptIsFragment`) +
+`fragment.test.ts` (4 tests) · `core/session-sync/session-sync-controller.ts`
+(`SessionSyncReason` += `eviction`) · `react/use-session-sync.ts` (subscribes
+and repairs).
+
+**What.** `5a7a43517f` removed the IndexedDB transcript mirror and said so in
+its own message: "#6146 evicts a detached session's transcript, and a session
+evicted while its agent runs comes back from SSE as a fragment; that repaint is
+gone here and no reconcile is keyed on eviction, so an evicted-then-refilled
+session can sit on a partial transcript until a reload. This PR does not address
+that; it should land with, or before, a reconcile-on-eviction fix." It landed
+without one. Reported the same day from live sessions: transcript blank or
+starting mid-conversation while the runtime held everything.
+
+**Fix.** The store already carries the exact signature. Eviction drops the
+messages AND marks the id; every authoritative re-establishment — `hydrate`,
+`clearSession`, `optimisticAdd` — clears the mark, and `applyEvent` does not. So
+messages present while the mark is still set can only have come from frames that
+arrived after the eviction: a fragment, by construction. `transcriptIsFragment`
+names that, and `useSessionSync` subscribes to the store rather than checking
+once, because the refill happens while the component is already mounted. The
+successful read disarms it — `hydrate` clears the mark.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` 2460 pass / 0 fail ·
+`smoke:install` passed · apps/web tsc clean, session suite 2517 pass / 0 fail.
+
+---
+
 ### 2026-08-24 — session `transcript-convergence` — the transcript must catch up, and five things stopped it — DONE
 
 **Files:** `core/session-sync/session-sync-controller.ts` (turn-end reconcile,

@@ -18,24 +18,20 @@ const source = readFileSync(join(import.meta.dir, 'project-sandbox-alert.tsx'), 
 const code = source.replace(/^[ \t]*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
 describe('sandbox alert — controls are IAM-gated, the message is not', () => {
-  test('probes both leaves in one batched request', () => {
-    expect(code).toContain('useProjectCans(projectId, SANDBOX_ALERT_GATE_ACTIONS)');
-    const list = code.slice(
-      code.indexOf('const SANDBOX_ALERT_GATE_ACTIONS'),
-      code.indexOf('];', code.indexOf('const SANDBOX_ALERT_GATE_ACTIONS')),
-    );
-    expect(list).toContain('PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ');
-    expect(list).toContain('PROJECT_ACTIONS.PROJECT_WRITE');
+  test('reads both leaves from the shared project-page batch', () => {
+    expect(code).toContain('useProjectPageCans(projectId)');
+    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]');
+    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_WRITE]');
   });
 
   // "Details" is a Customize destination, not a modal — `openSandboxSection`
   // routes to `projectSettingsSectionHref(projectId, 'sandbox')`.
   test('Details gates on customize.read, the recovery actions on project.write', () => {
     expect(code).toContain(
-      "const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed !== false;",
+      'const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed !== false;',
     );
     expect(code).toContain(
-      "const canRecover = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed !== false;",
+      'const canRecover = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed !== false;',
     );
     // Every `openSandboxSection` call site sits behind the details gate.
     const details = (code.match(/onClick=\{openSandboxSection\}/g) ?? []).length;

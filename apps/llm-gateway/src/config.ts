@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_REQUEST_BYTES } from '@kortix/llm-gateway';
+import { DEFAULT_IMAGE_WINDOW, DEFAULT_MAX_REQUEST_BYTES } from '@kortix/llm-gateway';
 import { hydrateEnvironmentSecret } from '@kortix/shared';
 
 hydrateEnvironmentSecret();
@@ -37,7 +37,17 @@ export const config = {
     secretKey: process.env.LANGFUSE_SECRET_KEY,
     baseUrl: process.env.LANGFUSE_HOST,
   },
-  // Default: 8 MiB. This accepts the measured 2,023,225-byte Aster request and
-  // rejects accidental/untrusted oversized payloads before upstream dispatch.
+  // Default: 128 MiB (DEFAULT_MAX_REQUEST_BYTES). A declared body over this is
+  // refused with 413 before a byte is read. 0 disables the per-request cap.
   maxRequestBytes: optionalInt('GATEWAY_MAX_REQUEST_BYTES', DEFAULT_MAX_REQUEST_BYTES),
+  // Inline-image cap per request (see @kortix/llm-gateway pipeline/image-window.ts).
+  // Default 20 (Bedrock Converse's hard limit); on overflow the 12 most recent
+  // images survive. GATEWAY_MAX_INLINE_IMAGES=0 disables pruning.
+  imageWindow: {
+    maxImages: optionalInt('GATEWAY_MAX_INLINE_IMAGES', DEFAULT_IMAGE_WINDOW.maxImages),
+    keepOnOverflow: optionalInt(
+      'GATEWAY_IMAGE_KEEP_ON_OVERFLOW',
+      DEFAULT_IMAGE_WINDOW.keepOnOverflow,
+    ),
+  },
 };

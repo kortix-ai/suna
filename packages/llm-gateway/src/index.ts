@@ -16,6 +16,8 @@ export type {
   InflightResizeResult,
 } from './pipeline/inflight-budget';
 export type { AdmittedBodyResult } from './pipeline/read-bounded-body';
+export { DEFAULT_IMAGE_WINDOW, applyImageWindow } from './pipeline/image-window';
+export type { ImageWindowOptions, ImageWindowResult } from './pipeline/image-window';
 export type { ChatCompletionRequest, GatewayDeps } from './pipeline';
 export {
   MAX_RELAYED_RETRY_AFTER_SECONDS,

@@ -863,7 +863,11 @@ jobs:
   publish-web-ecs-dns:
     name: Publish canonical Dev ECS DNS
     needs: [detect-changes, deploy-web-ecs]
-    if: needs.detect-changes.outputs.frontend == 'true'
+    # `always()` prevents a skipped unrelated ancestor from suppressing this
+    # job after deploy-web-ecs has already succeeded.
+    if: ${{ always()
+      && needs.detect-changes.outputs.frontend == 'true'
+      && needs.deploy-web-ecs.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -891,7 +895,9 @@ jobs:
   verify-web-dev:
     name: Verify canonical Dev frontend on ECS
     needs: [detect-changes, dev-version, publish-web-ecs-dns]
-    if: needs.detect-changes.outputs.frontend == 'true'
+    if: ${{ always()
+      && needs.detect-changes.outputs.frontend == 'true'
+      && needs.publish-web-ecs-dns.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
