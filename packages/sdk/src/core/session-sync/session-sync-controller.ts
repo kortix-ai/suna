@@ -18,6 +18,34 @@ const TAIL_RETRY_MAX_MS = 15_000;
 export const SESSION_SYNC_PAGE_SIZE = 50;
 
 /**
+ * The FIRST page — the one the user waits on.
+ *
+ * Time to first paint is bytes, not messages. Measured on a heavy session
+ * (essentia, 2026-08-24, a run with hundreds of image reads whose parts carry
+ * base64):
+ *
+ *   message?limit=50   ->   8,228 kB   30.39 s
+ *   message?limit=50   ->  24,460 kB   48.76 s
+ *   message?limit=50   ->  20,284 kB   35.74 s
+ *   message?limit=50   ->  25,125 kB   29.23 s
+ *
+ * Roughly 165-500 kB PER MESSAGE. The first screen does not need fifty of
+ * those; it needs enough to fill a view. Twenty is a full view plus buffer,
+ * and on that session it is ~3-10 MB instead of ~8-25 MB.
+ *
+ * Older pages keep the larger size on purpose: by then the user is scrolling
+ * deliberately, a spinner is honest, and fewer round trips is the better trade
+ * — each page also costs a CORS preflight, one of which measured 3.34 s.
+ *
+ * NOTE this is not what fixed the blank transcript. That was structural:
+ * `hydrate` ran only after a multi-page backward walk, so NOTHING rendered at
+ * any page size — a smaller limit would have meant MORE sequential round trips
+ * before that single paint, and a longer blank. The walk is gone (see
+ * `loadTail`); this only makes the first paint lighter.
+ */
+export const SESSION_SYNC_TAIL_PAGE_SIZE = 20;
+
+/**
  * How far back the tail read will walk to complete a turn before it stops and
  * leaves the rest to "load older".
  *
@@ -460,7 +488,9 @@ export class SessionSyncController {
     const startedAt = this.scheduler.now();
     try {
       const page = await this.options.loadPage({
-        limit: SESSION_SYNC_PAGE_SIZE,
+        // The tail is what someone is waiting for; an older page is what they
+        // asked for. Different budgets — see SESSION_SYNC_TAIL_PAGE_SIZE.
+        limit: operation === 'tail' ? SESSION_SYNC_TAIL_PAGE_SIZE : SESSION_SYNC_PAGE_SIZE,
         ...(before ? { before } : {}),
       });
       this.options.onTelemetry?.({

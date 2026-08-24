@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import {
   SESSION_SYNC_PAGE_SIZE,
+  SESSION_SYNC_TAIL_PAGE_SIZE,
   SessionSyncController,
   createHttpSessionSyncController,
   loadCompleteSessionHistory,
@@ -111,7 +112,7 @@ describe('SessionSyncController', () => {
     await controller.start();
     expect(requests).toEqual([
       {
-        url: `https://runtime.example.test/session/session%2F1/message?limit=${SESSION_SYNC_PAGE_SIZE}`,
+        url: `https://runtime.example.test/session/session%2F1/message?limit=${SESSION_SYNC_TAIL_PAGE_SIZE}`,
         authorization: 'Bearer token-1',
       },
     ]);
@@ -130,6 +131,8 @@ describe('SessionSyncController', () => {
       return page(['message-1']);
     });
 
+    // `loadCompleteSessionHistory` is a full-history helper, not a first
+    // paint: nobody is watching a spinner, so it keeps the larger page.
     expect(requests).toEqual([
       { limit: SESSION_SYNC_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
@@ -187,7 +190,7 @@ describe('SessionSyncController', () => {
     });
 
     await controller.start();
-    expect(requests).toEqual([{ limit: SESSION_SYNC_PAGE_SIZE }]);
+    expect(requests).toEqual([{ limit: SESSION_SYNC_TAIL_PAGE_SIZE }]);
     expect(controller.getSnapshot()).toMatchObject({
       freshness: 'fresh',
       hasOlder: true,
@@ -196,7 +199,7 @@ describe('SessionSyncController', () => {
 
     await controller.loadOlder();
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-older' },
     ]);
     expect(hydrated.flat().map((entry) => entry.info.id)).toEqual([
@@ -262,12 +265,12 @@ describe('SessionSyncController', () => {
     // The TAIL is one page — see `loadTail`. Completing the turn is what the
     // user drives by scrolling up, and that is where the walk lives now.
     await controller.start();
-    expect(requests).toEqual([{ limit: SESSION_SYNC_PAGE_SIZE }]);
+    expect(requests).toEqual([{ limit: SESSION_SYNC_TAIL_PAGE_SIZE }]);
 
     await controller.loadOlder();
 
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
     ]);
@@ -356,7 +359,7 @@ describe('SessionSyncController', () => {
     await controller.loadOlder();
 
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-3' },
@@ -397,7 +400,7 @@ describe('SessionSyncController', () => {
       'Session history cursor repeated: cursor-1',
     );
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
     ]);
     expect(controller.getSnapshot().isLoadingOlder).toBe(false);
@@ -459,8 +462,8 @@ describe('SessionSyncController', () => {
     await controller.reconcile('manual');
 
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
     ]);
   });
 
@@ -656,9 +659,9 @@ describe('SessionSyncController', () => {
     await controller.loadOlder();
 
     expect(requests).toEqual([
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
-      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_TAIL_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
     ]);
   });
@@ -966,6 +969,65 @@ describe('SessionSyncController', () => {
     await controller.loadOlder();
 
     expect(pages).toBe(2);
+    controller.destroy();
+  });
+  /**
+   * Time to FIRST PAINT is bytes, not messages.
+   *
+   * Measured on a heavy session (essentia, 2026-08-24 — hundreds of image reads,
+   * parts carrying base64): 50 messages weighed 8,228 kB / 24,460 kB / 20,284 kB
+   * / 25,125 kB across four reads. That is roughly 165-500 kB PER MESSAGE, so the
+   * first screen cost 8-25 MB and 30-49 s.
+   *
+   * The first page only has to fill a screen. Twenty messages is a full view plus
+   * buffer, and on that session it is ~3-10 MB instead of ~8-25 MB.
+   *
+   * Older pages keep the larger size: by then the user is scrolling deliberately,
+   * a spinner is honest, and fewer round trips is the better trade (each page
+   * costs a CORS preflight — one measured at 3.34 s).
+   */
+  test('the first page is smaller than an older page', async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return request.before ? page(['older']) : page(['newest'], 'cursor-older');
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+    expect(requests).toEqual([{ limit: SESSION_SYNC_TAIL_PAGE_SIZE }]);
+
+    await controller.loadOlder();
+    expect(requests.at(-1)).toEqual({
+      limit: SESSION_SYNC_PAGE_SIZE,
+      before: 'cursor-older',
+    });
+
+    expect(SESSION_SYNC_TAIL_PAGE_SIZE).toBeLessThan(SESSION_SYNC_PAGE_SIZE);
+    controller.destroy();
+  });
+
+  test('every reconcile reason reads the small first page, not just the initial one', async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return page(['m1']);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    for (const reason of ['initial', 'poll', 'visible', 'turn-end', 'eviction'] as const) {
+      await controller.reconcile(reason);
+    }
+
+    expect(requests.every((request) => request.limit === SESSION_SYNC_TAIL_PAGE_SIZE)).toBe(true);
     controller.destroy();
   });
 });
