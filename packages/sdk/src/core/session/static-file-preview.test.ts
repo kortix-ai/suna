@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { appendPreviewToken } from './preview';
 import {
   STATIC_FILE_HEALTH_MAX_ATTEMPTS,
   authenticatedUrlAddresses,
@@ -77,30 +78,53 @@ describe('shouldRetryStaticFileHealth', () => {
 
 // ── Which file is the authenticated URL actually for? ──────────────────────
 // Authentication resolves in an effect, so on the frame where the viewer opens
-// a DIFFERENT file the authenticated URL still points at the previous one.
-// Framing it shows the file the user just navigated away from — briefly, which
-// reads as the preview rendering the wrong page.
+// a DIFFERENT file the authenticated URL still names the previous one. Framing
+// it shows the file the user just navigated away from.
+//
+// Every case below runs the REAL `appendPreviewToken`, never a hand-written
+// approximation of it. A prefix test passed against a concatenated string and
+// shipped a preview that spun "Starting preview server…" forever: the static
+// file URL is the one preview URL carrying a query (`?path=…`), and
+// `appendPreviewToken` re-serializes the query through `URLSearchParams`, so
+// its slashes come back as `%2F` and no prefix of the original survives.
 
 describe('authenticatedUrlAddresses', () => {
-  const FILE = 'https://api.kortix.cloud/v1/p/sbx1/3211/open?path=/workspace/a.html';
-  const OTHER = 'https://api.kortix.cloud/v1/p/sbx1/3211/open?path=/workspace/b.html';
+  const SUBDOMAIN = staticFilePreviewTargets('/workspace/index.html', LOCAL)!.previewUrl;
+  const DEPLOYED_FILE = staticFilePreviewTargets('/workspace/index.html', DEPLOYED)!.previewUrl;
+  const DEPLOYED_OTHER = staticFilePreviewTargets('/workspace/other.html', DEPLOYED)!.previewUrl;
 
-  it('accepts the path-based form, which authenticates by cookie and is unchanged', () => {
-    expect(authenticatedUrlAddresses(FILE, FILE)).toBe(true);
+  it('accepts the token form the subdomain proxy actually receives', () => {
+    const authenticated = appendPreviewToken(SUBDOMAIN, 'TK');
+    // The proof the old prefix test was wrong, kept as a standing assertion so
+    // nobody reintroduces one.
+    expect(authenticated.startsWith(SUBDOMAIN)).toBe(false);
+    expect(authenticated).toContain('%2Fworkspace%2Findex.html');
+    expect(authenticatedUrlAddresses(authenticated, SUBDOMAIN)).toBe(true);
   });
 
-  it('accepts the subdomain form, which carries a one-shot token', () => {
-    expect(
-      authenticatedUrlAddresses('http://p3211-sbx1.localhost:8008/open?path=/a.html&token=TK', 'http://p3211-sbx1.localhost:8008/open?path=/a.html'),
-    ).toBe(true);
+  it('accepts the path-based form, which authenticates by cookie and is unchanged', () => {
+    expect(authenticatedUrlAddresses(DEPLOYED_FILE, DEPLOYED_FILE)).toBe(true);
   });
 
   it('rejects a URL left over from the previously opened file', () => {
-    expect(authenticatedUrlAddresses(OTHER, FILE)).toBe(false);
+    expect(authenticatedUrlAddresses(DEPLOYED_OTHER, DEPLOYED_FILE)).toBe(false);
+    expect(
+      authenticatedUrlAddresses(
+        appendPreviewToken(staticFilePreviewTargets('/workspace/other.html', LOCAL)!.previewUrl, 'TK'),
+        SUBDOMAIN,
+      ),
+    ).toBe(false);
   });
 
-  it('rejects nothing at all', () => {
-    expect(authenticatedUrlAddresses(null, FILE)).toBe(false);
-    expect(authenticatedUrlAddresses(FILE, undefined)).toBe(false);
+  it('is not fooled by a file whose name merely extends another', () => {
+    const shorter = staticFilePreviewTargets('/workspace/a.html', DEPLOYED)!.previewUrl;
+    const longer = staticFilePreviewTargets('/workspace/a.html.bak', DEPLOYED)!.previewUrl;
+    expect(authenticatedUrlAddresses(longer, shorter)).toBe(false);
+  });
+
+  it('rejects nothing at all, and anything unparseable', () => {
+    expect(authenticatedUrlAddresses(null, DEPLOYED_FILE)).toBe(false);
+    expect(authenticatedUrlAddresses(DEPLOYED_FILE, undefined)).toBe(false);
+    expect(authenticatedUrlAddresses('not a url', DEPLOYED_FILE)).toBe(false);
   });
 });

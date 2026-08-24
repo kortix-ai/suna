@@ -17,8 +17,13 @@
  *   - `ready` + a `url` — frame it.
  *   - `unavailable` — a sentence and a `retry()`.
  *
- * `url` is `null` in every state but the last, so a caller cannot accidentally
- * frame an unauthenticated or unbound URL: there is nothing to frame.
+ * `url` is non-null ONLY in `ready`, and only once the authenticated URL names
+ * THIS file — so a caller cannot accidentally frame an unauthenticated URL, an
+ * unbound one, or the file the user just navigated away from.
+ *
+ * Every wait is bounded. A pending state that can outlive its bound is
+ * indistinguishable from a hung one, which is exactly how this surface shipped
+ * a spinner that never resolved.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -68,21 +73,35 @@ export function useStaticFilePreview(
   const retry = useCallback(() => setRetryNonce((n) => n + 1), []);
 
   useEffect(() => {
-    if (!targets) {
-      // Nothing to probe yet — a sandbox that has not bound is still starting,
-      // which is what `checking` says.
-      setStatus('checking');
-      return;
-    }
+    if (!enabled) return;
 
     let cancelled = false;
     let attempts = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
     setStatus('checking');
 
-    async function probe() {
-      if (cancelled || !targets) return;
+    // Every wait is bounded, including the one with nothing to probe. A sandbox
+    // that never binds leaves `targets` null forever, and an unbounded pending
+    // state is indistinguishable from a hung one — it spins for the life of the
+    // tab with no way out. `targets` is a dependency, so a sandbox that DOES
+    // bind restarts this loop with a fresh budget.
+    function waitOrGiveUp() {
+      if (cancelled) return;
+      if (!shouldRetryStaticFileHealth(attempts)) {
+        setStatus('unavailable');
+        return;
+      }
+      timer = setTimeout(tick, STATIC_FILE_HEALTH_RETRY_MS);
+    }
+
+    async function tick() {
+      if (cancelled) return;
       attempts += 1;
+
+      if (!targets) {
+        waitOrGiveUp();
+        return;
+      }
 
       // A subdomain preview never receives the host-only `/v1/p` session
       // cookie, so its first request has to carry a one-shot `?token` — the
@@ -107,20 +126,16 @@ export function useStaticFilePreview(
         setStatus('ready');
         return;
       }
-      if (!shouldRetryStaticFileHealth(attempts)) {
-        setStatus('unavailable');
-        return;
-      }
-      timer = setTimeout(probe, STATIC_FILE_HEALTH_RETRY_MS);
+      waitOrGiveUp();
     }
 
-    void probe();
+    void tick();
 
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [targets, retryNonce]);
+  }, [enabled, targets, retryNonce]);
 
   // `status` is about the SERVER, so it rightly survives a file switch. The
   // authenticated URL does not: it resolves in an effect and still names the

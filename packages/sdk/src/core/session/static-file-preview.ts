@@ -76,15 +76,38 @@ export function shouldRetryStaticFileHealth(attempts: number): boolean {
  *
  * `useAuthenticatedPreviewUrl` resolves in an effect, so on the render where a
  * viewer switches to a different file it still holds the PREVIOUS file's URL.
- * Framing that shows the page the user just navigated away from. A prefix test
- * is exact enough for both forms authentication produces: the path-based form
- * is the preview URL unchanged, and the subdomain form is the preview URL plus
- * a one-shot `token` query.
+ * Framing that shows the page the user just navigated away from.
+ *
+ * Compare NORMALIZED, never by prefix. The subdomain form authenticates with a
+ * one-shot `token` that `appendPreviewToken` adds through `URLSearchParams`,
+ * which re-serializes the WHOLE query — and the static file URL is the one
+ * preview URL that has a query, so `?path=/workspace/a.html` comes back as
+ * `?path=%2Fworkspace%2Fa.html`. No prefix of the original survives that, and a
+ * prefix test shipped a preview stuck on "Starting preview server…" forever:
+ * the server was up, the URL was authenticated, and the check said it belonged
+ * to a different file. A prefix is wrong in the other direction too —
+ * `a.html.bak` starts with the URL for `a.html`.
+ *
+ * Both sides go through the same `URL` round-trip, so both carry the same
+ * encoding; `token` is dropped because it is the credential, not the address.
  */
+function normalizeAddress(candidate: string): string | null {
+  try {
+    const url = new URL(candidate);
+    url.searchParams.delete('token');
+    url.searchParams.sort();
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function authenticatedUrlAddresses(
   authenticatedUrl: string | null | undefined,
   previewUrl: string | undefined,
 ): boolean {
   if (!authenticatedUrl || !previewUrl) return false;
-  return authenticatedUrl.startsWith(previewUrl);
+  const authenticated = normalizeAddress(authenticatedUrl);
+  const wanted = normalizeAddress(previewUrl);
+  return authenticated !== null && authenticated === wanted;
 }
