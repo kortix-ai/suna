@@ -89,6 +89,12 @@ function isMissingSandboxError(error: unknown): boolean {
  * after API restarts recovers a fresh token and explicitly resumes a paused box.
  */
 const connectedSandboxes = new Map<string, E2BSandbox>();
+export const E2B_INGRESS_HANDLE_TTL_MS = 5_000;
+const connectedSandboxCachedAt = new Map<string, number>();
+const connectOperations = new Map<
+  string,
+  { generation: object; promise: Promise<E2BSandbox> }
+>();
 export const E2B_RUNNING_STATUS_CACHE_TTL_MS = 3_000;
 const runningStatusCache = new Map<string, number>();
 const statusCacheGeneration = new Map<string, object>();
@@ -105,6 +111,12 @@ function currentStatusGeneration(externalId: string): object {
 function invalidateRunningStatus(externalId: string): void {
   runningStatusCache.delete(externalId);
   statusCacheGeneration.set(externalId, {});
+}
+
+function invalidateConnectedSandbox(externalId: string): void {
+  connectedSandboxes.delete(externalId);
+  connectedSandboxCachedAt.delete(externalId);
+  connectOperations.delete(externalId);
 }
 
 function validateRuntimeEnv(value: unknown, externalId: string): Record<string, string> {
@@ -298,11 +310,13 @@ async function ensureAppEntrypoint(
 
 export class E2BProvider implements SandboxProvider {
   readonly name: ProviderName = 'e2b';
+  readonly ingressCacheTtlMs = 0;
 
   constructor(
     private readonly removeTimeoutMs = E2B_REMOVE_TIMEOUT_MS,
     private readonly renewTimeoutMs = E2B_RENEW_TIMEOUT_MS,
     private readonly stopTimeoutMs = E2B_STOP_TIMEOUT_MS,
+    private readonly now: () => number = Date.now,
   ) {}
 
   readonly provisioning: ProvisioningTraits = {
@@ -365,6 +379,7 @@ export class E2BProvider implements SandboxProvider {
     }
 
     connectedSandboxes.set(sandbox.sandboxId, sandbox);
+    connectedSandboxCachedAt.set(sandbox.sandboxId, this.now());
     try {
       // E2B preserves the filesystem but not Sandbox.create(...envs) across a
       // keepMemory:false pause. Persist the complete per-session environment on
@@ -376,7 +391,7 @@ export class E2BProvider implements SandboxProvider {
       if (workloadType === 'app') await ensureAppEntrypoint(sandbox, envVars);
       else await ensureKortixEntrypoint(sandbox, envVars);
     } catch (error) {
-      connectedSandboxes.delete(sandbox.sandboxId);
+      invalidateConnectedSandbox(sandbox.sandboxId);
       await sandbox.kill({ requestTimeoutMs: 20_000 }).catch(() => false);
       throw new Error(
         `[e2b] failed to launch Kortix entrypoint: ${error instanceof Error ? error.message : String(error)}`,
@@ -402,11 +417,11 @@ export class E2BProvider implements SandboxProvider {
 
   private async startOnce(externalId: string, generation: object): Promise<void> {
     try {
-      const sandbox = await Sandbox.connect(externalId, {
-        ...apiOpts(),
-        timeoutMs: E2B_RUNTIME_BACKSTOP_MS,
-      });
-      connectedSandboxes.set(externalId, sandbox);
+      const sandbox = await this.connectFresh(externalId, generation);
+      if (statusCacheGeneration.get(externalId) === generation) {
+        connectedSandboxes.set(externalId, sandbox);
+        connectedSandboxCachedAt.set(externalId, this.now());
+      }
       // A filesystem-only pause cold-boots on connect. E2B normally runs the
       // template start command during that boot; this explicit check makes the
       // Kortix runtime invariant independent of provider startup behavior.
@@ -415,9 +430,10 @@ export class E2BProvider implements SandboxProvider {
       else await ensureKortixEntrypoint(sandbox, envVars);
       if (statusCacheGeneration.get(externalId) === generation) {
         runningStatusCache.set(externalId, Date.now());
+        connectedSandboxCachedAt.set(externalId, this.now());
       }
     } catch (error) {
-      connectedSandboxes.delete(externalId);
+      invalidateConnectedSandbox(externalId);
       invalidateRunningStatus(externalId);
       throw error;
     }
@@ -484,11 +500,11 @@ export class E2BProvider implements SandboxProvider {
       `E2B stop(${externalId})`,
     );
     invalidateRunningStatus(externalId);
-    connectedSandboxes.delete(externalId);
+    invalidateConnectedSandbox(externalId);
   }
 
   async remove(externalId: string): Promise<void> {
-    connectedSandboxes.delete(externalId);
+    invalidateConnectedSandbox(externalId);
     invalidateRunningStatus(externalId);
     try {
       await withTimeout(
@@ -535,13 +551,44 @@ export class E2BProvider implements SandboxProvider {
 
   private async connected(externalId: string): Promise<E2BSandbox> {
     const cached = connectedSandboxes.get(externalId);
-    if (cached) return cached;
-    const sandbox = await Sandbox.connect(externalId, {
+    const cachedAt = connectedSandboxCachedAt.get(externalId);
+    if (
+      cached &&
+      cachedAt !== undefined &&
+      this.now() - cachedAt < E2B_INGRESS_HANDLE_TTL_MS
+    )
+      return cached;
+
+    const providerStatus = await this.getStatus(externalId);
+    if (providerStatus !== 'running') {
+      throw new Error(`[e2b] sandbox ${externalId} is not running (status: ${providerStatus})`);
+    }
+    const generation = currentStatusGeneration(externalId);
+    return this.connectFresh(externalId, generation);
+  }
+
+  private connectFresh(externalId: string, generation: object): Promise<E2BSandbox> {
+    const inFlight = connectOperations.get(externalId);
+    if (inFlight) return inFlight.promise;
+
+    const promise = Sandbox.connect(externalId, {
       ...apiOpts(),
       timeoutMs: E2B_RUNTIME_BACKSTOP_MS,
-    });
-    connectedSandboxes.set(externalId, sandbox);
-    return sandbox;
+    })
+      .then((sandbox) => {
+        if (statusCacheGeneration.get(externalId) === generation) {
+          connectedSandboxes.set(externalId, sandbox);
+          connectedSandboxCachedAt.set(externalId, this.now());
+        }
+        return sandbox;
+      })
+      .finally(() => {
+        if (connectOperations.get(externalId)?.promise === promise) {
+          connectOperations.delete(externalId);
+        }
+      });
+    connectOperations.set(externalId, { generation, promise });
+    return promise;
   }
 
   async resolveIngress(
