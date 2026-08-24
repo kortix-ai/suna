@@ -188,6 +188,35 @@ export function mergeProjectSecretConnectedProviders(
  * Once the runtime is up, the live `/provider` list replaces this (it knows
  * auth.json, autoloaded providers like OpenCode Zen, and real capabilities).
  */
+/**
+ * Which model a provider should DEFAULT to when the user has picked nothing.
+ * Mirrors the API picker's table (apps/api/src/llm-gateway/models/
+ * picker-catalog.ts FLAGSHIP_CANDIDATES) — first candidate present in the
+ * catalog wins; a provider not listed (or whose candidates are absent) falls
+ * back to its most recently released model. Without this the very first
+ * message of a native project ran on whatever model happened to sort first in
+ * the models.dev file (observed live: `Hy-MT2-30B-A3B`, which OpenRouter
+ * refused with "No endpoints found that support tool use").
+ */
+const NATIVE_FLAGSHIP_CANDIDATES: Record<string, string[]> = {
+  anthropic: ['claude-opus-4-8', 'claude-sonnet-4-6'],
+  openai: ['gpt-5.5', 'gpt-5.1', 'gpt-5', 'gpt-4.1'],
+  google: ['gemini-3-pro-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+  'x-ai': ['grok-4', 'grok-3'],
+  xai: ['grok-4', 'grok-3'],
+  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+  mistral: ['mistral-large-latest', 'mistral-large'],
+  groq: ['llama-3.3-70b-versatile'],
+  perplexity: ['sonar-pro', 'sonar'],
+  openrouter: ['anthropic/claude-sonnet-4.6', 'anthropic/claude-sonnet-4.5', 'openai/gpt-5.2'],
+};
+
+/** Table providers first, in table order — "first connected provider" then
+ *  favors a direct flagship provider over e.g. OpenRouter's 350-model sprawl. */
+const NATIVE_PROVIDER_RANK = new Map(
+  Object.keys(NATIVE_FLAGSHIP_CANDIDATES).map((id, index) => [id, index]),
+);
+
 export function nativeProviderListFromCatalog(
   catalog: {
     providers: Array<{
@@ -199,6 +228,7 @@ export function nativeProviderListFromCatalog(
   secretNames: Set<string>,
 ): ProviderListResponse {
   const connectedIds = connectedGatewayProviderIdsFromSecretNames(secretNames);
+  const defaults: Record<string, string> = {};
   const all = (catalog.providers ?? [])
     .filter(
       (provider) =>
@@ -206,24 +236,42 @@ export function nativeProviderListFromCatalog(
         !NATIVE_EXCLUDED_PROVIDER_IDS.has(provider.id) &&
         (provider.models?.length ?? 0) > 0,
     )
-    .map((provider) => ({
-      id: provider.id,
-      name: provider.name,
-      source: 'env',
-      models: Object.fromEntries(
-        provider.models.map((model) => [
-          model.id,
-          {
-            id: model.id,
-            name: model.name,
-            ...(model.released ? { release_date: model.released } : {}),
-          },
-        ]),
-      ),
-    }));
+    .sort(
+      (a, b) =>
+        (NATIVE_PROVIDER_RANK.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+        (NATIVE_PROVIDER_RANK.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+    )
+    .map((provider) => {
+      // Newest first: the picker's visual order and the "first model" fallback
+      // both read insertion order.
+      const models = [...provider.models].sort((a, b) =>
+        (b.released ?? '').localeCompare(a.released ?? ''),
+      );
+      const ids = new Set(models.map((model) => model.id));
+      const flagship =
+        (NATIVE_FLAGSHIP_CANDIDATES[provider.id] ?? []).find((candidate) => ids.has(candidate)) ??
+        models[0]?.id;
+      if (flagship) defaults[provider.id] = flagship;
+      return {
+        id: provider.id,
+        name: provider.name,
+        source: 'env',
+        models: Object.fromEntries(
+          models.map((model) => [
+            model.id,
+            {
+              id: model.id,
+              name: model.name,
+              ...(model.released ? { release_date: model.released } : {}),
+            },
+          ]),
+        ),
+      };
+    });
   return {
     all,
     connected: all.map((provider) => provider.id),
+    default: defaults,
   } as unknown as ProviderListResponse;
 }
 

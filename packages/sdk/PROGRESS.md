@@ -66,8 +66,15 @@ this window; native mode now synthesizes its list from the ungated
 read 403s degrade to empty until boot). Runtime truth still wins the moment it
 exists.
 
-**Gates:** `typecheck` clean · `bun run test` 2509 pass / 0 fail ·
+**Gates:** `typecheck` clean · `bun run test` 2513 pass / 0 fail ·
 `smoke:install` passed. Shippable: YES.
+
+**Addendum (same session):** the first live dev run auto-picked
+`Hy-MT2-30B-A3B` (models.dev file order) and OpenRouter refused the first
+message with "No endpoints found that support tool use". The synthesized list
+now carries a per-provider `default` (flagship-candidate table mirroring the
+API picker's, else most-recent release), ranks flagship-table providers first,
+and orders models newest-first.
 
 ---
 

@@ -235,3 +235,74 @@ describe('nativeProviderListFromCatalog (pre-runtime native picker source)', () 
     expect((list.all ?? []).some((p) => p.id === 'kortix')).toBe(false);
   });
 });
+
+// The first live dev run of the pre-runtime source auto-picked
+// `Hy-MT2-30B-A3B` (catalog file order) and OpenRouter answered "No endpoints
+// found that support tool use" on the user's very first message. The
+// synthesized list must therefore carry a per-provider `default` (the
+// composer's fallback reads `providers.default[id]` before "first model") and
+// order deterministically toward flagships.
+describe('nativeProviderListFromCatalog — default pick quality', () => {
+  const catalog = {
+    source: 'models.dev',
+    fetched_at: '2026-08-24T00:00:00Z',
+    provider_count: 2,
+    model_count: 5,
+    providers: [
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        env: ['OPENROUTER_API_KEY'],
+        models: [
+          { id: 'hy/hy-mt2-30b-a3b', name: 'Hy-MT2-30B-A3B', released: '2025-01-01' },
+          { id: 'z-ai/glm-4.7-flash', name: 'GLM-4.7-Flash', released: '2026-06-01' },
+          { id: 'old/thing', name: 'Old Thing', released: null },
+        ],
+      },
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        env: ['ANTHROPIC_API_KEY'],
+        models: [
+          { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', released: '2025-10-01' },
+          { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', released: '2026-01-01' },
+        ],
+      },
+    ],
+  };
+
+  test('a known flagship becomes the provider default', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    expect((list as { default?: Record<string, string> }).default).toEqual({
+      anthropic: 'claude-opus-4-8',
+    });
+  });
+
+  test('a provider with no flagship candidate defaults to its most recently released model', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['OPENROUTER_API_KEY']));
+    expect((list as { default?: Record<string, string> }).default).toEqual({
+      openrouter: 'z-ai/glm-4.7-flash',
+    });
+  });
+
+  test('flagship-table providers rank before the rest, so anthropic beats openrouter as first pick', () => {
+    const list = nativeProviderListFromCatalog(
+      catalog as never,
+      new Set(['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY']),
+    );
+    expect((list.all ?? []).map((p) => p.id)).toEqual(['anthropic', 'openrouter']);
+    expect(list.connected).toEqual(['anthropic', 'openrouter']);
+  });
+
+  test('models within a provider are ordered newest-first', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['OPENROUTER_API_KEY']));
+    const openrouter = (list.all ?? []).find((p) => p.id === 'openrouter') as {
+      models: Record<string, unknown>;
+    };
+    expect(Object.keys(openrouter.models)).toEqual([
+      'z-ai/glm-4.7-flash',
+      'hy/hy-mt2-30b-a3b',
+      'old/thing',
+    ]);
+  });
+});
