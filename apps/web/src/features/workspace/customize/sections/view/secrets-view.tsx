@@ -401,6 +401,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                     <SecretTableRow
                       key={row.identifier}
                       row={row}
+                      llmGatewayEnabled={llmGatewayEnabled}
                       canManage={canManage}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
                       onEdit={() => openEdit(row)}
@@ -417,6 +418,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               onOpenChange={setDialogOpen}
               projectId={projectId}
               row={dialogRow}
+              llmGatewayEnabled={llmGatewayEnabled}
               connectors={connectorsQuery.data?.connectors ?? []}
               connectorsLoading={connectorsQuery.isLoading}
               egressEnabled={egressEnabled}
@@ -681,12 +683,14 @@ function SecretMarks({ row }: { row: SecretRow }) {
 
 function SecretTableRow({
   row,
+  llmGatewayEnabled,
   canManage,
   busy,
   onEdit,
   onDelete,
 }: {
   row: SecretRow;
+  llmGatewayEnabled: boolean;
   canManage: boolean;
   busy: boolean;
   onEdit: () => void;
@@ -695,7 +699,7 @@ function SecretTableRow({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const canManageShared = canManage && !row.system;
   const distinctKey = row.identifier !== row.key;
-  const delivery = secretDeliveryPresentation(row.strategy, row.consumer);
+  const delivery = secretDeliveryPresentation(row.strategy, row.consumer, { llmGatewayEnabled });
 
   return (
     <TableRow
@@ -776,6 +780,7 @@ function SecretDialog({
   onOpenChange,
   projectId,
   row,
+  llmGatewayEnabled,
   connectors,
   connectorsLoading,
   egressEnabled,
@@ -785,6 +790,7 @@ function SecretDialog({
   onOpenChange: (open: boolean) => void;
   projectId: string;
   row: SecretRow | null;
+  llmGatewayEnabled: boolean;
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
   egressEnabled: boolean;
@@ -1067,7 +1073,7 @@ function SecretDialog({
     : row.configured
       ? `Edit ${row.identifier}`
       : `Set ${row.identifier}`;
-  const selectedDelivery = secretDeliveryPresentation(strategy, nextConsumer);
+  const selectedDelivery = secretDeliveryPresentation(strategy, nextConsumer, { llmGatewayEnabled });
   const bindingIdentifier = (row?.identifier ?? identifier).trim() || key.trim().toUpperCase();
   const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier);
   // Offer "Enforce at the network" only when the experimental flag is on, or

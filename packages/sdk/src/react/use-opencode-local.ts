@@ -275,11 +275,17 @@ export function useOpenCodeLocal({
   defaultAgentName,
   resolveServerDefault,
 }: UseOpenCodeLocalOptions): OpenCodeLocal {
-  // ---- Flatten models from providers (shared with the chat input, so the
-  // gateway-only allowlist applies here too — native providers never leak in) ----
-  const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
-  const projectId = useKortixRouteProjectId();
+  // ---- Flatten models from providers (shared with the chat input). The
+  // filter follows the provider MODE: gateway mode keeps the kortix-only
+  // allowlist (native bypass providers never leak in); native mode
+  // (llm_gateway off) flattens OpenCode's own connected providers — that IS
+  // the catalog off-gateway. ----
   const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
+  const flatModels = useMemo<FlatModel[]>(
+    () => flattenModels(providers, { providerMode }),
+    [providers, providerMode],
+  );
+  const projectId = useKortixRouteProjectId();
 
   // ---- Model store (persisted: recent, variant, per-agent/session selection) ----
   const modelStore = useModelStore(flatModels);

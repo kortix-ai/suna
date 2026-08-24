@@ -52,6 +52,7 @@ import {
 import { createRemoteSessionBranch } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 import { resolveSessionSecretGrant } from './secret-grant';
+import { validateNativeOpencodeModelRef } from './session-model-change';
 import {
   AmbiguousSecretGrantError,
   intersectSecretGrants,
@@ -1050,14 +1051,25 @@ export async function createProjectSession(input: {
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
   const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
 
-  // Model: normalize + fail-fast at create. An unservable / retired / typo'd
-  // model pin was previously stored verbatim and only failed at prompt time (a
-  // dead turn); a bare managed id (`claude-opus-4-8`) silently dropped to the
-  // daemon's default because opencode addresses managed models as `kortix/<id>`.
-  // Validate against the same servability resolver the gateway uses, and store
-  // the OPENCODE ref form. Runs BEFORE the billing hold so a bad model never
-  // costs a credit reservation. Mirrors the channel-model gate
-  // (routes/channel-bindings.ts) and the plan's §4.7 fail-fast.
+  // Model: normalize + fail-fast at create. Two paths, forked on the project's
+  // `llm_gateway` flag:
+  //
+  //  • gateway ON — validate against the same servability resolver the gateway
+  //    uses and store the OPENCODE ref form (`kortix/<wire>`). An unservable /
+  //    retired / typo'd pin previously only failed at prompt time (a dead
+  //    turn); a bare managed id (`claude-opus-4-8`) silently dropped to the
+  //    daemon's default because opencode addresses managed models as
+  //    `kortix/<id>`.
+  //  • gateway OFF (native OpenCode) — the gateway resolver has no say.
+  //    OpenCode owns the catalog and connects providers from the keys in the
+  //    box, so the pin is stored VERBATIM in OpenCode's native
+  //    `provider/model` form. Only the shape is checked here: the daemon's
+  //    resolveOpencodeModel drops a slash-less ref silently, and a `kortix/…`
+  //    ref names a provider that does not exist off-gateway — both would be a
+  //    dead pin, so both fail fast instead.
+  //
+  // Runs BEFORE the billing hold so a bad model never costs a credit
+  // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
   const requestedModel = normalizeString(body.opencode_model ?? body.opencodeModel);
   let opencodeModel: string | null = null;
   let opencodeModelSource: ModelSource | null = null;
@@ -1070,26 +1082,40 @@ export async function createProjectSession(input: {
         },
       };
     }
-    const servable = await isModelServableForAccount({
-      userId,
-      accountId,
-      projectId,
-      freeModelsOnly,
-      model: requestedModel,
-    });
-    if (!servable) {
-      return {
-        error: {
-          status: 400,
-          body: {
-            error: `Model "${requestedModel}" is not available for this account`,
-            code: 'INVALID_SESSION_MODEL',
+    if (!llmGatewayEnabled) {
+      const nativeShapeError = validateNativeOpencodeModelRef(requestedModel);
+      if (nativeShapeError) {
+        return {
+          error: {
+            status: 400,
+            body: { error: nativeShapeError.message, code: nativeShapeError.code },
           },
-        },
-      };
+        };
+      }
+      opencodeModel = requestedModel;
+      opencodeModelSource = 'explicit';
+    } else {
+      const servable = await isModelServableForAccount({
+        userId,
+        accountId,
+        projectId,
+        freeModelsOnly,
+        model: requestedModel,
+      });
+      if (!servable) {
+        return {
+          error: {
+            status: 400,
+            body: {
+              error: `Model "${requestedModel}" is not available for this account`,
+              code: 'INVALID_SESSION_MODEL',
+            },
+          },
+        };
+      }
+      opencodeModel = toOpencodeModelRef(requestedModel);
+      opencodeModelSource = 'explicit';
     }
-    opencodeModel = toOpencodeModelRef(requestedModel);
-    opencodeModelSource = 'explicit';
   } else if (llmGatewayEnabled) {
     try {
       const resolved = await resolveEffectiveModel({

@@ -122,7 +122,7 @@ Registry order — the same order **Settings → Experimental** shows.
 | `agentmail_email` | AgentMail Email | Experimental | Off | `routes` |
 | `teams` | Microsoft Teams | Experimental | Off | `routes` |
 | `voice` | Voice | Experimental | Off | `behavioral` |
-| `llm_gateway` | LLM Gateway | Experimental | Operator-set | `behavioral` |
+| `llm_gateway` | LLM Gateway | Experimental | Off (operator can default on) | `behavioral` |
 | `review_center` | Review Center | Experimental | Off | `routes` |
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
@@ -130,7 +130,10 @@ Registry order — the same order **Settings → Experimental** shows.
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 
 `llm_gateway` reads its per-project default from
-`LLM_GATEWAY_DEFAULT_ENABLED`. An explicit project choice still wins.
+`LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to off: a project that has not
+opted in runs native OpenCode model management (provider keys injected into
+the sandbox, native `provider/model` refs). An explicit project choice still
+wins.
 
 ### What each flag gates
 

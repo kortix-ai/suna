@@ -3,6 +3,7 @@ import { SESSION_SECRETS_ALLOWLIST_MAX_KEYS } from '@kortix/api-contract';
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import { connectors, projectSecrets, projectSessionSecretHandles, projectSessions, projects } from '@kortix/db';
 import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
+import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
 import { config } from '../config';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
@@ -601,15 +602,32 @@ export async function materializeSecretDelivery(
     sessionId: string | null;
     grantEnv: string[] | 'all' | undefined;
     mintHandleFor: SecretHandleMinter;
+    /**
+     * The project's effective `llm_gateway` mode — the fork between the two
+     * model-credential delivery paths:
+     *
+     *  • gateway ON  — provider API keys are SERVICE credentials. Every
+     *    gateway-managed name is withheld from the box; the gateway resolves
+     *    the value server-side after authenticating the session token.
+     *  • gateway OFF (native OpenCode) — the same stored rows ARE the box's
+     *    credentials. A `consumer: 'llm_gateway'` row delivers its plaintext
+     *    value so OpenCode's native provider management auto-connects, and a
+     *    provider-key NAME is an ordinary env var.
+     */
+    llmGatewayEnabled: boolean;
   },
 ): Promise<void> {
   for (const row of rows) {
     if (!(row.key in env)) continue;
-    // Model credentials are service credentials. A legacy `runtime` row must
-    // not override that platform boundary. The LLM gateway resolves the value
-    // server-side after authenticating the session token.
-    if (isGatewayManagedEnv(row.key)) {
+    if (input.llmGatewayEnabled && isGatewayManagedEnv(row.key)) {
       delete env[row.key];
+      continue;
+    }
+    if (!input.llmGatewayEnabled && row.consumer === 'llm_gateway') {
+      // Native mode: the row was stored `broker`/`llm_gateway` only because the
+      // platform defaulted provider keys there (routes/r3.ts `defaultToGateway`,
+      // the provider-connect UI). With no gateway in the path it delivers like a
+      // `runtime` row — plaintext, so toggling the flag never strands the key.
       continue;
     }
     const delivery = resolveSecretDelivery({
@@ -806,9 +824,14 @@ export async function listProjectSecretsSnapshotForUser(
   );
   const sandboxRows = rows.filter((row) => !boundConnectorIdentifiers.has(row.identifier));
   const { env, selected } = resolveGrantedSecretSelection(sandboxRows, grantEnv);
+  // Resolved HERE, once, so boot, hot push, and the toggle fan-out all deliver
+  // model credentials from the same decision — a caller cannot pass a stale
+  // mode and desynchronise the box from the project's flag.
+  const llmGatewayEnabled = await projectLlmGatewayEnabledById(projectId);
   await materializeSecretDelivery(selected, env, {
     sessionId: sessionId ?? null,
     grantEnv,
+    llmGatewayEnabled,
     mintHandleFor: async (row) => {
       if (!sessionId) throw new Error('Secret handle delivery requires a session');
       return mintSessionSecretHandle(projectId, sessionId, row);

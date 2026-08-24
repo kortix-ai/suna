@@ -18,6 +18,7 @@ import { channelModelContext } from './model-gate';
 import { type SlashCtx, handleSlashCommand } from './commands';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
+import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
 
@@ -349,6 +350,29 @@ async function handleSetSelection(
   // Picker options are already servable, but re-validate before persisting so a
   // stored model can NEVER 404 at request time ("model isn't available").
   const gate = await channelModelContext(ctx);
+  // Native mode (gateway off): the picker that produced this action no longer
+  // renders, but a stale panel can still post — accept only a native
+  // `provider/model` ref and store it verbatim.
+  if (gate && !gate.llmGatewayEnabled) {
+    const nativeShapeError = validateNativeOpencodeModelRef(requested);
+    if (nativeShapeError) {
+      await respondViaUrl(payload.response_url, {
+        response_type: 'ephemeral',
+        replace_original: true,
+        text: `⚠️ \`${escapeMrkdwn(requested)}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`.`,
+      });
+      return;
+    }
+    const okNative = await setChannelModel(ctx, requested);
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      replace_original: true,
+      text: okNative
+        ? `✓ Model for this channel set to \`${escapeMrkdwn(requested)}\`. New sessions will use it.`
+        : 'That channel is no longer connected to a project — run `/kortix` first.',
+    });
+    return;
+  }
   if (gate) {
     const servable = await isModelServableForAccount({
       userId: gate.ownerUserId,

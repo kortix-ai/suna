@@ -311,11 +311,34 @@ export function secretDeliveryLegend(showEnforced = true): SecretDeliveryLegendE
  * `disabled`, and rendering "Disabled" beside a working provider key would be
  * a lie. Everything else shows its exposure.
  */
+/**
+ * Same stored row, opposite delivery: with the project's LLM Gateway flag OFF
+ * the platform injects a `llm_gateway`-consumer key into the sandbox env so
+ * OpenCode's native provider management can use it. The badge must never
+ * claim "never enters the sandbox" about a value that just did.
+ */
+const NATIVE_MODEL_KEY_PRESENTATION: SecretDeliveryPresentation = {
+  label: 'Model provider',
+  description:
+    'A model provider key. The LLM Gateway is off for this project, so it loads into the sandbox environment and OpenCode connects the provider natively.',
+  tone: 'secondary',
+};
+
 export function secretDeliveryPresentation(
   strategy: SecretDeliveryStrategy,
   consumer?: SecretConsumer | null,
+  opts?: {
+    /** The project's `llm_gateway` flag — forks the copy for model-provider
+     *  keys (`consumer: 'llm_gateway'`). Defaults to on (the historical
+     *  wording) so callers that cannot know stay accurate for gateway
+     *  projects. */
+    llmGatewayEnabled?: boolean;
+  },
 ): SecretDeliveryPresentation {
   const usage = secretUsage(strategy, consumer);
+  if (usage === 'llm_gateway' && opts?.llmGatewayEnabled === false) {
+    return NATIVE_MODEL_KEY_PRESENTATION;
+  }
   if (usage && usage !== 'agent') return ASSIGNED_USAGE_PRESENTATIONS[usage];
   return EXPOSURE_PRESENTATIONS[secretExposure(strategy, consumer)];
 }

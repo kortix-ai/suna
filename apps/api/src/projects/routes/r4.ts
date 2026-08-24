@@ -3219,6 +3219,12 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json(
+        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
+        404,
+      );
+    }
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get('userId') as string;
     const defaults = await getAccountModelDefaults(ownerAccountId, projectId);
@@ -3276,6 +3282,12 @@ projectsApp.openapi(
     // Floor 'read'; project.customize.write is the real gate.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json(
+        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
+        404,
+      );
+    }
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -3371,6 +3383,12 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
     );
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json(
+        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
+        404,
+      );
+    }
     const ownerAccountId = loaded.row.accountId as string;
     const scope = c.req.query('scope');
     const agentName = c.req.query('agentName');

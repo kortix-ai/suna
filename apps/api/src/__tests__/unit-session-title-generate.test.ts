@@ -188,6 +188,10 @@ describe('generateSessionTitleFromFirstPrompt', () => {
       // Never let a unit test reach the real resolver (billing tier + gateway
       // candidate resolution, both DB-backed).
       fallbackModel: over.fallbackModel ?? (async () => null),
+      // This suite exercises the GATEWAY titling path; the per-project flag is
+      // resolved from the DB in production. Native-mode (flag off) behavior is
+      // covered by its own cases below.
+      resolveLlmGatewayEnabled: over.resolveLlmGatewayEnabled ?? (async () => true),
     };
     return { options, persisted, minted, revoked, models, generateCalls: () => generateCalls };
   }
@@ -442,5 +446,17 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     const h = harness();
     await generateSessionTitleFromFirstPrompt({ ...input, firstPromptText: '   ' }, h.options);
     expect(h.persisted).toEqual([]);
+  });
+
+  // ── Native mode (project `llm_gateway` flag OFF) ─────────────────────────
+  it('native mode runs NO gateway pipeline — no mint, no generate — and titles from the prompt', async () => {
+    const h = harness({ resolveLlmGatewayEnabled: async () => false });
+    await generateSessionTitleFromFirstPrompt(
+      { ...input, modelHint: 'anthropic/claude-sonnet-4-6' },
+      h.options,
+    );
+    expect(h.minted).toEqual([]);
+    expect(h.generateCalls()).toBe(0);
+    expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
   });
 });

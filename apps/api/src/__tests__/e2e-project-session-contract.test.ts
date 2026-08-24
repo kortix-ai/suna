@@ -2021,7 +2021,10 @@ describe('project session API contract', () => {
     const env = lastProvisionInput!.extraEnvVars ?? {};
     expect(env).not.toHaveProperty('KORTIX_END_USER_REF');
     expect(env).not.toHaveProperty('KORTIX_ORIGIN_REF');
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/anthropic/claude-opus-4-8');
+    // Native mode (llm_gateway off — the default): the pin is stored and
+    // delivered as OpenCode's own `provider/model` ref, never rebadged
+    // `kortix/…`.
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
     expect(env.GMAIL_TOKEN).toBe('g-secret');
     expect(env.STRIPE_SECRET).toBeUndefined();
 
@@ -3960,7 +3963,12 @@ describe('project session API contract', () => {
     expect(lastProvisionInput).not.toBeNull();
 
     const env = lastProvisionInput!.extraEnvVars ?? {};
-    expect(env.OPENAI_API_KEY).toBeUndefined();
+    // Native mode (llm_gateway off — the default): a provider key IS the box's
+    // credential. It is stored `broker`/`llm_gateway` (defaultToGateway) but
+    // DELIVERS plaintext so OpenCode's native provider management can
+    // auto-connect. Gateway mode withholds it — see
+    // secret-delivery-withholding.test.ts.
+    expect(env.OPENAI_API_KEY).toBe('sk-test-openai');
     expect(env.LOCAL_BUILD_SECRET).toBe('local-build-value');
 
     expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);

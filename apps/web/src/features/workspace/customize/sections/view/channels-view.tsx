@@ -102,6 +102,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { ModelSelector } from '@/features/session/model-selector';
+import { storedModelRefToKey } from '@/lib/llm-gateway';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import {
   ChannelDisconnectButton,
@@ -469,8 +470,15 @@ function ChannelBindingTableRow({
 
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
+  // Mode-aware read-back: a native (gateway-off) pin is `provider/model` and
+  // must not be forced under the synthetic `kortix` provider, or the selector
+  // shows "Project default" beside a channel that has an explicit pin.
+  const llmGatewayFlag = useFeatureFlag(projectId, 'llm_gateway');
   const selectedModel = binding.opencodeModel
-    ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel))
+    ? storedModelRefToKey(
+        stripOpencodeNamespace(binding.opencodeModel),
+        llmGatewayFlag.enabled === true,
+      )
     : null;
 
   const update = useUpdateChannelBinding();
