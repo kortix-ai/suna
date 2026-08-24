@@ -12,6 +12,28 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `llm-gateway-off` (follow-up) — native picker source BEFORE the runtime exists — DONE
+
+**Files:** `react/provider-selection.ts` (NEW pure `nativeProviderListFromCatalog`)
++ tests · `react/use-opencode-sessions/providers.ts` (pre-runtime
+`['project-providers', :id, 'native-catalog']` query; returned while the native
+runtime query has no data). **Public surface: no barrel changes.**
+
+**What.** Reported from the field right after the native-mode ship: "no models
+shown after connecting api key". The native provider query is gated on
+`runtimeReady` — on the project home / a cold session there is no opencode to
+read, so the composer showed "No models available" and a key save changed
+nothing until a sandbox booted. Gateway mode always had `/model-picker` for
+this window; native mode now synthesizes its list from the ungated
+`/llm-catalog/providers` + the project's secret names (members whose secret
+read 403s degrade to empty until boot). Runtime truth still wins the moment it
+exists.
+
+**Gates:** `typecheck` clean · `bun run test` 2509 pass / 0 fail ·
+`smoke:install` passed. Shippable: YES.
+
+---
+
 ### 2026-08-24 — session `llm-gateway-off` — native-mode (flag off) model path — DONE
 
 **Files:** `react/model-flatten.ts` (`flattenModels` gains optional

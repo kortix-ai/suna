@@ -10,6 +10,7 @@ import type { ProviderListResponse } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
 import {
   getProjectDetail,
+  getProjectLlmCatalogProviders,
   getProjectModelPicker,
   listProjectSecrets,
 } from '../../core/rest/projects-client';
@@ -19,6 +20,7 @@ import {
   GATEWAY_PROVIDER_IDS,
   LLM_PROVIDER_CREDENTIALS,
   mergeProjectSecretConnectedProviders,
+  nativeProviderListFromCatalog,
   normalizeProviderList,
   projectLlmCatalogToProviderList,
   providerListHasModels,
@@ -149,5 +151,39 @@ export function useOpenCodeProviders() {
     retry: (failureCount) => failureCount < 10,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
   });
-  return projectId && projectGatewayEnabled ? gatewayProvidersQuery : nativeProvidersQuery;
+  // Native mode, BEFORE the session runtime exists (project home, cold
+  // session): opencode's /provider list — the native query's only source —
+  // cannot be read yet, so without a fallback the composer showed "No models
+  // available" until a sandbox booted, and connecting a key changed nothing.
+  // Synthesize the picker source from the ungated /llm-catalog/providers
+  // route + the project's secret names (nativeProviderListFromCatalog). The
+  // live runtime list takes over the moment it exists; a cached runtime
+  // answer (the native query's placeholderData) also wins, since it is
+  // runtime truth from a previous boot.
+  const nativeCatalogQuery = useQuery<ProviderListResponse>({
+    queryKey: ['project-providers', projectId, 'native-catalog'],
+    queryFn: async () => {
+      const [catalog, secrets] = await Promise.all([
+        getProjectLlmCatalogProviders(projectId!),
+        // `project.secret.read` is manager-tier: a member's read 403s. Treat
+        // that as "no keys visible" — the runtime list corrects it on boot —
+        // rather than erroring the whole picker source.
+        listProjectSecrets(projectId!).catch(() => ({ items: [] as Array<{ name: string }> })),
+      ]);
+      const items = Array.isArray(secrets) ? secrets : (secrets.items ?? []);
+      return nativeProviderListFromCatalog(
+        catalog,
+        new Set(items.map((secret: { name: string }) => secret.name)),
+      );
+    },
+    enabled: !!projectId && projectModeKnown && !projectGatewayEnabled && !runtimeReady,
+    ...contract('config'),
+    retry: false,
+  });
+
+  if (projectId && projectGatewayEnabled) return gatewayProvidersQuery;
+  if (projectId && projectModeKnown && !runtimeReady && !nativeProvidersQuery.data) {
+    return nativeCatalogQuery;
+  }
+  return nativeProvidersQuery;
 }

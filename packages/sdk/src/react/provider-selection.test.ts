@@ -7,8 +7,10 @@ import {
   connectedGatewayProviderIdsFromSecretNames,
   mergeProviderLists,
   mergeProjectSecretConnectedProviders,
+  nativeProviderListFromCatalog,
   projectLlmCatalogToProviderList,
 } from './provider-selection';
+import { flattenModels } from './model-flatten';
 
 describe('LLM_PROVIDER_CREDENTIALS — Kortix auth requirements, not raw catalog env', () => {
   test('amazon-bedrock requires only the bearer token + region', () => {
@@ -147,5 +149,89 @@ describe('applyEnablementToProviderList', () => {
     applyEnablementToProviderList(providers, { 'glm-5.2': false });
     const models = (providers.all?.[0] as { models: Record<string, { enabled?: boolean }> }).models;
     expect(models['glm-5.2'].enabled).toBe(true);
+  });
+});
+
+// Native mode, BEFORE any sandbox runtime exists (project home, cold session):
+// there is no opencode /provider list to read, so the picker synthesizes a
+// ProviderListResponse from the ungated /llm-catalog/providers route plus the
+// project's secret NAMES. Without this the composer showed "No models
+// available" on every native project until a box booted — connecting a key
+// changed nothing.
+describe('nativeProviderListFromCatalog (pre-runtime native picker source)', () => {
+  const catalog = {
+    source: 'models.dev',
+    fetched_at: '2026-08-24T00:00:00Z',
+    provider_count: 3,
+    model_count: 5,
+    providers: [
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        env: ['ANTHROPIC_API_KEY'],
+        models: [
+          { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', released: '2026-02-01' },
+          { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', released: '2025-10-01' },
+        ],
+      },
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        env: ['OPENROUTER_API_KEY'],
+        models: [{ id: 'z-ai/glm-4.7-flash', name: 'GLM-4.7-Flash', released: null }],
+      },
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        env: ['OPENAI_API_KEY'],
+        models: [{ id: 'gpt-5.2', name: 'GPT-5.2', released: null }],
+      },
+    ],
+  };
+
+  test('providers whose key is in the secrets connect, with catalog models flattened-compatible', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    expect(list.connected).toEqual(['anthropic']);
+    const anthropic = (list.all ?? []).find((p) => p.id === 'anthropic') as {
+      models: Record<string, { name?: string; release_date?: string }>;
+    };
+    expect(Object.keys(anthropic.models)).toEqual(['claude-sonnet-4-6', 'claude-haiku-4-5']);
+    // `released` (catalog wire name) must land as `release_date` (the field
+    // flattenModels/the picker sort read).
+    expect(anthropic.models['claude-sonnet-4-6']!.release_date).toBe('2026-02-01');
+    // Disconnected providers are omitted entirely — 195 catalog providers per
+    // paint would be dead weight the flatten filters out anyway.
+    expect((list.all ?? []).some((p) => p.id === 'openai')).toBe(false);
+  });
+
+  test('the synthesized list flattens to native FlatModels', () => {
+    const list = nativeProviderListFromCatalog(
+      catalog as never,
+      new Set(['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY']),
+    );
+    const flat = flattenModels(list, { providerMode: 'native' });
+    expect(flat.map((m) => `${m.providerID}/${m.modelID}`).sort()).toEqual([
+      'anthropic/claude-haiku-4-5',
+      'anthropic/claude-sonnet-4-6',
+      'openrouter/z-ai/glm-4.7-flash',
+    ]);
+  });
+
+  test('no connected key ⇒ an EMPTY list (the connect-provider call to action stays)', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set());
+    expect(list.all).toEqual([]);
+    expect(list.connected).toEqual([]);
+  });
+
+  test('never synthesizes the synthetic kortix provider', () => {
+    const withKortix = {
+      ...catalog,
+      providers: [
+        ...catalog.providers,
+        { id: 'kortix', name: 'Kortix', env: [], models: [{ id: 'glm-5.2', name: 'GLM', released: null }] },
+      ],
+    };
+    const list = nativeProviderListFromCatalog(withKortix as never, new Set(['ANTHROPIC_API_KEY']));
+    expect((list.all ?? []).some((p) => p.id === 'kortix')).toBe(false);
   });
 });
