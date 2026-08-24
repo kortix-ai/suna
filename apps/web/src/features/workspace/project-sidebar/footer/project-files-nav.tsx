@@ -1,6 +1,5 @@
 'use client';
 
-import { FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
@@ -9,6 +8,7 @@ import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
+import { FoldersIcon } from '@phosphor-icons/react';
 
 /**
  * Top-level Files entry. Hidden when the caller lacks `project.file.read`: that
@@ -56,7 +56,7 @@ export function ProjectFilesNavItem() {
         className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
       >
         <Link href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
-          <FolderOpen />
+          <FoldersIcon />
           Files
         </Link>
       </SidebarMenuButton>
