@@ -424,14 +424,18 @@ const envSchema = z.object({
   // when off.
   KORTIX_MANAGED_PROVIDER_ENABLED: optBoolUnset,
   // Fleet default for projects with no explicit per-project override. Defaults
-  // OFF: the LLM gateway is a per-project feature-flag opt-in. A project that
-  // has not enabled the flag runs native OpenCode provider management (provider
-  // keys injected into the sandbox env, native `provider/model` refs, no
-  // gateway URL in the box). The master switch still wins —
-  // LLM_GATEWAY_ENABLED=false forces native OpenCode for everyone regardless of
-  // this value — and an operator can set LLM_GATEWAY_DEFAULT_ENABLED=true to
-  // default a whole environment (e.g. managed cloud) onto the gateway.
-  LLM_GATEWAY_DEFAULT_ENABLED: optBoolFalse,
+  // ON: wherever the gateway is available (master switch above), the managed
+  // gateway is the default routing mechanism and every project inherits it
+  // unless it explicitly opts out. Turning the per-project flag OFF is a
+  // fully supported first-class path (native OpenCode provider management:
+  // provider keys injected into the sandbox env, native `provider/model`
+  // refs, no gateway URL in the box) — the deliberate lever for deployments
+  // like Essentia that want their own keys end to end. The master switch
+  // still wins — LLM_GATEWAY_ENABLED=false forces native OpenCode for
+  // everyone regardless of this value — and an operator can set
+  // LLM_GATEWAY_DEFAULT_ENABLED=false to opt a whole environment back to
+  // native-by-default.
+  LLM_GATEWAY_DEFAULT_ENABLED: optBoolTrue,
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL: optStr,

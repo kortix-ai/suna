@@ -10,11 +10,12 @@ explains managed models vs. your own provider key (BYOK), how Kortix picks a
 model automatically, and two billing gotchas to know.
 
 This page applies to projects with the LLM Gateway on. LLM Gateway is an
-experimental [feature flag](/docs/feature-flags), and it is **off by
-default** — turn it on in Settings → Experimental (operators can default a
-whole deployment on with `LLM_GATEWAY_DEFAULT_ENABLED`).
+experimental [feature flag](/docs/feature-flags), **on by default** where the
+platform offers it — check or toggle it in Settings → Experimental (operators
+can default a whole deployment off with `LLM_GATEWAY_DEFAULT_ENABLED=false`).
 
-With the flag off, the project runs **native OpenCode model management**:
+Turning the flag off is a fully supported path. The project then runs
+**native OpenCode model management**:
 
 - Your provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `OPENROUTER_API_KEY`, …) are injected into the sandbox as ordinary env
