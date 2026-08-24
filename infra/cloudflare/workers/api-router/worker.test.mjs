@@ -696,7 +696,7 @@ describe('api-router worker', () => {
     }
   });
 
-  test('an unreachable origin is a named 502 origin_unreachable, retryable, with no request id', async () => {
+  test('an unreachable origin is a named 503 origin_unreachable, retryable, with no request id', async () => {
     globalThis.fetch = async () => {
       throw new Error('connection refused');
     };
@@ -706,7 +706,7 @@ describe('api-router worker', () => {
       env,
     );
 
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(503);
     expect(response.headers.get('X-Origin-Status')).toBe('fetch-error');
     // tests/src/core/client.ts isKe2eTransientGatewayResponse classifies a
     // 502/503/504 as transient only when x-request-id is ABSENT and retry-after

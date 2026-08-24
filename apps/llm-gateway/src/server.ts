@@ -36,6 +36,36 @@ export interface GatewayServer {
   traces: TraceSink | null;
 }
 
+// Cloudflare replaces an ORIGIN 502 or 504 with its own HTML "Bad gateway"
+// page (Enterprise-only "Origin Error Page Pass-thru" turns that off). Every
+// public gateway host sits behind a proxied Cloudflare hostname, so a JSON
+// `502 upstream_error` reached OpenCode as an HTML page and surfaced as
+// "AI_APICallError: Bad Gateway" with no code, no request id and no
+// suggestion (dev 2026-08-24; Essentia 2026-08-22). 503 passes through
+// unchanged. The original status is kept on a header and in the body so
+// nothing is lost — only the transport-level rewrite is avoided.
+const CLOUDFLARE_REWRITTEN_STATUSES = new Set([502, 504]);
+export const UPSTREAM_STATUS_HEADER = 'x-kortix-upstream-status';
+
+export async function cloudflareSafe(res: Response): Promise<Response> {
+  if (!CLOUDFLARE_REWRITTEN_STATUSES.has(res.status)) return res;
+  const headers = new Headers(res.headers);
+  headers.set(UPSTREAM_STATUS_HEADER, String(res.status));
+  if (!headers.has('retry-after')) headers.set('retry-after', '5');
+  const contentType = headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    const text = await res.text();
+    try {
+      const body = JSON.parse(text) as Record<string, unknown>;
+      body.upstream_status = res.status;
+      return new Response(JSON.stringify(body), { status: 503, headers });
+    } catch {
+      return new Response(text, { status: 503, headers });
+    }
+  }
+  return new Response(res.body, { status: 503, headers });
+}
+
 export function buildServer(options: { inflight?: InflightBudget } = {}): GatewayServer {
   const inflight = options.inflight ?? defaultInflight;
   const api = createApiClient({ baseUrl: config.apiUrl, token: config.apiToken });
@@ -206,7 +236,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
           signal: c.req.raw?.signal,
         };
         body.body = '';
-        const res = await gateway.chatCompletions(request);
+        const res = await cloudflareSafe(await gateway.chatCompletions(request));
         recordOutcome(res.status);
         return releaseWhenResponseEnds(res, body.release);
       } catch (error) {
@@ -263,7 +293,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
           rawBody: body.body,
         };
         body.body = '';
-        const res = await gateway.messages(request);
+        const res = await cloudflareSafe(await gateway.messages(request));
         recordOutcome(res.status);
         return releaseWhenResponseEnds(res, body.release);
       } catch (error) {
@@ -293,9 +323,11 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   const models = (c: {
     req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined };
   }) =>
-    gateway.listModels(c.req.header('authorization'), {
-      managedOnly: c.req.query('scope') === 'managed',
-    });
+    gateway
+      .listModels(c.req.header('authorization'), {
+        managedOnly: c.req.query('scope') === 'managed',
+      })
+      .then(cloudflareSafe);
 
   app.get('/models', models);
   app.get('/v1/models', models);

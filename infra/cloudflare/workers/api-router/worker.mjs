@@ -42,9 +42,10 @@ const DEFAULT_MAINTENANCE = {
 const WEBHOOK_RELAY_USER_AGENT = 'Kortix-Webhook-Relay/1.0';
 
 // The one synthetic error this worker still produces: the origin fetch threw
-// (DNS, TLS, connection refused, timeout). 502 is the honest status — the
-// upstream did not answer. Retry-After marks it transient for retrying clients
-// and there is deliberately no x-request-id, because no origin request ran.
+// (DNS, TLS, connection refused, timeout). 503 + Retry-After marks it
+// transient for retrying clients; 503 rather than 502 because Cloudflare
+// rewrites a 502/504 body into its HTML error page and this JSON must reach
+// the client. There is deliberately no x-request-id: no origin request ran.
 function originUnreachableResponse(active, isGateway, request, reason) {
   const origin = request.headers.get('Origin');
   const headers = new Headers({
@@ -69,7 +70,7 @@ function originUnreachableResponse(active, isGateway, request, reason) {
         code: 'origin_unreachable',
         retry_after_seconds: 30,
       },
-      { status: 502, headers },
+      { status: 503, headers },
     ),
   );
 }
