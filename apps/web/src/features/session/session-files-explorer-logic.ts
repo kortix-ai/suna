@@ -6,7 +6,13 @@
  */
 
 import type { SessionPanelView } from '@/stores/session-browser-store';
-import type { SessionPanelMode } from '@/features/session/session-version-header';
+
+/**
+ * Which of the explorer's two tabs is showing. Lives here rather than in the
+ * component so the pure helpers below own their own vocabulary — it used to be
+ * declared in a `session-version-header.tsx` that no longer exists.
+ */
+export type SessionPanelMode = 'files' | 'changes';
 
 /**
  * The mode the explorer renders in.
@@ -52,9 +58,6 @@ export function explorerViewForMode(mode: SessionPanelMode): SessionPanelView {
  * treated as already-seen, so it does not replay into the explorer and steal
  * focus onto a stale, previously-clicked path.
  */
-export function initialExplorerNonce(
-  ephemeral: boolean,
-  pendingNonce: number | undefined,
-): number {
+export function initialExplorerNonce(ephemeral: boolean, pendingNonce: number | undefined): number {
   return ephemeral ? (pendingNonce ?? 0) : 0;
 }

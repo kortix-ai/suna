@@ -29,24 +29,16 @@ export function SandboxFileExplorer({
   embedded = false,
   shareContext,
   leading,
-  contentPanel,
 }: {
   embedded?: boolean;
   shareContext?: { projectId: string; sessionId: string };
   /** Host chrome for the start of the explorer's action row — see {@link DriveExplorer}. */
   leading?: ReactNode;
-  /** ARIA wiring when `leading` is a tab strip — see {@link DriveExplorer}. */
-  contentPanel?: { id: string; labelledBy: string };
 } = {}) {
   return (
     <FileExplorerSourceProvider value={sandboxExplorerSource}>
       <SandboxServerGate leading={leading}>
-        <DriveExplorer
-          embedded={embedded}
-          shareContext={shareContext}
-          leading={leading}
-          contentPanel={contentPanel}
-        />
+        <DriveExplorer embedded={embedded} shareContext={shareContext} leading={leading} />
       </SandboxServerGate>
     </FileExplorerSourceProvider>
   );
@@ -55,9 +47,9 @@ export function SandboxFileExplorer({
 /**
  * Renders children only while the sandbox OpenCode server is reachable.
  *
- * `leading` (the host's tab strip) is repeated over the closed-gate states on
- * purpose: it is how the user switches away from a workspace that is still
- * booting or unreachable, so it must not vanish with the explorer.
+ * The session panel's tabs now sit ABOVE this gate rather than being threaded
+ * through it, so a booting or unreachable workspace can no longer take the
+ * user's way out of it down with the explorer.
  */
 function SandboxServerGate({
   children,

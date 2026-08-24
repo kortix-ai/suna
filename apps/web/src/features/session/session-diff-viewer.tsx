@@ -16,11 +16,10 @@
  * the same list the proposed-change dialog renders, so the two surfaces cannot
  * drift apart again.
  *
- * The controls are CONTENT, not a bar. This viewer's panel mount already sits
- * under {@link SessionChangesHeader}'s own `h-11` row, and a second bordered
- * bar beneath it would put back the stacked chrome that "one header row per
- * surface" removed from All files. So there is no header here: the states
- * render straight into the pane and the controls scroll with the list.
+ * The controls are CONTENT, not a bar. The panel mount already sits under the
+ * explorer's tab row, and a second bordered bar beneath it would stack chrome
+ * two deep in a 400px panel. So there is no header here: the states render
+ * straight into the pane and the controls scroll with the list.
  */
 
 import { Button } from '@/components/ui/button';

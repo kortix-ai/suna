@@ -20,6 +20,7 @@ import { useFilesStore } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import {
   ClipboardIcon as Clipboard,
   FilePlusIcon as FilePlus,
@@ -27,7 +28,6 @@ import {
   FolderPlusIcon as FolderPlus,
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
-import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useFileExplorerSource } from '../explorer-source';
@@ -44,12 +44,7 @@ import {
 } from '../upload-batch';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
-import {
-  DRIVE_ACTION_ROW_CLASS,
-  DriveNewMenu,
-  DrivePathBar,
-  DriveViewMenu,
-} from './drive-toolbar';
+import { DRIVE_ACTION_ROW_CLASS, DriveNewMenu, DrivePathBar, DriveViewMenu } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileSearch } from './file-search';
@@ -84,7 +79,6 @@ export function DriveExplorer({
   embedded = false,
   shareContext,
   leading,
-  contentPanel,
   panels,
   children,
 }: {
@@ -95,12 +89,6 @@ export function DriveExplorer({
    * strip. Sharing the row is what lets that host drop its own header.
    */
   leading?: ReactNode;
-  /**
-   * ARIA wiring for the listing region when `leading` is a tab strip. The
-   * tabs live in this component's row, so only this component can stamp the
-   * panel they control.
-   */
-  contentPanel?: { id: string; labelledBy: string };
   /** Rendered inside the relative content area (slide-in side panels). */
   panels?: ReactNode;
   /** Rendered at the root (portal dialogs owned by the wrapping surface). */
@@ -774,12 +762,7 @@ export function DriveExplorer({
         </div>
       )}
 
-      <div
-        className="relative min-h-0 flex-1"
-        id={contentPanel?.id}
-        role={contentPanel ? 'tabpanel' : undefined}
-        aria-labelledby={contentPanel?.labelledBy}
-      >
+      <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0 overflow-y-auto">
           {isLoading && showSkeleton && (
             <div className="animate-in fade-in-0 p-4 duration-200">
@@ -862,12 +845,7 @@ export function DriveExplorer({
               // the toolbar menu.
               action={
                 canWrite ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={handleUpload}
-                  >
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleUpload}>
                     <Upload className="size-3.5 shrink-0" />
                     Upload files
                   </Button>
