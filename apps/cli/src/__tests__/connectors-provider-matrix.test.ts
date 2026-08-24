@@ -67,6 +67,11 @@ async function runProviderCase(input: {
 describe('kortix connectors add provider matrix', () => {
   const cases = [
     {
+      provider: 'composio',
+      flags: ['--app', 'gmail'],
+      expectedLines: ['app: gmail'],
+    },
+    {
       provider: 'pipedream',
       flags: ['--app', 'github'],
       expectedLines: ['app: github'],

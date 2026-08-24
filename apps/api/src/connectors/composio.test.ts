@@ -57,6 +57,7 @@ function fakeRuntime(
     resumed?: ComposioSessionLike;
     calls?: Array<Record<string, unknown>>;
     catalogPage?: Awaited<ReturnType<NonNullable<ComposioRuntime['toolkits']>['get']>>;
+    authConfigs?: Array<{ id: string; name: string }>;
   } = {},
 ): ComposioRuntime {
   const calls = input.calls ?? [];
@@ -77,6 +78,20 @@ function fakeRuntime(
             async get(query) {
               calls.push({ type: 'catalog', query });
               return input.catalogPage!;
+            },
+          },
+        }
+      : {}),
+    ...(input.authConfigs
+      ? {
+          authConfigs: {
+            async list(query) {
+              calls.push({ type: 'auth-config-list', query });
+              return { items: input.authConfigs! };
+            },
+            async create(toolkit, options) {
+              calls.push({ type: 'auth-config-create', toolkit, options });
+              return { id: 'auth-config-created' };
             },
           },
         }
@@ -198,7 +213,11 @@ test('composioConnectUrl uses session.authorize and does not treat its id as the
     connectionId: 'connection-1',
     stableUserId: 'kortix-connection:connection-1',
     redirects: { success: 'https://kortix.test/success' },
-    runtime: fakeRuntime({ created, calls }),
+    runtime: fakeRuntime({
+      created,
+      calls,
+      authConfigs: [{ id: 'auth-config-existing', name: 'Kortix Gmail managed actions v1' }],
+    }),
   });
 
   expect(result).toEqual({
@@ -212,6 +231,56 @@ test('composioConnectUrl uses session.authorize and does not treat its id as the
     type: 'authorize',
     toolkit: 'gmail',
     options: { callbackUrl: 'https://kortix.test/success', alias: 'gmail' },
+  });
+});
+
+test('composioConnectUrl binds Gmail to a managed auth config with explicit mail scopes', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const created = session({
+    toolkit: { slug: 'gmail', name: 'Gmail', isNoAuth: false },
+  });
+
+  await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'gmail',
+    app: 'gmail',
+    connectionId: 'connection-scoped-gmail',
+    stableUserId: 'kortix-connection:connection-scoped-gmail',
+    runtime: fakeRuntime({ created, calls, authConfigs: [] }),
+  });
+
+  expect(calls[0]).toEqual({
+    type: 'auth-config-list',
+    query: {
+      toolkit: 'gmail',
+      search: 'Kortix Gmail managed actions v1',
+      isComposioManaged: true,
+      limit: 100,
+    },
+  });
+  expect(calls[1]).toEqual({
+    type: 'auth-config-create',
+    toolkit: 'gmail',
+    options: {
+      type: 'use_composio_managed_auth',
+      name: 'Kortix Gmail managed actions v1',
+      credentials: {
+        scopes: [
+          'https://www.googleapis.com/auth/gmail.readonly',
+          'https://www.googleapis.com/auth/gmail.send',
+          'https://www.googleapis.com/auth/gmail.compose',
+          'https://www.googleapis.com/auth/gmail.modify',
+          'https://www.googleapis.com/auth/gmail.labels',
+        ].join(','),
+      },
+      isEnabledForToolRouter: true,
+    },
+  });
+  expect(calls[2]).toMatchObject({
+    type: 'create',
+    config: {
+      authConfigs: { gmail: 'auth-config-created' },
+    },
   });
 });
 
@@ -329,7 +398,7 @@ test('executeComposio resumes the selected connection session and returns real d
       type: 'execute',
       toolSlug: 'GMAIL_SEND_EMAIL',
       args: { to: 'a@example.com' },
-      options: { account: 'connected-account-1' },
+      options: undefined,
     },
   ]);
 });
@@ -486,9 +555,7 @@ test('composioCatalogPage applies category filtering to the provider catalogue',
     }),
   });
 
-  expect(calls).toEqual([
-    { type: 'catalog', query: { category: 'productivity', limit: 1000 } },
-  ]);
+  expect(calls).toEqual([{ type: 'catalog', query: { category: 'productivity', limit: 1000 } }]);
   expect(result).toEqual({
     provider: 'composio',
     toolkits: [

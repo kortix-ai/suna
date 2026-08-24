@@ -1,6 +1,6 @@
 /**
  * `kortix connectors` — the agent's interface to every configured connector
- * (Pipedream / MCP / OpenAPI / Postman / GraphQL / HTTP), absorbed from the old in-sandbox
+ * (Composio / Pipedream / MCP / OpenAPI / Postman / GraphQL / HTTP), absorbed from the old in-sandbox
  * `connector` shim into the one kortix CLI.
  *
  * Three faces over ONE core (see ../connector-gateway/gateway.ts):
@@ -27,7 +27,7 @@ import {
 import { CliError, out, parseExecArgs } from '../connector-gateway/io.ts';
 import { runConnectorMcpServer } from '../connector-gateway/mcp.ts';
 
-const PROVIDERS = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
+const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
 // Built-in channels are never added/connected through the connector — the
 // platform materializes their connectors automatically after the channel is
@@ -93,10 +93,18 @@ export function parseConnectorCallInput(
 }
 
 // Build a connector draft (ConnectorDraft on the API) from CLI flags.
-function connectorDraftFromFlags(slug: string, flags: Record<string, string | undefined>): Record<string, unknown> {
+function connectorDraftFromFlags(
+  slug: string,
+  flags: Record<string, string | undefined>,
+): Record<string, unknown> {
   const provider = flags.provider;
-  if (!provider) throw new CliError('--provider is required (pipedream|mcp|openapi|postman|graphql|http)', 'USAGE');
-  if (!PROVIDERS.includes(provider)) throw new CliError(`--provider must be one of ${PROVIDERS.join(', ')}`, 'USAGE');
+  if (!provider)
+    throw new CliError(
+      '--provider is required (pipedream|mcp|openapi|postman|graphql|http)',
+      'USAGE',
+    );
+  if (!PROVIDERS.includes(provider))
+    throw new CliError(`--provider must be one of ${PROVIDERS.join(', ')}`, 'USAGE');
   const draft: Record<string, unknown> = { slug, provider };
   if (flags.name) draft.name = flags.name;
   if (flags.app) draft.app = flags.app;
@@ -110,7 +118,11 @@ function connectorDraftFromFlags(slug: string, flags: Record<string, string | un
   return draft;
 }
 
-async function dispatch(command: string, args: string[], flags: Record<string, string>): Promise<void> {
+async function dispatch(
+  command: string,
+  args: string[],
+  flags: Record<string, string>,
+): Promise<void> {
   switch (command) {
     case 'connectors':
     case 'ls': {
@@ -131,8 +143,16 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
     case 'search': {
       const connector = connectorClient(flags.project);
       const q = args.join(' ') || flags.query || '';
-      const matches = await connector.search(q, { limit: Number(flags.limit) || 20 });
-      out({ matches: matches.map((m) => ({ tool: m.tool, risk: m.risk, description: m.description })) });
+      const matches = await connector.search(q, {
+        limit: Number(flags.limit) || 20,
+      });
+      out({
+        matches: matches.map((m) => ({
+          tool: m.tool,
+          risk: m.risk,
+          description: m.description,
+        })),
+      });
       break;
     }
 
@@ -140,10 +160,20 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
     case 'describe': {
       const connector = connectorClient(flags.project);
       const ref = args[0];
-      if (!ref || !ref.includes('.')) throw new CliError('usage: kortix connectors show <connector>.<action>', 'USAGE');
+      if (!ref || !ref.includes('.'))
+        throw new CliError('usage: kortix connectors show <connector>.<action>', 'USAGE');
       const tool = await connector.describe(ref);
-      if (!tool) throw new CliError(`unknown tool "${ref}" — run 'kortix connectors discover' to list tools`, 'NOT_FOUND');
-      out({ tool: tool.tool, risk: tool.risk, description: tool.description, inputSchema: tool.inputSchema });
+      if (!tool)
+        throw new CliError(
+          `unknown tool "${ref}" — run 'kortix connectors discover' to list tools`,
+          'NOT_FOUND',
+        );
+      out({
+        tool: tool.tool,
+        risk: tool.risk,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      });
       break;
     }
 
@@ -152,7 +182,11 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       const connector = connectorClient(flags.project);
       let parsed: Record<string, unknown> = {};
       if (rawArgs) {
-        try { parsed = JSON.parse(rawArgs); } catch { throw new CliError('args must be valid JSON', 'BAD_ARGS'); }
+        try {
+          parsed = JSON.parse(rawArgs);
+        } catch {
+          throw new CliError('args must be valid JSON', 'BAD_ARGS');
+        }
       }
       // A gated call returns its authenticated approval URL immediately. The
       // server sends the decision back into the session after a human acts.
@@ -166,9 +200,13 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       // Add (or update) a connector on the project NOW — committed to
       // kortix.yaml on main + synced server-side, exactly like the dashboard's
       // "Add app". No change request needed; it's live this session. Then run
-      // `kortix connectors connect <slug>` to surface the auth link.
+      // `kortix connectors connect <slug>` to surface the provider auth link.
       const slug = args[0];
-      if (!slug) throw new CliError('usage: kortix connectors add <slug> --provider <p> [--app <app>] [--url <url>] …', 'USAGE');
+      if (!slug)
+        throw new CliError(
+          'usage: kortix connectors add <slug> --provider <p> [--app <app>] [--url <url>] …',
+          'USAGE',
+        );
       rejectBuiltinChannel(slug);
       const draft = connectorDraftFromFlags(slug, flags);
       const res = await addConnector(draft, flags.project);
@@ -189,12 +227,17 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       const slug = args[0];
       if (!slug) throw new CliError('usage: kortix connectors rm <slug>', 'USAGE');
       await removeConnector(slug, flags.project);
-      out({ ok: true, slug, removed: true, note: 'Removed from kortix.yaml on main + catalog.' });
+      out({
+        ok: true,
+        slug,
+        removed: true,
+        note: 'Removed from kortix.yaml on main + catalog.',
+      });
       break;
     }
 
     case 'connect': {
-      // Mint a Pipedream Quick Connect link for a declared connector and hand
+      // Start the declared connector's provider-neutral authorization and hand
       // the URL to the human. SURFACE this url in your reply — in the web UI it
       // opens a 1-click connect popup; in Slack it's a tappable link. The agent
       // never touches the credential. The connector must already be declared in
@@ -203,14 +246,26 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       if (!slug) throw new CliError('usage: kortix connectors connect <connector-slug>', 'USAGE');
       rejectBuiltinChannel(slug);
       const expires = flags.expires ? Number(flags.expires) : undefined;
-      const link = await mintConnectLink({ slug, expiresInMinutes: expires, projectOverride: flags.project });
+      const link = await mintConnectLink({
+        slug,
+        expiresInMinutes: expires,
+        projectOverride: flags.project,
+      });
       out({
         ok: true,
         slug: link.slug,
         app: link.app,
         url: link.url,
         expires_at: link.expires_at,
-        note: 'Surface this url to the human. It opens Pipedream Quick Connect (web: popup, Slack: link). No keys touch the sandbox.',
+        provider: link.provider,
+        connected: link.connected,
+        is_no_auth: link.is_no_auth,
+        session_id: link.session_id,
+        connection_id: link.connection_id,
+        request_id: link.request_id,
+        note: link.url
+          ? 'Surface this url to the human. It opens the configured provider authorization flow. No keys touch the sandbox.'
+          : 'The connector is already connected or requires no authentication.',
       });
       break;
     }
@@ -218,15 +273,17 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
     default:
       out({
         name: 'kortix connectors',
-        description: 'One interface to every configured connector. Calls run server-side; no secrets in the sandbox.',
+        description:
+          'One interface to every configured connector. Calls run server-side; no secrets in the sandbox.',
         commands: {
           ls: 'kortix connectors ls — list connectors + tools this session can use',
           discover: 'kortix connectors discover "<intent>" — search tools by natural language',
-          show: 'kortix connectors show <connector>.<action> — show a tool\'s input schema',
-          call: 'kortix connectors call <connector> <action> \'<json-args>\' — run a tool or return its approval link',
-          add: 'kortix connectors add <slug> --provider pipedream --app <app> — add a connector NOW (no CR), then connect',
+          show: "kortix connectors show <connector>.<action> — show a tool's input schema",
+          call: "kortix connectors call <connector> <action> '<json-args>' — run a tool or return its approval link",
+          add: 'kortix connectors add <slug> --provider composio --app <toolkit> — add a managed app connector NOW (no CR), then connect',
           rm: 'kortix connectors rm <slug> — remove a connector from the project',
-          connect: 'kortix connectors connect <connector-slug> — mint a Pipedream Quick Connect link to hand the human',
+          connect:
+            'kortix connectors connect <connector-slug> — start the connector provider authorization and hand the URL to the human',
           mcp: 'kortix connectors mcp — run the optional stdio MCP compatibility server',
         },
       });

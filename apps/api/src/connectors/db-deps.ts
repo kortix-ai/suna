@@ -1840,7 +1840,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     if (composio?.composioConfigured?.() && composio.composioCatalogPage) {
       return composio.composioCatalogPage({ projectId, ...input });
     }
-    return pipedreamConfigured() ? { provider: 'pipedream', ...(await pipedreamCatalogPage(input)) } : null;
+    // `/connect/toolkits` is the Composio surface. Never turn an unavailable
+    // Composio deployment into an implicit Pipedream request. The legacy
+    // Pipedream catalogue has explicit `/pipedream/apps` routes for deliberate
+    // rollback use.
+    return null;
   },
   connectorConnect: async (projectId, slug, _userId, redirects) => {
     const conn = await loadComposioConnector(projectId, slug);

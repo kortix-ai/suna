@@ -20,7 +20,7 @@ import { runConnector } from './connector-gateway.ts';
 
 // ── Shapes (mirror apps/api/src/connectors) ───────────────────────────────────
 
-type Provider = 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
+type Provider = 'composio' | 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
 
 interface ConnectorAction {
   path: string;
@@ -108,12 +108,20 @@ interface DeviceAuthorizationStart {
   interval_seconds: number;
 }
 
-const PROVIDERS: readonly Provider[] = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
+const PROVIDERS: readonly Provider[] = [
+  'composio',
+  'pipedream',
+  'mcp',
+  'openapi',
+  'postman',
+  'graphql',
+  'http',
+];
 
 const HELP = help`Usage: kortix connectors <subcommand> [options]
 
 Manage the project's connectors — the external systems agents call as tools
-(Pipedream apps, MCP servers, OpenAPI/Postman/GraphQL/HTTP endpoints). Mirrors the
+(Composio/Pipedream apps, MCP servers, OpenAPI/Postman/GraphQL/HTTP endpoints). Mirrors the
 dashboard's Customize → Connectors. Connectors are project-wide visible; the
 only access gate is which AGENTS may call one (\`kortix agents scope\` /
 \`[[agents]].connectors\` in kortix.yaml) — see \`kortix grants\`.
@@ -142,7 +150,10 @@ Subcommands:
   secret <slug> <identifier>        Use a project secret as this connector's
                                     server-side credential. Add --clear to
                                     remove the binding.
-  connect <slug> [--expires <min>]  Start a Pipedream 1-click connection.
+  connect <slug>                    Start the connector provider authorization.
+  connect-finalize <slug>           Confirm authorization completed. Accepts
+       [--connection-id <uuid>]     the IDs returned by \`connect\`.
+       [--request-id <id>]
   apps [<query>] [--category <c>]   Browse the Pipedream app catalog.
        [--cursor <c>] [--json]
   catalog [<query>] [--cursor <c>]  Browse the direct-connector catalogue.
@@ -183,7 +194,7 @@ named after one of those verbs must be addressed as \`policy <slug> ls\` etc.
 Add options (provider-specific):
   --name <label>           Human label (default: slug).
   --provider <p>           ${PROVIDERS.join('|')}.
-  --app <slug>             Pipedream app slug (provider=pipedream).
+  --app <slug>             Composio toolkit or Pipedream app slug.
   --url <url>              MCP server URL (provider=mcp).
   --transport <http|sse>   MCP transport (provider=mcp).
   --endpoint <url>         GraphQL endpoint (provider=graphql).
@@ -251,10 +262,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  if (
-    sub === 'connections' &&
-    (rest.length === 0 || rest[0] === '-h' || rest[0] === '--help')
-  ) {
+  if (sub === 'connections' && (rest.length === 0 || rest[0] === '-h' || rest[0] === '--help')) {
     process.stdout.write(CONNECTIONS_HELP);
     return rest.length === 0 ? 2 : 0;
   }
@@ -313,6 +321,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.expires = takeFlagValue(rest, ['--expires']);
     f.owner = takeFlagValue(rest, ['--owner']);
     f.ownerId = takeFlagValue(rest, ['--owner-id']);
+    f.connectionId = takeFlagValue(rest, ['--connection-id']);
+    f.requestId = takeFlagValue(rest, ['--request-id']);
     f.metadata = takeFlagValue(rest, ['--metadata']);
     f.clientId = takeFlagValue(rest, ['--client-id']);
     f.clientSecret = takeFlagValue(rest, ['--client-secret']);
@@ -339,15 +349,20 @@ export async function runConnectors(argv: string[]): Promise<number> {
   //    `--apply` skips the local-edit + ship/CR flow and applies the change
   //    instantly on the cloud project (commit to kortix.yaml on main + sync,
   //    exactly like the dashboard) — handled in the switch below.
-  if ((sub === 'add' || sub === 'create') && !applyRemote) return connectorAddLocal(positional[0], f);
-  if ((sub === 'rm' || sub === 'remove' || sub === 'delete') && !applyRemote) return connectorRmLocal(positional[0]);
+  if ((sub === 'add' || sub === 'create') && !applyRemote)
+    return connectorAddLocal(positional[0], f);
+  if ((sub === 'rm' || sub === 'remove' || sub === 'delete') && !applyRemote)
+    return connectorRmLocal(positional[0]);
   // `policy set --default` stays a LOCAL kortix.yaml edit unless --apply asks
   // for the live write — byte-compatible with every existing script.
   if ((sub === 'policy' || sub === 'policies') && positional[0] === 'set' && !applyRemote) {
     return policySetLocal(f.default);
   }
 
-  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveProjectContext({
+    projectArg: f.project,
+    hostArg: f.host,
+  });
   if (!ctx) return 1;
   const ex = `/connectors/projects/${ctx.projectId}`;
 
@@ -389,15 +404,21 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const resp = await ctx.client.post<{
           ok: boolean;
           sync?: unknown;
-          authDiscovery?: { status: string; recommended?: { type?: string } | null };
+          authDiscovery?: {
+            status: string;
+            recommended?: { type?: string } | null;
+          };
         }>(`${ex}/connectors`, draft);
-        if (json) { emitJson(resp); return 0; }
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         process.stdout.write(
           `${status.ok(`${C.bold}${slug}${C.reset} live on the project`)} ${C.dim}(committed to kortix.yaml on main + synced)${C.reset}\n` +
             (resp.authDiscovery?.recommended?.type
               ? `  ${C.dim}Authentication: ${C.reset}${resp.authDiscovery.recommended.type}${C.dim} (auto-detected; set the credential next)${C.reset}\n`
               : '') +
-            `  ${C.dim}Next: ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}\n`,
+            `  ${C.dim}Next: ${C.reset}${C.cyan}${f.provider === 'composio' || f.provider === 'pipedream' ? `kortix connectors connect ${slug}` : `kortix connectors credential ${slug}`}${C.reset}\n`,
         );
         return 0;
       }
@@ -407,12 +428,16 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
         await ctx.client.delete(`${ex}/connectors/${encodeURIComponent(slug)}`);
-        process.stdout.write(`${status.ok(`Removed ${C.bold}${slug}${C.reset}`)} ${C.dim}(kortix.yaml on main + catalog)${C.reset}\n`);
+        process.stdout.write(
+          `${status.ok(`Removed ${C.bold}${slug}${C.reset}`)} ${C.dim}(kortix.yaml on main + catalog)${C.reset}\n`,
+        );
         return 0;
       }
       case 'ls':
       case 'list': {
-        const { connectors } = await ctx.client.get<{ connectors: AdminConnector[] }>(`${ex}/connectors`);
+        const { connectors } = await ctx.client.get<{
+          connectors: AdminConnector[];
+        }>(`${ex}/connectors`);
         if (json) {
           emitJson({ connectors });
           return 0;
@@ -433,13 +458,17 @@ export async function runConnectors(argv: string[]): Promise<number> {
             `  ${pad(c.slug, slugW)}   ${statusCell(c.status)}  ${pad(c.provider, 11)}  ${pad(c.credentialMode, 9)}  ${pad(String(c.actions.length), 5)}\n`,
           );
         }
-        process.stdout.write(`\n  ${C.dim}${connectors.length} connector${connectors.length === 1 ? '' : 's'}${C.reset}\n\n`);
+        process.stdout.write(
+          `\n  ${C.dim}${connectors.length} connector${connectors.length === 1 ? '' : 's'}${C.reset}\n\n`,
+        );
         return 0;
       }
       case 'show': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
-        const { connectors } = await ctx.client.get<{ connectors: AdminConnector[] }>(`${ex}/connectors`);
+        const { connectors } = await ctx.client.get<{
+          connectors: AdminConnector[];
+        }>(`${ex}/connectors`);
         const c = connectors.find((x) => x.slug === slug);
         if (!c) {
           process.stderr.write(`${status.err(`No connector "${slug}".`)}\n`);
@@ -450,7 +479,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return 0;
         }
         process.stdout.write(`\n  ${C.bold}${c.name}${C.reset} ${C.faded}(${c.slug})${C.reset}\n`);
-        process.stdout.write(`  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}status ${C.reset}${statusCell(c.status)}   ${C.dim}cred ${C.reset}${c.credentialMode}${c.secretSet ? ` ${C.green}(set)${C.reset}` : ''}\n\n`);
+        process.stdout.write(
+          `  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}status ${C.reset}${statusCell(c.status)}   ${C.dim}cred ${C.reset}${c.credentialMode}${c.secretSet ? ` ${C.green}(set)${C.reset}` : ''}\n\n`,
+        );
         if (c.actions.length === 0) {
           const message =
             c.provider === 'http' && !c.actions.length
@@ -461,14 +492,19 @@ export async function runConnectors(argv: string[]): Promise<number> {
         }
         for (const a of c.actions) {
           process.stdout.write(`  ${C.cyan}${a.path}${C.reset} ${C.faded}[${a.risk}]${C.reset}\n`);
-          if (a.description) process.stdout.write(`    ${C.dim}${trim(a.description, 80)}${C.reset}\n`);
+          if (a.description)
+            process.stdout.write(`    ${C.dim}${trim(a.description, 80)}${C.reset}\n`);
         }
-        process.stdout.write(`\n  ${C.dim}${c.actions.length} tool${c.actions.length === 1 ? '' : 's'}${C.reset}\n\n`);
+        process.stdout.write(
+          `\n  ${C.dim}${c.actions.length} tool${c.actions.length === 1 ? '' : 's'}${C.reset}\n\n`,
+        );
         return 0;
       }
       case 'sync': {
         const resp = await ctx.client.post<SyncResult>(`${ex}/connectors/sync`);
-        process.stdout.write(`${status.ok(`Synced ${resp.synced} connector${resp.synced === 1 ? '' : 's'}`)}\n`);
+        process.stdout.write(
+          `${status.ok(`Synced ${resp.synced} connector${resp.synced === 1 ? '' : 's'}`)}\n`,
+        );
         reportSync(resp);
         return 0;
       }
@@ -519,7 +555,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'auth': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
-        const { connection_id: connectionId } = await ctx.client.post<{ connection_id: string }>(
+        const { connection_id: connectionId } = await ctx.client.post<{
+          connection_id: string;
+        }>(
           `/projects/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
           {},
         );
@@ -530,17 +568,21 @@ export async function runConnectors(argv: string[]): Promise<number> {
           else process.stdout.write(`  ${C.bold}${String(state.status)}${C.reset}\n`);
           return state.status === 'error' ? 1 : 0;
         }
-        const { discovery } = await ctx.client.post<{ discovery: OAuth2ResourceDiscoveryLike }>(
-          `${oauth2}/discover-resource`,
-          {},
-        );
+        const { discovery } = await ctx.client.post<{
+          discovery: OAuth2ResourceDiscoveryLike;
+        }>(`${oauth2}/discover-resource`, {});
         const steps = oauth2AuthorizeSteps(discovery, {
           ...(f.scope ? { scopes: f.scope.split(/[\s,]+/).filter(Boolean) } : {}),
           ...(f.clientId ? { clientId: f.clientId } : {}),
           ...(f.clientSecret ? { clientSecret: f.clientSecret } : {}),
         });
         if ('error' in steps) {
-          if (json) emitJson({ connection_id: connectionId, error: steps.error, discovery });
+          if (json)
+            emitJson({
+              connection_id: connectionId,
+              error: steps.error,
+              discovery,
+            });
           else process.stderr.write(`${status.err(steps.error)}\n`);
           return 1;
         }
@@ -568,14 +610,14 @@ export async function runConnectors(argv: string[]): Promise<number> {
           );
           return await pollDeviceAuthorization(ctx.client, oauth2, device);
         }
-        const started = await ctx.client.post<{ authorization_url: string; expires_at: string }>(
-          `${oauth2}/authorize`,
-          {
-            ...(steps.scopes.length ? { scopes: steps.scopes } : {}),
-            ...(f.successRedirect ? { success_redirect_uri: f.successRedirect } : {}),
-            ...(f.errorRedirect ? { error_redirect_uri: f.errorRedirect } : {}),
-          },
-        );
+        const started = await ctx.client.post<{
+          authorization_url: string;
+          expires_at: string;
+        }>(`${oauth2}/authorize`, {
+          ...(steps.scopes.length ? { scopes: steps.scopes } : {}),
+          ...(f.successRedirect ? { success_redirect_uri: f.successRedirect } : {}),
+          ...(f.errorRedirect ? { error_redirect_uri: f.errorRedirect } : {}),
+        });
         if (json) {
           emitJson({
             connection_id: connectionId,
@@ -601,24 +643,69 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return missing('--expires <positive minutes>');
         }
         const resp = await ctx.client.post<{
-          url: string;
-          slug: string;
-          app: string | null;
-          expires_at: string;
-        }>(`/projects/${ctx.projectId}/connect-requests`, {
+          provider: string;
+          app?: string | null;
+          connectUrl?: string | null;
+          connected?: boolean;
+          isNoAuth?: boolean;
+          sessionId?: string;
+          connectionId?: string;
+          requestId?: string;
+        }>(`${ex}/connectors/${encodeURIComponent(slug)}/connect`, {});
+        const output = {
+          provider: resp.provider,
           slug,
-          ...(expires === undefined ? {} : { expires_in_minutes: expires }),
-        });
+          app: resp.app ?? null,
+          url: resp.connectUrl ?? null,
+          connected: resp.connected === true,
+          is_no_auth: resp.isNoAuth === true,
+          session_id: resp.sessionId ?? null,
+          connection_id: resp.connectionId ?? null,
+          request_id: resp.requestId ?? null,
+        };
         if (json) {
-          emitJson(resp);
+          emitJson(output);
           return 0;
         }
         process.stdout.write(
           `\n  ${C.bold}Connect ${slug}${C.reset}\n` +
-            `  ${C.cyan}${resp.url}${C.reset}\n\n` +
-            `  ${C.dim}Expires ${resp.expires_at}. The connection finalizes automatically.${C.reset}\n\n`,
+            (output.url
+              ? `  ${C.cyan}${output.url}${C.reset}\n\n  ${C.dim}Open the URL and approve the ${output.provider} connection.${C.reset}\n\n`
+              : `  ${C.green}${output.connected ? 'Connected' : 'No authorization URL returned'}${C.reset}\n\n`),
         );
         return 0;
+      }
+      case 'connect-finalize': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const resp = await ctx.client.post<{
+          provider: string;
+          connected?: boolean;
+          accountId?: string;
+          connectionId?: string;
+          isNoAuth?: boolean;
+        }>(`${ex}/connectors/${encodeURIComponent(slug)}/connect/finalize`, {
+          ...(f.connectionId ? { connection_id: f.connectionId } : {}),
+          ...(f.requestId ? { request_id: f.requestId } : {}),
+        });
+        const output = {
+          provider: resp.provider,
+          slug,
+          connected: resp.connected === true,
+          account_id: resp.accountId ?? null,
+          connection_id: resp.connectionId ?? f.connectionId ?? null,
+          is_no_auth: resp.isNoAuth === true,
+        };
+        if (json) {
+          emitJson(output);
+          return output.connected ? 0 : 1;
+        }
+        process.stdout.write(
+          output.connected
+            ? `${status.ok(`${C.bold}${slug}${C.reset} connected through ${output.provider}`)}\n`
+            : `${status.err(`${C.bold}${slug}${C.reset} authorization is not complete`)}\n`,
+        );
+        return output.connected ? 0 : 1;
       }
       case 'rename':
       case 'name': {
@@ -638,12 +725,18 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (!slug) return missing('a connector slug');
         const mode = positional[1] ?? f.credential;
         if (mode === 'per_user') {
-          process.stderr.write(`${status.err('per_user credential mode was removed — connectors are always shared now')}\n`);
+          process.stderr.write(
+            `${status.err('per_user credential mode was removed — connectors are always shared now')}\n`,
+          );
           return 1;
         }
         if (mode !== 'shared') return missing('<shared>');
-        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential-mode`, { mode });
-        process.stdout.write(`${status.ok(`Connection mode for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`);
+        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential-mode`, {
+          mode,
+        });
+        process.stdout.write(
+          `${status.ok(`Connection mode for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`,
+        );
         return 0;
       }
       case 'apps': {
@@ -656,7 +749,12 @@ export async function runConnectors(argv: string[]): Promise<number> {
           .filter(Boolean)
           .join('&');
         const resp = await ctx.client.get<{
-          apps: { slug: string; name: string; description: string | null; categories: string[] }[];
+          apps: {
+            slug: string;
+            name: string;
+            description: string | null;
+            categories: string[];
+          }[];
           nextCursor?: string;
           hasMore: boolean;
         }>(`${ex}/pipedream/apps${qs ? `?${qs}` : ''}`);
@@ -671,7 +769,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const slugW = Math.max(...resp.apps.map((a) => a.slug.length), 4);
         process.stdout.write('\n');
         for (const a of resp.apps) {
-          process.stdout.write(`  ${C.cyan}${pad(a.slug, slugW)}${C.reset}  ${trim(a.name, 30)}  ${C.dim}${trim(a.description ?? '', 40)}${C.reset}\n`);
+          process.stdout.write(
+            `  ${C.cyan}${pad(a.slug, slugW)}${C.reset}  ${trim(a.name, 30)}  ${C.dim}${trim(a.description ?? '', 40)}${C.reset}\n`,
+          );
         }
         process.stdout.write(
           `\n  ${C.dim}${resp.apps.length} app${resp.apps.length === 1 ? '' : 's'}${resp.hasMore ? ` · more: --cursor ${resp.nextCursor}` : ''}${C.reset}\n\n`,
@@ -749,7 +849,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
               `  ${C.cyan}${v.id}${C.reset}  ${pad(v.kind, 8)}  ${trim(v.name, 30)}${v.requiresAuth ? ` ${C.faded}(auth)${C.reset}` : ''}${v.url ? `  ${C.dim}${v.url}${C.reset}` : ''}\n`,
             );
           }
-          process.stdout.write(`\n  ${C.dim}${detail.variants.length} surface${detail.variants.length === 1 ? '' : 's'}${C.reset}\n\n`);
+          process.stdout.write(
+            `\n  ${C.dim}${detail.variants.length} surface${detail.variants.length === 1 ? '' : 's'}${C.reset}\n\n`,
+          );
           return 0;
         }
         const q = positional[0];
@@ -770,7 +872,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
         }
         const items = page.items ?? [];
         if (items.length === 0) {
-          process.stdout.write(`  ${C.dim}No catalogue records${q ? ` matching "${q}"` : ''}.${C.reset}\n`);
+          process.stdout.write(
+            `  ${C.dim}No catalogue records${q ? ` matching "${q}"` : ''}.${C.reset}\n`,
+          );
           return 0;
         }
         const idW = Math.max(...items.map((i) => i.id.length), 2);
@@ -853,8 +957,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'policies': {
         const a0 = positional[0] ?? 'ls';
         const projectPolicies = `${ex}/policies`;
-        const loadProject = () =>
-          ctx.client.get<ProjectPoliciesView>(projectPolicies);
+        const loadProject = () => ctx.client.get<ProjectPoliciesView>(projectPolicies);
 
         // Project-wide: `policy ls|show`.
         if (a0 === 'ls' || a0 === 'list' || a0 === 'show') {
@@ -863,13 +966,17 @@ export async function runConnectors(argv: string[]): Promise<number> {
             emitJson(resp);
             return 0;
           }
-          process.stdout.write(`\n  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}\n`);
+          process.stdout.write(
+            `\n  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}\n`,
+          );
           if (resp.policies.length === 0) {
             process.stdout.write(`  ${C.dim}No explicit project policies.${C.reset}\n\n`);
             return 0;
           }
           for (const p of resp.policies) {
-            process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}${conditionsLabel(p.conditions)}\n`);
+            process.stdout.write(
+              `  ${C.cyan}${p.match}${C.reset} → ${p.action}${conditionsLabel(p.conditions)}\n`,
+            );
           }
           process.stdout.write('\n');
           return 0;
@@ -951,11 +1058,14 @@ export async function runConnectors(argv: string[]): Promise<number> {
           }
           const { policies } = resp;
           if (policies.length === 0) {
-            process.stdout.write(`  ${C.dim}No rules for ${slug} — every tool follows global rules & risk.${C.reset}\n`);
+            process.stdout.write(
+              `  ${C.dim}No rules for ${slug} — every tool follows global rules & risk.${C.reset}\n`,
+            );
             return 0;
           }
           process.stdout.write('\n');
-          for (const p of policies) process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}\n`);
+          for (const p of policies)
+            process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}\n`);
           process.stdout.write('\n');
           return 0;
         }
@@ -967,14 +1077,18 @@ export async function runConnectors(argv: string[]): Promise<number> {
           const { policies } = await load();
           const next = [...policies.filter((p) => p.match !== match), { match, action }];
           await ctx.client.put(path, { policies: next });
-          process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset}: ${match} → ${action}`)}\n`);
+          process.stdout.write(
+            `${status.ok(`${C.bold}${slug}${C.reset}: ${match} → ${action}`)}\n`,
+          );
           return 0;
         }
         if (cAction === 'rm' || cAction === 'remove') {
           const match = positional[2];
           if (!match) return missing('the <match> to remove');
           const { policies } = await load();
-          await ctx.client.put(path, { policies: policies.filter((p) => p.match !== match) });
+          await ctx.client.put(path, {
+            policies: policies.filter((p) => p.match !== match),
+          });
           process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset}: removed ${match}`)}\n`);
           return 0;
         }
@@ -1111,7 +1225,10 @@ async function runConnections(input: {
         { value },
       );
       if (json) emitJson(response);
-      else process.stdout.write(`${status.ok(`Credential set for connection ${C.bold}${connectionId}${C.reset}`)}\n`);
+      else
+        process.stdout.write(
+          `${status.ok(`Credential set for connection ${C.bold}${connectionId}${C.reset}`)}\n`,
+        );
       return 0;
     }
     case 'revoke':
@@ -1124,7 +1241,10 @@ async function runConnections(input: {
         {},
       );
       if (json) emitJson(response);
-      else process.stdout.write(`${status.ok(`${connectionActionPastTense(action)} connection ${C.bold}${connectionId}${C.reset}`)}\n`);
+      else
+        process.stdout.write(
+          `${status.ok(`${connectionActionPastTense(action)} connection ${C.bold}${connectionId}${C.reset}`)}\n`,
+        );
       return 0;
     }
     case 'connect': {
@@ -1150,10 +1270,10 @@ async function runConnections(input: {
     case 'finalize': {
       const connectionId = positional[0];
       if (!connectionId) return missing('a connection id');
-      const response = await ctx.client.post<{ connected: boolean; accountId?: string }>(
-        `${base}/${encodeURIComponent(connectionId)}/connect/finalize`,
-        {},
-      );
+      const response = await ctx.client.post<{
+        connected: boolean;
+        accountId?: string;
+      }>(`${base}/${encodeURIComponent(connectionId)}/connect/finalize`, {});
       if (json) emitJson(response);
       else {
         process.stdout.write(
@@ -1193,7 +1313,10 @@ function connectionActionPastTense(action: 'revoke' | 'activate' | 'default'): s
 
 // ── Local kortix.yaml config edits (source of truth; no cloud round-trip) ────
 
-function connectorAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
+function connectorAddLocal(
+  slug: string | undefined,
+  f: Record<string, string | undefined>,
+): number {
   if (!slug) return missing('a connector slug');
   if (!f.provider) return missing('--provider');
   if (!(PROVIDERS as readonly string[]).includes(f.provider)) {
@@ -1202,7 +1325,9 @@ function connectorAddLocal(slug: string | undefined, f: Record<string, string | 
   }
   try {
     if (arrayEntryExists('connectors', 'slug', slug)) {
-      process.stderr.write(`${status.err(`A connector "${slug}" already exists in kortix.yaml.`)}\n`);
+      process.stderr.write(
+        `${status.err(`A connector "${slug}" already exists in kortix.yaml.`)}\n`,
+      );
       return 1;
     }
     // Insertion order = field order in the block.
@@ -1221,7 +1346,7 @@ function connectorAddLocal(slug: string | undefined, f: Record<string, string | 
     process.stdout.write(
       `${status.ok(`Added [[connectors]] ${C.bold}${slug}${C.reset} to kortix.yaml`)}\n` +
         `  ${C.dim}Apply it with ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}; authentication will be detected from the source unless --auth-type overrides it.${C.reset}\n` +
-        `  ${C.dim}Then set the credential with ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}\n`,
+        `  ${C.dim}Then ${f.provider === 'composio' || f.provider === 'pipedream' ? 'connect it with' : 'set the credential with'} ${C.reset}${C.cyan}kortix connectors ${f.provider === 'composio' || f.provider === 'pipedream' ? `connect ${slug}` : `credential ${slug}`}${C.reset}\n`,
     );
     return 0;
   } catch (err) {
@@ -1299,7 +1424,9 @@ export function oauth2AuthorizeSteps(
   | { application: Record<string, unknown>; scopes: string[] }
   | { error: string } {
   if (!discovery.requires_authorization) {
-    return { error: 'This server accepted an unauthenticated request — no OAuth setup needed.' };
+    return {
+      error: 'This server accepted an unauthenticated request — no OAuth setup needed.',
+    };
   }
   const metadata = discovery.metadata ?? {};
   if (!metadata.token_url && !metadata.authorization_url) {
@@ -1411,12 +1538,17 @@ async function pollDeviceAuthorization(
       return 1;
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    let state: { status: string; error_code?: string | null; scopes?: string[] };
+    let state: {
+      status: string;
+      error_code?: string | null;
+      scopes?: string[];
+    };
     try {
-      state = await client.post<{ status: string; error_code?: string | null; scopes?: string[] }>(
-        `${oauth2Base}/device/${encodeURIComponent(device.session_id)}`,
-        {},
-      );
+      state = await client.post<{
+        status: string;
+        error_code?: string | null;
+        scopes?: string[];
+      }>(`${oauth2Base}/device/${encodeURIComponent(device.session_id)}`, {});
     } catch (err) {
       return surfaceApiError(err);
     }
@@ -1468,7 +1600,9 @@ export function parsePolicyConditions(
     const separator = negated ? '!=' : '=';
     const index = entry.indexOf(separator);
     if (index <= 0) {
-      return { error: `--condition must look like arg=value or arg!=value (got "${entry}")` };
+      return {
+        error: `--condition must look like arg=value or arg!=value (got "${entry}")`,
+      };
     }
     const arg = entry.slice(0, index).trim();
     const match = entry.slice(index + separator.length).trim();
@@ -1486,7 +1620,9 @@ export function conditionsLabel(conditions: PolicyCondition[] | undefined): stri
 }
 
 /** Accept friendly verbs (allow|ask|block) or canonical actions → canonical, else null. */
-function normalizePolicyAction(v: string | undefined): 'always_run' | 'require_approval' | 'block' | null {
+function normalizePolicyAction(
+  v: string | undefined,
+): 'always_run' | 'require_approval' | 'block' | null {
   switch ((v ?? '').toLowerCase()) {
     case 'allow':
     case 'always_run':

@@ -55,13 +55,13 @@ export function connectorClient(projectOverride?: string): ConnectorClient {
  * management + setup-link minting. Resolves the sandbox env-token host
  * (`activeHost()` in api/config.ts) + KORTIX_PROJECT_ID.
  */
-export function connectorProjectContext(projectOverride?: string): { client: ApiClient; projectId: string } {
+export function connectorProjectContext(projectOverride?: string): {
+  client: ApiClient;
+  projectId: string;
+} {
   const auth = loadAuth();
   if (!auth?.token) {
-    throw new CliError(
-      'not authenticated — KORTIX_TOKEN is missing.',
-      'MISSING_ENV',
-    );
+    throw new CliError('not authenticated — KORTIX_TOKEN is missing.', 'MISSING_ENV');
   }
   const projectId = resolveProjectId(projectOverride);
   if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set.', 'MISSING_ENV');
@@ -83,10 +83,24 @@ export async function callWithApprovalHandoff<T = unknown>(
 }
 
 export interface ConnectLinkResult {
-  url: string;
+  provider: string;
+  url: string | null;
   slug: string;
   app: string | null;
-  expires_at: string;
+  connected: boolean;
+  is_no_auth: boolean;
+  session_id: string | null;
+  connection_id: string | null;
+  request_id: string | null;
+  expires_at?: string;
+}
+
+export interface FinalizeConnectionResult {
+  provider: string;
+  connected: boolean;
+  account_id: string | null;
+  connection_id: string | null;
+  is_no_auth: boolean;
 }
 
 export interface SecretLinkResult {
@@ -96,7 +110,7 @@ export interface SecretLinkResult {
   expires_at: string;
 }
 
-/** Mint a Pipedream Quick Connect link for a declared connector. */
+/** Start the configured provider's authorization for a declared connector. */
 export async function mintConnectLink(opts: {
   slug: string;
   expiresInMinutes?: number;
@@ -104,10 +118,58 @@ export async function mintConnectLink(opts: {
 }): Promise<ConnectLinkResult> {
   if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
   const { client, projectId } = connectorProjectContext(opts.projectOverride);
-  return client.post<ConnectLinkResult>(`/projects/${projectId}/connect-requests`, {
+  const result = await client.post<{
+    provider?: string;
+    app?: string | null;
+    connectUrl?: string | null;
+    connected?: boolean;
+    isNoAuth?: boolean;
+    sessionId?: string;
+    connectionId?: string;
+    requestId?: string;
+  }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(opts.slug)}/connect`, {});
+  return {
+    provider: result.provider ?? 'unknown',
+    url: result.connectUrl ?? null,
     slug: opts.slug,
-    ...(opts.expiresInMinutes ? { expires_in_minutes: opts.expiresInMinutes } : {}),
-  });
+    app: result.app ?? null,
+    connected: result.connected === true,
+    is_no_auth: result.isNoAuth === true,
+    session_id: result.sessionId ?? null,
+    connection_id: result.connectionId ?? null,
+    request_id: result.requestId ?? null,
+  };
+}
+
+/** Confirm that a previously started provider authorization completed. */
+export async function finalizeConnectorConnection(opts: {
+  slug: string;
+  connectionId?: string;
+  requestId?: string;
+  projectOverride?: string;
+}): Promise<FinalizeConnectionResult> {
+  if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
+  const { client, projectId } = connectorProjectContext(opts.projectOverride);
+  const result = await client.post<{
+    provider?: string;
+    connected?: boolean;
+    accountId?: string;
+    connectionId?: string;
+    isNoAuth?: boolean;
+  }>(
+    `/connectors/projects/${projectId}/connectors/${encodeURIComponent(opts.slug)}/connect/finalize`,
+    {
+      ...(opts.connectionId ? { connection_id: opts.connectionId } : {}),
+      ...(opts.requestId ? { request_id: opts.requestId } : {}),
+    },
+  );
+  return {
+    provider: result.provider ?? 'unknown',
+    connected: result.connected === true,
+    account_id: result.accountId ?? null,
+    connection_id: result.connectionId ?? opts.connectionId ?? null,
+    is_no_auth: result.isNoAuth === true,
+  };
 }
 
 /** Mint a short-lived link a human opens to enter project secret value(s). */

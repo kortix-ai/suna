@@ -96,7 +96,7 @@ export type ConnectProviderState = 'asking' | 'configured' | 'absent' | 'unknown
 
 export interface ConnectProviderStatus {
   state: ConnectProviderState;
-  provider: 'composio' | 'pipedream' | 'auto' | null;
+  provider: 'composio' | 'pipedream' | null;
 }
 
 /**
@@ -122,34 +122,39 @@ export interface ConnectProviderStatus {
  */
 export function useConnectProviderStatus(enabled: boolean): ConnectProviderStatus {
   const query = useQuery({
-    queryKey: ['connect-status'],
+    // Version the key so tabs opened before the Composio cutover cannot keep an
+    // Infinity-stale `provider: "pipedream"` answer in memory after deployment.
+    queryKey: ['connect-status', 'composio-first-v2'],
     queryFn: getConnectStatus,
-    staleTime: Infinity,
+    // A deployment can change underneath an open tab. Revalidate on mount so a
+    // rolling release cannot leave the catalogue pinned to the previous provider.
+    staleTime: 30_000,
+    refetchOnMount: 'always',
     retry: false,
     enabled,
   });
   if (!enabled) return { state: 'unknown', provider: null };
   if (query.isSuccess) {
-    return query.data.configured
-      ? { state: 'configured', provider: query.data.provider ?? 'composio' }
-      : { state: 'absent', provider: null };
+    if (!query.data.configured) return { state: 'absent', provider: null };
+    const providers = query.data.providers ?? (query.data.provider ? [query.data.provider] : []);
+    // Composio is the automatic managed-provider path. Pipedream remains
+    // available only on deployments that have no Composio configuration at all.
+    const provider = providers.includes('composio')
+      ? 'composio'
+      : providers.includes('pipedream')
+        ? 'pipedream'
+        : null;
+    return provider ? { state: 'configured', provider } : { state: 'absent', provider: null };
   }
-  if (query.isError) return { state: 'unknown', provider: 'auto' };
+  // A failed status probe must never silently fall back to Pipedream. Try the
+  // Composio endpoint and surface its real error if the provider is unavailable.
+  if (query.isError) return { state: 'unknown', provider: 'composio' };
   return { state: 'asking', provider: null };
-}
-
-function connectCatalogEndpointUnavailable(error: unknown): boolean {
-  const candidate = error as { status?: number; code?: string };
-  return (
-    candidate.status === 404 ||
-    candidate.status === 501 ||
-    candidate.code === 'feature_not_supported'
-  );
 }
 
 export async function listConnectCatalogPage(input: {
   projectId: string;
-  provider: 'composio' | 'pipedream' | 'auto';
+  provider: 'composio' | 'pipedream';
   q?: string;
   cursor?: string;
   category?: string;
@@ -165,30 +170,25 @@ export async function listConnectCatalogPage(input: {
   if (input.provider === 'pipedream') {
     return listPipedreamApps(input.projectId, query);
   }
-  try {
-    const page = await listConnectToolkits(input.projectId, query);
-    return {
-      apps: page.toolkits.map((toolkit) => ({
-        slug: toolkit.slug,
-        name: toolkit.name,
-        description: toolkit.description ?? null,
-        imgSrc: toolkit.logo,
-        authType: toolkit.isNoAuth ? 'none' : 'oauth',
-        categories: toolkit.categories ?? [],
-        hasActions: true,
-        hasTriggers: false,
-        featuredWeight: 0,
-        provider: 'composio' as const,
-      })),
-      categories: [],
-      total: page.total,
-      nextCursor: page.nextCursor,
-      hasMore: page.hasMore,
-    };
-  } catch (error) {
-    if (input.provider !== 'auto' || !connectCatalogEndpointUnavailable(error)) throw error;
-    return listPipedreamApps(input.projectId, query);
-  }
+  const page = await listConnectToolkits(input.projectId, query);
+  return {
+    apps: page.toolkits.map((toolkit) => ({
+      slug: toolkit.slug,
+      name: toolkit.name,
+      description: toolkit.description ?? null,
+      imgSrc: toolkit.logo,
+      authType: toolkit.isNoAuth ? 'none' : 'oauth',
+      categories: toolkit.categories ?? [],
+      hasActions: true,
+      hasTriggers: false,
+      featuredWeight: 0,
+      provider: 'composio' as const,
+    })),
+    categories: [],
+    total: page.total,
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
+  };
 }
 
 /**
