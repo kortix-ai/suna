@@ -404,6 +404,29 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     }
     try {
       const upstream = await fetch(`${proxyBase}${path}${query}`, init);
+      // The gateway is reached through a proxied Cloudflare hostname, so a
+      // failure on THIS hop arrives as Cloudflare's HTML error page rather
+      // than the gateway's JSON. Relaying that verbatim is what shows a user a
+      // bare "Bad gateway" screen with no code and no request id. Replace it
+      // with the typed envelope every client already understands. The global
+      // 502/504 -> 503 filter in index.ts then keeps it readable through the
+      // caller's own Cloudflare hop.
+      const upstreamType = upstream.headers.get('content-type') ?? '';
+      if (upstream.status >= 500 && !upstreamType.includes('json')) {
+        const detail = (await upstream.text().catch(() => '')).slice(0, 200);
+        const message = `Standalone LLM gateway hop failed upstream (${upstream.status})`;
+        console.error(`[gateway] non-JSON ${upstream.status} from gateway hop:`, detail);
+        c.header('retry-after', '5');
+        return c.json(
+          {
+            error: { message, type: 'gateway_proxy_error', code: 'gateway_proxy_error' },
+            message,
+            code: 'gateway_proxy_error',
+            upstream_status: upstream.status,
+          },
+          503,
+        );
+      }
       // The gateway owns the body framing (it re-materializes or relays what
       // fetch already decoded), and so does this hop: never forward
       // content-encoding/content-length/transfer-encoding from a response

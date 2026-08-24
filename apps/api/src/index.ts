@@ -308,7 +308,13 @@ app.use('*', logger());
 // returning the semantically correct status internally; this is the single
 // place that makes it safe on the wire, instead of ~40 call sites each having
 // to remember. Bodyless responses and upgrades are left alone.
-const EDGE_REWRITTEN_STATUSES = new Set([502, 504]);
+// 520-524 are Cloudflare's OWN origin-error statuses. They can appear here
+// because the API->gateway hop itself traverses Cloudflare
+// (LLM_GATEWAY_PROXY_TARGET is a proxied hostname whose ALB only accepts
+// Cloudflare IPs), so an internal-hop failure arrives as a CF HTML page with a
+// 52x status and gets relayed onward. No Kortix handler ever returns 52x, so
+// normalizing them is unambiguous.
+const EDGE_REWRITTEN_STATUSES = new Set([502, 504, 520, 521, 522, 523, 524]);
 app.use('*', async (c, next) => {
   await next();
   const res = c.res;
