@@ -334,7 +334,10 @@ describe('full self-host Docker distribution', () => {
     const caddyfile = kortixRuntimeAssets.Caddyfile;
     for (const [name, port, healthPath] of [
       ['kortix-api', '8008', '/v1/health'],
-      ['llm-gateway', '8090', '/health'],
+      // /health/live is the SHALLOW probe. The deep /health 503s while the
+      // Kortix API is unreachable, which would fail every gateway replica at
+      // once on an API blip and turn a healthy gateway into a Caddy 502.
+      ['llm-gateway', '8090', '/health/live'],
       ['frontend', '3000', '/'],
     ] as const) {
       expect(caddyfile, name).toContain(`name ${name}`);

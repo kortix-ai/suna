@@ -2,7 +2,7 @@ import './environment-secret';
 import { config } from './config';
 import { buildServer } from './server';
 
-const { app, traces } = buildServer();
+const { app, traces, inflightRequests } = buildServer();
 
 const server = Bun.serve({
   port: config.port,
@@ -26,8 +26,36 @@ const server = Bun.serve({
 
 console.log(`[gateway] listening on :${server.port}`);
 
+// Drain before exit. ECS/Kubernetes send SIGTERM, then SIGKILL after the stop
+// timeout; a Spot reclaim and every rolling deploy do the same. Exiting
+// immediately (what this did until 2026-08-24) cut every in-flight LLM stream
+// mid-frame — the client saw a truncated SSE body with no error, which is
+// indistinguishable from a model that stopped talking.
+//
+// The budget is deliberately shorter than the platform's stop timeout so the
+// process always exits on its own terms rather than being killed.
+const DRAIN_BUDGET_MS = Number(process.env.GATEWAY_DRAIN_MS) || 25_000;
+const DRAIN_POLL_MS = 250;
+
+let shuttingDown = false;
 const shutdown = async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  // Stop accepting new connections; keep serving the ones already open.
   server.stop();
+  const deadline = Date.now() + DRAIN_BUDGET_MS;
+  let remaining = inflightRequests();
+  if (remaining > 0)
+    console.log(
+      `[gateway] draining ${remaining} in-flight request(s), budget ${DRAIN_BUDGET_MS}ms`,
+    );
+  while (remaining > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, DRAIN_POLL_MS));
+    remaining = inflightRequests();
+  }
+  if (remaining > 0)
+    console.warn(`[gateway] drain budget expired with ${remaining} request(s) still in flight`);
+  else console.log('[gateway] drained cleanly');
   if (traces) await traces.shutdown();
   process.exit(0);
 };

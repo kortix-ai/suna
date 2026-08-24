@@ -106,6 +106,13 @@ export function createLangfuseSink(
     publicKey: cfg.publicKey,
     secretKey: cfg.secretKey,
     baseUrl: cfg.baseUrl,
+    // Batch. `record()` used to await `flushAsync()` per request, which is one
+    // HTTP POST per trace with no concurrency cap and up to ~24s of internal
+    // retries — during a Langfuse outage that accumulates one in-flight fetch
+    // per request on the gateway. Observability must never be able to push
+    // back on the serving path.
+    flushAt: 50,
+    flushInterval: 5_000,
   });
 
   return {
@@ -113,7 +120,7 @@ export function createLangfuseSink(
       try {
         const { trace: traceBody, generation } = traceToLangfuse(trace);
         client.trace(traceBody).generation(generation);
-        await client.flushAsync();
+        // No flush here: the client batches and the shutdown hook drains.
       } catch (err) {
         logger.warn('[gateway] failed to record trace to langfuse', err);
       }

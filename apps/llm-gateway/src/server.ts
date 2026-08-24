@@ -1,4 +1,5 @@
 import {
+  DEFAULT_BODY_AMPLIFICATION,
   DEFAULT_MAX_REQUEST_BYTES,
   InflightBudget,
   createGateway,
@@ -12,9 +13,32 @@ import { automaticInflightBudgetBytes } from './memory-budget';
 
 // One admission budget protects one standalone process. Work beyond capacity
 // receives a typed response before its body is retained.
+const inflightCapacityBytes =
+  Number(process.env.GATEWAY_INFLIGHT_BUDGET_BYTES) || automaticInflightBudgetBytes();
+// A per-request cap larger than the budget can ever admit is a lie: such a
+// request is refused 413 `too_large` ("never retry") when the honest answer is
+// that this process is too small for it. Clamp to what the budget can hold.
+const perRequestCapBytes = Math.min(
+  Number(process.env.GATEWAY_MAX_REQUEST_BYTES) || DEFAULT_MAX_REQUEST_BYTES,
+  Math.floor(
+    inflightCapacityBytes /
+      (Number(process.env.GATEWAY_BODY_AMPLIFICATION) || DEFAULT_BODY_AMPLIFICATION),
+  ),
+);
+// How much resident memory one wire byte really costs while it is in flight.
+// This is the safety margin that decides how many big requests run at once, so
+// it is deliberately conservative and measured, not guessed: a single isolated
+// 27 MiB request peaks at ~2.3x (memory-envelope.test.ts), but under real
+// concurrency the transient copies of different requests overlap and GC lags
+// behind, so the honest number is higher. At 3x, 60 concurrent 27 MiB uploads
+// OOM-killed a 2 GiB container (measured 2026-08-24); the same load survives
+// at 6x with peak RSS well under the limit.
+const bodyAmplification =
+  Number(process.env.GATEWAY_BODY_AMPLIFICATION) || DEFAULT_BODY_AMPLIFICATION;
 const defaultInflight = new InflightBudget({
-  maxBytes: Number(process.env.GATEWAY_INFLIGHT_BUDGET_BYTES) || automaticInflightBudgetBytes(),
-  perRequestMaxBytes: Number(process.env.GATEWAY_MAX_REQUEST_BYTES) || DEFAULT_MAX_REQUEST_BYTES,
+  maxBytes: inflightCapacityBytes,
+  perRequestMaxBytes: perRequestCapBytes,
+  amplification: bodyAmplification,
 });
 import { Hono } from 'hono';
 import { createApiClient } from './clients/api-client';
@@ -34,6 +58,8 @@ const ERROR_RATE_ALERT = 0.5;
 export interface GatewayServer {
   app: Hono;
   traces: TraceSink | null;
+  /** Requests still being served, including streams still relaying. */
+  inflightRequests: () => number;
 }
 
 // Cloudflare replaces an ORIGIN 502 or 504 with its own HTML "Bad gateway"
@@ -140,6 +166,62 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
 
   const app = new Hono();
 
+  // Counts requests still being served, INCLUDING a streaming response that is
+  // still relaying, so `main.ts` can drain before exit instead of cutting every
+  // live turn on a deploy, scale-in or Spot reclaim.
+  let inflightRequestCount = 0;
+  app.use('*', async (c, next) => {
+    inflightRequestCount += 1;
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      inflightRequestCount -= 1;
+    };
+    try {
+      await next();
+    } catch (error) {
+      done();
+      throw error;
+    }
+    const streamed = c.res?.body;
+    if (!streamed) {
+      done();
+      return;
+    }
+    // PULL-DRIVEN pass-through: one upstream read per downstream pull, so a
+    // slow client throttles the provider instead of filling this process's
+    // memory. (`tee()` here would do the opposite — the counting branch races
+    // ahead and buffers the whole completion.)
+    const reader = streamed.getReader();
+    c.res = new Response(
+      new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          try {
+            const chunk = await reader.read();
+            if (chunk.done) {
+              done();
+              controller.close();
+              return;
+            }
+            controller.enqueue(chunk.value);
+          } catch (error) {
+            done();
+            controller.error(error);
+          }
+        },
+        async cancel(reason) {
+          try {
+            await reader.cancel(reason);
+          } finally {
+            done();
+          }
+        },
+      }),
+      c.res,
+    );
+  });
+
   // Shallow liveness: the process is up. The k8s livenessProbe should point here
   // so a dependency outage (which a restart can't fix) doesn't crash-loop the pod.
   // Includes version/commit so a rollout can be confirmed with one cheap probe
@@ -211,7 +293,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     try {
       // Reserve capacity before the body is materialized.
-      const body = await readAdmittedBody(c.req.raw, config.maxRequestBytes, inflight);
+      const body = await readAdmittedBody(c.req.raw, perRequestCapBytes, inflight);
       if (!body.ok) {
         const status = body.reason === 'too_large' ? 413 : 503;
         if (body.reason === 'overloaded') {
@@ -221,7 +303,11 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
             utilization: inflight.utilisation,
           });
         }
-        recordOutcome(status);
+        // A client that vanished mid-upload is not a fleet error: its
+        // reservation is already back and nobody reads this response. Keeping
+        // it out of the error rate stops an aborting client from faking an
+        // incident on /health.
+        if (body.reason !== 'client_aborted') recordOutcome(status);
         return status === 413
           ? requestTooLargeResponse(requestId)
           : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1, requestId);
@@ -279,10 +365,10 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     };
   }) => {
     try {
-      const body = await readAdmittedBody(c.req.raw, config.maxRequestBytes, inflight);
+      const body = await readAdmittedBody(c.req.raw, perRequestCapBytes, inflight);
       if (!body.ok) {
         const status = body.reason === 'too_large' ? 413 : 503;
-        recordOutcome(status);
+        if (body.reason !== 'client_aborted') recordOutcome(status);
         return status === 413
           ? requestTooLargeResponse()
           : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1);
@@ -291,6 +377,9 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
         const request = {
           authorization: c.req.header('authorization'),
           rawBody: body.body,
+          // Without this a disconnected /v1/messages client left the provider
+          // generating — and billing — to nobody.
+          signal: c.req.raw?.signal,
         };
         body.body = '';
         const res = await cloudflareSafe(await gateway.messages(request));
@@ -334,5 +423,5 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   app.get('/v1/llm/models', models);
   app.get('/v1/openai/models', models);
 
-  return { app, traces };
+  return { app, traces, inflightRequests: () => inflightRequestCount };
 }

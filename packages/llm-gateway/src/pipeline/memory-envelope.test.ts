@@ -245,3 +245,37 @@ describe('memory envelope: 40-screenshot / ~28 MB request', () => {
     expect(text).toContain('[DONE]');
   });
 });
+
+describe('streaming backpressure', () => {
+  /**
+   * A consumer slower than the provider must NOT be able to make the whole
+   * completion accumulate in the gateway. Before the backpressure bridge the
+   * producer loop ran to completion regardless of demand: measured 2026-08-24,
+   * a 100k-part completion whose consumer read one frame then stalled grew RSS
+   * by 85.2 MiB — memory admission never sees, because it charges the request.
+   */
+  test('a stalled consumer stops the producer instead of buffering the completion', async () => {
+    const { openAiSseFromFullStream } = await import('../transports/ai-sdk/sse');
+    const TOTAL = 50_000;
+    let produced = 0;
+    const fullStream = (async function* () {
+      for (let i = 0; i < TOTAL; i += 1) {
+        produced += 1;
+        yield { type: 'text-delta', text: 'abcd' } as never;
+      }
+      yield { type: 'finish', finishReason: 'stop' } as never;
+    })();
+
+    const stream = openAiSseFromFullStream(fullStream as never, { model: 'm', provider: 'p' });
+    const reader = stream.getReader();
+    await reader.read(); // one frame, then stall
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    // Bounded by the queue, not by the size of the completion.
+    expect(produced).toBeLessThan(100);
+    console.log(
+      `[backpressure] producer emitted ${produced} of ${TOTAL} parts while the consumer stalled`,
+    );
+    await reader.cancel();
+  });
+});

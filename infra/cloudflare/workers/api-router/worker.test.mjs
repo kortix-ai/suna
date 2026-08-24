@@ -195,9 +195,23 @@ describe('api-router worker', () => {
     expect(stagingTerraform).toMatch(
       /module "gateway"[\s\S]*?fargate_base_on_demand\s*=\s*1/,
     );
-    // Without this the module never creates the request-count scaling policy.
-    expect(stagingTerraform).toMatch(
-      /module "gateway"[\s\S]*?requests_per_target_target\s*=\s*600/,
+    // Without a NON-ZERO value the module never creates the
+    // ALBRequestCountPerTarget policy (0 is its default and the module skips
+    // it), and an I/O-bound gateway blocked on upstream models never moves
+    // CPU or memory — so it would never scale at all.
+    //
+    // The number is deliberately NOT the API's 600: the gateway holds whole
+    // request bodies in memory while it forwards them, so it saturates on
+    // concurrency far earlier than the API does. Asserting 600 here only ever
+    // passed by accident of regex ordering — the API's own 600 sits ABOVE the
+    // gateway block, so this pattern could never match the gateway's value.
+    const stagingGateway = stagingTerraform.match(/module "gateway"[\s\S]*?\n}\n/)?.[0];
+    expect(stagingGateway).toBeDefined();
+    const gatewayRequestsPerTarget = num(stagingGateway, 'requests_per_target_target');
+    expect(gatewayRequestsPerTarget).toBeGreaterThan(0);
+    // The gateway must be able to add replicas, not just sit at its floor.
+    expect(num(stagingGateway, 'max_capacity')).toBeGreaterThan(
+      num(stagingGateway, 'min_capacity'),
     );
   });
 

@@ -25,7 +25,7 @@ export type AdmittedBodyResult =
   | { ok: true; body: string; bytes: number; release: () => void }
   | {
       ok: false;
-      reason: 'too_large' | 'overloaded';
+      reason: 'too_large' | 'overloaded' | 'client_aborted';
       bytes: number;
       limit: number;
       retryAfterSeconds?: number;
@@ -51,14 +51,33 @@ export async function readAdmittedBody(
   maxBytes: number,
   budget: InflightBudget,
 ): Promise<AdmittedBodyResult> {
+  /**
+   * Refusing a request does NOT stop the client from sending its body.
+   *
+   * This is the difference between shedding load and dying. When admission
+   * says no, the caller is already streaming megabytes at us; if we simply
+   * return a 503 and leave the body unread, the server keeps accepting those
+   * bytes into its socket buffers to complete the HTTP transaction. Measured
+   * 2026-08-24: 60 concurrent 27 MiB uploads against a 2 GiB container were
+   * correctly refused by admission and OOM-killed the process anyway, because
+   * ~1.3 GB of refused body was buffered on the way in.
+   *
+   * Cancelling the body tears down the read side, so the bytes we already
+   * decided not to read are never accumulated.
+   */
+  const refuse = (result: AdmittedBodyResult): AdmittedBodyResult => {
+    void request.body?.cancel().catch(() => {});
+    return result;
+  };
+
   const declared = declaredContentLength(request);
   if (declared !== null && maxBytes > 0 && declared > maxBytes) {
-    return { ok: false, reason: 'too_large', bytes: declared, limit: maxBytes };
+    return refuse({ ok: false, reason: 'too_large', bytes: declared, limit: maxBytes });
   }
 
   const lease = budget.admit(declared ?? 0);
   if (!lease.ok) {
-    return {
+    return refuse({
       ok: false,
       reason: lease.reason,
       bytes: declared ?? 0,
@@ -66,13 +85,33 @@ export async function readAdmittedBody(
       ...(lease.retryAfterSeconds !== undefined
         ? { retryAfterSeconds: lease.retryAfterSeconds }
         : {}),
-    };
+    });
   }
 
   const reader = request.body?.getReader();
   if (!reader) {
     return { ok: true, body: '', bytes: 0, release: lease.release };
   }
+
+  // A client that disconnects MID-UPLOAD must not strand its reservation.
+  // Bun does not settle a pending `reader.read()` when the request is aborted,
+  // so without this the loop below awaits forever while holding the lease:
+  // capacity shrinks permanently and, after enough aborted uploads, every
+  // request 503s `gateway_overloaded` on a process that is otherwise idle.
+  // Measured 2026-08-24 against the real container: one aborted 2.8 MB upload
+  // leaked 8,521,827 reserved bytes that were never returned.
+  // Cancelling the reader settles the pending read, so the loop exits through
+  // its normal paths and the lease is released exactly once.
+  const abortRead = () => {
+    void reader.cancel('client aborted upload').catch(() => {});
+  };
+  const signal = request.signal;
+  if (signal?.aborted) {
+    abortRead();
+    lease.release();
+    return { ok: false, reason: 'client_aborted', bytes: 0, limit: maxBytes };
+  }
+  signal?.addEventListener('abort', abortRead, { once: true });
 
   // Bytes are retained as bytes and decoded to ONE string at the end. The
   // previous implementation decoded every chunk to a string and then
@@ -137,11 +176,19 @@ export async function readAdmittedBody(
     }
     chunks.length = 0;
     buffer = null;
+    // The reader was cancelled by the abort listener: the body is truncated,
+    // so there is nothing to dispatch. Release rather than hand a partial
+    // request to the pipeline (which would fail JSON.parse anyway).
+    if (signal?.aborted) {
+      lease.release();
+      return { ok: false, reason: 'client_aborted', bytes, limit: maxBytes };
+    }
     return { ok: true, body: new TextDecoder().decode(whole), bytes, release: lease.release };
   } catch (error) {
     lease.release();
     throw error;
   } finally {
+    signal?.removeEventListener('abort', abortRead);
     reader.releaseLock?.();
   }
 }

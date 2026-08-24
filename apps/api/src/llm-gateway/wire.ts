@@ -391,7 +391,13 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     headers.delete('host');
     headers.delete('connection');
     const query = new URL(c.req.url).search;
-    const init: RequestInit & { duplex?: 'half' } = { method: c.req.method, headers };
+    const init: RequestInit & { duplex?: 'half' } = {
+      method: c.req.method,
+      headers,
+      // Without this a client disconnect never reached the gateway, so the
+      // provider kept generating — and billing — a turn nobody would read.
+      signal: c.req.raw.signal,
+    };
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
       init.body = c.req.raw.body;
       init.duplex = 'half';
