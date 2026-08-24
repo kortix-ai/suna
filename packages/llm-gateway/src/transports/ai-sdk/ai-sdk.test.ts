@@ -372,7 +372,7 @@ describe('ai-sdk request conversion', () => {
     );
   });
 
-  it('translates image_url user parts, decoding data: URLs to bytes', () => {
+  it('translates a data: image_url into a file part that carries the base64 untouched', () => {
     const { messages } = toModelMessages([
       {
         role: 'user',
@@ -382,14 +382,44 @@ describe('ai-sdk request conversion', () => {
         ],
       },
     ]);
-    const imagePart = (messages[0]?.content as Array<{ type: string; image: unknown }>).find(
-      (p) => p.type === 'image',
-    );
-    expect(imagePart).toBeDefined();
-    // data: URL decoded to Uint8Array so Bedrock treats it as inline data
-    // (not a URL reference, which Bedrock rejects).
-    expect(imagePart!.image).toBeInstanceOf(Uint8Array);
-    expect(Array.from(imagePart!.image as Uint8Array)).toEqual([0, 0, 0]); // bytes of "AAAA"
+    const filePart = (
+      messages[0]?.content as Array<{ type: string; data: unknown; mediaType?: string }>
+    ).find((p) => p.type === 'file');
+    expect(filePart).toBeDefined();
+    // Tagged inline data: the AI SDK returns it as-is and both the anthropic
+    // and bedrock providers serialize a base64 STRING through the identity
+    // `convertToBase64`, so no decode and no re-encode happens anywhere.
+    expect(filePart!.data).toEqual({ type: 'data', data: 'AAAA' });
+    expect(filePart!.mediaType).toBe('image/png');
+  });
+
+  it('keeps an http(s) image_url as a URL reference and defaults the media type', () => {
+    const { messages } = toModelMessages([
+      {
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'https://img.example/a.png' } }],
+      },
+    ]);
+    const filePart = (
+      messages[0]?.content as Array<{ type: string; data: { type: string; url?: URL }; mediaType?: string }>
+    ).find((p) => p.type === 'file');
+    expect(filePart!.data.type).toBe('url');
+    expect(filePart!.data.url?.toString()).toBe('https://img.example/a.png');
+    expect(filePart!.mediaType).toBe('image');
+  });
+
+  it('data: URL without a media type falls back to the top-level image type', () => {
+    const { messages } = toModelMessages([
+      {
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'data:;base64,AAAA' } }],
+      },
+    ]);
+    const filePart = (
+      messages[0]?.content as Array<{ type: string; data: unknown; mediaType?: string }>
+    ).find((p) => p.type === 'file');
+    expect(filePart!.data).toEqual({ type: 'data', data: 'AAAA' });
+    expect(filePart!.mediaType).toBe('image');
   });
 
   it('defaults maxOutputTokens for anthropic/bedrock (non-thinking), maps reasoning_effort + tool_choice', () => {

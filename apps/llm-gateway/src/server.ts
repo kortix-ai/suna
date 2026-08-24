@@ -14,7 +14,7 @@ import { automaticInflightBudgetBytes } from './memory-budget';
 // receives a typed response before its body is retained.
 const defaultInflight = new InflightBudget({
   maxBytes: Number(process.env.GATEWAY_INFLIGHT_BUDGET_BYTES) || automaticInflightBudgetBytes(),
-  perRequestMaxBytes: DEFAULT_MAX_REQUEST_BYTES,
+  perRequestMaxBytes: Number(process.env.GATEWAY_MAX_REQUEST_BYTES) || DEFAULT_MAX_REQUEST_BYTES,
 });
 import { Hono } from 'hono';
 import { createApiClient } from './clients/api-client';
@@ -75,7 +75,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
         await Promise.allSettled(sinks);
       },
     },
-    { logger },
+    { logger, imageWindow: config.imageWindow },
   );
 
   // Rolling per-second traffic buckets feeding the health endpoint's error-rate
@@ -181,7 +181,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     try {
       // Reserve capacity before the body is materialized.
-      const body = await readAdmittedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES, inflight);
+      const body = await readAdmittedBody(c.req.raw, config.maxRequestBytes, inflight);
       if (!body.ok) {
         const status = body.reason === 'too_large' ? 413 : 503;
         if (body.reason === 'overloaded') {
@@ -249,7 +249,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     };
   }) => {
     try {
-      const body = await readAdmittedBody(c.req.raw, DEFAULT_MAX_REQUEST_BYTES, inflight);
+      const body = await readAdmittedBody(c.req.raw, config.maxRequestBytes, inflight);
       if (!body.ok) {
         const status = body.reason === 'too_large' ? 413 : 503;
         recordOutcome(status);

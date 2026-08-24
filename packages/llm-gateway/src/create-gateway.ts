@@ -51,6 +51,7 @@ export function createGateway(
     hooks,
     logger,
     fetchImpl: deps.fetchImpl,
+    imageWindow: deps.imageWindow,
   };
 
   const jsonResponse = (data: unknown, status = 200): Response =>

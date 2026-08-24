@@ -2181,3 +2181,54 @@ still blocked, and the own-session credential still allowed.
 
 *Incident:* essentia project `e7170bf8`, origin counts user 568 / backend 43.
 PR #6828.
+||||||| base
+
+## Measure the amplification factor; never decode what you can forward
+
+2026-08-24. The gateway's ai-sdk transport decoded every `data:` image with
+`atob(raw).split('').map(c => c.charCodeAt(0))` — one JavaScript string per
+byte, 89 MB resident for a 6.7 MB image — and then let provider-utils re-encode
+the bytes through a `String.fromCodePoint` concat loop. The admission budget
+charged 3x per wire byte on the assumption that the parsed graph was the only
+copy. Both `@ai-sdk/anthropic` and `@ai-sdk/amazon-bedrock` accept a base64
+STRING and serialize it through the identity `convertToBase64`.
+
+**The rule.** A passthrough forwards bytes in the encoding it received them.
+Before charging a memory budget, measure the real peak with a mounted request
+through the real handler and write the number next to the constant
+(`memory-envelope.test.ts`: 2.25x openai-compat, 2.9x anthropic, 0.61x steady
+state on 2026-08-24). A budget factor without a measurement is a wish.
+
+**Bound the inputs a client can grow without limit.** A screenshot-per-step
+agent re-sends every screenshot on every turn. Providers already cap images
+per request (Bedrock Converse: 20). The gateway keeps the newest 12 of >20 and
+replaces older ones with a one-line notice, with hysteresis so the prefix
+stays cache-stable for 8 turns.
+
+*Incident:* Essentia 2026-08-22, 40-screenshot / 28 MB request, cgroup OOM.
+Enforcement: `memory-envelope.test.ts` (peak factor < 6x, all 40 images
+forwarded byte-for-byte on both routes), `image-window.test.ts`.
+
+## A re-framed body must not carry the provider's framing headers
+
+2026-08-24. The gateway forwarded `upstream.headers` unchanged on both response
+paths. `fetch` had already gunzipped the provider body and the gateway
+re-materialized it (a string, or a relayed stream), but the response still
+said `content-encoding: gzip` with the compressed `content-length`. The API
+reverse proxy's `fetch` threw `ZlibError` on every non-streaming completion
+and answered `502 gateway_proxy_unreachable` while the gateway itself had
+logged a 200. Caddy on a self-host box passes the same pair straight to the
+client.
+
+**The rule.** When a proxy decodes or re-frames a body, it owns the framing.
+Strip `content-encoding`, `content-length`, `transfer-encoding` and the
+hop-by-hop set (RFC 7230 §6.1) before forwarding; keep everything else.
+`curl` without `--compressed` ignores `content-encoding`, so a curl-only
+check passes while every `fetch`-based client fails — test through the real
+next hop.
+
+*Incident:* local stack, found during the passthrough e2e for the memory work
+above; the same code is live on dev. Enforcement: `simple-handler.test.ts`
+"drops wire-framing headers", `passthroughHeaders()` on all three response
+paths.
+

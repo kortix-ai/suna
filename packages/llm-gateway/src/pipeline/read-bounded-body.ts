@@ -74,8 +74,19 @@ export async function readAdmittedBody(
     return { ok: true, body: '', bytes: 0, release: lease.release };
   }
 
-  const decoder = new TextDecoder();
-  const parts: string[] = [];
+  // Bytes are retained as bytes and decoded to ONE string at the end. The
+  // previous implementation decoded every chunk to a string and then
+  // `join`ed them, which held two full copies of the body (the parts and the
+  // joined result) at the moment of the join. Here a declared body lands in a
+  // single preallocated buffer (each network chunk is released as soon as it
+  // is copied), and an undeclared body is concatenated once. Peak is one
+  // byte buffer plus the decoded string, and the buffer is a local that dies
+  // on return.
+  let buffer: Uint8Array | null =
+    declared !== null && declared > 0 && (maxBytes <= 0 || declared <= maxBytes)
+      ? new Uint8Array(declared)
+      : null;
+  const chunks: Uint8Array[] = [];
   let bytes = 0;
   try {
     for (;;) {
@@ -99,11 +110,34 @@ export async function readAdmittedBody(
           ...(resized.reason === 'overloaded' ? { retryAfterSeconds: 1 } : {}),
         };
       }
+      if (buffer && nextBytes <= buffer.byteLength) {
+        buffer.set(value, bytes);
+      } else {
+        // `content-length` lied (or was absent): fall back to chunk collection.
+        if (buffer) {
+          chunks.push(buffer.subarray(0, bytes));
+          buffer = null;
+        }
+        chunks.push(value);
+      }
       bytes = nextBytes;
-      parts.push(decoder.decode(value, { stream: true }));
     }
-    parts.push(decoder.decode());
-    return { ok: true, body: parts.join(''), bytes, release: lease.release };
+    let whole: Uint8Array;
+    if (buffer) {
+      whole = bytes === buffer.byteLength ? buffer : buffer.subarray(0, bytes);
+    } else if (chunks.length === 1) {
+      whole = chunks[0];
+    } else {
+      whole = new Uint8Array(bytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        whole.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+    }
+    chunks.length = 0;
+    buffer = null;
+    return { ok: true, body: new TextDecoder().decode(whole), bytes, release: lease.release };
   } catch (error) {
     lease.release();
     throw error;
