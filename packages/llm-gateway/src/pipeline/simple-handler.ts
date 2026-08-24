@@ -49,22 +49,6 @@ export interface HandlerRuntime {
   imageWindow?: ImageWindowOptions;
 }
 
-/**
- * Deadline for the provider's response HEADERS (time to first byte).
- *
- * There was no upstream timeout at all: `callUpstream` passed only the client's
- * signal, Bun's `idleTimeout` is 0, and no load balancer bounds that leg. A
- * provider that accepts the TCP connection and never answers therefore pinned
- * an admission reservation forever while Cloudflare gave the caller a 524 at
- * 100s. This fires first, so the caller gets a typed 503 it can retry.
- *
- * Headers only: once the stream is flowing, `relayStream`'s heartbeat and its
- * 90-minute inactivity budget govern it — a long-thinking model is not a
- * timeout.
- */
-const UPSTREAM_HEADERS_TIMEOUT_MS =
-  Number(process.env.GATEWAY_UPSTREAM_HEADERS_TIMEOUT_MS) || 90_000;
-
 const EMPTY_USAGE: TokenCounts = {
   promptTokens: 0,
   completionTokens: 0,
@@ -316,12 +300,24 @@ export async function handleChatCompletions(
   if (streaming) body.stream_options = { include_usage: true };
   let upstream: Response;
   try {
-    // Abort the dispatch if the provider has not produced response headers in
-    // time — combined with the client's own signal so a disconnect still wins.
-    const headersDeadline = AbortSignal.timeout(UPSTREAM_HEADERS_TIMEOUT_MS);
+    // The gateway imposes NO deadline of its own on the provider — not on
+    // acceptance and not on the completion. Deliberate: every gateway-side
+    // timer tried here has eventually killed a legitimate long turn (#6473's
+    // 90s probe in July; a 90s AbortSignal.timeout added and removed the same
+    // day, 2026-08-24 — a signal handed to fetch/streamText governs the WHOLE
+    // response, not just headers). Pacing belongs to the caller: its abort
+    // forwards into this controller for the response's whole lifetime, so a
+    // hung provider costs exactly as long as the caller keeps waiting, and
+    // the admission lease frees the moment the caller gives up. A stream that
+    // goes silent AFTER it started is still reaped by relayStream's
+    // 90-minute inactivity budget.
+    const upstreamAbort = new AbortController();
+    const forwardClientAbort = () => upstreamAbort.abort(req.signal?.reason);
+    if (req.signal?.aborted) forwardClientAbort();
+    else req.signal?.addEventListener('abort', forwardClientAbort, { once: true });
     const dispatch = callUpstream(body, descriptor, {
       fetchImpl,
-      signal: req.signal ? AbortSignal.any([req.signal, headersDeadline]) : headersDeadline,
+      signal: upstreamAbort.signal,
       requestId: id,
     });
     // Dispatch has serialized (openai-compat) or translated (ai-sdk) the
@@ -346,18 +342,6 @@ export async function handleChatCompletions(
       candidatesTried: [descriptor.provider],
     });
     if (error instanceof UpstreamHttpError) return rawProviderError(error);
-    // A headers timeout is "try again", not "this request is malformed".
-    const timedOut = (error as { name?: unknown })?.name === 'TimeoutError' && !req.signal?.aborted;
-    if (timedOut)
-      return gatewayErrorResponse(503, {
-        message: `Provider ${descriptor.provider} sent no response headers within ${UPSTREAM_HEADERS_TIMEOUT_MS}ms`,
-        code: 'upstream_timeout',
-        provider: descriptor.provider,
-        requestedModel,
-        resolvedModel: descriptor.resolvedModel ?? routedModel,
-        requestId: id,
-        suggestion: 'Retry the request, or choose another model.',
-      });
     return gatewayErrorResponse(502, {
       message: error instanceof Error ? error.message : 'Provider request failed',
       code: 'upstream_error',
