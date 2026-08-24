@@ -217,12 +217,60 @@ const NATIVE_PROVIDER_RANK = new Map(
   Object.keys(NATIVE_FLAGSHIP_CANDIDATES).map((id, index) => [id, index]),
 );
 
+/** The catalog fields the pre-runtime picker source reads per model — a
+ *  structural subset of `@kortix/llm-catalog`'s `CatalogModel` (the wire
+ *  shape), typed loose so both the shared type and test fixtures satisfy it. */
+interface NativeCatalogModel {
+  id: string;
+  name: string;
+  released?: string | null;
+  description?: string;
+  family?: string;
+  reasoning?: boolean;
+  reasoning_options?: Array<{
+    type: string;
+    values?: Array<string | null>;
+    min?: number;
+    max?: number;
+  }>;
+  tool_call?: boolean;
+  attachment?: boolean;
+  open_weights?: boolean;
+  last_updated?: string;
+  modalities?: { input?: string[]; output?: string[] };
+  limit?: { context?: number; input?: number; output?: number };
+  cost?: { input?: number; output?: number };
+}
+
+/**
+ * Variant IDS for a model's thinking-mode row, mirroring how opencode itself
+ * derives variants from the same models.dev `reasoning_options`
+ * (opencode packages/opencode/src/provider/transform.ts `reasoningVariants`):
+ * an `effort` knob contributes its published values verbatim (null → 'none'),
+ * a `budget_tokens` knob contributes the synthesized high/max pair, anything
+ * else contributes nothing. IDs only — the runtime owns the actual variant
+ * SETTINGS and replaces this list wholesale the moment it loads, so a
+ * pre-runtime pick lands on a runtime variant of the same name.
+ */
+function nativeVariantIds(model: NativeCatalogModel): string[] {
+  const options = model.reasoning_options ?? [];
+  const effort = options.find((option) => option.type === 'effort');
+  if (effort) {
+    return (effort.values ?? []).flatMap((value) => {
+      if (value === null) return ['none'];
+      return typeof value === 'string' ? [value] : [];
+    });
+  }
+  if (options.some((option) => option.type === 'budget_tokens')) return ['high', 'max'];
+  return [];
+}
+
 export function nativeProviderListFromCatalog(
   catalog: {
     providers: Array<{
       id: string;
       name: string;
-      models: Array<{ id: string; name: string; released: string | null }>;
+      models: Array<NativeCatalogModel>;
     }>;
   },
   secretNames: Set<string>,
@@ -257,14 +305,38 @@ export function nativeProviderListFromCatalog(
         name: provider.name,
         source: 'env',
         models: Object.fromEntries(
-          models.map((model) => [
-            model.id,
-            {
-              id: model.id,
-              name: model.name,
-              ...(model.released ? { release_date: model.released } : {}),
-            },
-          ]),
+          models.map((model) => {
+            const variantIds = nativeVariantIds(model);
+            return [
+              model.id,
+              {
+                id: model.id,
+                name: model.name,
+                ...(model.released ? { release_date: model.released } : {}),
+                // Metadata parity with the runtime list: `family` +
+                // `release_date` feed the picker's newest-per-family default
+                // view (without them EVERY historical version rendered, ids
+                // sharing a display name showed as duplicates); the
+                // capability flags feed the badges; `variants` feeds the
+                // thinking-mode row. All read by flattenModels' LooseModel
+                // branch under the exact same keys the runtime serves.
+                ...(model.family ? { family: model.family } : {}),
+                ...(model.reasoning !== undefined ? { reasoning: model.reasoning } : {}),
+                ...(model.reasoning_options ? { reasoning_options: model.reasoning_options } : {}),
+                ...(model.tool_call !== undefined ? { tool_call: model.tool_call } : {}),
+                ...(model.attachment !== undefined ? { attachment: model.attachment } : {}),
+                ...(model.modalities ? { modalities: model.modalities } : {}),
+                ...(model.limit ? { limit: model.limit } : {}),
+                ...(model.cost ? { cost: model.cost } : {}),
+                ...(model.description ? { description: model.description } : {}),
+                ...(model.open_weights !== undefined ? { open_weights: model.open_weights } : {}),
+                ...(model.last_updated ? { last_updated: model.last_updated } : {}),
+                ...(variantIds.length > 0
+                  ? { variants: Object.fromEntries(variantIds.map((id) => [id, {}])) }
+                  : {}),
+              },
+            ];
+          }),
         ),
       };
     });

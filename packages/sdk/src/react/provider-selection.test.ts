@@ -306,3 +306,90 @@ describe('nativeProviderListFromCatalog — default pick quality', () => {
     ]);
   });
 });
+
+// UX parity with the runtime picker (field report: the pre-runtime list showed
+// duplicate names and every historical version, and no thinking-mode row).
+// The catalog wire payload (runtimeModelCatalog snapshot = @kortix/llm-catalog
+// Catalog) already carries family/capabilities/reasoning_options — the
+// synthesized entries must pass them through so the picker's newest-per-family
+// curation, capability badges, and the variant (thinking mode) row behave
+// exactly as they do once the runtime list loads.
+describe('nativeProviderListFromCatalog — metadata parity with the runtime picker', () => {
+  const catalog = {
+    source: 'models.dev',
+    fetched_at: '2026-08-24T00:00:00Z',
+    provider_count: 1,
+    model_count: 3,
+    providers: [
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        env: ['ANTHROPIC_API_KEY'],
+        models: [
+          {
+            id: 'claude-opus-4-8',
+            name: 'Claude Opus 4.8',
+            released: '2026-01-01',
+            family: 'claude-opus',
+            reasoning: true,
+            reasoning_options: [
+              { type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] },
+            ],
+            tool_call: true,
+            attachment: true,
+            limit: { context: 200000, output: 64000 },
+            cost: { input: 5, output: 25 },
+          },
+          {
+            id: 'claude-sonnet-4-6',
+            name: 'Claude Sonnet 4.6',
+            released: '2025-11-01',
+            family: 'claude-sonnet',
+            reasoning: true,
+            reasoning_options: [{ type: 'budget_tokens', min: 1024, max: 32000 }],
+            tool_call: true,
+          },
+          {
+            id: 'claude-3-haiku',
+            name: 'Claude 3 Haiku',
+            released: '2024-03-01',
+            family: 'claude-haiku',
+            tool_call: true,
+          },
+        ],
+      },
+    ],
+  };
+
+  test('family, capabilities, limits, and cost survive onto the FlatModel', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    const flat = flattenModels(list, { providerMode: 'native' });
+    const opus = flat.find((m) => m.modelID === 'claude-opus-4-8')!;
+    expect(opus.family).toBe('claude-opus');
+    expect(opus.capabilities).toEqual({ reasoning: true, vision: true, toolcall: true });
+    expect(opus.contextWindow).toBe(200000);
+    expect(opus.cost).toEqual({ input: 5, output: 25 });
+    expect(opus.releaseDate).toBe('2026-01-01');
+  });
+
+  test('an effort knob synthesizes the same variant IDS opencode derives, so the thinking-mode row renders pre-runtime', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    const flat = flattenModels(list, { providerMode: 'native' });
+    const opus = flat.find((m) => m.modelID === 'claude-opus-4-8')!;
+    expect(Object.keys(opus.variants ?? {})).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  test('a budget_tokens knob synthesizes high/max, mirroring opencode budgetVariants', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    const flat = flattenModels(list, { providerMode: 'native' });
+    const sonnet = flat.find((m) => m.modelID === 'claude-sonnet-4-6')!;
+    expect(Object.keys(sonnet.variants ?? {})).toEqual(['high', 'max']);
+  });
+
+  test('a model with no reasoning knob gets no variants at all', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    const flat = flattenModels(list, { providerMode: 'native' });
+    const haiku = flat.find((m) => m.modelID === 'claude-3-haiku')!;
+    expect(haiku.variants ?? {}).toEqual({});
+  });
+});

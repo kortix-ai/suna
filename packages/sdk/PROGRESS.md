@@ -69,6 +69,17 @@ exists.
 **Gates:** `typecheck` clean · `bun run test` 2513 pass / 0 fail ·
 `smoke:install` passed. Shippable: YES.
 
+**Addendum 2 (field UX report):** the pre-runtime list rendered every
+historical version + duplicate display names and no thinking-mode row — the
+synthesized entries carried only {id,name,release_date}. They now pass through
+the catalog's family/capabilities/limits/cost (the wire payload was always the
+full `CatalogModel`; `ProjectLlmCatalogProviderModel` = that shared type now)
+and synthesize variant IDS from `reasoning_options` mirroring opencode's own
+`reasoningVariants` rule (effort values verbatim, budget_tokens → high/max) —
+so newest-per-family curation, badges, and the THINKING MODE row behave
+identically before and after the runtime loads. Type-surface snapshot
+regenerated (+ProjectLlmCatalogProviderModel, additive).
+
 **Addendum (same session):** the first live dev run auto-picked
 `Hy-MT2-30B-A3B` (models.dev file order) and OpenRouter refused the first
 message with "No endpoints found that support tool use". The synthesized list
