@@ -1,16 +1,16 @@
 'use client';
 
 /**
- * `PanelCard` — the reusable Easy-mode card shell (Progress / Outputs /
- * Context all sit on this, directly or in spirit).
+ * `PanelCard` — the reusable Easy-mode card shell. Outputs, Context, Preview
+ * and Plan are all this component with different contents.
  *
  * Collapsed and empty, a card is a *promise*: a title, soft placeholder art,
  * and one plain sentence saying what will show up here. Nothing technical is
  * visible until the user asks for it.
  *
- * The chevron rotates down and the header toggles an in-place body. All three
- * cards work this way: expanding one never hides the others, so the panel is
- * always the same three rows and never navigates away from itself.
+ * The chevron rotates down and the header toggles an in-place body. Every card
+ * works this way: expanding one never hides the others, so the panel is always
+ * the same rows and never navigates away from itself.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +24,20 @@ import { type ReactNode, useEffect, useState } from 'react';
 export interface PanelCardProps {
   title: string;
   count?: number;
-  /** Second line under the title — Progress uses it for its live step label. */
+  /**
+   * Stands in the count badge's slot for a card whose quantity is not a count.
+   *
+   * Plan is the only such card: "3 of 6, and here is the dial" is its size,
+   * the way "12" is Outputs'. Putting it HERE rather than beside the chevron
+   * is what keeps the column's headers parallel — every card states its size
+   * immediately after its title, so the eye reads one column of titles and one
+   * column of sizes rather than hunting a different edge per card.
+   *
+   * Mutually exclusive with `count` in practice: a card that has both is
+   * saying its size twice.
+   */
+  indicator?: ReactNode;
+  /** Second line under the title — Plan uses it for its live step label. */
   subtitle?: ReactNode;
   children?: ReactNode;
   /** Soft placeholder art shown above `emptyText` — the "promise" state. */
@@ -37,7 +50,7 @@ export interface PanelCardProps {
   emptyActions?: ReactNode;
   isEmpty: boolean;
   defaultExpanded?: boolean;
-  /** Override the body padding — a full-bleed list (Progress) wants none. */
+  /** Override the body padding — a full-bleed list wants none. */
   contentClassName?: string;
   /** A control beside the chevron (Outputs' "download all") — click-isolated
    * from the header's own expand/collapse toggle. */
@@ -75,11 +88,13 @@ const HEADER_CLASS = cn(
 function CardTitleRow({
   title,
   count,
+  indicator,
   subtitle,
   chevron,
 }: {
   title: string;
   count?: number;
+  indicator?: ReactNode;
   subtitle?: ReactNode;
   chevron: ReactNode;
 }) {
@@ -93,6 +108,11 @@ function CardTitleRow({
               {count}
             </Badge>
           )}
+          {/* `self-center`, against the row's `items-baseline`: a badge has a
+              baseline to sit on and an indicator is a glyph, which would
+              otherwise hang its bottom edge off the title's baseline and read
+              a pixel or two low. */}
+          {indicator && <span className="flex shrink-0 self-center">{indicator}</span>}
         </span>
         {subtitle}
       </span>
@@ -104,6 +124,7 @@ function CardTitleRow({
 export function PanelCard({
   title,
   count,
+  indicator,
   subtitle,
   children,
   emptyArt,
@@ -149,6 +170,7 @@ export function PanelCard({
           <CardTitleRow
             title={title}
             count={count}
+            indicator={indicator}
             subtitle={subtitle}
             chevron={
               <span className="flex shrink-0 items-center gap-0.5">

@@ -11,7 +11,7 @@ import {
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectPageCans } from '@/lib/use-project-can';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 /**
@@ -83,24 +83,16 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
  * be called from a loop that short-circuits.
  */
 function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] | null {
-  const canModels = useProjectCan(projectId, TAB_PREFERENCE[0].action);
-  const canConnectors = useProjectCan(projectId, TAB_PREFERENCE[1].action);
-  const canAgents = useProjectCan(projectId, TAB_PREFERENCE[2].action);
-  const canSkills = useProjectCan(projectId, TAB_PREFERENCE[3].action);
-  const canTriggers = useProjectCan(projectId, TAB_PREFERENCE[4].action);
-  const canSecrets = useProjectCan(projectId, TAB_PREFERENCE[5].action);
-  const canConfig = useProjectCan(projectId, TAB_PREFERENCE[6].action);
-
-  const probes = [
-    canModels,
-    canConnectors,
-    canAgents,
-    canSkills,
-    canTriggers,
-    canSecrets,
-    canConfig,
-  ];
-  const hit = probes.findIndex((p) => p.allowed || p.isLoading);
+  // ONE request. These used to be seven `useProjectCan` singles, and each one
+  // is its own `GET …/iam/members/:me/effective?action=…` plus a CORS
+  // preflight — fourteen round trips on every project page open, for a
+  // sidebar row. `useCans` sends the list to `effective:batch` and answers all
+  // seven from one response; the order below is still the preference order.
+  const results = useProjectPageCans(projectId);
+  const hit = TAB_PREFERENCE.findIndex((tab) => {
+    const probe = results[tab.action];
+    return !!probe && (probe.allowed || probe.isLoading);
+  });
   return hit === -1 ? null : TAB_PREFERENCE[hit].key;
 }
 
@@ -182,7 +174,8 @@ export function ProjectCustomizeNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const canCustomize = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ);
+  const caps = useProjectPageCans(projectId);
+  const canCustomize = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ];
   const tab = useCapabilityTab(projectId);
   // Active on the index itself (`/customize`, no deeper segment) AND on any
   // capability tab it links out to — the row should stay lit while browsing
@@ -236,4 +229,3 @@ export function ProjectCustomizeNavItem() {
     </SidebarMenuItem>
   );
 }
-

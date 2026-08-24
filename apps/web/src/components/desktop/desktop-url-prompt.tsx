@@ -22,8 +22,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { errorToast } from '@/components/ui/toast';
 import { getFrontendUrl, isDesktop, setFrontendUrl } from '@/lib/desktop';
-import { toast } from '@/lib/toast';
 import { useEffect, useState } from 'react';
 
 export function DesktopUrlPrompt() {
@@ -55,7 +55,7 @@ export function DesktopUrlPrompt() {
       // Tauri rejects commands with a plain string, not an Error — surface it.
       const msg =
         typeof e === 'string' ? e : e instanceof Error ? e.message : 'Could not set frontend URL';
-      toast.error(msg);
+      errorToast(msg);
       setBusy(false);
     }
   };

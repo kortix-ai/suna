@@ -93,13 +93,20 @@ export const kortixRuntimeAssets: Readonly<Record<string, string>> = {
 };
 
 /**
- * The internal URL Caddy's on_demand_tls `ask` calls before issuing a per-App
+ * The internal URL Caddy's on_demand_tls `ask` calls before issuing a
  * certificate. It resolves to kortix-api over the Compose network and returns
- * 200 only for a real, resolvable App public host (see apps/edge in the API),
- * which is what bounds ACME issuance so a random hostname pointed at this box
- * cannot mint unbounded certificates.
+ * 200 only for a hostname this instance actually serves — a real App host or a
+ * real sandbox preview host (see edge/tls-check.ts in the API) — which is what
+ * bounds ACME issuance so a random hostname pointed at this box cannot mint
+ * unbounded certificates.
+ *
+ * Caddy allows exactly ONE global `ask`, so both wildcard families share it.
  */
-const APPS_TLS_CHECK_URL = 'http://kortix-api:8008/v1/apps/edge/tls-check';
+// Deliberately the /v1/apps/edge path, not /v1/edge: this is the URL every
+// already-installed Caddyfile carries, and the API serves the same handler at
+// both. An instance whose assets update before its API image therefore keeps a
+// working gate for App hosts instead of losing on-demand TLS entirely.
+const EDGE_TLS_CHECK_URL = 'http://kortix-api:8008/v1/apps/edge/tls-check';
 
 /**
  * The exact substring of the base Caddyfile global options block that closes it.
@@ -153,6 +160,53 @@ const APPS_SITE_BLOCK = `# *.<apps base domain>: every deployed Kortix App, serv
 	}
 }`;
 
+/**
+ * The wildcard preview-serving site block. Every sandbox port a browser can
+ * open publishes on <env>-p<port>-<sandbox-label>.{$KORTIX_PREVIEW_BASE_DOMAIN},
+ * so the app is alone on its own origin and root-absolute links, XHR to `/api`,
+ * `history.pushState`, service workers and WebSockets all resolve to the origin
+ * the browser is already on — none of which survive a path prefix.
+ *
+ * The API matches the real Host header (KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true —
+ * this reverse proxy is the trust boundary, there is no Cloudflare Worker to
+ * sign the claim). Caddy preserves the inbound Host and sets X-Forwarded-Proto
+ * by default, so resolvePreviewHost(Host) names the right sandbox and port with
+ * no header_up override.
+ *
+ * TLS is issued PER HOSTNAME on first request; a 2nd-level wildcard certificate
+ * is as impractical here as it is for Apps.
+ *
+ * Caddy's reverse_proxy passes WebSocket upgrades through unchanged, which the
+ * API needs — a dev server's hot reload opens one, and it is the only
+ * credential-carrying request an app's own code can make.
+ */
+const PREVIEW_SITE_BLOCK = `# *.<preview base domain>: one origin per sandbox port, served over
+# per-hostname on-demand TLS. Only present when KORTIX_PREVIEW_BASE_DOMAIN is
+# configured — see renderCaddyfile() in compose-assets.ts. The global
+# on_demand_tls \`ask\` above bounds certificate issuance to real preview hosts.
+*.{$KORTIX_PREVIEW_BASE_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		on_demand
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name kortix-api
+			port 8008
+			refresh 2s
+		}
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		fail_duration 30s
+		health_uri /v1/health
+		health_interval 3s
+		health_timeout 2s
+	}
+}`;
+
 export interface RenderCaddyfileOptions {
   /**
    * Whether Apps hosting is configured (KORTIX_APPS_BASE_DOMAIN is set). When
@@ -162,6 +216,14 @@ export interface RenderCaddyfileOptions {
    * never emits an empty `*.` site address or an unbounded on_demand_tls.
    */
   appsHostingConfigured?: boolean;
+  /**
+   * Whether sandbox previews get their own origins (KORTIX_PREVIEW_BASE_DOMAIN
+   * is set). When true, renderCaddyfile appends the wildcard
+   * `*.<preview base domain>` block — and injects the global on_demand_tls
+   * `ask` if the Apps block has not already. When false, previews stay on the
+   * path proxy (`/v1/p/{sandbox}/{port}/`), which needs no extra hostname.
+   */
+  previewHostingConfigured?: boolean;
 }
 
 /**
@@ -170,15 +232,21 @@ export interface RenderCaddyfileOptions {
  * configured.
  */
 export function renderCaddyfile(options: RenderCaddyfileOptions = {}): string {
-  if (!options.appsHostingConfigured) return kortixCaddyfile;
+  const blocks = [
+    options.appsHostingConfigured ? APPS_SITE_BLOCK : null,
+    options.previewHostingConfigured ? PREVIEW_SITE_BLOCK : null,
+  ].filter((block): block is string => block !== null);
+  if (blocks.length === 0) return kortixCaddyfile;
   if (!kortixCaddyfile.includes(CADDY_GLOBAL_CLOSE)) {
     throw new Error('Caddyfile global options block changed; cannot inject on_demand_tls');
   }
+  // on_demand_tls is GLOBAL-only and Caddy allows one global block, so the
+  // `ask` is injected once no matter how many wildcard families are served.
   const withOnDemand = kortixCaddyfile.replace(
     CADDY_GLOBAL_CLOSE,
-    `email {$KORTIX_ACME_EMAIL}\n\n\ton_demand_tls {\n\t\task ${APPS_TLS_CHECK_URL}\n\t}\n}`,
+    `email {$KORTIX_ACME_EMAIL}\n\n\ton_demand_tls {\n\t\task ${EDGE_TLS_CHECK_URL}\n\t}\n}`,
   );
-  return `${withOnDemand.trimEnd()}\n\n${APPS_SITE_BLOCK}\n`;
+  return `${withOnDemand.trimEnd()}\n\n${blocks.join('\n\n')}\n`;
 }
 
 export function writeKortixRuntimeAssets(root: string, options: RenderCaddyfileOptions = {}): void {
@@ -573,7 +641,14 @@ interface MemSpec {
 
 const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   'supabase-db': { limit: '1280m', reservation: '512m', oomScoreAdj: -900 },
-  'kortix-api': { limit: '${KORTIX_API_MEMORY_LIMIT:-640m}', reservation: '256m' },
+  // The API HOSTS THE GATEWAY IN-PROCESS (apps/api/src/index.ts mounts
+  // `/v1/llm` via mountLlmGateway), so every byte the note below describes for
+  // the standalone gateway also transits this container. 640m was the same
+  // mistake one service down: on 2026-08-21 the dev API — capped at 1024 MiB,
+  // still under the 2 GiB proven necessary here — was OOM-killed three times
+  // in eleven minutes during an image-heavy session, and the browser was shown
+  // Cloudflare's "Bad Gateway" page. Matched to the gateway's ceiling.
+  'kortix-api': { limit: '${KORTIX_API_MEMORY_LIMIT:-2048m}', reservation: '256m' },
   // Headroom for large multimodal requests: the gateway buffers the raw request
   // body (image-heavy agent turns run tens of MiB — see DEFAULT_MAX_REQUEST_BYTES),
   // so 512m was far too tight once the body ceiling was raised. Give it a generous

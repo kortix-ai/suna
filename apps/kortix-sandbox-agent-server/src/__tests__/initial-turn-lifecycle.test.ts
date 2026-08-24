@@ -1,24 +1,25 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
+  claimInitialTurnFromApi,
   publishInitialOpenCodeSessionAfterPrompt,
   reconcileInitialTurnAcceptanceToApi,
   relayInitialTurnAcceptedToApi,
+  resetClaimedInitialTurnForTests,
 } from '../main';
 import { type SandboxBootState, resolveTurnObservationIdentity } from '../routes/health';
 
 const KEYS = [
   'KORTIX_PROJECT_ID',
   'KORTIX_SESSION_ID',
-  'KORTIX_SANDBOX_TOKEN',
   'KORTIX_TOKEN',
-  'KORTIX_CLI_TOKEN',
   'KORTIX_API_URL',
 ] as const;
 
 let saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
+  resetClaimedInitialTurnForTests();
   saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
   for (const key of KEYS) delete process.env[key];
 });
@@ -32,6 +33,79 @@ afterEach(() => {
 });
 
 describe('daemon-delivered initial turn lifecycle', () => {
+  test('claims the first prompt with the single session credential', async () => {
+    let observed: { authorization: string | null; body: unknown } | null = null;
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        observed = {
+          authorization: request.headers.get('authorization'),
+          body: await request.json(),
+        };
+        return Response.json({
+          ok: true,
+          initial_turn: {
+            prompt: 'private prompt',
+            turn_token: 'turn-token',
+            message_id: 'msg_initial',
+          },
+        });
+      },
+    });
+    try {
+      process.env.KORTIX_PROJECT_ID = 'project-1';
+      process.env.KORTIX_SESSION_ID = 'session-1';
+      process.env.KORTIX_TOKEN = 'session-token';
+      process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
+
+      expect(await claimInitialTurnFromApi()).toEqual({
+        prompt: 'private prompt',
+        turnToken: 'turn-token',
+        messageId: 'msg_initial',
+      });
+      expect(observed as unknown).toEqual({
+        authorization: 'Bearer session-token',
+        body: { session_id: 'session-1', kind: 'initial_turn_claim' },
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test('retries a transient initial-turn claim failure', async () => {
+    let requests = 0;
+    const server = Bun.serve({
+      port: 0,
+      fetch() {
+        requests += 1;
+        if (requests === 1) return Response.json({ error: 'temporary' }, { status: 503 });
+        return Response.json({
+          ok: true,
+          initial_turn: {
+            prompt: 'retry prompt',
+            turn_token: 'retry-token',
+            message_id: 'msg_retry',
+          },
+        });
+      },
+    });
+    try {
+      process.env.KORTIX_PROJECT_ID = 'project-1';
+      process.env.KORTIX_SESSION_ID = 'session-1';
+      process.env.KORTIX_TOKEN = 'session-token';
+      process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
+
+      expect(await claimInitialTurnFromApi()).toEqual({
+        prompt: 'retry prompt',
+        turnToken: 'retry-token',
+        messageId: 'msg_retry',
+      });
+      expect(requests).toBe(2);
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test('uses the pinned root for exact recovery when prompt delivery times out ambiguously', () => {
     expect(resolveTurnObservationIdentity(undefined, 'msg_initial', 'ses_pinned')).toEqual({
       sessionId: 'ses_pinned',
@@ -80,15 +154,14 @@ describe('daemon-delivered initial turn lifecycle', () => {
     try {
       process.env.KORTIX_PROJECT_ID = 'project-1';
       process.env.KORTIX_SESSION_ID = 'session-1';
-      process.env.KORTIX_SANDBOX_TOKEN = 'sandbox-token';
-      process.env.KORTIX_CLI_TOKEN = 'session-token-must-not-be-used';
+      process.env.KORTIX_TOKEN = 'session-token';
       process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
 
       expect(await relayInitialTurnAcceptedToApi('ses_root', 'msg_initial', 'turn-token')).toBe(
         true,
       );
       expect(observed as unknown).toEqual({
-        authorization: 'Bearer sandbox-token',
+        authorization: 'Bearer session-token',
         body: {
           session_id: 'session-1',
           kind: 'turn_accepted',
@@ -127,7 +200,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
     try {
       process.env.KORTIX_PROJECT_ID = 'project-1';
       process.env.KORTIX_SESSION_ID = 'session-1';
-      process.env.KORTIX_SANDBOX_TOKEN = 'sandbox-token';
+      process.env.KORTIX_TOKEN = 'sandbox-token';
       process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
 
       expect(
@@ -169,7 +242,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
     try {
       process.env.KORTIX_PROJECT_ID = 'project-1';
       process.env.KORTIX_SESSION_ID = 'session-1';
-      process.env.KORTIX_SANDBOX_TOKEN = 'sandbox-token';
+      process.env.KORTIX_TOKEN = 'sandbox-token';
       process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
 
       expect(
@@ -187,10 +260,10 @@ describe('daemon-delivered initial turn lifecycle', () => {
     }
   });
 
-  test('refuses to promote through the session CLI credential', async () => {
+  test('requires the complete session relay context', async () => {
     process.env.KORTIX_PROJECT_ID = 'project-1';
-    process.env.KORTIX_SESSION_ID = 'session-1';
-    process.env.KORTIX_CLI_TOKEN = 'session-token';
+    delete process.env.KORTIX_SESSION_ID;
+    process.env.KORTIX_TOKEN = 'session-token';
     process.env.KORTIX_API_URL = 'http://127.0.0.1:1/v1';
 
     await expect(

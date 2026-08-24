@@ -11,7 +11,7 @@ export const people: RoleContent = {
 
   hero: {
     title: 'The coordination. Never the decision about a person.',
-    sub: 'Scheduling across four calendars, the interview kit built from the actual scorecard, the onboarding checklist that runs itself, the policy question answered from your handbook rather than from the internet. An agent does the logistics. A human does the judgement — and we mean that as a boundary, not a slogan.',
+    sub: 'Scheduling across four calendars, an interview kit built from the real scorecard, onboarding that runs itself, a policy answer from your handbook. The agent does the logistics. A person decides about a person.',
     microline: 'Coordination and drafting · a person decides about a person',
     specs: [
       { k: 'Does', v: 'Scheduling, kits, onboarding, answers' },
@@ -23,7 +23,7 @@ export const people: RoleContent = {
 
   handoff: {
     title: 'The logistics that eat a hiring week.',
-    sub: 'A People team is judgement plus an enormous amount of coordination, and the coordination is what stops the judgement happening. Every job below is the coordination half — deliberately.',
+    sub: 'A People team is judgement plus a mountain of coordination, and the coordination is what stops the judgement happening. Every job below is the coordination half.',
     jobs: [
       {
         id: 'scheduling',
@@ -60,7 +60,7 @@ export const people: RoleContent = {
 
   output: {
     title: 'A kit any interviewer can run.',
-    sub: 'The output here is deliberately about the process, not about the person. It makes the loop consistent and the bar explicit — which is the part a tool can genuinely improve.',
+    sub: 'The output here is about the process, not the person. It makes the loop consistent and the bar explicit, which is the part a tool can genuinely improve.',
     artifact: {
       kind: 'doc',
       file: 'hiring/platform-engineer/stage-2-systems.md',
@@ -99,7 +99,7 @@ export const people: RoleContent = {
 
   reach: {
     title: 'The calendar, the inbox, the applicant system.',
-    sub: 'People systems hold the most sensitive data in the company, so the mechanism matters more here than anywhere else on this site. Connect each once for the project; the credential is decrypted on our side and attached to the outbound call.',
+    sub: 'People systems hold the most sensitive data in the company, so the mechanism matters most here. Connect each one once for the project. Credentials never enter the machine.',
     rows: [
       {
         k: 'Google Workspace and Outlook',
@@ -128,7 +128,7 @@ export const people: RoleContent = {
 
   cadence: {
     title: 'Ask in the thread. Run onboarding on the start date.',
-    sub: 'The same session machinery started three ways. In this function the automated mode is best pointed at logistics with a fixed date, never at anything evaluative.',
+    sub: 'Three ways to start the same session. Point the scheduled one at logistics with a fixed date, never at anything evaluative.',
     modes: [
       {
         id: 'on-demand',
@@ -153,7 +153,7 @@ export const people: RoleContent = {
 
   control: {
     title: 'Where the line is, and why it is drawn there.',
-    sub: 'This is the function where "the agent handled it" would be the wrong answer. The controls below are the platform ones; the first row is the product position.',
+    sub: 'This is the function where "the agent handled it" is the wrong answer. The first row is the product position. The rest are the platform controls.',
     rows: [
       {
         id: 'boundary',

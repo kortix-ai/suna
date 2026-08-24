@@ -26,6 +26,23 @@ describe('detectCommandFromText', () => {
     expect(detectCommandFromText('something completely unrelated', commands)).toBeUndefined();
   });
 
+  // Regression for Better Stack error "TypeError: t is not iterable" (dev,
+  // 2026-08-23), thrown from this module's `for (const cmd of commands)`. The
+  // runtime's `GET /command` is typed `Command[]`, but a proxy or daemon that
+  // answers with an object body hands the render a truthy non-array, which
+  // crashed the whole session view. Detection must degrade instead, exactly
+  // like it does for a non-string template.
+  test('does NOT throw when commands is a truthy non-array', () => {
+    expect(
+      detectCommandFromText('build the project now please', {} as unknown as Command[]),
+    ).toBeUndefined();
+    expect(
+      detectCommandFromText('build the project now please', {
+        commands: [cmd('build', 'build the project now please $ARGUMENTS')],
+      } as unknown as Command[]),
+    ).toBeUndefined();
+  });
+
   test('returns undefined for empty input', () => {
     expect(
       detectCommandFromText('', [cmd('build', 'build the project now please $ARGUMENTS')]),

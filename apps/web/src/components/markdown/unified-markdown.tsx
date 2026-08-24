@@ -243,13 +243,21 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
         ),
 
         // GFM task-list checkbox.
-        input: ({ checked, ...props }: React.InputHTMLAttributes<HTMLInputElement>) => (
+        input: ({
+          checked,
+          className: inputClassName,
+          node: _node,
+          ...props
+        }: React.InputHTMLAttributes<HTMLInputElement> & { node?: unknown }) => (
           <input
+            {...props}
             type="checkbox"
             checked={checked}
             readOnly
-            className="border-border accent-secondary relative -top-[1px] mr-2 size-4 cursor-default rounded align-middle"
-            {...props}
+            className={cn(
+              inputClassName,
+              'border-border accent-secondary relative -top-[1px] mr-2 size-4 cursor-default rounded-sm align-middle',
+            )}
           />
         ),
 
@@ -258,8 +266,9 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
           children,
           style,
           className: divClassName,
+          node: _node,
           ...props
-        }: React.HTMLAttributes<HTMLDivElement>) => {
+        }: React.HTMLAttributes<HTMLDivElement> & { node?: unknown }) => {
           if (isKatexClassName(divClassName)) {
             return (
               <div
@@ -285,8 +294,9 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
           children,
           style,
           className: spanClassName,
+          node: _node,
           ...props
-        }: React.HTMLAttributes<HTMLSpanElement>) => {
+        }: React.HTMLAttributes<HTMLSpanElement> & { node?: unknown }) => {
           if (isKatexClassName(spanClassName)) {
             return (
               <span
@@ -314,6 +324,20 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
 
     const safeContent = typeof content === 'string' ? content : content ? String(content) : '';
 
+    // Three whole-string rewrites (KaTeX prep, system-tag strip, autolink). Run
+    // bare, they re-ran on EVERY render of this component — including every
+    // render caused by something other than a new token — for the full length
+    // of the answer. Memoising on the string collapses that to once per
+    // distinct value. It sits ABOVE the empty-content early return so the hook
+    // order stays fixed.
+    const finalContent = useMemo(
+      () =>
+        safeContent
+          ? autoLinkUrls(stripKortixSystemTags(prepareMarkdownForKatex(safeContent)))
+          : '',
+      [safeContent],
+    );
+
     if (!safeContent) {
       return (
         <div className={cn('text-muted-foreground text-sm', className)}>
@@ -321,8 +345,6 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
         </div>
       );
     }
-
-    const finalContent = autoLinkUrls(stripKortixSystemTags(prepareMarkdownForKatex(safeContent)));
 
     return (
       <div

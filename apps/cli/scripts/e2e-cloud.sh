@@ -35,7 +35,7 @@ AUTH_FILE=/tmp/kortix-e2e-auth-$$.json
 WORK_DIR=/tmp/kortix-e2e-work-$$
 PUSH_FILE=/tmp/kortix-e2e-push-$$.env
 
-unset KORTIX_TOKEN KORTIX_CLI_TOKEN KORTIX_PROJECT_ID
+unset KORTIX_TOKEN KORTIX_PROJECT_ID
 export KORTIX_API_URL
 export KORTIX_AUTH_FILE="$AUTH_FILE"
 

@@ -59,6 +59,9 @@ function normalizeHeaders(h: RequestInit['headers']): Record<string, string> {
 
 mock.module('../../shared/platinum', () => ({
   isPlatinumConfigured: () => true,
+  platinumJsonResponse: async () => {
+    throw new Error('unexpected Platinum materialization request');
+  },
   platinumJson: async (path: string, init: RequestInit = {}) => {
     const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined;
     const headers = normalizeHeaders(init.headers);
@@ -92,7 +95,7 @@ const baseOpts = {
   // The truncated display name session-sandbox.ts actually sends as `name` —
   // the dedup identity must NEVER be derived from this.
   name: 'session-11111111',
-  envVars: { KORTIX_SANDBOX_TOKEN: 'tok_test' },
+  envVars: { KORTIX_TOKEN: 'tok_test' },
   sandboxId: SANDBOX_ID,
 };
 

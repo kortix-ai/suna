@@ -76,9 +76,9 @@ describe('connection terminology', () => {
         label: 'Project Gmail',
       }),
     ).toMatchObject({ connector_alias: 'gmail', owner_type: 'project' });
-    expect(
-      UpdateConnectionCredentialInputSchema.parse({ value: 'secret-value' }),
-    ).toEqual({ value: 'secret-value' });
+    expect(UpdateConnectionCredentialInputSchema.parse({ value: 'secret-value' })).toEqual({
+      value: 'secret-value',
+    });
   });
 
   test('secret consumers accept connector and reject removed product nouns', () => {
@@ -112,13 +112,13 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       connectors_api_discover: false,
       agentmail_email: false,
       teams: false,
-      voice: false,
       llm_gateway: true,
       review_center: false,
       meta_agent: false,
       apps: false,
       monitors: false,
       warm_sessions: false,
+      secrets_egress: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -270,10 +270,7 @@ describe('ProjectSchema', () => {
         }),
       ),
     ).toThrow();
-    const retiredProviders = [
-      ['local', 'docker'].join('_'),
-      ['local', 'docker'].join('-'),
-    ];
+    const retiredProviders = [['local', 'docker'].join('_'), ['local', 'docker'].join('-')];
     for (const retiredProvider of retiredProviders) {
       expect(() =>
         ProjectSchema.parse(
@@ -687,13 +684,13 @@ describe('envelopes', () => {
       'connectors_api_discover',
       'agentmail_email',
       'teams',
-      'voice',
       'llm_gateway',
       'review_center',
       'meta_agent',
       'apps',
       'monitors',
       'warm_sessions',
+      'secrets_egress',
     ]);
   });
 
@@ -825,7 +822,9 @@ describe('session connection contracts', () => {
     expect(SessionConnectorBindingSchema.parse({ connection_id: connectionId })).toEqual({
       connection_id: connectionId,
     });
-    expect(SessionConnectorBindingSchema.safeParse({ authorization_id: connectionId }).success).toBe(false);
+    expect(
+      SessionConnectorBindingSchema.safeParse({ authorization_id: connectionId }).success,
+    ).toBe(false);
     expect(
       SessionConnectorBindingsSchema.safeParse({
         veyris: { authorization_id: connectionId, connection_id: connectionId },
@@ -853,13 +852,14 @@ describe('session connection contracts', () => {
 
   test('bounds binding count and non-secret connection metadata', () => {
     const tooMany = Object.fromEntries(
-      Array.from({ length: 65 }, (_, index) => [`connector_${index}`, { connection_id: connectionId }]),
+      Array.from({ length: 65 }, (_, index) => [
+        `connector_${index}`,
+        { connection_id: connectionId },
+      ]),
     );
     expect(SessionConnectorBindingsInputSchema.safeParse(tooMany).success).toBe(false);
     expect(ConnectionMetadataSchema.safeParse({ access_token: 'nope' }).success).toBe(false);
-    expect(ConnectionMetadataSchema.safeParse({ payload: 'é'.repeat(9_000) }).success).toBe(
-      false,
-    );
+    expect(ConnectionMetadataSchema.safeParse({ payload: 'é'.repeat(9_000) }).success).toBe(false);
   });
 
   test('connection reconcile and credential mutation reject unknown or oversized input', () => {
@@ -1019,7 +1019,8 @@ describe('session scope contracts', () => {
       connector_bindings_configured: false,
       connector_bindings_inherit_unbound: true,
       applied_live: true,
-      detail: 'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.',
+      detail:
+        'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.',
     };
     expect(SessionScopeSchema.parse(value)).toEqual(value);
   });
@@ -1296,7 +1297,8 @@ describe('SecretEgressPolicySchema — `inject` is optional', () => {
 
   test('a malformed slot is still rejected — optional is not "anything goes"', () => {
     expect(
-      SecretEgressPolicySchema.safeParse({ ...hosts, inject: { kind: 'cookie', name: 'x' } }).success,
+      SecretEgressPolicySchema.safeParse({ ...hosts, inject: { kind: 'cookie', name: 'x' } })
+        .success,
     ).toBe(false);
   });
 });

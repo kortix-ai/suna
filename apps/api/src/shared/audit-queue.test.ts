@@ -239,4 +239,24 @@ describe('AuditQueue', () => {
     await sleep(40);
     expect(fake.batches.flat().map((r) => r.action)).toEqual(['a', 'b']);
   });
+
+  test('a flush waits only for rows queued before that call', async () => {
+    const fake = makeClient();
+    const q = new AuditQueue(fake.client, { flushMs: 10_000, flushMax: 100 });
+    fake.gate(true);
+    q.enqueue(row('a'));
+    void q.flush();
+
+    q.enqueue(row('b'));
+    const barrier = q.flush();
+    q.enqueue(row('c'));
+
+    fake.release();
+    fake.gate(false);
+    await barrier;
+
+    expect(fake.batches.flat().map((r) => r.action)).toEqual(['a', 'b']);
+    expect(q.stats().queued).toBe(1);
+    await q.shutdown();
+  });
 });

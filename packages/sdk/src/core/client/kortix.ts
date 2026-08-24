@@ -23,6 +23,8 @@ import { type KortixPlatformConfig, configureKortix, platformConfig } from '../h
 import * as P from '../rest/projects-client';
 import { getSessionHealth } from '../session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
+import { loadPreviewUrlTemplate } from '../session/preview-config';
+import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../session/preview-options';
 import { setCurrentRuntime } from '../session/current-runtime';
 import {
   clearSessionRuntime,
@@ -118,7 +120,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
    * sandbox happens to be globally active (which may belong to a different
    * session handle).
    */
-  function resolvePreviewOptsForSandbox(sandboxId: string): SubdomainUrlOptions {
+  function resolvePreviewOptsForSandbox(sandboxId: string): ResolvedPreviewOptions {
     // Read the LIVE platform config, not the `config` captured at
     // `createKortix()` time: a host may re-point the seam after creation
     // (calling `configureKortix()` again — e.g. the whitelabel app switching
@@ -131,7 +133,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     if (u) {
       backendPort = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80;
     }
-    return { sandboxId, backendPort, apiBaseUrl };
+    // Assembled by the single producer, never by hand — see preview-options.ts.
+    return resolvePreviewOptions({ sandboxId, apiBaseUrl, backendPort });
   }
 
   /** Account-scoped operations. */
@@ -414,8 +417,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         get: (appId: string) => P.getApp(projectId, appId),
         update: (...a: DropFirst<Parameters<typeof P.updateApp>>) => P.updateApp(projectId, ...a),
         access: {
-          get: (...a: DropFirst<Parameters<typeof P.getAppAccess>>) => P.getAppAccess(projectId, ...a),
-          update: (...a: DropFirst<Parameters<typeof P.updateAppAccess>>) => P.updateAppAccess(projectId, ...a),
+          get: (...a: DropFirst<Parameters<typeof P.getAppAccess>>) =>
+            P.getAppAccess(projectId, ...a),
+          update: (...a: DropFirst<Parameters<typeof P.updateAppAccess>>) =>
+            P.updateAppAccess(projectId, ...a),
           session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
             P.createAppAccessSession(projectId, ...a),
         },
@@ -727,9 +732,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
             P.updateEmailPolicy(projectId, ...a),
         },
-        voice: {
-          setBotName: (name: string) => P.setMeetBotName(projectId, name),
-        },
       },
 
       /** Toggle a feature flag (Customize → Feature flags). Pass `enabled: null` to clear the override. */
@@ -866,6 +868,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       if (cached) return cached;
       const readyTimeoutMs = opts?.readyTimeoutMs ?? 180_000;
 
+      // Learn how this deployment addresses previews while the sandbox boots.
+      // `previewUrl()` is synchronous (a React render calls it), so the answer
+      // has to be here before it can be asked for. Runs alongside the start
+      // poll and never gates it — a failure just leaves the path form.
+      const previewConfig = loadPreviewUrlTemplate(
+        platformConfig().backendUrl ?? config.backendUrl,
+      ).catch(() => null);
+
       // Dedup concurrent starts for this (projectId, sessionId) — see
       // `inFlightSessionStarts`'s doc comment. If another call (this handle or
       // a different one) already kicked off `/start`, ride its result instead
@@ -874,6 +884,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       const inFlight = inFlightSessionStarts.get(key);
       if (inFlight) {
         _ready = await inFlight;
+        await previewConfig;
         return _ready;
       }
 
@@ -949,6 +960,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       inFlightSessionStarts.set(key, startPromise);
       try {
         _ready = await startPromise;
+        // Resolved concurrently with the boot above, so this is already
+        // settled — awaited here only so `previewUrl()` can never be reached
+        // before the deployment's preview addressing is known.
+        await previewConfig;
         return _ready;
       } finally {
         if (inFlightSessionStarts.get(key) === startPromise) {
@@ -1048,10 +1063,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         /** Hold (or release) the whole queue — what the Stop button writes. */
         hold: (held: boolean) => P.holdSessionPrompts(projectId, sessionId, held),
       },
-      /** This session's live voice-call transcript (spoken turns + ask_kortix/run_command calls). */
-      voiceTranscript: (options?: Parameters<typeof P.getVoiceTranscript>[2]) =>
-        P.getVoiceTranscript(projectId, sessionId, options),
-
       /**
        * Resolve THIS handle's own runtime (idempotent): provisions/resumes the
        * sandbox (long-poll until ready) and caches the resolved OpenCode session
@@ -1270,8 +1281,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     billing,
     /** Public share links for a sandbox port (`/v1/p/share`, sandbox-scoped). */
     sandboxShares,
-    /** Speech-to-text transcription (`/transcription` — not project-scoped). */
-    transcribe: P.transcribeAudio,
     /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
     connectStatus,
     /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */

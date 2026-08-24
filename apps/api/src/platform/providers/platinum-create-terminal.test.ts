@@ -20,6 +20,9 @@ const calls: { path: string; method: string }[] = [];
 
 mock.module('../../shared/platinum', () => ({
   isPlatinumConfigured: () => true,
+  platinumJsonResponse: async () => {
+    throw new Error('unexpected Platinum materialization request');
+  },
   platinumJson: async (path: string, init: RequestInit = {}) => {
     calls.push({ path, method: String(init.method ?? 'GET') });
     // POST /v1/sandboxes?wait_for_state=running — return a box in `createState`.
@@ -45,7 +48,7 @@ const baseOpts = {
   accountId: 'acc_1',
   userId: 'usr_1',
   name: 'test-box',
-  envVars: { KORTIX_SANDBOX_TOKEN: 'tok_test' },
+  envVars: { KORTIX_TOKEN: 'tok_test' },
 };
 
 beforeEach(() => {

@@ -1,11 +1,23 @@
 /**
  * The OpenCode wire message-id clock, server side.
  *
- * OpenCode resolves "has this prompt already been answered?" by ID ORDER: a
- * user message whose id sorts below the assistant replies already on record is
- * read as answered, and its turn never runs. So an id that goes on the wire is
- * not a name — it is a position, and minting one wrongly silently drops the
- * prompt.
+ * WHY THE ID IS A POSITION AND NOT JUST A NAME — and how far that still goes:
+ *
+ *  - opencode <= 1.18.14 (the baked 1.17.11 on every box provisioned before
+ *    2026-08-20): the loop resolves "has this prompt already been answered?"
+ *    by ID ORDER. A user message whose id sorts below the assistant replies
+ *    already on record is read as answered and its turn NEVER RUNS. Minting an
+ *    id wrongly silently drops the prompt.
+ *  - opencode >= 1.18.15 (the 1.18.19 image): that test was retired upstream —
+ *    the loop now exits on `lastAssistant.parentID === lastUser.id`, and
+ *    `latest()` orders by `time.created`. A low id no longer drops a prompt on
+ *    its own.
+ *
+ * The id clock still orders the TRANSCRIPT in both versions: `MessageV2.page()`
+ * has always run `orderBy(desc(time_created), desc(id))`, so the id remains the
+ * sub-millisecond tiebreak and a wildly wrong one still reorders the user's
+ * messages on screen. This module therefore stays exactly as it is until the
+ * last <= 1.18.14 sandbox image is out of the fleet.
  *
  * WHY THIS IS NOT IMPORTED FROM `@kortix/sdk` (a deliberate deviation from the
  * repo's "logic lives in the SDK" rule): `apps/api` has no `@kortix/sdk`

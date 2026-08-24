@@ -34,7 +34,7 @@ const SESSION_ENV = {
   KORTIX_EGRESS_SHIM_PORT: String(PORT),
   KORTIX_API_URL: 'https://api.kortix.test/v1',
   KORTIX_PROJECT_ID: 'proj-hot-push',
-  KORTIX_CLI_TOKEN: 'kortix_pat_hot_push',
+  KORTIX_TOKEN: 'kortix_pat_hot_push',
 } as const
 
 let testEnvFileSequence = 0

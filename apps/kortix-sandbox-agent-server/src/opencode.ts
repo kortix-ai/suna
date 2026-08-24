@@ -38,7 +38,7 @@ export type VerifiedReloadResult =
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
-import { access, constants, stat } from 'node:fs/promises'
+import { access, constants, open, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_ENV_SH } from './agent-env-file'
@@ -49,6 +49,12 @@ import { egressShimEnv } from './egress-shim'
 import { logger } from './logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
+import {
+  OPENCODE_CURRENT_LINK,
+  OPENCODE_SYSTEM_LINK,
+  publishOpencodeNativeLink,
+  resolveInstalledOpencodeNative,
+} from './opencode-binary'
 import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
@@ -89,13 +95,10 @@ const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
  * bad — a user connects a ChatGPT/Codex account, the UI confirms it, and the
  * next turn still runs on the account they replaced.
  *
- * `KORTIX_OPENCODE_DENY_ENV` belongs to the same family (`withoutDeniedProviderEnv`
- * strips native provider keys at spawn) and is included for the same reason.
  */
 export const RESPAWN_REQUIRED_ENV_NAMES = [
   CODEX_AUTH_JSON_SECRET,
   OPENCODE_AUTH_JSON_SECRET,
-  'KORTIX_OPENCODE_DENY_ENV',
   SECRET_CAPABILITIES_ENV_NAME,
 ] as const
 
@@ -132,7 +135,7 @@ export function requiresRespawn(changedNames: readonly string[]): boolean {
 export function hasKortixLlmGateway(env: NodeJS.ProcessEnv): boolean {
   return Boolean(
     env.KORTIX_LLM_PROXY_URL ||
-    (env.KORTIX_LLM_BASE_URL && env.KORTIX_LLM_API_KEY),
+    (env.KORTIX_LLM_BASE_URL && env.KORTIX_TOKEN),
   )
 }
 
@@ -182,10 +185,10 @@ export async function buildOpencodeConfigContent(
     secretCapabilitiesInstructionPath?: string | null
   } = {},
 ): Promise<string | undefined> {
-  const connectorToken = env.KORTIX_CLI_TOKEN
+  const connectorToken = env.KORTIX_TOKEN
   const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
-  const llmApiKey = env.KORTIX_LLM_API_KEY
+  const llmApiKey = env.KORTIX_TOKEN
 
   // Warm-fork no-restart path (stateful only). When the daemon runs the localhost
   // LLM proxy it exports KORTIX_LLM_PROXY_URL; the provider then points baseURL at
@@ -314,7 +317,7 @@ export async function buildOpencodeConfigContent(
           // placeholder token; the proxy injects the real per-session token
           // upstream (so the baked config is session-independent → no restart on
           // restore). Direct mode (cold/Daytona): the real token + api url, as before.
-          KORTIX_CLI_TOKEN: connectorProxyMode ? CONNECTOR_PROXY_PLACEHOLDER_KEY : connectorToken!,
+          KORTIX_TOKEN: connectorProxyMode ? CONNECTOR_PROXY_PLACEHOLDER_KEY : connectorToken!,
           KORTIX_API_URL: connectorProxyMode ? connectorProxyUrl! : apiUrl!,
           PATH: '/usr/local/bin:/usr/bin:/bin',
           // Lets the CLI target the project-explicit gateway route. Optional —
@@ -356,14 +359,6 @@ export async function buildOpencodeConfigContent(
       // mode (cold/Daytona) it's the real gateway base + key, as before.
       baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
       apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
-      // AI-SDK-native transport toggle. OFF (default) keeps the historical
-      // `@ai-sdk/openai-compatible` provider (`/chat/completions`) with ZERO
-      // behavior change; ON emits the `@ai-sdk/gateway` provider that POSTs to
-      // the gateway's native `/language-model` ingress. Pair with the
-      // gateway-side `GATEWAY_AI_SDK_NATIVE` — both must be on together.
-      aiSdkNative: ['1', 'true', 'yes', 'on'].includes(
-        (env.KORTIX_LLM_AI_SDK_NATIVE ?? '').trim().toLowerCase(),
-      ),
       managedOverlay,
       // Catalog is org-stable and ships baked into every image at
       // BAKED_LLM_CATALOG_PATH, so this resolves off DISK — no network on the
@@ -424,17 +419,6 @@ type KortixProviderOpts = {
   /** Live managed lineup fetched from `${gateway}/models?scope=managed`, or
    *  null when it was unavailable (then the BUNDLED managed set fills gaps). */
   managedOverlay?: Record<string, KortixGatewayModel> | null
-  /** AI-SDK-native transport toggle (env `KORTIX_LLM_AI_SDK_NATIVE`, default OFF).
-   *  OFF → `@ai-sdk/openai-compatible` (opencode POSTs `${baseURL}/chat/completions`,
-   *  the historical path, ZERO behavior change). ON → `@ai-sdk/gateway` (opencode
-   *  POSTs `${baseURL}/language-model` with the model id in the `ai-language-model-id`
-   *  header, hitting the gateway's native ingress). The gateway mounts BOTH
-   *  `/language-model` and the `/v1/llm/language-model` alias, so the SAME baseURL
-   *  works for either transport. Kept flag-selected (not a replacement) so the
-   *  native path can canary + roll back. Must stay in sync with the gateway-side
-   *  `GATEWAY_AI_SDK_NATIVE`: the native provider only works once the gateway's
-   *  native ingress is on, or every call 404s. */
-  aiSdkNative?: boolean
 }
 
 function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> {
@@ -456,19 +440,12 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
       return [id, opencodeModel]
     }),
   )
-  // Provider-package selection is the ONLY difference between the two transports.
-  // Both packages read the same `{ baseURL, apiKey }` options, and both carry the
-  // same `models` catalog map, so opencode's per-call `languageModel(id)`,
-  // model-picker, and cost/limits wiring are identical either way.
-  //   - `@ai-sdk/openai-compatible` → POST `${baseURL}/chat/completions`
-  //     (OpenAI wire; the historical default).
-  //   - `@ai-sdk/gateway`           → POST `${baseURL}/language-model`, model id in
-  //     the `ai-language-model-id` header (AI-SDK-native wire). `@ai-sdk/gateway`
-  //     also exposes `getAvailableModels()` (`${baseURL}/config`), but that is
-  //     called LAZILY, never on the model-create or stream hot path — opencode
-  //     sources its catalog from the `models` map here + models.dev, so NO gateway
-  //     `/config` stub is required for the native provider to function.
-  const npm = opts.aiSdkNative ? '@ai-sdk/gateway' : '@ai-sdk/openai-compatible'
+  // opencode talks to the Kortix gateway over the OpenAI-compatible wire:
+  // POST `${baseURL}/chat/completions`. This is the ONLY transport. The
+  // AI-SDK-native `@ai-sdk/gateway` (`/language-model`) path was removed after it
+  // returned empty completions on real agentic/image turns while this path
+  // stayed reliable.
+  const npm = '@ai-sdk/openai-compatible'
   return {
     npm,
     name: 'Kortix',
@@ -703,35 +680,6 @@ export async function writeKortixOpencodeConfig(
   writeFileSync(configPath, content, { mode: 0o600 })
   logger.info(`[opencode] wrote config (${content.length} bytes) to ${configPath}`)
   return configPath
-}
-
-/**
- * Withhold provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) from an
- * OpenCode child. With any such key in its env, OpenCode auto-connects a NATIVE
- * provider and calls it directly — bypassing the gateway (no logs / spend /
- * budgets) and leaving stale models that survive a BYOK disconnect. The gateway
- * must be the only LLM path, so the API hands us the exact names to strip
- * (Codex/OpenCode subscription auth is excluded — materializeOpencodeAuth has
- * already consumed it into auth.json). This only shapes the child's env; the
- * container itself keeps what it holds.
- */
-export function withoutDeniedProviderEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const denied = (env.KORTIX_OPENCODE_DENY_ENV || '')
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean)
-  const next: NodeJS.ProcessEnv = { ...env }
-  let withheld = 0
-  for (const name of denied) {
-    if (name in next) {
-      delete next[name]
-      withheld++
-    }
-  }
-  if (withheld > 0) {
-    logger.info(`[opencode] withheld ${withheld} provider credential(s) from opencode (gateway-only routing)`)
-  }
-  return next
 }
 
 const GATEWAY_MODELS_RETRY_DELAYS_MS = [400, 800]
@@ -1434,11 +1382,78 @@ async function which(bin: string): Promise<string | null> {
   })
 }
 
-async function detectOpencodeBinary(): Promise<string | null> {
-  if (await isExecutable('/usr/local/bin/opencode-kortix')) {
-    return '/usr/local/bin/opencode-kortix'
+export interface OpencodeBinaryDetectionOptions {
+  nativeBinaryFastPathEnabled?: boolean
+  currentLink?: string
+  systemLink?: string
+  isExecutable?: (path: string) => Promise<boolean>
+  resolveInstalledNative?: () => Promise<string>
+  publishNativeLink?: (nativePath: string, linkPath: string) => Promise<void>
+  findOnPath?: (bin: string) => Promise<string | null>
+}
+
+export async function detectOpencodeBinary(
+  options: OpencodeBinaryDetectionOptions = {},
+): Promise<string | null> {
+  const currentLink = options.currentLink ?? OPENCODE_CURRENT_LINK
+  const systemLink = options.systemLink ?? OPENCODE_SYSTEM_LINK
+  const checkExecutable = options.isExecutable ?? isExecutable
+  const findOnPath = options.findOnPath ?? which
+
+  // The one cold-boot experiment switch must restore the pre-optimization
+  // launch path completely. Disabled sessions use pnpm's PATH launcher and do
+  // not discover or publish native-binary links. Existing stable links remain
+  // an availability fallback only when that verified launcher disappeared.
+  if (!options.nativeBinaryFastPathEnabled) {
+    const pathLauncher = await findOnPath('opencode')
+    if (pathLauncher) return pathLauncher
+    if (await checkExecutable(currentLink)) return currentLink
+    if (await checkExecutable(systemLink)) return systemLink
+    return null
   }
-  return await which('opencode')
+
+  if (await checkExecutable(currentLink)) return currentLink
+  if (await checkExecutable(systemLink)) return systemLink
+
+  const resolveInstalledNative = options.resolveInstalledNative ?? resolveInstalledOpencodeNative
+  const publishNativeLink =
+    options.publishNativeLink ??
+    ((nativePath: string, linkPath: string) => publishOpencodeNativeLink(nativePath, linkPath))
+  try {
+    const nativePath = await resolveInstalledNative()
+    await publishNativeLink(nativePath, currentLink)
+    return currentLink
+  } catch (err) {
+    logger.warn('[opencode] native binary discovery failed; using PATH launcher', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  return await findOnPath('opencode')
+}
+
+const EXECUTABLE_PREFETCH_BUFFER_BYTES = 4 * 1024 * 1024
+
+export async function prefetchExecutablePages(
+  path: string,
+  signal?: AbortSignal,
+  allocateBuffer: (size: number) => Buffer = (size) => Buffer.allocUnsafe(size),
+): Promise<number> {
+  if (signal?.aborted) throw signal.reason
+  const buffer = allocateBuffer(EXECUTABLE_PREFETCH_BUFFER_BYTES)
+  const handle = await open(path, 'r', 0o600)
+  let bytes = 0
+  try {
+    while (true) {
+      if (signal?.aborted) throw signal.reason
+      const result = await handle.read(buffer, 0, buffer.byteLength, null)
+      if (result.bytesRead === 0) break
+      bytes += result.bytesRead
+    }
+  } finally {
+    await handle.close()
+  }
+  return bytes
 }
 
 async function resolveOpencodeCwd(cfg: Config): Promise<string> {
@@ -1452,6 +1467,8 @@ async function resolveOpencodeCwd(cfg: Config): Promise<string> {
 type OpencodeState = 'starting' | 'ok' | 'down'
 
 export type Opencode = {
+  prefetchBinary(): Promise<boolean>
+  cancelBinaryPrefetch(): void
   start(): Promise<void>
   stop(signal?: NodeJS.Signals): Promise<void>
   restart(): Promise<void>
@@ -1484,11 +1501,17 @@ export type Opencode = {
   getBinaryPath(): string | null
   getState(): OpencodeState
   markReady(): void
+  /** Resolves when the active supervised process answers the real session API. */
+  waitForCurrentReadyResponse(): Promise<void>
 }
 
 export interface OpencodeSupervisorOptions {
   onStartupMark?: (label: string) => void
+  onFirstReadyResponse?: () => void
   binaryPathOverride?: string
+  binaryPathResolverOverride?: () => Promise<string | null>
+  nativeBinaryFastPathEnabled?: boolean
+  prefetchExecutableOverride?: (path: string, signal: AbortSignal) => Promise<number>
   configPathOverride?: string
   /**
    * opencode died without anyone asking it to, and has just been respawned.
@@ -1531,8 +1554,74 @@ export function createOpencodeSupervisor(
   let restartDelayMs = 500
   let state: OpencodeState = 'starting'
   let readinessTimer: ReturnType<typeof setTimeout> | null = null
+  let firstReadyResponseReported = false
+  let readyResponseProcess: ChildProcess | null = null
+  const readyResponseWaiters = new Set<() => void>()
   let opencodeCwd = cfg.workspace
   const startupMark = options.onStartupMark ?? (() => {})
+  let binaryResolutionPromise: Promise<string | null> | null = null
+  let binaryPrefetchPromise: Promise<boolean> | null = null
+  let binaryPrefetchController: AbortController | null = null
+
+  async function resolveBinaryPath(): Promise<string | null> {
+    if (!binaryResolutionPromise) {
+      binaryResolutionPromise = options.binaryPathOverride
+        ? Promise.resolve(options.binaryPathOverride)
+        : (options.binaryPathResolverOverride?.() ??
+          detectOpencodeBinary({
+            nativeBinaryFastPathEnabled: options.nativeBinaryFastPathEnabled === true,
+          }))
+    }
+    let resolved: string | null
+    try {
+      resolved = await binaryResolutionPromise
+    } catch (err) {
+      binaryResolutionPromise = null
+      throw err
+    }
+    if (!resolved) binaryResolutionPromise = null
+    if (resolved && binaryPath !== resolved) {
+      binaryPath = resolved
+      startupMark('runtime-binary-resolved')
+    }
+    return resolved
+  }
+
+  async function prefetchBinaryOnce(signal: AbortSignal): Promise<boolean> {
+    const startedAt = Date.now()
+    let bin: string | null = null
+    try {
+      bin = await resolveBinaryPath()
+      if (!bin) throw new Error('OpenCode binary not found')
+      startupMark('runtime-binary-prefetch-started')
+      const prefetch = options.prefetchExecutableOverride ?? prefetchExecutablePages
+      const bytes = await prefetch(bin, signal)
+      if (signal.aborted) throw signal.reason
+      startupMark('runtime-binary-prefetched')
+      logger.info('[opencode] executable pages prefetched', {
+        binaryPath: bin,
+        bytes,
+        durationMs: Date.now() - startedAt,
+      })
+      return true
+    } catch (err) {
+      if (signal.aborted) {
+        startupMark('runtime-binary-prefetch-cancelled')
+        logger.info('[opencode] executable prefetch stopped before spawn', {
+          binaryPath: bin,
+          durationMs: Date.now() - startedAt,
+        })
+      } else {
+        startupMark('runtime-binary-prefetch-failed')
+        logger.warn('[opencode] executable prefetch failed; using normal demand paging', {
+          binaryPath: bin,
+          err: err instanceof Error ? err.message : String(err),
+          durationMs: Date.now() - startedAt,
+        })
+      }
+      return false
+    }
+  }
 
   function ensureCwdExists(): string {
     try {
@@ -1602,10 +1691,7 @@ export function createOpencodeSupervisor(
       PORT: undefined,
       APP_PORT: undefined,
     })
-
     materializeOpencodeAuth(env)
-
-    env = withoutDeniedProviderEnv(env)
 
     // Boot profiling: when KORTIX_OPENCODE_DEBUG=1, ask opencode to emit its own
     // verbose startup logs (interleaved into the daemon log via inherited
@@ -1652,15 +1738,33 @@ export function createOpencodeSupervisor(
       stdio: ['ignore', 'inherit', 'inherit'],
       detached: true,
     })
-    proc.once('spawn', () => startupMark('runtime-process-spawned'))
-
     proc.on('error', (err) => {
       logger.error('[opencode] spawn error', err)
     })
 
     if (supervise) {
+      readyResponseProcess = null
       child = proc
       superviseChild(proc)
+    }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        proc.once('spawn', () => {
+          startupMark('runtime-process-spawned')
+          resolve()
+        })
+        proc.once('error', reject)
+      })
+    } catch (err) {
+      // Node does not guarantee an `exit` event after an asynchronous spawn
+      // error. Detach the failed generation here and reject into the caller's
+      // existing retry path. This also makes candidate verification fail fast.
+      if (supervise && child === proc) {
+        readyResponseProcess = null
+        child = null
+        state = stopping ? 'down' : 'starting'
+      }
+      throw err
     }
     return proc
   }
@@ -1679,6 +1783,7 @@ export function createOpencodeSupervisor(
         logger.info('[opencode] retired child exit ignored', { pid: proc.pid })
         return
       }
+      if (readyResponseProcess === proc) readyResponseProcess = null
       child = null
       state = stopping ? 'down' : 'starting'
       if (stopping) return
@@ -1722,6 +1827,17 @@ export function createOpencodeSupervisor(
     if (state !== 'ok') logger.info('[opencode] ready')
     state = 'ok'
     restartDelayMs = 500
+  }
+
+  function reportReadyResponse(proc: ChildProcess) {
+    if (stopping || child !== proc) return
+    readyResponseProcess = proc
+    for (const resolve of readyResponseWaiters) resolve()
+    readyResponseWaiters.clear()
+    if (!firstReadyResponseReported) {
+      firstReadyResponseReported = true
+      options.onFirstReadyResponse?.()
+    }
   }
 
   /**
@@ -1899,7 +2015,9 @@ export function createOpencodeSupervisor(
    * Rewrite the config file and ask opencode to re-read it in place. True when
    * it did.
    *
-   * Measured against the pinned opencode (1.17.11) on 2026-08-03:
+   * Measured against opencode 1.17.11 on 2026-08-03, re-verified on the
+   * pinned 1.18.19 on 2026-08-20 (same pid after dispose, JSON `true` body,
+   * phantom route still answers 200 text/html):
    *   - `POST /global/dispose` re-reads the config file from disk, in-process,
    *     same pid, in ~51ms. A respawn is ~8s.
    *   - There is NO config file watcher. Rewriting the file alone changes
@@ -1983,12 +2101,19 @@ export function createOpencodeSupervisor(
     readinessTimer = setTimeout(async () => {
       if (stopping) return
       const probedPort = activePort
+      const probedChild = child
       const ready = await checkReady(probedPort)
+      if (stopping) return
       if (probedPort !== activePort) {
         scheduleReadinessProbe()
         return
       }
+      if (probedChild !== child) {
+        scheduleReadinessProbe()
+        return
+      }
       if (ready) {
+        if (probedChild) reportReadyResponse(probedChild)
         markReady()
       } else if (state !== 'starting') {
         state = 'starting'
@@ -1998,18 +2123,31 @@ export function createOpencodeSupervisor(
   }
 
   return {
+    prefetchBinary() {
+      if (!binaryPrefetchPromise) {
+        const controller = new AbortController()
+        binaryPrefetchController = controller
+        binaryPrefetchPromise = prefetchBinaryOnce(controller.signal).finally(() => {
+          if (binaryPrefetchController === controller) binaryPrefetchController = null
+        })
+      }
+      return binaryPrefetchPromise
+    },
+
+    cancelBinaryPrefetch() {
+      binaryPrefetchController?.abort()
+    },
+
     async start() {
       stopping = false
       state = 'starting'
-      const bin = options.binaryPathOverride ?? await detectOpencodeBinary()
+      const bin = await resolveBinaryPath()
       if (!bin) {
-        logger.warn('[opencode] binary not found on PATH (and /usr/local/bin/opencode-kortix missing); daemon will continue, opencode reports as starting')
+        logger.warn('[opencode] binary not found; daemon will continue, opencode reports as starting')
         state = 'starting'
         scheduleReadinessProbe()
         return
       }
-      binaryPath = bin
-      startupMark('runtime-binary-resolved')
       opencodeCwd = await resolveOpencodeCwd(currentCfg)
       startupMark('runtime-cwd-resolved')
       try {
@@ -2037,10 +2175,13 @@ export function createOpencodeSupervisor(
     async stop(signal: NodeJS.Signals = 'SIGTERM') {
       stopping = true
       state = 'down'
+      readyResponseProcess = null
       if (readinessTimer) {
         clearTimeout(readinessTimer)
         readinessTimer = null
       }
+      binaryPrefetchController?.abort()
+      if (binaryPrefetchPromise) await binaryPrefetchPromise
       if (!child) return
       const c = child
       // Spawned with detached: true, so c.pid also identifies the process
@@ -2125,12 +2266,6 @@ export function createOpencodeSupervisor(
      * rather than silently not applying the config.
      */
     async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
-      // Some settings are not IN the config file — they shape the child's
-      // PROCESS env at spawn, and a dispose cannot re-run that. The provider-key
-      // deny-list is the live case: `withoutDeniedProviderEnv` strips native
-      // keys when the child is spawned, so disposing after a gateway-mode
-      // toggle would leave those keys exactly as they were — routing around the
-      // gateway's budgets and logging, or failing to restore BYOK.
       // A dispose re-reads the config in place — same process, no turn lost.
       if (!opts.mustRespawn && (await tryDisposeReload())) {
         return { how: 'disposed', turnEnded: false }
@@ -2167,6 +2302,7 @@ export function createOpencodeSupervisor(
           reason: 'the verified opencode exited before promotion; the previous one is still running',
         }
       }
+      reportReadyResponse(proven.candidate)
       markReady()
       if (previous) await killProcessGroup(previous, 'SIGTERM').catch(() => {})
       logger.info('[opencode] candidate promoted', {
@@ -2232,6 +2368,13 @@ export function createOpencodeSupervisor(
     },
 
     markReady,
+
+    waitForCurrentReadyResponse() {
+      if (!stopping && child && readyResponseProcess === child) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        readyResponseWaiters.add(resolve)
+      })
+    },
   }
 }
 

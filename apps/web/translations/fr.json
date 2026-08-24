@@ -4227,7 +4227,15 @@
       "line301JsxTextRequestDemo": "Demander une démo",
       "line312JsxTextGetStarted": "Commencer",
       "line322JsxAttrAriaLabelOpenMenu": "Ouvrir le menu",
-      "line348JsxAttrAriaLabelCloseMenu": "Fermer le menu"
+      "line348JsxAttrAriaLabelCloseMenu": "Fermer le menu",
+      "copySymbolSvg": "Copier le symbole en SVG",
+      "copyWordmarkSvg": "Copier le logotype en SVG",
+      "downloadBrandAssets": "Télécharger les ressources de marque",
+      "svgCopied": "SVG copié dans le presse-papiers",
+      "copyFailed": "Échec de la copie",
+      "home": "Accueil",
+      "logIn": "Connexion",
+      "back": "Retour"
     },
     "componentsHomeSimpleFooter": {
       "line50JsxAttrAriaLabelToggleTheme": "Changer de thème"
@@ -7084,7 +7092,6 @@
     "autoAppPublicShareSessionTokenPageJsxTextOpenAppa9aa1bb9": "Ouvrir l'application",
     "autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8": "Démarrer la session",
     "autoAppPublicShareSessionTokenPageJsxTextSignInb66c3487": "Connectez-vous pour commencer",
-    "autoAppPublicShareSessionTokenPageJsxAttrSandboxAllow2840c013": "autoriser la même origine autoriser les scripts autoriser les formulaires autoriser les popups autoriser les téléchargements",
     "autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063": "autoriser la même origine autoriser les scripts autoriser les formulaires autoriser les popups autoriser les téléchargements",
     "autoAppPublicTemplatesShareIdErrorJsxAttrDescriptionWeCouldn8189e2ca": "Nous n'avons pas pu charger ce modèle. Réessayez ou rechargez si cela continue.",
     "autoAppSystemDebugErrorPageJsxTextPreviewVariant8b7cfd4d": "Variante d'aperçu",

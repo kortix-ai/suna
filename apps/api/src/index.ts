@@ -3,48 +3,116 @@ import './environment-secret';
 
 // ─── Observability (must follow environment hydration) ───────────────────────
 import './lib/sentry';
-import { captureException, flushSentry, addBreadcrumb, isSentryIgnoredError } from './lib/sentry';
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
-import { emitOtelSpan } from './lib/otel';
 import {
-  recordHttpRequest,
-  incInFlight,
   decInFlight,
-  setEventLoopLagSeconds,
-  renderMetrics,
+  incInFlight,
   metricsEnabled,
+  recordHttpRequest,
+  renderMetrics,
+  setEventLoopLagSeconds,
 } from './lib/metrics';
+import { emitOtelSpan } from './lib/otel';
 import {
   getDiagnosticFields,
   getRequestContext,
   runWithContext,
   setContextField,
 } from './lib/request-context';
-import { getRequestUrl, ensureAbsoluteRequestUrl } from './lib/request-url';
+import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
+import { addBreadcrumb, captureException, flushSentry, isSentryIgnoredError } from './lib/sentry';
 
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { mountOpenApiDocs, json, errors, auth } from './openapi';
-import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
-import { sendDemoRequestNotification } from './lib/demo-request-email';
+import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
-import { HTTPException } from 'hono/http-exception';
 import { config } from './config';
 import { BillingError } from './errors';
+import { sendDemoRequestNotification } from './lib/demo-request-email';
+import { auth, errors, json, mountOpenApiDocs } from './openapi';
+import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
 
 // ─── Sub-Service Imports ────────────────────────────────────────────────────
 
-import { router } from './router';
-import { billingApp, accountDeletionApp } from './billing';
-import { platformApp } from './platform';
-import { sandboxProxyApp } from './sandbox-proxy';
-import { setupApp } from './setup';
-import { supabaseAuth, combinedAuth } from './middleware/auth';
+import { platformSettings } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { accessControlApp } from './access-control';
+import { accountsRouter } from './accounts';
+import { accountInvitesRouter } from './accounts/invites';
+import { adminApp } from './admin';
+import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
+import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
+import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
+import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
+import { authRouter } from './auth';
+import { authEmailHookApp } from './auth/send-email-hook';
+import { accountDeletionApp, billingApp } from './billing';
+import {
+  emailWebhookApp,
+  slackIdentityApp,
+  slackOauthApp,
+  slackWebhookApp,
+  teamsIdentityApp,
+  teamsOauthApp,
+  teamsWebhookApp,
+  telegramWebhookApp,
+} from './channels';
+import { connectorApp } from './connectors';
+import { nativeOAuth2CallbackApp } from './connectors/oauth2-callback';
+import { edgeApp } from './edge/tls-check';
+import { ensureSchema } from './ensure-schema';
+// STATIC, not `await import(...)`. See the note at the mount site: a top-level
+// await anywhere above the last `app.route(...)` leaves the route table, the
+// error handler and the 404 handler unregistered for any importer that observes
+// `app` before it settles.
+import { gitProxyApp } from './git-proxy';
+import { describeEmailChain } from './lib/email/transport';
+import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
+import { mountLlmGateway } from './llm-gateway/wire';
+import { marketplaceApp } from './marketplace';
+import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { createCorsMiddleware } from './middleware/cors';
-import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
+import { oauthApp } from './oauth';
+import { opsApp } from './ops';
+import { platformApp } from './platform';
+import { sandboxWebhooksApp } from './platform/webhooks/routes';
+import {
+  getTriggerSchedulerHealth,
+  projectWebhooksApp,
+  projectsApp,
+  startProjectTriggerScheduler,
+  stopProjectTriggerScheduler,
+} from './projects';
+import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
+import { GitOperationError, isGitOperationError } from './projects/git/mirror';
+import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+import {
+  startProviderTransitionWorker,
+  stopProviderTransitionWorker,
+} from './projects/provider-transition/provider-transition-worker';
+import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
+import {
+  startSunaMigrationWorker,
+  stopSunaMigrationWorker,
+} from './projects/suna-migration/suna-migration-worker';
+import { router } from './router';
+import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
+import { runtimeAssetsApp, runtimeAssetsManifest } from './runtime-assets';
+import { sandboxProxyApp } from './sandbox-proxy';
+import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
+import { previewBaseDomain, warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
+import { scimRouter } from './scim';
+import { setupApp } from './setup';
+import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
+import { auditApiRequest, shutdownAuditEvents } from './shared/audit';
+import {
+  startAuditReconciliationWorker,
+  stopAuditReconciliationWorker,
+} from './shared/audit-reconciliation-worker';
+import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
 import { inspectDatabaseError } from './shared/database-errors';
-import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 import {
   isDaytonaRateLimitError,
   primeDaytonaRateLimitClassifier,
@@ -53,7 +121,6 @@ import {
   isDaytonaTransientProviderError,
   primeDaytonaTransientClassifier,
 } from './shared/daytona-transient';
-import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -61,89 +128,34 @@ import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
 import { db, hasDatabase } from './shared/db';
 import { computeEtag, etagMatches } from './shared/http-cache';
-import { getPlatformRole } from './shared/platform-roles';
-import { platformSettings } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { ensureSchema } from './ensure-schema';
-import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
-import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
-import {
-  tunnelApp,
-  wsHandlers as tunnelWsHandlers,
-  startTunnelService,
-  stopTunnelService,
-} from './tunnel';
-import { voiceMcpRoutes } from './channels/voice/routes';
-import { accessControlApp } from './access-control';
-import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
-import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import {
   isLeader,
+  runsSingletonWorkers,
   startLeaderElection,
   stopLeaderElection,
-  runsSingletonWorkers,
 } from './shared/leader-election';
-import { mountLlmGateway } from './llm-gateway/wire';
-// STATIC, not `await import(...)`. See the note at the mount site: a top-level
-// await anywhere above the last `app.route(...)` leaves the route table, the
-// error handler and the 404 handler unregistered for any importer that observes
-// `app` before it settles.
-import { gitProxyApp } from './git-proxy';
-import { connectorApp } from './connectors';
-import {
-  slackWebhookApp,
-  teamsWebhookApp,
-  teamsIdentityApp,
-  teamsOauthApp,
-  telegramWebhookApp,
-  slackOauthApp,
-  slackIdentityApp,
-  emailWebhookApp,
-} from './channels';
-import { sandboxWebhooksApp } from './platform/webhooks/routes';
-import { marketplaceApp } from './marketplace';
+import { getPlatformRole } from './shared/platform-roles';
+import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 import { skillsApp } from './skills';
-import { runtimeAssetsApp } from './runtime-assets';
-import { oauthApp } from './oauth';
-import { nativeOAuth2CallbackApp } from './connectors/oauth2-callback';
-import {
-  projectWebhooksApp,
-  projectsApp,
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
-  getTriggerSchedulerHealth,
-} from './projects';
-import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
-import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
-import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
-import { appEdgeApp } from './apps/edge';
-import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
+import { projectImageRolloutDiagnostic } from './snapshots/project-image-scope';
+import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import {
-  startSunaMigrationWorker,
-  stopSunaMigrationWorker,
-} from './projects/suna-migration/suna-migration-worker';
-import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
-import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
-import {
-  startProviderTransitionWorker,
-  stopProviderTransitionWorker,
-} from './projects/provider-transition/provider-transition-worker';
-import { accountsRouter } from './accounts';
-import { authRouter } from './auth';
-import { authEmailHookApp } from './auth/send-email-hook';
-import { describeEmailChain } from './lib/email/transport';
-import { scimRouter } from './scim';
-import { accountInvitesRouter } from './accounts/invites';
-import { auditApiRequest, shutdownAuditEvents } from './shared/audit';
-import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
-import {
-  startAuditReconciliationWorker,
-  stopAuditReconciliationWorker,
-} from './shared/audit-reconciliation-worker';
-import { opsApp } from './ops';
-import { adminApp } from './admin';
+  startTunnelService,
+  stopTunnelService,
+  tunnelApp,
+  wsHandlers as tunnelWsHandlers,
+} from './tunnel';
+
+/**
+ * The streaming secret relay routes, matched on the raw pathname in
+ * `Bun.serve`'s fetch — before Hono sees the request.
+ *
+ * Covers both `…/relay` and `…/relay/ws-ticket` (and the ws upgrade path when
+ * it lands). These carry SSE and long-lived upstream bodies, so they need the
+ * same `server.timeout(req, 0)` treatment as /v1/p/ and /v1/llm-gateway.
+ */
+const SECRET_RELAY_PATH = /^\/v1\/projects\/[^/]+\/secrets\/[^/]+\/relay(?:\/|$)/;
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -282,6 +294,37 @@ app.use('*', async (c, next) => {
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
 app.use('*', logger());
+
+// ── Never emit 502/504 to a client that reaches us through Cloudflare ────────
+// Cloudflare REPLACES the body of an origin 502/504 with its own HTML "Bad
+// gateway" page and drops our headers with it — including
+// `x-kortix-proxy-hop` / `x-kortix-upstream-status`, the attribution channel,
+// and any JSON `code` a client branches on. Every such response therefore
+// reached users as an unreadable HTML page (dev, 2026-08-24) or as
+// "AI_APICallError: Bad Gateway" inside a session.
+//
+// 503 passes through Cloudflare untouched, so the honest upstream status moves
+// into `x-kortix-upstream-status` and the JSON body survives. Handlers keep
+// returning the semantically correct status internally; this is the single
+// place that makes it safe on the wire, instead of ~40 call sites each having
+// to remember. Bodyless responses and upgrades are left alone.
+// 520-524 are Cloudflare's OWN origin-error statuses. They can appear here
+// because the API->gateway hop itself traverses Cloudflare
+// (LLM_GATEWAY_PROXY_TARGET is a proxied hostname whose ALB only accepts
+// Cloudflare IPs), so an internal-hop failure arrives as a CF HTML page with a
+// 52x status and gets relayed onward. No Kortix handler ever returns 52x, so
+// normalizing them is unambiguous.
+const EDGE_REWRITTEN_STATUSES = new Set([502, 504, 520, 521, 522, 523, 524]);
+app.use('*', async (c, next) => {
+  await next();
+  const res = c.res;
+  if (!res || !EDGE_REWRITTEN_STATUSES.has(res.status)) return;
+  if (res.status === 101 || (res as { webSocket?: unknown }).webSocket) return;
+  const headers = new Headers(res.headers);
+  headers.set('x-kortix-upstream-status', String(res.status));
+  if (!headers.has('retry-after')) headers.set('retry-after', '5');
+  c.res = new Response(res.body, { status: 503, statusText: res.statusText, headers });
+});
 
 // Post-request: Sentry breadcrumbs + slow/error request logging
 app.use('*', async (c, next) => {
@@ -854,12 +897,6 @@ app.route('/v1/account', accountDeletionApp); // account deletion status/request
 app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
-// Voice routes are registered BEFORE projectsApp: Hono matches in registration
-// order, and projectsApp's auth middleware would otherwise claim the worker's
-// MCP callback (/sessions/:id/mcp/voice) and reject it with a generic 401
-// before its own per-call HMAC check ever runs. The worker is not a Kortix
-// session and cannot present session auth.
-app.route('/v1/projects', voiceMcpRoutes);
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
@@ -868,19 +905,22 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 // what lets an agent in ANY harness, holding only the `kortix` binary and a token,
 // read the platform's own instructions with no repo checkout and no sandbox.
 // combinedAuth (not supabaseAuth) so a CLI `kortix_pat_` and the in-sandbox
-// KORTIX_CLI_TOKEN works; see ./skills/index.ts for the full auth rationale.
+// KORTIX_TOKEN works; see ./skills/index.ts for the full auth rationale.
 app.use('/v1/skills', combinedAuth);
 app.use('/v1/skills/*', combinedAuth);
 app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1], /v1/skills/:name/file?path=
 
 // /v1/runtime-assets — the sandbox runtime assets THIS deploy was built with:
-// the `kortix` CLI binary it bakes into snapshots and the managed-skill overlay.
-// A live sandbox reconciles against these on every session start/restart/resume,
-// which is what stops an old box from running a CLI that predates the routes it
-// calls. combinedAuth for the same reason as /v1/skills above: the callers are a
-// `kortix_pat_` CLI and the in-sandbox KORTIX_CLI_TOKEN.
+// the `kortix-agent` daemon and `kortix` CLI binaries it bakes into snapshots,
+// and the managed-skill overlay. A live sandbox reconciles against these on
+// every session start/restart/resume, which is what stops an old box from
+// running a daemon or CLI that predates the routes it calls. combinedAuth for
+// the same reason as /v1/skills above: the callers are a `kortix_pat_` CLI and
+// the in-sandbox KORTIX_TOKEN. The `/*` wildcard is what puts every payload
+// route behind auth — a new one must be added to runtimeAssetsApp, never mounted
+// beside it.
 app.use('/v1/runtime-assets/*', combinedAuth);
-app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /managed-skills
+app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /agent, /managed-skills
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -890,7 +930,7 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /mana
 }
 
 // Connector — unified connector layer. Gateway routes (/catalog, /call) use
-// KORTIX_CLI_TOKEN (validated inside the router); admin routes
+// KORTIX_TOKEN (validated inside the router); admin routes
 // (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
 {
   app.use('/v1/connectors/projects/*', combinedAuth);
@@ -921,7 +961,16 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 // (Caddy cannot present a bearer token); it discloses only whether a hostname
 // maps to an App. Not an App public host itself (Host = kortix-api), so it is
 // served by Hono, never intercepted by handleAppPublicRequest.
-app.route('/v1/apps/edge', appEdgeApp); // GET /v1/apps/edge/tls-check?domain=<host>
+// One on-demand-TLS gate for every wildcard family this instance serves (Apps
+// and sandbox previews). Caddy allows a single global `ask`, so both families
+// share one handler — mounted at BOTH paths. `/v1/apps/edge/tls-check` is where
+// every already-installed Caddyfile points, and it keeps working: an instance
+// that updates its assets before its API image still gets a correct answer for
+// App hosts, and preview hosts simply have no certificate until the API is new.
+// `/v1/edge/tls-check` is the name that describes what it now does.
+// See edge/tls-check.ts.
+app.route('/v1/apps/edge', edgeApp); // GET /v1/apps/edge/tls-check?domain=<host>
+app.route('/v1/edge', edgeApp); // GET /v1/edge/tls-check?domain=<host>
 
 // Setup links — PUBLIC, token-gated. An agent-minted (encrypted, short-lived,
 // value-only) token is the bearer capability, so a human can fill in a secret
@@ -947,13 +996,6 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
-// Anonymous resolve step for a `voice_spawn` join link: exchanges the short,
-// ungessable id for a freshly-minted LiveKit access token + server URL. Backs
-// the logged-out `/voice/[token]` page the same way publicSessionSharesApp
-// backs `/share/[shareId]` above — see join-links.ts / public-join-routes.ts.
-import { voiceJoinPublicApp } from './channels/voice/public-join-routes';
-app.route('/v1/public/voice-join', voiceJoinPublicApp); // /v1/public/voice-join/:token
-
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -967,9 +1009,9 @@ app.route('/v1/admin', adminApp);
 app.route('/v1/oauth', oauthApp);
 app.route('/v1/connectors/oauth2', nativeOAuth2CallbackApp);
 
+import { warmPipedreamCatalog } from './connectors/pipedream';
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
-import { warmPipedreamCatalog } from './connectors/pipedream';
 app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
 
 app.use('/v1/tunnel/*', async (c, next) => {
@@ -993,7 +1035,6 @@ app.route('/v1/p', sandboxProxyApp);
 // === Error Handling ===
 
 app.onError((err, c) => {
-
   const method = c.req.method;
   const path = c.req.path;
   const errName = err.constructor?.name || 'Error';
@@ -1268,6 +1309,26 @@ app.onError((err, c) => {
 // === 404 Handler ===
 
 app.notFound((c) => {
+  // A root-absolute link on a path-based preview (`<a href="/learn">` inside
+  // /v1/p/{sandbox}/{port}/) resolves against THIS origin and lands here with
+  // the prefix stripped. Put the navigation back where it belongs instead of
+  // answering a JSON 404 the user can do nothing with. See prefix-escape.ts —
+  // the durable fix is the per-preview origin, this only recovers navigations.
+  const escaped = resolvePrefixEscape(c.req.raw);
+  if (escaped) {
+    // On a deployment that serves preview origins this should never fire: it
+    // means a BROWSER was handed a path preview somewhere. Say so loudly rather
+    // than silently repairing it — the repair is correct, the fact that it was
+    // needed is not.
+    if (previewBaseDomain()) {
+      appLogger.warn('[preview] browser escaped a PATH preview on a deployment with origins', {
+        path: c.req.path,
+        location: escaped.location,
+      });
+    }
+    return c.redirect(escaped.location, escaped.status);
+  }
+
   return c.json(
     {
       error: true,
@@ -1351,6 +1412,8 @@ let draining = false;
 // service serve request-path needs (per-node caches + the WS acceptor), so they
 // must be live on each node behind the load balancer.
 async function startReplicaServices() {
+  appLogger.info('[snapshots] project image rollout', projectImageRolloutDiagnostic());
+  warnIfPreviewOriginsMissing(appLogger);
   startAccessControlCache();
   startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
@@ -1451,6 +1514,22 @@ async function bootServices() {
   // paged API (`indexReady: false`), so a cold pod serves correct results the
   // whole time — just without category facets.
   warmPipedreamCatalog();
+  // Hash the sandbox runtime binaries off the request path.
+  //
+  // `/v1/runtime-assets/manifest` sha256s the CLI (~104 MB) and the agent
+  // (~95.6 MB) on its first call and memoizes. Every sandbox polls this route
+  // at boot, and a deploy sends the whole fleet at cold replicas at once — so
+  // the first caller per replica was paying ~200 MB of hashing inside the 25s
+  // request deadline. Measured on dev: the very first post-deploy call returned
+  // `503 request_deadline`, and a daemon that gets a 503 skips convergence for
+  // that boot entirely (it never throws, by design).
+  //
+  // Deliberately NOT awaited: readiness must not wait on it, and a request that
+  // arrives first simply shares the same in-flight promise.
+  void runtimeAssetsManifest().catch(() => {
+    // Absent binaries are a legitimate state (a checkout that never built one);
+    // the route reports that per component. Nothing to do here.
+  });
 }
 
 // Graceful shutdown
@@ -1508,10 +1587,11 @@ if (import.meta.main) {
 
 // Subdomain preview routing — `p{port}-{sandboxId}.localhost:{apiPort}/...`
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`
-// (Hono can't match on the Host header). See `sandbox-proxy/subdomain.ts`.
-import { handleSubdomainRequest, parsePreviewSubdomain } from './sandbox-proxy/subdomain';
+// (Hono can't match on the Host header). See `sandbox-proxy/preview-origin.ts`.
+import { handlePreviewOriginRequest, isPreviewHost } from './sandbox-proxy/preview-origin';
 import {
   matchPreviewWsPath,
+  preparePreviewHostWsUpgrade,
   preparePreviewWsUpgrade,
   previewWsHandlers,
 } from './sandbox-proxy/ws-proxy';
@@ -1555,17 +1635,27 @@ export default {
       server.timeout(req, 0);
     }
 
+    // The secret streaming relay carries SSE and long-lived upstream bodies.
+    // Without this Bun cuts the socket with an empty reply that the LB turns
+    // into a 502 with no CORS headers — the same shape as the gateway
+    // idleTimeout incident. The global `idleTimeout: 0` above is necessary but
+    // not sufficient: `server.timeout(req, …)` is the PER-REQUEST budget.
+    if (SECRET_RELAY_PATH.test(url.pathname)) {
+      server.timeout(req, 0);
+    }
+
     // The standalone-gateway reverse proxy streams chat completions (SSE). Let
     // the gateway's own keep-alive / upstream timeout govern it instead of Bun
     // closing the client socket at idleTimeout with an empty reply.
-    if (url.pathname.startsWith('/v1/llm-gateway')) {
+    // Covers BOTH the internal `/v1/llm-gateway` prefix used by cloud sandboxes
+    // and `/v1/llm`, the documented public path — which was unguarded.
+    if (url.pathname.startsWith('/v1/llm')) {
       server.timeout(req, 0);
     }
 
     // ── Subdomain preview routing ──────────────────────────────────────
     // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
     // Same per-request long-poll/SSE timeout posture as /v1/p/.
-    const host = req.headers.get('host') || '';
     if (resolveAppRequest(req, url)) {
       server.timeout(req, 0);
       if (isWsUpgrade) {
@@ -1586,20 +1676,27 @@ export default {
       const appResponse = await handleAppPublicRequest(req);
       if (appResponse) return appResponse;
     }
-    if (parsePreviewSubdomain(host)) {
+    if (isPreviewHost(req, url)) {
       server.timeout(req, 0);
-      // WS-on-subdomain isn't wired yet (agent server's port-proxy is
-      // HTTP-only). Reject the upgrade cleanly so the client falls back
-      // gracefully instead of timing out.
+      // An app on its own origin opens `new WebSocket('/hmr')` — dev-server
+      // hot reload, live preview, anything socket-driven. The handshake is an
+      // ordinary HTTP request, so it carries the preview cookie and needs no
+      // token in the URL.
       if (isWsUpgrade) {
-        return new Response(
-          JSON.stringify({
-            error: 'WebSocket upgrade on preview subdomain not implemented',
-          }),
-          { status: 501, headers: { 'Content-Type': 'application/json' } },
-        );
+        const prepared = await preparePreviewHostWsUpgrade(req, url);
+        if (!prepared.ok) {
+          return new Response(JSON.stringify({ error: prepared.message }), {
+            status: prepared.status,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (server.upgrade(req, { data: prepared.data })) return undefined;
+        return new Response(JSON.stringify({ error: 'Preview WebSocket upgrade failed' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
-      const res = await handleSubdomainRequest(req, url);
+      const res = await handlePreviewOriginRequest(req, url);
       if (res) return res;
     }
 
@@ -1696,6 +1793,9 @@ export default {
       }
       const prep = await preparePreviewWsUpgrade(url);
       if (!prep.ok) {
+        console.warn(
+          `[preview-ws] REFUSED ${prep.status} ${prep.message} path=${url.pathname} hasToken=${url.searchParams.has('token')}`,
+        );
         return new Response(JSON.stringify({ error: prep.message }), {
           status: prep.status,
           headers: { 'Content-Type': 'application/json' },

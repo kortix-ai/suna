@@ -65,13 +65,14 @@ export type SecretCapability =
  * capabilities.
  */
 export const NETWORK_BOUNDARY_NOTES: readonly string[] = [
-  'Use the environment variable exactly as you would use the real credential: put it in the header, query string or body your client already builds.',
+  'Use the environment variable exactly as you would use the real credential: put it in the header, query string or body your client already builds. `Authorization: Bearer $VAR`, `Cookie: session=$VAR`, an `X-Api-Key` header, a query parameter and a JSON/form body field all work — Kortix substitutes the handle wherever it appears.',
   'The variable holds a HANDLE, not the value. Kortix swaps the handle for the real credential outside the sandbox.',
   'The value is not in this sandbox: no environment variable, no file, no alias. Do not search for it and do not ask the user for it.',
+  'Send the handle as-is. Do NOT base64-encode it yourself first — for example HTTP Basic auth (`curl -u $VAR:` / `Authorization: Basic <base64>`) hides the handle inside a base64 blob Kortix cannot find, so the swap does not happen. Put the handle in a Bearer/token header, a query parameter or a body field instead.',
   'The swap happens only on the `hosts` this capability lists, over HTTPS. Sent anywhere else the handle arrives as a literal string and the request fails.',
   'If a response reflects the credential straight back, Kortix scrubs the obvious copies to `[REDACTED]`. This is best-effort reflection-scrubbing, not proof of success: a `[REDACTED]` is a hint the substitution ran, not a guarantee, and a host can still transform the value past the scrub.',
   'An empty reply or a connection error on a listed host is a REAL failure. Do not read it as the substitution working.',
-  'Requests to a listed host are relayed through Kortix, so responses are not streamed: no SSE, no websockets, and large bodies are capped.',
+  'Requests to a listed host are relayed through Kortix, so responses are not streamed: no SSE, no websockets, and large bodies are capped (1 MiB request, 5 MiB response).',
   'A listed host that answers 401 means the swap did not happen. Report that; do not invent a credential.',
   'If a request cannot be relayed, run `kortix secrets call <identifier> <https-url> [options]` — the explicit door to the same hosts and the same policy.',
 ]

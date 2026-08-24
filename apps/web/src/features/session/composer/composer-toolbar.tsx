@@ -21,7 +21,7 @@ import { SendStopControl } from './send-stop-control';
  *    is a setting on top of the selected model, not a peer of it. Reasoning
  *    effort is NOT — it is a per-project setting, so it sits beside the model
  *    rather than two clicks inside it.
- *  - RIGHT: voice, send/stop.
+ *  - RIGHT: send/stop.
  *
  * Attach, agent, and token progress used to sit here. They now live in the
  * row BELOW the card (`composer.tsx`, directly after the card element) so the
@@ -99,9 +99,6 @@ export interface ComposerToolbarProps {
   /** Rendered FIRST in the left cluster, before the model selector. */
   leading?: React.ReactNode;
 
-  onTranscription: (text: string) => void;
-  voiceDisabled: boolean;
-
   isSending: boolean;
   isBusy: boolean;
   onStop?: () => void;
@@ -139,8 +136,6 @@ export function ComposerToolbar({
   toolbarSlot,
   rewind,
   leading,
-  onTranscription,
-  voiceDisabled,
   isSending,
   isBusy,
   onStop,

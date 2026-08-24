@@ -20,7 +20,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-const sectionShell = 'mx-auto max-w-7xl px-6 py-16 sm:py-24 lg:px-0';
+const sectionShell = 'mx-auto max-w-7xl px-6 py-24 md:py-30lg:px-0';
 
 /* ================================================================== */
 /* Problem — 1% vs 99% (the video's cold open), big and stark          */

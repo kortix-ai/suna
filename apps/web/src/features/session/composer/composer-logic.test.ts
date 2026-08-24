@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import type { JSONContent } from '@tiptap/core';
 
 import {
-  appendTranscribedText,
   planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
@@ -142,7 +141,7 @@ describe('resolveEditorPlaceholder', () => {
         lockForQuestion: true,
         questionButtonLabel: null,
       }),
-    ).toBe('Type your answer...');
+    ).toBe('Type your answer…');
   });
 
   test('lockForQuestion with a questionButtonLabel offers the custom-answer hint instead', () => {
@@ -152,7 +151,7 @@ describe('resolveEditorPlaceholder', () => {
         lockForQuestion: true,
         questionButtonLabel: 'Next',
       }),
-    ).toBe('Or type your own answer...');
+    ).toBe('Or type your own answer…');
   });
 
   test('an empty-string questionButtonLabel is falsy, same as null', () => {
@@ -162,7 +161,7 @@ describe('resolveEditorPlaceholder', () => {
         lockForQuestion: true,
         questionButtonLabel: '',
       }),
-    ).toBe('Type your answer...');
+    ).toBe('Type your answer…');
   });
 });
 
@@ -413,99 +412,6 @@ describe('planPrefillMerge — merge-mode prefill restores the live semantics', 
 
     const labels = JSON.stringify(merged).match(/"label":"[^"]+"/g);
     expect(labels).toEqual(['"label":"a.ts"', '"label":"b.ts"']);
-  });
-});
-
-/**
- * Task 14, matrix row 21. Old behaviour was
- * `setText(prev => prev ? `${prev} ${text}` : text)` — end of the draft,
- * single space, no focus change.
- */
-describe('appendTranscribedText — voice transcription appends at the end with a space', () => {
-  test('joins onto the existing paragraph with a SPACE, not a block break', () => {
-    expect(appendTranscribedText(docOf('hello'), false, 'transcribed')).toEqual({
-      type: 'doc',
-      content: [
-        {
-          type: 'paragraph',
-          content: [
-            { type: 'text', text: 'hello' },
-            { type: 'text', text: ' transcribed' },
-          ],
-        },
-      ],
-    });
-  });
-
-  test('appends to the END of a multi-paragraph draft, never into an earlier block', () => {
-    const draft: JSONContent = {
-      type: 'doc',
-      content: [
-        { type: 'paragraph', content: [{ type: 'text', text: 'first' }] },
-        { type: 'paragraph', content: [{ type: 'text', text: 'second' }] },
-      ],
-    };
-
-    const next = appendTranscribedText(draft, false, 'dictated');
-
-    expect(next.content?.[0]).toEqual(draft.content![0]); // earlier block untouched
-    expect(next.content?.[1]).toEqual({
-      type: 'paragraph',
-      content: [
-        { type: 'text', text: 'second' },
-        { type: 'text', text: ' dictated' },
-      ],
-    });
-  });
-
-  test('replaces the document outright when the composer is empty (no leading space)', () => {
-    expect(appendTranscribedText(docOf(''), true, 'transcribed')).toEqual(docOf('transcribed'));
-  });
-
-  test('starts a new paragraph when the last block cannot hold inline text', () => {
-    // A list/blockquote/code block holds child BLOCKS; pushing a text node
-    // into one would build an invalid document.
-    const draft: JSONContent = {
-      type: 'doc',
-      content: [
-        {
-          type: 'bulletList',
-          content: [
-            { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'item' }] }] },
-          ],
-        },
-      ],
-    };
-
-    const next = appendTranscribedText(draft, false, 'dictated');
-
-    expect(next.content?.[0]).toEqual(draft.content![0]);
-    expect(next.content?.[1]).toEqual({
-      type: 'paragraph',
-      content: [{ type: 'text', text: 'dictated' }],
-    });
-  });
-
-  test('an empty transcription leaves the document untouched', () => {
-    const draft = docOf('hello');
-    expect(appendTranscribedText(draft, false, '')).toBe(draft);
-  });
-
-  test('preserves a mention atom already in the last paragraph', () => {
-    const draft: JSONContent = {
-      type: 'doc',
-      content: [
-        {
-          type: 'paragraph',
-          content: [{ type: 'mention', attrs: { kind: 'file', label: 'a.ts', value: 'a.ts' } }],
-        },
-      ],
-    };
-
-    const next = appendTranscribedText(draft, false, 'dictated');
-
-    expect(next.content?.[0].content?.[0]).toEqual(draft.content![0].content![0]);
-    expect(next.content?.[0].content?.[1]).toEqual({ type: 'text', text: ' dictated' });
   });
 });
 

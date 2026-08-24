@@ -1,3 +1,4 @@
+import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -14,6 +15,7 @@ import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
+import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
 import { recordSessionActivity } from '../../projects/session-activity';
 import {
   createExtendThrottle,
@@ -28,6 +30,14 @@ import {
   KORTIX_SERVICE_CALL_HEADER,
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
+import { config } from '../../config';
+import { previewCorsHeaders } from '../preview-hosts';
+import { appCookieHeader } from '../preview-session';
+import {
+  PREVIEW_STATE_HEADER,
+  previewStatePage,
+  type PreviewState,
+} from '../preview-state-page';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
@@ -176,8 +186,12 @@ function stripFrameAncestors(csp: string): string | null {
 // default to these) would otherwise refuse to load in the panel. Stripping them
 // at the proxy makes embedding work for ANY project without per-app config —
 // the same project-agnostic approach as the origin/host re-origination above.
-// This is safe for previews: access is already gated by the preview token +
-// ownership check, so they aren't world-framable.
+// Framing is intentionally OPEN, and that is not the same as unprotected. The
+// credential is now an ambient `SameSite=None` cookie, so any site can frame a
+// signed-in user's live preview — what stops that being useful is the
+// cross-site gate in preview-origin.ts (reads are governed by the CORS
+// allowlist, writes and WebSocket upgrades require a same-site Sec-Fetch-Site),
+// not a framing restriction.
 function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Headers {
   const headers = new Headers(upstreamHeaders);
   headers.delete('x-frame-options');
@@ -189,9 +203,32 @@ function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Header
       else headers.delete(key);
     }
   }
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
+  // One allowlist for both edges — see previewCorsHeaders. An arbitrary origin
+  // gets nothing, because the preview cookie is ambient on cross-site requests.
+  for (const [key, value] of Object.entries(previewCorsHeaders(origin))) {
+    headers.set(key, value);
+  }
+
+  // The app inside the sandbox writes its own cookies, and they are forwarded —
+  // that is what makes a cookie-session app work. What it may NOT do is widen
+  // their scope: `p.kortix.com` is not on the Public Suffix List, so a
+  // `Domain=kortix.com` cookie from a preview would be accepted for the web app
+  // and the API too. Strip `Domain` (leaving a host-only cookie, which is what
+  // the app actually needs) and drop any attempt to overwrite ours.
+  const setCookies = headers.getSetCookie?.() ?? [];
+  if (setCookies.length) {
+    headers.delete('set-cookie');
+    for (const cookie of setCookies) {
+      const name = cookie.split('=', 1)[0]?.trim();
+      if (name === '__kortix_preview' || name === '__kortix_preview_chips') continue;
+      headers.append(
+        'set-cookie',
+        cookie
+          .split(';')
+          .filter((attr) => !/^\s*domain\s*=/i.test(attr))
+          .join(';'),
+      );
+    }
   }
   return headers;
 }
@@ -207,93 +244,17 @@ function isBrowserNavigation(incomingHeaders: Headers): boolean {
   return dest === 'document' || dest === 'iframe' || dest === 'frame';
 }
 
-// Minimal, dependency-free HTML shown when a sandbox port can't be reached —
-// instead of the browser's bare "HTTP ERROR 502" interstitial. Self-contained
-// (inline CSS/JS), dark-mode aware, and gently auto-retries a few times to ride
-// out the boot window before falling back to a manual Retry button. Colors and
-// the button mirror the web app's tokens (globals.css --background/--foreground/
-// --secondary/--muted-foreground; Button variant="secondary" size="sm").
-function portUnreachableHtml(port: number): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Port ${port} isn't responding</title>
-<style>
-  :root {
-    color-scheme: light dark;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0 0 0);
-    --secondary: oklch(0.9431 0 0);
-    --muted-foreground: oklch(0.5103 0 0);
-    --kortix-yellow: oklch(0.732 0.15 90.688);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --background: oklch(0.1398 0 0);
-      --foreground: oklch(1 0 0);
-      --secondary: oklch(0.2264 0 0);
-      --muted-foreground: oklch(0.683 0 0);
-    }
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    display: flex; align-items: center; justify-content: center;
-    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: var(--secondary); color: var(--foreground); padding: 24px;
-    -webkit-font-smoothing: antialiased;
-  }
-  .card { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;  }
-  h1 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; margin: 0; }
-  .dot {
-    width: 8px; height: 8px; border-radius: 999px; background: var(--kortix-yellow);
-    animation: pulse 1.4s ease-in-out infinite;
-  }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-  button {
-    display: inline-flex; align-items: center; justify-content: center;
-    height: 28px; padding: 0 12px; border: 0; border-radius: 8px;
-    font: inherit; font-weight: 500; cursor: pointer;
-    background: var(--background); color: var(--foreground);
-    transition: background-color .15s;
-  }
-  button:hover { background: color-mix(in oklab, var(--secondary) 90%, transparent); }
-  .status { font-size: 12px; color: var(--muted-foreground); min-height: 18px; margin: 0; }
-</style>
-</head>
-<body>
-  <div class="card">
-    <h1><span class="dot"></span>Port ${port} isn't responding</h1>
-    <button id="retry" type="button">Retry</button>
-    <p class="status" id="status"></p>
-  </div>
-  <script>
-    (function () {
-      var KEY = 'kortix-preview-retries-${port}';
-      var MAX = 5, DELAY = 4000;
-      var n = parseInt(sessionStorage.getItem(KEY) || '0', 10) || 0;
-      var statusEl = document.getElementById('status');
-      function reload() { sessionStorage.setItem(KEY, String(n + 1)); location.reload(); }
-      document.getElementById('retry').addEventListener('click', function () {
-        sessionStorage.setItem(KEY, '0'); location.reload();
-      });
-      if (n < MAX) {
-        var left = Math.round(DELAY / 1000);
-        statusEl.textContent = 'Retrying in ' + left + 's\\u2026';
-        var t = setInterval(function () {
-          left -= 1;
-          statusEl.textContent = left > 0 ? 'Retrying in ' + left + 's\\u2026' : 'Retrying\\u2026';
-        }, 1000);
-        setTimeout(function () { clearInterval(t); reload(); }, DELAY);
-      } else {
-        statusEl.textContent = 'Still not responding.';
-      }
-    })();
-  </script>
-</body>
-</html>`;
+/**
+ * The address the browser is on, reconstructed from the request it sent. Shown
+ * on the state page and carried into the sign-in hand-off. Falls back to '' when
+ * the headers do not say, which simply omits it from the page.
+ */
+function previewReturnTo(incomingHeaders: Headers): string {
+  const forwarded = incomingHeaders.get('x-kortix-preview-host') || incomingHeaders.get('x-forwarded-host');
+  const host = forwarded || incomingHeaders.get('host') || '';
+  if (!host) return '';
+  const proto = incomingHeaders.get('x-forwarded-proto') || 'https';
+  return `${proto}://${host}`;
 }
 
 // Response for an unreachable / not-yet-ready sandbox port: a friendly HTML page
@@ -330,9 +291,11 @@ export function portUnreachableResponse(opts: {
   if (upstreamStatus !== null) {
     headers.set(PROXY_UPSTREAM_STATUS_HEADER, String(upstreamStatus));
   }
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
+  // The SAME allowlist as every other preview response — this was a third copy
+  // of the policy and it still echoed any origin back with credentials.
+  const cors = previewCorsHeaders(origin);
+  for (const [key, value] of Object.entries(cors)) headers.set(key, value);
+  if (Object.keys(cors).length) {
     // Without this the browser hides both headers from JS and the probe is back
     // to guessing — the web app and the API are always different origins.
     headers.set(
@@ -342,7 +305,30 @@ export function portUnreachableResponse(opts: {
   }
   if (isBrowserNavigation(incomingHeaders)) {
     headers.set('Content-Type', 'text/html; charset=utf-8');
-    return new Response(portUnreachableHtml(port), { status, headers });
+    // A browser gets 200 and a page it can read, NOT the 5xx.
+    //
+    // "The dev server has not bound the port yet" and "the box is still waking"
+    // are the ordinary first seconds of a preview, not gateway failures — and
+    // reporting them as 5xx meant this page never arrived: Cloudflare replaces
+    // an origin 5xx with its own branded error interstitial (proved by the
+    // absence of x-kortix-proxy-hop on what reached the client). The real state
+    // stays fully legible — the status is still on every non-navigation
+    // response, and both hop headers are set here too, so a fetch probe reads
+    // exactly what it always did.
+    const state: PreviewState =
+      code === 'sandbox_not_ready' || retry === true ? 'starting'
+      : upstreamStatus === null ? 'not-listening'
+      : 'unreachable';
+    headers.set(PREVIEW_STATE_HEADER, state);
+    return new Response(
+      previewStatePage({
+        state,
+        port,
+        returnTo: previewReturnTo(incomingHeaders),
+        frontendUrl: config.FRONTEND_URL || '',
+      }),
+      { status: 200, headers },
+    );
   }
   headers.set('Content-Type', 'application/json');
   return new Response(
@@ -660,8 +646,8 @@ const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
 //
 // Forwards one request to a sandbox port with the full upstream auth header set,
 // auto-wake retries, redirect rewriting, and CORS injection. Exported so both
-// proxy edges use it: the path-based Hono route below and the subdomain handler
-// (src/sandbox-proxy/subdomain.ts).
+// proxy edges use it: the path-based Hono route below and the preview-origin handler
+// (src/sandbox-proxy/preview-origin.ts).
 
 export type PreviewProxyAccess =
   | {
@@ -741,6 +727,38 @@ export function shouldAutoResumeStoppedSandbox(
   }
   return opts.browserNavigation === true && !carriesSessionData(upstreamPort);
 }
+
+/**
+ * Should a WebSocket UPGRADE wake a stopped box?
+ *
+ * The HTTP data path wakes a parked box on explicit user intent
+ * (`shouldAutoResumeStoppedSandbox`). The WebSocket path had no such branch at
+ * all: it answered `503 sandbox not ready` and stopped there. A browser never
+ * sees that status — a refused upgrade surfaces only as close code `1006` — so
+ * the terminal reconnected against a parked box forever, and nothing in the
+ * loop could ever wake it. Reloading the page did not help either: the panel's
+ * `GET /kortix/pty` is a GET on a session-data port, which by policy also never
+ * resumes. The terminal was therefore unrecoverable until the user prompted the
+ * agent (a POST) or restarted the session.
+ *
+ * A terminal ATTACH is the same class of intent as a session mutation: a human
+ * opened the panel or pressed "Reconnect now". The client marks exactly those
+ * two connects with `wake=1` and NEVER marks its automatic backoff retries, so
+ * the "passive resurrection" the resume policy exists to prevent (polling,
+ * hydration, background reconnects) still cannot wake a box.
+ *
+ * Pure + exported so the gate is unit-tested without provisioning a box.
+ */
+export function shouldWakeStoppedSandboxForWsAttach(
+  status: string,
+  remainingPath: string,
+  opts: { wakeRequested: boolean; accessKind?: string },
+): boolean {
+  if (status !== 'stopped') return false;
+  if (!opts.wakeRequested) return false;
+  if (opts.accessKind && opts.accessKind !== 'principal') return false;
+  return classifyPtyWebSocketPath(remainingPath) !== null;
+}
 /**
  * Is this a proxied attempt at the daemon's DESTRUCTIVE branch reset?
  *
@@ -789,6 +807,11 @@ export async function forwardToSandbox(
   // the scheme is correct in every environment (http in local dev, https behind
   // a TLS-terminating LB). Falls back to reconstructing from the Host header.
   publicOrigin?: string,
+  // Origin mode: this sandbox port is served on its OWN hostname, so the app is
+  // alone on that origin. Two things become both safe and necessary there —
+  // forwarding the app's cookies (see appCookieHeader) and leaving same-origin
+  // responses free of injected CORS headers.
+  opts: { originMode?: boolean } = {},
 ): Promise<Response> {
   let requestBody = body;
 
@@ -1233,7 +1256,16 @@ export async function forwardToSandbox(
 
       const headers = new Headers();
       for (const [key, value] of incomingHeaders.entries()) {
-        if (STRIP_FORWARD_HEADERS.has(key.toLowerCase())) continue;
+        const name = key.toLowerCase();
+        // On a preview origin the jar holds the app's own cookies plus ours.
+        // Give the app back everything that is its own — a cookie-session app
+        // is otherwise permanently logged out through the proxy.
+        if (name === 'cookie' && opts.originMode) {
+          const appCookies = appCookieHeader(value);
+          if (appCookies) headers.set('cookie', appCookies);
+          continue;
+        }
+        if (STRIP_FORWARD_HEADERS.has(name)) continue;
         headers.set(key, value);
       }
       headers.set('Accept-Encoding', 'identity');
@@ -1526,6 +1558,53 @@ export async function forwardToSandbox(
           exposed ? `${exposed}, ${EFFECTIVE_MESSAGE_ID_HEADER}` : EFFECTIVE_MESSAGE_ID_HEADER,
         );
       }
+      // The transcript list leaves the API WITHOUT its attachment bytes.
+      //
+      // The daemon strips these too (kortix-sandbox-agent-server/src/proxy.ts)
+      // and that is the right home. This second pass exists for every sandbox
+      // still running an older daemon image — a self-host does not rebuild
+      // its templates on our schedule, and the read that motivated this
+      // (20 messages = 7-19 MB, dying on a 30s browser deadline, retried
+      // forever) was on exactly such a box. Idempotent by construction: a
+      // reference is not a `data:` url, so a list the daemon already stripped
+      // passes through with zero work.
+      const listMatch =
+        method === 'GET' && upstream.ok
+          ? /^\/session\/([^/]+)\/message\/?$/.exec(remainingPath)
+          : null;
+      if (
+        listMatch &&
+        (upstream.headers.get('content-type') ?? '').includes('application/json')
+      ) {
+        const sessionID = decodeURIComponent(listMatch[1] ?? '');
+        const text = await upstream.text();
+        let body = text;
+        try {
+          const stripped = stripInlineAttachmentBytes(
+            JSON.parse(text),
+            (messageID, partID) =>
+              `/kortix/part/${encodeURIComponent(sessionID)}/${encodeURIComponent(messageID)}/${encodeURIComponent(partID)}`,
+          );
+          if (stripped.stripped > 0) {
+            body = JSON.stringify(stripped.value);
+            console.info(
+              `[PREVIEW] stripped ${stripped.stripped} inline attachment part(s), ${stripped.savedBytes} bytes, from ${sandboxId} ${remainingPath}`,
+            );
+          }
+        } catch {
+          // Not the JSON we expected — pass it through untouched. This path
+          // must never be the reason a transcript read fails.
+        }
+        respHeaders.delete('content-length');
+        respHeaders.delete('content-encoding');
+        respHeaders.set('content-type', 'application/json; charset=utf-8');
+        return new Response(body, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: respHeaders,
+        });
+      }
+
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -1640,6 +1719,10 @@ export async function resolvePreviewWsUpstream(opts: {
   /** The caller's AGENT/SANDBOX token binding. Only the trigger-session manager
    *  override reads it (connectors/share.ts). REQUIRED, same reasoning. */
   boundCredentialSessionId: string | null;
+  /** The client marked this attach as user-initiated (`wake=1`): the panel's
+   *  first connect, or "Reconnect now". Automatic backoff retries never set it.
+   *  See `shouldWakeStoppedSandboxForWsAttach`. */
+  wakeRequested?: boolean;
 }): Promise<
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
@@ -1648,7 +1731,7 @@ export async function resolvePreviewWsUpstream(opts: {
   const callerSessionId = opts.callerSessionId;
   const boundCredentialSessionId = opts.boundCredentialSessionId;
 
-  const record = await loadSandbox(sandboxId);
+  let record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
 
   const ingressRequest = {
@@ -1684,7 +1767,28 @@ export async function resolvePreviewWsUpstream(opts: {
     };
   }
   if (record.status !== 'active') {
-    return { ok: false, status: 503, message: 'sandbox not ready' };
+    // A user-initiated terminal attach resumes a parked box, exactly like a
+    // session mutation does on the HTTP path. Without this the socket can only
+    // loop: the browser sees 1006, retries, and nothing ever wakes the sandbox.
+    if (
+      shouldWakeStoppedSandboxForWsAttach(record.status, remainingPath, {
+        wakeRequested: opts.wakeRequested === true,
+        accessKind: 'principal',
+      })
+    ) {
+      const resumeExternalId = record.externalId;
+      await resumeStoppedSandboxByExternalId(resumeExternalId).catch((err) => {
+        console.warn(`[preview-ws] auto-resume failed for ${resumeExternalId}:`, err);
+        return false;
+      });
+      // The resume flips the row to 'active' immediately; the box finishes
+      // booting in the background and the client's next retry connects.
+      const resumed = await loadSandbox(sandboxId);
+      if (resumed) record = resumed;
+    }
+    if (record.status !== 'active') {
+      return { ok: false, status: 503, message: `sandbox not ready (status: ${record.status})` };
+    }
   }
 
   const ingress = await resolveSandboxIngress(record, ingressRequest);
@@ -1826,7 +1930,11 @@ preview.all('/:sandboxId/:port', async (c) => {
   const sandboxId = c.req.param('sandboxId');
   const port = c.req.param('port');
   const url = new URL(c.req.url);
-  return c.redirect(`/${sandboxId}/${port}/${url.search}`, 301);
+  // The app is mounted at /v1/p (see apps/api/src/index.ts), so a Location
+  // built from the route-relative path drops the mount and sends the browser to
+  // `https://<api>/<sandbox>/<port>/` — a 404. Mirrors the sibling normalizer in
+  // routes/public-share.ts.
+  return c.redirect(`/v1/p/${sandboxId}/${port}/${url.search}`, 301);
 });
 
 export { preview };

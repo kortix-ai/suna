@@ -20,8 +20,6 @@ const managed: UpstreamDescriptor = {
   markup: 1,
 };
 
-const fastRetry = { sleep: async () => {}, rand: () => 0.5, baseDelayMs: 1, maxAttempts: 2 };
-
 function makeHooks(over: Partial<GatewayHooks> = {}): GatewayHooks {
   return {
     authenticate: async (token) => (token === 'good' ? principal : null),
@@ -35,7 +33,7 @@ function makeHooks(over: Partial<GatewayHooks> = {}): GatewayHooks {
 
 describe('gateway.messages (Anthropic Messages ingress)', () => {
   test('401 without a bearer token, in the Anthropic error envelope (not the OpenAI-compat one)', async () => {
-    const res = await createGateway(makeHooks(), { retry: fastRetry }).messages({
+    const res = await createGateway(makeHooks()).messages({
       authorization: undefined,
       rawBody: JSON.stringify({ model: 'x', messages: [{ role: 'user', content: 'hi' }] }),
     });
@@ -48,7 +46,7 @@ describe('gateway.messages (Anthropic Messages ingress)', () => {
   });
 
   test('400 on invalid JSON, in the Anthropic error envelope', async () => {
-    const res = await createGateway(makeHooks(), { retry: fastRetry }).messages({
+    const res = await createGateway(makeHooks()).messages({
       authorization: 'Bearer good',
       rawBody: 'not json',
     });
@@ -79,7 +77,7 @@ describe('gateway.messages (Anthropic Messages ingress)', () => {
       );
     };
 
-    const res = await createGateway(makeHooks(), { retry: fastRetry }, { fetchImpl }).messages({
+    const res = await createGateway(makeHooks(), { fetchImpl }).messages({
       authorization: 'Bearer good',
       rawBody: JSON.stringify({
         model: 'anthropic/claude-sonnet-4-6',
@@ -117,7 +115,7 @@ describe('gateway.messages (Anthropic Messages ingress)', () => {
     const fetchImpl: FetchImpl = async () =>
       new Response(sseBody, { status: 200, headers: { 'content-type': 'text/event-stream' } });
 
-    const res = await createGateway(makeHooks(), { retry: fastRetry }, { fetchImpl }).messages({
+    const res = await createGateway(makeHooks(), { fetchImpl }).messages({
       authorization: 'Bearer good',
       rawBody: JSON.stringify({
         model: 'x',

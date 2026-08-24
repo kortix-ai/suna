@@ -49,6 +49,7 @@ import {
 } from 'react';
 import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
+import { PanelWidthButton } from './viewer-actions';
 
 /** Closes the detail. Exported so a body with its own toolbar can host it. */
 export function CloseButton({ onClose }: { onClose: () => void }) {
@@ -60,7 +61,11 @@ export function CloseButton({ onClose }: { onClose: () => void }) {
       aria-label="Close"
       className="size-7 shrink-0 active:scale-[0.96]"
     >
-      <X className="size-4" />
+      {/* `size-3.5`, not `size-4`: an X is a full-bleed glyph — it fills its
+          own box corner to corner, where an arrow or a caret leaves margin. At
+          a matched nominal size it reads a step larger than every icon beside
+          it, which is exactly how it looked in this toolbar. */}
+      <X className="size-3.5" />
     </Button>
   );
 }
@@ -146,7 +151,7 @@ export function DetailSidebarToggle({ className }: { className?: string }) {
  * own sidebar instead of a view inside this shell. Shared, the two cannot drift.
  */
 const CARD_FRAME =
-  'bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow';
+  'bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow-md';
 
 /**
  * A layer that lives inside the detail card frame but must NEVER unmount.
@@ -722,7 +727,10 @@ export function DetailLayer({
                 {persistentLayer.title}
               </span>
             </span>
-            <CloseButton onClose={persistentLayer.onClose} />
+            <span className="flex shrink-0 items-center gap-0.5">
+              <PanelWidthButton isMobile={isMobile} />
+              <CloseButton onClose={persistentLayer.onClose} />
+            </span>
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">{persistentLayer.body}</div>
         </m.div>

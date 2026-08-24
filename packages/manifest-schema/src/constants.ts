@@ -40,8 +40,20 @@ export const RESERVED_ENV_NAME_PREFIXES = ['KORTIX_', 'OPENCODE_'] as const;
 
 /** Process-level names the sandbox sets itself; overriding them breaks boot. */
 export const RESERVED_ENV_NAMES: ReadonlySet<string> = new Set([
-  'PORT', 'PATH', 'HOME', 'PWD', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME',
-  'TERM', 'TMPDIR', 'NODE_ENV', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+  'PORT',
+  'PATH',
+  'HOME',
+  'PWD',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'HOSTNAME',
+  'TERM',
+  'TMPDIR',
+  'NODE_ENV',
+  'NODE_OPTIONS',
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
 ]);
 
 /**
@@ -136,7 +148,15 @@ export function formatDurationSeconds(seconds: number): string {
 // runtime parser's PROVIDERS in apps/api/src/projects/connectors.ts — enforced
 // by apps/api/src/__tests__/unit-connectors-parse.test.ts. `computer` is
 // deliberately absent: it is synth-only and never written to a manifest.
-export const CONNECTOR_PROVIDERS = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel'] as const;
+export const CONNECTOR_PROVIDERS = [
+  'pipedream',
+  'mcp',
+  'openapi',
+  'postman',
+  'graphql',
+  'http',
+  'channel',
+] as const;
 export const CONNECTOR_AUTH_TYPES = [
   'bearer',
   'basic',
@@ -151,7 +171,7 @@ export const CONNECTOR_AUTH_TYPES = [
 /** The exclusive owner model for connections under one connector. */
 export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
 /** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'voice'] as const;
+export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email'] as const;
 /**
  * Platform-owned slugs and the only provider allowed to use each — mirrors
  * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
@@ -161,7 +181,6 @@ export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
   kortix_slack: 'channel',
   kortix_teams: 'channel',
   kortix_email: 'channel',
-  kortix_voice: 'channel',
   computer: 'computer',
 };
 export const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;

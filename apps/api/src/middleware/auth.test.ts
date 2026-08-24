@@ -188,7 +188,7 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(await res.text()).toContain('Project-scoped token cannot access a different project');
   });
 
-  // The in-sandbox `KORTIX_CLI_TOKEN` IS a project+session-scoped PAT, and
+  // The in-sandbox `KORTIX_TOKEN` IS a project+session-scoped PAT, and
   // enforceTokenProjectScope is default-deny. /v1/skills shipped without an
   // allowlist entry, so the one caller the system skills exist for — an agent
   // in a sandbox running the `kortix skills get <name>` that every baked image

@@ -14,7 +14,14 @@
  * response shape is a contract (the CLI and `@kortix/sdk` depend on it) and
  * must not change. The streaming route (next) is the only real consumer.
  */
-import { getBackend, hasBackend, parseBasicAuthHeader, type GitConnectionRef } from './git-backends';
+import {
+  defaultManagedProviderId,
+  getBackend,
+  hasBackend,
+  isRetiredManagedProvider,
+  parseBasicAuthHeader,
+  type GitConnectionRef,
+} from './git-backends';
 import {
   ManagedRepoSeedError,
   buildManagedRepoSeedState,
@@ -30,6 +37,7 @@ import {
 } from './seed-files';
 import { getCatalogItemDetail } from '../marketplace/catalog';
 import { remoteBranchExists } from './git';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -48,6 +56,10 @@ import {
   upsertProjectGitConnection,
 } from './lib/git';
 import { metadataMerge } from './lib/metadata-merge';
+import {
+  buildCachedFastBootGitHint,
+  resolveFastBootGitHintWithCache,
+} from './lib/fast-boot-git-hint';
 import {
   classifyProvisionReplay,
   findIdempotentProvision,
@@ -72,6 +84,8 @@ export const PROVISION_PHASES = [
 
 export type ProvisionPhase = (typeof PROVISION_PHASES)[number];
 export type ProvisionEmit = (phase: ProvisionPhase) => void;
+
+const FAST_BOOT_SEED_HINT_TIMEOUT_MS = 8_000;
 
 /**
  * The exact status codes `runProvision` can produce, matching both routes'
@@ -150,11 +164,22 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   // Managed-git provider, provider-agnostic via the backend registry. GitHub is
   // the default + only active managed backend. Forgejo / Artifacts slot in here
   // as drop-ins.
-  const provider =
-    normalizeString(body.provider) ??
-    (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
+  //
+  // `defaultManagedProviderId()` — never `process.env.MANAGED_GIT_PROVIDER`
+  // directly: a retired backend must not be selectable by a deployed env bundle
+  // (see registry.ts). A caller naming one explicitly is refused for the same
+  // reason; EXISTING repos on it keep working through their connection row.
+  const provider = normalizeString(body.provider) ?? defaultManagedProviderId();
   if (!hasBackend(provider)) {
     return { status: 400, body: { error: `Unsupported managed git provider "${provider}"` } };
+  }
+  if (isRetiredManagedProvider(provider)) {
+    return {
+      status: 400,
+      body: {
+        error: `Managed git provider "${provider}" is retired — new repositories are provisioned on github`,
+      },
+    };
   }
   const backend = getBackend(provider);
   if (!(await backend.isConfigured())) {
@@ -546,14 +571,10 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
             marketplaceItems,
             now: now.toISOString(),
           });
-      // Seed the project tip == the deterministic scaffold root (the constant
-      // 'kortix-project' render), byte-identical to the image-baked scaffold
-      // (snapshots/build-context.ts). This lets a fresh session's fork REUSE
-      // the warm-seed's already-opencode-initialized /workspace with ZERO
-      // network (git.ts baked-checkout reuse fires when baseSha == scaffold
-      // root) — the single biggest spawn-latency win. The per-project name
-      // customization is applied in-sandbox at fork (not committed to the
-      // shared remote root) so the warm reuse is never broken by a divergent tip.
+      // Seed a deterministic scaffold root followed by the project's small
+      // customization commit. Fresh-session boot can import that exact second
+      // commit from the API mirror as a bounded Git bundle, on top of the
+      // image-baked root, without an in-sandbox network fetch.
       await pushVerifiedSeed({
         projectId: row.projectId,
         branch: provisioned.defaultBranch,
@@ -619,6 +640,51 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
         })
         .where(eq(projects.projectId, row.projectId))
         .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
+
+      if (config.KORTIX_FAST_COLD_BOOT_ENABLED && writeUpstream) {
+        const hintTask = resolveFastBootGitHintWithCache(
+          {
+            projectId: row.projectId,
+            repoUrl: writeUpstream.url,
+            defaultBranch: provisioned.defaultBranch,
+            manifestPath: row.manifestPath,
+            gitAuthToken: null,
+            gitAuthHeaders: writeUpstream.headers,
+          },
+          provisioned.defaultBranch,
+          null,
+        )
+          .then((hint) =>
+            buildCachedFastBootGitHint(provisioned.defaultBranch, hint),
+          )
+          .catch((error) => {
+            console.warn('[projects] fast-boot seed hint unavailable', {
+              projectId: row.projectId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return null;
+          });
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        const cachedHint = await Promise.race([
+          hintTask,
+          new Promise<null>((resolve) => {
+            timeout = setTimeout(() => resolve(null), FAST_BOOT_SEED_HINT_TIMEOUT_MS);
+          }),
+        ]).finally(() => {
+          if (timeout) clearTimeout(timeout);
+        });
+        if (cachedHint) {
+          const currentMetadata = (row.metadata as Record<string, unknown> | null) ?? {};
+          const currentGit =
+            currentMetadata.git && typeof currentMetadata.git === 'object'
+              ? (currentMetadata.git as Record<string, unknown>)
+              : {};
+          row.metadata = {
+            ...currentMetadata,
+            git: { ...currentGit, fast_boot: cachedHint },
+          };
+        }
+      }
     } catch (error) {
       const stage = error instanceof ManagedRepoSeedError ? error.stage : 'push';
       console.error(

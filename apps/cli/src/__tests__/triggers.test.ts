@@ -114,7 +114,7 @@ async function runCli(args: string[], configFile: string = config) {
   };
   for (const key of [
     'KORTIX_API_URL',
-    'KORTIX_CLI_TOKEN',
+    'KORTIX_TOKEN',
     'KORTIX_FRONTEND_URL',
     'KORTIX_PROJECT_ID',
     'KORTIX_TOKEN',

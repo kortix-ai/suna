@@ -19,7 +19,7 @@ import {
 import type { MeResponse } from '../api/types.ts';
 
 const ENV_KEYS = [
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -166,7 +166,7 @@ describe('permission-denial identity footer', () => {
 
   test('names the agent, its grant, and where to change it', async () => {
     process.env.KORTIX_API_URL = 'https://api.kortix.com';
-    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
     rememberTokenIdentity('kortix_pat_session', agentMe());
     recordPermissionDenial(403);
 
@@ -185,7 +185,7 @@ describe('permission-denial identity footer', () => {
 
   test('prints nothing when no call was refused', async () => {
     process.env.KORTIX_API_URL = 'https://api.kortix.com';
-    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
     rememberTokenIdentity('kortix_pat_session', agentMe());
 
     const cap = captureStderr();
@@ -199,7 +199,7 @@ describe('permission-denial identity footer', () => {
 
   test('a non-identity status is not recorded', async () => {
     process.env.KORTIX_API_URL = 'https://api.kortix.com';
-    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
     rememberTokenIdentity('kortix_pat_session', agentMe());
     recordPermissionDenial(404);
     recordPermissionDenial(500);
@@ -215,7 +215,7 @@ describe('permission-denial identity footer', () => {
 
   test('the footer is emitted once per command', async () => {
     process.env.KORTIX_API_URL = 'https://api.kortix.com';
-    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
     rememberTokenIdentity('kortix_pat_session', agentMe());
     recordPermissionDenial(403);
     recordPermissionDenial(403);

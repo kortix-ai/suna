@@ -9,7 +9,7 @@ description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, 
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
 **system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`,
 `kortix-memory`, `kortix-harness-refinement`, `kortix-slack`,
-`kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
+`kortix-computer`, `kortix-marketplace` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
 re-install, no image re-bake):
@@ -145,6 +145,17 @@ Kortix cloud state — not just files in the repo. Examples:
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
+| "turn on / off a feature flag (Apps, Voice, Review Center, …)" | `kortix projects features` · `kortix projects features enable <flag>` |
+| "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
+| "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
+| "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> …` · `kortix agents config <agent>` |
+| "stop / wake a session, share it, or publish a preview link" | `kortix sessions stop|start <id>` · `sessions share <id> --mode …` · `sessions links <id> create --port 3000` |
+| "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
+| "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
+| "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
+| "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
+| "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
+| "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
 
 **Everything is scriptable — drive Kortix like the dashboard.** Every
 read/list command takes `--json` for machine-readable output (parse that,
@@ -168,11 +179,15 @@ that's intentional. Use `kortix projects info` to inspect **this** project.
 **Secret capability discovery.** `$KORTIX_SECRET_CAPABILITIES` contains a
 value-free JSON catalog for this session. Check it before asking for a
 credential. It lists only secrets allowed by both the agent grant and session
-scope. Four entry kinds:
+scope. Four entry kinds — `sandbox` is the common, default case; `network` and
+`https_broker` appear only when the project has enabled the experimental network
+enforcement feature:
 
-- `sandbox` — the named environment variable holds the REAL value. Treat it as
-  radioactive: never print it, never echo it, never write it to a file.
-- `network` — the named environment variable holds a HANDLE, not the value. Use
+- `sandbox` — the named environment variable holds the REAL value. This is the
+  default kind. Treat it as radioactive: never print it, never echo it, never
+  write it to a file.
+- `network` — appears only under the experimental network enforcement feature.
+  The named environment variable holds a HANDLE, not the value. Use
   the variable exactly as you would use the real credential (header, query
   string, body). Kortix swaps the handle for the real value OUTSIDE the sandbox,
   and only on the `hosts` the entry lists, over HTTPS. Sent anywhere else the
@@ -181,9 +196,10 @@ scope. Four entry kinds:
   it worked. An empty reply or a connection error on a listed host is a REAL
   failure. The value is not in this sandbox in any form: do not search for it,
   do not ask the user for it. The entry's `notes` carry the full rules.
-- `https_broker` — use `kortix secrets call IDENTIFIER URL [options]`; Kortix
-  adds the value server-side only after the request matches the stored policy.
-  This is also the fallback when a request cannot be relayed transparently.
+- `https_broker` — appears only under the experimental network enforcement
+  feature. Use `kortix secrets call IDENTIFIER URL [options]`; Kortix adds the
+  value server-side only after the request matches the stored policy. This is
+  also the fallback when a request cannot be relayed transparently.
 - `kortix_service` — spent only by its named service, such as a connector or
   the LLM gateway. It has no sandbox presence at all.
 

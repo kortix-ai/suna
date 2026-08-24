@@ -117,8 +117,7 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
       KORTIX_CONNECTORS_PROXY_URL: 'http://127.0.0.1:4320',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
-      KORTIX_LLM_API_KEY: 'real-session-llm-key',
-      KORTIX_CLI_TOKEN: 'real-session-exec-token',
+      KORTIX_TOKEN: 'real-session-token',
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
     expect(json).toBeDefined()
@@ -142,8 +141,7 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
       KORTIX_CONNECTORS_PROXY_URL: 'http://127.0.0.1:4320',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
-      KORTIX_LLM_API_KEY: 'real-session-llm-key',
-      KORTIX_CLI_TOKEN: 'real-session-exec-token',
+      KORTIX_TOKEN: 'real-session-token',
       KORTIX_CONNECTORS_MCP_ENABLED: '1',
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
@@ -152,22 +150,21 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
 
     expect(cfg.mcp['kortix-connectors'].command).toEqual(['/usr/local/bin/kortix', 'connectors', 'mcp'])
     expect(cfg.mcp['kortix-connectors'].environment.KORTIX_API_URL).toBe('http://127.0.0.1:4320')
-    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_CLI_TOKEN).toBe(CONNECTOR_PROXY_PLACEHOLDER_KEY)
-    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_CLI_TOKEN).not.toBe('real-session-exec-token')
+    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_TOKEN).toBe(CONNECTOR_PROXY_PLACEHOLDER_KEY)
+    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_TOKEN).not.toBe('real-session-exec-token')
   })
 
   test('DIRECT mode (cold/Daytona): real key + token baked, unchanged', async () => {
     const json = await buildOpencodeConfigContent({
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
-      KORTIX_LLM_API_KEY: 'real-session-llm-key',
-      KORTIX_CLI_TOKEN: 'real-session-exec-token',
+      KORTIX_TOKEN: 'real-session-token',
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
     expect(json).toBeDefined()
     const cfg = JSON.parse(json!)
     expect(cfg.provider.kortix.options.baseURL).toBe('https://gateway.kortix.test/v1/llm')
-    expect(cfg.provider.kortix.options.apiKey).toBe('real-session-llm-key')
+    expect(cfg.provider.kortix.options.apiKey).toBe('real-session-token')
     expect(cfg.mcp).toBeUndefined()
   })
 })

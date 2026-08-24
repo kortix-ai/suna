@@ -1,29 +1,46 @@
 export { createGateway } from './create-gateway';
 export { DEFAULT_MAX_REQUEST_BYTES } from './domain/config';
+export {
+  gatewayOverloadedResponse,
+  readAdmittedBody,
+  releaseWhenResponseEnds,
+  requestTooLargeResponse,
+} from './pipeline/read-bounded-body';
+export {
+  DEFAULT_BODY_AMPLIFICATION,
+  InflightBudget,
+} from './pipeline/inflight-budget';
+export type {
+  InflightBudgetOptions,
+  InflightLease,
+  InflightResizeResult,
+} from './pipeline/inflight-budget';
+export type { AdmittedBodyResult } from './pipeline/read-bounded-body';
+export { DEFAULT_IMAGE_WINDOW, applyImageWindow } from './pipeline/image-window';
+export type { ImageWindowOptions, ImageWindowResult } from './pipeline/image-window';
 export type { ChatCompletionRequest, GatewayDeps } from './pipeline';
-export { gatewayErrorBody, gatewayErrorResponse } from './pipeline/error-response';
+export {
+  MAX_RELAYED_RETRY_AFTER_SECONDS,
+  clampRetryAfterSeconds,
+  gatewayErrorBody,
+  gatewayErrorResponse,
+} from './pipeline/error-response';
 export type { GatewayErrorContext } from './pipeline/error-response';
 
 export { callUpstream } from './http';
 export type { CallUpstreamOptions, FetchImpl } from './http';
 
 export {
-  CircuitBreaker,
-  withResilience,
   withRetry,
   backoffDelay,
   realSleep,
 } from './resilience';
 export type {
-  BreakerBinding,
-  BreakerState,
-  CircuitBreakerOptions,
   RetryOptions,
   SleepFn,
 } from './resilience';
 
 export {
-  CircuitOpenError,
   GatewayResolutionError,
   NetworkError,
   TimeoutError,
@@ -61,7 +78,6 @@ export type {
   AuthedPrincipal,
   AuthorizeResult,
   BillingMode,
-  GatewayConfig,
   GatewayHooks,
   GatewayLogger,
   GatewayTrace,

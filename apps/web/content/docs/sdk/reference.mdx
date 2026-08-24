@@ -26,7 +26,6 @@ kortix.session(pid, sid); // id-bound session handle → see Sessions
 kortix.github; // GitHub App install + repo linking
 kortix.billing; // credits, subscription, tier, transactions
 kortix.sandboxShares; // public share links for a sandbox port
-kortix.transcribe; // speech-to-text
 kortix.connectStatus; // easy-connect (Pipedream) status
 kortix.marketplace; // public marketplace catalog
 kortix.validateToken; // pasted-API-key check
@@ -216,7 +215,7 @@ await p.llmCatalog();
 
 #### `p.tokens` — project-scoped API keys
 
-Auto-minted at session create as `KORTIX_CLI_TOKEN`; can also be minted by hand.
+Auto-minted at session create as `KORTIX_TOKEN`; can also be minted by hand.
 
 | method | what |
 | --- | --- |
@@ -244,11 +243,15 @@ project access.
 | `setPersonal(name, value)` · `removePersonal(name)` | set · remove a per-user override |
 | `setGitCredential(input)` | set a git auth credential |
 
-`runtime` with consumer `sandbox` is **environment** exposure — the only policy
-that puts a plaintext value in the session. `egress` with consumer `network` is
-**egress-enforced** exposure: the session holds a handle and Kortix substitutes
-the real value outside the sandbox, for the exact HTTPS hosts the policy lists.
-Every `broker` consumer has no session presence at all. See
+`runtime` with consumer `sandbox` is **environment** exposure — the default,
+and the only policy that puts a plaintext value in the session. `egress` with
+consumer `network` is **egress-enforced** exposure: the session holds a handle
+and Kortix substitutes the real value outside the sandbox, for the exact HTTPS
+hosts the policy lists. Egress-enforced exposure is experimental; it needs the
+`secrets_egress` feature flag (Settings → Feature flags). With the flag off,
+`setStrategy(identifier, 'egress', …)` and `upsert(...)` with an egress policy
+return `403` `feature_disabled`. Every `broker` consumer has no session presence
+at all. See
 [Secrets](/docs/project/secrets). The `broker(...)` method requires a
 session-scoped token and an active session handle.
 

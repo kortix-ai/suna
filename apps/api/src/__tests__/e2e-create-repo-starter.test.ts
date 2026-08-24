@@ -9,6 +9,7 @@ import {
 } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { parse as parseYaml } from 'yaml';
 
 import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 
@@ -51,6 +52,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-cli/SKILL.md',
   '.kortix/opencode/tools/image_search.ts',
   '.kortix/opencode/tools/lib/get-env.ts',
+  '.kortix/opencode/tools/lib/tool.ts',
   '.kortix/opencode/tools/memory.ts',
   '.kortix/opencode/tools/scrape_webpage.ts',
   '.kortix/opencode/tools/show.ts',
@@ -186,6 +188,9 @@ mock.module('../projects/git', () => ({
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   // Used by snapshots/builder + the snapshots HTTP surface in projects/index.
   resolveCommitSha: async () => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  resolveFastBootGitHint: async () => ({
+    baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  }),
   resolveTreeOid: async () => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),
@@ -209,6 +214,7 @@ mock.module('../projects/git', () => ({
 // resolves cleanly. We stub the helpers projects/index calls so the
 // fire-and-forget snapshot kickoff in the create paths is a no-op here.
 mock.module('../snapshots/builder', () => ({
+  routedPerProjectWarmImageName: () => 'kpp2-test',
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
     slug: 'default',
@@ -657,6 +663,13 @@ describe('create-repo starter scaffold contract', () => {
     // The manifest IS shipped and names the project.
     const manifest = files.find((file) => file.path === 'kortix.yaml');
     expect(manifest?.content).toContain('name: "Company OS"');
+    if (!manifest) throw new Error('starter is missing kortix.yaml');
+    const parsedManifest = parseYaml(manifest.content) as {
+      triggers?: Array<{ slug?: string; enabled?: boolean }>;
+    };
+    expect(
+      parsedManifest.triggers?.find((trigger) => trigger.slug === 'harness-reflector'),
+    ).toEqual(expect.objectContaining({ enabled: false }));
     expect(files.some((file) => file.path.includes('/agent-tunnel/'))).toBe(false);
   });
 

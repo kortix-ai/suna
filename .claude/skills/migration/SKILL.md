@@ -25,8 +25,8 @@ current `package.json` scripts.
 - **Applied-state table:** `kortix_migrations.pgmigrations` (node-pg-migrate
   tracks migration names; it does not checksum file contents).
 - **Deploy:** `deploy-dev.yml` and `deploy-prod.yml` run `pnpm --filter
-  @kortix/db migrate` before the EKS GitOps rollout. The disabled Helm PreSync
-  hook is not the live migration path.
+  @kortix/db migrate` before the ECS Fargate rollout (`infra/scripts/ecs-deploy.sh`).
+  Migrations always land before new code.
 
 ## Rules
 

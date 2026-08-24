@@ -168,7 +168,7 @@ export function SessionAuditPanel({
                     <li key={event.event_id} className="border-border border-b last:border-b-0">
                       <button
                         type="button"
-                        className="hover:bg-primary/[0.03] flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left transition-colors active:scale-[0.96]"
+                        className="hover:bg-primary/[0.03] flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left transition-[background-color,transform] active:scale-[0.998]"
                         onClick={() => setSelectedEvent(event)}
                       >
                         <span className="text-muted-foreground w-8 shrink-0 text-right font-mono text-xs tabular-nums">
@@ -239,7 +239,7 @@ export function SessionAuditPanel({
                     >
                       <button
                         type="button"
-                        className="hover:bg-primary/[0.03] flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left transition-colors"
+                        className="hover:bg-primary/[0.03] flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left transition-[background-color,transform] active:scale-[0.998]"
                         onClick={() => setSelected(action)}
                       >
                         <div className="min-w-0 flex-1">

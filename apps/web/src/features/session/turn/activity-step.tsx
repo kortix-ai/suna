@@ -14,6 +14,7 @@ import {
   UsersThreeIcon,
 } from '@phosphor-icons/react';
 
+import { familyForTool } from '@/features/session/action-panel/shared/narration';
 import { partOutcome } from '@/features/session/tool/shared/tool-outcome';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import { cn } from '@/lib/utils';
@@ -87,8 +88,21 @@ function ActivityStepImpl({
    * "1 step failed" and the chain's closing step are both gone. `partOutcome`
    * decides, not `state.status`, so a call that RETURNED its error keeps its
    * mark too.
+   *
+   * Neither is a DELEGATE row's glyph, for the reason the paragraph above gives
+   * and not despite it. "A single row has no rail and no thread" is true of a
+   * read or a command; it is false of a sub-agent. `task` / `agent_spawn` /
+   * `session_spawn` render a nested thread of their own — the sub-agent's steps,
+   * with their own hairline (`tool/shared/sub-agent.tsx`) — so the row IS a
+   * parent, and the icon is that thread's anchor exactly as it is in the chain.
+   * Stripping it left a lone sub-agent's twenty rows hanging off a line of bare
+   * text. The family table decides rather than a local list of tool names, so a
+   * new delegation alias cannot land on one side of this and not the other.
    */
-  const hideIcon = Boolean(bare) && (!isToolPart(part) || partOutcome(part) === 'ok');
+  const hideIcon =
+    Boolean(bare) &&
+    (!isToolPart(part) || partOutcome(part) === 'ok') &&
+    !(isToolPart(part) && familyForTool(part.tool) === 'delegate');
 
   const header = (
     <div className="flex min-w-0 items-center gap-3">
@@ -96,9 +110,7 @@ function ActivityStepImpl({
       <span className="text-foreground/80 flex-none text-sm leading-[1.5]">{verb}</span>
       {label.object && (
         <span
-          className={cn(
-            'text-muted-foreground/70 min-w-0 truncate font-mono text-sm leading-[1.5]',
-          )}
+          className="text-muted-foreground/70 min-w-0 truncate font-mono text-sm leading-[1.5]"
           title={label.object}
         >
           {label.object}

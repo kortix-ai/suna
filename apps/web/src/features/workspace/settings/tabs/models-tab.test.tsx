@@ -8,6 +8,7 @@ import {
   LlmTabStrip,
   MODELS_PAGE_DESCRIPTION,
   MODELS_PAGE_TITLE,
+  QUICK_LLM_TABS,
 } from '../../customize/sections/gateway-view';
 
 /**
@@ -30,6 +31,28 @@ describe('LlmTabStrip', () => {
       return out.indexOf(`>${t.label}<`);
     });
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  /**
+   * The quick dialog renders THIS component with a `tabs` subset — three of the
+   * same pills, in the same order, not three different ones. Anything the
+   * dialog needs that this component cannot express is a divergence.
+   */
+  test('renders a subset when given one, in LLM_TABS order and style', () => {
+    const out = renderToStaticMarkup(
+      <LlmTabStrip value="models" tabs={QUICK_LLM_TABS} onValueChange={() => {}} />,
+    );
+    for (const t of QUICK_LLM_TABS) expect(out).toContain(`>${t.label}<`);
+    // The four page-only tabs are absent, and nothing else changed: same
+    // default pill list, no underline rule.
+    for (const t of LLM_TABS.slice(3)) expect(out).not.toContain(`>${t.label}<`);
+    expect(out.indexOf('>Models<')).toBeGreaterThan(out.indexOf('>Providers<'));
+    expect(out.indexOf('>Custom<')).toBeGreaterThan(out.indexOf('>Models<'));
+    const full = renderToStaticMarkup(<LlmTabStrip value="models" onValueChange={() => {}} />);
+    // Identical trigger chrome — the class string a pill renders with.
+    const triggerClass = (html: string) =>
+      html.match(/data-slot="tabs-trigger"[^>]*class="([^"]+)"/)?.[1];
+    expect(triggerClass(out)).toBe(triggerClass(full));
   });
 
   test('the selected tab is the one it is given', () => {
@@ -111,10 +134,65 @@ describe('Models page chrome', () => {
     const actionStart = gatewaySource.indexOf('action={');
     const filtersStart = gatewaySource.indexOf('filters={');
     expect(actionStart).toBeGreaterThan(-1);
-    expect(gatewaySource.indexOf('<ModelSelector')).toBeGreaterThan(actionStart);
-    // The picker sits before `filters`, i.e. inside `action` — not inside the
-    // tab row, where a bordered dropdown reads as a second tab strip.
-    expect(gatewaySource.indexOf('<ModelSelector')).toBeLessThan(filtersStart);
+    expect(filtersStart).toBeGreaterThan(actionStart);
+    // The picker sits in `action` — not in the tab row, where a bordered
+    // dropdown reads as a second tab strip. It is a component now
+    // (`ProjectDefaultPicker`) because the quick dialog renders the same one;
+    // `<ModelSelector` itself lives inside it, higher up the file, so this
+    // asserts the SLOT's contents, not a raw file offset.
+    expect(gatewaySource.slice(actionStart, filtersStart)).toContain('<ProjectDefaultPicker');
+    const filtersSlot = gatewaySource.slice(filtersStart, gatewaySource.indexOf('<LlmSections'));
+    expect(filtersSlot).toContain('<LlmTabStrip');
+    expect(filtersSlot).not.toContain('ProjectDefaultPicker');
+    expect(filtersSlot).not.toContain('ModelSelector');
+  });
+
+  /**
+   * The one page-level control is one component, mounted twice: here in the
+   * shell's `action` slot and in `ProjectProviderModal`'s header. A second
+   * `<ModelSelector` in this file would mean the dialog and the page had
+   * drifted apart again.
+   */
+  test('ProjectDefaultPicker is the only place this module builds the picker', () => {
+    expect(gatewaySource.match(/<ModelSelector/g)).toHaveLength(1);
+    const picker = gatewaySource.slice(
+      gatewaySource.indexOf('export function ProjectDefaultPicker'),
+      gatewaySource.indexOf('export function LlmSections'),
+    );
+    expect(picker).toContain('<ModelSelector');
+    expect(picker).toContain('Project default');
+  });
+
+  /**
+   * `LlmSections` is the page body AND the dialog body. It must stay padding-
+   * free horizontally: the host column supplies it (`CapabilityPageShell`
+   * here, `px-5` in the dialog), and a `px-*` added here double-indents the
+   * page — which is the bug that made the model rows sit 20px right of the
+   * heading in the first place.
+   */
+  test('LlmSections carries no column padding of its own', () => {
+    const sections = gatewaySource.slice(
+      gatewaySource.indexOf('export function LlmSections'),
+      gatewaySource.indexOf('export function LlmManagementView'),
+    );
+    expect(sections).toContain("tab === 'models'");
+    expect(sections).not.toMatch(/className="[^"]*\bpx-\d/);
+    expect(sections).not.toMatch(/className="[^"]*\bp-[1-9]/);
+    // `ProviderConnect` is the one section with padding of its own to cancel.
+    expect(sections).toContain("className=\"gap-4 p-0\"");
+  });
+
+  /**
+   * The dialog's three tabs are a SLICE of the page's seven — same ids, same
+   * labels, same order. A second hand-written list is how "API keys" vs
+   * "Providers" happened.
+   */
+  test('QUICK_LLM_TABS is the first three of LLM_TABS, unchanged', () => {
+    expect(QUICK_LLM_TABS).toEqual(LLM_TABS.slice(0, 3));
+    expect(QUICK_LLM_TABS.map((t) => t.label)).toEqual(['Providers', 'Models', 'Custom']);
+    for (const t of QUICK_LLM_TABS) {
+      expect(LLM_TABS).toContainEqual(t);
+    }
   });
 
   test('no sub-tab declares a column of its own — the shell’s max-w-5xl is the page', () => {

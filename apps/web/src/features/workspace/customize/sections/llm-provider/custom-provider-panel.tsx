@@ -68,7 +68,7 @@ export function customProviderIdsFromSecrets(names: string[]): string[] {
   return [...ids].sort();
 }
 
-/** One added custom provider — same row grid as the API keys list. */
+/** One added custom provider — same row grid as the provider list. */
 function CustomProviderRow({ id }: { id: string }) {
   return (
     <div className="grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] sm:items-center sm:gap-4">
@@ -127,7 +127,7 @@ export function CustomProviderPanel({
 }: {
   projectId: string;
   canWrite?: boolean;
-  /** Called on a successful save — hosts send the reader back to the API keys
+  /** Called on a successful save — hosts send the reader back to the Providers
    *  list, where the new provider now has a row. */
   onDone?: () => void;
 }) {
@@ -148,7 +148,7 @@ export function CustomProviderPanel({
           its own — this tab is for the endpoint the catalog does not carry. */}
       <p className="text-muted-foreground px-0.5 text-xs text-pretty">
         Point this project at any OpenAI-compatible endpoint — self-hosted, on-prem, or a provider
-        that isn't in the catalog. Everything the catalog does carry belongs on the API keys tab.
+        that isn't in the catalog. Everything the catalog does carry belongs on the Providers tab.
       </p>
 
       <AddedCustomProviders projectId={projectId} />

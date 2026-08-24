@@ -1,4 +1,45 @@
-import { createGateway, gatewayErrorResponse } from '@kortix/llm-gateway';
+import {
+  DEFAULT_BODY_AMPLIFICATION,
+  DEFAULT_MAX_REQUEST_BYTES,
+  InflightBudget,
+  createGateway,
+  gatewayErrorResponse,
+  gatewayOverloadedResponse,
+  readAdmittedBody,
+  releaseWhenResponseEnds,
+  requestTooLargeResponse,
+} from '@kortix/llm-gateway';
+import { automaticInflightBudgetBytes } from './memory-budget';
+
+// One admission budget protects one standalone process. Work beyond capacity
+// receives a typed response before its body is retained.
+const inflightCapacityBytes =
+  Number(process.env.GATEWAY_INFLIGHT_BUDGET_BYTES) || automaticInflightBudgetBytes();
+// A per-request cap larger than the budget can ever admit is a lie: such a
+// request is refused 413 `too_large` ("never retry") when the honest answer is
+// that this process is too small for it. Clamp to what the budget can hold.
+const perRequestCapBytes = Math.min(
+  Number(process.env.GATEWAY_MAX_REQUEST_BYTES) || DEFAULT_MAX_REQUEST_BYTES,
+  Math.floor(
+    inflightCapacityBytes /
+      (Number(process.env.GATEWAY_BODY_AMPLIFICATION) || DEFAULT_BODY_AMPLIFICATION),
+  ),
+);
+// How much resident memory one wire byte really costs while it is in flight.
+// This is the safety margin that decides how many big requests run at once, so
+// it is deliberately conservative and measured, not guessed: a single isolated
+// 27 MiB request peaks at ~2.3x (memory-envelope.test.ts), but under real
+// concurrency the transient copies of different requests overlap and GC lags
+// behind, so the honest number is higher. At 3x, 60 concurrent 27 MiB uploads
+// OOM-killed a 2 GiB container (measured 2026-08-24); the same load survives
+// at 6x with peak RSS well under the limit.
+const bodyAmplification =
+  Number(process.env.GATEWAY_BODY_AMPLIFICATION) || DEFAULT_BODY_AMPLIFICATION;
+const defaultInflight = new InflightBudget({
+  maxBytes: inflightCapacityBytes,
+  perRequestMaxBytes: perRequestCapBytes,
+  amplification: bodyAmplification,
+});
 import { Hono } from 'hono';
 import { createApiClient } from './clients/api-client';
 import { config } from './config';
@@ -17,9 +58,42 @@ const ERROR_RATE_ALERT = 0.5;
 export interface GatewayServer {
   app: Hono;
   traces: TraceSink | null;
+  /** Requests still being served, including streams still relaying. */
+  inflightRequests: () => number;
 }
 
-export function buildServer(): GatewayServer {
+// Cloudflare replaces an ORIGIN 502 or 504 with its own HTML "Bad gateway"
+// page (Enterprise-only "Origin Error Page Pass-thru" turns that off). Every
+// public gateway host sits behind a proxied Cloudflare hostname, so a JSON
+// `502 upstream_error` reached OpenCode as an HTML page and surfaced as
+// "AI_APICallError: Bad Gateway" with no code, no request id and no
+// suggestion (dev 2026-08-24; Essentia 2026-08-22). 503 passes through
+// unchanged. The original status is kept on a header and in the body so
+// nothing is lost — only the transport-level rewrite is avoided.
+const CLOUDFLARE_REWRITTEN_STATUSES = new Set([502, 504]);
+export const UPSTREAM_STATUS_HEADER = 'x-kortix-upstream-status';
+
+export async function cloudflareSafe(res: Response): Promise<Response> {
+  if (!CLOUDFLARE_REWRITTEN_STATUSES.has(res.status)) return res;
+  const headers = new Headers(res.headers);
+  headers.set(UPSTREAM_STATUS_HEADER, String(res.status));
+  if (!headers.has('retry-after')) headers.set('retry-after', '5');
+  const contentType = headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    const text = await res.text();
+    try {
+      const body = JSON.parse(text) as Record<string, unknown>;
+      body.upstream_status = res.status;
+      return new Response(JSON.stringify(body), { status: 503, headers });
+    } catch {
+      return new Response(text, { status: 503, headers });
+    }
+  }
+  return new Response(res.body, { status: 503, headers });
+}
+
+export function buildServer(options: { inflight?: InflightBudget } = {}): GatewayServer {
+  const inflight = options.inflight ?? defaultInflight;
   const api = createApiClient({ baseUrl: config.apiUrl, token: config.apiToken });
 
   const logger = createGatewayLogger();
@@ -57,16 +131,7 @@ export function buildServer(): GatewayServer {
         await Promise.allSettled(sinks);
       },
     },
-    {
-      retry: config.retry,
-      breaker: config.breaker,
-      captureBodies: config.captureBodies,
-      maxRequestBytes: config.maxRequestBytes > 0 ? config.maxRequestBytes : undefined,
-      streamProbeTimeoutMs:
-        config.streamProbeTimeoutMs > 0 ? config.streamProbeTimeoutMs : undefined,
-      aiSdkNative: config.aiSdkNative,
-    },
-    { logger },
+    { logger, imageWindow: config.imageWindow },
   );
 
   // Rolling per-second traffic buckets feeding the health endpoint's error-rate
@@ -101,6 +166,62 @@ export function buildServer(): GatewayServer {
 
   const app = new Hono();
 
+  // Counts requests still being served, INCLUDING a streaming response that is
+  // still relaying, so `main.ts` can drain before exit instead of cutting every
+  // live turn on a deploy, scale-in or Spot reclaim.
+  let inflightRequestCount = 0;
+  app.use('*', async (c, next) => {
+    inflightRequestCount += 1;
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      inflightRequestCount -= 1;
+    };
+    try {
+      await next();
+    } catch (error) {
+      done();
+      throw error;
+    }
+    const streamed = c.res?.body;
+    if (!streamed) {
+      done();
+      return;
+    }
+    // PULL-DRIVEN pass-through: one upstream read per downstream pull, so a
+    // slow client throttles the provider instead of filling this process's
+    // memory. (`tee()` here would do the opposite — the counting branch races
+    // ahead and buffers the whole completion.)
+    const reader = streamed.getReader();
+    c.res = new Response(
+      new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          try {
+            const chunk = await reader.read();
+            if (chunk.done) {
+              done();
+              controller.close();
+              return;
+            }
+            controller.enqueue(chunk.value);
+          } catch (error) {
+            done();
+            controller.error(error);
+          }
+        },
+        async cancel(reason) {
+          try {
+            await reader.cancel(reason);
+          } finally {
+            done();
+          }
+        },
+      }),
+      c.res,
+    );
+  });
+
   // Shallow liveness: the process is up. The k8s livenessProbe should point here
   // so a dependency outage (which a restart can't fix) doesn't crash-loop the pod.
   // Includes version/commit so a rollout can be confirmed with one cheap probe
@@ -115,17 +236,18 @@ export function buildServer(): GatewayServer {
   // `incidents`/`checks` for the what.
   app.get('/health', async (c) => {
     const apiCheck = await api.ping();
-    const breakers = gateway.breakerHealth();
-    const openBreakers = breakers.filter((b) => b.state === 'open');
     const traffic = trafficSnapshot();
+    const admission = {
+      used_bytes: inflight.inflightBytes,
+      capacity_bytes: inflight.capacityBytes,
+      utilization: Number(inflight.utilisation.toFixed(4)),
+    };
     const errorSpike =
       traffic.requests >= ERROR_RATE_MIN_VOLUME && traffic.error_rate >= ERROR_RATE_ALERT;
 
     const incidents: string[] = [];
     if (!apiCheck.ok)
       incidents.push(`kortix api unreachable (${apiCheck.error ?? `http ${apiCheck.status}`})`);
-    if (openBreakers.length)
-      incidents.push(`upstream circuit open: ${openBreakers.map((b) => b.provider).join(', ')}`);
     if (errorSpike)
       incidents.push(
         `error rate ${(traffic.error_rate * 100).toFixed(0)}% over ${traffic.window_s}s`,
@@ -149,13 +271,8 @@ export function buildServer(): GatewayServer {
             ...(apiCheck.status ? { http_status: apiCheck.status } : {}),
             ...(apiCheck.error ? { error: apiCheck.error } : {}),
           },
-          upstreams: {
-            status: openBreakers.length ? 'degraded' : 'ok',
-            tracked: breakers.length,
-            open: openBreakers.map((b) => b.provider),
-            breakers,
-          },
           traces: { langfuse: traces ? 'enabled' : 'disabled' },
+          admission,
         },
         traffic,
       },
@@ -167,21 +284,51 @@ export function buildServer(): GatewayServer {
     req: {
       header: (k: string) => string | undefined;
       text: () => Promise<string>;
-      raw?: { signal?: AbortSignal };
+      // The standard Request is needed to reserve capacity before reading it.
+      // `signal` is read off the same object for the
+      // client-disconnect abort below.
+      raw: Request;
     };
   }) => {
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     try {
-      const res = await gateway.chatCompletions({
-        authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
-        // `c.req.raw` is Hono's underlying standard Request — its `.signal`
-        // fires on client disconnect, so a caller that goes away mid-request
-        // stops the upstream fetch/stream instead of running to completion.
-        signal: c.req.raw?.signal,
-      });
-      recordOutcome(res.status);
-      return res;
+      // Reserve capacity before the body is materialized.
+      const body = await readAdmittedBody(c.req.raw, perRequestCapBytes, inflight);
+      if (!body.ok) {
+        const status = body.reason === 'too_large' ? 413 : 503;
+        if (body.reason === 'overloaded') {
+          console.warn('[gateway] admission overloaded', {
+            usedBytes: inflight.inflightBytes,
+            capacityBytes: inflight.capacityBytes,
+            utilization: inflight.utilisation,
+          });
+        }
+        // A client that vanished mid-upload is not a fleet error: its
+        // reservation is already back and nobody reads this response. Keeping
+        // it out of the error rate stops an aborting client from faking an
+        // incident on /health.
+        if (body.reason !== 'client_aborted') recordOutcome(status);
+        return status === 413
+          ? requestTooLargeResponse(requestId)
+          : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1, requestId);
+      }
+      try {
+        const request = {
+          authorization: c.req.header('authorization'),
+          rawBody: body.body,
+          // `c.req.raw` is Hono's underlying standard Request — its `.signal`
+          // fires on client disconnect, so a caller that goes away mid-request
+          // stops the upstream fetch/stream instead of running to completion.
+          signal: c.req.raw?.signal,
+        };
+        body.body = '';
+        const res = await cloudflareSafe(await gateway.chatCompletions(request));
+        recordOutcome(res.status);
+        return releaseWhenResponseEnds(res, body.release);
+      } catch (error) {
+        body.release();
+        throw error;
+      }
     } catch (err) {
       console.error('[gateway] request failed', err);
       recordOutcome(503);
@@ -207,22 +354,41 @@ export function buildServer(): GatewayServer {
 
   // Anthropic-Messages-compatible ingress — a client speaking the Anthropic
   // Messages API shape (`{model, system, messages, tools, max_tokens,
-  // stream}`) hits the SAME auth/billing/routing/failover/trace pipeline as
+  // stream}`) hits the same auth/routing/dispatch/settlement pipeline as
   // `/v1/chat/completions`; `gateway.messages` translates request/response/SSE
   // at the edges only. Mirrors the chat-completions alias namespaces above.
   const messages = async (c: {
     req: {
       header: (k: string) => string | undefined;
       text: () => Promise<string>;
+      raw: Request;
     };
   }) => {
     try {
-      const res = await gateway.messages({
-        authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
-      });
-      recordOutcome(res.status);
-      return res;
+      const body = await readAdmittedBody(c.req.raw, perRequestCapBytes, inflight);
+      if (!body.ok) {
+        const status = body.reason === 'too_large' ? 413 : 503;
+        if (body.reason !== 'client_aborted') recordOutcome(status);
+        return status === 413
+          ? requestTooLargeResponse()
+          : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1);
+      }
+      try {
+        const request = {
+          authorization: c.req.header('authorization'),
+          rawBody: body.body,
+          // Without this a disconnected /v1/messages client left the provider
+          // generating — and billing — to nobody.
+          signal: c.req.raw?.signal,
+        };
+        body.body = '';
+        const res = await cloudflareSafe(await gateway.messages(request));
+        recordOutcome(res.status);
+        return releaseWhenResponseEnds(res, body.release);
+      } catch (error) {
+        body.release();
+        throw error;
+      }
     } catch (err) {
       console.error('[gateway] messages request failed', err);
       recordOutcome(503);
@@ -241,64 +407,21 @@ export function buildServer(): GatewayServer {
   app.post('/v1/llm/messages', messages);
   app.post('/v1/openai/messages', messages);
 
-  // AI-SDK-native ingress (Vercel "AI Gateway" protocol): opencode's
-  // `@ai-sdk/gateway` provider POSTs `LanguageModelV{3,4}CallOptions` here. The
-  // model id + spec version + streaming flag are in HEADERS, not the path/body.
-  // Inert (404) until `GATEWAY_AI_SDK_NATIVE` is on — `gateway.languageModel`
-  // enforces the flag. The base URL opencode is configured with may carry a
-  // `/v{N}/ai` prefix, so mount the tolerant aliases too.
-  const languageModel = async (c: {
-    req: {
-      header: (k: string) => string | undefined;
-      text: () => Promise<string>;
-      raw?: { signal?: AbortSignal };
-    };
-  }) => {
-    const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-    try {
-      const res = await gateway.languageModel({
-        authorization: c.req.header('authorization'),
-        header: (name: string) => c.req.header(name),
-        rawBody: await c.req.text(),
-        signal: c.req.raw?.signal,
-      });
-      recordOutcome(res.status);
-      return res;
-    } catch (err) {
-      console.error('[gateway] language-model request failed', err);
-      recordOutcome(503);
-      return gatewayErrorResponse(503, {
-        message: 'Gateway unavailable',
-        code: 'gateway_error',
-        provider: '',
-        requestedModel: '',
-        resolvedModel: '',
-        requestId,
-        suggestion: 'Retry the request. If the error continues, switch to another model.',
-      });
-    }
-  };
-
-  app.post('/language-model', languageModel);
-  // Prefix-tolerant: `@ai-sdk/gateway` derives the path from its baseURL, which
-  // in opencode carries a `/v{N}/ai` segment (e.g. `/v3/ai/language-model`).
-  app.post('/:version/ai/language-model', languageModel);
-  app.post('/v1/llm/language-model', languageModel);
-  app.post('/v1/openai/language-model', languageModel);
-
   // `?scope=managed` → managed lineup only (~3KB). Sandboxes call it on every
   // boot to learn the live managed set; see wire.ts for the full rationale.
   const models = (c: {
     req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined };
   }) =>
-    gateway.listModels(c.req.header('authorization'), {
-      managedOnly: c.req.query('scope') === 'managed',
-    });
+    gateway
+      .listModels(c.req.header('authorization'), {
+        managedOnly: c.req.query('scope') === 'managed',
+      })
+      .then(cloudflareSafe);
 
   app.get('/models', models);
   app.get('/v1/models', models);
   app.get('/v1/llm/models', models);
   app.get('/v1/openai/models', models);
 
-  return { app, traces };
+  return { app, traces, inflightRequests: () => inflightRequestCount };
 }

@@ -46,7 +46,7 @@ export const META_AGENT_GUIDE = [
   '- Do not clone the project repository into this sandbox.',
   '- Treat this sandbox as disposable.',
   '',
-  '`KORTIX_CLI_TOKEN` authenticates the CLI without login or local configuration.',
+  '`KORTIX_TOKEN` authenticates the CLI without login or local configuration.',
   'It grants every project action allowed to the user who started this session.',
   'It cannot access another project, account administration, project secrets, or connectors.',
 ].join('\n');
@@ -77,6 +77,13 @@ RUN curl -fsSL https://get.pnpm.io/install.sh \\
       | env HOME=/home/kortix SHELL=/bin/bash PNPM_VERSION=${PNPM_VERSION} sh - \\
  && HOME=/home/kortix pnpm runtime set node ${NODE_VERSION} --global \\
  && HOME=/home/kortix pnpm add --global --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \\
+ && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
+ && test -x "$opencode_native" \\
+ && test "$(wc -c < "$opencode_native")" -gt 50000000 \\
+ && test "$("$opencode_native" --version)" = "${OPENCODE_VERSION}" \\
+ && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\
+ && ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
+ && test "$(/usr/local/bin/opencode-kortix --version)" = "${OPENCODE_VERSION}" \\
  && ln -sf "\$(command -v node)" /usr/local/bin/node \\
  && chown -R kortix:kortix /home/kortix
 

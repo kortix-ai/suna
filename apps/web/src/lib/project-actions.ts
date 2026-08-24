@@ -44,7 +44,6 @@ export type CustomizeSection =
   | 'schedules'
   | 'webhooks'
   | 'channels'
-  | 'voice'
   | 'sandbox'
   | 'settings'
   | 'feature-flags'
@@ -194,13 +193,6 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   // repo and opens a CR — the session itself asserts the real leaves; visibility
   // follows settings (editor+ via customize.write in isCustomizeSectionVisible).
   upgrade: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
-  // Voice — a project-level setting (the bot's display name), not a connector;
-  // follows the same gate as the sibling channel name route (r4.ts's
-  // channels/meet/name uses PROJECT_CUSTOMIZE_WRITE, not a connector leaf).
-  voice: {
-    read: PROJECT_ACTIONS.PROJECT_READ,
-    write: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-  },
 };
 
 /** The distinct read leaves used to gate section visibility — handy for a single

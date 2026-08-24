@@ -75,11 +75,11 @@ describe('setup-link token codec', () => {
     expect(r.payload.sid).toBeNull();
   });
 
-  test('scope defaults to runtime when omitted', () => {
+  test('scope defaults to connector when omitted', () => {
     const { token } = mintSetupLink(PROJECT_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
     const r = resolveSetupLink(token);
     if (!r.ok || r.payload.kind !== 'secret') throw new Error('expected secret');
-    expect(r.payload.scope).toBe('runtime');
+    expect(r.payload.scope).toBe('connector');
   });
 
   test('expired token resolves to 410', () => {

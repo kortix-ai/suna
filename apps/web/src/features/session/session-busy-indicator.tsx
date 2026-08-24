@@ -1,7 +1,7 @@
 'use client';
 
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { TextShimmer } from '@/components/ui/text-shimmer';
@@ -40,12 +40,20 @@ const FADE_SWAP = {
 
 export function SessionBusyIndicator({
   statusText,
+  elapsedLabel,
   retryLabel,
   ambient = false,
   sessionId,
   className,
 }: {
   statusText?: string;
+  /**
+   * Live elapsed time for the current status, e.g. `"24s"`. Rendered beside the
+   * phrase in its OWN non-animated span: it ticks once a second, and folding it
+   * into `statusText` would change the `AnimatePresence` key every second and
+   * replay the roll-swap forever during long tool calls.
+   */
+  elapsedLabel?: string;
   retryLabel?: string;
   ambient?: boolean;
   /**
@@ -57,14 +65,10 @@ export function SessionBusyIndicator({
   className?: string;
 }): React.ReactElement {
   const reduceMotion = useReducedMotion() ?? false;
-  const hasMounted = useRef(false);
   const retryText = retryLabel?.trim();
   const isRetrying = Boolean(retryText);
   const status = statusText?.trim();
-
-  useEffect(() => {
-    hasMounted.current = true;
-  }, []);
+  const elapsed = elapsedLabel?.trim();
 
   const [ambientIdx, setAmbientIdx] = useState(() =>
     Math.floor(Math.random() * AMBIENT_MESSAGES.length),
@@ -88,7 +92,11 @@ export function SessionBusyIndicator({
   return (
     <m.div
       role="status"
-      aria-live="polite"
+      // `role="status"` implies aria-live="polite". The ambient filler rotates
+      // on a 4s timer and carries no information, so it is muted — otherwise a
+      // screen reader re-reads a new phrase every 4 seconds for the whole turn.
+      // A real status or retry label still announces.
+      aria-live={useAmbient ? 'off' : 'polite'}
       data-testid="session-busy-indicator"
       className={cn(
         'text-muted-foreground flex w-full min-w-0 items-center gap-1.5 py-0.5 text-xs',
@@ -98,23 +106,32 @@ export function SessionBusyIndicator({
       <SessionDotMatrix sessionId={sessionId} size={14} className="shrink-0" />
       <span className="relative min-w-0 flex-1" aria-hidden>
         {isRetrying ? (
-          <span className="text-muted-foreground/70 block truncate text-sm leading-5">{label}</span>
+          <span className="text-muted-foreground/70 block truncate text-sm leading-5 tabular-nums">
+            {label}
+          </span>
         ) : (
-          <span className="relative block min-w-0 overflow-hidden leading-5">
-            <AnimatePresence mode="popLayout">
-              <m.span
-                key={label}
-                initial={hasMounted.current ? swap.initial : swap.animate}
-                animate={swap.animate}
-                exit={swap.exit}
-                transition={swap.transition}
-                className="block min-w-0 whitespace-nowrap"
-              >
-                <TextShimmer className="truncate text-center align-middle text-sm leading-5">
-                  {label}
-                </TextShimmer>
-              </m.span>
-            </AnimatePresence>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="relative block min-w-0 flex-1 overflow-hidden leading-5">
+              <AnimatePresence initial={false} mode="popLayout">
+                <m.span
+                  key={label}
+                  initial={swap.initial}
+                  animate={swap.animate}
+                  exit={swap.exit}
+                  transition={swap.transition}
+                  className="block min-w-0 whitespace-nowrap"
+                >
+                  <TextShimmer className="truncate text-center align-middle text-sm leading-5">
+                    {label}
+                  </TextShimmer>
+                </m.span>
+              </AnimatePresence>
+            </span>
+            {elapsed ? (
+              <span className="text-muted-foreground/70 shrink-0 text-sm leading-5 tabular-nums">
+                {elapsed}
+              </span>
+            ) : null}
           </span>
         )}
       </span>

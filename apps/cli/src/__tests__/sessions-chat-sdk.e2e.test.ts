@@ -14,7 +14,7 @@ const TOKEN = 'kortix_pat_cli_sdk';
 
 const ENV_KEYS = [
   'KORTIX_CONFIG_FILE',
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -31,6 +31,8 @@ let stdout = '';
 let stderr = '';
 let promptBody: Record<string, unknown> | null = null;
 let runtimeAuthorization: string | null = null;
+let runtimePromptPosts = 0;
+let createBody: Record<string, unknown> | null = null;
 
 function sessionRow() {
   return {
@@ -99,11 +101,17 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     stderr = '';
     promptBody = null;
     runtimeAuthorization = null;
+    runtimePromptPosts = 0;
+    createBody = null;
 
     server = Bun.serve({
       port: 0,
       fetch: async (request) => {
         const url = new URL(request.url);
+        if (request.method === 'POST' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
+          createBody = (await request.json()) as Record<string, unknown>;
+          return Response.json(sessionRow());
+        }
         if (
           request.method === 'GET' &&
           url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`
@@ -126,6 +134,7 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
           request.method === 'POST' &&
           url.pathname === `/v1/p/${EXTERNAL_ID}/8000/session/${OPENCODE_SESSION_ID}/message`
         ) {
+          runtimePromptPosts += 1;
           runtimeAuthorization = request.headers.get('authorization');
           promptBody = (await request.json()) as Record<string, unknown>;
           return Response.json(assistantReply());
@@ -220,6 +229,24 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     expect(JSON.parse(stdout)).toEqual([
       expect.objectContaining({ role: 'assistant', text: 'OpenCode REST reply' }),
     ]);
+
+    stdout = '';
+    const code = await runSessions([
+      'chat',
+      '--new',
+      '--project',
+      PROJECT_ID,
+      '--prompt',
+      'one initial prompt',
+      '--agent',
+      'default',
+      '--json',
+    ]);
+
+    expect(code).toBe(0);
+    expect(createBody).toMatchObject({ initial_prompt: 'one initial prompt', agent_name: 'default' });
+    expect(runtimePromptPosts).toBe(1);
+    expect(JSON.parse(stdout).text).toBe('OpenCode REST reply');
     expect(stderr).toBe('');
   });
 });

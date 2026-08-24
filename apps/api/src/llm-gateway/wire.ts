@@ -1,8 +1,6 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { DEFAULT_MAX_REQUEST_BYTES, createGateway } from '@kortix/llm-gateway';
 import { config } from '../config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { createInProcessGatewayHooks } from './hooks';
 import { createInternalGatewayRoutes } from './internal-routes';
 
 // ─── OpenAPI documentation for the inference surface ────────────────────────
@@ -345,14 +343,11 @@ function modelsRoute(path: string) {
     description: `Servable model catalog for the caller\'s account/project — a keyed object (NOT the OpenAI \`{object:"list",data:[...]}\` array shape) mapping model id → capabilities.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} -H "Authorization: Bearer $KORTIX_GATEWAY_KEY"\n\`\`\``,
     request: {
       query: z.object({
-        scope: z
-          .enum(['managed'])
-          .optional()
-          .openapi({
-            description:
-              'Set to `managed` for the platform-managed lineup only (~3KB instead of ~3.3MB). Sandboxes call this on every boot to learn the current managed set. Omit for the caller\'s full catalog.',
-            example: 'managed',
-          }),
+        scope: z.enum(['managed']).optional().openapi({
+          description:
+            "Set to `managed` for the platform-managed lineup only (~3KB instead of ~3.3MB). Sandboxes call this on every boot to learn the current managed set. Omit for the caller's full catalog.",
+          example: 'managed',
+        }),
       }),
     },
     ...auth,
@@ -360,163 +355,137 @@ function modelsRoute(path: string) {
   });
 }
 
-// Single place that wires every LLM-gateway surface onto the API:
-//
-//   /v1/llm            In-process gateway running the FULL package pipeline
-//                      (multi-transport, failover, breakers, budgets, traces).
-//                      Serves self-host / dev and is the fallback when no
-//                      standalone gateway URL is configured. Same code as the
-//                      out-of-process pod — only the hook binding differs
-//                      (direct calls here vs HTTP in the standalone service).
-//   /internal/gateway  Control-plane RPC the out-of-process gateway pod calls.
-//   /v1/llm-gateway/*  Reverse proxy to the standalone gateway (when configured).
+// The API is the gateway control plane and a streaming network bridge only.
+// Inference never runs in this process. A malformed or memory-heavy model
+// request can therefore terminate only a disposable gateway worker, never the
+// API that owns auth, sessions, billing, and project state.
 export function mountLlmGateway(app: OpenAPIHono): void {
-  if (!config.LLM_GATEWAY_ENABLED) {
-    app.all('/v1/llm/*', (c) => c.json({ error: 'LLM gateway is disabled' }, 503));
-  } else {
-    // One gateway instance per process — its circuit breakers are long-lived.
-    const gateway = createGateway(createInProcessGatewayHooks(), {
-      captureBodies: true,
-      maxRequestBytes: DEFAULT_MAX_REQUEST_BYTES,
-      // AI-SDK-native ingress (`/language-model`). Mirrors the standalone
-      // gateway's `aiSdkNative: config.aiSdkNative` (apps/llm-gateway server.ts).
-      // OFF (default) → `gateway.languageModel` returns 404, so the route
-      // mounted below is inert; ON → it serves the Vercel AI-Gateway protocol.
-      aiSdkNative: config.aiSdkNative,
-    });
-    // OpenAPIHono (not a plain Hono) so the inference surface below registers
-    // in the shared OpenAPI registry — `.route()` merges a child OpenAPIHono's
-    // registry into the parent, path-prefixed, the same way `projectsApp` does
-    // for the gateway MANAGEMENT ops in projects/routes/gateway.ts.
-    const llm = makeOpenApiApp();
-    llm.get('/health', (c) =>
-      c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),
-    );
-    const chat = async (c: import('hono').Context) =>
-      gateway.chatCompletions({
-        authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
-        // `c.req.raw` is the underlying standard Request — its `.signal` fires
-        // when the client disconnects, so the gateway can stop reading (and
-        // billing for) upstream tokens no one is listening for anymore.
-        signal: c.req.raw.signal,
-      });
-    // `?scope=managed` serves ONLY the platform-managed lineup (~3KB) instead
-    // of the project's full catalog (~3.3MB). Every sandbox calls it on boot to
-    // learn the current managed set — the catalog baked into its image is stale
-    // as soon as the managed lineup changes (prod incident 2026-08-19:
-    // `ModelNotFound: kortix/grok-4.6`). Auth and free-tier semantics are
-    // identical to the default listing; no param = byte-identical response.
-    const models = (c: import('hono').Context) =>
-      gateway.listModels(c.req.header('authorization'), {
-        managedOnly: c.req.query('scope') === 'managed',
-      });
-    const messages = async (c: import('hono').Context) =>
-      gateway.messages({
-        authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
-      });
-    // AI-SDK-native ingress (Vercel "AI Gateway" protocol): opencode's
-    // `@ai-sdk/gateway` provider POSTs `LanguageModelV{3,4}CallOptions` here. The
-    // model id + spec version + streaming flag are in HEADERS (read via `header`),
-    // NOT the path/body — mirrors the standalone server's `languageModel` handler
-    // (apps/llm-gateway/src/server.ts). Inert (404) until `GATEWAY_AI_SDK_NATIVE`
-    // is on, because `gateway.languageModel` enforces the `aiSdkNative` flag.
-    const languageModel = async (c: import('hono').Context) =>
-      gateway.languageModel({
-        authorization: c.req.header('authorization'),
-        header: (name: string) => c.req.header(name),
-        rawBody: await c.req.text(),
-        // `c.req.raw.signal` fires on client disconnect, so the gateway stops
-        // reading (and billing for) upstream tokens no one is listening for.
-        signal: c.req.raw.signal,
-      });
-    // Runtime routes are unchanged plain Hono mounts — same handlers, same
-    // signatures, same streaming behavior as before this OpenAPI registration.
-    llm.post('/chat/completions', chat);
-    llm.get('/models', models);
-    // Anthropic-Messages-compatible ingress: a client speaking the Anthropic
-    // Messages API shape (`{model, system, messages, tools, max_tokens,
-    // stream}`) hits the same in-process pipeline as `/chat/completions` —
-    // `gateway.messages` translates request/response/SSE at the edges only.
-    llm.post('/messages', messages);
-    // OpenAI-style clients (opencode's `kortix` provider among them) treat the
-    // base URL as an OpenAI ORIGIN and append `/v1/chat/completions` — so the
-    // in-process mount must also serve the `/v1/...`-prefixed shape, exactly
-    // like the standalone gateway pod does. Without this, a self-host whose
-    // public URL points at the API directly (tunnel/local mode, no Caddy
-    // /v1/llm* split) 404s every completion call. Same reasoning applies to
-    // the Anthropic-shaped `/v1/messages` variant.
-    llm.post('/v1/chat/completions', chat);
-    llm.get('/v1/models', models);
-    llm.post('/v1/messages', messages);
-    // AI-SDK-native mounts. opencode's `@ai-sdk/gateway` provider is configured
-    // with the `${KORTIX_URL}/v1/llm` baseURL, so it POSTs to
-    // `/v1/llm/language-model` → this sub-app path `/language-model` (the primary
-    // target). `/v1/language-model` is the belt-and-suspenders `/v1/...`-prefixed
-    // variant, exactly like `/v1/chat/completions` above. `@ai-sdk/gateway` may
-    // also derive a `/v{N}/ai/language-model` path from its baseURL, so mount the
-    // prefix-tolerant alias too — mirrors the standalone server.
-    llm.post('/language-model', languageModel);
-    llm.post('/v1/language-model', languageModel);
-    llm.post('/:version/ai/language-model', languageModel);
-
-    // OpenAPI documentation ONLY — see the big comment above for why these are
-    // `registerPath()` (registry-only) instead of `llm.openapi(route, handler)`.
-    llm.openAPIRegistry.registerPath(chatCompletionsRoute('/chat/completions'));
-    llm.openAPIRegistry.registerPath(modelsRoute('/models'));
-    llm.openAPIRegistry.registerPath(messagesRoute('/messages'));
-    llm.openAPIRegistry.registerPath(chatCompletionsRoute('/v1/chat/completions'));
-    llm.openAPIRegistry.registerPath(modelsRoute('/v1/models'));
-    llm.openAPIRegistry.registerPath(messagesRoute('/v1/messages'));
-    app.route('/v1/llm', llm);
-  }
-
   app.route('/internal/gateway', createInternalGatewayRoutes());
 
-  if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
-    const rawTarget =
-      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`;
-    let proxyBase: string | null = null;
+  const rawTarget =
+    config.LLM_GATEWAY_PROXY_TARGET ||
+    (config.LLM_GATEWAY_PROXY_PORT ? `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}` : '');
+  let proxyBase: string | null = null;
+  if (rawTarget) {
     try {
       const url = new URL(rawTarget);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        throw new Error(`unsupported protocol "${url.protocol}"`);
-      }
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('not HTTP');
       proxyBase = rawTarget.replace(/\/+$/, '');
-    } catch (err) {
-      console.error('[gateway] invalid LLM_GATEWAY_PROXY_TARGET — reverse proxy disabled:', err);
-    }
-
-    if (proxyBase) {
-      const base = proxyBase;
-      app.all('/v1/llm-gateway/*', async (c) => {
-        const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
-        const target = `${base}${tail}`;
-        const init: RequestInit & { duplex?: 'half' } = {
-          method: c.req.method,
-          headers: c.req.raw.headers,
-        };
-        if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
-          init.body = c.req.raw.body;
-          init.duplex = 'half';
-        }
-        try {
-          const upstream = await fetch(target, init);
-          return new Response(upstream.body, {
-            status: upstream.status,
-            headers: upstream.headers,
-          });
-        } catch (err) {
-          // Standalone gateway pod unreachable (network / DNS / pod down).
-          // Without this guard the request rejects unhandled; return 502 instead.
-          console.error('[gateway] reverse proxy to standalone gateway failed:', err);
-          return c.json(
-            { error: 'gateway upstream unreachable', code: 'gateway_proxy_unreachable' },
-            502,
-          );
-        }
-      });
+    } catch (error) {
+      console.error('[gateway] invalid standalone gateway target:', error);
     }
   }
+
+  const proxy = async (c: import('hono').Context, path: string): Promise<Response> => {
+    if (!config.LLM_GATEWAY_ENABLED) {
+      return c.json({ error: 'LLM gateway is disabled', code: 'gateway_disabled' }, 503);
+    }
+    if (!proxyBase) {
+      return c.json(
+        { error: 'Standalone LLM gateway is not configured', code: 'gateway_unavailable' },
+        503,
+      );
+    }
+
+    const headers = new Headers(c.req.raw.headers);
+    headers.delete('host');
+    headers.delete('connection');
+    const query = new URL(c.req.url).search;
+    const init: RequestInit & { duplex?: 'half' } = {
+      method: c.req.method,
+      headers,
+      // Without this a client disconnect never reached the gateway, so the
+      // provider kept generating — and billing — a turn nobody would read.
+      signal: c.req.raw.signal,
+    };
+    if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+      init.body = c.req.raw.body;
+      init.duplex = 'half';
+    }
+    try {
+      const upstream = await fetch(`${proxyBase}${path}${query}`, init);
+      // The gateway is reached through a proxied Cloudflare hostname, so a
+      // failure on THIS hop arrives as Cloudflare's HTML error page rather
+      // than the gateway's JSON. Relaying that verbatim is what shows a user a
+      // bare "Bad gateway" screen with no code and no request id. Replace it
+      // with the typed envelope every client already understands. The global
+      // 502/504 -> 503 filter in index.ts then keeps it readable through the
+      // caller's own Cloudflare hop.
+      const upstreamType = upstream.headers.get('content-type') ?? '';
+      if (upstream.status >= 500 && !upstreamType.includes('json')) {
+        const detail = (await upstream.text().catch(() => '')).slice(0, 200);
+        const message = `Standalone LLM gateway hop failed upstream (${upstream.status})`;
+        console.error(`[gateway] non-JSON ${upstream.status} from gateway hop:`, detail);
+        c.header('retry-after', '5');
+        return c.json(
+          {
+            error: { message, type: 'gateway_proxy_error', code: 'gateway_proxy_error' },
+            message,
+            code: 'gateway_proxy_error',
+            upstream_status: upstream.status,
+          },
+          503,
+        );
+      }
+      // The gateway owns the body framing (it re-materializes or relays what
+      // fetch already decoded), and so does this hop: never forward
+      // content-encoding/content-length/transfer-encoding from a response
+      // whose bytes fetch has already inflated.
+      const headers = new Headers(upstream.headers);
+      for (const name of ['content-encoding', 'content-length', 'transfer-encoding', 'connection'])
+        headers.delete(name);
+      return new Response(upstream.body, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers,
+      });
+    } catch (error) {
+      // Say what actually happened. Until 2026-08-24 every throw here was
+      // reported as "unreachable", which is what a ZlibError (the gateway
+      // forwarded `content-encoding: gzip` on a body fetch had already
+      // inflated) looked like to users and to the edge worker for days.
+      const err = error as { code?: unknown; name?: unknown; message?: unknown };
+      const cause =
+        typeof err?.code === 'string'
+          ? err.code
+          : typeof err?.name === 'string'
+            ? err.name
+            : 'Error';
+      const detail = typeof err?.message === 'string' ? err.message : String(error);
+      const unreachable =
+        /ECONNREFUSED|ENOTFOUND|ECONNRESET|ETIMEDOUT|ConnectionRefused|FailedToOpenSocket|timed out/i.test(
+          `${cause} ${detail}`,
+        );
+      const code = unreachable ? 'gateway_proxy_unreachable' : 'gateway_proxy_error';
+      const message = unreachable
+        ? `Standalone LLM gateway is unreachable (${cause}: ${detail})`
+        : `Standalone LLM gateway response could not be relayed (${cause}: ${detail})`;
+      console.error(`[gateway] ${code}:`, error);
+      // 503, not 502: Cloudflare replaces an origin 502/504 body with its own
+      // HTML page, which is how this error reached users as a blank "Bad
+      // gateway" screen. 503 passes through with this JSON intact.
+      c.header('retry-after', '5');
+      return c.json({ error: { message, type: code, code }, message, code, cause, detail }, 503);
+    }
+  };
+
+  const llm = makeOpenApiApp();
+  llm.openAPIRegistry.registerPath(chatCompletionsRoute('/chat/completions'));
+  llm.openAPIRegistry.registerPath(modelsRoute('/models'));
+  llm.openAPIRegistry.registerPath(messagesRoute('/messages'));
+  llm.openAPIRegistry.registerPath(chatCompletionsRoute('/v1/chat/completions'));
+  llm.openAPIRegistry.registerPath(modelsRoute('/v1/models'));
+  llm.openAPIRegistry.registerPath(messagesRoute('/v1/messages'));
+  llm.all('*', (c) => {
+    const tail = c.req.path.slice('/v1/llm'.length) || '/';
+    return proxy(c, tail);
+  });
+  app.route('/v1/llm', llm);
+
+  // Temporary compatibility alias for clients configured with the old proxy
+  // prefix. New clients use /v1/llm directly.
+  app.all('/v1/llm-gateway/*', (c) => {
+    const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
+    return proxy(c, tail);
+  });
 }

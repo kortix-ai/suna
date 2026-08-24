@@ -3,11 +3,13 @@ import { readFileSync } from 'node:fs'
 
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
+import { runtimeConvergenceReport } from '../runtime-assets'
 import type { Opencode } from '../opencode'
 import {
   type OpencodeDeliveryObservation,
   inspectOpencodeRoot,
   observeOpencodeDelivery,
+  opencodeSessionInFlight,
   readPinnedSessionId,
 } from '../opencode-turn-state'
 
@@ -77,13 +79,26 @@ export async function observeRequestedTurn(
   if (identity.sessionId && identity.messageId) {
     return observeOpencodeDelivery(opencodeUrl, workspace, identity.sessionId, identity.messageId)
   }
-  const inspection = await inspectOpencodeRoot(opencodeUrl, workspace, identity.sessionId ?? '')
+  const sessionId = identity.sessionId ?? ''
+  const inspection = await inspectOpencodeRoot(opencodeUrl, workspace, sessionId)
   if (!inspection.known) return { inFlight: null, end: null }
+  if (inspection.turnInFlight)
+    return { inFlight: true, end: null, orphanedPrompt: inspection.orphanedPrompt }
+
+  // The transcript reads terminal — ASK OpenCode before saying so. `abandoned`
+  // routes straight into the inbox's redelivery, and the window between "the
+  // prompt is persisted" and "its assistant message exists" is a normal part of
+  // a LIVE delivery: a root-scoped read taken inside that window sees a prompt
+  // with no answer and used to call it abandoned, re-sending a prompt that was
+  // already executing. `/session/status` closes the window.
+  const busy = await opencodeSessionInFlight(opencodeUrl, workspace, sessionId)
+  if (busy === null) return { inFlight: null, end: null }
+  if (busy) return { inFlight: true, end: null, orphanedPrompt: inspection.orphanedPrompt }
   return {
-    inFlight: inspection.turnInFlight,
+    inFlight: false,
     // The ONE ending a root-scoped read can prove without lending another
-    // turn's outcome to this one: the root's last message is a prompt nothing
-    // answered. `abandoned` is already in the control plane's
+    // turn's outcome to this one: the root's newest prompt has no assistant
+    // message answering it. `abandoned` is already in the control plane's
     // DAEMON_REPORTABLE_END_REASONS, and it is what triggers redelivery.
     end: inspection.orphanedPrompt ? 'abandoned' : null,
     orphanedPrompt: inspection.orphanedPrompt,
@@ -211,6 +226,13 @@ export function createHealthRouter(
       // the newest commit and still be running config compiled days ago. Read
       // from the live process env, so it tracks a hot push as well as a boot.
       agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
+      // What this box last converged its own runtime to. Auto-update without
+      // reporting only moves the uncertainty — this makes "is the fleet
+      // current?" a query instead of a hope, and it is the signal that tells us
+      // a fleet-drain gate has actually cleared. `pinned: true` means an update
+      // crash-looped and the supervisor latched it off: that box will not
+      // self-heal and needs a human.
+      runtime: await runtimeConvergenceReport(),
       // Opt-in (`?turn=1`) because it costs a call into opencode, and health is
       // polled as a liveness check every few seconds on every idle box. Two
       // callers ask: the reload gate, which must not restart the runtime out

@@ -2,13 +2,26 @@
 
 import { type RefObject, useEffect, useRef } from 'react';
 
-/** True for elements that already handle their own typing. */
+/**
+ * True for elements the type-ahead redirect must leave alone.
+ *
+ * Two groups, and the second one is the bug fix. Fields that handle their own
+ * typing, obviously — but ALSO any control or overlay that binds a key of its
+ * own. A focused `<button>` treats Space as "activate"; a menu, listbox or
+ * dialog treats it as a selection. Without them here, Space anywhere in an open
+ * dropdown pulled focus into the composer and typed a space into the draft
+ * instead of choosing the highlighted row.
+ */
 function isTextEditingElement(el: Element | null): boolean {
   if (!el) return false;
   const html = el as HTMLElement;
   if (html.isContentEditable) return true;
   const tag = html.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (tag === 'BUTTON' || tag === 'A') return true;
+  return !!html.closest?.(
+    '[role="dialog"],[role="menu"],[role="listbox"],[role="menuitem"],[role="option"],[role="alertdialog"]',
+  );
 }
 
 /** Only the composer inside the visible tab should answer a global event. */
@@ -116,6 +129,11 @@ export function useComposerFocus({
       if (disabled || e.defaultPrevented) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (typeof e.key !== 'string' || e.key.length !== 1) return;
+      // Space is `length === 1` but it is not type-ahead — it is the activate
+      // key for every focused control on the page. Redirecting it stole the
+      // press AND typed a leading space into an empty draft. A real word starts
+      // with a letter; the composer picks it up on that character.
+      if (e.key === ' ') return;
       const el = ref.current;
       if (!isVisible(el)) return;
       if (document.activeElement === el || el.contains(document.activeElement)) return;

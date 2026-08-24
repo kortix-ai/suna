@@ -14,10 +14,10 @@ function apiBase(): string {
 }
 
 function authHeaders(): Record<string, string> {
-  const token = (process.env.KORTIX_CLI_TOKEN || '').trim();
+  const token = (process.env.KORTIX_TOKEN || '').trim();
   if (!token) {
     throw new CliError(
-      'KORTIX_CLI_TOKEN not set — cannot authenticate to apps/api.',
+      'KORTIX_TOKEN not set — cannot authenticate to apps/api.',
       'MISSING_ENV',
     );
   }

@@ -15,10 +15,12 @@ import {
   DEFAULT_LLM_PRICE_MARKUP,
   defaultAutoTopupForSeats,
   grantForSeats,
+  INCLUDED_CREDITS_RATIO,
   isPerSeatAccount,
   isLegacyAccount,
   canClaimPerSeat,
   llmPriceMarkup,
+  resolveRenewalGrant,
 } from '../../billing/services/tiers';
 
 import { calculateComputeCost } from '../../billing/services/compute-metering';
@@ -117,6 +119,59 @@ describe('canClaimPerSeat — the "Claim seat-based pricing" card gate', () => {
       billingModel: 'legacy', hasLegacyMachine: true,
       commitmentType: 'monthly', commitmentEndDate: future, now,
     })).toBe(true);
+  });
+});
+
+describe('resolveRenewalGrant — the ONE renewal-grant rule', () => {
+  test('the included-usage ratio is $25 of every $40', () => {
+    expect(INCLUDED_CREDITS_RATIO).toBe(0.625);
+  });
+
+  test('per-seat: seats × $25, authoritative over the invoice amount', () => {
+    expect(
+      resolveRenewalGrant({ tierName: 'per_seat', billingModel: 'per_seat', seatCount: 3, amountPaidUsd: 120 }),
+    ).toEqual({ credits: 75, description: 'Monthly renewal: 75 credits (3 seats)' });
+    // Discounted invoice: the seat count still decides the grant.
+    expect(
+      resolveRenewalGrant({ tierName: 'per_seat', billingModel: 'per_seat', seatCount: 1, amountPaidUsd: 20 }).credits,
+    ).toBe(25);
+    // per-seat billing_model wins even when the tier column lags.
+    expect(
+      resolveRenewalGrant({ tierName: 'pro', billingModel: 'per_seat', seatCount: 2, amountPaidUsd: 80 }).credits,
+    ).toBe(50);
+  });
+
+  test('a tier with a configured monthly grant keeps it unchanged', () => {
+    expect(
+      resolveRenewalGrant({ tierName: 'free', billingModel: 'legacy', seatCount: null, amountPaidUsd: 0 }),
+    ).toEqual({ credits: 2, description: 'Monthly renewal: 2 credits' });
+  });
+
+  test('legacy zero-grant tiers resolve by the money that moved (stranded-payer regression)', () => {
+    // The $40/mo "Kortix Computer · Pro" machine sub on legacy tier `pro`
+    // (monthlyCredits 0) used to grant NOTHING on every paid renewal.
+    expect(
+      resolveRenewalGrant({ tierName: 'pro', billingModel: 'legacy', seatCount: null, amountPaidUsd: 40 }),
+    ).toEqual({ credits: 25, description: 'Monthly renewal: 25 credits (legacy subscription, $40 paid)' });
+    expect(
+      resolveRenewalGrant({ tierName: 'pro', billingModel: null, seatCount: null, amountPaidUsd: 60 }).credits,
+    ).toBe(37.5);
+    expect(
+      resolveRenewalGrant({ tierName: 'pro', billingModel: null, seatCount: null, amountPaidUsd: 80 }).credits,
+    ).toBe(50);
+  });
+
+  test('per-seat and the amount rule agree at the standard seat price', () => {
+    const seats = 4;
+    const bySeats = resolveRenewalGrant({
+      tierName: 'per_seat', billingModel: 'per_seat', seatCount: seats, amountPaidUsd: PER_SEAT_PRICE_USD * seats,
+    }).credits;
+    expect(bySeats).toBe(PER_SEAT_PRICE_USD * seats * INCLUDED_CREDITS_RATIO);
+  });
+
+  test('nothing paid → nothing granted; negative amounts clamp to 0', () => {
+    expect(resolveRenewalGrant({ tierName: 'pro', billingModel: null, seatCount: null, amountPaidUsd: 0 }).credits).toBe(0);
+    expect(resolveRenewalGrant({ tierName: 'pro', billingModel: null, seatCount: null, amountPaidUsd: -5 }).credits).toBe(0);
   });
 });
 

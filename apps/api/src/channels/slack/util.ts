@@ -32,6 +32,25 @@ export function stripMentions(text: string): string {
   return text.replace(/<@[A-Z0-9]+>/g, '').trim();
 }
 
+/**
+ * Does `text` @-mention this exact Slack user?
+ *
+ * Slack renders a mention as `<@U123>` and, on older and enterprise-grid paths,
+ * as `<@U123|display-name>`. A check that only knows the first form fails CLOSED
+ * on the second: a real mention is dropped and the bot silently says nothing,
+ * which is the same shape of failure as #6590.
+ *
+ * One predicate, used by every caller that has to decide "was I the one
+ * addressed" — the app_mention gate and the plain-message gate both route on
+ * this, and two hand-rolled versions of it are how they drift apart.
+ */
+export function mentionsUser(text: string, userId: string): boolean {
+  // Slack user ids are [A-Z0-9]. Anything else is not an id we can build a
+  // pattern from, and answering "yes" to a malformed one would defeat the gate.
+  if (!/^[A-Z0-9]+$/.test(userId)) return false;
+  return new RegExp(`<@${userId}(\\|[^>]*)?>`).test(text);
+}
+
 export function repoOgImage(repoUrl: string): string | null {
   const m = repoUrl.match(/github\.com[\/:]([\w.-]+)\/([\w.-]+?)(\.git)?$/i);
   if (!m) return null;

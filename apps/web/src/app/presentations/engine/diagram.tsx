@@ -346,7 +346,7 @@ export function IsolationDiagram({ step }: { step: number }) {
 /* ── 2 · the credential broker ──────────────────────────────────────────────
    The centrepiece. Steps: 0 the shape · 1 the agent asks · 2 Kortix resolves ·
    3 the API answers · 4 what never crossed. Grounded in connectors/content.ts
-   `broker`: the sandbox carries one KORTIX_CLI_TOKEN and zero third-party
+   `broker`: the sandbox carries one KORTIX_TOKEN and zero third-party
    secrets; the credential is attached server-side at call time. */
 
 export function BrokerDiagram({ step }: { step: number }) {
@@ -369,7 +369,7 @@ export function BrokerDiagram({ step }: { step: number }) {
           className="max-w-[15rem]"
         >
           <div className="mt-3 flex flex-col gap-1.5">
-            <Chip tone={step >= 1 ? 'active' : 'idle'}>KORTIX_CLI_TOKEN</Chip>
+            <Chip tone={step >= 1 ? 'active' : 'idle'}>KORTIX_TOKEN</Chip>
             <span className="text-muted-foreground/70 text-[11px] leading-snug">
               …and no third-party secret at all
             </span>

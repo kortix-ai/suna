@@ -4227,7 +4227,15 @@
       "line301JsxTextRequestDemo": "Demo anfragen",
       "line312JsxTextGetStarted": "Loslegen",
       "line322JsxAttrAriaLabelOpenMenu": "Menü öffnen",
-      "line348JsxAttrAriaLabelCloseMenu": "Menü schließen"
+      "line348JsxAttrAriaLabelCloseMenu": "Menü schließen",
+      "copySymbolSvg": "Symbol als SVG kopieren",
+      "copyWordmarkSvg": "Wortmarke als SVG kopieren",
+      "downloadBrandAssets": "Brand-Assets herunterladen",
+      "svgCopied": "SVG in die Zwischenablage kopiert",
+      "copyFailed": "Kopieren fehlgeschlagen",
+      "home": "Home",
+      "logIn": "Anmelden",
+      "back": "Zurück"
     },
     "componentsHomeSimpleFooter": {
       "line50JsxAttrAriaLabelToggleTheme": "Theme umschalten"
@@ -7084,7 +7092,6 @@
     "autoAppPublicShareSessionTokenPageJsxTextOpenAppa9aa1bb9": "App öffnen",
     "autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8": "Sitzung starten",
     "autoAppPublicShareSessionTokenPageJsxTextSignInb66c3487": "Melden Sie sich an, um zu beginnen",
-    "autoAppPublicShareSessionTokenPageJsxAttrSandboxAllow2840c013": "Allow-Same-Origin, Allow-Scripts, Allow-Forms, Allow-Popups, Allow-Downloads",
     "autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063": "Allow-Same-Origin, Allow-Scripts, Allow-Forms, Allow-Popups, Allow-Downloads",
     "autoAppPublicTemplatesShareIdErrorJsxAttrDescriptionWeCouldn8189e2ca": "Wir konnten diese Vorlage nicht laden. Versuchen Sie es erneut oder laden Sie neu, wenn das Problem weiterhin auftritt.",
     "autoAppSystemDebugErrorPageJsxTextPreviewVariant8b7cfd4d": "Vorschauvariante",

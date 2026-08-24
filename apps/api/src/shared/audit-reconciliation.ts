@@ -149,19 +149,6 @@ export async function reconcileAuditEvents(
              g.latency_ms, g.created_at
         FROM kortix.gateway_request_logs g WHERE g.account_id = ${accountId}::uuid
       UNION ALL
-      SELECT pr.account_id, t.project_id, t.session_id, NULL::text, NULL::uuid,
-             CASE WHEN t.role = 'user' THEN 'human' ELSE 'agent' END,
-             NULL::text, NULL::text, NULL::text, 0::integer, 'voice', NULL::text, 'success',
-             'voice.turn.' || t.role, 'completed', 'voice_turn', t.cursor::text,
-             NULL::text, t.cursor::text, NULL::text, 'voice_call_turns', t.cursor::text, t.role,
-             jsonb_build_object('call_id', t.call_id, 'role', t.role, 'speaker', t.speaker,
-               'character_count', length(t.text)),
-             encode(extensions.digest(convert_to(t.text, 'UTF8'), 'sha256'), 'hex'),
-             NULL::jsonb, NULL::text, NULL::integer, t.created_at
-        FROM kortix.voice_call_turns t
-        JOIN kortix.projects pr ON pr.project_id = t.project_id
-       WHERE pr.account_id = ${accountId}::uuid
-      UNION ALL
       SELECT t.account_id, t.project_id, t.session_id, NULL::text, t.actor_user_id,
              COALESCE(t.actor_type, CASE WHEN t.actor_user_id IS NULL THEN 'system' ELSE 'human' END),
              NULL::text, NULL::text, NULL::text, 0::integer, 'connector', NULL::text,

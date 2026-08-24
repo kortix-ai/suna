@@ -39,6 +39,18 @@ excluded_rules = [
   # covered by our custom checker (packages/db/scripts/zero-downtime-guard.ts),
   # which requires a `-- mixed-version-safe:` / enum annotation instead.
   "require-enum-value-ordering",
+
+  # A blanket ban on DROP TABLE, which this repo cannot use as written: a
+  # contract-phase drop is a legitimate, sometimes REQUIRED migration (removing
+  # the schema of a reverted feature before it reaches prod is the case that
+  # forced this), and squawk has no per-statement escape. The hazard the rule
+  # names — "old code might still reference it" — is exactly what our own
+  # checker covers and covers better: scripts/lint-migrations.ts REFUSES any
+  # DROP without a `-- mixed-version-safe: <why>` line, and prints a destructive
+  # -operation warning for every one that has it. Same reasoning as
+  # `require-enum-value-ordering` above: the annotation guard is the real gate.
+  # Everything else squawk says about a drop migration still applies.
+  "ban-drop-table",
 ]
 
 # Rules explicitly turned ON (opt-in, disabled by squawk's own defaults). Zero

@@ -224,8 +224,42 @@ PreWithPaths.displayName = 'PreWithPaths';
 // ---------------------------------------------------------------------------
 
 /**
+ * Elements whose text belongs to something other than prose: code is code, and
+ * a link already owns its own target. Path detection must not reach inside any
+ * of them.
+ */
+const OPAQUE_TAG_NAMES = new Set(['code', 'pre', 'a']);
+
+interface OpaqueProbeProps {
+  children?: React.ReactNode;
+  className?: string;
+  /** hast element the markdown parser passes through to custom components. */
+  node?: { tagName?: string };
+}
+
+/**
+ * Is this element one whose subtree path detection must leave alone?
+ *
+ * Checking `el.type === 'code'` only catches the NATIVE tag. Both markdown
+ * renderers replace `code`/`pre`/`a` with custom components, so the type is a
+ * function there and the plain check missed every fence in the app. The tag
+ * name survives on the `node` prop the parser forwards; fenced code also
+ * carries `language-*` in `className`, which covers a renderer that drops
+ * `node`.
+ */
+function isOpaqueElement(el: React.ReactElement<OpaqueProbeProps>): boolean {
+  if (typeof el.type === 'string') return OPAQUE_TAG_NAMES.has(el.type);
+
+  const tagName = el.props?.node?.tagName;
+  if (typeof tagName === 'string' && OPAQUE_TAG_NAMES.has(tagName)) return true;
+
+  const className = el.props?.className;
+  return typeof className === 'string' && /(?:^|\s)language-/.test(className);
+}
+
+/**
  * Walk a React children tree and replace text nodes that contain file paths
- * with clickable versions. Skips children already inside <code> or <a> elements.
+ * with clickable versions. Skips children already inside <code>, <pre> or <a>.
  */
 export function wrapChildrenWithPaths(
   children: React.ReactNode,
@@ -260,19 +294,26 @@ export function wrapChildrenWithPaths(
       );
     }
 
-    // React elements — recurse into children, but skip <code> and <a>
+    // React elements — recurse into children, but skip code/pre/a subtrees.
     if (React.isValidElement(child)) {
-      const el = child as React.ReactElement<{ children?: React.ReactNode }>;
-      // Don't process children of code/a elements (they have their own handling)
-      if (
-        typeof el.type === 'string' &&
-        (el.type === 'code' || el.type === 'a' || el.type === 'pre')
-      ) {
+      const el = child as React.ReactElement<OpaqueProbeProps>;
+      // Code and links handle their own text; rewriting their children turned
+      // a fenced block's string into a React element, and `String(children)`
+      // in MarkdownCode then rendered the literal `[object Object]`.
+      if (isOpaqueElement(el)) {
         return child;
       }
-      // For custom (non-native) components (e.g. Streamdown's code/a/pre
-      // overrides), don't recurse if children is a string that looks like a
-      // URL — those components handle their own URL/path rendering.
+      // A path already made clickable is finished. `li` wraps its children and
+      // then the nested `p`/`td` component wraps them AGAIN, so the second pass
+      // walked into the span the first pass produced and wrapped its text in a
+      // second one — `role="button"` inside `role="button"`, two click handlers
+      // on one path.
+      if (el.type === ClickablePath) {
+        return child;
+      }
+      // For custom (non-native) components, don't recurse if children is a
+      // string that looks like a URL — those components handle their own
+      // URL/path rendering.
       if (typeof el.type !== 'string' && typeof el.props.children === 'string') {
         if (/^[a-z][a-z0-9+.-]*:\/\//i.test(el.props.children.trim())) {
           return child;

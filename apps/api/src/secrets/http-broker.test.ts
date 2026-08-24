@@ -51,15 +51,33 @@ describe('prepareSecretBrokerRequest', () => {
     }
   });
 
-  test('rejects non-HTTPS URLs, URL credentials, and managed caller headers', () => {
+  test('rejects non-HTTPS URLs, URL credentials, and framing caller headers', () => {
     for (const input of [
       request({ url: 'http://api.example.com/v1/messages' }),
       request({ url: 'https://user:pass@api.example.com/v1/messages' }),
-      request({ headers: { authorization: 'caller-value' } }),
+      // Only true framing / hop-by-hop headers are rejected. `authorization` and
+      // `cookie` are NOT here — they are substitution surfaces (see the
+      // substitution suite). `host` is managed by the broker.
       request({ headers: { host: 'attacker.example' } }),
+      request({ headers: { 'transfer-encoding': 'chunked' } }),
     ]) {
       expect(() => prepareSecretBrokerRequest(policy(), SECRET, input)).toThrow(SecretBrokerError);
     }
+  });
+
+  test('a caller authorization/cookie header is accepted (not rejected)', () => {
+    // The pre-substitution broker rejected these outright (59c1f74bf8). They are
+    // the credential-carrying headers the agent must be able to send a HANDLE in,
+    // so they pass sanitizeHeaders now. With the default policy's inject slot the
+    // route's own value still overwrites `authorization`; without a slot the
+    // caller's header rides through and substitution handles the handle.
+    expect(() =>
+      prepareSecretBrokerRequest(
+        hostsOnlyPolicy(),
+        SECRET,
+        request({ headers: { authorization: 'Bearer plain', cookie: 'session=plain' } }),
+      ),
+    ).not.toThrow();
   });
 
   test('injects query and nested JSON fields without accepting prototype paths', () => {
@@ -294,6 +312,27 @@ describe('prepareSecretBrokerRequest substitution', () => {
     // The relay is fully buffered, so the framing it states must be the framing
     // it sends — the substituted body is longer than the one that arrived.
     expect(prepared.headers['content-length']).toBe(String(prepared.body!.byteLength));
+    expect(prepared.substituted).toEqual(['PRIMARY']);
+  });
+
+  test('substitutes a handle in the Authorization and Cookie headers', () => {
+    // The reliability fix: `Authorization: Bearer <handle>` is the single most
+    // common way an agent authenticates, and `cookie` is the other credential
+    // header. Both were dropped before, so the request left carrying nothing.
+    const prepared = prepareSecretBrokerRequest(
+      hostsOnlyPolicy(),
+      SECRET,
+      request({
+        headers: {
+          authorization: `Bearer ${HANDLE}`,
+          cookie: `session=${HANDLE}; other=keep`,
+        },
+      }),
+      [substitution({ policy: hostsOnlyPolicy() })],
+    );
+
+    expect(prepared.headers.authorization).toBe(`Bearer ${SECRET}`);
+    expect(prepared.headers.cookie).toBe(`session=${SECRET}; other=keep`);
     expect(prepared.substituted).toEqual(['PRIMARY']);
   });
 

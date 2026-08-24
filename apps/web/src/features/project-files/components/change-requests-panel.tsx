@@ -1,31 +1,33 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
+import Hint from '@/components/ui/hint';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { formatRelative } from '@kortix/shared';
 import {
-  WarningCircleIcon as AlertCircle,
-  CheckCircleIcon as CheckCircle2,
-  CaretDownIcon as ChevronDown,
-  GitDiffIcon as FileDiff,
-  StackIcon as Layers,
-  PlusIcon as Plus,
-  ArrowClockwiseIcon as RefreshCw,
-  XIcon as X,
-  XCircleIcon as XCircle,
+  CheckCircleIcon,
+  GitDiffIcon,
+  PlusIcon,
+  XCircleIcon,
 } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+
 import type { ChangeRequest, ChangeRequestStatus } from '../api/change-requests';
 import { useProjectContext } from '../context';
-import { useChangeRequests } from '../hooks/use-change-requests';
+import { useChangeRequests, usePrefetchChangeRequest } from '../hooks/use-change-requests';
 import { ChangeRequestDetailDialog } from './change-request-detail-dialog';
 import { OpenChangeRequestDialog } from './open-change-request-dialog';
+import {
+  groupByDate,
+  ReviewEmpty,
+  ReviewError,
+  ReviewGroupLabel,
+  ReviewPanel,
+  ReviewRow,
+  ReviewRowSkeleton,
+} from './review-panel';
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -39,17 +41,9 @@ const fullTimestampFormat = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit',
 });
 
-function formatFull(timestamp: number): string {
-  return fullTimestampFormat.format(timestamp);
-}
-
 function tsFromCr(cr: ChangeRequest): number {
-  if (cr.status === 'merged' && cr.merged_at) {
-    return new Date(cr.merged_at).getTime();
-  }
-  if (cr.status === 'closed' && cr.closed_at) {
-    return new Date(cr.closed_at).getTime();
-  }
+  if (cr.status === 'merged' && cr.merged_at) return new Date(cr.merged_at).getTime();
+  if (cr.status === 'closed' && cr.closed_at) return new Date(cr.closed_at).getTime();
   return new Date(cr.created_at).getTime();
 }
 
@@ -63,77 +57,19 @@ function crTimeLabel(cr: ChangeRequest): string {
   return `proposed ${formatRelative(cr.created_at, { extended: 'full' }) ?? ''}`;
 }
 
-function groupByDate(crs: ChangeRequest[]) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today.getTime() - 86_400_000);
-  const thisWeekStart = new Date(today.getTime() - today.getDay() * 86_400_000);
-
-  const groups = new Map<string, ChangeRequest[]>();
-  for (const cr of crs) {
-    const d = new Date(tsFromCr(cr));
-    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    let label: string;
-    if (day.getTime() >= today.getTime()) label = 'Today';
-    else if (day.getTime() >= yesterday.getTime()) label = 'Yesterday';
-    else if (day.getTime() >= thisWeekStart.getTime()) label = 'This week';
-    else label = d.toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
-    if (!groups.has(label)) groups.set(label, []);
-    groups.get(label)!.push(cr);
-  }
-  return Array.from(groups.entries()).map(([label, items]) => ({ label, items }));
-}
-
-// ---------------------------------------------------------------------------
-// list row
-// ---------------------------------------------------------------------------
-
+/**
+ * Status as a bare glyph.
+ *
+ * It used to sit in a `size-6 rounded-full bg-muted/40` tile — the same grey
+ * for all three states, so the tile carried no information and only added a
+ * shape. The colour is the signal; the icon is the label for it.
+ */
 function CrIcon({ status }: { status: ChangeRequestStatus }) {
-  if (status === 'merged') return <CheckCircle2 className="text-kortix-purple h-3.5 w-3.5" />;
-  if (status === 'closed') {
-    return <XCircle className="text-muted-foreground h-3.5 w-3.5" />;
+  if (status === 'merged') {
+    return <CheckCircleIcon weight="fill" className="text-kortix-purple size-4" />;
   }
-  return <FileDiff className="text-kortix-green h-3.5 w-3.5" />;
-}
-
-function CrListItem({
-  cr,
-  isActive,
-  onSelect,
-}: {
-  cr: ChangeRequest;
-  isActive: boolean;
-  onSelect: () => void;
-}) {
-  const ts = tsFromCr(cr);
-  return (
-    <button
-      onClick={onSelect}
-      className={cn(
-        'group flex w-full cursor-pointer items-start gap-3 py-2.5 pr-2 pl-3 text-left',
-        'border-l-2 border-l-transparent',
-        'hover:bg-muted/40 transition-colors',
-        isActive && 'bg-primary/[0.05] border-l-primary',
-      )}
-    >
-      <div className="bg-muted/40 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
-        <CrIcon status={cr.status} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground font-mono text-xs">#{cr.number}</span>
-          <p className="text-foreground truncate text-sm font-medium">{cr.title}</p>
-        </div>
-        <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
-          <span title={formatFull(ts)}>{crTimeLabel(cr)}</span>
-          <span className="text-muted-foreground/30">·</span>
-          <span className="truncate" title={`Applies to the "${cr.base_ref}" version`}>
-            into {cr.base_ref}
-          </span>
-        </div>
-      </div>
-    </button>
-  );
+  if (status === 'closed') return <XCircleIcon className="text-muted-foreground/60 size-4" />;
+  return <GitDiffIcon className="text-kortix-green size-4" />;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,12 +82,14 @@ interface ChangeRequestsPanelProps {
 }
 
 /**
- * Right-edge slide-in panel mirroring the Checkpoints drawer. Lists CRs for
- * the active project, filterable by status. Clicking a row opens the detail
- * dialog with diff + merge/close actions.
+ * Right-edge drawer listing this project's proposed changes, filtered by
+ * status. Selecting a row opens the detail dialog (diff + apply / dismiss).
+ *
+ * Rows prefetch their own detail and diff on hover, and the dialog seeds its
+ * header straight from the row — see `usePrefetchChangeRequest` and
+ * `useChangeRequest`'s `initialData` for why opening one is no longer a wait.
  */
 export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPanelProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const ctx = useProjectContext();
   const activeRef = ctx?.ref ?? '';
   const defaultBranch = ctx?.defaultBranch ?? '';
@@ -159,12 +97,14 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
   const [selectedCrId, setSelectedCrId] = useState<string | null>(null);
   const [openDialogShown, setOpenDialogShown] = useState(false);
 
-  const { data, isLoading, error, refetch, isFetching } = useChangeRequests(status, {
+  const { data, isLoading, error } = useChangeRequests(status, {
     enabled: open,
     refetchInterval: open ? 6_000 : undefined,
   });
+  const prefetch = usePrefetchChangeRequest();
+
   const crs = useMemo(() => data?.change_requests ?? [], [data]);
-  const groups = useMemo(() => groupByDate(crs), [crs]);
+  const groups = useMemo(() => groupByDate(crs, tsFromCr), [crs]);
   const total = crs.length;
 
   const initialHeadForDialog =
@@ -172,58 +112,27 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
 
   return (
     <>
-      <aside
-        aria-hidden={!open}
-        className={cn(
-          'absolute top-0 right-0 bottom-0 flex w-[400px] flex-col',
-          'border-border bg-background border-l',
-          'transition-transform duration-200 ease-out',
-          'z-30',
-          open ? 'translate-x-0' : 'pointer-events-none translate-x-full',
-        )}
-      >
-        <div className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-3">
-          <span className="text-sm font-medium">
-            {tHardcodedUi.raw(
-              'featuresProjectFilesComponentsChangeRequestsPanel.line131JsxTextChangeRequests',
-            )}
-          </span>
-          {activeRef && (
-            <span
-              className="bg-muted/50 text-muted-foreground/90 flex max-w-[140px] items-center gap-1 truncate rounded-full px-1.5 py-0.5 text-xs"
-              title={`Version: ${activeRef}`}
+      <ReviewPanel
+        open={open}
+        onClose={onClose}
+        title="Proposed changes"
+        // No refresh control: this list polls every 6s for as long as the panel
+        // is open, so a manual refresh could only ever repeat what already
+        // happens on its own.
+        actions={
+          <Hint label="Propose a change" side="bottom">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Propose a change"
+              onClick={() => setOpenDialogShown(true)}
+              className="text-muted-foreground hover:text-foreground active:scale-[0.96]"
             >
-              <Layers className="h-3 w-3" />
-              {activeRef}
-            </span>
-          )}
-          {total > 0 && <span className="text-muted-foreground text-xs tabular-nums">{total}</span>}
-          <Button
-            size="sm"
-            className="ml-auto h-7 gap-1 px-2 text-xs"
-            onClick={() => setOpenDialogShown(true)}
-            title={tHardcodedUi.raw(
-              'featuresProjectFilesComponentsChangeRequestsPanel.line145JsxAttrTitleOpenANewChangeRequest',
-            )}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => refetch()}
-            title="Refresh"
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} title="Close">
-            <X className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-
-        <div className="border-border shrink-0 border-b px-3 py-2">
+              <PlusIcon className="size-4" />
+            </Button>
+          </Hint>
+        }
+        filters={
           <Tabs
             value={status}
             onValueChange={(v) => setStatus(v as ChangeRequestStatus | 'all')}
@@ -236,101 +145,88 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
               <TabsTriggerCompact value="all">All</TabsTriggerCompact>
             </TabsListCompact>
           </Tabs>
-        </div>
+        }
+      >
+        {isLoading && <ReviewRowSkeleton count={5} />}
 
-        <div className="min-h-0 flex-1">
-          <ScrollArea className="h-full">
-            {isLoading && (
-              <div className="space-y-3 p-3">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="space-y-1.5">
-                    <Skeleton className="h-3 w-20" />
-                    <Skeleton className="h-14 w-full rounded-lg" />
-                  </div>
-                ))}
-              </div>
-            )}
+        {error && !isLoading && (
+          <ReviewError title="Couldn't load proposed changes" error={error} />
+        )}
 
-            {error && !isLoading && (
-              <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
-                <AlertCircle className="text-muted-foreground/30 h-6 w-6" />
-                <p className="text-muted-foreground text-xs">Failed to load change requests</p>
-                <p className="text-muted-foreground/60 text-xs">
-                  {error instanceof Error ? error.message : 'Unknown error'}
-                </p>
-              </div>
-            )}
+        {!isLoading && !error && total === 0 && (
+          <ReviewEmpty
+            size="sm"
+            className="py-10"
+            icon={GitDiffIcon}
+            title={status === 'open' ? 'Nothing waiting for review' : 'Nothing here yet'}
+            description={
+              status === 'open'
+                ? 'Changes your agents propose show up here before they reach the main version.'
+                : undefined
+            }
+            action={
+              status === 'open' ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => setOpenDialogShown(true)}
+                >
+                  <PlusIcon className="size-3.5 shrink-0" />
+                  Propose a change
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
 
-            {!isLoading && !error && total === 0 && (
-              <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
-                <FileDiff className="text-muted-foreground/30 h-6 w-6" />
-                <p className="text-muted-foreground text-xs">
-                  {tHardcodedUi.raw(
-                    'featuresProjectFilesComponentsChangeRequestsPanel.line199JsxTextChangeRequests',
-                  )}
-                </p>
-                {status === 'open' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-1 h-7 gap-1 text-xs"
-                    onClick={() => setOpenDialogShown(true)}
+        {!isLoading && !error && total > 0 && (
+          <div className="pb-3">
+            {groups.map((group, gi) => (
+              <div key={group.label}>
+                <ReviewGroupLabel first={gi === 0}>{group.label}</ReviewGroupLabel>
+                {group.items.map((cr) => (
+                  <ReviewRow
+                    key={cr.cr_id}
+                    isActive={selectedCrId === cr.cr_id}
+                    onSelect={() => setSelectedCrId(cr.cr_id)}
+                    onPrefetch={() => prefetch(cr.cr_id)}
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    {tHardcodedUi.raw(
-                      'featuresProjectFilesComponentsChangeRequestsPanel.line209JsxTextOpenTheFirstOne',
-                    )}
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {!isLoading && !error && total > 0 && (
-              <div className="py-1">
-                {groups.map((group, gi) => (
-                  <Disclosure
-                    key={group.label}
-                    open
-                    className="group/cr"
-                    transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
-                  >
-                    <DisclosureTrigger>
-                      <button
-                        type="button"
-                        className={cn(
-                          'bg-background/95 sticky top-0 z-[1] flex w-full items-center gap-2 px-3 py-1.5 backdrop-blur-sm',
-                          'border-border border-b',
-                          gi === 0 ? '' : 'border-border border-t',
-                        )}
+                    <span className="mt-0.5 shrink-0">
+                      <CrIcon status={cr.status} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline gap-1.5">
+                        <span className="text-muted-foreground/70 shrink-0 text-xs tabular-nums">
+                          #{cr.number}
+                        </span>
+                        <span
+                          className={cn(
+                            'text-foreground min-w-0 flex-1 truncate text-sm font-medium',
+                            cr.status === 'closed' && 'text-muted-foreground',
+                          )}
+                        >
+                          {cr.title}
+                        </span>
+                      </span>
+                      <span
+                        className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs"
+                        title={fullTimestampFormat.format(tsFromCr(cr))}
                       >
-                        <div className="flex w-full items-center justify-between gap-2 px-1">
-                          <span className="text-foreground/90 text-sm font-medium">
-                            {group.label}
-                          </span>
-                          <div className="text-muted-foreground flex items-center gap-1.5">
-                            <span className="text-[12px] tabular-nums">{group.items.length}</span>
-                            <ChevronDown className="size-3.5 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/cr:rotate-180" />
-                          </div>
-                        </div>
-                      </button>
-                    </DisclosureTrigger>
-                    <DisclosureContent>
-                      {group.items.map((cr) => (
-                        <CrListItem
-                          key={cr.cr_id}
-                          cr={cr}
-                          isActive={selectedCrId === cr.cr_id}
-                          onSelect={() => setSelectedCrId(cr.cr_id)}
-                        />
-                      ))}
-                    </DisclosureContent>
-                  </Disclosure>
+                        <span className="truncate">{crTimeLabel(cr)}</span>
+                        <span className="text-muted-foreground/30" aria-hidden>
+                          ·
+                        </span>
+                        <span className="truncate">into {cr.base_ref}</span>
+                      </span>
+                    </span>
+                  </ReviewRow>
                 ))}
               </div>
-            )}
-          </ScrollArea>
-        </div>
-      </aside>
+            ))}
+          </div>
+        )}
+      </ReviewPanel>
 
       <ChangeRequestDetailDialog crId={selectedCrId} onClose={() => setSelectedCrId(null)} />
 
@@ -340,9 +236,7 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
         projectId={ctx?.projectId ?? ''}
         defaultBranch={defaultBranch}
         initialHeadRef={initialHeadForDialog}
-        onCreated={(crId) => {
-          setSelectedCrId(crId);
-        }}
+        onCreated={(crId) => setSelectedCrId(crId)}
       />
     </>
   );

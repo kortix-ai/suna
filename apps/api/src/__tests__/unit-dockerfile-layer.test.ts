@@ -199,7 +199,7 @@ describe('buildLayeredDockerfile', () => {
       `playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`,
     );
     const cloneIdx = merged.indexOf('Per-project COLD warm: bake repo checkout into /workspace');
-    const opencodeWarmupIdx = merged.indexOf('kortix-opencode-warmup instance keep');
+    const opencodeWarmupIdx = merged.indexOf('kortix-opencode-warmup instance repo');
     expect(chromiumIdx).toBeGreaterThanOrEqual(0);
     expect(cloneIdx).toBeGreaterThanOrEqual(0);
     expect(opencodeWarmupIdx).toBeGreaterThanOrEqual(0);

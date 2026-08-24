@@ -15,46 +15,32 @@
  *     would have one meaningful position.
  *
  * So the toolbar is: what you're looking at (left) and what you can do with it
- * (right — copy, download, full screen, close). Every file gets the same right
- * side, so the actions never move.
+ * (right). The right side is one split button — `Copy`, with a caret holding
+ * `Copy link` and `Download file` — then full screen and close. Every file gets
+ * the same right side, built by `ViewerActions`, so the actions never move and
+ * this toolbar cannot drift from `PreviewShell`'s.
  */
 
 import { HighlightedCode } from '@/components/markdown/code';
-import { CopyButton } from '@/components/markdown/copy-button';
 import { DocMarkdown } from '@/components/markdown/doc-markdown';
 import {
   MarkdownFrontmatterCard,
   parseFrontmatter,
 } from '@/components/markdown/markdown-frontmatter';
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
-import Loading from '@/components/ui/loading';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast } from '@/components/ui/toast';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
-import {
-  RuntimeNotBoundError,
-  downloadFile,
-  isBrowserViewable,
-  openFileInNewTab,
-} from '@/features/files/api/runtime-files';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
-import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
-import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import {
-  CodeSimpleIcon as Code2,
-  DownloadIcon as Download,
-  ArrowSquareOutIcon as ExternalLink,
-  EyeIcon as Eye,
-  ArrowsOutSimpleIcon as Maximize2,
-  ChatIcon as MessageSquarePlus,
-  ArrowsInSimpleIcon as Minimize2,
-} from '@phosphor-icons/react';
+import { CodeSimpleIcon as Code2, EyeIcon as Eye } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
-import { type ShareContext, ShareFileButton } from './viewer-actions';
+import {
+  PanelWidthButton,
+  type ShareContext,
+  ViewerActions,
+  fileShareInput,
+} from './viewer-actions';
 
 type View = 'preview' | 'source';
 
@@ -118,118 +104,24 @@ export function isSvg(fileName: string): boolean {
   return extensionOf(fileName) === 'svg';
 }
 
-/**
- * Download fetches the file's real bytes before the browser save dialog can
- * appear, so on anything bigger than a note there is a real wait. Without a
- * pending state the button looks broken and gets clicked again — which starts a
- * second fetch. The spinner both explains the pause and blocks the double-click.
- */
-export function DownloadButton({ path, fileName }: { path: string; fileName: string }) {
-  const [downloading, setDownloading] = useState(false);
-
-  const handleDownload = async () => {
-    if (downloading) return;
-    setDownloading(true);
-    try {
-      await downloadFile(path, fileName);
-      track('deliverable_downloaded', { scope: 'one' });
-    } catch {
-      // The browser reports its own failure; the button just needs to recover.
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  return (
-    <Hint label="Download" side="bottom">
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => void handleDownload()}
-        disabled={downloading}
-        aria-label="Download"
-        aria-busy={downloading}
-        className="size-7 active:scale-[0.96] disabled:opacity-100"
-      >
-        {downloading ? (
-          <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
-        ) : (
-          <Download className="size-3.5" />
-        )}
-      </Button>
-    </Hint>
-  );
-}
-
-/**
- * Same fetch-then-act shape as `DownloadButton` (and the same reason for a
- * pending state — a slow sandbox fetch behind a silent click reads as a
- * broken button and invites a second, overlapping click). Shown only for
- * formats a tab can actually render (`isBrowserViewable`) — an omitted
- * control beats a disabled one with no explanation (W4).
- */
-export function OpenInNewTabButton({ path }: { path: string }) {
-  const [opening, setOpening] = useState(false);
-
-  const handleOpen = async () => {
-    if (opening) return;
-    setOpening(true);
-    try {
-      await openFileInNewTab(path);
-    } catch (error) {
-      // A blob URL could only ever fail in the browser, which reported it
-      // itself. A real URL can fail because the runtime has no sandbox bound,
-      // and only we know that — so say so instead of looking like a dead button.
-      if (error instanceof RuntimeNotBoundError) errorToast(error.message);
-    } finally {
-      setOpening(false);
-    }
-  };
-
-  return (
-    <Hint label="Open in a new tab" side="bottom">
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => void handleOpen()}
-        disabled={opening}
-        aria-label="Open in a new tab"
-        aria-busy={opening}
-        className="size-7 active:scale-[0.96] disabled:opacity-100"
-      >
-        {opening ? (
-          <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
-        ) : (
-          <ExternalLink className="size-3.5" />
-        )}
-      </Button>
-    </Hint>
-  );
-}
-
 export function FileViewer({
   content,
   fileName,
   path,
   shareContext,
   onClose,
-  onAskForChanges,
   className,
 }: {
   content: string;
   fileName: string;
   /** Sandbox path — needed to download the real bytes. */
   path?: string;
-  /** Forwarded to the toolbar's share control, exactly as `PreviewShell` does.
-   *  This toolbar and `PreviewShell`'s are required to render the same controls
-   *  (see the contract in `viewer-actions.tsx`); omitting it here is what left
-   *  every text and markdown file with no way to produce a public link. */
+  /** Forwarded to `ViewerActions`, exactly as `PreviewShell` does. This toolbar
+   *  and `PreviewShell`'s are required to render the same controls (see the
+   *  contract in `viewer-actions.tsx`); omitting it here is what left every
+   *  text and markdown file with no way to produce a public link. */
   shareContext?: ShareContext;
   onClose?: () => void;
-  /** Seeds the composer with a starter line about this file and closes the
-   *  detail (W12). Omitted entirely (not disabled) where there's no session
-   *  composer to hand it to. */
-  onAskForChanges?: () => void;
   className?: string;
 }) {
   const html = isHtml(fileName);
@@ -241,13 +133,11 @@ export function FileViewer({
   const renders = html || svg;
   const [view, setView] = useState<View>('preview');
 
-  const isExpanded = useIsExpanded();
-  const toggleExpanded = useToggleExpanded();
   const isMobile = useIsMobile();
 
   return (
     <div className={cn('flex h-full min-h-0 min-w-0 flex-col', className)}>
-      <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2.5 py-2.5">
         <span className="flex min-w-0 items-center gap-2.5">
           <DetailSidebarToggle className="size-7" />
           {renders ? (
@@ -277,44 +167,20 @@ export function FileViewer({
           <span className="text-foreground truncate text-sm font-medium">{fileName}</span>
         </span>
 
-        {/* Same actions in the same place for every file — they never move. */}
-        <span className="flex shrink-0 items-center gap-0.5">
-          {onAskForChanges && (
-            <Hint label="Ask for changes" side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Ask for changes"
-                onClick={onAskForChanges}
-                className="size-7 active:scale-[0.96]"
-              >
-                <MessageSquarePlus className="size-3.5" />
-              </Button>
-            </Hint>
-          )}
-          <CopyButton code={content} />
-          {path && isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
-          <ShareFileButton shareContext={shareContext} path={path} fileName={fileName} />
-          {path && <DownloadButton path={path} fileName={fileName} />}
-          {/* The store flip is a no-op on mobile — the drawer never reads
-              `isExpanded` — so the control was dead weight there. */}
-          {!isMobile && (
-            <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={toggleExpanded}
-                aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
-                className="size-7 active:scale-[0.96]"
-              >
-                {isExpanded ? (
-                  <Minimize2 className="size-3.5" />
-                ) : (
-                  <Maximize2 className="size-3.5" />
-                )}
-              </Button>
-            </Hint>
-          )}
+        {/* Same actions in the same place for every file — they never move.
+            Text is the one kind whose content a clipboard can hold, so `Copy`
+            here copies the file itself and `Copy link` drops into the menu. */}
+        <span className="flex shrink-0 items-center gap-1">
+          <ViewerActions
+            copy={{
+              run: () => navigator.clipboard.writeText(content),
+              ariaLabel: 'Copy file contents',
+            }}
+            shareContext={shareContext}
+            shareInput={fileShareInput(path, fileName)}
+            download={path ? { path, fileName } : undefined}
+          />
+          <PanelWidthButton isMobile={isMobile} />
           {onClose && <CloseButton onClose={onClose} />}
         </span>
       </div>

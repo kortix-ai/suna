@@ -3,6 +3,7 @@
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
+import { SIDEBAR_MAX_WIDTH_PX } from '@/components/ui/sidebar-width';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ConnectorConnectionGateDialog } from '@/features/connectors/connector-connection-gate-dialog';
 import { isBillingEnabled } from '@/lib/config';
@@ -55,12 +56,17 @@ function SidebarLeftSlot({ sidebarContent }: { sidebarContent?: React.ReactNode 
           : 'overflow-hidden'
       }
       style={{
-        // Normal mode: use a max-width larger than any real sidebar width
-        // so it never constrains the inner <Sidebar> (which manages its
-        // own 280px / 3.25rem widths via `collapsible="icon"`).
+        // Normal mode: the sidebar's absolute width ceiling, so this slot
+        // never constrains it. It used to be a flat 320px, which silently
+        // capped the resizable panel the moment a user dragged past that —
+        // the panel kept rendering at its real width while the in-flow gap
+        // stopped growing, so the content pane overlapped it. A constant, not
+        // `var(--sidebar-width)`: this box transitions its max-width for the
+        // onboarding morph, and tracking the live variable would make that
+        // transition lag every frame of a rail drag.
         // Onboarding-hide: clamp to 0 so the sidebar slides out with an
         // animation — CSS needs a concrete start value to transition from.
-        maxWidth: hideSidebar ? 0 : 320,
+        maxWidth: hideSidebar ? 0 : SIDEBAR_MAX_WIDTH_PX,
         opacity: hideSidebar ? 0 : 1,
       }}
     >
@@ -73,7 +79,6 @@ function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode
   useDeleteOperationEffects();
   return <>{children}</>;
 }
-
 
 // `GlobalUserSettingsModal` (the store-driven modal that
 // `showGlobalUserSettingsModal` used to conditionally mount, wrapping the

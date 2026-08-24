@@ -282,16 +282,43 @@ function ActivityGroupStepImpl({
         </div>
       </DisclosureTrigger>
       <DisclosureContent>
-        <div className="mt-3 space-y-3 pl-7">
-          {step.parts.map((part) => (
-            <ActivityStep
-              key={part.id}
-              part={part}
-              sessionId={sessionId}
-              running={running}
-              disableNavigation={disableNavigation}
-            />
-          ))}
+        {/*
+          The members are a CHAIN, not a plain list — the same `ChainOfThought`
+          the burst itself is built from, one level down.
+
+          A group row is the only thing standing between the reader and N
+          independent pieces of work, and some of those pieces open threads of
+          their own: a `task` member expands into the whole sub-agent's step
+          list. Rendered as bare siblings, the group's own hairline (drawn by
+          the burst's `ChainOfThoughtStep`, in the GROUP's icon lane) was the
+          only line on screen, so twenty rows belonging to the first agent had
+          nothing tying them to that agent rather than to the group or to the
+          agent below them. The list ran off the bottom unbounded.
+
+          Wrapping each member in `ChainOfThoughtStep` answers that with the
+          component that already exists rather than a second rail
+          implementation: the step draws its hairline only while it is open, in
+          ITS row's icon lane — 28px right of the group's, because that is where
+          `pl-7` puts the member's glyph. One bar per level of nesting that
+          actually exists, each anchored to the icon it hangs from.
+
+          `ChainOfThought` also owns the `space-y-3` this div used to carry, for
+          the reason written on that component: the gap belongs BETWEEN rows,
+          not on them.
+        */}
+        <div className="mt-3 pl-7">
+          <ChainOfThought>
+            {step.parts.map((part) => (
+              <ChainOfThoughtStep key={part.id}>
+                <ActivityStep
+                  part={part}
+                  sessionId={sessionId}
+                  running={running}
+                  disableNavigation={disableNavigation}
+                />
+              </ChainOfThoughtStep>
+            ))}
+          </ChainOfThought>
         </div>
       </DisclosureContent>
     </>
@@ -486,6 +513,14 @@ function ActivityBurstImpl({
    * label and a caret of its own. It did not while the thought was unlabelled
    * prose: unwrapping THAT would have pinned the model's reasoning open with
    * nothing left to close it.
+   *
+   * `bare` drops the summary line ONLY. It does not, on its own, decide that a
+   * row has no thread — a lone sub-agent is one row here and a whole nested
+   * list of steps one level down, so `ActivityStep` keeps a delegate row's
+   * leading glyph even when bare. See the `hideIcon` note there; the two rules
+   * are separate on purpose, because "there is nothing to summarise" and "there
+   * is nothing under this row" are different facts and only the first is what
+   * `summary.total === 1` establishes.
    */
   const bare = steps.length === 1 && summary.total === 1;
 
@@ -617,16 +652,6 @@ function ActivityBurstImpl({
                   <ChainOfThoughtStep key={step.key}>{stepBody(step, bare)}</ChainOfThoughtStep>
                 ),
               )}
-
-              {/* The closing step. It is a step, not a footer, so `ChainOfThought`
-							    hands it `isLast` and the rail above it finally has somewhere to
-							    land — the chain reads as terminated rather than trailing off.
-							    Success is monochrome, at the same scale as every row: the cap is
-							    punctuation, and a success-green check would out-weigh the work it
-							    closes on every burst the reader opens.
-								    Failure is the one thing that earns colour here. "Done" over a
-								    burst that lost a page is a false summary of the chain it
-								    terminates, and it is the LAST line the reader sees. */}
             </ChainOfThought>
           </div>
         </ToolActivateContext.Provider>

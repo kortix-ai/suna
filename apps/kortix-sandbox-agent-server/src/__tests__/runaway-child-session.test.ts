@@ -62,7 +62,7 @@ beforeEach(() => {
   saved = {
     KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
     KORTIX_SESSION_ID: process.env.KORTIX_SESSION_ID,
-    KORTIX_SANDBOX_TOKEN: process.env.KORTIX_SANDBOX_TOKEN,
+    KORTIX_TOKEN: process.env.KORTIX_TOKEN,
     KORTIX_API_URL: process.env.KORTIX_API_URL,
   }
 })
@@ -83,7 +83,7 @@ describe('runaway guard reaches child sessions', () => {
     const m = startMocks()
     process.env.KORTIX_PROJECT_ID = 'proj_1'
     process.env.KORTIX_SESSION_ID = 'sess_1'
-    process.env.KORTIX_SANDBOX_TOKEN = 'tok'
+    process.env.KORTIX_TOKEN = 'tok'
     process.env.KORTIX_API_URL = m.baseUrl
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
@@ -104,7 +104,7 @@ describe('runaway guard reaches child sessions', () => {
     const m = startMocks()
     process.env.KORTIX_PROJECT_ID = 'proj_1'
     process.env.KORTIX_SESSION_ID = 'sess_1'
-    process.env.KORTIX_SANDBOX_TOKEN = 'tok'
+    process.env.KORTIX_TOKEN = 'tok'
     process.env.KORTIX_API_URL = m.baseUrl
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config

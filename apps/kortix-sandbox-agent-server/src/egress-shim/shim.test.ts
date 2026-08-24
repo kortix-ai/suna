@@ -28,6 +28,15 @@ async function startShim(
 ): Promise<{ port: number; calls: Array<{ url: string; init: RequestInit }> }> {
   const calls: Array<{ url: string; init: RequestInit }> = []
   const brokerFetch = (async (url: unknown, init: unknown) => {
+    // The capability probe runs ONCE at construction, before any guest request.
+    // Answering 404 puts this shim on the permanent buffered `/broker`
+    // transport, which is what the tests below assert — the streaming tests
+    // override `brokerFetch` to answer 204 instead. It is not recorded, so
+    // `calls[0]` still means "the first relayed request".
+    if ((init as RequestInit | undefined)?.headers &&
+        'x-kortix-relay-probe' in ((init as RequestInit).headers as Record<string, string>)) {
+      return new Response(null, { status: 404 })
+    }
     calls.push({ url: String(url), init: init as RequestInit })
     return new Response(
       JSON.stringify({
@@ -177,36 +186,60 @@ describe('headers the broker would reject or that would defeat redaction', () =>
     expect(headers['accept-encoding']).toBe('identity')
   })
 
+  // authorization and cookie are the credential-carrying headers: an agent puts
+  // a HANDLE in them and the broker substitutes it server-side, so the shim must
+  // FORWARD them. Dropping them (as before) left a Bearer/cookie request carrying
+  // nothing, and the upstream answered 401.
   test.each([
-    ['cookie', 'Cookie: sid=abc'],
-    ['authorization', 'Authorization: Bearer guess'],
+    ['authorization', 'Authorization: Bearer guess', 'Bearer guess'],
+    ['cookie', 'Cookie: sid=abc', 'sid=abc'],
+  ])('%s is forwarded so the broker can substitute a handle in it', async (name, line, value) => {
+    const headers = await relayedHeaders(`${line}\r\n`)
+    expect(headers[name]).toBe(value)
+  })
+
+  test.each([
     ['te', 'TE: trailers'],
-  ])('%s is dropped, because the broker 400s on it rather than stripping it', async (name, line) => {
+    ['keep-alive', 'Keep-Alive: timeout=5'],
+  ])('%s is dropped, because the broker manages or 400s it', async (name, line) => {
     const headers = await relayedHeaders(`${line}\r\n`)
     expect(headers[name]).toBeUndefined()
   })
 
-  test('a websocket upgrade is reset, not left hanging', async () => {
-    // The relay is request/response and fully buffered — it cannot carry a
-    // socket. Found while testing header handling: without an explicit
-    // 'upgrade' listener the inner server fires neither 'request' nor anything
-    // else, and the client waits forever with nothing in the log.
+  test('a websocket upgrade gets a real 501, not a socket reset', async () => {
+    // This assertion CHANGED, and the change is the point.
+    //
+    // Before, the inner listener was `https.createServer` and a protocol
+    // upgrade fired 'upgrade', never 'request'. Under Bun the socket handed to
+    // that event is an inert stub — `write()` returns true while dropping the
+    // bytes — so the only honest option was to destroy the connection, and the
+    // client learned nothing. Measured: node v22.22.0 delivers the same bytes
+    // fine; there is no workaround at the node:http layer because there is no
+    // fd to recover.
+    //
+    // The listener is `Bun.serve` now, so the shim can ANSWER. Even with the
+    // websocket relay unavailable, the agent gets a status and a code it can
+    // act on instead of a hang and no log line.
     const errors: string[] = []
     const { port } = await startShim({ onError: (where) => errors.push(where) })
     const { socket } = await connect(port, 'api.example.com:443')
     const tls = await import('node:tls')
-    const outcome = await new Promise<string>((resolve) => {
+    const response = await new Promise<string>((resolve, reject) => {
+      let buffer = ''
       const secured = tls.connect({ socket, servername: 'api.example.com', ca: CA.certPem }, () => {
         secured.write(
           'GET / HTTP/1.1\r\nHost: api.example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n',
         )
       })
-      // Either end is a clean outcome; a TIMEOUT is the bug.
-      secured.once('close', () => resolve('closed'))
-      secured.once('error', () => resolve('closed'))
-      setTimeout(() => resolve('TIMEOUT'), 3000)
+      secured.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8')
+        if (buffer.includes('}')) resolve(buffer)
+      })
+      secured.once('error', reject)
+      setTimeout(() => reject(new Error(`timed out; got ${JSON.stringify(buffer)}`)), 4000)
     })
-    expect(outcome).toBe('closed')
+    expect(response).toContain('501')
+    expect(response).toContain('websocket_relay_unavailable')
     expect(errors).toContain('upgrade')
   })
 
@@ -223,7 +256,9 @@ describe('headers the broker would reject or that would defeat redaction', () =>
     const theirs = [...block.slice(0, block.indexOf(']')).matchAll(/'([a-z-]+)'/g)]
       .map((m) => m[1])
       .sort()
-    const mine = readFileSync(new URL('./shim.ts', import.meta.url), 'utf8')
+    // The literal list lives in its own module now, so `relay-client.ts` can
+    // read the same set without importing `shim.ts` (which imports it).
+    const mine = readFileSync(new URL('./blocked-headers.ts', import.meta.url), 'utf8')
     const mineBlock = mine.slice(mine.indexOf('const BLOCKED_REQUEST_HEADERS'))
     const ours = [...mineBlock.slice(0, mineBlock.indexOf(']')).matchAll(/'([a-z-]+)'/g)]
       .map((m) => m[1])
@@ -511,7 +546,7 @@ describe('the shim fails closed', () => {
     }),
     KORTIX_API_URL: 'https://api.kortix.test/v1',
     KORTIX_PROJECT_ID: 'proj-1',
-    KORTIX_CLI_TOKEN: 'kortix_pat_test',
+    KORTIX_TOKEN: 'kortix_pat_test',
   }
 
   test('a complete environment yields a config', () => {
@@ -519,15 +554,7 @@ describe('the shim fails closed', () => {
     expect(shimUnavailableReason(base)).toBeNull()
   })
 
-  test('the SANDBOX token does not stand in for the session token', () => {
-    // KORTIX_TOKEN is the daemon's identity and project-scoped routes reject
-    // it. Accepting it here would start a shim whose every relay 403s.
-    const env = { ...base, KORTIX_CLI_TOKEN: undefined, KORTIX_TOKEN: 'kortix_sb_daemon' }
-    expect(resolveShimConfig(env)).toBeNull()
-    expect(shimUnavailableReason(env)).toContain('KORTIX_CLI_TOKEN')
-  })
-
-  test.each(['KORTIX_API_URL', 'KORTIX_PROJECT_ID', 'KORTIX_CLI_TOKEN'])(
+  test.each(['KORTIX_API_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN'])(
     'a missing %s names itself in the reason',
     (name) => {
       const env = { ...base, [name]: undefined }
@@ -543,4 +570,450 @@ describe('the shim fails closed', () => {
     expect(resolveShimConfig(env)).toBeNull()
     expect(shimUnavailableReason(env)).toBeNull()
   })
+})
+
+/**
+ * The STREAMING transport.
+ *
+ * Everything above exercises the permanent buffered `/broker` path, which is
+ * unchanged. These drive the same shim with the capability probe answered
+ * `204`, so it selects `/relay` — and assert the three properties the buffered
+ * path could never have: bytes move incrementally in both directions, a handle
+ * split across a chunk boundary is still substituted, and there is no size cap.
+ */
+describe('the streaming relay transport', () => {
+  const HANDLE = 'kortix_brokered__use_kortix_fetch__KXS1abcdefghijklmnopqrstuvwxyz234567ab'
+  const VALUE = 'sk_live_the_real_value'
+
+  /** A shim whose probe succeeds, with a fake Kortix relay behind it. */
+  async function startStreamingShim(relay: {
+    /** Called with the decoded meta and a reader over the streamed request body. */
+    onRelay: (input: {
+      meta: import('@kortix/api-contract/secret-relay').SecretRelayMeta
+      body: ReadableStream<Uint8Array> | null
+    }) => Promise<Response>
+  }) {
+    const codec = await import('@kortix/api-contract/secret-relay')
+    const brokerFetch = (async (url: unknown, init: unknown) => {
+      const request = init as RequestInit & { headers: Record<string, string> }
+      if ('x-kortix-relay-probe' in request.headers) {
+        return new Response(null, { status: 204, headers: { 'x-kortix-relay': '1' } })
+      }
+      expect(String(url)).toContain('/relay')
+      const meta = codec.decodeRelayMeta(request.headers['x-kortix-relay-meta']!)
+      return await relay.onRelay({
+        meta,
+        body: (request.body as ReadableStream<Uint8Array> | undefined) ?? null,
+      })
+    }) as unknown as typeof fetch
+
+    const server = await createEgressShim({
+      ca: CA,
+      rules: [{ hosts: ['api.example.com'], identifier: 'DEMO_TOKEN' }],
+      apiUrl: 'https://api.kortix.test/v1',
+      projectId: 'proj-1',
+      token: 'kortix_pat_test',
+      brokerFetch,
+    })
+    open.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    return { port: (server.address() as net.AddressInfo).port }
+  }
+
+  /** A relay response carrying an upstream status and a streamed body. */
+  async function relayResponse(
+    status: number,
+    headers: Array<[string, string]>,
+    chunks: string[],
+    gapMs = 0,
+  ): Promise<Response> {
+    const codec = await import('@kortix/api-contract/secret-relay')
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        for (const chunk of chunks) {
+          if (gapMs) await new Promise((r) => setTimeout(r, gapMs))
+          controller.enqueue(Buffer.from(chunk))
+        }
+        controller.close()
+      },
+    })
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'x-kortix-relay': '1',
+        'x-kortix-relay-status': codec.encodeRelayStatus({ v: 1, status, headers }),
+        'content-type': 'application/octet-stream',
+      },
+    })
+  }
+
+  /** Speak HTTPS through the real CONNECT tunnel and hand back the raw socket. */
+  async function guest(port: number) {
+    const { socket } = await connect(port, 'api.example.com:443')
+    const tls = await import('node:tls')
+    const secured = await new Promise<import('node:tls').TLSSocket>((resolve, reject) => {
+      const s = tls.connect({ socket, servername: 'api.example.com', ca: CA.certPem }, () =>
+        resolve(s),
+      )
+      s.once('error', reject)
+    })
+    return secured
+  }
+
+  test('the probe selects the relay, and the guest request arrives there', async () => {
+    let sawRelay = false
+    const { port } = await startStreamingShim({
+      onRelay: async ({ meta }) => {
+        sawRelay = true
+        expect(meta.url).toBe('https://api.example.com/v1/things?a=1')
+        expect(meta.method).toBe('POST')
+        // The security control that survives every transport.
+        expect(meta.headers).toContainEqual(['accept-encoding', 'identity'])
+        return await relayResponse(200, [['content-type', 'application/json']], ['{"ok":true}'])
+      },
+    })
+    const secured = await guest(port)
+    secured.write(
+      'POST /v1/things?a=1 HTTP/1.1\r\nHost: api.example.com\r\nContent-Length: 2\r\n\r\n{}',
+    )
+    const text = await readUntil(secured, '', '{"ok":true}')
+    expect(sawRelay).toBe(true)
+    expect(text).toContain('200')
+    secured.destroy()
+  })
+
+  test('a handle SPLIT across guest chunk boundaries still reaches Kortix whole', async () => {
+    // The bug class the whole design exists to prevent. The guest writes the
+    // handle in two TCP segments; the relay must see the complete byte string.
+    let received = ''
+    const { port } = await startStreamingShim({
+      onRelay: async ({ body }) => {
+        const parts: string[] = []
+        if (body) {
+          const reader = body.getReader()
+          for (;;) {
+            const { done, value } = await reader.read()
+            if (done) break
+            parts.push(Buffer.from(value).toString('utf8'))
+          }
+        }
+        received = parts.join('')
+        return await relayResponse(200, [['content-type', 'application/json']], ['{"ok":true}'])
+      },
+    })
+    const secured = await guest(port)
+    const payload = `{"token":"${HANDLE}"}`
+    secured.write(
+      `POST /v1/things HTTP/1.1\r\nHost: api.example.com\r\nContent-Length: ${payload.length}\r\n\r\n`,
+    )
+    const cut = payload.indexOf(HANDLE) + 11
+    secured.write(payload.slice(0, cut))
+    await new Promise((r) => setTimeout(r, 60))
+    secured.write(payload.slice(cut))
+    await readUntil(secured, '', '{"ok":true}')
+    expect(received).toBe(payload)
+    expect(received).toContain(HANDLE)
+    secured.destroy()
+  })
+
+  test('SSE events reach the guest ONE AT A TIME, not batched at the end', async () => {
+    // The property a buffered relay can never have, and the reason the
+    // substituter had to become prefix-aware: an event that is complete must
+    // leave now, not when the connection closes.
+    const { port } = await startStreamingShim({
+      onRelay: async () =>
+        await relayResponse(
+          200,
+          [['content-type', 'text/event-stream']],
+          ['data: {"i":0}\n\n', 'data: {"i":1}\n\n', 'data: {"i":2}\n\n'],
+          60,
+        ),
+    })
+    const secured = await guest(port)
+    secured.write('GET /v1/stream HTTP/1.1\r\nHost: api.example.com\r\n\r\n')
+    const arrivals: number[] = []
+    const started = Date.now()
+    await new Promise<void>((resolve, reject) => {
+      let buffer = ''
+      secured.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8')
+        arrivals.push(Date.now() - started)
+        if (buffer.includes('{"i":2}')) resolve()
+      })
+      secured.once('error', reject)
+      setTimeout(() => reject(new Error(`timed out; got ${JSON.stringify(buffer)}`)), 5000)
+    })
+    // Batched delivery would land in one or two reads at the very end.
+    expect(arrivals.length).toBeGreaterThanOrEqual(3)
+    expect(arrivals[arrivals.length - 1]! - arrivals[0]!).toBeGreaterThan(60)
+    secured.destroy()
+  })
+
+  test('a response far past the old 5 MiB cap round-trips byte-exactly', async () => {
+    // The cap that no longer exists. 8 MiB is 1.6x the buffered response
+    // ceiling; the buffered path answered 502 response_too_large here.
+    const size = 8 * 1024 * 1024
+    const { port } = await startStreamingShim({
+      onRelay: async () =>
+        await relayResponse(
+          200,
+          [['content-type', 'application/octet-stream']],
+          Array.from({ length: 8 }, () => 'q'.repeat(1024 * 1024)),
+        ),
+    })
+    const secured = await guest(port)
+    secured.write('GET /v1/big HTTP/1.1\r\nHost: api.example.com\r\n\r\n')
+    const total = await new Promise<number>((resolve, reject) => {
+      let headerDone = false
+      let bytes = 0
+      let buffer = Buffer.alloc(0)
+      secured.on('data', (chunk: Buffer) => {
+        if (!headerDone) {
+          buffer = Buffer.concat([buffer, chunk])
+          const sep = buffer.indexOf('\r\n\r\n')
+          if (sep < 0) return
+          headerDone = true
+          bytes += buffer.byteLength - (sep + 4)
+        } else {
+          bytes += chunk.byteLength
+        }
+        if (bytes >= size) resolve(bytes)
+      })
+      secured.once('error', reject)
+      setTimeout(() => reject(new Error(`timed out at ${bytes} of ${size} bytes`)), 20_000)
+    })
+    expect(total).toBeGreaterThanOrEqual(size)
+    secured.destroy()
+  }, 30_000)
+
+  test("Kortix's own refusal reaches the agent verbatim, not as a proxy error", async () => {
+    // No `x-kortix-relay-status` ⟺ Kortix refused. The agent must see the code.
+    const { port } = await startStreamingShim({
+      onRelay: async () =>
+        new Response(
+          JSON.stringify({ error: 'outbound request does not match the secret policy', code: 'policy_denied' }),
+          {
+            status: 403,
+            headers: { 'content-type': 'application/json', 'x-kortix-relay-error': 'policy_denied' },
+          },
+        ),
+    })
+    const secured = await guest(port)
+    secured.write('GET /v1/nope HTTP/1.1\r\nHost: api.example.com\r\n\r\n')
+    const text = await readUntil(secured, '', 'policy_denied')
+    expect(text).toContain('403')
+    expect(text).toContain('policy_denied')
+    secured.destroy()
+  })
+
+  test('a failed probe pins the shim to the buffered transport for its lifetime', async () => {
+    // The rollout guarantee: an older self-hosted API answers 404 and the shim
+    // never tries `/relay` again — because a streamed body already consumed
+    // cannot be replayed onto a fallback.
+    const seen: string[] = []
+    const brokerFetch = (async (url: unknown, init: unknown) => {
+      const request = init as RequestInit & { headers: Record<string, string> }
+      seen.push(String(url))
+      if ('x-kortix-relay-probe' in request.headers) return new Response(null, { status: 404 })
+      return new Response(
+        JSON.stringify({
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body_base64: Buffer.from('{"ok":true}').toString('base64'),
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof fetch
+    const server = await createEgressShim({
+      ca: CA,
+      rules: [{ hosts: ['api.example.com'], identifier: 'DEMO_TOKEN' }],
+      apiUrl: 'https://api.kortix.test/v1',
+      projectId: 'proj-1',
+      token: 'kortix_pat_test',
+      brokerFetch,
+    })
+    open.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const port = (server.address() as net.AddressInfo).port
+    for (let i = 0; i < 2; i += 1) {
+      const secured = await guest(port)
+      secured.write('GET /v1/things HTTP/1.1\r\nHost: api.example.com\r\n\r\n')
+      await readUntil(secured, '', '{"ok":true}')
+      secured.destroy()
+    }
+    expect(seen[0]).toContain('/relay')
+    expect(seen.slice(1).every((url) => url.endsWith('/broker'))).toBe(true)
+    expect(seen).toHaveLength(3)
+  })
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // REGRESSIONS — each of these failed before the fix beside it.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  test('a relay body that ends WITHOUT its sentinel kills the guest connection', async () => {
+    // The relay's whole mid-stream error signal used to rest on "a failure
+    // after the headers terminates the chunked response without its final
+    // 0\r\n\r\n". Measured false on bun 1.3.14: Bun writes the terminator
+    // anyway and the client's fetch resolves cleanly, so a truncated 3 MB JSON
+    // list reached the agent as a complete-looking 200 and it acted on partial
+    // data. Truncation is now signalled positively by a random sentinel, and
+    // its ABSENCE has to reach the guest as a transport error — which, for the
+    // same Bun reason, can only be done by killing the connection.
+    const codec = await import('@kortix/api-contract/secret-relay')
+    const { port } = await startStreamingShim({
+      onRelay: async () => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(Buffer.from('{"partial":'))
+            controller.close() // clean close, sentinel NEVER written
+          },
+        })
+        return new Response(body, {
+          status: 200,
+          headers: {
+            'x-kortix-relay': '1',
+            'x-kortix-relay-status': codec.encodeRelayStatus({
+              v: 1,
+              status: 200,
+              headers: [['content-type', 'application/json']],
+              eos: 'ab'.repeat(codec.RELAY_EOS_BYTES),
+            }),
+            'content-type': 'application/octet-stream',
+          },
+        })
+      },
+    })
+    const secured = await guest(port)
+    const closed = new Promise<string>((resolve) => {
+      secured.once('close', (hadError: boolean) => resolve(hadError ? 'reset' : 'closed'))
+      secured.once('error', () => resolve('reset'))
+      setTimeout(() => resolve('still-open'), 2000)
+    })
+    secured.write('GET /v1/things HTTP/1.1\r\nHost: api.example.com\r\n\r\n')
+    expect(await closed).not.toBe('still-open')
+    secured.destroy()
+  })
+
+  test('a relay body WITH its sentinel delivers the payload and strips the sentinel', async () => {
+    const codec = await import('@kortix/api-contract/secret-relay')
+    const eos = 'cd'.repeat(codec.RELAY_EOS_BYTES)
+    const { port } = await startStreamingShim({
+      onRelay: async ({ meta }) => {
+        // The shim must ASK for the sentinel, or an old API never sends one.
+        expect(meta.eos).toBe(true)
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(Buffer.from('{"ok":true}'))
+            controller.enqueue(Buffer.from(eos, 'hex'))
+            controller.close()
+          },
+        })
+        return new Response(body, {
+          status: 200,
+          headers: {
+            'x-kortix-relay': '1',
+            'x-kortix-relay-status': codec.encodeRelayStatus({
+              v: 1,
+              status: 200,
+              headers: [['content-type', 'application/json']],
+              eos,
+            }),
+            'content-type': 'application/octet-stream',
+          },
+        })
+      },
+    })
+    const secured = await guest(port)
+    secured.write('GET /v1/things HTTP/1.1\r\nHost: api.example.com\r\n\r\n')
+    const text = await readUntil(secured, '', '{"ok":true}')
+    expect(text).toContain('200')
+    // The sentinel is transport framing, never payload.
+    expect(text).not.toContain(eos)
+    expect(Buffer.from(text, 'utf8').includes(Buffer.from(eos, 'hex'))).toBe(false)
+    secured.destroy()
+  })
+
+  test('a relay that goes AWAY mid-life downgrades to /broker instead of failing forever', async () => {
+    // `relaySupported` was decided once by the construction-time probe and
+    // never revised, so both documented incident levers —
+    // KORTIX_SECRET_RELAY_STREAM_ENABLED=false (503 relay_disabled) and an API
+    // rollback (404) — BROKE every running boundary-secret sandbox instead of
+    // healing it, with /broker up and working the whole time.
+    const seen: string[] = []
+    const brokerFetch = (async (url: unknown, init: unknown) => {
+      const request = init as RequestInit & { headers: Record<string, string> }
+      if ('x-kortix-relay-probe' in request.headers) {
+        seen.push('probe')
+        return new Response(null, { status: 204, headers: { 'x-kortix-relay': '1' } })
+      }
+      seen.push(String(url).endsWith('/broker') ? 'broker' : 'relay')
+      if (!String(url).endsWith('/broker')) {
+        return new Response(
+          JSON.stringify({ error: 'The streaming secret relay is disabled', code: 'relay_disabled' }),
+          {
+            status: 503,
+            headers: { 'content-type': 'application/json', 'x-kortix-relay-error': 'relay_disabled' },
+          },
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body_base64: Buffer.from('{"ok":true}').toString('base64'),
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof fetch
+    const server = await createEgressShim({
+      ca: CA,
+      rules: [{ hosts: ['api.example.com'], identifier: 'DEMO_TOKEN' }],
+      apiUrl: 'https://api.kortix.test/v1',
+      projectId: 'proj-1',
+      token: 'kortix_pat_test',
+      brokerFetch,
+    })
+    open.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const port = (server.address() as net.AddressInfo).port
+    for (let i = 0; i < 2; i += 1) {
+      const secured = await guest(port)
+      secured.write('GET /v1/things HTTP/1.1\r\nHost: api.example.com\r\n\r\n')
+      // Both calls SUCCEED: the first recovers in-turn (a GET is replayable),
+      // the second never touches /relay again.
+      await readUntil(secured, '', '{"ok":true}')
+      secured.destroy()
+    }
+    expect(seen).toEqual(['probe', 'relay', 'broker', 'broker'])
+  })
+
+  test('construction does NOT block on the capability probe', async () => {
+    // `createEgressShim` was awaited on a 5 s network round trip while
+    // `startProxy()` — the daemon's health listener — had not bound yet, so
+    // every readiness poll hit a closed port and the session sat at "Starting
+    // the agent". The probe now settles off the boot path.
+    let probeStarted = false
+    const brokerFetch = (async (_url: unknown, init: unknown) => {
+      const request = init as RequestInit & { headers: Record<string, string> }
+      if ('x-kortix-relay-probe' in request.headers) {
+        probeStarted = true
+        await new Promise((r) => setTimeout(r, 600))
+        return new Response(null, { status: 204, headers: { 'x-kortix-relay': '1' } })
+      }
+      return new Response(null, { status: 500 })
+    }) as unknown as typeof fetch
+    const started = Date.now()
+    const server = await createEgressShim({
+      ca: CA,
+      rules: [{ hosts: ['api.example.com'], identifier: 'DEMO_TOKEN' }],
+      apiUrl: 'https://api.kortix.test/v1',
+      projectId: 'proj-1',
+      token: 'kortix_pat_test',
+      brokerFetch,
+    })
+    open.push(server)
+    const elapsed = Date.now() - started
+    expect(probeStarted).toBe(true)
+    expect(elapsed).toBeLessThan(300)
+  }, 10_000)
 })

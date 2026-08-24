@@ -3,25 +3,37 @@ import { readFileSync } from 'node:fs';
 
 import { buildFastSandboxDockerfile } from '../fast-dockerfile';
 
+const DEFAULT_OPTIONS = {
+  agentBinaryPath: 'artifacts/kortix-agent.gz',
+  cliBinaryPath: 'artifacts/kortix.gz',
+  entrypointScriptPath: 'artifacts/kortix-entrypoint',
+  opencodeWarmupScriptPath: 'artifacts/opencode-warmup',
+  machineDocPath: 'artifacts/MACHINE.fast.md',
+  slackCliPath: 'artifacts/slack-cli',
+  lazyToolsPath: 'artifacts/lazy-tools',
+  catalogPath: 'artifacts/llm-catalog.json',
+  managedSkillsPath: 'artifacts/managed-skills',
+  runtimeVersionsPath: 'artifacts/runtime-versions.json',
+  opencodeConfigPath: 'artifacts/opencode',
+  scaffoldPath: 'artifacts/scaffold.git',
+};
+
 describe('buildFastSandboxDockerfile', () => {
   test('keeps the session-critical runtime and defers heavyweight tool packs', () => {
-    const dockerfile = buildFastSandboxDockerfile({
-      agentBinaryPath: 'artifacts/kortix-agent.gz',
-      cliBinaryPath: 'artifacts/kortix.gz',
-      entrypointScriptPath: 'artifacts/kortix-entrypoint',
-      opencodeWarmupScriptPath: 'artifacts/opencode-warmup',
-      machineDocPath: 'artifacts/MACHINE.fast.md',
-      slackCliPath: 'artifacts/slack-cli',
-      lazyToolsPath: 'artifacts/lazy-tools',
-      catalogPath: 'artifacts/llm-catalog.json',
-      managedSkillsPath: 'artifacts/managed-skills',
-      runtimeVersionsPath: 'artifacts/runtime-versions.json',
-      opencodeConfigPath: 'artifacts/opencode',
-      scaffoldPath: 'artifacts/scaffold.git',
-    });
+    const dockerfile = buildFastSandboxDockerfile(DEFAULT_OPTIONS);
 
-    expect(dockerfile).toContain('FROM ubuntu:24.04');
-    expect(dockerfile).toContain('opencode-ai@1.17.11');
+expect(dockerfile).toContain('FROM ubuntu:24.04');
+    expect(dockerfile).toContain('opencode-ai@1.18.19');
+    expect(dockerfile).toContain(
+      "opencode_native=\"$(sed -n 's/^# cmd-shim-target=//p' \"$(command -v opencode)\" | tail -n 1)\"",
+    );
+    expect(dockerfile).not.toContain('pnpm list -g');
+    expect(dockerfile).not.toContain('pnpm root -g');
+    expect(dockerfile).toContain('test "$(wc -c < "$opencode_native")" -gt 50000000');
+    expect(dockerfile).toContain('ln -sfn "$opencode_native" /opt/kortix/opencode.current');
+    expect(dockerfile).toContain(
+      'ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix',
+    );
     expect(dockerfile).toContain('pnpm-linux-${pnpm_arch}.tar.gz');
     expect(dockerfile).toContain('bun-v1.3.14');
     expect(dockerfile).toContain('aarch64|arm64) bun_arch=aarch64');
@@ -40,14 +52,28 @@ describe('buildFastSandboxDockerfile', () => {
     expect(dockerfile).toContain(
       '/home/kortix/.bun/bin/bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check',
     );
-    expect(dockerfile).toContain('bash /tmp/kortix-opencode-warmup instance wipe');
+    expect(dockerfile).toContain('git clone -q /opt/kortix/scaffold.git /workspace');
+    expect(dockerfile).toContain('kortixOpenCodeInstallSentinel');
+    expect(dockerfile).toContain('bash /tmp/kortix-opencode-warmup instance keep');
+    expect(dockerfile.indexOf('/opt/kortix/scaffold.git')).toBeLessThan(
+      dockerfile.indexOf('instance keep'),
+    );
+    expect(dockerfile.indexOf('git clone -q /opt/kortix/scaffold.git /workspace')).toBeLessThan(
+      dockerfile.indexOf('instance keep'),
+    );
+    expect(dockerfile.indexOf('kortixOpenCodeInstallSentinel')).toBeLessThan(
+      dockerfile.indexOf('instance keep'),
+    );
+    expect(dockerfile).toContain(
+      'sudo -u kortix env HOME=/home/kortix git -C /workspace status',
+    );
     expect(dockerfile.indexOf('bun build tools/*.ts')).toBeGreaterThan(
       dockerfile.indexOf('/opt/kortix/warm-config/.kortix/opencode/'),
     );
-    expect(dockerfile.indexOf('instance wipe')).toBeGreaterThan(
+    expect(dockerfile.indexOf('instance keep')).toBeGreaterThan(
       dockerfile.indexOf('bun build tools/*.ts'),
     );
-    expect(dockerfile.indexOf('instance wipe')).toBeGreaterThan(
+    expect(dockerfile.indexOf('instance keep')).toBeGreaterThan(
       dockerfile.indexOf('/opt/kortix/warm-config/.kortix/opencode/'),
     );
     expect(dockerfile).toContain('/opt/kortix/runtime-versions.json');
@@ -76,5 +102,17 @@ describe('buildFastSandboxDockerfile', () => {
     expect(installer).toContain(
       'uv pip install --python "${python_env}/bin/python" "${python_specs[@]}"',
     );
+  });
+
+  test('installs only the lean OpenCode config runtime', () => {
+    const dockerfile = buildFastSandboxDockerfile(DEFAULT_OPTIONS);
+
+    expect(dockerfile).toContain('test -d node_modules/zod');
+    expect(dockerfile).toContain('test ! -e node_modules/@opencode-ai/plugin');
+    expect(dockerfile).toContain('test ! -e node_modules/effect');
+    expect(dockerfile).toContain('test ! -e node_modules/@mendable/firecrawl-js');
+    expect(dockerfile).toContain('test ! -e node_modules/@tavily/core');
+    expect(dockerfile).toContain('test ! -e node_modules/replicate');
+    expect(dockerfile).not.toContain('bun build node_modules/axios');
   });
 });

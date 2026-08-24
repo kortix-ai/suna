@@ -7,22 +7,10 @@
  *   KORTIX_SECRET_CAPABILITIES  the host -> identifier rules (values-free)
  *   KORTIX_PROJECT_ID           the project the broker route is scoped to
  *   KORTIX_API_URL              where the broker route lives
- *   KORTIX_CLI_TOKEN            the session credential that may spend a secret
+ *   KORTIX_TOKEN             the session credential that may spend a secret
  *
- * ## Why KORTIX_CLI_TOKEN and not KORTIX_TOKEN
- *
- * The sandbox holds TWO credentials and only one of them works here.
- *
- *  - `KORTIX_SANDBOX_TOKEN` / `KORTIX_TOKEN` (`kortix_sb_…`) is the DAEMON's
- *    identity. It carries no user identity, and project-scoped routes reject it
- *    outright (platform/services/session-sandbox.ts).
- *  - `KORTIX_CLI_TOKEN` (`kortix_pat_…`) is the SESSION credential: it acts as
- *    the launching user, scoped by the agent grant, and is what the in-sandbox
- *    `kortix` CLI already uses to call this very route.
- *
- * The broker route requires `authType === 'pat'` plus a session id plus an agent
- * grant (projects/routes/secret-broker.ts). Only the CLI token satisfies that,
- * so reaching for the more obvious `KORTIX_TOKEN` yields a 403 on every request.
+ * The sandbox holds one session-bound credential. The API validates its user,
+ * project, session, and agent-grant claims before the broker spends a secret.
  *
  * ## Failing closed
  *
@@ -121,7 +109,7 @@ export function resolveShimConfig(env: NodeJS.ProcessEnv): ShimConfig | null {
 
   const apiUrl = env.KORTIX_API_URL?.trim()
   const projectId = env.KORTIX_PROJECT_ID?.trim()
-  const token = env.KORTIX_CLI_TOKEN?.trim()
+  const token = env.KORTIX_TOKEN?.trim()
   if (!apiUrl || !projectId || !token) return null
 
   return { rules, apiUrl, projectId, token }
@@ -140,8 +128,8 @@ export function shimUnavailableReason(env: NodeJS.ProcessEnv): string | null {
   if (parseShimRules(env.KORTIX_SECRET_CAPABILITIES).length === 0) return null
   if (!env.KORTIX_API_URL?.trim()) return 'KORTIX_API_URL is not set'
   if (!env.KORTIX_PROJECT_ID?.trim()) return 'KORTIX_PROJECT_ID is not set'
-  if (!env.KORTIX_CLI_TOKEN?.trim()) {
-    return 'KORTIX_CLI_TOKEN is not set (the sandbox token cannot spend a secret)'
+  if (!env.KORTIX_TOKEN?.trim()) {
+    return 'KORTIX_TOKEN is not set'
   }
   return null
 }

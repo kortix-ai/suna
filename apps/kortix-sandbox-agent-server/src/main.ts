@@ -39,7 +39,7 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 // `startSessionRuntime` — so every way a session comes up reconciles once.
 // Strictly AFTER `bootMark('opencode-ready')` and never awaited: it adds zero
 // milliseconds to the readiness the API and the frontend poll for.
-import { scheduleRuntimeAssetsReconcile } from './runtime-assets'
+import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
@@ -75,15 +75,27 @@ const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'north-mini-code-free',
 ])
 
+interface InitialTurnClaim {
+  prompt: string
+  turnToken: string
+  messageId: string
+}
+
+let claimedInitialTurn: InitialTurnClaim | null = null
+
+/** Test seam: a daemon process claims at most one initial turn. */
+export function resetClaimedInitialTurnForTests(): void {
+  claimedInitialTurn = null
+}
+
 async function main() {
   const bootTime = Date.now()
   const cfg = loadConfig()
-  const prompt = (process.env.KORTIX_INITIAL_PROMPT ?? '').trim()
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   const bootState: SandboxBootState = {
     repoMaterializationError: null,
     timeline: [],
-    initialOpenCodeSessionRequired: prompt.length > 0 || bootstrapSession,
+    initialOpenCodeSessionRequired: bootstrapSession,
     initialOpenCodeSessionId: null,
     initialOpenCodeSessionError: null,
   }
@@ -180,8 +192,14 @@ async function main() {
   // reconfigured with the resolved dir below, before the process is ever
   // spawned. `reconfigure` only rewrites state read at spawn time, so this is
   // exactly equivalent to constructing it late.
+  const opencodeBinaryPrefetchEnabled = process.env.KORTIX_OPENCODE_BINARY_PREFETCH === '1'
   const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
+    onFirstReadyResponse: () => {
+      if (bootState.timeline.some((mark) => mark.label === 'opencode-session-api-ready')) return
+      bootMark('opencode-session-api-ready')
+    },
+    nativeBinaryFastPathEnabled: opencodeBinaryPrefetchEnabled,
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
       // writing, or the client streams a part that will never complete.
@@ -205,7 +223,26 @@ async function main() {
     },
   })
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(opencode, server, staticWeb)
+  const shutdown = installShutdownHandlers(opencode, server, staticWeb)
+  // Hand the convergence machinery this session's live runtime, once.
+  //
+  // Two things need it. opencode convergence restarts opencode, so it goes
+  // through the supervisor that owns spawn/respawn/dispose — never behind its
+  // back. And a staged daemon update exits `75` through the SAME clean shutdown
+  // a SIGTERM takes: opencode is a child of this process, so a bare
+  // `process.exit` would leave the relaunched daemon fighting an orphan for the
+  // opencode port.
+  configureRuntimeConvergence({
+    seam: {
+      // Re-read per pass: a verified reload promotes the replacement on the
+      // other half of the port pair, so the live URL moves.
+      opencodeBaseUrl: () => opencode.getInternalUrl(),
+      workspace: cfg.workspace,
+      restartOpencode: () => opencode.restart(),
+    },
+    turnInFlight: () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace),
+    exit: (code) => shutdown({ reason: 'agent-swap', exitCode: code }),
+  })
   bootMark('proxy-up')
 
   // Learn the CURRENT managed lineup from the gateway this session bills
@@ -216,7 +253,15 @@ async function main() {
   // `ModelNotFound: kortix/<id>` (prod incident 2026-08-19). The result is
   // consumed by buildOpencodeConfigContent at spawn; the clone is the boot
   // long-pole, so the fetch costs no critical-path time.
-  startManagedModelsPrefetch(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_LLM_API_KEY)
+  startManagedModelsPrefetch(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_TOKEN)
+
+  // Platinum lazily faults image pages into a fresh VM. Read the OpenCode
+  // executable sequentially while repository and config work run. Stop at the
+  // spawn boundary, so a slow page fault cannot extend the critical path.
+  const opencodeBinaryPrefetchPromise =
+    opencodeBinaryPrefetchEnabled
+      ? opencode.prefetchBinary()
+      : Promise.resolve(false)
 
   const repoMaterializePromise: Promise<void> = cfg.autoClone
     ? materializeRepo(cfg).catch((err) => {
@@ -247,6 +292,11 @@ async function main() {
   await ensureInjectedManagedSkills(opencodeConfigDir)
   bootMark('config-deps')
 
+  // Repository/config work defines the free overlap window. Stop any
+  // remaining sequential read here so prefetch cannot outlive either outcome.
+  opencode.cancelBinaryPrefetch()
+  void opencodeBinaryPrefetchPromise
+
   if (bootState.repoMaterializationError) {
     logger.warn('[boot] skipping runtime readiness because repo materialization failed')
   } else {
@@ -273,7 +323,7 @@ async function main() {
   // AFTER the spawn and without a restart, because the whole point is that a
   // ~400KB cross-region catalog fetch never gates a session boot again.
   if (catalogIsDegraded(process.env.KORTIX_LLM_CATALOG_FILE)) {
-    scheduleCatalogWarm(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_LLM_API_KEY)
+    scheduleCatalogWarm(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_TOKEN)
   }
 
   logger.info('[boot] proxy up; runtime bootstrap complete', {
@@ -390,7 +440,6 @@ function armSeedAdoption(
       // deriving session's credentials, which must never serve this fork.
       server.reload(cfg2)
       bootState.initialOpenCodeSessionRequired =
-        (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
       logger.info('[seed] adoption — initializing session', { trigger, branch: process.env.KORTIX_BRANCH_NAME })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
@@ -534,6 +583,10 @@ async function startSessionRuntime(
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): Promise<void> {
+  const markOpencodeListening = () => {
+    if (bootState.timeline.some((mark) => mark.label === 'opencode-listening')) return
+    bootMark('opencode-listening')
+  }
   // BEFORE the event loop, the root resolution and any prompt delivery: a
   // restart here strands nothing, and the first turn must run on a provider map
   // that has every managed model the picker offers.
@@ -593,13 +646,19 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
+  const onSessionStatus = (opencodeSessionId: string, statusType: string) => {
+    if (statusType !== 'busy' && statusType !== 'retry') return
+    void relayTurnBeginToApi(opencodeSessionId, opencode, cfg).catch((err) =>
+      logger.warn('[opencode-events] turn-begin relay failed', { err: (err as Error).message }),
+    )
+  }
   let initialTurnAcceptanceSettled = false
   let initialTurnAcceptanceInFlight = false
   const reconcileInitialTurnAcceptance = async () => {
     if (initialTurnAcceptanceSettled || initialTurnAcceptanceInFlight) return
     const opencodeSessionId = bootState.initialOpenCodeSessionId
-    const turnToken = process.env.KORTIX_INITIAL_TURN_TOKEN?.trim()
-    const messageId = process.env.KORTIX_INITIAL_TURN_MESSAGE_ID?.trim()
+    const turnToken = claimedInitialTurn?.turnToken
+    const messageId = claimedInitialTurn?.messageId
     if (!opencodeSessionId || !turnToken || !messageId) return
     initialTurnAcceptanceInFlight = true
     try {
@@ -640,6 +699,7 @@ async function startSessionRuntime(
     onQuestionAsked,
     onSessionIdle,
     onSessionError,
+    onSessionStatus,
     onConnected,
     onReconcile: onConnected,
   }
@@ -653,7 +713,13 @@ async function startSessionRuntime(
     // backstop for any residual gap.
     const loop = startOpencodeEventLoop(opencode, cfg, eventHandlers)
     loopStarted = true
-    await maybeCreateInitialOpencodeSession(opencode, bootState, bootMark, loop.connected).catch(
+    await maybeCreateInitialOpencodeSession(
+      opencode,
+      bootState,
+      bootMark,
+      loop.connected,
+      markOpencodeListening,
+    ).catch(
       (err) => {
         bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
         logger.warn('[boot] initial opencode session setup failed', err)
@@ -674,7 +740,7 @@ async function startSessionRuntime(
       return
     }
   }
-  const ready = await waitForOpencodeReady(opencode, cfg.projectTarget, () => bootMark('opencode-listening'))
+  const ready = await waitForOpencodeReady(opencode, cfg.projectTarget, markOpencodeListening)
   if (ready) {
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
@@ -719,11 +785,11 @@ function reloadSessionEnv(paths: string[] = ['/etc/pt-env']): void {
 // failure just leaves the fallback catalog (LLM + tools still work via proxies).
 //
 // ENDPOINT CONTRACT (apps/api, to be added deliberately): GET KORTIX_LLM_CATALOG_URL with
-// `Authorization: Bearer <KORTIX_SANDBOX_TOKEN>` → `{ models: {...} }` ==
+// `Authorization: Bearer <KORTIX_TOKEN>` → `{ models: {...} }` ==
 // gatewayModelCatalog(projectId, userId). During seed capture there is NO live
 // sessionSandboxes row (it's a template build), and the token is a type='user'
 // account key, so the route must authorize by validateAccountToken→accountId/projectId,
-// NOT by the sandbox-row check clone-credential uses.
+// NOT by the live-session check used for ordinary sandbox tokens.
 async function prefetchSeedCatalog(cfg: Config): Promise<void> {
   const url = process.env.KORTIX_LLM_CATALOG_URL
   if (!url || !cfg.sandboxToken) return
@@ -1001,7 +1067,6 @@ async function runWarmSeedMode(
       // tokenless or with seed-only credentials.
       server.reload(cfg2)
       bootState.initialOpenCodeSessionRequired =
-        (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
       logger.info('[seed] adopting forked session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
@@ -1042,7 +1107,7 @@ async function runWarmSeedMode(
       // restart; an identical catalog keeps the hot-swap path.
       let gatewayCatalogChanged = false
       const llmBaseUrl = process.env.KORTIX_LLM_BASE_URL
-      const llmApiKey = process.env.KORTIX_LLM_API_KEY
+      const llmApiKey = process.env.KORTIX_TOKEN
       if (llmBaseUrl && llmApiKey) {
         const currentCatalogFile =
           process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json'
@@ -1076,12 +1141,12 @@ async function runWarmSeedMode(
         !bootState.repoMaterializationError
       ) {
         // LLM gateway: required for the session to function.
-        setLlmProxyToken(process.env.KORTIX_LLM_API_KEY, process.env.KORTIX_LLM_BASE_URL)
+        setLlmProxyToken(process.env.KORTIX_TOKEN, process.env.KORTIX_LLM_BASE_URL)
         // Optional Connector MCP compatibility: if the seed enabled that face,
         // the running MCP points at this proxy. The CLI path does not need this;
         // it reads the live session env through BASH_ENV on every command.
         if (process.env.KORTIX_CONNECTORS_PROXY_URL && connectorProxyBaseUrl() != null) {
-          setConnectorProxyToken(process.env.KORTIX_CLI_TOKEN, process.env.KORTIX_API_URL)
+          setConnectorProxyToken(process.env.KORTIX_TOKEN, process.env.KORTIX_API_URL)
         }
         if (llmProxyReady()) {
           hotSwapped = true
@@ -1162,12 +1227,13 @@ async function maybeCreateInitialOpencodeSession(
   // the reused-root / no-prompt paths (which never fire a new turn) don't depend
   // on it; a missing promise just skips the wait.
   eventLoopConnected?: Promise<void>,
+  onListening?: () => void,
 ): Promise<void> {
-  const prompt = (process.env.KORTIX_INITIAL_PROMPT ?? '').trim()
+  const claimedTurn = await claimInitialTurnFromApi()
+  const prompt = claimedTurn?.prompt ?? ''
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   if (!prompt && !bootstrapSession) return
 
-  const baseUrl = opencode.getInternalUrl()
   const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
 
   // `opencode-session-created` used to be ONE mark covering opencode's entire
@@ -1187,7 +1253,23 @@ async function maybeCreateInitialOpencodeSession(
   // marker (delivery, below, hasn't happened yet) — reflects only a PRIOR
   // boot's successful delivery, never this one's own pending write.
   const priorDeliveredMarker = readInitialPromptDeliveredMarker()
-  const resolved = await resolveExistingRoot(baseUrl, workspace, priorPin)
+  const fastRootReadinessEnabled = process.env.KORTIX_OPENCODE_BINARY_PREFETCH === '1'
+  const rootListDeadlineMs = await waitForFastOpencodeRootReadiness({
+    fastPathEnabled: fastRootReadinessEnabled,
+    firstReadyResponse: opencode.waitForCurrentReadyResponse(),
+  })
+  // A verified reload can promote OpenCode onto the standby port while the
+  // readiness gate waits. Resolve the live URL after that wait so root lookup
+  // never resumes against the retired process.
+  const baseUrl = opencode.getInternalUrl()
+  const resolved = await resolveExistingRoot(
+    baseUrl,
+    workspace,
+    priorPin,
+    rootListDeadlineMs,
+    onListening,
+    fastRootReadinessEnabled,
+  )
   bootMark('opencode-answering')
   if (resolved.status === 'defer') {
     // opencode never answered the root list within the deadline, and a prior
@@ -1287,7 +1369,12 @@ async function maybeCreateInitialOpencodeSession(
       bootMark('event-loop-connected')
     }
     await publishInitialOpenCodeSessionAfterPrompt(bootState, sessionId, () =>
-      deliverInitialOpenCodePrompt(opencode, sessionId, workspace, buildInitialPromptBody(prompt)),
+      deliverInitialOpenCodePrompt(
+        opencode,
+        sessionId,
+        workspace,
+        buildInitialPromptBody(prompt, claimedTurn?.messageId),
+      ),
     )
     // F1: written ONLY after delivery actually succeeded (an exception above
     // skips this line) — the durable receipt `reusedRootAlreadyDelivered`
@@ -1482,6 +1569,61 @@ export type ExistingRootResult =
   | { status: 'create' }
   | { status: 'defer' }
 
+const OPENCODE_ROOT_RESOLUTION_DEADLINE_MS = 20_000
+const OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS = 5_000
+const OPENCODE_FIRST_READY_GATE_MAX_MS = OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS
+
+type FastOpencodeRootReadinessInput = {
+  fastPathEnabled: boolean
+  firstReadyResponse: Promise<void>
+  deadlineMs?: number
+}
+
+type FastOpencodeRootReadinessDeps = {
+  now?: () => number
+  waitForSignal?: (signal: Promise<void>, timeoutMs: number) => Promise<void>
+}
+
+async function waitForSignalOrTimeout(signal: Promise<void>, timeoutMs: number): Promise<void> {
+  if (timeoutMs <= 0) return
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      signal.catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
+ * Hold the optional FAST root lookup for the supervisor's first successful
+ * session-API response. The gate replaces at most one doomed five-second
+ * root-list request. Its elapsed time is deducted from the existing 20-second
+ * root-resolution budget, so it cannot extend boot. The unchanged resolver
+ * still owns retries, root selection, and found/create/defer decisions.
+ */
+export async function waitForFastOpencodeRootReadiness(
+  input: FastOpencodeRootReadinessInput,
+  deps: FastOpencodeRootReadinessDeps = {},
+): Promise<number> {
+  const deadlineMs = Math.max(0, input.deadlineMs ?? OPENCODE_ROOT_RESOLUTION_DEADLINE_MS)
+  if (!input.fastPathEnabled) return deadlineMs
+
+  const now = deps.now ?? Date.now
+  const waitForSignal = deps.waitForSignal ?? waitForSignalOrTimeout
+  const startedAt = now()
+  await waitForSignal(
+    input.firstReadyResponse,
+    Math.min(deadlineMs, OPENCODE_FIRST_READY_GATE_MAX_MS),
+  )
+  const elapsedMs = Math.max(0, now() - startedAt)
+  return Math.max(0, deadlineMs - elapsedMs)
+}
+
 /**
  * Resolve a usable existing canonical root for this workspace so a restart
  * reuses it instead of creating a duplicate. Prefers the pinned id (if it still
@@ -1512,13 +1654,21 @@ async function resolveExistingRoot(
   workspace: string,
   priorPin: string | null = readPinnedOpencodeSessionId(),
   rootListDeadlineMs = 20_000,
+  onListening?: () => void,
+  strictAttemptDeadline = false,
 ): Promise<ExistingRootResult> {
   // Wait for a DEFINITIVE answer from opencode before deciding. Treating a slow
   // boot as "no roots" would create a duplicate on restart — the exact bug we're
   // killing — so only conclude "create a fresh root" once opencode has actually
   // answered with an empty list (or never answers within the deadline, and
   // there is no prior pin to protect — see `defer` above).
-  const roots = await waitForRootList(baseUrl, workspace, rootListDeadlineMs)
+  const roots = await waitForRootList(
+    baseUrl,
+    workspace,
+    rootListDeadlineMs,
+    onListening,
+    strictAttemptDeadline,
+  )
   if (!roots) {
     if (priorPin) {
       logger.warn(
@@ -1563,25 +1713,74 @@ async function waitForRootList(
   baseUrl: string,
   workspace: string,
   deadlineMs = 20_000,
+  onListening?: () => void,
+  strictAttemptDeadline = false,
 ): Promise<RootLite[] | null> {
   const deadline = Date.now() + deadlineMs
+  let listeningSeen = false
+  const markListening = () => {
+    if (listeningSeen) return
+    listeningSeen = true
+    onListening?.()
+  }
   while (Date.now() < deadline) {
-    const roots = await listOpencodeRoots(baseUrl, workspace)
+    const attemptTimeoutMs = strictAttemptDeadline
+      ? Math.min(
+          OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS,
+          Math.max(1, deadline - Date.now()),
+        )
+      : OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS
+    const roots = await listOpencodeRoots(
+      baseUrl,
+      workspace,
+      markListening,
+      attemptTimeoutMs,
+    )
     if (roots !== null) return roots
-    await new Promise((r) => setTimeout(r, 100))
+    const retryDelayMs = strictAttemptDeadline
+      ? Math.min(100, Math.max(0, deadline - Date.now()))
+      : 100
+    if (retryDelayMs > 0) await new Promise((r) => setTimeout(r, retryDelayMs))
   }
   return null
 }
 
-/** List opencode ROOT sessions (no parentID). Returns null when opencode is not
- *  reachable yet — distinct from `[]` (reachable, no sessions). */
-async function listOpencodeRoots(baseUrl: string, workspace: string): Promise<RootLite[] | null> {
+/** List opencode ROOT sessions (no parentID), newest-updated first. Returns null
+ *  when opencode is not reachable yet — distinct from `[]` (reachable, no
+ *  sessions).
+ *
+ *  `roots=true` makes the SERVER drop child sessions instead of us paging every
+ *  session in the workspace and filtering. Probed on the real binaries
+ *  2026-08-20: `roots`, `limit`, `start`, `search` and `scope` are all declared
+ *  on `GET /session` in 1.17.11 AND 1.18.19, and both answered
+ *  `?roots=true&limit=1` with exactly the most-recently-updated ROOT out of
+ *  three roots plus one newer child. Boxes provisioned before today still run
+ *  1.17.11, so that parity is the reason this is safe to ship as one call.
+ *
+ *  `limit=1` is deliberately NOT used, and the client-side `!parentID` filter
+ *  deliberately stays:
+ *   - `resolveExistingRoot` prefers the PINNED root over the newest one, which
+ *     needs the pin to be findable in this list — `limit=1` would hide it and
+ *     silently re-canonicalize a live conversation onto a different root.
+ *   - An OpenCode that does not know a query parameter ignores it silently. If
+ *     `roots` were ever dropped, the filter is what still stops a Task-tool
+ *     CHILD from being adopted as the canonical root. One line, absolute. */
+async function listOpencodeRoots(
+  baseUrl: string,
+  workspace: string,
+  onHttpResponse?: () => void,
+  attemptTimeoutMs = OPENCODE_ROOT_LIST_ATTEMPT_TIMEOUT_MS,
+): Promise<RootLite[] | null> {
   try {
-    const res = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(workspace)}`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(5_000),
-    })
+    const res = await fetch(
+      `${baseUrl}/session?directory=${encodeURIComponent(workspace)}&roots=true`,
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(attemptTimeoutMs),
+      },
+    )
+    onHttpResponse?.()
     if (!res.ok) return null
     const data = (await res.json()) as Array<{ id?: string; parentID?: string | null; time?: { created?: number; updated?: number } }>
     if (!Array.isArray(data)) return []
@@ -1841,12 +2040,7 @@ async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> 
   // /turn-stream accepts EITHER the session token or the sandbox credential
   // (it's a sandbox-identity route). Prefer the session token; fall back to the
   // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
-  const token = (
-    process.env.KORTIX_CLI_TOKEN ||
-    process.env.KORTIX_SANDBOX_TOKEN ||
-    process.env.KORTIX_TOKEN ||
-    ''
-  ).trim()
+  const token = (process.env.KORTIX_TOKEN || '').trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) return
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
@@ -1914,7 +2108,7 @@ export async function relayInitialTurnAcceptedToApi(
 ): Promise<boolean> {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const sandboxToken = (process.env.KORTIX_SANDBOX_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  const sandboxToken = (process.env.KORTIX_TOKEN || '').trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !sandboxToken || !apiUrl) {
     throw new Error('initial turn acceptance relay context is unavailable')
@@ -1943,11 +2137,62 @@ export async function relayInitialTurnAcceptedToApi(
   return body.ok === true
 }
 
+/** Claim the pending first turn through the session-bound Kortix credential. */
+export async function claimInitialTurnFromApi(): Promise<InitialTurnClaim | null> {
+  if (claimedInitialTurn) return claimedInitialTurn
+  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
+  const token = process.env.KORTIX_TOKEN?.trim()
+  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
+  if (!projectId || !sessionId || !token || !apiUrl) return null
+  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  let response: Response | null = null
+  let lastError: unknown = null
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ session_id: sessionId, kind: 'initial_turn_claim' }),
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (response.ok || response.status < 500) break
+      lastError = new Error(`initial turn claim returned ${response.status}`)
+    } catch (error) {
+      lastError = error
+    }
+    if (attempt < 2) await Bun.sleep(250 * 2 ** attempt)
+  }
+  if (!response) {
+    throw new Error(`initial turn claim failed after 3 attempts: ${String(lastError)}`)
+  }
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(`initial turn claim rejected: ${response.status} ${body.slice(0, 200)}`)
+  }
+  const body = (await response.json()) as {
+    initial_turn?: { prompt?: unknown; turn_token?: unknown; message_id?: unknown } | null
+  }
+  const turn = body.initial_turn
+  if (
+    !turn ||
+    typeof turn.prompt !== 'string' ||
+    typeof turn.turn_token !== 'string' ||
+    typeof turn.message_id !== 'string'
+  ) return null
+  claimedInitialTurn = {
+    prompt: turn.prompt,
+    turnToken: turn.turn_token,
+    messageId: turn.message_id,
+  }
+  return claimedInitialTurn
+}
+
 /** Remove only a pre-created initial-turn record that OpenCode never accepted. */
 export async function relayInitialTurnAbandonedToApi(turnToken: string): Promise<boolean> {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const sandboxToken = (process.env.KORTIX_SANDBOX_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  const sandboxToken = (process.env.KORTIX_TOKEN || '').trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !sandboxToken || !apiUrl) {
     throw new Error('initial turn abandonment relay context is unavailable')
@@ -2085,12 +2330,7 @@ function sandboxRelayContext(tokenOverride?: string | null): SandboxRelayContext
   const token =
     tokenOverride !== undefined
       ? (tokenOverride ?? '')
-      : (
-          process.env.KORTIX_CLI_TOKEN ||
-          process.env.KORTIX_SANDBOX_TOKEN ||
-          process.env.KORTIX_TOKEN ||
-          ''
-        ).trim()
+      : (process.env.KORTIX_TOKEN || '').trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) {
     logger.warn('[opencode-events] missing env to relay to apps/api', {
@@ -2240,6 +2480,115 @@ const relayedTurnSignatures = new Set<string>()
 /** Test-only: clear the per-turn dedup set between cases. */
 export function __resetRelayedTurnSignatures(): void {
   relayedTurnSignatures.clear()
+}
+
+// Turn-begin relay dedup: root id -> the newest user message id already
+// relayed (or refused as already-known by apps/api). A turn's identity is its
+// user message, so one turn relays once no matter how many `busy`/`retry`
+// status frames it emits. Per-process, like `relayedTurnSignatures`.
+const relayedTurnBegins = new Map<string, string>()
+const turnBeginRelaysInFlight = new Set<string>()
+
+/** Test-only: clear the per-turn begin dedup between cases. */
+export function __resetRelayedTurnBegins(): void {
+  relayedTurnBegins.clear()
+  turnBeginRelaysInFlight.clear()
+}
+
+/**
+ * Announce a BOX-INITIATED turn to apps/api (`turn-stream` kind `turn_begin`).
+ *
+ * Every control-plane prompt gets its `session_turns` row BEFORE delivery, but
+ * OpenCode also starts turns nobody delivered — the synthetic `<pty_exited>`
+ * user message it injects when a background pty finishes. Those turns had no
+ * authority at all: `GET .../turn` read idle over minutes of live streaming
+ * and the box ran on its 15-minute idle tail (live incident 2026-08-20,
+ * Essentia session d1b74954). This relay fires on the root's `busy`/`retry`
+ * status frames and names the newest user message; apps/api adopts it only
+ * when no open turn exists and the message was never seen — so relaying for
+ * an ordinary delivered prompt is a cheap no-op.
+ */
+export async function relayTurnBeginToApi(
+  opencodeSessionId: string,
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+): Promise<void> {
+  // The session credential is bound to this sandbox's session_id. The API
+  // treats that claim as the daemon identity for lifecycle-only callbacks.
+  const sandboxToken = (process.env.KORTIX_TOKEN || '').trim()
+  if (!sandboxToken) return
+  const ctx = sandboxRelayContext(sandboxToken)
+  if (!ctx) return
+  if (turnBeginRelaysInFlight.has(opencodeSessionId)) return
+  turnBeginRelaysInFlight.add(opencodeSessionId)
+  try {
+    if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
+    // The newest USER message names the turn that is running.
+    let newestUserId: string | null = null
+    try {
+      const res = await fetch(
+        `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/message?directory=${encodeURIComponent(cfg.workspace)}`,
+        { signal: AbortSignal.timeout(5_000) },
+      )
+      if (!res.ok) return
+      const rows = (await res.json()) as Array<{ info?: { id?: string; role?: string } }>
+      if (!Array.isArray(rows)) return
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const info = rows[i]?.info
+        if (info?.role === 'user' && typeof info.id === 'string') {
+          newestUserId = info.id
+          break
+        }
+      }
+    } catch {
+      return
+    }
+    if (!newestUserId) return
+    if (relayedTurnBegins.get(opencodeSessionId) === newestUserId) return
+
+    const { projectId, sessionId, token, apiRoot } = ctx
+    const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
+    const payload = JSON.stringify({
+      session_id: sessionId,
+      kind: 'turn_begin',
+      opencode_session_id: opencodeSessionId,
+      turn_message_id: newestUserId,
+    })
+    // Two attempts only: `busy`/`retry` frames recur for a live turn, so a
+    // transient failure retries itself on the next frame.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: payload,
+          signal: AbortSignal.timeout(15_000),
+        })
+        if (res.ok) {
+          // ANY definitive answer dedups: adopted, already-open, or
+          // already-known all mean this exact message needs no further relay.
+          relayedTurnBegins.set(opencodeSessionId, newestUserId)
+          const data = (await res.json().catch(() => null)) as { outcome?: string } | null
+          if (data?.outcome === 'adopted') {
+            logger.info('[opencode-events] box-initiated turn adopted', {
+              opencodeSessionId,
+              messageId: newestUserId,
+            })
+          }
+          return
+        }
+        logger.warn('[opencode-events] turn-begin relay non-ok', { status: res.status, attempt })
+      } catch (err) {
+        logger.warn('[opencode-events] turn-begin relay fetch failed', {
+          err: (err as Error).message,
+          attempt,
+        })
+      }
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1_000))
+    }
+  } finally {
+    turnBeginRelaysInFlight.delete(opencodeSessionId)
+  }
 }
 
 export async function relayTurnEndToApi(
@@ -2416,15 +2765,48 @@ async function readRootTurnState(
       }
     }>
     if (!Array.isArray(rows)) return { completedAt: null, parentMessageId: null }
-    // The most recent assistant message decides the turn's outcome. Crucially,
-    // stop at the turn boundary: if a USER message is the newest row (a pending or
-    // follow-up turn that hasn't produced an assistant reply yet), treat the run
-    // as clean/incomplete — never walk back into a PRIOR turn's already-superseded
-    // error and relay it as this turn's failure.
+    // The most recent assistant message decides the turn's outcome. Trailing
+    // USER rows are SKIPPED, not a boundary: a prompt forwarded into a live
+    // turn — and OpenCode's own synthetic `<pty_exited>` wake-ups — leave a
+    // user message as the newest row at almost every turn end, and bailing
+    // there unnamed EVERY relay for such sessions (live 2026-08-20, Essentia
+    // session d1b74954: `relay_named:false` on each end, double finalizes
+    // because the unnamed relay has no dedup signature, and the forwarded-turn
+    // reconciler lost its primary key). Attribution is message-scoped — the
+    // assistant's own `parentID` names the turn it answered — so a pending
+    // follow-up prompt can never be blamed for a prior turn's error.
+    //
+    // A newest assistant that is still OPEN (no completion, no terminal error)
+    // is not automatically a dead end either. WHICH TURN it belongs to decides,
+    // and `parentID` says so — the same linkage the API-side husk finalizer
+    // matches on. Two different shapes hide behind one open row:
+    //
+    //   `[uA, aA1(done), aA2(open)]`   one turn, mid-step  → STAY UNNAMED.
+    //       Naming aA1 would let completeSandboxTurn close a row whose turn is
+    //       still streaming.
+    //   `[uA, aA(done), uB, aB(open)]` turn A ended, B races → NAME A.
+    //       The idle being handled cannot be B's (B is open), so A is the turn
+    //       that ended. The old code stopped at the open row and relayed A with
+    //       no `turn_message_id` and no dedup signature — the ledger row then
+    //       never closed by message and waited for a reaper sweep, which is a
+    //       direct "stuck working forever" contributor.
+    //
+    // An open row whose `parentID` is missing proves nothing about which turn
+    // is running, so it keeps the old conservative unnamed answer.
+    let openTurnParentId: string | null | undefined
     for (let i = rows.length - 1; i >= 0; i--) {
       const info = rows[i]?.info
-      if (info?.role === 'user') return { completedAt: null, parentMessageId: null }
       if (info?.role !== 'assistant') continue
+      const open =
+        info.time?.completed == null && (!info.error || info.error.data?.isRetryable === true)
+      if (open) {
+        if (openTurnParentId === undefined) openTurnParentId = info.parentID ?? null
+        continue
+      }
+      const sameTurnAsTheOpenOne =
+        openTurnParentId !== undefined &&
+        (openTurnParentId === null || info.parentID == null || info.parentID === openTurnParentId)
+      if (sameTurnAsTheOpenOne) return { completedAt: null, parentMessageId: null }
       return {
         error: info.error ? flattenOpencodeError(info.error) : undefined,
         completedAt: info.time?.completed ?? null,
@@ -2510,7 +2892,7 @@ export function resolveOpencodeModel(): { providerID: string; modelID: string } 
 }
 
 /** Build the first-turn request from the session-bound runtime environment. */
-export function buildInitialPromptBody(prompt: string): {
+export function buildInitialPromptBody(prompt: string, claimedMessageId?: string): {
   messageID?: string
   parts: Array<{ type: 'text'; text: string }>
   model?: { providerID: string; modelID: string }
@@ -2519,7 +2901,7 @@ export function buildInitialPromptBody(prompt: string): {
   const model = resolveOpencodeModel()
   const agentName = (process.env.KORTIX_AGENT_NAME ?? '').trim()
   const agent = agentName && agentName !== 'default' ? agentName : undefined
-  const messageID = process.env.KORTIX_INITIAL_TURN_MESSAGE_ID?.trim() || undefined
+  const messageID = claimedMessageId
   return {
     ...(messageID ? { messageID } : {}),
     parts: [{ type: 'text', text: prompt }],
@@ -2528,8 +2910,7 @@ export function buildInitialPromptBody(prompt: string): {
   }
 }
 
-/** Read the pinned opencode session id (set at boot when KORTIX_INITIAL_PROMPT
- *  was delivered). Returns null if no session was pinned — caller decides
+/** Read the pinned OpenCode session id. Returns null if no session was pinned — caller decides
  *  whether to fail or fall back to creating a fresh session. */
 export function readPinnedOpencodeSessionId(): string | null {
   try {

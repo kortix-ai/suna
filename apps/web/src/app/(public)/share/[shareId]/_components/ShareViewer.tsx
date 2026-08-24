@@ -6,8 +6,8 @@ import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
   WarningIcon as AlertTriangle,
@@ -180,10 +180,10 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
     try {
       await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
-      toast.success('Share link copied to clipboard!');
+      successToast('Share link copied to clipboard!');
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error('Failed to copy link');
+      errorToast('Failed to copy link');
     }
   };
 

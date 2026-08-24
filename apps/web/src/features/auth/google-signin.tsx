@@ -2,10 +2,10 @@
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
+import { errorToast } from '@/components/ui/toast';
 import { NewGoogle } from '@/features/icon/icons/new-google';
 import { authRedirectUrl } from '@/lib/desktop';
 import { createClient } from '@/lib/supabase/client';
-import { toast } from '@/lib/toast';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
@@ -55,7 +55,7 @@ export default function GoogleSignIn({
       }
     } catch (error: any) {
       console.error('Google sign-in error:', error);
-      toast.error(error.message || 'Failed to sign in with Google');
+      errorToast(error.message || 'Failed to sign in with Google');
       setIsLoading(false);
     }
   };

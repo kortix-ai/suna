@@ -1,19 +1,12 @@
 import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
-import { cn } from '@/lib/utils';
+import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import SectionHeader from '@/features/marketing/component/section-header';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { SolutionsHeroVisual } from './hero-visual';
 import { ROLES } from './registry';
-import {
-  DefinitionRows,
-  Eyebrow,
-  Section,
-  SectionDivider,
-  SectionHeading,
-  SOLUTIONS_MEASURE,
-  SpecGrid,
-} from './shared';
+import { DefinitionRows, Eyebrow, Section, SectionDivider } from './shared';
 
 /**
  * `/solutions` — the hub the eight role pages hang off.
@@ -24,56 +17,27 @@ import {
  *
  * Accuracy gate: `./types.ts`. It governs this page too.
  */
+
 export function SolutionsHubPage(): ReactNode {
   return (
     <div className="bg-background relative">
-      {/* ── hero ────────────────────────────────────────────────────────── */}
-      <section className={cn(SOLUTIONS_MEASURE, 'relative pt-32 pb-12 sm:pt-36')}>
-        <Reveal>
-          <Badge variant="kortix" className="rounded">
-            Solutions
-          </Badge>
-          <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-            One platform. Eight teams with completely different work.
-          </h1>
-          <p className="text-muted-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-            The same project, the same connectors, the same memory — and eight different jobs
-            underneath. Each team writes the skills for its own work, and nobody stands up a second
-            system to do it.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button size="xl" asChild>
-              <Link href="/auth">Get started</Link>
-            </Button>
-            <Button size="xl" variant="secondary" asChild>
-              <Link href="/contact">Talk to us</Link>
-            </Button>
-          </div>
-          <p className="text-muted-foreground mt-6 font-mono text-xs tracking-wider uppercase">
-            Pick the team whose week you want back
-          </p>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <SpecGrid
-            specs={[
-              { k: 'Every session', v: 'Its own cloud computer, on its own branch' },
-              { k: 'Work lands', v: 'Through a change request' },
-              { k: 'Merge', v: 'Default-deny for agents' },
-              { k: 'Approval gates', v: 'Off until you set them' },
-            ]}
-          />
-        </Reveal>
-      </section>
-
-      <SectionDivider />
+      <CapabilityHero
+        eyebrow="Solutions"
+        title="One platform. Eight teams with completely different work."
+        sub="The same project, the same connectors, the same memory — and eight different jobs underneath. Each team writes the skills for its own work, and nobody stands up a second system to do it."
+        ctaPrimary="Get started"
+        ctaPrimaryHref="/auth"
+        ctaSecondary="Talk to us"
+        ctaSecondaryHref="/contact"
+        visual={<SolutionsHeroVisual />}
+      />
 
       {/* ── the eight roles ─────────────────────────────────────────────── */}
       <Section id="roles">
-        <SectionHeading
+        <SectionHeader
           eyebrow="By role"
           title="Start with the work, not the platform."
-          sub="Every page below is written about that team's actual week — what it can hand off, which connectors make sense for it, and what the output looks like when it comes back."
+          description="Every page below is written about that team's actual week — what it can hand off, which connectors make sense for it, and what the output looks like when it comes back."
         />
 
         <Reveal delay={0.06}>
@@ -105,10 +69,10 @@ export function SolutionsHubPage(): ReactNode {
 
       {/* ── what does not change between them ───────────────────────────── */}
       <Section id="constant">
-        <SectionHeading
+        <SectionHeader
           eyebrow="What never changes"
           title="Eight kinds of work. One set of rules underneath."
-          sub="The pages differ because the work differs. What sits under all of them is identical, and it is worth reading once rather than eight times."
+          description="The pages differ because the work differs. What sits under all of them is identical, and it is worth reading once rather than eight times."
         />
 
         <Reveal delay={0.06}>
@@ -154,34 +118,6 @@ export function SolutionsHubPage(): ReactNode {
           </div>
         </Reveal>
       </Section>
-
-      {/* ── closing ─────────────────────────────────────────────────────── */}
-      <Section id="cta">
-        <Reveal>
-          <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
-            <Badge variant="kortix" className="rounded">
-              Get started
-            </Badge>
-            <h2 className="text-foreground max-w-2xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-              Start with one team. The rest of the company is the same project.
-            </h2>
-            <p className="text-muted-foreground max-w-xl text-base leading-relaxed">
-              Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or
-              your own on-prem network.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button size="xl" asChild>
-                <Link href="/auth">Get started</Link>
-              </Button>
-              <Button size="xl" variant="secondary" asChild>
-                <Link href="/pricing">See pricing</Link>
-              </Button>
-            </div>
-          </div>
-        </Reveal>
-      </Section>
-
-      <div className="h-24 sm:h-28" />
     </div>
   );
 }

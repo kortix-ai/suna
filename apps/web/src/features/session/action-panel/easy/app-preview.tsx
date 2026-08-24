@@ -20,11 +20,12 @@
  */
 
 import { Button } from '@/components/ui/button';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
-import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
@@ -33,25 +34,17 @@ import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
 import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
-import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { type CreateSessionPublicShareInput, probePreviewPort } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
-  WarningIcon as AlertTriangle,
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
   ArrowSquareOutIcon,
-  CheckIcon as Check,
   GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
-  LinkSimpleIcon,
-  ArrowsOutSimpleIcon as Maximize2,
-  ChatIcon as MessageSquarePlus,
-  ArrowsInSimpleIcon as Minimize2,
   SparkleIcon as SparklesSolid,
   WarningIcon,
 } from '@phosphor-icons/react';
-import { AnimatePresence, m } from 'motion/react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
@@ -68,7 +61,7 @@ import {
   shouldArmLoadTimeout,
   shouldKeepProbingPort,
 } from './easy-panel-logic';
-import type { ShareContext } from './viewer-actions';
+import { PanelWidthButton, type ShareContext, ViewerActions } from './viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -104,7 +97,6 @@ export function AppPreview({
   name,
   shareContext,
   onClose,
-  onAskForChanges,
   onSendToAgent,
 }: {
   /** The internal sandbox URL the agent handed over, e.g. http://localhost:3000. */
@@ -115,10 +107,6 @@ export function AppPreview({
    *  there — same rule as `ShareFileButton`. */
   shareContext?: ShareContext;
   onClose: () => void;
-  /** Seeds the composer with a starter line about this app and closes the
-   *  detail (W12). Omitted entirely (not disabled) where there's no session
-   *  composer to hand it to. */
-  onAskForChanges?: () => void;
   /** "Send to agent" — shown in the "Couldn't load" error state next to
    *  Retry, in the merge-conflict "Solve with agent" style. Seeds the session
    *  composer with a prompt asking the agent to bring the app back up. Omitted
@@ -158,8 +146,6 @@ export function AppPreview({
   const [addressError, setAddressError] = useState(false);
   const addressRef = useRef<HTMLInputElement>(null);
 
-  const isExpanded = useIsExpanded();
-  const toggleExpanded = useToggleExpanded();
   const isMobile = useIsMobile();
 
   // Copy link mints a PUBLIC share and copies `/share/session/{token}`.
@@ -172,13 +158,6 @@ export function AppPreview({
     const path = parseLocalhostUrl(current)?.path || '/';
     return { mode: 'view', preview: { label: name, url: current, port, path } };
   }, [current, name, port]);
-
-  const shareLink = usePublicShareLink({
-    projectId: shareContext?.projectId,
-    sessionId: shareContext?.sessionId,
-    input: shareInput,
-  });
-  const copied = shareLink.copied;
 
   const sandboxHealth = useSyncExternalStore(
     useRuntimeConnectionStore.subscribe,
@@ -432,85 +411,31 @@ export function AppPreview({
           </div>
         </form>
 
-        {onAskForChanges && (
-          <Hint label="Ask for changes" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Ask for changes"
-              onClick={onAskForChanges}
-              className="active:scale-[0.96]"
+        {/* An app has no file to save and no text to put on a clipboard, so the
+            split button's primary falls through to `Copy link` — the one thing
+            you can hand someone for a running port. Opening the app in a real
+            browser tab is the only capability the panel itself cannot offer,
+            so it stays, behind the caret rather than as a seventh glyph. */}
+        <ViewerActions
+          shareContext={shareContext}
+          shareInput={shareInput}
+          className="ml-0.5"
+          extraMenuItems={
+            <DropdownMenuItem
+              disabled={!hasPreview}
+              onSelect={() => {
+                if (!previewUrl) return;
+                track('app_opened_new_tab');
+                window.open(previewUrl, '_blank', 'noopener,noreferrer');
+              }}
             >
-              <MessageSquarePlus className="size-4" />
-            </Button>
-          </Hint>
-        )}
+              <ArrowSquareOutIcon />
+              Open in a new tab
+            </DropdownMenuItem>
+          }
+        />
 
-        <Hint label="Open in a new tab" side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={!hasPreview}
-            aria-label="Open in a new tab"
-            onClick={() => {
-              if (!previewUrl) return;
-              track('app_opened_new_tab');
-              window.open(previewUrl, '_blank', 'noopener,noreferrer');
-            }}
-          >
-            <ArrowSquareOutIcon className="size-4" />
-          </Button>
-        </Hint>
-
-        <Hint label={copied ? 'Copied' : 'Copy a public view-only link'} side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={!hasPreview || !shareLink.canShare || shareLink.isPending}
-            aria-label="Copy a public view-only link"
-            onClick={() => {
-              track('app_link_copied');
-              shareLink.copyLink();
-            }}
-            className="active:scale-[0.96]"
-          >
-            {/* Morph, not a hard swap — same box, cross-faded (kortix-design-system
-                → "Button icon-swap"). */}
-            <span className="relative inline-flex size-4 items-center justify-center">
-              <AnimatePresence initial={false} mode="popLayout">
-                <m.span
-                  key={copied ? 'check' : 'link'}
-                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                  className="absolute inset-0 inline-flex items-center justify-center"
-                >
-                  {copied ? (
-                    <Check className="text-kortix-green size-4" />
-                  ) : (
-                    <LinkSimpleIcon className="size-4" />
-                  )}
-                </m.span>
-              </AnimatePresence>
-            </span>
-          </Button>
-        </Hint>
-
-        {/* The store flip is a no-op on mobile — the drawer never reads
-            `isExpanded` — so the control was dead weight there. */}
-        {!isMobile && (
-          <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleExpanded}
-              aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
-            >
-              {isExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-            </Button>
-          </Hint>
-        )}
+        <PanelWidthButton isMobile={isMobile} />
 
         <CloseButton onClose={onClose} />
       </div>
@@ -526,34 +451,30 @@ export function AppPreview({
         )}
 
         {hasError && !noApp && (
-          <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
-            <div className="flex max-w-sm flex-col items-center gap-4 px-4 text-center">
-              <span className="bg-kortix-yellow/15 flex size-9 items-center justify-center rounded-md">
-                <WarningIcon className="text-kortix-yellow size-5" />
-              </span>
-              <div>
-                <p className="text-sm font-medium">Couldn&apos;t load {name}</p>
-                {/* The single most common cause, said plainly: the agent started
-                    the server a moment ago and it isn't listening yet. Only a
-                    SETTLED `dead` verdict earns the stopped-workspace wording —
-                    see `previewErrorReason`. */}
-                <p className="text-muted-foreground mt-1 text-xs">
-                  {previewErrorReason({ sandbox: sandboxHealth, port })}
-                </p>
-              </div>
-              <div className="flex items-center justify-center gap-2">
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
-                  Retry
+          <ErrorState
+            icon={WarningIcon}
+            size="sm"
+            className="bg-background absolute inset-0 z-10"
+            title={`Couldn't load ${name}`}
+            /* The single most common cause, said plainly: the agent started the
+               server a moment ago and it isn't listening yet. Only a SETTLED
+               `dead` verdict earns the stopped-workspace wording — see
+               `previewErrorReason`. */
+            description={previewErrorReason({ sandbox: sandboxHealth, port })}
+            action={
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
+                Retry
+              </Button>
+            }
+            secondaryAction={
+              onSendToAgent ? (
+                <Button size="sm" className="gap-1.5" onClick={onSendToAgent}>
+                  <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
+                  Send to agent
                 </Button>
-                {onSendToAgent && (
-                  <Button size="sm" className="gap-1.5" onClick={onSendToAgent}>
-                    <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
-                    Send to agent
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
+              ) : null
+            }
+          />
         )}
 
         {noApp ? (

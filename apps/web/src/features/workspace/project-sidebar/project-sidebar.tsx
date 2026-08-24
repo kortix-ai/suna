@@ -91,7 +91,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     <Sidebar
       collapsible="offcanvas"
       variant="inset"
-      className="bg-sidebar [scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
+      // No background here. This className lands on the sidebar CONTAINER —
+      // the square positioning box — while the visible card is the rounded
+      // inner box, which already carries `bg-sidebar`. Painting it twice put a
+      // square fill behind the flyout card and it showed at all four corners.
+      className="[scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
       <SidebarHeader className="space-y-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))]">
         {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
@@ -252,8 +256,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           single control carrying identity AND the workspace directory; a copy
           down here would put the same dropdown at both ends of one panel. */}
 
-      {/* No resize rail while collapsed — the edge is the hover-peek zone. */}
-      {isExpanded && <SidebarRail />}
+      {/* Drag-to-resize handle on the panel's trailing edge (double-click or
+          Home resets to 16rem). It self-hides while collapsed — there is
+          nothing to resize, and that edge belongs to the hover-peek zone. */}
+      <SidebarRail />
     </Sidebar>
   );
 }

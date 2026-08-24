@@ -163,27 +163,35 @@ export class AuditQueue {
   }
 
   /**
-   * Drain the queue into batched INSERTs. Safe to call concurrently: overlapping
-   * callers await the in-flight drain instead of racing it. Never rejects.
+   * Write a snapshot of the queue. Rows added after this call remain buffered
+   * for the next flush, so a read barrier cannot be extended by live traffic.
+   * Concurrent snapshots run in order and never race their INSERTs.
    */
   flush(): Promise<void> {
-    if (this.inFlight) return this.inFlight;
-    const run = this.drain().finally(() => {
-      this.inFlight = null;
-      // A row enqueued while the drain was running still needs a timer.
-      this.scheduleFlush();
-    });
-    this.inFlight = run;
-    return run;
-  }
-
-  private async drain(): Promise<void> {
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    while (this.rows.length > 0) {
-      const batch = this.rows.splice(0, this.flushMax);
+    const snapshot = this.rows.splice(0);
+    if (snapshot.length === 0) return this.inFlight ?? Promise.resolve();
+
+    const previous = this.inFlight;
+    let run: Promise<void>;
+    run = (previous ?? Promise.resolve())
+      .then(() => this.write(snapshot))
+      .finally(() => {
+        if (this.inFlight === run) {
+          this.inFlight = null;
+          this.scheduleFlush();
+        }
+      });
+    this.inFlight = run;
+    return run;
+  }
+
+  private async write(snapshot: AuditRow[]): Promise<void> {
+    for (let offset = 0; offset < snapshot.length; offset += this.flushMax) {
+      const batch = snapshot.slice(offset, offset + this.flushMax);
       this.flushes += 1;
       try {
         await this.client.insert(auditEvents).values(batch).onConflictDoNothing();
@@ -199,7 +207,9 @@ export class AuditQueue {
 
   /** Flush everything and stop the timer. Used by the shutdown path. */
   async shutdown(): Promise<void> {
-    await this.flush();
+    while (this.rows.length > 0 || this.inFlight) {
+      await this.flush();
+    }
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;

@@ -51,4 +51,35 @@ describe('SessionBusyIndicator', () => {
     );
     expect(markup).toContain('Running tests');
   });
+
+  // Regression: the elapsed counter used to be concatenated into `statusText`,
+  // so the animated span's key changed once a second and replayed the roll-swap
+  // for the whole of any long tool call. The phrase markup either side of the
+  // elapsed span must stay byte-identical as the clock ticks.
+  test('elapsed time ticks without changing the animated phrase', () => {
+    const at21 = renderToStaticMarkup(
+      <SessionBusyIndicator statusText="Running tests" elapsedLabel="21s" />,
+    );
+    const at22 = renderToStaticMarkup(
+      <SessionBusyIndicator statusText="Running tests" elapsedLabel="22s" />,
+    );
+    expect(at21).toContain('21s');
+    expect(at22).toContain('22s');
+    expect(at21).toContain('tabular-nums');
+    expect(at21.replace('21s', 'X')).toBe(at22.replace('22s', 'X'));
+  });
+
+  test('omitting elapsedLabel renders no separator', () => {
+    const markup = renderToStaticMarkup(<SessionBusyIndicator statusText="Thinking" />);
+    expect(markup).not.toContain('&middot;');
+  });
+
+  // The ambient phrases rotate on a 4s timer and carry no information, so the
+  // live region is muted for them; a real status still announces.
+  test('ambient mutes the live region, real status announces', () => {
+    expect(renderToStaticMarkup(<SessionBusyIndicator ambient />)).toContain('aria-live="off"');
+    expect(renderToStaticMarkup(<SessionBusyIndicator statusText="Running tests" />)).toContain(
+      'aria-live="polite"',
+    );
+  });
 });

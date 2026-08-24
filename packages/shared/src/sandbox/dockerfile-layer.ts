@@ -150,9 +150,9 @@ export interface KortixToolchainLayerOpts {
    * `${target}/.git` whose HEAD matches the session base. Requires NO memory
    * snapshot: the checkout is plain rootfs bytes that BOTH Daytona and Platinum
    * boot cold. When set, the layer clones the repo into /workspace BEFORE the
-   * opencode instance warm-up (so opencode indexes the REAL project) and does
-   * NOT wipe /workspace afterward. Omit for the shared, project-independent
-   * default image (workspace stays empty; the daemon clones at boot).
+   * opencode instance warm-up (so opencode indexes the REAL project). The
+   * warm-up then restores the exact tracked checkout and removes every generated
+   * or ignored file. Omit for the shared, project-independent default image.
    */
   warmRepo?: WarmRepoConfig;
 }
@@ -180,7 +180,8 @@ export interface WarmRepoConfig {
   /**
    * Path (relative to the build context root) to the pre-staged,
    * credential-free repo checkout produced API-side. The image `COPY`s these
-   * bytes verbatim into /workspace — nothing here is secret.
+   * non-Git bytes verbatim into /workspace — nothing here is secret. The
+   * staged directory excludes `.git`; `stagedGitPath` restores it separately.
    */
   stagedPath: string;
   /**
@@ -215,7 +216,7 @@ export interface KortixArtifactLayerOpts {
    * binary. This is the admin CLI every in-sandbox agent reaches for
    * (`kortix cr open`, `secrets`, `sessions`, …); it lands on PATH as
    * `/usr/local/bin/kortix`, pre-authenticated via the injected
-   * KORTIX_CLI_TOKEN. Always provided by the production builder.
+   * KORTIX_TOKEN. Always provided by the production builder.
    */
   cliBinaryPath: string;
   /** Path the snapshot builder will reference for the entrypoint script. */
@@ -261,7 +262,7 @@ export interface BuildLayeredDockerfileOpts
 const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 
 /**
- * The per-project COLD warm bake step: `COPY` the credential-free repo checkout
+ * The per-project COLD warm bake step: copy the credential-free repo checkout
  * that Suna already cloned, origin-reset, and scrubbed API-side
  * (`stageWarmRepoCheckout`) into /workspace. NO auth material is present — this
  * is the PHASE 1 fix for the credential leak that the old in-Dockerfile clone
@@ -281,7 +282,7 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
     '# ─── Per-project COLD warm: bake repo checkout into /workspace ──────',
     '# The repo was cloned with the git-host credential, origin-reset to the',
     '# Kortix proxy, and scrubbed of ALL auth material API-side in Suna before',
-    '# this Dockerfile was rendered. This image only COPYs the sanitized plain',
+    '# this Dockerfile was rendered. This image only imports sanitized plain',
     '# bytes — no git credential ever enters the Dockerfile, build args, image',
     '# history, or build logs. See PHASE 1 provider-migration hardening.',
     // Empty whatever an earlier layer left in /workspace, then COPY the baked
@@ -292,12 +293,14 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
     // runtime user (COPY defaults to uid/gid 0). opencode + the daemon run as
     // `kortix` and must be able to write /workspace and its `.git` at runtime.
     `COPY --chown=kortix:kortix ${warmRepo.stagedPath}/ /workspace/`,
-    // Daytona uploads each COPY source as a separate context object. Transfer
-    // Git metadata as one visible file, then restore the canonical directory.
-    // Daytona exposes that copied context object as non-removable during RUN.
-    // Keep the credential-free archive instead of failing the image build.
-    `COPY ${warmRepo.stagedGitPath} /tmp/kortix-warm-repo-git.tar`,
-    'RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1 && chown -R kortix:kortix /workspace/.git',
+    // Provider uploaders transfer Git metadata as one visible tar file. ADD
+    // extracts the local archive without retaining the archive in the final
+    // rootfs. The archive contains one top-level `.git` directory, so extracting
+    // at /workspace restores the canonical checkout shape and file modes.
+    'RUN rm -rf /workspace/.git',
+    `ADD ${warmRepo.stagedGitPath} /workspace/`,
+    // E2B can discard ADD/COPY --chown. Correct ownership explicitly as root.
+    'RUN sudo chown -R kortix:kortix /workspace/.git',
     // Verify the baked checkout is a real repo. The branch is shell-quoted via
     // `shq` (never interpolated raw), so a hostile branch name cannot inject a
     // build-time shell command — closing the latent sink in the old echo.
@@ -317,15 +320,15 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
  * runtime path (/workspace) so Bun's content-addressed transpile cache hits at
  * boot. For the SHARED default image we then wipe /workspace (the session
  * clones into it). For a PER-PROJECT COLD warm (warmRepo set) the repo is
- * already baked at /workspace and we KEEP it — the daemon boots off the baked
- * checkout with NO clone. For a CUSTOM template we remove only the config we
+ * already baked at /workspace. We restore its exact pre-warm state, then the
+ * daemon boots from it with NO clone. For a CUSTOM template we remove only the config we
  * staged: /workspace is the user's. Either way the warmed caches under
  * the `kortix` user's home persist in the image layer. Measured: cold first-instance
  * 6–60s → ~2–4s after this bake. Requires opencode + bun + the baked config
  * deps to already be present in the image (either from the toolchain layer
  * above, or inherited via FROM on the fast path), so it must come after them.
- * Best effort: a build without network (or a warm-up failure) just falls back
- * to the runtime cost — set +e + trailing `true` keep the image build green.
+ * Required: a warm-up failure stops the image build. Shipping an unwarmed image
+ * moves the same initialization onto every session's startup path.
  *
  * Shared between `kortixToolchainLayer` and `buildPerProjectWarmFromBaseDockerfile`
  * so both render byte-identical warm-up text. Returns `[]` when there's no
@@ -339,7 +342,7 @@ function buildOpencodeInstanceWarmupLines(opts: {
 }): string[] {
   const { opencodeConfigPath, opencodeWarmupScriptPath, warmRepo, isSharedDefault } = opts;
   if (!opencodeConfigPath || !opencodeWarmupScriptPath) return [];
-  const cleanup = warmRepo ? 'keep' : isSharedDefault ? 'wipe' : 'targeted';
+  const cleanup = warmRepo ? 'repo' : isSharedDefault ? 'wipe' : 'targeted';
   return [
     `COPY --chown=kortix:kortix ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
     // Same "does it actually bundle" check as the opencode-config-deps
@@ -348,11 +351,9 @@ function buildOpencodeInstanceWarmupLines(opts: {
     // instead of just their axios/form-data override targets — this is
     // what actually walks the full transitive dependency tree
     // (firecrawl-js, tavily-core, replicate) that ToolRegistry resolves
-    // on a session's first prompt. Deliberately its own RUN step (not
-    // folded into the `set +e` warm-up below): a tool that can't bundle
-    // breaks every session's first prompt, not just startup latency, so
-    // it must fail the build — the warm-up readiness probe below stays
-    // best-effort as before.
+    // on a session's first prompt. Deliberately its own RUN step: a tool that
+    // cannot bundle breaks every session's first prompt, so the image build
+    // must fail before it reaches the warm-up readiness probe below.
     // E2B's Dockerfile parser does not preserve COPY --chown. Correct the
     // ownership explicitly before the standard kortix user changes this tree.
     'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
@@ -365,15 +366,15 @@ function buildOpencodeInstanceWarmupLines(opts: {
     '',
     `COPY --chown=kortix:kortix ${opencodeWarmupScriptPath} /tmp/kortix-opencode-warmup`,
     // Stage the canonical starter opencode config so the instance warm-up
-    // has the pty plugin + tools to load. For a per-project warm the baked
-    // repo may already ship its own .kortix/opencode — keep it (its config
-    // is what the session actually resolves at runtime) and only fall back
-    // to the staged starter when the repo has none.
+    // has the pty plugin + tools to load. In repo mode the script hides any
+    // repository-controlled `.kortix` tree and points OPENCODE_CONFIG_DIR at
+    // this canonical tree. Git cleanup restores the repository tree afterward.
     // The warm-up script records whether the starter config in /workspace is
     // ours and limits cleanup accordingly.
     // Three cases, and only one of them may delete indiscriminately:
-    //  • per-project COLD warm (warmRepo): KEEP the baked repo checkout so
-    //    the daemon boots off it with no clone.
+    //  • per-project COLD warm (warmRepo): restore the exact baked checkout
+    //    after OpenCode warms its caches. The daemon then boots from the clean
+    //    checkout with no clone.
     //  • SHARED default: /workspace contains only what this warm-up put
     //    there (the base is `PLATFORM_DEFAULT_USER_DOCKERFILE` — a FROM and a
     //    WORKDIR), so wiping it is exact, and it also clears anything opencode
@@ -382,7 +383,7 @@ function buildOpencodeInstanceWarmupLines(opts: {
     //    the starter config we staged (and the .kortix dir if that leaves it
     //    empty) — never their bytes. `rmdir` is the no-op-unless-empty form on
     //    purpose; a user's own /workspace/.kortix survives untouched.
-    `RUN bash /tmp/kortix-opencode-warmup instance ${cleanup}; rm -f /tmp/kortix-opencode-warmup`,
+    `RUN bash /tmp/kortix-opencode-warmup instance ${cleanup} && rm -f /tmp/kortix-opencode-warmup`,
     '',
   ];
 }
@@ -427,7 +428,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     'ENV DEBIAN_FRONTEND=noninteractive',
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
-    '        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping \\',
+    '        ca-certificates curl git gzip libatomic1 sudo unzip tmux iproute2 iputils-arping util-linux \\',
     '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
     '        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\',
     '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
@@ -595,7 +596,14 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '',
     `RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
-    '    && opencode --version',
+    '    && opencode --version \\',
+    `    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\`,
+    '    && test -x "$opencode_native" \\',
+    '    && test "$(wc -c < "$opencode_native")" -gt 50000000 \\',
+    `    && test "$("$opencode_native" --version)" = "${opencodeVersion}" \\`,
+    '    && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\',
+    '    && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\',
+    `    && test "$(/usr/local/bin/opencode-kortix --version)" = "${opencodeVersion}"`,
     '',
     // Bake OpenCode's "one time database migration" at BUILD time. The first time
     // opencode serves, it migrates its sqlite schema — logged as "Performing one
@@ -608,12 +616,12 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // run opencode here once to complete the migration and bake the migrated db
     // into the image layer. Every boot afterwards — cold or warm-snapshot restore —
     // then finds an already-migrated db and answers in ~2-3s. Env MUST match the
-    // daemon's spawn (apps/kortix-sandbox-agent-server/src/opencode.ts). Best
-    // effort: if opencode can't serve at build time it just falls back to the
-    // old boot-time migration — never fail the whole image build over a warm-up.
+    // daemon's spawn (apps/kortix-sandbox-agent-server/src/opencode.ts). The
+    // build fails if OpenCode cannot serve. A platform image without this state
+    // moves the database migration onto every session's startup path.
     ...(opencodeWarmupScriptPath ? [
       `COPY --chown=kortix:kortix ${opencodeWarmupScriptPath} /tmp/kortix-opencode-warmup`,
-      'RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup',
+      'RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup',
     ] : []),
     '',
     // Bun runtime for the agent CLIs (slack, …) + `kortix connectors mcp`.
@@ -673,7 +681,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // verification RUN step right below, added after that incident).
     'RUN mkdir -p /opt/kortix/opencode-config-deps \\',
     '    && cd /opt/kortix/opencode-config-deps \\',
-    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\`,
+    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\`,
     '    && bun install',
     '',
     // Verify the baked tree is actually usable by OpenCode's own runtime
@@ -685,8 +693,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // silently baked into every sandbox cloned from this image until a user
     // hit it on their very first prompt. Bundling the override targets here,
     // at build time, turns that failure mode into a build failure instead —
-    // intentionally NOT `set +e`: an unbundlable dependency tree must fail
-    // the image build, unlike the best-effort warm-up steps below.
+    // An unbundlable dependency tree must fail the image build before warm-up.
     'RUN cd /opt/kortix/opencode-config-deps \\',
     '    && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\',
     '    && rm -rf /tmp/opencode-deps-bundle-check \\',

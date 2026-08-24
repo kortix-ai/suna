@@ -29,12 +29,23 @@ export function mergeMetadata(patch: Record<string, unknown>) {
  * How long a first provider-`stopped` observation must age before a second one
  * may park a box that still holds turn authority.
  *
- * Shorter than the 20-second active-turn renewal pass
- * (projects/active-turn-renewal.ts), so a genuine park costs exactly one extra
- * pass, and long enough that two reads inside one provider transition can never
- * both count.
+ * SIZED FROM A MEASURED TRANSITION, not from the renewal cadence. It was
+ * 15_000, chosen so two reads could not fall inside one provider transition —
+ * but a Platinum lifecycle transition outlasts that, so both reads landed
+ * inside it and the guard expired mid-transition instead of covering it.
+ *
+ * Incident 2026-08-21T23:58Z (session 541ea985, Platinum sbx_01M0JE5DDBE9JCZ):
+ * parked at 23:58:37 with `provider_reconcile`, and the SAME box reported
+ * running again at 23:58:47 — ten seconds later. The guest never rebooted
+ * (uptime spanned the whole window) and OpenCode never restarted, so nothing
+ * had actually gone away; a live turn was destroyed by a state field read
+ * during a transition. That session lost five turns to this in one day.
+ *
+ * 60s covers the observed transition with margin. The cost is bounded and
+ * one-sided: a GENUINELY stopped box mid-turn waits up to a minute longer to
+ * park, while a box that is merely transitioning keeps the user's work.
  */
-export const MIDTURN_STOP_CONFIRMATION_MS = 15_000;
+export const MIDTURN_STOP_CONFIRMATION_MS = 60_000;
 
 export type StoppedObservationDecision = 'park' | 'await_confirmation';
 
@@ -64,6 +75,21 @@ export function decideStoppedObservation(
   if (storedSandboxTurns(metadata).length === 0) return 'park';
   const observedAtMs = Number(metadata?.pendingStopObservedAtMs);
   if (!Number.isFinite(observedAtMs) || observedAtMs <= 0) return 'await_confirmation';
+
+  // POSITIVE LIVENESS OUTRANKS A STATE FIELD. `providerRunningConfirmedAt` is
+  // written when the provider confirms the box RUNNING (routes/shared.ts). A
+  // confirmation stamped at or after the pending-stop observation is direct
+  // evidence the box outlived the reading that suspected it, so the suspicion
+  // is stale no matter how long ago it was recorded — waiting out a clock would
+  // park a box we have since watched run.
+  //
+  // This is the same asymmetry the window encodes, made explicit: uncertainty
+  // fails toward the LIVE box. In the 2026-08-21 incident the running
+  // confirmation landed ten seconds after the park, and consulting it would
+  // have saved the turn on its own.
+  const confirmedAtMs = Date.parse(String(metadata?.providerRunningConfirmedAt ?? ''));
+  if (Number.isFinite(confirmedAtMs) && confirmedAtMs >= observedAtMs) return 'await_confirmation';
+
   return now.getTime() - observedAtMs >= MIDTURN_STOP_CONFIRMATION_MS
     ? 'park'
     : 'await_confirmation';

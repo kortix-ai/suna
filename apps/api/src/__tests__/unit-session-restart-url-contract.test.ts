@@ -28,6 +28,8 @@ describe('session restart URL contract', () => {
         initSucceededAt: '2026-07-24T01:00:00.000Z',
         opencodeReadyWaitStartedAt: '2026-07-24T01:00:00.000Z',
         opencodeReadyWaitReason: 'unreachable',
+        opencodeUnreachableWaitStartedAt: '2026-07-24T01:00:00.000Z',
+        opencodeNotReadyWaitStartedAt: '2026-07-24T01:30:00.000Z',
       },
       now,
     );
@@ -36,6 +38,25 @@ describe('session restart URL contract', () => {
     expect(metadata.runtimeWakeProviderStatus).toBe('starting');
     expect(metadata.opencodeReadyWaitStartedAt).toBeUndefined();
     expect(metadata.opencodeReadyWaitReason).toBeUndefined();
+    expect(metadata.opencodeUnreachableWaitStartedAt).toBeUndefined();
+    expect(metadata.opencodeNotReadyWaitStartedAt).toBeUndefined();
+  });
+
+  test('tracks unreachable and not-ready deadlines independently across reason changes', () => {
+    const metadata = {
+      opencodeReadyWaitStartedAt: '2026-07-24T01:59:59.000Z',
+      opencodeReadyWaitReason: 'not_ready',
+      opencodeUnreachableWaitStartedAt: '2026-07-24T01:59:29.000Z',
+      opencodeNotReadyWaitStartedAt: '2026-07-24T01:58:29.000Z',
+    };
+    const now = Date.parse('2026-07-24T02:00:00.000Z');
+
+    expect(staleOpencodeReadyReason(metadata, 'unreachable', now, 30_000)).toBe(
+      'runtime_unreachable_timeout',
+    );
+    expect(staleOpencodeReadyReason(metadata, 'not_ready', now, 90_000)).toBe(
+      'runtime_not_ready_timeout',
+    );
   });
 
   test('does not treat an old initial boot as a stale post-restart OpenCode wait', () => {

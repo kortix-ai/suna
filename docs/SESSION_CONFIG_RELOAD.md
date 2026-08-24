@@ -107,7 +107,11 @@ Two notes: the reconcile-on-hash pattern already ships for connectors (`manifest
 ## Measured: the dispose question, settled (2026-08-03)
 
 Run against **opencode-ai@1.17.11** — the exact build `apps/sandbox/Dockerfile`
-installs — started locally and probed directly.
+installed at the time — started locally and probed directly. Re-probed on
+2026-08-20 against the now-pinned **opencode-ai@1.18.19**: `/global/dispose`
+still answers JSON `true` in-process (same pid), and
+`/kortix/services/system/reload` still falls through to the SPA catch-all
+(200, `text/html`).
 
 | Question | Answer |
 |---|---|

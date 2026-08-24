@@ -32,7 +32,7 @@ const SHIM_ENV_NAMES = [
   'KORTIX_SECRET_CAPABILITIES',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
 ] as const;
 
 const CAPABILITIES = JSON.stringify({
@@ -47,9 +47,8 @@ const CAPABILITIES = JSON.stringify({
  * that would disarm the shim without any caller changing.
  */
 const SESSION_ENV = {
-  KORTIX_SANDBOX_TOKEN: 'kortix_sb_daemon_identity',
   KORTIX_PROJECT_ID: 'proj-shim',
-  KORTIX_CLI_TOKEN: 'kortix_pat_session_credential',
+  KORTIX_TOKEN: 'kortix_pat_session_credential',
   KORTIX_SECRET_CAPABILITIES: CAPABILITIES,
 };
 
@@ -105,6 +104,9 @@ mock.module('../../projects/disk-quota-guard', () => ({
 
 mock.module('../../shared/platinum', () => ({
   isPlatinumConfigured: () => true,
+  platinumJsonResponse: async () => {
+    throw new Error('unexpected Platinum materialization request');
+  },
   platinumJson: async (path: string, init: RequestInit = {}) => {
     if (path.startsWith('/v1/sandboxes?')) {
       const body = JSON.parse(String(init.body)) as { envVars: Record<string, string> };

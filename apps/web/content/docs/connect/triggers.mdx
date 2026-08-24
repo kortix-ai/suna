@@ -224,7 +224,7 @@ Legacy `kortix.toml` uses the same fields in a different container; see [legacy 
 | `type` | yes | — | `cron`, `webhook`, or `monitor`. |
 | `prompt` | yes | — | Template string. Renders as the session's first message. |
 | `name` | no | `slug` | Human label. |
-| `agent` | no | `default` | Must name a key in `agents:`, or fall back to `default_agent`. |
+| `agent` | no | `default_agent` | Must name a key in `agents:`. Omit it to use `default_agent`; do not write the literal `default`. |
 | `model` | no | resolves at fire time | Wire form `provider/model`, for example `anthropic/claude-sonnet-4-5`. |
 | `enabled` | no | `true` | When `false`, the scheduler and the webhook receiver skip the entry. |
 | `session_mode` | no | `fresh`, or `reuse` on a monitor | See [Session strategy](#session-strategy). |
@@ -234,13 +234,24 @@ Legacy `kortix.toml` uses the same fields in a different container; see [legacy 
 | `cron` | one of `cron`/`run_at`, on `type: cron` | — | 6-field expression: second minute hour day month weekday. |
 | `run_at` | one of `cron`/`run_at`, on `type: cron` | — | ISO-8601 timestamp. Fires once, then stays dormant. |
 | `timezone` | no, cron only | `UTC` | IANA name. |
-| `secret_env` | required, webhook only | — | Name of a project secret holding the webhook signing key. |
+| `secret_env` | required, webhook only | — | Name of a project secret holding the signing key. The secret must use `broker` delivery with the `connector` consumer. |
 | `run` | required, monitor only | — | Repo-relative command whose stdout lines are the events. One line, at most 1024 characters. |
 | `mode` | required, monitor only | — | `poll` re-runs `run` every `interval`; `stream` runs it once and keeps it alive. |
 | `interval` | required for `mode: poll` | — | Duration literal (`30s`, `5m`, `24h`, `7d`), minimum `30s`. Invalid on `mode: stream`. |
 | `expect_event_within` | no, monitor only | — | Duration literal, minimum `5m`. Silence longer than this fires a lifecycle event. |
 
 A cron trigger needs `cron` or `run_at`, never both. A webhook trigger without `secret_env` is rejected — there is no unauthenticated webhook. A monitor needs `run` and `mode`, and rejects `cron`, `run_at`, `timezone`, and `secret_env` outright — a manifest that claims a schedule the monitor runner never reads is a lie.
+
+Configure the signing secret before you create or update a webhook trigger:
+
+```bash
+kortix secrets set WEBHOOK_SECRET=-
+kortix secrets delivery WEBHOOK_SECRET broker --consumer connector
+```
+
+Pass the value to the first command on standard input. If the secret previously
+used sandbox delivery, rotate it after the delivery change because an existing
+sandbox can retain the previous value.
 
 ## Session strategy
 
@@ -315,7 +326,7 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 | 400 | Malformed project ID or slug in the URL. |
 | 401 | Signature and token both missing or wrong. |
 | 404 | Trigger not found, disabled, not a webhook, or the project is not active. |
-| 409 | `secret_env` has no value set. |
+| 409 | The signing secret is missing, inactive, unavailable, or does not authorize the `connector` consumer. The response includes a `webhook_secret_*` code and remediation. |
 | 500 | Auth passed, but the session failed to fire. |
 
 ## Endpoints

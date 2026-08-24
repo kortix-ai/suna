@@ -47,6 +47,16 @@ on:
           - changed   # only surfaces stale vs what dev currently runs (fast — the default)
           - all       # force-rebuild + redeploy every surface
           - frontend  # frontend only
+      enable_fast_cold_boot:
+        description: Enable staged fast cold boot (requires surface=all)
+        type: boolean
+        required: true
+        default: false
+      allow_deletes:
+        description: Permit reviewed Terraform deletes during a manual rollback
+        type: boolean
+        required: true
+        default: false
 
 # Cancel a superseded deploy so dev always converges to the newest commit.
 #
@@ -84,6 +94,11 @@ jobs:
       apps_router: ${{ steps.outputs.outputs.apps_router }}
       terraform: ${{ steps.outputs.outputs.terraform }}
     steps:
+      - name: Validate fast cold boot activation
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && inputs.surface != 'all' }}
+        run: |
+          echo "::error::Activation requires surface=all so the API and sandbox runtime deploy together."
+          exit 1
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -277,6 +292,7 @@ jobs:
       github_environment: dev
       trusted_branch: main
       cloudflare: true
+      allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
     secrets: inherit
 
   terraform-dev:
@@ -299,6 +315,7 @@ jobs:
       github_environment: dev
       trusted_branch: main
       cloudflare: true
+      allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
     secrets: inherit
 
   # ── Compute the dev version (single source of truth) ────────────────────────
@@ -510,7 +527,16 @@ jobs:
     env:
       AWS_REGION: us-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"true"}'
+      # Non-secret task environment. KORTIX_PREVIEW_BASE_DOMAIN is the wildcard
+      # every sandbox preview origin sits under; it is declared, never derived
+      # (see apps/api/src/sandbox-proxy/preview-hosts.ts). Setting it is what
+      # makes clients stop using the path proxy, so it goes in only once the
+      # certificate pack for that wildcard is active. Unset = path proxy, which
+      # is also the complete rollback. Keep the fast-boot flag false for the
+      # first kpp2 rollout. Automatic pushes remain false. A deliberate manual
+      # surface=all dispatch can enable it after the rollout gates pass.
+      KORTIX_ECS_ENV_OVERRIDES: >-
+        {"KORTIX_FAST_COLD_BOOT_ENABLED":"${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && 'true' || 'false' }}","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -568,7 +594,10 @@ jobs:
   promote-dev-channel-api:
     name: Move :dev → this build (API)
     needs: [detect-changes, tag-api, deploy-api-ecs]
-    if: needs.detect-changes.outputs.api == 'true'
+    if: ${{ always()
+      && needs.detect-changes.outputs.api == 'true'
+      && needs.tag-api.result == 'success'
+      && needs.deploy-api-ecs.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: docker/setup-buildx-action@v4
@@ -704,7 +733,10 @@ jobs:
   promote-dev-channel-gateway:
     name: Move :dev → this build (gateway)
     needs: [detect-changes, tag-gateway, verify-gateway-dev-parity]
-    if: needs.detect-changes.outputs.gateway == 'true'
+    if: ${{ always()
+      && needs.detect-changes.outputs.gateway == 'true'
+      && needs.tag-gateway.result == 'success'
+      && needs.verify-gateway-dev-parity.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: docker/setup-buildx-action@v4
@@ -831,7 +863,11 @@ jobs:
   publish-web-ecs-dns:
     name: Publish canonical Dev ECS DNS
     needs: [detect-changes, deploy-web-ecs]
-    if: needs.detect-changes.outputs.frontend == 'true'
+    # `always()` prevents a skipped unrelated ancestor from suppressing this
+    # job after deploy-web-ecs has already succeeded.
+    if: ${{ always()
+      && needs.detect-changes.outputs.frontend == 'true'
+      && needs.deploy-web-ecs.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -859,7 +895,9 @@ jobs:
   verify-web-dev:
     name: Verify canonical Dev frontend on ECS
     needs: [detect-changes, dev-version, publish-web-ecs-dns]
-    if: needs.detect-changes.outputs.frontend == 'true'
+    if: ${{ always()
+      && needs.detect-changes.outputs.frontend == 'true'
+      && needs.publish-web-ecs-dns.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
@@ -915,7 +953,10 @@ jobs:
   promote-dev-channel-frontend:
     name: Move :dev → this build (frontend)
     needs: [detect-changes, build-frontend, verify-web-dev]
-    if: needs.detect-changes.outputs.frontend == 'true'
+    if: ${{ always()
+      && needs.detect-changes.outputs.frontend == 'true'
+      && needs.build-frontend.result == 'success'
+      && needs.verify-web-dev.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: docker/setup-buildx-action@v4

@@ -100,11 +100,13 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image                   = var.api_image
-  container_port          = var.container_port
-  certificate_arn         = module.acm.certificate_arn
-  health_check_path       = "/health/ready"
-  environment             = var.api_environment
+  image             = var.api_image
+  container_port    = var.container_port
+  certificate_arn   = module.acm.certificate_arn
+  health_check_path = "/health/ready"
+  environment = merge(var.api_environment, {
+    LLM_GATEWAY_PROXY_TARGET = "https://${var.gateway_domain}"
+  })
   secrets                 = var.api_secrets
   secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
   ses_send_region         = "us-east-2"
@@ -171,14 +173,29 @@ module "gateway" {
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
   # prod gateway: on-demand (no Spot — LLM path), HA floor of 2, insights on
-  task_cpu           = 512
-  task_memory        = 1024
-  desired_count      = 2
-  min_capacity       = 2
-  max_capacity       = 6
-  use_fargate_spot   = false
-  container_insights = true
-  tags               = local.tags
+  # Sizing: memory is the gateway's binding constraint, not CPU — it holds
+  # request bodies (multimodal turns reach tens of MB) while it forwards them.
+  # 2 GiB gives admission a 1 GiB budget (memory-budget.ts takes 50%), i.e.
+  # ~341 MiB of concurrent wire bytes at the measured 3x amplification. The old
+  # 512 MiB (dev) / 1 GiB (staging, prod) sat right on top of the size that
+  # OOM-killed the Essentia gateway on a single 28 MB request.
+  #
+  # Capacity comes from REPLICAS, not from one big task: the gateway is
+  # stateless and ALBRequestCountPerTarget already scales it. min_capacity is
+  # the floor that survives an AZ or Spot loss without a cold start.
+  # deregistration_delay + stop_timeout let a draining task finish its
+  # in-flight streams (main.ts drains for GATEWAY_DRAIN_MS first).
+  task_cpu                   = 1024
+  task_memory                = 2048
+  desired_count              = 3
+  min_capacity               = 3
+  max_capacity               = 20
+  use_fargate_spot           = false
+  container_insights         = true
+  deregistration_delay       = 300
+  stop_timeout               = 120
+  requests_per_target_target = 120
+  tags                       = local.tags
 }
 
 # DNS for the public API hostname. Gated by manage_dns so the stack (VPC/ALB/

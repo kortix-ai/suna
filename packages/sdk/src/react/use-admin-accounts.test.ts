@@ -3,12 +3,15 @@ import {
   ADMIN_OVERRIDE_KEYS,
   adminAccountLookupPath,
   adminAccountOverridesPath,
+  adminAccountSubscriptionPath,
   adminMemberRolePath,
   useAdminAccount,
+  useAdminAccountSubscription,
   useAdminSetMemberRole,
   useAdminSetOverrides,
   type AdminAccount,
   type AdminAccountMemberRole,
+  type AdminAccountSubscription,
   type AdminEntitlementOverridePatch,
   type AdminEntitlementOverrides,
 } from './use-admin-accounts';
@@ -42,6 +45,53 @@ describe('admin member-role mutation contract', () => {
   test('role union covers exactly the three account roles', () => {
     const roles: AdminAccountMemberRole[] = ['owner', 'admin', 'member'];
     expect(roles).toHaveLength(3);
+  });
+});
+
+describe('admin live-Stripe-subscription read', () => {
+  // What Stripe ACTUALLY charges, shown next to the resolved plan badge. A
+  // stored 'pro' tier renders "Team · $20/mo · grandfathered" while the real
+  // subscription can be a $40/mo legacy machine sub — the sheet needs both.
+  test('adminAccountSubscriptionPath targets the admin subscription route', () => {
+    expect(adminAccountSubscriptionPath('acct_1')).toBe('/admin/api/accounts/acct_1/subscription');
+  });
+
+  test('useAdminAccountSubscription is exported as a hook', () => {
+    expect(typeof useAdminAccountSubscription).toBe('function');
+  });
+
+  test('AdminAccountSubscription pins the wire shape the sheet renders', () => {
+    const sub: AdminAccountSubscription = {
+      id: 'sub_1TIWcF',
+      status: 'active',
+      description: 'Kortix Computer · Pro — 8 vCPU, 16 GB RAM, 320 GB SSD',
+      productName: 'Kortix Computer',
+      priceId: 'price_1',
+      unitAmountUsd: 40,
+      quantity: 1,
+      totalAmountUsd: 40,
+      interval: 'month',
+      currency: 'usd',
+      currentPeriodEnd: '2026-09-04T00:00:00.000Z',
+      cancelAtPeriodEnd: false,
+    };
+    expect(sub.totalAmountUsd).toBe(40);
+  });
+});
+
+describe('admin accounts list — display name', () => {
+  // The name the PRODUCT shows. The raw stored `name` is a migration
+  // placeholder ('Personal'/'User') for old rows; the server maps it to
+  // "<owner email>'s Account" and the console renders that same truth.
+  // Optional so a console pointed at an older API still type-checks.
+  test('AdminAccount carries displayName, and it is optional', () => {
+    const row: Pick<AdminAccount, 'name' | 'displayName'> = {
+      name: 'Personal',
+      displayName: "sc@wring.co's Account",
+    };
+    expect(row.displayName).toBe("sc@wring.co's Account");
+    const older: Pick<AdminAccount, 'name' | 'displayName'> = { name: 'Personal' };
+    expect(older.displayName).toBeUndefined();
   });
 });
 

@@ -21,6 +21,148 @@ linked, not inlined.
 
 ## Register
 
+### A deliberate runtime failure park must require explicit restart (2026-08-24)
+
+**When:** returning a stopped sandbox after `runtime_boot_failed` or
+`runtime_wake_failed`. Do not classify that row as an ordinary hibernated
+sandbox. Automatic `/start` retries can otherwise resume the same broken runtime
+and repeat the full readiness timeout forever. *Incident:* an Essentia E2B
+session issued consecutive 9.6–10.2 second `/start` calls for over 80 seconds;
+the existing 5-minute server window then parked and auto-resumed the same box.
+*Enforcer:* API repeated-start and web resumability regression tests.
+
+### Fence provider-status caches against lifecycle mutations (2026-08-24)
+
+**When:** caching a confirmed provider `running` result. Capture a lifecycle
+generation before the provider read. Cache the result only if that generation
+is unchanged. Invalidate before and after start, stop, and remove operations.
+An in-flight status read can otherwise finish after a stop and resurrect stale
+`running` state. *Near-miss:* the Essentia `/start` latency optimization added
+an E2B cache that could hide a completed pause for 1.5 seconds.
+*Enforcer:* `e2b.test.ts` holds `getInfo()` across `stop()` and rejects revival.
+
+### One React Query key needs one poll owner (2026-08-24)
+
+**When:** mounting the same query through several session-page components. Give
+exactly one stable route-level observer a `refetchInterval`; make every other
+observer a cache reader with `refetchOnMount: false`. In-flight deduplication
+does not merge independent timers or late stale mounts. *Incident:* five audit
+observers produced 9 requests during one Essentia session load.
+*Enforcer:* `session-audit-shared.test.ts` pins one owner and cache-reader mounts.
+
+### Browser idle is not network idle (2026-08-24)
+
+**When:** deferring a large non-critical request. Do not use
+`requestIdleCallback` as a first-paint network gate; network waits create idle
+main-thread windows immediately. Fetch at the user-demand boundary instead.
+*Incident:* an idle callback started the 4.07 MB LLM catalog during every
+session open. *Enforcer:* `llm-catalog-demand-loading.test.ts` bans layout boot.
+
+### A successful surface deploy must not inherit skipped unrelated ancestors (2026-08-24)
+
+**When:** chaining Dev deployment, canonical verification, and self-host channel
+promotion jobs. Add `always()` and assert the direct prerequisite result for
+each post-deploy job. A normal `if:` can inherit a skipped transitive ancestor,
+skip verification, and leave the mutable self-host tag on an older image even
+after the immutable image deployed successfully.
+*Incident:* a Dev frontend deployed a transcript fix, but its DNS verification
+and `:dev` promotion skipped. Self-host frontends kept a stale blank transcript.
+*Enforcer:* `tests/unit/web-ecs-workflow.test.ts` pins the post-deploy conditions.
+
+### Submit an initial session prompt exactly once (2026-08-23)
+
+**When:** creating a session with `initial_prompt`. Do not submit the same
+prompt again after session readiness. Assert one user turn and one assistant
+turn through the real CLI process. *Incident:* the CLI created the session with
+the prompt, then posted it again and returned HTTP 500 after the first reply.
+*Enforcer:* `sessions.test.ts` counts runtime prompt requests for `--new`.
+
+### Resolve a pnpm global package through `pnpm root -g` (2026-08-23)
+
+**When:** validating or linking a binary installed by `pnpm add -g`. Build the
+path as `$(pnpm root -g)/<package>`; do not parse `pnpm list --parseable` output.
+That output changed shape and made the E2B template fail after a successful
+OpenCode install, so new sessions continued using a stale warm template.
+*Enforcer:* `apps/sandbox/opencode-warmup.test.ts` pins the Dockerfile command.
+
+### A channel promotion must evaluate after skipped sibling surfaces (2026-08-23)
+
+**When:** adding a dev image promotion job after a conditional multi-surface
+deploy graph. Start its condition with `always()`, then require the selected
+surface's build and verification jobs to report `success` explicitly.
+*Incident:* Deploy Dev run `32654029814` deployed API SHA `a48c31be`, but GitHub
+skipped the API `:dev` promotion because unrelated surface ancestors skipped.
+A self-host deployment stayed on `3926a01a`. *Enforcer:*
+`dev-channel-promotion-workflow.test.ts` covers API, gateway, and frontend.
+
+### A WebSocket upgrade must obey the SAME wake policy as the HTTP path (2026-08-23)
+
+**When:** adding or changing a gate in `resolvePreviewWsUpstream` / `ws-proxy`,
+or any policy that answers a sandbox request with 503. A browser cannot see a
+refused upgrade — it reports close code `1006` with no status and no reason — so
+a gate the WebSocket path applies but the HTTP path does not becomes an
+unrecoverable client loop, never an error the user can act on. Mirror the HTTP
+resume policy, and log every refused upgrade with its status and path.
+*Incident:* the session Terminal reconnected forever against an idle-parked box:
+HTTP wakes it on user intent, the WS path had no wake branch at all, and the
+panel's own `GET /kortix/pty` never resumes either — so a reload could not fix
+it. PR #6792 adds `wake=1` for user-initiated attaches only.
+*Enforcer:* `ws-wake-policy.test.ts` pins the marked/unmarked split; the
+`[preview-ws] REFUSED` log makes the next one findable in one grep.
+
+### A typed list from a remote endpoint is not a list — normalize it at the SDK seam (2026-08-23)
+
+**When:** adding or touching any `@kortix/sdk` hook that returns a LIST from the
+runtime or platform API. Coerce the response with `asRuntimeList` and read the
+localStorage placeholder with `cachedRuntimeList`, so a body with an unexpected
+shape degrades to "no items" instead of reaching a render that iterates it.
+*Incident:* `GET /command` returned a truthy non-array on dev; the session view
+crashed into its error boundary with `TypeError: t is not iterable` from
+`detectCommandFromText`, and the bad value was cached, so a reload did not clear
+it. Fixed by PR #6790. *Enforcer:* `shared.test.ts` covers both helpers; the
+guard is only real for hooks that call them — check the call site in review.
+
+### Give reviewed infrastructure rollbacks an explicit delete path (2026-08-23)
+
+**When:** a rollback removes Terraform-managed resources. Keep automatic pushes
+delete-safe. Expose a manual `allow_deletes` input, review the exact plan, and
+apply the same plan through the guarded workflow. *Incident:* the `kortixd`
+rollback planned four relay-only deletes; the dev deploy correctly stopped and
+left the stable API image undeployed. *Enforcer:* `terraform-apply.yml` blocks
+deletes unless the caller passes `allow_deletes=true`.
+
+### Keep the legacy relay until old sessions pass a real cutover gate (2026-08-23)
+
+**When:** replacing sandbox runtime startup, ingress, or relay ownership.
+Do not merge the cutover until one pre-change session passes chat, files, PTY,
+idle survival, and stop/start recovery through the browser. A persistent boot
+lock must record the boot ID and owner PID, and recover an empty or stale lock.
+*Incident:* PRs #6686 and #6773–#6786 moved the relay to `kortixd`; an empty
+`/opt/kortix/bootstrap.lock` then blocked every later wake for that node.
+*Enforcer:* TODO: add the pre-change-session journey to the browser release gate.
+
+### Keep self-host sandbox gateway URLs aligned with the public proxy route (2026-08-23)
+
+**When:** changing `LLM_GATEWAY_PROXY_TARGET`, Caddy LLM matchers, or sandbox
+gateway URL resolution. Test the final public URL through the deployed proxy.
+Internal proxy mode does not prove that `/v1/llm-gateway/v1` is public.
+*Incident:* self-host sessions received Caddy `404` because Compose selected that
+internal prefix while Caddy exposed `/v1/llm` directly to the gateway.
+*Enforcer:* `compose-assets.test.ts` pins `LLM_GATEWAY_BASE_URL` to the public
+`${KORTIX_URL}/v1/llm` route.
+
+### Webhook signing secrets must use connector delivery (2026-08-23)
+
+**When:** creating, updating, or diagnosing a webhook trigger. A stored secret
+is not sufficient. Its delivery policy must authorize the `connector` consumer:
+use `broker` strategy with `connector` consumer, then rotate after narrowing a
+secret that previously reached a sandbox. Reject invalid policy during trigger
+create/update, and return distinct runtime codes for missing, inactive, and
+delivery-mismatched secrets. *Incident:* production `test-webhook` returned 409
+because `SECRET` existed with `runtime`/`sandbox` delivery; the same manifest
+also named an undeclared agent. *Enforcer:* `e2e-project-triggers.test.ts` and
+`secret-consumer-access.test.ts`.
+
 ### Assert monotonic timestamps when later writes can advance one field (2026-08-22)
 
 **When:** a test reads two timestamps written by one statement after asynchronous
@@ -30,6 +172,18 @@ release gate run 32598056475 failed `SESS-18` after `updated_at` advanced 223 ms
 past `last_activity_at`. *Enforcer:* `SESS-18` requires
 `last_activity_at > created_at` and `updated_at >= last_activity_at`.
 
+### A sandbox environment carries one credential, not a boot protocol (2026-08-22)
+
+**When:** provisioning a session or adding daemon boot data. Inject only the
+session-bound `KORTIX_TOKEN`. The daemon must claim prompts and lifecycle
+identifiers from the API with that token. Connector, provider, prompt, and
+turn-ledger values must not enter the VM environment. *Incident:* an Essentia
+`env` dump exposed connector credentials and four Kortix aliases; a real
+Platinum probe then found the initial-turn nonce still inherited by OpenCode.
+*Enforcer:* runtime-env tests reject all boot payload keys, daemon wire tests
+assert the authenticated claim, and the live guest probe must print only
+`KORTIX_TOKEN` for credential-like names.
+
 ### Prove the gated query ran after enabling its feature (2026-08-22)
 
 **When:** enabling a feature on one page, then navigating to its data page in a
@@ -38,6 +192,16 @@ exact API response around an explicit reload before asserting its empty state.
 *Near-miss:* release PR #6746 browser shard 2 failed twice with a permanent Apps
 skeleton after a `200` feature PATCH and zero `GET /apps` requests. *Enforcer:*
 `18-apps-ui.spec.ts` requires the Apps list response before the empty state.
+
+### Fence every detached lifecycle mutation with a durable operation id (2026-08-22)
+
+**When:** an HTTP handler returns before a sandbox stop, start, or recovery
+finishes. Acquire one database claim per `session_id`. Predicate every provider
+step and completion write on that claim. A client mutation flag cannot serialize
+tabs, refreshes, or repeated requests. *Incident:* session
+`ebdcac7f-58bd-4a9f-ad82-b5f536f12c9c` accepted three restarts in 27 seconds and
+oscillated through `running -> provisioning -> stopped -> running -> stopped`.
+*Enforcer:* `runtime-restart-fence.test.ts` and the restart compare-and-set query.
 
 ### Assert an asynchronous timestamp write on its own row (2026-08-22)
 
@@ -57,6 +221,71 @@ Use `vercel deploy --env KORTIX_PUBLIC_<NAME>=<value>`. Do not add a
 visibility and rejects public framework prefixes. *Incident:* v0.13.3 left
 `kortix.com` on v0.13.2 after `env add NEXT_PUBLIC_KORTIX_VERSION` failed.
 *Enforcer:* `web-ecs-workflow.test.ts` pins the deployment-scoped runtime value.
+
+### A self-host has TWO version axes — the images and the CLI binary. Updating one never updates the other (2026-08-22)
+
+**When:** diagnosing a self-host that is "on latest", or shipping any feature
+whose config the CLI renders (Caddyfile, `.env` keys, compose services).
+
+Essentia ran API/gateway/frontend images from `main` while `/usr/local/bin/kortix`
+was **1565 commits stale**. The CLI renders the Caddyfile and owns the `.env`
+schema, so the box silently lacked every CLI-side feature that had shipped since:
+preview origins could not be configured (no such flag existed), and the Caddy
+half of the "Bad Gateway" retry fix (PR #6702) had never landed even though its
+API half was live in the image. **Check `kortix --version` before believing any
+self-host diagnosis.** Upgrade with `curl -fsSL https://kortix.com/install | bash`
+(needs `HOME` set under SSM, or it dies on `HOME: unbound variable`).
+
+**Three update-semantics traps found in the same box:**
+1. `resolveTag()` reads `KORTIX_CHANNEL`, **never** `KORTIX_VERSION`. A bare
+   `kortix self-host update` on a box pinned to `dev-latest` with
+   `KORTIX_CHANNEL=stable` rolled it **back 758 commits** to a 3-week-old
+   release. Always pass `--version <ref>` explicitly on a pinned box.
+2. `KORTIX_IMAGE_PULL=never` (set by a past `--local-images`) makes every update
+   a silent no-op against the local Docker cache — `status` still reports
+   "no drift", because drift compares config to running images, not to the registry.
+3. `status`/`version` say "up to date" while tracking a floating tag. Compare the
+   **registry manifest digest** to the local `RepoDigests`, or the `/health`
+   `commit` to `origin/main`. A version string is not evidence.
+
+*Incident:* no outage from the staleness itself; it hid a shipped fix for ~1 day
+and blocked a customer feature.
+
+### Validate a config offline before applying it, and never trust a probe whose SNI you did not choose (2026-08-22)
+
+**When:** enabling a wildcard site block, or writing any "did it come back up?"
+check against a server doing on-demand TLS.
+
+Enabling preview origins on Essentia crash-looped Caddy for ~4 minutes:
+`subject does not qualify for certificate: '*.'`. A wildcard site address and the
+env var it interpolates are **two separate writes** — the Caddyfile gained
+`*.{$KORTIX_PREVIEW_BASE_DOMAIN}` while the running container's baked env still
+had that var empty, and Caddy refuses to adapt a config containing a bare `*.`.
+
+**Rules.**
+1. Render the target config and run `caddy validate --config … --adapter caddyfile`
+   in a throwaway container with the exact env **before** touching the live stack.
+   The failing and passing cases both reproduce in seconds, with no blast radius.
+2. After a config write, `--force-recreate` the container so its env is rebuilt
+   from `.env`. A plain restart reuses the env baked at creation time.
+3. **A probe to `https://localhost` is not a health check** against on-demand TLS:
+   it presents SNI `localhost`, the issuance `ask` gate correctly rejects it, and
+   TLS fails — so the probe returns `000` whether the service is healthy or not.
+   It fired a needless rollback here. Use `--resolve <real-host>:443:127.0.0.1`.
+   Prove any guard by running it against the *known-good* state first.
+4. **Never infer "no DNS" from a bare-label lookup when the record is a wildcard.**
+   `dig apps.essentia.kortix.cloud` returns nothing while `*.apps.essentia…`
+   exists and serves live traffic. That inference led to clearing a live
+   `KORTIX_APPS_BASE_DOMAIN` and taking deployed Apps down for ~25 min. Confirm
+   with the *authoritative* NS and a synthesized name, and prefer an empirical
+   before/after test to any reasoning about config intent.
+5. Querying a name before its record exists poisons public resolvers for the
+   SOA negative TTL (1800s here). Create the record first, then resolve.
+
+*Incident:* Essentia self-host, 2026-08-22. Two self-inflicted outages (~4 min
+API, ~25 min Apps), both caused by the operator's own verification, not by the
+change. Enforcer: `kortix self-host doctor` now fails on a domain-mode instance
+with no preview base domain (PR #6732).
 
 ### A selective capacity release must include the pool isolation it budgets (2026-08-22)
 
@@ -92,12 +321,135 @@ requires `prepareInitialSandboxTurn()` to match `WIRE_MESSAGE_ID`.
 
 **When:** proxying public provider webhooks through the API router to an AWS
 WAF-protected origin. Providers may omit `User-Agent`; signatures, not that
-informational header, authenticate these requests. Add a relay `User-Agent` only
+informational header, authenticate these requests. AWS Managed Rules reject the
+request before the API can verify its signature. Add a relay `User-Agent` only
 for POST webhook routes and only when absent. Preserve sender headers elsewhere.
 *Incident:* Agency webhooks returned origin `403`; the same body with any
 `User-Agent` reached Suna. *Enforcer:* `api-router/worker.test.mjs` covers every
 webhook path family, sender-header preservation, and non-webhook exclusion.
 
+### A JWKS is not evidence of how tokens are signed, and publishing a key changes behavior before you promote it (2026-08-21)
+
+**When:** migrating a Supabase project to asymmetric JWT signing keys, or
+reasoning about which algorithm any environment actually uses.
+
+Two traps, both hit in one session.
+
+**1. Read the token, never the JWKS.** Dev's `/.well-known/jwks.json` advertised
+`ES256` and had since 2025-11-30 — while every token it issued was `HS256`. The
+key existed in `standby` and had never been promoted. A whole perf change was
+reported as "dev gets the win" on that basis and it was wrong. The only
+authoritative check is decoding a real access token header:
+`base64url(token.split('.')[0])` -> `{"alg":...,"kid":...}`.
+
+**2. Importing the legacy secret publishes an asymmetric key immediately.**
+`POST /config/auth/signing-keys/legacy` looks inert — it only registers the
+existing HS256 secret as a key — but it also surfaces a standby ES256 key in
+JWKS. That flips every verifier from "JWKS is empty, fall back to the network"
+to "I have keys, verify locally", **without anything being promoted**, and it
+cannot be undone: a `standby` key may only move to `in_use` or
+`previously_used`, so the JWKS cannot be emptied again.
+
+That mattered because `apps/api/src/shared/jwt-verify.ts` implements ES256/RS256
+only, selects a key by `kid` and falls through to *first key in the cache* when a
+token carries none, and `middleware/auth.ts` treated `unsupported-alg` as a hard
+401 rather than an inconclusive result. A legacy token with no `kid` would have
+selected the new ES256 key and 401'd on a valid session. It was unreachable only
+because GoTrue stamps a `kid` on every token, including projects with an empty
+JWKS (verified: `{"alg":"HS256","kid":"IBZFPqpuE0oC+hnZ"}`). Fixed in PR #6698 —
+check the algorithm before selecting a key, and route both middlewares through
+one `isInconclusiveVerifyFailure` predicate.
+
+**The rules:** (1) verify an environment's signing algorithm from a minted token,
+never from JWKS or a docstring; (2) before publishing a key anywhere, read every
+verifier that consumes that JWKS and confirm an unknown/foreign algorithm falls
+back instead of rejecting; (3) treat the legacy import as a behavior change, not
+bookkeeping — it is one-way.
+
+*Near-miss:* no outage. Prod was staged (ES256 `standby`, HS256 `in_use`) and its
+tokens never changed. Dev and staging were promoted and verified: pre-rotation
+sessions kept returning 200 (the old key moves to `previously_used` and still
+verifies) and `service_role`/`anon` keys were unaffected.
+*Enforcer:* `apps/api/src/__tests__/unit-jwt-alg-fallback.test.ts` pins the
+predicate and the no-`kid` symmetric case. Nothing enforces rule (1) — prose only.
+
+
+### `git stash` is repo-global — never `pop` from a worktree (2026-08-21)
+
+**When:** any `git stash` / `git stash pop` inside a `pnpm worktree` checkout.
+The stash stack belongs to the REPOSITORY, not the worktree, and this repo
+carries ~80 entries from other people and other branches. `git stash -u` on a
+clean tree creates NOTHING, so a reflexive `stash … ; do work ; stash pop`
+pops **someone else's `stash@{0}`** into your tree. To compare against another
+ref, use `git worktree add <tmp> <ref>`, `git show <ref>:<path>`, or
+`git diff <ref>` — never stash.
+*Incident:* proving a CI failure was pre-existing, `git stash -q -u` on a clean
+worktree stashed nothing, then `git stash pop` unpacked
+`stash@{0}` — "WIP on relay-streaming: streaming substitution kernel", 16 files
+/ 1203 insertions of a colleague's parked work — into an unrelated worktree.
+A modify/delete conflict is the only reason git RETAINED the entry instead of
+dropping it; a clean apply would have silently consumed it and left the work
+recoverable only via `git fsck`. Recovered with `git reset --hard HEAD` +
+`git clean -fd` after verifying `git stash show --stat 'stash@{0}'` still
+listed all 16 files. **No enforcer** — the guard is the habit.
+
+### Entitlement is a property of the subscription, and "has an active subscription" is not "pays us" (2026-08-20)
+
+**When:** writing any rule that decides what an account may DO — the wallet
+floor, a renewal grant, a feature gate. Do not read `credit_accounts.tier` or
+`billing_model` as the authority. Both are stale by design: `tier` stays `free`
+for paying accounts, `billing_model` stays `per_seat` long after cancellation,
+and legacy paid tiers grant no monthly credits at all. Resolve from the
+subscription Stripe is collecting on.
+
+The trap on the other side, which is why this is one rule and not two: **the
+free tier carries a REAL $0 Stripe subscription whose status is `active`** —
+226,931 such rows on prod. So "has a paying subscription" alone is not
+"is a paying customer" either. A bypass needs BOTH a collecting subscription
+AND a plan that is actually paid for. Widening the paid-plan half from
+`per_seat`-only to any paid tier is the fix; dropping it is an uncapped
+free-tier hole.
+
+*Incident:* a customer paying $40/mo for "Kortix Computer · Pro" could not run
+a single turn. Legacy `pro` grants 0 monthly credits, so the wallet sat at $0
+and `checkBillingActive`'s one-cent admission hold 402'd every run; the paid
+renewal had granted nothing since April (`getMonthlyCredits('pro') === 0`).
+36 accounts in that exact shape on prod, 29 of them at a zero balance.
+Fixed in PR #6662.
+
+*Method note — the rule that actually caught the second bug:* the free-tier
+hole was not found by 7,538 green API tests, by typecheck, or by driving the
+real API with a seeded account. It was found by running one read-only
+`GROUP BY tier, billing_model, subscription_status` against **production** to
+size the affected population. **Before changing a predicate that gates money or
+access, count the rows it will newly admit, per class, on prod.** A local
+fixture only proves the class you thought to seed.
+
+*Enforcer:* `billing-state.test.ts` sweeps every Stripe status × plan class,
+including a free-tier + `active` $0-subscription case modeled on the real prod
+row; `per-seat-pricing.test.ts` pins `resolveRenewalGrant` for per-seat,
+configured-grant and paid-by-amount branches.
+
+||||||| bd5aae39c4
+
+||||||| 0c247496b6
+
+### A URL that carries a credential must never reach a log line (2026-08-20)
+
+**When:** logging any URL you did not build literally on that line —
+WebSocket connect URLs, presigned links, proxy targets, redirect targets.
+Browser WebSockets cannot send headers, so auth is smuggled in the query
+string (`?token=`), which turns "log the URL you are dialing" into "print the
+user's session JWT". Log `url.split('?')[0]`, or the origin + path, never the
+whole thing. Reconnect backoffs make it worse: one flapping sandbox reprints
+the credential every 1-15s for as long as it flaps.
+*Incident:* `pty-terminal.tsx` logged the full PTY WebSocket URL from
+`getKortixPtyWebSocketUrl`, which appends the live Supabase access token, on
+every connect AND every reconnect. The same file already carried a comment
+saying never to echo the token-bearing URL into the visible buffer — the rule
+existed, the enforcement did not. Found by audit, not by an incident; fixed in
+PR #6663. **No enforcer yet** — a lint rule banning bare `wsUrl`/`url`
+identifiers as console arguments is the TODO.
 ### A per-host credential never goes in a client-wide header bag (2026-08-20)
 
 **When:** giving any browser/HTTP client a token that authorises ONE origin —
@@ -285,7 +637,6 @@ with a temp instance's secrets; restored in ~4 min, all 16 healthy after.
 *Enforcer:* none — the CLI should either namespace the Compose project by the
 config dir or refuse when the resolved project already exists under a different
 instance directory. Until then this rule is the only guard.
-
 ### A request/response log must never cap what it captures (2026-08-18)
 
 **When:** persisting or rendering a captured request/response body (gateway
@@ -1153,12 +1504,819 @@ strictly (dynamic registration, stateful sessions) as the one you test against.
 *Incident:* found and fixed while building one-click OAuth 2.1 for MCP
 connectors, PR #6579. No production outage — the surface had never been used
 against a real provider, which is precisely why all three shipped unnoticed.
-### Size database pools for the rolling fleet, not the steady fleet
 
-**When:** sizing database pools or changing ECS deployment capacity. Bound the
-sum of every long-lived pool against the maximum rolling fleet. Include startup
-probes and reserve explicit non-API capacity.
-*Incident:* production SQLSTATE `53300` from 01:15:10Z through 01:16:37Z on
-2026-08-22. Twenty overlapping API tasks could request 380 connections against
-237 usable slots. *Enforcer:* `database-capacity.test.ts` pins the full rollout
-ceiling and reserve.
+## Transcript shape alone may never end a turn — and every turn needs a record, whoever started it
+
+Session/turn truth rules paid for on Essentia, 2026-08-20 (session `d1b74954`:
+composer flapped "not running" over a visibly streaming session; a user prompt
+delivered mid-turn was silently swallowed; PR #6657):
+
+**1. A verdict that a turn is DEAD must be gated on the runtime's own busy
+signal, not inferred from the transcript.** "A newer user message follows it"
+and "its latest assistant message is completed" both read as terminal and both
+occur mid-turn (prompts forwarded into a live turn; the step boundary while
+tools run). The reaper cleared a streaming turn's authority at 12:48:51Z; its
+step completed at 12:48:54Z. Rule: no terminal verdict while the root reports
+`busy`/`retry`; an unreadable status is `unknown`, never terminal.
+
+**2. Every runtime-initiated turn must be announced to the control plane.**
+OpenCode starts turns nobody delivered (synthetic `<pty_exited>` wake-ups).
+Anything keyed on "a control-plane prompt opened this turn" — `GET .../turn`,
+the deadline grant, Stop — silently misses them. The daemon's `turn_begin`
+relay + `adoptRuntimeSandboxTurn` close this; the general rule: when a new way
+for work to START appears, audit every consumer of "is work running".
+
+**3. A safety floor that DELETES its own retry state is a one-shot race.** The
+orphan-redelivery age floor (30s) was checked once, and losing the check
+cleared the record that was the only possible trigger — the user's prompt died
+at age 27s. A guard that defers must leave the state it will need standing.
+
+**4. An unnamed lifecycle event breaks every consumer keyed on the name.**
+`readRootTurnState` bailed on a trailing user message, so turn-end relays
+carried no `turn_message_id`: dedup vanished (double finalizes) and the strand
+reconciler lost its key. When an identity read has a "give up" branch, list
+what downstream keys on the identity before taking it.
+
+*Automation:* flipped-expectation tests in `orphaned-turn-finalize.test.ts` and
+`sandbox-reaper.test.ts` pin the incident timeline; `turn-begin-relay.test.ts`
+and `integration-sandbox-turn-lifecycle.test.ts` pin the adoption contract.
+
+## A release pipeline is only as green as its quietest dependency
+
+Rules paid for during the v0.13.1 release-gate campaign, 2026-08-19/20 (the
+gate had passed 0 of 18 runs in its history; 13 instrumented staging dry-runs
+converted every hidden cause into a named fix; v0.13.1 then shipped through
+the genuinely green gate — PRs #6622–#6648, release PR #6654):
+
+**1. A failing job in a `needs:` chain silently freezes every dependent
+deploy — probe credentials, and never let a janitor gate the payload.** The
+`wire-cloudflare` job's Cloudflare key died on 2026-08-18 (403). Three jobs
+`needs:`-depended on it, so every staging WEB deploy was skipped for a week —
+the release gate drove an Aug-12 frontend against the current API, and the
+resulting browser failures read as product bugs. Fix (#6626, #6639): the
+non-essential job is `continue-on-error`, and the deploy step probes each
+credential with a cheap authenticated read and uses the first one that works.
+Rule: when a job fails REPEATEDLY and everything still "works", find out what
+its `needs:` dependents silently stopped doing.
+
+**2. Never replay a non-idempotent POST through an edge-laundered 5xx — the
+origin may have committed.** The edge Worker turns any origin 5xx into a
+synthetic 503 with no `x-request-id`. The ke2e client retried creates through
+it, and the second send collided with the first send's committed row: 10
+distinct gate failures reading `409 already exists` were the client fighting
+itself (run 32306385663). Fix (#6628): POST is never replayed through an
+ambiguous 5xx; bounded retries stay for reads; world-bootstrap creates retry
+only with per-attempt-fresh identities (#6636, attempt-scoped run ids #6638).
+*Automation:* `tests/unit/create-replay-safety.test.ts` injects the exact
+laundered 503 and pins POST to one send while GET still retries.
+
+**3. Never put a credential in a browser's global header set.** The Vercel
+deployment-protection bypass secret sat in Playwright `use.extraHTTPHeaders`,
+which Chromium attaches to EVERY request: it was transmitted to 16 third-party
+hosts (Google, Facebook, DoubleClick…) on every run, persisted inside public
+workflow trace artifacts, AND its presence in cross-origin preflights made the
+API's CORS allow-list reject every browser API call — one line caused both a
+credential leak and the entire 11-spec browser failure class (#6632). Fix: the
+bypass is exchanged ONCE for a scoped `_vercel_jwt` cookie against the
+deployment origin. Rule: scope every credential to the one origin that needs
+it; treat `extraHTTPHeaders`/default-header config as a broadcast channel.
+
+*Incident:* no production outage — the cost was ~22 hours of release paralysis
+and one leaked secret (rotated). The meta-rule: a gate that has NEVER been
+green is not protecting anything; each red must convert one hidden cause into
+a named, enforced fix until green is the steady state.
+
+## A relay that authenticates with the wrong credential fails silently, forever
+
+Follow-up rule from the same 2026-08-20 turn-truth work (PR #6664), found only
+because the merged fix was verified on deployed dev:
+
+**A non-2xx that the caller merely retries-and-gives-up is indistinguishable
+from a feature that was never built.** The new `turn_begin` relay used the
+daemon's default token chain (`sandboxRelayContext()`), which prefers
+`KORTIX_CLI_TOKEN` — a user/agent PAT — while the route it calls is
+sandbox-identity-only. Every relay 403'd, twice, then gave up. On dev the
+symptoms were a perfect alibi: opencode emitted the frames, the deployed
+binary carried the new symbols, the env was complete, the root check passed,
+and a hand-made POST with the sandbox credential returned
+`{ok:true,outcome:'adopted'}` — while the ledger held zero rows. This is the
+same failure class as the Essentia turn-end 403s that `r4.ts`'s kind-gate
+comment already records; the sibling relay (`relayInitialTurnAcceptedToApi`)
+had already established the correct pattern.
+
+**Rules.**
+1. When adding a sandbox→API relay, copy the CREDENTIAL choice from the
+   nearest sibling of the same kind class, not the generic context helper.
+   Sandbox-identity kinds (`turn_accepted`, `turn_abandoned`, `turn_begin`)
+   resolve `KORTIX_SANDBOX_TOKEN || KORTIX_TOKEN` explicitly.
+2. Never relay a credential you know the route will refuse — skip instead. A
+   guaranteed 403 loop is worse than an absent feature: it looks like traffic.
+3. **Test the wire, not the call count.** The tests that shipped this asserted
+   "a POST happened" against a stubbed server. The test that catches it asserts
+   the `Authorization` header. Any test that stubs HTTP must assert the
+   credential and the URL, or it is only testing itself.
+4. Pin the EVENT WIRING separately from the handler's behavior. A unit test
+   that calls the relay directly proves nothing about whether the event that
+   should trigger it is dispatched — capture a real frame from the deployed
+   runtime and feed it through the real dispatcher.
+
+*Incident:* no outage — the fix was simply inert in production for ~25 minutes
+between merge and detection, which is exactly what dev verification is for.
+
+## "Positive" is only half of what DER asks of an INTEGER — it must also be minimal
+
+Found 2026-08-21 while chasing a ~4% flake in
+`apps/kortix-sandbox-agent-server/src/egress-shim/shim.test.ts`, which turned
+out to be a latent production defect in the egress shim's certificate authority
+(`egress-shim/ca.ts`).
+
+The serial number was built as `'00' + randomBytes(16)`, with a comment
+explaining the leading zero: a first byte `>= 0x80` is read as two's-complement
+NEGATIVE and the certificate is rejected. That is true, and it is not
+sufficient. **DER requires an INTEGER to be minimal as well as correctly
+signed: a `0x00` prefix is legal only when the byte after it is `>= 0x80`.**
+When the first random byte came in below that, the zero was redundant and the
+certificate was malformed — `BoringSSL … ASN.1 … INVALID_INTEGER` on the
+handshake, and `openssl x509` unable to load the file at all.
+
+It fired once in ~256 — the odds of `randomBytes()[0] === 0x00`, the case where
+even node-forge's own normalization leaves a redundant zero behind. Every
+sandbox mints its own CA and a leaf per terminated host, so roughly one sandbox
+in 256 got an egress CA no client could parse, and every HTTPS call the agent
+made through the shim failed.
+
+**Rules.**
+1. When hand-encoding an ASN.1 INTEGER, satisfy BOTH rules or neither is
+   satisfied. Clamping a random leading byte into `0x01..0x7f` answers both by
+   construction — never `>= 0x80` so no prefix is needed, never `0x00` so no
+   prefix is redundant — at a cost of one bit out of 128.
+2. **A 1-in-256 fault sampled probabilistically is a test that passes while the
+   bug ships.** Export the encoding rule and pin it directly over the whole
+   `0x00..0xff` leading-byte range. The bug survived a suite that minted a
+   certificate on every run for months.
+3. Filler bytes in a fixture can hide the fault. `00 00 ab …` is VALID (forge
+   re-adds a zero `0xab` genuinely needs); `00 00 16 …` is not. Build the
+   regression case from the bytes actually captured off the failure, not from a
+   convenient repeated byte.
+4. `tls.createSecureContext({ cert })` is lenient where `{ ca }` is strict — a
+   probe that only passes `cert` will report a malformed certificate as fine.
+   Diagnose with `openssl asn1parse`, which names the offending field
+   (`prim: INTEGER :BAD INTEGER:[…]`) instead of failing the whole parse.
+5. Treat a flaky test in a security-path suite as a defect report until proven
+   otherwise. This one was dismissible as "TLS socket timing" for as long as
+   nobody read the error text.
+
+*Incident:* no outage reported — the defect was found through CI flake, not
+through a customer. Roughly 0.4% of sandboxes would have had non-functional
+agent egress with no diagnostic pointing at the CA.
+
+## A browser must never be handed a 5xx for an expected state — an intermediary will replace it
+
+Found 2026-08-20 while shipping per-port preview origins (PR #6681 + follow-ups).
+A preview URL whose app had not yet bound its port returned Cloudflare's branded
+"Error 502 Bad gateway" page after ~12s. The API was innocent of the *page*: it
+had carefully built a friendly "port isn't responding" HTML body — and returned
+it with status **502**, so Cloudflare discarded body and all and substituted its
+own interstitial.
+
+**The tell:** our `x-kortix-proxy-hop` header was absent from what reached the
+client. A response of yours that arrives without a header you always set was not
+passed through — it was swapped. Check for one of your own headers before
+believing the status you see came from your code.
+
+**The error was semantic, not numeric.** "The dev server has not bound the port
+yet" and "the box is waking" are the ordinary first seconds of a preview, not
+gateway failures. A 5xx is an invitation every proxy in the chain accepts.
+
+**Rules.**
+1. For a top-level browser navigation, an expected/transient state answers **200
+   with a page that explains itself and retries**. Reserve 5xx for genuine
+   failure. Identity states (401/403/404) are safe — intermediaries pass those
+   through, and a monitor should see them.
+2. Keep the truth machine-readable: non-navigation requests keep the accurate
+   status, and the state travels in a header (`x-kortix-preview-state`) set on
+   the HTML too, so probes lose nothing.
+3. Decide by `Sec-Fetch-Dest`, not by status — an app's own `fetch('/api')` must
+   never receive HTML.
+
+**Corollary paid for in the same session — a mock that weakens a production
+constant asserts an unreachable branch.** A file-share test mocked
+`PUBLIC_SHARE_BLOCKED_PORTS` as EMPTY. The real constant contains the
+static-file port, so the shipped code refused the very case the test "proved"
+worked. When mocking a module for its collaborators, carry its CONSTANTS
+verbatim; a constant is the production behaviour, not a fixture.
+
+*Incident:* no outage — dev only, reported by the product owner and fixed the
+same session. Both the path proxy and the new origin were affected, so the 502
+had been reachable long before preview origins existed.
+
+## OpenCode model references must name the runtime provider
+
+Found 2026-08-24 while diagnosing prompts that failed after session startup.
+The model catalog registered every gateway model under OpenCode provider
+`kortix`. Session creation stored nested model IDs such as
+`codex/gpt-5.6-sol` without that provider. OpenCode interpreted `codex` as the
+provider and returned `ProviderModelNotFoundError`.
+
+**Rules.**
+1. Store every gateway-backed OpenCode model as `kortix/<wire-model>`.
+2. Preserve nested provider paths. `codex/gpt-5.6-sol` becomes
+   `kortix/codex/gpt-5.6-sol`.
+3. Strip exactly one `kortix/` prefix before gateway routing.
+4. Test managed, BYOK, nested Codex, and already-prefixed references together.
+
+*Incident:* new sessions reached runtime readiness but their first prompt
+failed because the stored model named a provider that OpenCode did not expose.
+
+## A comment saying "this was tried and reverted" is a decision record — read it before you overrule it
+
+Found 2026-08-21. PR #6692 "the inbox owns the queue" made the prompt-queue
+admission gate HOLD every queued prompt for as long as the session held turn
+authority, instead of forwarding it into the running turn. It shipped to dev at
+03:10 UTC and was reported broken by the product owner the same day: an agent
+working 9m21s sat on two prompts queued 8 minutes earlier, delivering neither.
+
+**The change was made to fix Remove.** Forwarding into a live turn made
+`DELETE .../prompts/:id` answer 409 within ~1s of a send, because OpenCode
+parents each STEP on the newest user message, so the running turn adopted the
+prompt almost immediately. Holding did fix that — and removed the reason the
+queue exists: what you type while the agent works being WITH the agent, picked
+up the moment the turn ends.
+
+**The codebase had already said so.** `inbox-admission.ts` carried, in its file
+header, *"Holding was tried and reverted: the user wants what they typed to be
+WITH the agent immediately"*, and the delivery test asserted the same. The PR
+noted that line and overruled it, and described the cost as losing *batch
+answering* rather than as losing the queue's whole point.
+
+**Rules.**
+1. A comment that records a REVERT is prior art with an owner and an outcome.
+   Overruling it needs the same evidence the original decision had — ask the
+   person, or reproduce the failure it describes. A one-line acknowledgement in
+   a commit body is not that.
+2. State the cost in the user's terms, not the implementation's. "A batch is no
+   longer folded into one model step" and "the queue no longer sends between
+   turns" are the same change; only the second one is reviewable.
+3. When a fix for control (Remove) costs behaviour (delivery), fix the control
+   on its own terms. Here that is `reachedPlacement` calling a prompt "answered"
+   as soon as any step parents on it — `cancel-forwarded.ts` can already take an
+   unread prompt back out of the runtime.
+
+**Verification that settles it, on deployed dev:** post prompt A (long task),
+wait for `GET .../turn` to report a non-empty `turns` array — that array IS
+`sessionHoldsTurnAuthority`, the predicate the hold read — then post prompt B and
+sample `GET .../prompts`. Held looks like `{state:'waiting',
+reason:'turn_active'}` for the whole turn. Correct looks like `delivering` inside
+2s and gone from the inbox while `turns` is still non-empty. Measured on
+`acce6fbe22`: `delivering` at t+1.8s, gone at t+9.5s, turn still open.
+
+*Incident:* dev only, ~14h from merge to revert. Reverted by PR #6699
+(`acce6fbe22`), which restores the six queue files byte-for-byte to the
+pre-#6692 tree and keeps only the two changes that touch no queue behaviour —
+the non-transitive `compareMessagesForDisplay` fix, and the Remove toast reading
+`error.status` instead of regexing `/409/` against `error.message` (that regex
+could never match, so a 409 and a 404 rendered the same dead-end string, which is
+why Remove looked like it simply never worked).
+
+## A limit larger than the thing it protects is not a limit — and a rendered file is not a deploy
+
+2026-08-21. The dev API was OOM-killed three times in eleven minutes (`exit 137`,
+"OutOfMemoryError: container killed due to memory usage") during an image-heavy
+agent session. Cloudflare answered the dead origin with its own page, so the
+product showed **"Bad Gateway · Retrying in 53s"** and everyone — including me —
+went looking for a code regression in the LLM gateway. There wasn't one.
+
+**Diagnosis, in the order that worked.** `/v1/health` was failing 10–40% with
+`server: cloudflare` and NO `x-kortix-*` or `x-amzn-*` header, so the response
+never came from our code. That route runs no database query and no gateway
+logic, which eliminated every application-level suspect at once. ECS then named
+it outright: `exit 137`, three times.
+
+**The metric that proved it was provisioning, not a regression.** Daily maximum
+memory held a 65–70% band for ten consecutive days and broke it only that day
+(85.5%) — while the AVERAGE stayed at ~37%, unchanged all month. *Peak without
+drift is a few large allocations, never a leak and never load growth.* Learn to
+read that pair; it is the whole diagnosis in two numbers.
+
+**Three compounding causes, each its own rule.**
+
+1. **A ceiling above the container is decoration.** `DEFAULT_MAX_REQUEST_BYTES`
+   was 1 GiB inside a 1024 MiB task and a 640 MiB self-host container — a single
+   *permitted* request could exceed all the memory there was. A request-size cap
+   is only meaningful as a FRACTION of process memory.
+
+2. **Bounding one request is not bounding memory.** Per-request caps with
+   unbounded concurrency still OOM; the crash just arrives later. Memory must be
+   `O(concurrency)`, because concurrency is the only term a scaling policy
+   controls. Shed with `503 + Retry-After` — a refusal costs one request, an OOM
+   costs every request in flight plus the container. And a 503 is a pressure
+   signal the autoscaler can SEE; an OOM looks like a task that stopped existing.
+
+3. **Autoscaling on averages cannot see a single-task peak.** All three policies
+   (average memory 70%, average CPU 60%, requests/target 600) sat idle through
+   all three kills: the mean never moved, and requests peaked at 461 of 600.
+   Alarm on `MemoryUtilization / Maximum`, never only `Average`.
+
+**A rendered file is not a deploy.** A self-host `docker-compose.yml` is written
+ONCE. `kortix self-host update` re-renders it, but the background
+`kortix-updater` container only pulls images — so a box kept current by the
+updater freezes its memory limits at the original render. Measured: a box
+rendered while `llm-gateway` was a literal `512m` still had 512m months later,
+straight through the update that raised the default to 2048m. **The fix shipped
+and could not land.** `kortix-api` escaped only because it happened to be
+`${KORTIX_API_MEMORY_LIMIT:-640m}` and could be moved from `.env`.
+
+**The rule that follows: derive limits from reality, don't write them down.**
+The process now reads its own cgroup limit at boot and takes a fraction. A stale
+render becomes harmless, and more container memory becomes more throughput with
+nothing to re-render.
+
+**Corollary — parity is a safety property.** Dev ran `task_memory 1024` while
+prod and staging ran `4096`, unchanged since at least Aug 15. Dev was the only
+place this could surface first, and it surfaced in a founder's live session.
+
+*Incident:* dev + one self-host box; no production impact (prod predated the
+change). Fixed by #6705 (ceilings), #6708 (bounded memory + admission control),
+#6712 (self-sizing). Verification that settles it: drive 60 concurrent 8 MiB
+bodies at the REAL mounted routes and assert most are shed, every response is a
+real status, no `unhandledRejection`/`uncaughtException`, and the process still
+serves afterwards with the budget released.
+
+## Size database pools for the rolling fleet, not the steady fleet
+
+2026-08-22. A production API deployment overlapped 10 old ECS tasks with 10 new
+tasks. PostgreSQL returned SQLSTATE `53300` because the tasks could request more
+connections than the server exposed. Authorization, audit ingestion, project
+reads, turn streams, webhooks, and lifecycle settlement then failed together.
+The queries were collateral failures. They were not six separate defects.
+
+**The arithmetic that failed.** PostgreSQL exposed 240 connections and reserved
+3 for superusers. Each task allowed 15 main-pool connections, 3 audit-pool
+connections, and 1 leader-election connection. Twenty overlapping tasks could
+therefore request 380 long-lived connections against 237 usable slots. The old
+comment counted only 10 steady-state main pools. It excluded the rolling overlap
+and every secondary pool.
+
+**The rule.** Bound connections against the maximum rolling fleet. Count every
+long-lived pool and every concurrent startup probe. Reserve explicit capacity
+for Supabase, operators, migrations, and request-scoped clients. A steady-state
+calculation is invalid for a service with `deployment_maximum_percent = 200`.
+
+**The enforcement.** `apps/api/src/shared/database-capacity.test.ts` pins the
+production server limit, ECS maximum capacity, rolling overlap, main pool,
+audit pool, leader connection, startup probe, and non-API reserve. The test
+fails when the API connection ceiling exceeds the available application budget.
+Any change to pool size, task capacity, deployment overlap, or PostgreSQL size
+must update and pass this invariant before deployment.
+
+*Incident:* production, SQLSTATE `53300` from 01:15:10Z through 01:16:37Z.
+Verification that settles it: deploy the bounded pools, confirm the exact
+production SHA, exercise webhook and session traffic, then query Better Stack
+for zero new SQLSTATE `53300` occurrences after the rollout completed.
+
+## Admission after allocation is accounting, not admission
+
+2026-08-22. A 28.37 MB multimodal request repeatedly OOM-killed a 512 MiB
+standalone gateway. The existing in-flight budget did not protect the process.
+Both gateway hosts called `readBoundedBody()` before `InflightBudget.admit()`.
+Concurrent requests therefore allocated complete JavaScript strings before the
+budget could reject them. The hosts also released the lease when the handler
+returned a streaming `Response`. Parsed request data could remain reachable
+until the response stream ended.
+
+**The rule.** Reserve declared bytes before the first body read. Grow a chunked
+request's reservation before retaining each chunk. Hold the lease until response
+EOF, error, or cancellation. A test that asserts only `503` counts does not prove
+a memory bound. It must assert allocation order and lease lifetime.
+
+**Remove amplification sources before raising memory.** The same request existed
+as HTTP chunks, a JavaScript string, a parsed object, an AI SDK request graph, a
+serialized provider payload, and trace capture. The gateway now clears the raw
+string after parsing, uses direct `fetch` for OpenAI-compatible providers, loads
+protocol translators lazily, retains no response body, and stores metadata-only
+traces. A container memory increase can raise throughput. It cannot repair an
+unbounded allocation path.
+
+*Incident:* Essentia standalone gateway, repeated cgroup OOM kills and Caddy
+`502 Bad Gateway`. Enforcement: `readAdmittedBody` allocation-order tests,
+response-lifetime lease tests, one-dispatch tests, and a mounted 28 MiB request
+test that asserts one provider call and an intact response.
+
+## A standalone service needs explicit caller wiring in every environment
+
+2026-08-22. The API stopped hosting an in-process gateway and became a reverse
+proxy. Self-host Compose configured `LLM_GATEWAY_PROXY_TARGET`. Dev ECS did not.
+The gateway deployed healthy at the correct SHA, but the API returned
+`gateway_unavailable` for every LLM route. The edge converted that origin `503`
+into `MAINTENANCE_MODE`, which hid the missing environment variable.
+
+**The rule.** A service extraction is incomplete until every caller in every
+deployment topology has an explicit target. Configure local, self-host, dev,
+staging, production, and shadow environments in the same change. Verify through
+the caller route. A healthy callee does not prove that its caller can reach it.
+
+**The enforcement.** Terraform now injects `LLM_GATEWAY_PROXY_TARGET` into each
+cloud API task. The end-to-end verification calls `/v1/llm/health` through the
+API origin and requires the standalone gateway health response.
+
+*Incident:* dev API returned `gateway_unavailable` after gateway PR #6737.
+The public edge surfaced it as blocking maintenance. Direct origin inspection
+identified the missing target before user traffic resumed.
+
+## Two dev stacks on one shared DB share one work queue
+
+2026-08-22. A `timeline-parity` worktree session's first prompt died inside
+OpenCode with `Cannot connect to API …
+subdivision-marine-acne-shorter.trycloudflare.com/v1/llm-gateway/v1/chat/completions`.
+That host belonged to a different worktree (`mw-perf`) whose quick tunnel had
+rotted. Both worktrees reuse the primary local Supabase, so prompt-inbox
+delivery, session-lifecycle commands, and sandbox env sync form ONE queue.
+`mw-perf`'s API grabbed the job, pushed its `KORTIX_URL`-derived gateway URL
+into the other worktree's sandbox, and forwarded the prompt. The owning
+worktree's log showed no env sync and no prompt POST, so nothing local
+explained the failure.
+
+**The rule.** A sandbox's gateway URL and credentials must come from the
+instance that owns the sandbox, never from whichever instance dequeues work.
+In local development, run one stack against the shared DB, or create the
+worktree with `--db`. When an OpenCode error names a host, grep EVERY stack
+log on the machine for that host before suspecting the branch.
+
+**Second incident, same night (~23:00 UTC).** Same worktree, same symptom,
+different culprit: the PRIMARY `pnpm dev` stack on `:8008`. Its quick tunnel
+(`patches-….trycloudflare.com`) had died; its 1 s lifecycle drain tick still
+claimed the worktree's queued prompt, its env sync pushed the dead
+`patches…/v1/llm-gateway` URL into the worktree's sandbox, and OpenCode failed
+the turn with `Cannot connect to API`. The worktree's log again showed no env
+sync and no prompt POST. Two instances in one evening proves this is the
+default failure mode of a shared DB, not a one-off.
+
+**The enforcement.** Two layers, both shipped:
+1. `pnpm worktree start` (`scripts/worktree/cli.ts`, `warnOnSharedDbCrosstalk`)
+   warns at start when another stack is live on the same database, names it,
+   and states the remedy.
+2. **Instance scoping is the product fix.** `KORTIX_INSTANCE_ID`
+   (`apps/api/src/config.ts`, optional, unset in every deployed env) is set by
+   the launchers only: `scripts/dev-local.sh` exports `primary`,
+   `scripts/worktree/lib/launch-env.ts` exports the worktree name.
+   `provisionSessionSandbox` stamps `session_sandboxes.metadata.instanceId`;
+   `sandboxBelongsToThisInstance()` (`apps/api/src/projects/instance-scope.ts`)
+   is consulted by the lifecycle drain (`drainSessionLifecycleQueue` RELEASES a
+   claimed command whose sandbox another instance owns — `queued`, due in 2 s,
+   attempt given back, never dead-lettered), by the env-sync project fan-out
+   (`propagateProjectSecretsToActiveSandboxes` skips foreign boxes), by the box
+   reaper (`reapAndReconcileSandboxes` skips them) and by Platinum's
+   `listManagedRunningSandboxes` (`kortix.instance` marker beside `kortix.env`).
+   Unset id, or a row with no stamp (legacy), means "mine" — a strict no-op in
+   production and never a stranded sandbox. HTTP-path work (proxy, `/start`,
+   `prompt_async`) is deliberately unscoped: the browser talks to one stack on
+   purpose.
+
+*Incidents:* session `b090016e…` on worktree `timeline-parity` (20:16 UTC,
+`mw-perf`'s dead `subdivision-marine-acne-shorter` tunnel) and the same
+worktree at ~23:00 UTC (primary `pnpm dev`'s dead `patches…` tunnel); in both,
+prompts after the owning instance's own env sync succeeded.
+
+## Every stack launcher needs the tunnel watchdog, not only `pnpm dev`
+
+2026-08-22. The `timeline-parity` worktree's quick tunnel died three times in
+one evening (30 min – 3 h after mint). The symptom in the session UI was
+OpenCode `Retrying in 81s · #1 · <none>` — Cloudflare's HTML 530 carries no
+message — or `Cannot connect to API …trycloudflare.com/v1/llm-gateway` on the
+first prompt. The local API was healthy each time. `scripts/dev-local.sh` had
+a watchdog that rotates a dead tunnel and bounces the API; the worktree
+launcher (`scripts/worktree/cli.ts`) did not, so every death needed a hand
+restart and a new `KORTIX_URL`.
+
+**The rule.** A component that bakes a public callback URL at spawn must own
+the liveness of that URL. Any launcher that mints a quick tunnel ships the
+watchdog with it: probe the URL while the local API is healthy; on death,
+mint a new tunnel and respawn the API with the new URL; say so in the log.
+Diagnose a `<none>` retry row by `curl $KORTIX_URL/v1/health` (530 = dead
+tunnel) and `pgrep -f 'cloudflared tunnel'`.
+
+**The enforcement.** `pnpm worktree start` now runs `startTunnelWatchdog`
+(60 s tick, two-probe confirmation, cloudflared exit detection, API respawn
+with the new `KORTIX_URL`). The worktree launcher gets the same tunnel
+watchdog as `pnpm dev`. Proven by killing cloudflared on a live stack and
+watching the rotation (PR #6755).
+
+*Incident:* session `b090016e…` / `cbde77cf…` on worktree `timeline-parity`,
+three tunnel deaths, each surfaced as an OpenCode retry loop.
+
+## A credential boundary cannot depend on a feature flag
+
+2026-08-22. Session provisioning could advertise a direct upstream Git origin
+when `KORTIX_GIT_PROXY` was false. The sandbox daemon then called
+`/projects/:id/git/clone-credential`, which returned the raw upstream token.
+The proxy path was secure, but an environment flag could restore credential
+delivery into every sandbox.
+
+**The rule.** A server-side credential boundary is unconditional. Runtime
+clients receive one session credential and a Kortix proxy URL. No feature flag,
+compatibility endpoint, or generic authorization-header helper may expose or
+attach an upstream credential inside the sandbox.
+
+**The enforcement.** Session provisioning and project serialization always use
+`/v1/git/:project.git`. The clone-credential route no longer exists. The daemon
+rejects direct network Git origins and builds auth headers only for `/v1/git/`.
+Route coverage pins the endpoint removal. Daemon tests pin direct-origin denial.
+
+*Incident:* a sandbox environment audit found four Kortix token aliases and
+provider credentials. The Git compatibility path could also return a raw Git
+provider token to the sandbox.
+
+## Never resolve a merge inside a worktree whose API runs `--hot`
+
+2026-08-22. `git merge origin/main` was run inside `suna-timeline-parity`, the
+worktree that served the user's live test stack (`bun --hot` API, Next dev
+web). The merge stopped on conflicts, the tree held conflict markers, and the
+hot-reloading API picked them up (`tsc`: `TS1185: Merge conflict marker
+encountered` in `r4.ts`) while the user was testing. `git merge --abort`
+restored it within a minute; no sandbox was lost.
+
+**The rule.** A worktree that serves a live stack is read-only to git
+operations that can leave the tree in a non-compiling state: merges with
+possible conflicts, rebases, cherry-picks, checkouts of other branches.
+Resolve in a scratch worktree on a sibling branch, run the gates there, then
+`git merge --ff-only` inside the live worktree so it only ever moves between
+two consistent trees. Fast-forward is the only git write a live worktree
+should see — and a fast-forward that moves `apps/kortix-sandbox-agent-server`,
+`apps/cli`, or `apps/kortix-app-runtime` source must be followed by the same
+artifact builds the launcher runs at start (`pnpm --filter` build for the
+agent server and CLI, `bash apps/kortix-app-runtime/build.sh`), or every new
+session fails provisioning with `kortix-agent dist binary … is older than its
+source` (seen 2026-08-22 21:41 right after the ff; rebuilt, sessions booted
+again).
+
+**The enforcement.** The integration-branch memory note names the rule; the
+scratch-worktree-then-ff sequence is the procedure
+(`timeline-parity-main-merge` → `git merge --ff-only`). Candidate for a
+`pnpm worktree` guard: refuse `merge`/`rebase` in a slot whose API port is
+listening unless `--ff-only`.
+
+*Incident:* `timeline-parity` worktree, 2026-08-22 ~21:35 UTC, ~60 s of
+`tsc` errors on the live API; aborted, re-done in `tp-main-merge`, ff'd.
+
+## A cancelled deploy-dev can advertise a SHA it never promoted, and the next run then skips that surface
+
+2026-08-23. `deploy-dev` run 32605966965 (`e6c4ba0b62`, an `apps/web`-only
+change) was cancelled by a newer merge while in flight. Its per-surface jobs
+did not all die together: `Build frontend image` and `Deploy frontend to dev
+(ECS Fargate)` both reported `success`, while `Move :dev → this build
+(frontend)` and `Verify canonical Dev frontend on ECS` were cancelled. The next
+run (32606271039, `dbe5999884`) resolved the deploy base and logged `Comparing
+changed surfaces against deployed dev SHA e6c4ba0b62…` — the SHA the cancelled
+run had advertised — concluded the frontend was current, and printed
+`Build frontend image (amd64): skipped` / `Deploy frontend to dev: skipped`.
+`https://dev.kortix.com/api/health` still reported `commit 2ff469ed`'s
+predecessor at that moment. A later unrelated merge happened to touch the
+frontend and carried the stranded change out; nothing in the pipeline would
+have.
+
+**The rule.** "The next push re-picks-up your still-stale surface" is only true
+while the staleness probe reports what is actually SERVING. A cancelled run can
+move the probe's answer past a surface it never promoted, and every later run
+then reads that surface as fresh. After a cancelled `deploy-dev`, never assume
+the next merge carries your surface — read the cancelled run's PER-JOB
+conclusions, and if the `Move :dev` / `Verify canonical` step for your surface
+was cancelled, force it: `gh workflow run deploy-dev.yml -f surface=all`.
+
+**The enforcement.** Verify by ARTIFACT CONTENT, never by run conclusion or by
+`/health` alone: fetch the deployed surface and grep it for a string only your
+change introduces. For `apps/web`, load the route in a browser, collect
+`performance.getEntriesByType('resource')` `/_next/*.js`, fetch each and assert
+both the string your change ADDS and the absence of the one it REMOVES — the
+pair is what distinguishes "deployed" from "an older bundle that happens to
+contain a similar token". Candidate pipeline fix: make the deploy base come
+from each surface's own live artifact, and never let a surface's SHA advance
+past its `Move :dev` step.
+
+*Incident:* PR #6764, merge `e6c4ba0b62`, 2026-08-22 23:43 UTC. No outage —
+a frontend-only fix sat undeployed on dev for ~25 minutes while both the run
+list and the deployed-SHA probe read as healthy.
+
+## Update every generated Dockerfile when the sandbox runtime changes
+
+2026-08-23. A fix changed the canonical sandbox Dockerfile, but self-hosted
+template builds continued to fail. The live builder rendered its Dockerfile
+from `packages/shared/src/sandbox/dockerfile-layer.ts`. The fast and meta
+renderers also retained the failed command.
+
+**The rule.** A sandbox runtime command change must update the canonical
+Dockerfile and every generated Dockerfile. A passing canonical Dockerfile test
+does not prove the remote template build path.
+
+**The enforcement.** The layer, fast, and meta renderer tests assert
+`pnpm root -g`. Each test rejects `pnpm list -g`. Golden snapshots make the
+live layered Dockerfile change visible in review.
+
+*Incident:* a self-hosted project template rebuild repeated the retired
+OpenCode package lookup after the canonical image fix deployed.
+
+## Resolve a pnpm global binary from its installed shim target
+
+2026-08-23. `pnpm root -g` failed under pnpm 11.15.1 after a successful global
+install. `PNPM_HOME` and pnpm's configured global-bin directory resolved to
+different paths. The generated `opencode` shim still executed version 1.18.19,
+but the following package-root lookup exited non-zero.
+
+**The rule.** Runtime image builds must not infer pnpm's versioned global-store
+layout. When a native binary must outlive its package-manager shim, read the
+installed shim's `cmd-shim-target` metadata and validate that exact target.
+
+**The enforcement.** The canonical, layer, fast, and meta Dockerfile tests pin
+`cmd-shim-target` resolution. They reject both `pnpm root -g` and the older
+`pnpm list -g` lookup.
+
+*Incident:* the live E2B build installed OpenCode 1.18.19 and printed its
+version, then failed before the native-binary assertion.
+
+## Missing managed runtime binaries are recoverable drift, not an unreadable runtime
+
+2026-08-23. Existing sandbox disks created before the managed OpenCode link
+could update their CLI and agent, but never became ready. Runtime convergence
+treated an unreadable OpenCode health endpoint as a busy or transient runtime.
+The required managed binary did not exist, so the endpoint could never recover.
+
+**The rule.** Distinguish a missing managed binary from a temporarily
+unreadable process. Install and restart when the managed link is absent. Defer
+when the managed link exists but the process cannot report its version.
+
+**The enforcement.** Runtime convergence tests cover both states. A missing
+managed link installs the manifest version and restarts OpenCode. An existing
+link with unreadable health performs no install and no restart.
+
+*Incident:* old session disks remained in `runtimeReady=false` after a runtime
+upgrade because OpenCode convergence reported `opencode did not report its
+version` on every start.
+
+## A transcript list must never carry attachment bytes
+
+2026-08-24. On a self-host, sessions with hundreds of agent image reads stopped
+rendering. Every file part carried its whole file as a `data:` url, so
+`GET /session/:id/message?limit=20` weighed 7–19 MB. The SDK's 30 s fetch
+deadline killed the read at exactly 30.00 s, the tail retry re-issued it, and
+the browser downloaded tens of megabytes for a screen that never painted. The
+same read answered inside the sandbox in 276 ms; the bytes leaving the sandbox
+were the entire cost.
+
+**The rule.** The message list carries a *reference* to an attachment — type,
+mime, filename, id — never its bytes. Bytes are served per part, on demand,
+`immutable` with a strong ETag. Strip at the daemon (the source) AND at the
+API proxy (for sandboxes on an older daemon image); a reference is not a
+`data:` url, so the two passes compose.
+
+**The enforcement.** `kortix-sandbox-agent-server/src/__tests__/attachment-strip.test.ts`
+drives the real Hono app end to end: the list carries the reference, the part
+endpoint returns the exact bytes, 304 on ETag, 404 on unknown, and the
+single-message read is NOT stripped. `apps/api/src/sandbox-proxy/inline-attachments.test.ts`
+pins the pure transform, including "unrecognised payload passes through
+untouched" — the strip runs on every response on that path and must never be
+the reason a read fails.
+
+*Incident:* essentia `5306fd8d`, five consecutive reads at 29.23–30.08 s,
+78 MB transferred, nothing rendered. PR #6829.
+
+## A wake budget is a deadline, not an attempt count
+
+2026-08-24. Auto-resume was three attempts spaced 1500 ms — about three
+seconds — and a self-host's E2B resume takes 8.0–8.8 s. Every healthy sleeping
+box ran out of budget mid-wake, and the page replaced its loader with
+"session <id> is stopped — open a new session to continue" moments before the
+same box came up. Users read it as "all my sessions are broken".
+
+**The rule.** Anything that waits for a machine to boot is bounded by a
+deadline measured from the first observation of the resumable box, never by
+how many times we asked. A count describes our retry spacing, not the machine.
+
+**The enforcement.** `apps/web/src/features/session/session-resume.test.ts`
+asserts `AUTO_RESUME_WINDOW_MS >= 60_000` and that a null clock is
+"just started", not "expired".
+
+*Incident:* essentia, every stopped session, 2026-08-24. PR #6827.
+
+## Sandbox-isolation guards read the agent binding, never the caller's session id
+
+2026-08-24. 43 `backend`-origin sessions in one project were listed in the
+sidebar and every `/start` answered 404. `isSessionTargetVisibleToCaller`
+narrowed on `callerSessionId`, which `resolveSupabaseAuth` sets to the
+Supabase LOGIN session id for every signed-in human — non-null, and never a
+Kortix session id — so every human failed the sibling check meant for sandbox
+credentials. The same regression had already been fixed for the
+manager-override gate and documented in its test; the remedy was not carried
+to this guard.
+
+**The rule.** A guard that asks "is this caller a session-bound credential"
+reads `boundCredentialSessionId` (`callerKortixSessionId(c)`: null for a
+browser JWT, the real id for anything bound). `callerSessionId` cannot answer
+that question.
+
+**The enforcement.** `apps/api/src/__tests__/unit-connector-share.test.ts`
+pins a human with a login session id passing, a sibling sandbox credential
+still blocked, and the own-session credential still allowed.
+
+*Incident:* essentia project `e7170bf8`, origin counts user 568 / backend 43.
+PR #6828.
+||||||| base
+
+## Measure the amplification factor; never decode what you can forward
+
+2026-08-24. The gateway's ai-sdk transport decoded every `data:` image with
+`atob(raw).split('').map(c => c.charCodeAt(0))` — one JavaScript string per
+byte, 89 MB resident for a 6.7 MB image — and then let provider-utils re-encode
+the bytes through a `String.fromCodePoint` concat loop. The admission budget
+charged 3x per wire byte on the assumption that the parsed graph was the only
+copy. Both `@ai-sdk/anthropic` and `@ai-sdk/amazon-bedrock` accept a base64
+STRING and serialize it through the identity `convertToBase64`.
+
+**The rule.** A passthrough forwards bytes in the encoding it received them.
+Before charging a memory budget, measure the real peak with a mounted request
+through the real handler and write the number next to the constant
+(`memory-envelope.test.ts`: 2.25x openai-compat, 2.9x anthropic, 0.61x steady
+state on 2026-08-24). A budget factor without a measurement is a wish.
+
+**Bound the inputs a client can grow without limit.** A screenshot-per-step
+agent re-sends every screenshot on every turn. Providers already cap images
+per request (Bedrock Converse: 20). The gateway keeps the newest 12 of >20 and
+replaces older ones with a one-line notice, with hysteresis so the prefix
+stays cache-stable for 8 turns.
+
+*Incident:* Essentia 2026-08-22, 40-screenshot / 28 MB request, cgroup OOM.
+Enforcement: `memory-envelope.test.ts` (peak factor < 6x, all 40 images
+forwarded byte-for-byte on both routes), `image-window.test.ts`.
+
+## A re-framed body must not carry the provider's framing headers
+
+2026-08-24. The gateway forwarded `upstream.headers` unchanged on both response
+paths. `fetch` had already gunzipped the provider body and the gateway
+re-materialized it (a string, or a relayed stream), but the response still
+said `content-encoding: gzip` with the compressed `content-length`. The API
+reverse proxy's `fetch` threw `ZlibError` on every non-streaming completion
+and answered `502 gateway_proxy_unreachable` while the gateway itself had
+logged a 200. Caddy on a self-host box passes the same pair straight to the
+client.
+
+**The rule.** When a proxy decodes or re-frames a body, it owns the framing.
+Strip `content-encoding`, `content-length`, `transfer-encoding` and the
+hop-by-hop set (RFC 7230 §6.1) before forwarding; keep everything else.
+`curl` without `--compressed` ignores `content-encoding`, so a curl-only
+check passes while every `fetch`-based client fails — test through the real
+next hop.
+
+*Incident:* local stack, found during the passthrough e2e for the memory work
+above; the same code is live on dev. Enforcement: `simple-handler.test.ts`
+"drops wire-framing headers", `passthroughHeaders()` on all three response
+paths.
+
+## The edge never rewrites an origin error
+
+2026-08-24. The `api-router` Worker replaced every origin 502/503/504 with a
+synthetic `503 MAINTENANCE_MODE` "Service maintenance" page. On dev, 5 of 8
+non-streaming completions were failing with a gateway content-encoding bug
+(origin 502) and every user, log line and OpenCode retry classifier saw
+"Kortix is temporarily unavailable" instead. The gateway's own health showed
+`errors: 0` and 3.6 h of uptime: nothing was in maintenance and nothing had
+crashed.
+
+**The rule.** A proxy passes the origin's status, body and headers through
+unchanged. The only synthetic error it may produce is for an origin it could
+not reach at all, and that response names itself (`502 origin_unreachable`,
+`X-Origin-Status: fetch-error`, `Retry-After`). A maintenance page comes only
+from an explicit admin state. When a proxy catches an exception, the response
+carries the exception class and message (`gateway_proxy_error` with `cause`
+and `detail`), not a generic "unreachable".
+
+*Incident:* dev, found while verifying the gateway passthrough work above.
+Enforcement: `worker.test.mjs` origin-passthrough tests; `wire.ts` proxy
+error envelope.
+
+## Shedding load only works if you also stop the upload
+
+2026-08-24, found by stress-testing the gateway in its real container. Three
+separate defects, each of which alone breaks the "never OOM, never 502"
+promise, and none of which unit tests could see:
+
+1. **A refused request keeps arriving.** Admission correctly returned 503 for
+   60 concurrent 27 MiB uploads and the 2 GiB container was OOM-killed anyway:
+   ~1.3 GB of refused body was still buffered on the way in. A rejection must
+   `cancel()` the request body, not just answer.
+2. **A client that vanishes mid-upload strands its reservation.** Bun never
+   settles a pending `reader.read()` on abort, so the read awaited forever
+   holding the lease. One aborted 2.8 MB upload leaked 8,521,827 reserved
+   bytes permanently; enough of them and an idle process 503s everything.
+   Cancel the reader from an `abort` listener.
+3. **An amplification constant measured on ONE request is wrong.** Isolated, a
+   27 MiB request peaks at 2.3x. Under concurrency the transients overlap and
+   GC lags, and 3x OOMs. The default is now 6x.
+
+**The rule.** Test admission control with a real container under a real memory
+limit and hostile clients — overload, abort storms, slow consumers. A unit test
+that asserts "returns 503" proves nothing about survival: all three defects
+above passed every unit test in the suite. Assert the process afterwards:
+`OOMKilled=false`, `RestartCount=0`, and the admission counter back at zero.
+
+*Evidence:* 1074/1074 200s at 12 rps mixed (p99 0.32s, peak 322 MiB/2048, no
+leak); the 60x27 MiB overload that killed the container now peaks at 827 MiB
+and stays healthy. Enforcement: `read-bounded-body.test.ts` abort cases,
+`memory-envelope.test.ts` backpressure case.

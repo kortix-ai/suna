@@ -283,6 +283,12 @@ mock.module('../projects/git', () => ({
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   getFileAtRef: async () => null,
   resolveCommitSha: async () => 'a'.repeat(40),
+  resolveFastBootGitHint: async () => ({
+    baseSha: 'a'.repeat(40),
+    gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
+    gitDeltaParentSha: 'b'.repeat(40),
+    gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
+  }),
   resolveBranchTip: async () => 'a'.repeat(40),
   resolveBranchAheadState: async () => ({ ahead: 0, behind: 0 }),
   getBranchDiff: async () => ({ files: [], diff: '' }),
@@ -338,6 +344,7 @@ mock.module('../snapshots/builder', () => ({
     built: false,
     provider: 'daytona',
   }),
+  routedPerProjectWarmImageName: () => 'kpp2-test',
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
@@ -1228,6 +1235,8 @@ describe('project session API contract', () => {
           initSucceededAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
           opencodeReadyWaitStartedAt: staleReadyWaitStartedAt,
           opencodeReadyWaitReason: 'unreachable',
+          opencodeUnreachableWaitStartedAt: staleReadyWaitStartedAt,
+          opencodeNotReadyWaitStartedAt: staleReadyWaitStartedAt,
           runtimeIdentityState: 'unavailable',
           runtimeUnavailableReason: 'runtime_not_ready_timeout',
         },
@@ -1262,6 +1271,8 @@ describe('project session API contract', () => {
     const resumedMetadata = sessionSandboxRows[0]!.metadata as Record<string, unknown>;
     expect(resumedMetadata.opencodeReadyWaitStartedAt).toBeUndefined();
     expect(resumedMetadata.opencodeReadyWaitReason).toBeUndefined();
+    expect(resumedMetadata.opencodeUnreachableWaitStartedAt).toBeUndefined();
+    expect(resumedMetadata.opencodeNotReadyWaitStartedAt).toBeUndefined();
     expect(resumedMetadata.runtimeIdentityState).toBeUndefined();
     expect(resumedMetadata.runtimeUnavailableReason).toBeUndefined();
     expect(resumedMetadata.runtimeWakeStartedAt).toEqual(expect.any(String));
@@ -1390,6 +1401,57 @@ describe('project session API contract', () => {
       },
     });
     expect(providerStartCalls).toBe(1);
+
+  });
+
+  test('an expired runtime wake failure requires an explicit restart', async () => {
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-expired-wake-failure',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          stopReason: 'runtime_wake_failed',
+          runtimeWakeError: 'start_failed',
+          runtimeWakeRetryAfterAt: new Date(Date.now() - 1_000).toISOString(),
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-expired-wake-failure',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(false);
+
+    const response = await createApp().request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_wake_failed',
+    });
+    expect(providerStartCalls).toBe(0);
   });
 
   test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
@@ -1624,7 +1686,7 @@ describe('project session API contract', () => {
     const env = lastProvisionInput!.extraEnvVars ?? {};
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
     expect(env.KORTIX_GITHUB_TOKEN).toBeUndefined();
-    expect(env.KORTIX_CLI_TOKEN).toBeUndefined();
+    expect(env.KORTIX_TOKEN).toBeUndefined();
     expect(env.KORTIX_TOKEN).toBeUndefined();
 
     sessionSandboxRows = [
@@ -1648,16 +1710,7 @@ describe('project session API contract', () => {
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
       headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
-    expect(cloneRes.status).toBe(200);
-    expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://gitlab.com/acme/private-project.git',
-      source: 'project_credential',
-      auth: {
-        username: 'x-access-token',
-        token: 'gitlab-project-token',
-        type: 'basic',
-      },
-    });
+    expect(cloneRes.status).toBe(404);
   });
 
   test('derives session origin from the caller token without session attribution fields', async () => {
@@ -1760,18 +1813,12 @@ describe('project session API contract', () => {
     const patCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
       headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
     });
-    expect(patCloneRes.status).toBe(403);
-    expect(await patCloneRes.json()).toMatchObject({
-      message: 'session workspace does not allow repository access',
-    });
+    expect(patCloneRes.status).toBe(404);
 
     const sandboxCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
       headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
-    expect(sandboxCloneRes.status).toBe(403);
-    expect(await sandboxCloneRes.json()).toMatchObject({
-      error: 'sandbox workspace does not allow repository access',
-    });
+    expect(sandboxCloneRes.status).toBe(404);
 
     for (const suffix of ['diff', 'merge-preview']) {
       const crRes = await app.request(
@@ -1974,7 +2021,7 @@ describe('project session API contract', () => {
     const env = lastProvisionInput!.extraEnvVars ?? {};
     expect(env).not.toHaveProperty('KORTIX_END_USER_REF');
     expect(env).not.toHaveProperty('KORTIX_ORIGIN_REF');
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/anthropic/claude-opus-4-8');
     expect(env.GMAIL_TOKEN).toBe('g-secret');
     expect(env.STRIPE_SECRET).toBeUndefined();
 
@@ -2076,16 +2123,7 @@ describe('project session API contract', () => {
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
       headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
-    expect(cloneRes.status).toBe(200);
-    expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://git.example.test/legacy-private-project',
-      source: 'project_credential',
-      auth: {
-        username: 'x-access-token',
-        token: 'legacy-git-token',
-        type: 'basic',
-      },
-    });
+    expect(cloneRes.status).toBe(404);
   });
 
   test('rejects reserved platform secret names', async () => {
@@ -2155,6 +2193,14 @@ describe('project session API contract', () => {
       {
         body: { metadata: { trigger_slug: 'forged-trigger' } },
         message: 'metadata key is server-managed: trigger_slug',
+      },
+      {
+        body: { metadata: { workspace_mode: 'branch' } },
+        message: 'metadata key is server-managed: workspace_mode',
+      },
+      {
+        body: { metadata: { sandbox_slug: 'default' } },
+        message: 'metadata key is server-managed: sandbox_slug',
       },
       {
         body: { random: 'field' },
@@ -2731,8 +2777,11 @@ describe('project session API contract', () => {
             },
           },
           // An earlier poll recorded the first observation, longer ago than
-          // MIDTURN_STOP_CONFIRMATION_MS.
-          pendingStopObservedAtMs: Date.now() - 20_000,
+          // MIDTURN_STOP_CONFIRMATION_MS. That window is 60s (raised from 15s
+          // after a Platinum transition outlasted it and parked a healthy box
+          // mid-turn on 2026-08-21), so the marker has to be older than that —
+          // 20s no longer confirms anything.
+          pendingStopObservedAtMs: Date.now() - 90_000,
         },
         lastUsedAt: null,
         createdAt: new Date('2026-01-02T00:00:00Z'),
@@ -3348,7 +3397,7 @@ describe('project session API contract', () => {
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
           opencodeReadyWaitReason: 'unreachable',
         },
         lastUsedAt: null,
@@ -3379,6 +3428,63 @@ describe('project session API contract', () => {
     const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
     expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
     expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
+
+    const retry = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_unreachable_timeout',
+      sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
+    });
+    expect(providerStartCalls).toBe(0);
+  });
+
+  test('dashboard start resets the readiness clock when not-ready changes to unreachable', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-readiness-reason-change',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          opencodeReadyWaitReason: 'not_ready',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    opencodeEnsureReason = 'unreachable';
+
+    const before = Date.now();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'starting', reason: 'unreachable' });
+    const metadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(metadata.opencodeReadyWaitReason).toBe('unreachable');
+    expect(Date.parse(String(metadata.opencodeReadyWaitStartedAt))).toBeGreaterThanOrEqual(before);
+    expect(providerStopCalls).toBe(0);
   });
 
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
@@ -3859,13 +3965,10 @@ describe('project session API contract', () => {
 
     expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
-    const expectedRepoUrl =
-      process.env.KORTIX_GIT_PROXY === 'true'
-        ? new URL(
-            `/v1/git/${PROJECT_ID}.git`,
-            process.env.KORTIX_URL ?? 'https://test.kortix.local',
-          ).toString()
-        : projectRow.repoUrl;
+    const expectedRepoUrl = new URL(
+      `/v1/git/${PROJECT_ID}.git`,
+      process.env.KORTIX_URL ?? 'https://test.kortix.local',
+    ).toString();
     expect(env.KORTIX_REPO_URL).toBe(expectedRepoUrl);
     expect(env.KORTIX_BASE_REF).toBe('main');
     // LLM/tool-router URLs are no longer injected — the sandbox derives any
@@ -3873,7 +3976,7 @@ describe('project session API contract', () => {
     expect(env.KORTIX_LLM_TOKEN).toBeUndefined();
     expect(env.KORTIX_LLM_BASE_URL).toBeUndefined();
     expect(env.TAVILY_API_URL).toBeUndefined();
-    expect(env.KORTIX_CLI_TOKEN).toBeUndefined();
+    expect(env.KORTIX_TOKEN).toBeUndefined();
     expect(env.KORTIX_TOKEN).toBeUndefined();
     expect(env.KORTIX_API_URL).toBeTruthy();
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
@@ -3924,7 +4027,7 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BASE_REF).toBe('dev');
-    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
   });
 
   test('persists runtime_context separately and injects one server-owned JSON envelope', async () => {

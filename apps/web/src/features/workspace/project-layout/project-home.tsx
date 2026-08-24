@@ -14,7 +14,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,7 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { Kortix } from '@/features/icon/icons/kortix';
 import { Slack } from '@/features/icon/icons/slack';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import {
@@ -188,6 +189,10 @@ export function ProjectHome({
     setPrefill({ text: s, id: Date.now() });
   };
 
+  // The home composer has no session yet, so its unsent draft is keyed by the
+  // project. Memoized because it crosses into a `React.memo`-wrapped composer.
+  const draftScope = useMemo<DraftScope>(() => ({ kind: 'project', projectId }), [projectId]);
+
   return (
     <div
       className={cn('bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden px-4.5')}
@@ -246,6 +251,7 @@ export function ProjectHome({
             onSend={handleSend}
             onCommand={handleCommand}
             projectId={projectId}
+            draftScope={draftScope}
             // `busy` here means "create in flight" — spinner in the send slot,
             // input locked. NOT isBusy (that renders agent-running stop-button
             // semantics, which leave the composer with no button at all here).

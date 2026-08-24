@@ -1,4 +1,4 @@
-import { type Plugin, tool } from '@opencode-ai/plugin'
+import { type Plugin, tool } from '../tools/lib/tool'
 import { DEFAULT_READ_LIMIT, MAX_LINE_LENGTH } from './opencode-pty/src/shared/constants.ts'
 import { formatLine, formatSessionInfo } from './opencode-pty/src/plugin/pty/formatters.ts'
 import { initPermissions, checkCommandPermission, checkWorkdirPermission } from './opencode-pty/src/plugin/pty/permissions.ts'

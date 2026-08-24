@@ -7,6 +7,7 @@ import {
 } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from './db';
+import { previewOriginFor } from '../sandbox-proxy/preview-hosts';
 import { OPENCODE_PORTS } from './opencode-ports';
 
 export type PublicShareResourceType = 'preview' | 'file';
@@ -15,6 +16,24 @@ export const STATIC_FILE_SHARE_PORT = 3211;
 // Both halves of the opencode port pair — a verified reload swaps which one is
 // live, so blocking only 4096 would leave the conversation API publicly
 // shareable through the other after a single reload. See shared/opencode-ports.
+/**
+ * The methods a view-only share permits. Shared by BOTH proxy edges — the path
+ * form and the preview origin — because a share that is read-only on one and
+ * writable on the other is just writable.
+ */
+export const PUBLIC_SHARE_VIEW_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * True when this share may not be written through, whatever the visitor sends.
+ * Allowlist, not denylist: `mode` is a free-form string on the row, so anything
+ * that is not explicitly `interactive` is read-only, and a future mode cannot
+ * fail open. A FILE share is always read-only — it names one document.
+ */
+export function isViewOnlyShare(share: { mode?: string | null; resourceType?: string | null; filePath?: string | null }): boolean {
+  if (share.resourceType === 'file' || share.filePath) return true;
+  return share.mode !== 'interactive';
+}
+
 export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([
   22,
   ...OPENCODE_PORTS,
@@ -89,7 +108,38 @@ function resourceProxyPath(token: string, row: Pick<PublicShareRow, 'resourceTyp
   return `/v1/p/public-share/${token}/${row.port}${row.path}`;
 }
 
-export function serializePublicShare(row: PublicShareRow, token?: string) {
+/**
+ * The absolute URL a share opens at, when the deployment serves preview
+ * origins. `proxy_path` stays for compatibility, but it is the PATH form —
+ * under it a shared app's root-absolute links resolve against the API origin
+ * and 404, and shared file content renders with the API's own principal.
+ *
+ * Needs the sandbox's external id, which the share row does not carry; callers
+ * that have it (they joined session_sandboxes) pass it, and the rest get null
+ * and the path form, exactly as before.
+ */
+function resourcePublicUrl(
+  token: string,
+  row: Pick<PublicShareRow, 'resourceType' | 'port' | 'path'>,
+  externalId: string | null | undefined,
+): string | null {
+  if (!externalId) return null;
+  if (row.resourceType === 'file') {
+    const origin = previewOriginFor(externalId, STATIC_FILE_SHARE_PORT);
+    return origin ? `${origin}/open?public_share=${encodeURIComponent(token)}` : null;
+  }
+  if (!row.port) return null;
+  const origin = previewOriginFor(externalId, row.port);
+  if (!origin) return null;
+  const path = row.path && row.path.startsWith('/') ? row.path : `/${row.path || ''}`;
+  return `${origin}${path}?public_share=${encodeURIComponent(token)}`;
+}
+
+export function serializePublicShare(
+  row: PublicShareRow,
+  token?: string,
+  externalId?: string | null,
+) {
   const publicToken = token ?? publicShareToken(row.shareId);
   return {
     share_id: row.shareId,
@@ -109,6 +159,7 @@ export function serializePublicShare(row: PublicShareRow, token?: string) {
     public_token: publicToken,
     public_path: `/share/session/${publicToken}`,
     proxy_path: resourceProxyPath(publicToken, row),
+    public_url: resourcePublicUrl(publicToken, row, externalId),
   };
 }
 
@@ -118,7 +169,22 @@ export async function listPublicSharesForSession(sessionId: string) {
     .from(projectSessionPublicShares)
     .where(eq(projectSessionPublicShares.sessionId, sessionId))
     .orderBy(desc(projectSessionPublicShares.createdAt));
-  return rows.map((row) => serializePublicShare(row));
+  // One lookup for the whole list: every share of a session names the same
+  // sandbox, and without the external id every row would fall back to the path
+  // form (see resourcePublicUrl).
+  const externalId = await sessionSandboxExternalId(sessionId);
+  return rows.map((row) => serializePublicShare(row, undefined, externalId));
+}
+
+/** The live sandbox external id for a session, or null when none is bound. */
+export async function sessionSandboxExternalId(sessionId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ externalId: sessionSandboxes.externalId })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .orderBy(desc(sessionSandboxes.updatedAt))
+    .limit(1);
+  return row?.externalId ?? null;
 }
 
 export function buildPublicShareInsert(input: PublicShareInput, ctx: {
@@ -215,7 +281,10 @@ export async function createPublicShare(input: PublicShareInput, ctx: {
     })
     .returning();
 
-  return { ok: true as const, share: serializePublicShare(row, token) };
+  return {
+    ok: true as const,
+    share: serializePublicShare(row, token, await sessionSandboxExternalId(row.sessionId)),
+  };
 }
 
 export async function revokePublicShare(sessionId: string, shareId: string) {
@@ -227,7 +296,7 @@ export async function revokePublicShare(sessionId: string, shareId: string) {
       eq(projectSessionPublicShares.sessionId, sessionId),
     ))
     .returning();
-  return row ? serializePublicShare(row) : null;
+  return row ? serializePublicShare(row, undefined, await sessionSandboxExternalId(row.sessionId)) : null;
 }
 
 export async function touchPublicShare(shareId: string) {

@@ -223,6 +223,16 @@
   --color-kortix-green: var(--kortix-green);
   --color-kortix-purple: var(--kortix-purple);
   --color-kortix-red: var(--kortix-red);
+  /* Terminal surface. The PTY pane and its chrome (the connect strip, the
+     panel shell behind it) are always dark, in every app theme, because they
+     mirror a real shell — so these are literals, not light/dark pairs. One
+     set of tokens so the three files that paint that surface cannot drift
+     apart again. `terminalTheme` in features/session/pty-terminal.tsx must
+     keep `background` equal to --terminal-surface and `foreground` equal to
+     --terminal-fg: xterm's ITheme needs concrete colors, not CSS vars. */
+  --color-terminal-surface: var(--terminal-surface);
+  --color-terminal-fg: var(--terminal-fg);
+  --color-terminal-border: var(--terminal-border);
   /* Emoji-picker active-cell tints (src/components/ui/emoji-picker.tsx).
      Six hues the picker rotates through so the hovered/keyboard-active cell is
      never the same colour as the cell above it. They live here rather than as
@@ -296,6 +306,8 @@
   --text-xs--line-height: calc(1 / 0.8125);
   --text-sm: 0.875rem;
   --text-sm--line-height: calc(1.25 / 0.875);
+  --text-md: 0.9rem;
+  --text-md--line-height: calc(1.375 / 0.9375);
   --text-base: 1rem;
   --text-base--line-height: calc(1.5 / 1);
   --text-lg: 1.125rem;
@@ -609,16 +621,18 @@
     }
   }
 
-  --animate-blink-cursor: blink-cursor 1.2s step-end infinite
-;
+  --animate-blink-cursor: blink-cursor 1.2s step-end infinite;
   @keyframes blink-cursor {
-  0%, 49% {
-    opacity: 1;
+    0%,
+    49% {
+      opacity: 1;
     }
-  50%, 100% {
-    opacity: 0;
+    50%,
+    100% {
+      opacity: 0;
     }
-  }}
+  }
+}
 
 /*
  * Neutral ramp — Framer design system (VoltAgent/awesome-design-md).
@@ -694,6 +708,12 @@
   --kortix-purple: oklch(0.675 0.131 306.212);
   --kortix-red: oklch(0.648 0.202 24.745);
 
+  /* Terminal surface — declared once, never re-declared under .dark: the PTY
+     pane keeps the same shell-black in both themes. See the @theme mapping. */
+  --terminal-surface: #0f0f0f;
+  --terminal-fg: #e5e5e5;
+  --terminal-border: rgb(255 255 255 / 0.1);
+
   /* Motion tokens (canonical values; mirrored in @theme for utilities) */
   --duration-fast: 100ms;
   --duration-normal: 150ms;
@@ -707,7 +727,7 @@
 }
 
 .dark {
-  --background: oklch(0.17 0 0); /* canvas #090909 */
+  --background: oklch(15% 0 0); /* canvas #090909 */
   --pane: oklch(0.1543 0 0); /* #0c0c0c */
   --foreground: oklch(1 0 0); /* ink #ffffff */
   --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
@@ -788,7 +808,6 @@
 
   html {
     scroll-behavior: smooth;
-    font-size: 100%;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -974,6 +993,94 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+/* Hero enter — the landing fold, and nothing else.
+
+   `.kx-stagger` above is route-level motion: one curve, one duration, delays
+   keyed off DOM order. A hero band cannot use it. The eyebrow, the headline,
+   the sub, the button pair, a full-bleed product frame and the trust line are
+   six very different sizes, and on a fixed 300ms/40ms grid the small things
+   read as hurried while the big one reads as snatched. Duration has to scale
+   with the distance an element travels, so each band opts in by hand and
+   declares its own delay.
+
+   That delay arrives as a class (`[--kx-enter:150ms]`), never as an inline
+   `style`. Not a preference: an inline declaration outranks a stylesheet one,
+   so an inline `animation-delay` would survive the `prefers-reduced-motion`
+   block below — the movement would stop and the staged reveal would carry on
+   without it. Setting only the custom property leaves `animation-delay: 0ms`
+   free to win.
+
+   Blur is on text and on text only. 6px is what separates a considered fade
+   from a generic one — the words resolve rather than appear — but it is a
+   per-pixel filter, and running it across a ~1100px product frame costs real
+   frames on the exact paint where the page is already busiest hydrating. */
+@keyframes kx-hero-text {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* The frame travels 24px rather than 14 and settles from 0.99 rather than out
+   of blur. It is the only element on the fold big enough for scale to register
+   as approach instead of as a wobble, and the floor stays high on purpose:
+   anything under ~0.95 on a screenshot stops reading as motion and starts
+   reading as a zoom effect. */
+@keyframes kx-hero-frame {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.kx-hero-text,
+.kx-hero-frame,
+.kx-hero-veil {
+  animation-delay: var(--kx-enter, 0ms);
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.kx-hero-text {
+  animation-name: kx-hero-text;
+  animation-duration: 620ms;
+}
+
+.kx-hero-frame {
+  animation-name: kx-hero-frame;
+  animation-duration: 820ms;
+}
+
+/* The wallpaper is ambient, so it gets no movement and the longest ramp on the
+   page. It should read as having been there all along, not as arriving. */
+.kx-hero-veil {
+  animation-name: kx-fade;
+  animation-duration: 1100ms;
+  animation-timing-function: linear;
+}
+
+/* Reduced motion removes the movement, not the animation. The fade stays,
+   because it is what tells a reader the fold finished loading; the travel, the
+   scale and the staged delays go. */
+@media (prefers-reduced-motion: reduce) {
+  .kx-hero-text,
+  .kx-hero-frame {
+    animation-name: kx-fade;
+    animation-duration: 260ms;
+    animation-delay: 0ms;
   }
 }
 
@@ -1472,10 +1579,7 @@ html[data-desktop-platform='macos'] .kx-app-header {
   min-height: var(--kx-titlebar-inset);
   padding-top: 0;
   padding-bottom: 0;
-  padding-left: max(
-    1.5rem,
-    calc(var(--kx-titlebar-control-left) - max(0px, (100vw - 72rem) / 2))
-  );
+  padding-left: max(1.5rem, calc(var(--kx-titlebar-control-left) - max(0px, (100vw - 72rem) / 2)));
   -webkit-app-region: drag;
   app-region: drag;
 }
@@ -1517,7 +1621,12 @@ html[data-desktop='true'] .kx-titlebar-spacer {
    y=0, so it shares the band with the OS window controls: the macOS traffic
    lights on the left, the Win/Linux cluster on the right. Wear
    `.kx-titlebar-row` and it indents past whichever applies. Indent only — the
-   row keeps its own height, exactly like .kx-files-header below.
+   row keeps its own height.
+
+   The standalone Files header (/projects/[id]/files) wears this too. It used
+   to carry a Files-only near-duplicate of these rules, with its own md+ and
+   per-platform split, for a header that no longer exists in that shape — see
+   `drive-header.tsx`. One class, one rule.
 
    `data-sidebar-collapsed` gates the left indent: an expanded sidebar covers
    the lights (and the shell's toggle self-hides), so indenting then would
@@ -1529,25 +1638,6 @@ html[data-desktop='true'] .kx-titlebar-row {
 }
 html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
   padding-left: var(--kx-titlebar-content-left);
-}
-
-/* Files page header (/projects/[id]/files) — the one page header that reaches
-   the top of the window with nothing above it, so it shares the title-bar row
-   with the OS window controls. No extra vertical space, indent only.
-
-   Both indents are scoped to md+ where the title shares the traffic-light row. */
-@media (min-width: 768px) {
-  /* macOS: indent past the lights AND the shell's floating sidebar toggle —
-     --kx-titlebar-content-left is exactly "after both". Only while collapsed;
-     an expanded sidebar covers the lights itself. */
-  html[data-desktop-platform='macos'] .kx-files-header[data-sidebar-collapsed] {
-    padding-left: var(--kx-titlebar-content-left);
-  }
-  /* Win/Linux: window controls live top-right, where the history / proposed-
-     changes / view-mode controls sit. Left stays at the web's `pl-14`. */
-  html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-files-header {
-    padding-right: var(--kx-titlebar-controls-width);
-  }
 }
 
 /* Full-screen / top-reaching modals (e.g. the File Preview modal) start
@@ -2000,8 +2090,13 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
 /* Coarse-pointer (touch) targets inside the composer toolbar — added once
    here at the shell rather than per-button, since every toolbar button is a
    plain <button> with no shared class today. */
+/* The underbar is listed too. It holds the SAME attach control the toolbar
+   used to, so with only `.kortix-composer-toolbar` here one button was 40px on
+   project home (inline underbar, inside the toolbar) and 32px in a session
+   (row underbar, outside it). */
 @media (pointer: coarse) {
-  .kortix-composer-toolbar button {
+  .kortix-composer-toolbar button,
+  .kortix-composer-underbar button {
     min-height: 2.5rem;
     min-width: 2.5rem;
   }
@@ -2073,9 +2168,27 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
    above. `composer.tsx` applies `.composer-locked-approval` to the
    editor's own wrapper only while `lockForApproval` is true; scoped to the
    placeholder `::before` alone so it can never affect real typed text. */
-.composer-locked-approval .kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
+.composer-locked-approval
+  .kortix-composer-editor
+  .ProseMirror
+  p.is-editor-empty:first-child::before {
   color: var(--color-amber-600);
 }
-.dark .composer-locked-approval .kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
+.dark
+  .composer-locked-approval
+  .kortix-composer-editor
+  .ProseMirror
+  p.is-editor-empty:first-child::before {
   color: var(--color-amber-400);
+}
+
+/* ── Sidebar rail drag ──────────────────────────────────────────────────────
+   While `SidebarRail` is being dragged the pointer must read as a resize
+   everywhere it travels — it leaves the 16px handle within the first few
+   pixels — and nothing under it may select. `<html>` carries the attribute for
+   the duration of the drag only; `!important` is what beats every element's
+   own cursor/user-select, which is the entire point of a global drag state. */
+[data-sidebar-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }

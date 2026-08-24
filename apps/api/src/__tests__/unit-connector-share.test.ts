@@ -480,3 +480,72 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * The SAME regression the manager-override gate already fixed, still live in
+ * the sibling narrowing.
+ *
+ * `resolveSupabaseAuth` puts the SUPABASE LOGIN session id in `callerSessionId`
+ * for every signed-in human, so reading that field made all three narrowing
+ * conditions true for ANY human opening ANY `backend`-origin session: the
+ * session 404'd from `/start` while sitting in the sidebar.
+ *
+ * Measured on a live self-host (essentia, 2026-08-24): 43 backend-origin
+ * sessions in one project, none openable, while `user`- and `schedule`-origin
+ * sessions in the same project opened normally.
+ */
+describe('isSessionTargetVisibleToCaller — the binding, not the login id', () => {
+  const BACKEND = { origin: 'backend', sessionId: 'backend-session-a' };
+
+  test('a human never trips the sibling gate, whatever their login session id', () => {
+    expect(
+      isSessionTargetVisibleToCaller({
+        ...BACKEND,
+        // A Supabase LOGIN session id — non-null, and never a Kortix session id.
+        callerSessionId: 'supabase-login-abc',
+        boundCredentialSessionId: null,
+      }),
+    ).toBe(true);
+  });
+
+  test('a sandbox credential still cannot reach a SIBLING backend session', () => {
+    expect(
+      isSessionTargetVisibleToCaller({
+        ...BACKEND,
+        callerSessionId: 'backend-session-b',
+        boundCredentialSessionId: 'backend-session-b',
+      }),
+    ).toBe(false);
+  });
+
+  test('a sandbox credential still reaches its OWN backend session', () => {
+    expect(
+      isSessionTargetVisibleToCaller({
+        ...BACKEND,
+        callerSessionId: 'backend-session-a',
+        boundCredentialSessionId: 'backend-session-a',
+      }),
+    ).toBe(true);
+  });
+
+  test('non-backend origins were never narrowed and still are not', () => {
+    expect(
+      isSessionTargetVisibleToCaller({
+        origin: 'schedule',
+        sessionId: 'scheduled-session',
+        callerSessionId: 'supabase-login-abc',
+        boundCredentialSessionId: null,
+      }),
+    ).toBe(true);
+  });
+
+  test('a caller that never sourced the binding keeps its old behaviour', () => {
+    // Field ABSENT (not null): fall back rather than silently widen.
+    expect(
+      isSessionTargetVisibleToCaller({ ...BACKEND, callerSessionId: 'backend-session-b' }),
+    ).toBe(false);
+    expect(
+      isSessionTargetVisibleToCaller({ ...BACKEND, callerSessionId: 'backend-session-a' }),
+    ).toBe(true);
+  });
+});

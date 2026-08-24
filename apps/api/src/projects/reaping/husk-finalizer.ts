@@ -36,6 +36,18 @@
  *
  * Every read is tail-bounded (READ_MESSAGE_LIMIT) — this runs across the
  * provider ingress on a ~20s pass, not over localhost like the daemon's copy.
+ *
+ * WHY NOT `GET /session/status`? It exists in both 1.17.11 and 1.18.19 and it
+ * is cheaper than a transcript read, but it answers a DIFFERENT question. Its
+ * body is `{ [sessionID]: { type: 'idle' | 'busy' | 'retry' } }` — one verdict
+ * per ROOT, with no message in it. This module is message-scoped by
+ * construction (see the paragraph above): a root can hold a husk AND a live
+ * turn at once, and `busy`/`idle` cannot say which of the two it is talking
+ * about. Worse, the post-condition after the abort is the claim "THIS message
+ * is now closed", and a root-level `idle` is exactly the reading that a
+ * truncated or pushed-out target would also produce — the false 'finalized'
+ * this module exists to avoid. `/session/status` would replace proof with a
+ * guess, so the transcript read stays.
  */
 
 import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
@@ -91,9 +103,22 @@ const READ_TIMEOUT_MS = 5_000;
  * and one newer turn (user + assistant) that may land between the abort and the
  * post-condition read. Anything older than that window cannot be the root's
  * last message, so it can never be an abortable husk. Same `limit` param the
- * sibling readers send (session-transcript.ts:130). The window is a size
- * bound only — `inspectRoot` reads positions out of whatever list comes back,
- * so a server that ignores `limit` changes the transfer, not the verdict.
+ * sibling readers send (session-transcript.ts:130).
+ *
+ * `limit` RETURNS THE TRAILING MESSAGES — verified, not assumed. `MessageV2.page`
+ * in the pinned binary reads
+ * `orderBy(desc(time_created), desc(id)).limit(limit + 1)`, slices to `limit`,
+ * then `.reverse()`s, and its `before` cursor filters
+ * `time_created < cursor OR (time_created = cursor AND id < cursor.id)` — i.e.
+ * it pages BACKWARDS into history. So the window is the NEWEST `limit`
+ * messages, handed back oldest-first. Checked against the 1.18.18 binary at
+ * ~/.opencode/bin/opencode on 2026-08-20; the same code shape is present in
+ * 1.17.11's generated SDK surface, whose `/session/{id}/message` query is the
+ * identical `{directory?, limit?}`.
+ *
+ * The window is additionally a size bound only — `inspectRoot` reads positions
+ * out of whatever list comes back, so a server that ignored `limit` would
+ * change the transfer, not the verdict.
  */
 const READ_MESSAGE_LIMIT = 4;
 

@@ -11,9 +11,9 @@ import type {
   AppMachineSupport,
   CreateSandboxOpts,
   ProviderName,
+  ProvisionResult,
   ProvisioningStatus,
   ProvisioningTraits,
-  ProvisionResult,
   ResolvedEndpoint,
   ResolvedSandboxIngress,
   SandboxIngressRequest,
@@ -89,7 +89,23 @@ function isMissingSandboxError(error: unknown): boolean {
  * after API restarts recovers a fresh token and explicitly resumes a paused box.
  */
 const connectedSandboxes = new Map<string, E2BSandbox>();
+export const E2B_RUNNING_STATUS_CACHE_TTL_MS = 3_000;
+const runningStatusCache = new Map<string, number>();
+const statusCacheGeneration = new Map<string, object>();
 const startOperations = new Map<string, Promise<void>>();
+
+function currentStatusGeneration(externalId: string): object {
+  const existing = statusCacheGeneration.get(externalId);
+  if (existing) return existing;
+  const generation = {};
+  statusCacheGeneration.set(externalId, generation);
+  return generation;
+}
+
+function invalidateRunningStatus(externalId: string): void {
+  runningStatusCache.delete(externalId);
+  statusCacheGeneration.set(externalId, {});
+}
 
 function validateRuntimeEnv(value: unknown, externalId: string): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -105,7 +121,7 @@ function validateRuntimeEnv(value: unknown, externalId: string): Record<string, 
     envs[key] = item;
   }
   const workloadType = envs.KORTIX_WORKLOAD_TYPE === 'app' ? 'app' : 'session';
-  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_SANDBOX_TOKEN';
+  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_TOKEN';
   if (!envs[required]) {
     throw new Error(`[e2b] sandbox ${externalId} persisted runtime environment has no ${required}`);
   }
@@ -368,6 +384,7 @@ export class E2BProvider implements SandboxProvider {
     }
 
     const externalId = sandbox.sandboxId;
+    runningStatusCache.set(externalId, Date.now());
     const ingressPort = workloadType === 'app' ? 8080 : 8000;
     return {
       externalId,
@@ -383,7 +400,7 @@ export class E2BProvider implements SandboxProvider {
     };
   }
 
-  private async startOnce(externalId: string): Promise<void> {
+  private async startOnce(externalId: string, generation: object): Promise<void> {
     try {
       const sandbox = await Sandbox.connect(externalId, {
         ...apiOpts(),
@@ -396,8 +413,12 @@ export class E2BProvider implements SandboxProvider {
       const envVars = await loadRuntimeEnv(sandbox);
       if (envVars.KORTIX_WORKLOAD_TYPE === 'app') await ensureAppEntrypoint(sandbox, envVars);
       else await ensureKortixEntrypoint(sandbox, envVars);
+      if (statusCacheGeneration.get(externalId) === generation) {
+        runningStatusCache.set(externalId, Date.now());
+      }
     } catch (error) {
       connectedSandboxes.delete(externalId);
+      invalidateRunningStatus(externalId);
       throw error;
     }
   }
@@ -430,7 +451,9 @@ export class E2BProvider implements SandboxProvider {
     const inFlight = startOperations.get(externalId);
     if (inFlight) return inFlight;
 
-    const operation = this.startOnce(externalId).finally(() => {
+    invalidateRunningStatus(externalId);
+    const generation = currentStatusGeneration(externalId);
+    const operation = this.startOnce(externalId, generation).finally(() => {
       if (startOperations.get(externalId) === operation) {
         startOperations.delete(externalId);
       }
@@ -451,6 +474,7 @@ export class E2BProvider implements SandboxProvider {
   }
 
   async stop(externalId: string): Promise<void> {
+    invalidateRunningStatus(externalId);
     const sandbox = connectedSandboxes.get(externalId);
     await withTimeout(
       sandbox
@@ -459,11 +483,13 @@ export class E2BProvider implements SandboxProvider {
       this.stopTimeoutMs,
       `E2B stop(${externalId})`,
     );
+    invalidateRunningStatus(externalId);
     connectedSandboxes.delete(externalId);
   }
 
   async remove(externalId: string): Promise<void> {
     connectedSandboxes.delete(externalId);
+    invalidateRunningStatus(externalId);
     try {
       await withTimeout(
         Sandbox.kill(externalId, apiOpts()),
@@ -472,17 +498,38 @@ export class E2BProvider implements SandboxProvider {
       );
     } catch (error) {
       if (!isMissingSandboxError(error)) throw error;
+    } finally {
+      invalidateRunningStatus(externalId);
+      statusCacheGeneration.delete(externalId);
     }
   }
 
   async getStatus(externalId: string): Promise<SandboxStatus> {
+    const cachedAt = runningStatusCache.get(externalId);
+    if (
+      cachedAt !== undefined &&
+      Date.now() - cachedAt < E2B_RUNNING_STATUS_CACHE_TTL_MS
+    )
+      return 'running';
+    const generation = currentStatusGeneration(externalId);
     try {
       const info = await Sandbox.getInfo(externalId, apiOpts());
-      if (info.state === 'running') return 'running';
+      if (info.state === 'running') {
+        if (statusCacheGeneration.get(externalId) === generation) {
+          runningStatusCache.set(externalId, Date.now());
+        }
+        return 'running';
+      }
+      invalidateRunningStatus(externalId);
       if (info.state === 'paused') return 'stopped';
       return 'unknown';
     } catch (error) {
-      return isMissingSandboxError(error) ? 'removed' : 'unknown';
+      invalidateRunningStatus(externalId);
+      if (isMissingSandboxError(error)) {
+        statusCacheGeneration.delete(externalId);
+        return 'removed';
+      }
+      return 'unknown';
     }
   }
 

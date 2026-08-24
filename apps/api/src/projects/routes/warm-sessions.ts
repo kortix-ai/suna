@@ -7,11 +7,11 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { roleAllows } from '../access';
+
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
-import { loadProjectForUser } from '../lib/access';
+import { callerHasManagerStanding, loadProjectForUser } from '../lib/access';
 import { canUseAnyAgent } from '../lib/agent-access';
 import { ClaimWarmProjectSessionInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
@@ -221,7 +221,7 @@ projectsApp.openapi(
 
     const view = {
       viewerId: loaded.userId,
-      canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+      canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
     };
     const existing = await findWarmProjectSession({
       accountId: loaded.row.accountId,
@@ -420,7 +420,7 @@ projectsApp.openapi(
     return c.json(
       serializeSession(claimed, {
         viewerId: loaded.userId,
-        canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+        canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
       }),
       200,
     );

@@ -12,8 +12,6 @@
  * resolvable App public host, so a random hostname pointed at the box cannot
  * mint unbounded certificates.
  */
-import { createRoute, z } from '@hono/zod-openapi';
-import { errors, json, makeOpenApiApp } from '../openapi';
 import { resolveAppHost } from './hostnames';
 import { loadPublicAppState } from './public-proxy';
 
@@ -50,33 +48,7 @@ export async function appTlsCheckStatus(
   return (await appExists(matched.routeKey)) ? 200 : 404;
 }
 
-/** Build the edge app; `appExists` is injectable for tests. */
-export function createAppEdgeApp(appExists: AppExistsCheck = defaultAppExists) {
-  const edgeApp = makeOpenApiApp();
-
-  edgeApp.openapi(
-    createRoute({
-      method: 'get',
-      path: '/tls-check',
-      tags: ['apps'],
-      summary: 'On-demand-TLS gate: 200 iff <domain> is a real Kortix App host',
-      request: { query: z.object({ domain: z.string().optional() }) },
-      responses: {
-        200: json(z.object({ ok: z.boolean() }), 'Domain is a servable App host'),
-        ...errors(403, 404),
-      },
-    }),
-    async (c) => {
-      const status = await appTlsCheckStatus(c.req.query('domain'), appExists);
-      if (status === 200) return c.json({ ok: true }, 200);
-      return c.json(
-        { error: true, message: status === 404 ? 'No such App host' : 'Not an App host', status },
-        status,
-      );
-    },
-  );
-
-  return edgeApp;
-}
-
-export const appEdgeApp = createAppEdgeApp();
+// The Hono app that used to live here is gone: one handler now answers for both
+// wildcard families and is mounted from edge/tls-check.ts at BOTH
+// /v1/apps/edge/tls-check and /v1/edge/tls-check. This file keeps the App-side
+// status rule that handler composes.

@@ -144,6 +144,24 @@ describe('only GRANTED rows may vote on a shared key (Strix HIGH)', () => {
 });
 
 describe('materializeSecretDelivery', () => {
+  test('withholds model credentials even when a legacy row says runtime', async () => {
+    const provider = row('openai', 'OPENAI_API_KEY', {
+      strategy: 'runtime',
+      consumer: 'sandbox',
+    });
+    const env = envFor([provider]);
+
+    await materializeSecretDelivery([provider], env, {
+      sessionId: 'session-1',
+      grantEnv: 'all',
+      mintHandleFor: async () => {
+        throw new Error('must not mint');
+      },
+    });
+
+    expect(env).toEqual({});
+  });
+
   test('replaces a managed broker value with a session handle', async () => {
     const brokered = row('provider', 'PROVIDER_KEY', {
       strategy: 'broker',

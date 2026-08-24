@@ -73,6 +73,26 @@ variable "task_cpu" {
   default     = 512
 }
 
+variable "deregistration_delay" {
+  description = <<-EOT
+    Seconds the ALB keeps draining a deregistering target.
+
+    30 (the old hard-coded value) is fine for request/response APIs and wrong
+    for anything streaming: an LLM completion routinely runs minutes, so every
+    deploy, scale-in and Spot reclaim cut live turns mid-frame. The client saw a
+    truncated SSE body with no error frame, which is indistinguishable from a
+    model that simply stopped talking.
+  EOT
+  type        = number
+  default     = 120
+}
+
+variable "stop_timeout" {
+  description = "Seconds ECS waits after SIGTERM before SIGKILL. Must exceed the app's drain budget."
+  type        = number
+  default     = 120
+}
+
 variable "task_memory" {
   description = "Fargate task memory (MiB), valid for the chosen CPU."
   type        = number

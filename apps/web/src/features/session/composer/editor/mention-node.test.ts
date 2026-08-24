@@ -152,7 +152,10 @@ describe('renderHTML output', () => {
     // failure. What must hold is the visual contract — every chip carries the
     // faint primary tint in BOTH themes and rides the line it sits on.
     expect(attrs.class).toContain('bg-primary/[0.08]');
-    expect(attrs.class).toContain('dark:bg-primary/[0.08]');
+    // ONE `bg-primary/[0.08]`, no `dark:` twin. `--primary` is a themed token,
+    // so the single declaration is already correct in both modes; the twin
+    // that used to be asserted here resolved to the identical rule.
+    expect(attrs.class).not.toContain('dark:bg-primary/[0.08]');
     expect(attrs.class).toContain('align-baseline');
     expect(content).toBe('@README.md');
   });
@@ -183,10 +186,6 @@ describe('renderHTML output', () => {
     // not this file — would pick the winner.
     expect(attrs.class).toContain('bg-primary/[0.08]');
     expect(attrs.class).not.toContain('bg-muted');
-    // `dark:bg-*` is a different variant group, so an unprefixed `bg-*` cannot
-    // stand in for it. Without the explicit dark override the chip loses its
-    // tint in dark mode only.
-    expect(attrs.class).toContain('dark:bg-primary/[0.08]');
     expect(attrs.class).not.toContain('dark:bg-card');
   });
 });

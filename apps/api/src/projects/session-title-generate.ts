@@ -1,7 +1,6 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
-import type { createGateway } from '@kortix/llm-gateway';
 import { config } from '../config';
 import { logger as appLogger } from '../lib/logger';
 import {
@@ -55,19 +54,20 @@ const TITLE_SYSTEM_PROMPT =
 // compare-and-set in `persistTitle`.
 const inFlight = new Set<string>();
 
-// The same pipeline the API mounts, run directly in-process so title generation
-// behaves identically whether the gateway is in-process or a standalone pod — we
-// never depend on the pod's URL for our own internal call. Loaded LAZILY: a
-// title is fire-and-forget, so importing this module must not drag the whole
-// gateway (routing, policy engine, catalog) into every consumer's load graph.
-let gatewaySingleton: ReturnType<typeof createGateway> | null = null;
-async function internalGateway(): Promise<ReturnType<typeof createGateway>> {
-  if (!gatewaySingleton) {
-    const { createGateway } = await import('@kortix/llm-gateway');
-    const { createInProcessGatewayHooks } = await import('../llm-gateway/hooks');
-    gatewaySingleton = createGateway(createInProcessGatewayHooks());
+function standaloneGatewayUrl(): string | null {
+  const target =
+    config.LLM_GATEWAY_PROXY_TARGET ||
+    (config.LLM_GATEWAY_PROXY_PORT
+      ? `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
+      : '');
+  if (!target) return null;
+  try {
+    const url = new URL(target);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return `${target.replace(/\/+$/, '')}/v1/chat/completions`;
+  } catch {
+    return null;
   }
-  return gatewaySingleton;
 }
 
 /** Normalize a model-generated title: strip wrapping quotes, collapse
@@ -219,8 +219,17 @@ async function generateViaGateway(
   promptText: string,
 ): Promise<string | null> {
   const rawBody = titleCompletionBody(model, promptText);
-  const gateway = await internalGateway();
-  const res = await gateway.chatCompletions({ authorization, rawBody });
+  const gatewayUrl = standaloneGatewayUrl();
+  if (!gatewayUrl) {
+    appLogger.warn('[title-generate] standalone gateway is not configured');
+    return null;
+  }
+  const res = await fetch(gatewayUrl, {
+    method: 'POST',
+    headers: { authorization, 'content-type': 'application/json' },
+    body: rawBody,
+    signal: AbortSignal.timeout(DEFAULT_GENERATION_TIMEOUT_MS),
+  });
   if (!res.ok) {
     appLogger.warn('[title-generate] gateway returned non-200', { status: res.status, model });
     return null;

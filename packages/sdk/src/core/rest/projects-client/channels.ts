@@ -282,24 +282,6 @@ export async function updateEmailPolicy(
   return normalizeEmailInstallation(installation);
 }
 
-// ── Voice — the display name the bot uses when it joins a call ──
-// The voice itself now comes from the realtime provider, not a per-project
-// ElevenLabs pick, so the name is all that's left to configure here.
-
-export async function setMeetBotName(
-  projectId: string,
-  name: string,
-): Promise<{ bot_name: string }> {
-  return unwrap(
-    await backendApi.put<{ bot_name: string }>(
-      `/projects/${encodeURIComponent(projectId)}/channels/meet/name`,
-      { name },
-      { showErrors: false },
-    ),
-    'Failed to save name',
-  );
-}
-
 // ── Channel bindings — which agent/model/join-policy a bound chat channel uses ──
 // The web management surface for `chat_channel_bindings`. Today the only other
 // way to change these is the in-Slack `/kortix agent|model|policy` commands —

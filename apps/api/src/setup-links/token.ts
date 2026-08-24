@@ -121,7 +121,7 @@ export function mintSetupLink(
 
   const payload: SetupLinkPayload =
     spec.kind === 'secret'
-      ? { ...base, kind: 'secret', fields: spec.fields, scope: spec.scope ?? 'runtime', sid: spec.sid ?? null }
+      ? { ...base, kind: 'secret', fields: spec.fields, scope: spec.scope ?? 'connector', sid: spec.sid ?? null }
       : spec.kind === 'approval'
         ? { ...base, kind: 'approval', eid: spec.executionId, sid: spec.sessionId ?? null }
         : {

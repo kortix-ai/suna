@@ -1,7 +1,8 @@
 import { HTTPException } from 'hono/http-exception';
 import { matchAllowedRoute, type ProxyServiceConfig } from '../../config/proxy-services';
 import { validateSecretKey } from '../../../repositories/api-keys';
-import { isKortixToken } from '../../../shared/crypto';
+import { validateAccountToken } from '../../../repositories/account-tokens';
+import { isAccountToken, isKortixToken } from '../../../shared/crypto';
 import { config, getToolCost } from '../../../config';
 import { deductToolCredits } from '../../services/billing';
 import { grantCredits } from '../../../billing/services/credits';
@@ -13,6 +14,31 @@ import type { ToolCreditReservation, AuthResult } from './app';
 // Re-export matchAllowedRoute for handlers (kept here so handlers import from one place)
 export { matchAllowedRoute };
 
+/**
+ * Resolve ANY Kortix credential to the account it bills.
+ *
+ * The platform mints two shapes and they live in different tables:
+ *   - `kortix_pat_…`  → `account_tokens`   (`validateAccountToken`)
+ *   - `kortix_…` / `kortix_sb_…` → `kortix_api_keys` (`validateSecretKey`)
+ *
+ * The in-sandbox `KORTIX_TOKEN` — the credential every built-in tool presents
+ * to this proxy — is the FIRST shape: a session-scoped PAT auto-minted at
+ * session create (projects/routes/r3.ts). This resolver only ever consulted
+ * the second table, so every built-in tool call answered
+ * `401 Invalid Kortix token in x-api-key` while the same token authenticated
+ * fine on every other route. Try the right validator for the prefix; never
+ * widen what counts as valid (both validators still enforce active + not
+ * expired + not revoked).
+ */
+export async function resolveKortixAccount(token: string): Promise<string | null> {
+  if (isAccountToken(token)) {
+    const pat = await validateAccountToken(token);
+    return pat.isValid && pat.accountId ? pat.accountId : null;
+  }
+  const key = await validateSecretKey(token);
+  return key.isValid && key.accountId ? key.accountId : null;
+}
+
 export async function tryAuthenticate(c: any): Promise<AuthResult> {
   const authHeader = c.req.header('Authorization');
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
@@ -23,10 +49,8 @@ export async function tryAuthenticate(c: any): Promise<AuthResult> {
 
   if (bearerToken && isKortixToken(bearerToken) && config.DATABASE_URL) {
     try {
-      const result = await validateSecretKey(bearerToken);
-      if (result.isValid && result.accountId) {
-        return { isKortixUser: true, accountId: result.accountId };
-      }
+      const accountId = await resolveKortixAccount(bearerToken);
+      if (accountId) return { isKortixUser: true, accountId };
     } catch {
       // Fall through to reject below
     }
@@ -40,10 +64,8 @@ export async function tryAuthenticate(c: any): Promise<AuthResult> {
   const tokenPrefixed = authHeader?.startsWith('Token ') ? authHeader.slice(6) : undefined;
   if (tokenPrefixed && isKortixToken(tokenPrefixed) && config.DATABASE_URL) {
     try {
-      const result = await validateSecretKey(tokenPrefixed);
-      if (result.isValid && result.accountId) {
-        return { isKortixUser: true, accountId: result.accountId };
-      }
+      const accountId = await resolveKortixAccount(tokenPrefixed);
+      if (accountId) return { isKortixUser: true, accountId };
     } catch {
       // Fall through to reject below
     }
@@ -56,10 +78,8 @@ export async function tryAuthenticate(c: any): Promise<AuthResult> {
   const xApiKey = c.req.header('x-api-key');
   if (xApiKey && isKortixToken(xApiKey) && config.DATABASE_URL) {
     try {
-      const result = await validateSecretKey(xApiKey);
-      if (result.isValid && result.accountId) {
-        return { isKortixUser: true, accountId: result.accountId };
-      }
+      const accountId = await resolveKortixAccount(xApiKey);
+      if (accountId) return { isKortixUser: true, accountId };
     } catch {
       // Fall through to reject below
     }
@@ -77,10 +97,8 @@ export async function tryAuthenticate(c: any): Promise<AuthResult> {
         const json = JSON.parse(bodyText);
         const bodyApiKey = json?.api_key;
         if (bodyApiKey && isKortixToken(bodyApiKey)) {
-          const result = await validateSecretKey(bodyApiKey);
-          if (result.isValid && result.accountId) {
-            return { isKortixUser: true, accountId: result.accountId };
-          }
+          const accountId = await resolveKortixAccount(bodyApiKey);
+          if (accountId) return { isKortixUser: true, accountId };
           throw new HTTPException(401, { message: 'Invalid Kortix token in request body' });
         }
       }
@@ -100,10 +118,8 @@ export async function tryAuthenticate(c: any): Promise<AuthResult> {
     const kortixTokenHeader = c.req.header('X-Kortix-Token');
     if (kortixTokenHeader && isKortixToken(kortixTokenHeader)) {
       try {
-        const result = await validateSecretKey(kortixTokenHeader);
-        if (result.isValid && result.accountId) {
-          return { isKortixUser: true, accountId: result.accountId, isPassthrough: true };
-        }
+        const accountId = await resolveKortixAccount(kortixTokenHeader);
+        if (accountId) return { isKortixUser: true, accountId, isPassthrough: true };
       } catch {
         // Fall through to reject below
       }

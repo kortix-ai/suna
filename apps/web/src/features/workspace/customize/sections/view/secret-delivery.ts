@@ -201,20 +201,17 @@ export type SecretDeliveryPresentation = {
 /**
  * The three exposures, in the order the picker lists them.
  *
- * Order is the argument. `enforced` leads because it is the default and the
- * one to reach for: the value never enters the machine the agent controls.
- * `environment` sits second and is warning-toned everywhere it renders — it
- * is the only value whose plaintext lands in a process the agent can read, so
- * it should be chosen on purpose, never by default. `disabled` closes the
- * list because it is an off switch, not a delivery mode.
+ * Order is the argument. `environment` leads because it is the default and the
+ * one every project gets: the real value loads into the sandbox as an env var,
+ * the mode that needs no setup and works the same on every provider. It is
+ * warning-toned everywhere it renders — it is the only value whose plaintext
+ * lands in a process the agent can read, an honest label, not an alarm.
+ * `enforced` sits second and is an EXPERIMENTAL opt-in behind the
+ * `secrets_egress` flag (still in testing): the value never enters the sandbox,
+ * Kortix substitutes it outside on an approved host. `disabled` closes the list
+ * because it is an off switch, not a delivery mode.
  */
 const EXPOSURE_PRESENTATIONS: Record<SecretExposure, SecretDeliveryPresentation> = {
-  enforced: {
-    label: 'Enforce at the network',
-    description:
-      'The sandbox holds a handle. Kortix substitutes the real value only on requests to the approved hosts.',
-    tone: 'secondary',
-  },
   environment: {
     // The only exposure where agent code can read the value, so the badge is a
     // warning and not a neutral label. `secrets-view.tsx` says the same thing
@@ -223,6 +220,12 @@ const EXPOSURE_PRESENTATIONS: Record<SecretExposure, SecretDeliveryPresentation>
     label: 'Environment variable',
     description: 'The real value is an environment variable agent code and commands can read.',
     tone: 'warning',
+  },
+  enforced: {
+    label: 'Enforce at the network',
+    description:
+      'The sandbox holds a handle. Kortix substitutes the real value only on requests to the approved hosts.',
+    tone: 'secondary',
   },
   disabled: {
     label: 'Disabled',
@@ -276,14 +279,21 @@ export type SecretDeliveryLegendEntry = SecretDeliveryPresentation & {
  * The Secrets page renders this as its "What each Access value means" legend.
  * It reads the same tables the picker and each row's badge read, which is the
  * only reason the three can be trusted to agree.
+ *
+ * `showEnforced` drops the experimental "Enforce at the network" definition
+ * when no row uses it and the `secrets_egress` flag is off — the legend must
+ * not explain a value the picker never offers, or the page reintroduces exactly
+ * the network-boundary confusion the flag hides.
  */
-export function secretDeliveryLegend(): SecretDeliveryLegendEntry[] {
+export function secretDeliveryLegend(showEnforced = true): SecretDeliveryLegendEntry[] {
   return [
-    ...(Object.keys(EXPOSURE_PRESENTATIONS) as SecretExposure[]).map((key) => ({
-      key,
-      kind: 'exposure' as const,
-      ...EXPOSURE_PRESENTATIONS[key],
-    })),
+    ...(Object.keys(EXPOSURE_PRESENTATIONS) as SecretExposure[])
+      .filter((key) => showEnforced || key !== 'enforced')
+      .map((key) => ({
+        key,
+        kind: 'exposure' as const,
+        ...EXPOSURE_PRESENTATIONS[key],
+      })),
     ...(Object.keys(ASSIGNED_USAGE_PRESENTATIONS) as Exclude<SecretUsage, 'agent'>[]).map(
       (key) => ({
         key,
@@ -413,12 +423,18 @@ function providerApiHost(provider: LlmProviderEntry | null): string | null {
  *     that explains why. This outranks the key name because it is a property
  *     of the credential itself: `AWS_ACCESS_KEY_ID` pasted as an `AKIA…` value
  *     cannot be enforced at any boundary, whatever the catalog says.
- *  2. **A known model key.** `enforced`, with the vendor's API host prefilled.
- *     The host comes from the same catalog the LLM providers screen reads, or
- *     from `WELL_KNOWN_API_HOSTS` when that provider's SDK hardcodes the URL and
- *     the catalog carries no `api` (Anthropic, OpenAI, …). Empty only when no
- *     host is known for the provider at all.
- *  3. **Everything else.** `enforced` with an empty host list.
+ *  2. **A known model key.** `environment`, but the vendor's API host is still
+ *     prefilled from the same catalog the LLM providers screen reads (or
+ *     `WELL_KNOWN_API_HOSTS` when that provider's SDK hardcodes the URL). The
+ *     host waits ready so that a project which has turned ON the experimental
+ *     `secrets_egress` flag and switches to enforced does not have to type it.
+ *  3. **Everything else.** `environment` with an empty host list.
+ *
+ * The default is ALWAYS `environment`: the real value loads into the sandbox,
+ * the mode that needs no setup and works on every provider. Enforced (network
+ * substitution) is an experimental opt-in behind `secrets_egress`; a new secret
+ * is never defaulted onto it, so the default never points at an option the
+ * picker may not even show.
  */
 export function classifyNewSecret(input: { key: string; value: string }): SecretClassification {
   const key = input.key.trim().toUpperCase();
@@ -434,7 +450,7 @@ export function classifyNewSecret(input: { key: string; value: string }): Secret
   }
   const apiHost = providerApiHost(provider);
   return {
-    exposure: 'enforced',
+    exposure: 'environment',
     hosts: apiHost ? [apiHost] : [],
     modelProvider,
     signingNote: null,
@@ -463,18 +479,23 @@ export type SecretExposureOption = SecretDeliveryPresentation & {
 };
 
 /**
- * Every exposure the user may pick — three, flat, always all three.
+ * The exposures the user may pick.
  *
- * Nothing disables an option any more. The deployment question that used to
- * gray out "Network boundary" is gone: one mechanism serves every sandbox
- * provider (spec §4), and the API reports `network_boundary_available: true`
- * unconditionally.
+ * `environment` and `disabled` are always offered. `enforced` (network
+ * substitution) is experimental and appears ONLY when `egressAvailable` — the
+ * project has turned on the `secrets_egress` flag, or the row being edited is
+ * already enforced (so a legacy/enforced secret stays readable and can be moved
+ * off enforcement even after the flag is switched back off). The default is
+ * always `environment`, so hiding `enforced` never leaves the picker pointing
+ * at an option that is not present.
  */
-export function secretExposureOptions(): SecretExposureOption[] {
-  return (Object.keys(EXPOSURE_PRESENTATIONS) as SecretExposure[]).map((exposure) => ({
-    exposure,
-    ...EXPOSURE_PRESENTATIONS[exposure],
-  }));
+export function secretExposureOptions(egressAvailable: boolean): SecretExposureOption[] {
+  return (Object.keys(EXPOSURE_PRESENTATIONS) as SecretExposure[])
+    .filter((exposure) => egressAvailable || exposure !== 'enforced')
+    .map((exposure) => ({
+      exposure,
+      ...EXPOSURE_PRESENTATIONS[exposure],
+    }));
 }
 
 

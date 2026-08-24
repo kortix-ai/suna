@@ -65,13 +65,13 @@ export const hero = {
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
   ctaSecondaryHref: '/docs/connect/slack',
-  microline: 'Slack today · Teams, email and voice behind a switch',
+  microline: 'Slack today · Teams and email behind a switch',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
-    { k: 'Live today', v: 'Slack' },
-    { k: 'A thread is', v: 'Exactly one session' },
-    { k: 'The reply lands', v: 'In the same thread' },
-    { k: 'Approve or deny', v: 'On a card, in the thread' },
+    { k: 'Live today', v: 'Slack', visual: 'presence' },
+    { k: 'A thread is', v: 'Exactly one session', visual: 'thread' },
+    { k: 'The reply lands', v: 'In the same thread', visual: 'reply' },
+    { k: 'Approve or deny', v: 'On a card, in the thread', visual: 'approve' },
   ],
 } as const;
 
@@ -102,13 +102,6 @@ export const surfaces = {
       name: 'Email',
       state: 'Experimental',
       body: 'A project inbox, so a message to an address starts a session and a reply continues it. Opt in per project under Customize → Feature flags. Real, and not finished.',
-    },
-    {
-      id: 'voice',
-      icon: 'Kortix',
-      name: 'Voice',
-      state: 'Experimental',
-      body: 'A realtime call the agent speaks in. Same per-project opt-in. It spawns a room and shares the link — it does not dial into a meeting you already started.',
     },
   ],
   notChannels: {
@@ -259,8 +252,14 @@ export const commands = {
   policy: {
     title: 'Three answers to “who may start a session here”',
     values: [
-      { k: 'project_open', v: 'The default. Any project member who mentions the bot gets a session.' },
-      { k: 'owner_approval', v: 'A session starts only once the channel owner approves the request.' },
+      {
+        k: 'project_open',
+        v: 'The default. Any project member who mentions the bot gets a session.',
+      },
+      {
+        k: 'owner_approval',
+        v: 'A session starts only once the channel owner approves the request.',
+      },
       { k: 'owner_only', v: 'Only the owner. Everyone else gets nothing, predictably.' },
     ],
   },

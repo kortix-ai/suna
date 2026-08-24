@@ -11,7 +11,7 @@ export const it: RoleContent = {
 
   hero: {
     title: 'You have to run it, and you have to approve it. Both, honestly.',
-    sub: 'Access reviews, joiner-mover-leaver, the service desk queue, the runbook that only one person can execute. IT gets more out of an agent platform than most teams — and is the team that has to say yes to it first. This page does both halves.',
+    sub: 'Access reviews, joiners and leavers, the service desk queue, the runbook only one person can run. IT gains the most from this, and has to approve it first. This page covers both.',
     microline: 'Runbooks that execute · deny-by-default reach · SAML 2.0 single sign-on',
     specs: [
       { k: 'Runbooks', v: 'Markdown in your repo, not in a head' },
@@ -23,7 +23,7 @@ export const it: RoleContent = {
 
   handoff: {
     title: 'The queue, and the runbook only one person can execute.',
-    sub: 'IT work is unusually well suited to this: it is procedural, it is written down somewhere already, and the cost of it not happening is invisible right up until an audit or an incident.',
+    sub: 'IT work fits this well. It is procedural, it is already written down somewhere, and nobody notices it was skipped until an audit or an incident.',
     jobs: [
       {
         id: 'jml',
@@ -60,7 +60,7 @@ export const it: RoleContent = {
 
   output: {
     title: 'A review with a recommendation on every row.',
-    sub: 'The artifact IT actually needs is not a dashboard. It is a list, with a defensible reason attached to each line, in a state where approving it does something.',
+    sub: 'What IT needs is not a dashboard. It is a list, with a defensible reason on every line, in a form where approving it does something.',
     artifact: {
       kind: 'table',
       file: 'access/2026-q3-review-production.md',
@@ -112,7 +112,7 @@ export const it: RoleContent = {
 
   reach: {
     title: 'Your estate, reached the way it is actually reachable.',
-    sub: 'IT tooling is the least uniform stack in the company. Connect what is in the catalogue; define the rest yourself. Either way the credential is decrypted on our side and never enters the machine.',
+    sub: 'IT stacks are the least uniform in the company. Connect what is in the catalogue and define the rest yourself. Either way, credentials never enter the machine.',
     rows: [
       {
         k: 'Google Workspace and Microsoft 365',
@@ -141,7 +141,7 @@ export const it: RoleContent = {
 
   cadence: {
     title: 'Answer the ticket now. Run the review every quarter.',
-    sub: 'The same session machinery started three ways. IT is the function where the scheduled mode does the most good, because the work that gets skipped is the work with no deadline attached.',
+    sub: 'Three ways to start the same session. Scheduled runs help IT most, because the work that gets skipped is the work with no deadline attached.',
     modes: [
       {
         id: 'on-demand',
@@ -166,7 +166,7 @@ export const it: RoleContent = {
 
   control: {
     title: 'The part where you review us.',
-    sub: 'You are also the team that has to approve this. Here are the answers, including the ones that are less flattering than the version you usually get on a page like this.',
+    sub: 'You are also the team that has to approve this. Here are the answers, including the ones that are less flattering than usual.',
     rows: [
       {
         id: 'isolation',

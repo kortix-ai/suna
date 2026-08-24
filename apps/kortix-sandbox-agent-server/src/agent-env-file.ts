@@ -39,9 +39,6 @@ const DANGEROUS_NAMES = new Set([
 // shredded on shutdown — same posture as the project secrets already written here.
 const SHELL_SESSION_CREDS = [
   'KORTIX_TOKEN',
-  'KORTIX_CLI_TOKEN',
-  'KORTIX_SANDBOX_TOKEN',
-  'KORTIX_CLI_TOKEN',
   'KORTIX_PROJECT_ID',
   'KORTIX_API_URL',
   'KORTIX_FRONTEND_URL',

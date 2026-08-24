@@ -104,7 +104,41 @@ function captureIdentity(endpoint: string, token: string, data: unknown): void {
   }
 }
 
+/** The API commits manifest writes (kortix.yaml, agent .md) with a
+ *  compare-and-swap on the file sha. Two writes in quick succession — e.g.
+ *  `agents default` then `agents scope`, or a dashboard edit landing while the
+ *  CLI reads — answer 409 with this exact message. The write is safe to replay:
+ *  the server re-reads the file and applies the same mutation on top of the new
+ *  sha. Replay ONCE after a short pause; a second conflict is surfaced as-is. */
+const MANIFEST_CAS_CONFLICT = /changed since it was read/i;
+const MANIFEST_CAS_RETRY_DELAY_MS = 1500;
+function isManifestCasConflict(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 409) return false;
+  if (MANIFEST_CAS_CONFLICT.test(err.message)) return true;
+  // The SDK may keep the server's wording in the body rather than the message.
+  try {
+    return MANIFEST_CAS_CONFLICT.test(JSON.stringify(err.body ?? ''));
+  } catch {
+    return false;
+  }
+}
+
 async function request<T>(
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  path: string,
+  body: unknown,
+  opts: { auth: Auth; accountId?: string },
+): Promise<T> {
+  try {
+    return await requestOnce<T>(method, path, body, opts);
+  } catch (err) {
+    if (method === 'GET' || !isManifestCasConflict(err)) throw err;
+    await new Promise((r) => setTimeout(r, MANIFEST_CAS_RETRY_DELAY_MS));
+    return requestOnce<T>(method, path, body, opts);
+  }
+}
+
+async function requestOnce<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body: unknown,

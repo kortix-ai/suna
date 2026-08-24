@@ -9,22 +9,29 @@ import {
 } from '@/features/session/session-files-explorer-logic';
 import { getSessionFilesStore } from '@/features/session/session-files-store-registry';
 import {
-  SessionVersionHeader,
+  SessionChangesHeader,
+  SessionFilesTabs,
+  sessionVersionTabId,
   type SessionPanelMode,
 } from '@/features/session/session-version-header';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 /**
  * Session side-panel "Files" surface.
  *
- * An elegant version header frames the screen as a standalone copy of the
- * project's main version, with two plain tabs:
+ * ONE row of chrome, with two plain tabs at its left:
  *   • All files (default) — the SAME Drive-style explorer the /files page
  *                uses ({@link DriveExplorer}), pointed at the live sandbox
  *                via {@link sandboxExplorerSource} (writable, searchable).
  *   • Changes (secondary) — the real per-file diff viewer
  *                ({@link SessionDiffViewer}), the same diff UI used elsewhere.
+ *
+ * On All files the tabs are handed to the explorer as its action row's
+ * `leading` slot, so the row carries tabs + [+ New] + [⋯] and the path strip
+ * below it appears only once you are inside a folder. On Changes the explorer
+ * is gone, so `SessionChangesHeader` draws the row itself and adds the
+ * "Propose changes" action.
  *
  * The sub-mode is addressable through the shared panel-view store (the `files`
  * view value means "Changes"), so the header chip's "View changes" lands the
@@ -140,21 +147,42 @@ function SessionFilesExplorerInner({
 
   const showDiff = mode === 'changes' && !!chatSessionId;
 
+  // One id per mount: two explorers (Advanced's tab + Easy's drill-in) can be
+  // in the DOM at once, so the tab/panel wiring must not collide.
+  const panelId = useId();
+
+  // All files: the tabs ride INSIDE the explorer's action row, so the surface
+  // shows one row of chrome instead of a tab bar stacked on a toolbar. That
+  // makes the explorer the only thing that can stamp the tab panel, hence
+  // `contentPanel`.
+  //
+  // Changes: the explorer is unmounted, so that branch draws its own row.
+  const tabs = { mode, onModeChange, panelId };
+
   return (
     <div className="flex h-full flex-col">
-      <SessionVersionHeader chatSessionId={chatSessionId} mode={mode} onModeChange={onModeChange} />
-      <div className="min-h-0 flex-1">
-        {showDiff ? (
-          <SessionDiffViewer sessionId={chatSessionId!} />
-        ) : (
-          <SandboxFileExplorer
-            embedded
-            shareContext={
-              projectId && projectSessionId ? { projectId, sessionId: projectSessionId } : undefined
-            }
-          />
-        )}
-      </div>
+      {showDiff ? (
+        <>
+          <SessionChangesHeader chatSessionId={chatSessionId} {...tabs} />
+          <div
+            id={panelId}
+            role="tabpanel"
+            aria-labelledby={sessionVersionTabId(panelId, mode)}
+            className="min-h-0 flex-1"
+          >
+            <SessionDiffViewer />
+          </div>
+        </>
+      ) : (
+        <SandboxFileExplorer
+          embedded
+          leading={<SessionFilesTabs {...tabs} />}
+          contentPanel={{ id: panelId, labelledBy: sessionVersionTabId(panelId, mode) }}
+          shareContext={
+            projectId && projectSessionId ? { projectId, sessionId: projectSessionId } : undefined
+          }
+        />
+      )}
     </div>
   );
 }

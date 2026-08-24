@@ -189,25 +189,21 @@ export function deleteConfig(): void {
 
 /**
  * Resolve the active Host for the current invocation. Priority:
- *   1. KORTIX_CLI_TOKEN env var (synthetic ephemeral host, never persisted).
- *      It carries the session-scoped PAT the platform injects into a sandbox.
- *      (The SANDBOX credential
- *      — KORTIX_SANDBOX_TOKEN / its legacy KORTIX_TOKEN alias — is deliberately
- *      NOT used here: it's the daemon's identity, not the user's, and does not
- *      authenticate against the project-scoped API routes the CLI calls.)
+ *   1. KORTIX_TOKEN env var (synthetic ephemeral host, never persisted).
+ *      It carries the session-scoped token the platform injects into a sandbox.
  *   2. KORTIX_API_URL env var (URL override for the stored active host)
  *   3. `--host` flag (handled at the call site via `getHost(name)`)
  *   4. The `active` host in config.json
  */
 /**
- * True when the platform-injected `KORTIX_CLI_TOKEN` is present.
+ * True when the platform-injected `KORTIX_TOKEN` is present.
  * `activeHost()` then resolves to a
  * synthetic env host, which must outrank a `.kortix/link.json` host —
  * inside a sandbox the named host has no stored credentials, so honoring
  * the link would strand a fully-authenticated CLI on "not logged in".
  */
 function sandboxCliToken(): string | undefined {
-  return sandboxEnvValue('KORTIX_CLI_TOKEN');
+  return sandboxEnvValue('KORTIX_TOKEN');
 }
 
 export function hasEnvTokenHost(): boolean {

@@ -65,7 +65,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <div
                 key={key}
-                className="bg-muted/40 border-border/60 flex items-start gap-2 rounded-2xl border px-2.5 py-1.5"
+                className="bg-muted/40 border-border/60 flex items-start gap-2 rounded-md border px-2.5 py-1.5"
               >
                 <Ban className="text-muted-foreground/70 mt-0.5 size-3 shrink-0" />
                 <div className="min-w-0 flex-1">
@@ -131,7 +131,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
               <div
                 key={key}
                 className={cn(
-                  'flex items-center gap-2 rounded-2xl border px-2.5 py-1.5',
+                  'flex items-center gap-2 rounded-md border px-2.5 py-1.5',
                   STATUS_BORDER.success,
                   STATUS_BG.success,
                 )}

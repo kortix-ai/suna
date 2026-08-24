@@ -5,9 +5,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ExperimentalTabView, filterFeatures } from './experimental-tab';
 
 const betaFeature: FeatureFlagView = {
-  key: 'voice',
-  name: 'Voice',
-  description: 'Talk to your agent.',
+  key: 'review_center',
+  name: 'Review Center',
+  description: 'Review agent output.',
   stability: 'beta',
   available: true,
   enabled: true,
@@ -46,8 +46,8 @@ describe('ExperimentalTabView', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
     );
-    expect(out).toContain('Voice');
-    expect(out).toContain('Talk to your agent.');
+    expect(out).toContain('Review Center');
+    expect(out).toContain('Review agent output.');
     expect(out).toContain('Beta');
     expect(out).toContain('Apps');
     expect(out).toContain('Early-access app discovery.');
@@ -58,7 +58,7 @@ describe('ExperimentalTabView', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
     );
-    expect(out.indexOf('Voice')).toBeLessThan(out.indexOf('Apps'));
+    expect(out.indexOf('Review Center')).toBeLessThan(out.indexOf('Apps'));
   });
 
   test('a feature switch reflects its enabled state via aria-checked', () => {
@@ -81,9 +81,9 @@ describe('ExperimentalTabView', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
     );
-    expect(out).toContain('id="feature-flag-voice"');
+    expect(out).toContain('id="feature-flag-review_center"');
     expect(out).toContain('id="feature-flag-apps"');
-    expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-voice"/);
+    expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-review_center"/);
     expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-apps"/);
     // Every switch in the pane is named — none may ship unlabelled.
     expect(out.match(/role="switch"/g)?.length).toBe(2);
@@ -94,12 +94,12 @@ describe('ExperimentalTabView', () => {
     // `aria-labelledby` is only a name if the target exists and holds the text.
     // A dangling id would leave the switch just as unnamed as before.
     const out = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} />);
-    expect(out).toMatch(/id="feature-flag-voice"[^>]*>Voice</);
+    expect(out).toMatch(/id="feature-flag-review_center"[^>]*>Review Center</);
   });
 
   test('a pending feature key disables its own switch', () => {
     const out = renderToStaticMarkup(
-      <ExperimentalTabView features={[betaFeature]} pendingKeys={['voice']} canManage />,
+      <ExperimentalTabView features={[betaFeature]} pendingKeys={['review_center']} canManage />,
     );
     expect(out).toMatch(/role="switch"[^>]*disabled/);
   });
@@ -123,7 +123,7 @@ describe('ExperimentalTabView', () => {
 
   test('loading state shows a skeleton, not any feature row', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView isLoading features={[betaFeature]} />);
-    expect(out).not.toContain('Voice');
+    expect(out).not.toContain('Review Center');
   });
 
   test('error state shows a retry action, not any feature row', () => {
@@ -132,7 +132,7 @@ describe('ExperimentalTabView', () => {
     );
     expect(out).toContain('Retry');
     expect(out).toContain('boom');
-    expect(out).not.toContain('Voice');
+    expect(out).not.toContain('Review Center');
   });
 
   test('every stability the API can serve has its own badge, including stable', () => {
@@ -249,7 +249,7 @@ describe('filterFeatures', () => {
   });
 
   test('matches the display name', () => {
-    expect(filterFeatures(all, 'voice').map((f) => f.key)).toEqual(['voice']);
+    expect(filterFeatures(all, 'apps').map((f) => f.key)).toEqual(['apps']);
   });
 
   test('matches the raw key — the term docs and support threads actually use', () => {
@@ -257,11 +257,11 @@ describe('filterFeatures', () => {
   });
 
   test('matches the description', () => {
-    expect(filterFeatures(all, 'talk to your').map((f) => f.key)).toEqual(['voice']);
+    expect(filterFeatures(all, 'review agent').map((f) => f.key)).toEqual(['review_center']);
   });
 
   test('is case-insensitive and ignores surrounding whitespace', () => {
-    expect(filterFeatures(all, '  VOICE  ').map((f) => f.key)).toEqual(['voice']);
+    expect(filterFeatures(all, '  APPS  ').map((f) => f.key)).toEqual(['apps']);
   });
 
   test('no match returns empty rather than falling back to everything', () => {

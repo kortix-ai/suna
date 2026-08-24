@@ -51,7 +51,7 @@
  *    validator REJECTS it. Channel routing is live project state, exactly as
  *    the shipped manifest's own closing comment says.
  *  - SURFACES. Slack, web and CLI only. Slack is the one live channel; Teams is
- *    behind an operator switch and email/voice are experimental. The manifest
+ *    behind an operator switch and email is experimental. The manifest
  *    enum is closed at four. Telegram, WhatsApp, SMS and Discord are NOT
  *    channels, in any tense.
  *  - TRIGGERS are exactly two kinds: a cron schedule and a signed webhook.
@@ -85,8 +85,7 @@ export const asking = {
   panel: {
     title: 'Ask',
     label: 'Input',
-    footer:
-      'You set allow, ask or block per action. Merge stays default-deny for agents.',
+    footer: 'You set allow, ask or block per action. Merge stays default-deny for agents.',
   },
   modes: [
     {

@@ -121,7 +121,7 @@ async function cli(args: string[], input?: string): Promise<CliResult> {
     env: {
       ...process.env,
       KORTIX_API_URL: API,
-      KORTIX_CLI_TOKEN: agentToken,
+      KORTIX_TOKEN: agentToken,
       KORTIX_PROJECT_ID: projectId,
       KORTIX_SESSION_ID: sessionId,
       KORTIX_NO_UPDATE_CHECK: '1',
@@ -401,7 +401,7 @@ async function driveMcp(): Promise<void> {
     env: {
       ...process.env,
       KORTIX_API_URL: API,
-      KORTIX_CLI_TOKEN: agentToken,
+      KORTIX_TOKEN: agentToken,
       KORTIX_PROJECT_ID: projectId,
       KORTIX_SESSION_ID: sessionId,
       KORTIX_NO_UPDATE_CHECK: '1',

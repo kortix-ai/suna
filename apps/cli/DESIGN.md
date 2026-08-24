@@ -75,7 +75,7 @@ for every subsequent call, so command code doesn't fork.
 
 - Override the file path with `KORTIX_AUTH_FILE`.
 - Override the base URL with `KORTIX_API_URL` or `--api <url>`.
-- Pull the token from env via `KORTIX_CLI_TOKEN` for non-interactive use
+- Pull the token from env via `KORTIX_TOKEN` for non-interactive use
   (CI, agents) — bypasses the file.
 
 ### 2.2 Phase A — paste-a-token

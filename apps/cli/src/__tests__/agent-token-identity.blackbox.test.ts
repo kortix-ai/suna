@@ -113,7 +113,7 @@ async function runCli(args: string[]) {
       KORTIX_CONFIG_FILE: join(tmp, 'config.json'),
       // What the platform injects into a running session.
       KORTIX_API_URL: `http://127.0.0.1:${server!.port}`,
-      KORTIX_CLI_TOKEN: AGENT_TOKEN,
+      KORTIX_TOKEN: AGENT_TOKEN,
       KORTIX_PROJECT_ID: PROJECT_ID,
       KORTIX_SESSION_ID: SESSION_ID,
     },

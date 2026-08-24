@@ -12,11 +12,18 @@ export { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
  * whose process died) and the reload gate (which refuses to restart opencode out
  * from under a turn that is still running).
  *
- * "In flight" is `last message is an assistant message with no completion time`.
- * That is the same test boot has always used to decide whether an adopted root
- * needs its turn finalized; it is true both for a turn that is genuinely running
- * and for one whose writer died. Distinguishing them is the caller's job:
- * post-respawn, the writer is by definition gone.
+ * "In flight" is `the NEWEST ASSISTANT message has no completion time`. That is
+ * the same test boot has always used to decide whether an adopted root needs its
+ * turn finalized; it is true both for a turn that is genuinely running and for
+ * one whose writer died. Distinguishing them is the caller's job: post-respawn,
+ * the writer is by definition gone.
+ *
+ * NEWEST ASSISTANT, not "last row". `MessageV2.page()` orders by `time_created`
+ * in both 1.17.11 and 1.18.19, so reading the list positionally is fine for
+ * "which row is newest" — but it is NOT fine for "is a turn running", because a
+ * prompt forwarded INTO a live turn (and OpenCode's own synthetic `<pty_exited>`
+ * wake-ups) leave a USER row as the newest row while the assistant streams. The
+ * old `msgs[msgs.length - 1]` read that as "no turn running, prompt dropped".
  */
 /**
  * The canonical opencode root, or null when nothing is pinned yet.
@@ -90,7 +97,9 @@ export async function inspectOpencodeRoot(
     if (!res.ok) return unknown
     const msgs = (await res.json()) as Array<{
       info?: {
+        id?: string
         role?: string
+        parentID?: string
         time?: { completed?: number }
         error?: { data?: { isRetryable?: boolean } }
       }
@@ -103,18 +112,45 @@ export async function inspectOpencodeRoot(
         turnInFlight: false,
         known: true,
       }
-    const last = msgs[msgs.length - 1]
+
+    // Scan from the newest row for the two independent facts. They are NOT the
+    // same row: `[user A, assistant A (streaming), user B]` is the routine
+    // forwarded-prompt shape, and it is BOTH "a turn is running" and "B has no
+    // answer yet".
+    let lastAssistantIdx = -1
+    let lastUserIdx = -1
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const role = msgs[i]?.info?.role
+      if (lastAssistantIdx < 0 && role === 'assistant') lastAssistantIdx = i
+      if (lastUserIdx < 0 && role === 'user') lastUserIdx = i
+      if (lastAssistantIdx >= 0 && lastUserIdx >= 0) break
+    }
+
+    const newest = lastAssistantIdx >= 0 ? msgs[lastAssistantIdx]?.info : undefined
     const lastTurnIncomplete = Boolean(
-      last?.info?.role === 'assistant' &&
-        !last?.info?.time?.completed &&
-        (!last?.info?.error || last.info.error.data?.isRetryable === true),
+      newest && !newest.time?.completed && (!newest.error || newest.error.data?.isRetryable === true),
     )
+
+    // ORPHANED = the newest prompt has no assistant message answering it.
+    // Attribution is by PARENT LINKAGE (`assistant.parentID === user.id`), the
+    // same rule `observeOpencodeDelivery` and the API-side husk finalizer use.
+    // Older daemons' fixtures (and any transcript that omits ids) fall back to
+    // "an assistant row exists after this prompt", which is the best a list
+    // without ids can prove.
+    const prompt = lastUserIdx >= 0 ? msgs[lastUserIdx]?.info : undefined
+    const answered =
+      lastUserIdx < 0 ||
+      (typeof prompt?.id === 'string'
+        ? msgs.some((m) => m.info?.role === 'assistant' && m.info.parentID === prompt.id)
+        : lastAssistantIdx > lastUserIdx)
+
     return {
       hasMessages: true,
       lastTurnIncomplete,
-      orphanedPrompt: last?.info?.role === 'user',
-      // A trailing user message is deliberately NOT counted here any more —
-      // see `orphanedPrompt`.
+      orphanedPrompt: !answered,
+      // A trailing user message is deliberately NOT counted here — see
+      // `orphanedPrompt`. An open assistant message IS, even when a newer user
+      // row sits after it.
       turnInFlight: lastTurnIncomplete,
       known: true,
     }
@@ -144,15 +180,43 @@ export async function opencodeTurnInFlight(
   const sessionId = rootSessionId
   if (!sessionId) return false
   try {
+    // ASK, don't infer. `/session/status` is OpenCode's own answer to this
+    // exact question and it sees what a transcript cannot: the step boundary
+    // inside one turn, where the newest assistant message reads completed while
+    // tools run and the next step's message does not exist yet.
+    if ((await opencodeSessionInFlight(baseUrl, workspace, sessionId)) === true) return true
     const inspection = await inspectOpencodeRoot(baseUrl, workspace, sessionId)
-    return inspection.known ? inspection.turnInFlight : null
+    // The transcript still gets a vote, in ONE direction only: an assistant
+    // message left open by a writer that died reads idle to `/session/status`
+    // (the process holding it is gone) and in flight here. The post-respawn
+    // cleanup exists for exactly that husk, so an open assistant message keeps
+    // owning runtime even when the oracle says idle.
+    if (inspection.known && inspection.turnInFlight) return true
+    if (!inspection.known) return null
+    return false
   } catch (err) {
     logger.warn('[turn-state] could not read turn state', { err: (err as Error).message })
     return null
   }
 }
 
-async function opencodeSessionInFlight(
+/**
+ * Is this exact OpenCode session executing right now? `null` when it cannot be told.
+ *
+ * `GET /session/status` returns `{ [sessionID]: SessionStatus }`. Probed on the
+ * real binaries 2026-08-20: the route and its response shape are IDENTICAL in
+ * 1.17.11 and 1.18.19, and `SessionStatus` is a CLOSED union of exactly
+ * `idle | retry | busy` in both. A session that is idle is simply ABSENT from
+ * the map — three freshly created idle sessions returned `{}` — so a missing
+ * entry is a definite `false`, not a gap.
+ *
+ * The remaining `null` is therefore not ambiguity we chose to keep: it is
+ * "OpenCode did not answer" (non-2xx, unparseable, timeout) plus one deliberate
+ * tripwire — a `type` outside the closed union means a FUTURE OpenCode added a
+ * fourth execution state. Reading an unknown state as idle would be the same
+ * class of bug this whole module exists to kill, so it stays unknown and logs.
+ */
+export async function opencodeSessionInFlight(
   baseUrl: string,
   workspace: string,
   sessionId: string,
@@ -171,6 +235,7 @@ async function opencodeSessionInFlight(
     const type = (status as { type?: unknown }).type
     if (type === 'busy' || type === 'retry') return true
     if (type === 'idle') return false
+    logger.warn('[turn-state] unknown OpenCode session status; treating as unreadable', { type })
     return null
   } catch {
     return null
@@ -259,14 +324,35 @@ export async function observeOpencodeDelivery(
         ? 'completed'
         : null
 
-    // A newer user message owns the root now, so this turn is over whatever the
-    // root reports. Its status would describe the NEWER turn, so never ask.
-    if (after.some((message) => message.info?.role === 'user')) return { inFlight: false, end }
-    if (end !== null) return { inFlight: false, end }
+    // A hard failure cannot un-fail: a terminally-errored assistant message
+    // ENDED the turn that owns it, so a busy root beside it is a NEWER turn.
+    // This is the one short-circuit that survives, and it is asymmetric with a
+    // COMPLETED message on purpose — a completion ends one STEP, not the turn.
+    if (errored) return { inFlight: false, end }
+    const newerUser = after.some((message) => message.info?.role === 'user')
 
+    // Every remaining verdict is a claim that the turn DIED, made from
+    // transcript shape alone — and transcript shape cannot see a running loop.
+    // A prompt forwarded INTO a live turn (and OpenCode's own synthetic
+    // `<pty_exited>` wake-ups) put a newer user message on the root while the
+    // SAME loop still streams the older turn's steps; and between two steps of
+    // one turn the latest assistant message reads completed while tools run
+    // and the next step's message does not exist yet. Both shapes read
+    // "terminal" here and were: live incident 2026-08-20 (Essentia session
+    // d1b74954) — the reaper destroyed a streaming turn's authority at
+    // 12:48:51Z on the newer-user rule; its step completed at 12:48:54Z. So no
+    // terminal verdict leaves this function while the root itself reports
+    // busy, and an unreadable status is unknown, never terminal.
+    //
+    // A `newerUser && end === 'completed'` fast path USED to return terminal
+    // here without asking. It is gone: that is the two shapes above STACKED —
+    // a `<pty_exited>` row landing in the step-boundary window — and it was the
+    // last route by which array position alone could end a live turn.
     const busy = await opencodeSessionInFlight(baseUrl, workspace, rootSessionId)
     if (busy === null) return unreadable
     if (busy) return { inFlight: true, end: null }
+    if (newerUser) return { inFlight: false, end }
+    if (end !== null) return { inFlight: false, end }
     // The root is idle with this turn's assistant message still open: the husk a
     // killed model call leaves behind. With no assistant message at all, the
     // prompt landed and produced nothing, and nothing here says why — but that

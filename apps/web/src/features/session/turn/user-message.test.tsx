@@ -7,6 +7,7 @@ import { MentionChip, chipClass } from '@/features/session/mention-chip';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { MessageWithParts } from '@/ui';
 
+import { RemoveFromQueueButton } from './queued-prompt-bubbles';
 import { UserMessage, UserMessageBubble } from './user-message';
 
 const message = {
@@ -64,6 +65,31 @@ describe('UserMessage actions', () => {
     const markup = render(true);
     expect(markup).toContain('aria-label="Copy code"');
     expect(markup).not.toContain('aria-label="Edit message and rewind session"');
+  });
+
+  test('puts remove-from-queue in the hover actions row, not beside the bubble', () => {
+    const markup = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <TooltipProvider>
+            <UserMessage
+              message={message}
+              sessionId="session-1"
+              ownsPlan={false}
+              onRewind={() => {}}
+              leadingActions={<RemoveFromQueueButton id="prompt-1" onRemove={() => {}} />}
+            />
+          </TooltipProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    const fade = 'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100';
+    const fadeAt = markup.indexOf(fade);
+    const removeAt = markup.indexOf('aria-label="Remove from queue"');
+    expect(removeAt).toBeGreaterThan(-1);
+    expect(fadeAt).toBeGreaterThan(-1);
+    expect(removeAt).toBeGreaterThan(fadeAt);
+    expect(markup).not.toContain('pr-7');
   });
 });
 
@@ -265,5 +291,107 @@ describe('UserMessage timestamp', () => {
 
     // Exactly one reveal — the row's. Nothing nested fades on its own.
     expect(markup.split('group-hover/turn:opacity-100').length - 1).toBe(1);
+  });
+
+  test('the reveal is desktop-only: under 768px the row is always visible', () => {
+    // A touch screen has no hover, so without this the timestamp, Copy and
+    // Edit-from-here sit at zero opacity for the whole session — present,
+    // sized, and unreachable. Touch browsers also leave an emulated `:hover`
+    // stuck on the last-tapped element, so the failure mode was not "never
+    // shows" but "one arbitrary turn stays lit".
+    //
+    // `max-md` is Tailwind's `width < 48rem` = 768px, the same breakpoint
+    // `useIsMobile` uses, so the CSS and the JS agree on what mobile is.
+    const markup = render(false, stamped);
+    expect(markup).toContain('max-md:opacity-100');
+
+    // On the SAME element as the fade it overrides, not a nested wrapper.
+    const row = markup.match(/class="[^"]*group-hover\/turn:opacity-100[^"]*"/)?.[0] ?? '';
+    expect(row).toContain('opacity-0');
+    expect(row).toContain('max-md:opacity-100');
+  });
+});
+
+describe('UserMessage renders the plan it owns', () => {
+  /**
+   * The plan card is the only surface left for session todos ON MOBILE:
+   * `session-chat` drops every `todowrite` part before segmentation, and above
+   * 768px it also nulls the anchor so the Easy panel's card draws instead
+   * (`chatPlanAnchorId`, plan-anchor.test.ts). These tests pass `ownsPlan`
+   * directly, so they pin the mobile path: if this component stops mounting
+   * `PlanCard` when it owns the plan, a phone user's plan renders NOWHERE and
+   * reads as "the agent never made a plan".
+   *
+   * Seeded through the query cache on the exact key the `todo.updated` SSE
+   * handler writes (`['opencode','session-todo',<sessionID>]`), so the test
+   * exercises the real data path rather than a prop.
+   */
+  const SESSION = 'ses_plan';
+
+  const renderWithPlan = (ownsPlan: boolean, todos: unknown[]) => {
+    const client = new QueryClient();
+    client.setQueryData(['opencode', 'session-todo', SESSION], todos);
+    return renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <TooltipProvider>
+            <UserMessage message={message} sessionId={SESSION} ownsPlan={ownsPlan} />
+          </TooltipProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+  };
+
+  const todos = [
+    { content: 'Audit the worker registration', status: 'completed' },
+    { content: 'Wire the retry budget', status: 'in_progress' },
+    { content: 'Backfill the ledger', status: 'pending' },
+  ];
+
+  test('the owning turn shows the plan the agent wrote', () => {
+    const markup = renderWithPlan(true, todos);
+    // The closed disclosure renders no content children by design, so the full
+    // list is not in static markup. What the collapsed card must say is where
+    // the plan is: the step running right now, and the count.
+    //
+    // It used to say a literal ">Plan<" beside the count. That title is gone —
+    // the trigger's subject IS the running step now, and the list below drops
+    // that row so the sentence is not printed twice.
+    expect(markup).toContain('Wire the retry budget');
+    expect(markup).toContain('1 of 3');
+    expect(markup.match(/Wire the retry budget/g)).toHaveLength(1);
+    expect(markup).toContain('role="img"');
+  });
+
+  test('the whole checklist is one keyboard-reachable expand away', () => {
+    const markup = renderWithPlan(true, todos);
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain('tabindex="0"');
+    expect(markup).toContain('data-state="closed"');
+  });
+
+  test('a plan lifts the column cap so the checklist reads as a panel', () => {
+    // Anchored to `self-end` — the ROOT column's own cap. The bubble inside it
+    // also carries `max-w-full`, so a bare substring match would pass in both
+    // directions and could never fail.
+    expect(renderWithPlan(true, todos)).toContain('self-end max-w-full');
+    expect(renderWithPlan(false, todos)).toContain('self-end max-w-[80%]');
+    expect(renderWithPlan(false, todos)).not.toContain('self-end max-w-full');
+  });
+
+  test('a turn that does not own the plan draws no card', () => {
+    const markup = renderWithPlan(false, todos);
+    // The card ITSELF, not its content: the checklist body is behind a closed
+    // disclosure in either case, so asserting on todo text proves nothing.
+    expect(markup).not.toContain('group/plan');
+    expect(markup).not.toContain('>Plan<');
+  });
+
+  test('an empty plan draws nothing, even on the owning turn', () => {
+    const markup = renderWithPlan(true, []);
+    expect(markup).not.toContain('group/plan');
+    expect(markup).not.toContain('>Plan<');
+    // …and the column keeps its cap, so a one-word message never stretches.
+    expect(markup).toContain('self-end max-w-[80%]');
   });
 });

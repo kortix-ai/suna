@@ -50,12 +50,16 @@ const OVERSIZE_TEMPLATE_NAME = 'kortix-oversize-template';
 let fromBuildPayloads: FromBuildPayload[] = [];
 let registeredTemplateName = '';
 let registeredTemplateId = '';
+let lifecycleEvents: string[] = [];
 /** Counts from-build POSTs the oversize stub rejected — proves a size-cap
  *  failure never burns more than one BUILD_ATTEMPTS slot. */
 let oversizeAttempts = 0;
 
 mock.module('../shared/platinum', () => ({
   isPlatinumConfigured: () => true,
+  platinumJsonResponse: async () => {
+    throw new Error('unexpected default Platinum materialization request');
+  },
   platinumJson: async (path: string, init: RequestInit = {}) => {
     if (path === '/v1/templates/from-build/presign') {
       return { upload_url: 'https://upload.test/context.tar.gz', context_s3_key: 'ctx-key' };
@@ -73,6 +77,12 @@ mock.module('../shared/platinum', () => ({
       registeredTemplateId = `tpl-${fromBuildPayloads.length}`;
       return { id: registeredTemplateId, name: payload.name, state: 'building' };
     }
+    if (path === '/v1/templates/from-patch') {
+      const payload = JSON.parse(String(init.body ?? '{}')) as { name: string };
+      registeredTemplateName = payload.name;
+      registeredTemplateId = 'tpl-patch-1';
+      return { id: registeredTemplateId, name: payload.name, state: 'building' };
+    }
     if (path === '/v1/templates') {
       return registeredTemplateName
         ? [{ id: registeredTemplateId, name: registeredTemplateName, state: 'ready' }]
@@ -82,6 +92,7 @@ mock.module('../shared/platinum', () => ({
     // its id (`GET /v1/templates/:id`), never the name list, once from-build
     // hands one back — see platinum.ts's requireExternalTemplateId/waitForActive.
     if (registeredTemplateId && path === `/v1/templates/${registeredTemplateId}`) {
+      lifecycleEvents.push(`ready:${registeredTemplateId}`);
       return { id: registeredTemplateId, name: registeredTemplateName, state: 'ready' };
     }
     throw new Error(`unexpected Platinum path: ${path}`);
@@ -98,6 +109,7 @@ const stubFetch = Object.assign(
 ) as typeof fetch;
 
 const {
+  PlatinumAdapter,
   platinumProvider,
   PLATINUM_MAX_BUILD_SIZE_MB,
   PLATINUM_MIN_BUILD_SIZE_MB,
@@ -109,6 +121,7 @@ beforeEach(() => {
   fromBuildPayloads = [];
   registeredTemplateName = '';
   registeredTemplateId = '';
+  lifecycleEvents = [];
   oversizeAttempts = 0;
   globalThis.fetch = stubFetch;
   // Per-test (not module load): build-context reads these lazily, so setting here
@@ -176,6 +189,62 @@ describe('platinumBuildSizeMb (lazy PLATINUM_BUILD_SIZE_MB env knob)', () => {
 });
 
 describe('Platinum snapshot build sizing', () => {
+  test('buildSnapshot awaits exact-id materialization after readiness', async () => {
+    const adapter = new PlatinumAdapter(async (externalId) => {
+      lifecycleEvents.push(`materialize:${externalId}`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      lifecycleEvents.push(`materialized:${externalId}`);
+    });
+
+    const result = await adapter.buildSnapshot({
+      snapshotName: 'kortix-materialized-template',
+      image: 'ubuntu:24.04',
+      spec: { diskGb: 10 },
+      slug: 'materialized',
+    });
+
+    expect(result.externalTemplateId).toBe(registeredTemplateId);
+    expect(lifecycleEvents).toEqual([
+      `ready:${registeredTemplateId}`,
+      `materialize:${registeredTemplateId}`,
+      `materialized:${registeredTemplateId}`,
+    ]);
+  });
+
+  test('swapAgent awaits exact-id materialization after readiness', async () => {
+    const adapter = new PlatinumAdapter(async (externalId) => {
+      lifecycleEvents.push(`materialize:${externalId}`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      lifecycleEvents.push(`materialized:${externalId}`);
+    });
+
+    const result = await adapter.swapAgent('kortix-patched-template', 'kortix-source-template');
+
+    expect(result.externalTemplateId).toBe('tpl-patch-1');
+    expect(lifecycleEvents).toEqual([
+      'ready:tpl-patch-1',
+      'materialize:tpl-patch-1',
+      'materialized:tpl-patch-1',
+    ]);
+  });
+
+  test.each(['build', 'agent swap'] as const)('%s remains successful when materialization rejects', async (flow) => {
+    const adapter = new PlatinumAdapter(async () => {
+      throw new Error('materialization unavailable');
+    });
+
+    const result = flow === 'build'
+      ? await adapter.buildSnapshot({
+        snapshotName: 'kortix-materialize-fail-open',
+        image: 'ubuntu:24.04',
+        spec: { diskGb: 10 },
+        slug: 'materialize-fail-open',
+      })
+      : await adapter.swapAgent('kortix-patch-fail-open', 'kortix-source-template');
+
+    expect(result.externalTemplateId).toBe(registeredTemplateId);
+  });
+
   test('a disk under the cap is sent verbatim as the build ceiling', async () => {
     await platinumProvider.buildSnapshot({
       snapshotName: 'kortix-small-template',

@@ -3,6 +3,7 @@
     "ABORT_REASONS",
     "ABORT_REASONS_NOT_YET_EMITTED",
     "ACTIVE_INSTANCE_COOKIE",
+    "ATTACHMENT_PART_REF_PREFIX",
     "ApiError",
     "AuthError",
     "BillingError",
@@ -23,7 +24,6 @@
     "PREVIEW_PROBE_TIMEOUT_MS",
     "PROVISION_IN_FLIGHT_CODE",
     "PublicSessionShareError",
-    "PublicVoiceJoinError",
     "RequestTooLargeError",
     "RuntimeNotReadyError",
     "SANDBOX_FS_ROOTS",
@@ -33,6 +33,7 @@
     "STREAM_OBSERVATION_MAX_MS",
     "SessionNotReadyError",
     "SessionStartError",
+    "TURN_END_LEDGER_LAG_MS",
     "__getConfigResolver",
     "__setConfigResolver",
     "abortErrorReason",
@@ -50,6 +51,7 @@
     "assignTicket",
     "attachGroupToProject",
     "authenticatedFetch",
+    "authorizePreviewUrl",
     "backendApi",
     "bindSlackIdentity",
     "bindTeamsIdentity",
@@ -101,6 +103,7 @@
     "confirmCheckoutSession",
     "connectEmail",
     "connectSlack",
+    "connectionIsFaulted",
     "convertPresentationToGoogleSlides",
     "convertRuntimePresentation",
     "copyFile",
@@ -209,6 +212,7 @@
     "featureFlags",
     "fetchAccountStateWithToken",
     "fetchAccountsWithToken",
+    "fetchAttachmentPart",
     "fetchCostExportCsv",
     "fetchProjectArchive",
     "fetchProjectsForAccountWithToken",
@@ -345,8 +349,6 @@
     "getPublicSessionShareMessages",
     "getPublicShareByToken",
     "getPublicTemplate",
-    "getPublicVoiceJoin",
-    "getPublicVoiceTranscript",
     "getQuestionForTool",
     "getReferralCode",
     "getReferralStats",
@@ -396,7 +398,6 @@
     "getUsageRollup",
     "getUserRolesWithToken",
     "getVersionDiff",
-    "getVoiceTranscript",
     "getWorkingState",
     "grantSandboxProjectAccess",
     "grantSecretToAgent",
@@ -420,6 +421,7 @@
     "isAgentPart",
     "isAppRouteUrl",
     "isAttachment",
+    "isAttachmentPartRef",
     "isBillingError",
     "isCompactionPart",
     "isConfigured",
@@ -590,6 +592,7 @@
     "probeEffectivePermissions",
     "probePreviewPort",
     "projectCompacting",
+    "projectSessionConnection",
     "projectSessionStartSeed",
     "projectWorking",
     "provisionProject",
@@ -694,7 +697,6 @@
     "setGitHubAppPat",
     "setImpersonationSession",
     "setMaintenanceConfig",
-    "setMeetBotName",
     "setMemberSuperAdmin",
     "setMfaRequired",
     "setModelDefault",
@@ -747,7 +749,6 @@
     "toWorkspaceRelative",
     "toolInfo",
     "toolViewModel",
-    "transcribeAudio",
     "triggerSandboxUpdate",
     "triggersRequest",
     "turnHasSteps",
@@ -836,6 +837,7 @@
     "abortOpenCodeSession",
     "adminAccountLookupPath",
     "adminAccountOverridesPath",
+    "adminAccountSubscriptionPath",
     "adminImpersonateRevokePath",
     "adminMemberRolePath",
     "agentScopedModelSelectionKey",
@@ -1004,6 +1006,7 @@
     "useAdminAccountLedger",
     "useAdminAccountProjects",
     "useAdminAccountSandboxes",
+    "useAdminAccountSubscription",
     "useAdminAccountUsers",
     "useAdminAccounts",
     "useAdminActivityAnalytics",
@@ -1142,6 +1145,7 @@
     "useOpenCodeSkills",
     "useOpenCodeToolIds",
     "useOpenCodeTools",
+    "useOpenCodeVcsDiff",
     "useOpsOverview",
     "usePatchProject",
     "usePermissionSelfHeal",
@@ -1192,6 +1196,7 @@
     "useRuntimeSessionTodo",
     "useRuntimeSessions",
     "useRuntimeStore",
+    "useRuntimeVcsDiff",
     "useSandboxConnectionStore",
     "useSandboxRuntimeReload",
     "useSandboxServiceAction",
@@ -1265,18 +1270,8 @@
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
-  "./server": [
-    "createScopedKortix",
-    "forwardKortixRequest",
-    "getScopedConfig",
-    "runWithKortix"
-  ],
-  "./internal/sync-store": [
-    "Binary",
-    "ascendingId",
-    "sameSessionStatus",
-    "useSyncStore"
-  ],
+  "./server": ["createScopedKortix", "forwardKortixRequest", "getScopedConfig", "runWithKortix"],
+  "./internal/sync-store": ["Binary", "ascendingId", "sameSessionStatus", "useSyncStore"],
   "./internal/server-store": [
     "deriveSubdomainOpts",
     "getActiveDbSandboxId",
@@ -1299,9 +1294,7 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./internal/opencode-pending-store": [
-    "useOpenCodePendingStore"
-  ],
+  "./internal/opencode-pending-store": ["useOpenCodePendingStore"],
   "./internal/idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
@@ -1429,7 +1422,6 @@
   "./projects-client": [
     "FEATURE_FLAG_KEYS",
     "PublicSessionShareError",
-    "PublicVoiceJoinError",
     "SessionStartError",
     "acceptAccountInvite",
     "actReviewItem",
@@ -1605,8 +1597,6 @@
     "getProrationPreview",
     "getPublicSessionShare",
     "getPublicSessionShareMessages",
-    "getPublicVoiceJoin",
-    "getPublicVoiceTranscript",
     "getReferralCode",
     "getReferralStats",
     "getReviewItem",
@@ -1626,7 +1616,6 @@
     "getTemplate",
     "getUsageRollup",
     "getVersionDiff",
-    "getVoiceTranscript",
     "grantSecretToAgent",
     "holdSessionPrompts",
     "importSsoProviderFromMetadata",
@@ -1796,7 +1785,6 @@
     "setEnterpriseDemo",
     "setGatewayBudget",
     "setGatewayRoutingPolicy",
-    "setMeetBotName",
     "setMemberSuperAdmin",
     "setMfaRequired",
     "setModelDefault",
@@ -1820,7 +1808,6 @@
     "submitReviewItem",
     "syncConnectors",
     "syncSubscription",
-    "transcribeAudio",
     "updateAccountAuditWebhook",
     "updateAccountMemberRole",
     "updateAccountName",
@@ -1859,15 +1846,8 @@
     "validateToken",
     "verifyGatewayProvider"
   ],
-  "./feature-flags": [
-    "featureFlags",
-    "parseFlagOverride"
-  ],
-  "./fresh-sessions": [
-    "clearSessionFresh",
-    "isSessionFresh",
-    "markSessionFresh"
-  ],
+  "./feature-flags": ["featureFlags", "parseFlagOverride"],
+  "./fresh-sessions": ["clearSessionFresh", "isSessionFresh", "markSessionFresh"],
   "./instance-routes": [
     "ACTIVE_INSTANCE_COOKIE",
     "INSTANCE_SCOPED_ROUTES",
@@ -1965,11 +1945,7 @@
     "submitSecretSetupLink",
     "triggerSandboxUpdate"
   ],
-  "./event-stream": [
-    "heartbeatGapEvent",
-    "narrowChatEvent",
-    "openEventStream"
-  ],
+  "./event-stream": ["heartbeatGapEvent", "narrowChatEvent", "openEventStream"],
   "./files": [
     "SANDBOX_FS_ROOTS",
     "copyFile",
@@ -2004,7 +1980,9 @@
     "SERVER_COMPACTION_REVALIDATE_MS",
     "SERVER_OBSERVATION_MAX_MS",
     "STREAM_OBSERVATION_MAX_MS",
+    "TURN_END_LEDGER_LAG_MS",
     "appendPreviewToken",
+    "authorizePreviewUrl",
     "buildPresentationTemplateImageUrl",
     "buildPresentationTemplatePdfUrl",
     "buildPreviewAuthEndpoint",
@@ -2016,6 +1994,7 @@
     "buildWebProxyUrl",
     "classifyPreviewProbeStatus",
     "compactionExpiryAtMs",
+    "connectionIsFaulted",
     "convertRuntimePresentation",
     "countLiveInboxPrompts",
     "detectLocalhostUrls",
@@ -2040,11 +2019,13 @@
     "parseWebProxyUrl",
     "probePreviewPort",
     "projectCompacting",
+    "projectSessionConnection",
     "projectWorking",
     "proxyLocalhostUrl",
     "proxyUrlToInternal",
     "rewriteLocalhostUrl",
     "serverCompactionRevalidateAtMs",
+    "stripTrailingSlashes",
     "toInternalUrl",
     "workingExpiryAtMs"
   ],
@@ -2072,6 +2053,7 @@
     "proxyLocalhostUrl",
     "proxyUrlToInternal",
     "rewriteLocalhostUrl",
+    "stripTrailingSlashes",
     "toInternalUrl"
   ],
   "./message-queue": [
@@ -2152,12 +2134,7 @@
     "turnHasSteps",
     "unwrapError"
   ],
-  "./sync-store": [
-    "Binary",
-    "ascendingId",
-    "sameSessionStatus",
-    "useSyncStore"
-  ],
+  "./sync-store": ["Binary", "ascendingId", "sameSessionStatus", "useSyncStore"],
   "./server-store": [
     "deriveSubdomainOpts",
     "getActiveDbSandboxId",
@@ -2180,9 +2157,7 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./opencode-pending-store": [
-    "useOpenCodePendingStore"
-  ],
+  "./opencode-pending-store": ["useOpenCodePendingStore"],
   "./idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",

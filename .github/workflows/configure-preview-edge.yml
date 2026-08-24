@@ -1,0 +1,364 @@
+name: Configure Sandbox Preview Edge
+
+# Provisions the wildcard origin every sandbox preview is served on:
+# `{env}-p{port}-{sandbox}.p.kortix.com`. One dispatch is idempotent — it
+# creates what is missing and verifies what already exists.
+#
+# Why an origin per preview at all: an app served under a path prefix escapes it
+# the moment it emits anything root-absolute (`<a href="/learn">`,
+# `fetch('/api')`, `pushState`, a service worker, a WebSocket). Only a real
+# origin makes an arbitrary app work unmodified. See
+# apps/api/src/sandbox-proxy/preview-hosts.ts.
+#
+# Sibling of configure-apps-edge.yml, which does the same for `*.apps.kortix.com`.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: configure-preview-edge
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC -> AWS, to read each environment's API_KEY_SECRET
+
+jobs:
+  configure:
+    name: Configure and verify the preview edge
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Account: Workers Scripts Write. kortix.com zone: DNS Write,
+      # Workers Routes Write, SSL and Certificates Write, and Zone Read.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+      # 192.0.2.1 is TEST-NET-1 and never routable: the Worker answers every
+      # request on this hostname, so the record exists only to make the name
+      # resolve and be proxied. Same target the Apps wildcard uses.
+      PREVIEW_DNS_NAME: '*.p.kortix.com'
+      PREVIEW_DNS_TARGET: '192.0.2.1'
+      PREVIEW_CERT_HOST: '*.p.kortix.com'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate Cloudflare configuration
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::${name} is not configured."
+              exit 1
+            fi
+          done
+
+      - name: Verify Worker route
+        run: |
+          set -euo pipefail
+          routes="$({
+            curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/workers/routes"
+          })"
+          jq -e '
+            .success == true and
+            any(.result[]; .pattern == "*.p.kortix.com/*" and .script == "kortix-preview-router")
+          ' <<<"$routes"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+          aws-region: us-west-2
+
+      - name: Sync each environment's edge secret from its own env blob
+        working-directory: infra/cloudflare/workers/preview-router
+        run: |
+          set -euo pipefail
+          # The API verifies the edge signature with KORTIX_PREVIEW_EDGE_SECRET,
+          # falling back to API_KEY_SECRET (see shared/edge-signature.ts). Rather
+          # than introduce a new secret that has to be copied into two systems by
+          # hand — and drift — read each environment's own API_KEY_SECRET from
+          # the Secrets Manager blob that already feeds its ECS tasks, and push
+          # that as the Worker secret. Nothing is printed, and no value is ever
+          # written to a file.
+          for pair in "dev:kortix-dev-env:DEV_EDGE_SECRET" \
+                      "staging:kortix-staging-env:STAGING_EDGE_SECRET" \
+                      "prod:kortix-prod-env:PROD_EDGE_SECRET"; do
+            env_name="${pair%%:*}"; rest="${pair#*:}"
+            blob="${rest%%:*}"; secret_name="${rest#*:}"
+            if ! value="$(aws secretsmanager get-secret-value \
+                  --secret-id "$blob" --query SecretString --output text 2>/dev/null)"; then
+              echo "::warning::$blob is not readable — $env_name previews will answer 503 until $secret_name is set."
+              continue
+            fi
+            key="$(jq -r '.API_KEY_SECRET // empty' <<<"$value")"
+            if [ -z "$key" ]; then
+              echo "::warning::$blob has no API_KEY_SECRET — skipping $secret_name."
+              continue
+            fi
+            printf '%s' "$key" | npx --yes wrangler@4.34.0 secret put "$secret_name" >/dev/null
+            echo "synced $secret_name from $blob"
+          done
+
+          secrets="$(npx --yes wrangler@4.34.0 secret list --format json)"
+          jq -e '
+            map(.name) | (index("DEV_EDGE_SECRET") != null)
+          ' <<<"$secrets"
+          for name in STAGING_EDGE_SECRET PROD_EDGE_SECRET; do
+            if ! jq -e --arg n "$name" 'any(.[]; .name == $n)' <<<"$secrets" >/dev/null; then
+              echo "::warning::$name is not set — that environment's previews will answer 503."
+            fi
+          done
+
+      - name: Reserve preview response headers for the Worker
+        run: |
+          set -euo pipefail
+          # Cloudflare response-header transforms run AFTER Workers. A broad
+          # zone rule that sets Content-Security-Policy or X-Frame-Options would
+          # therefore override what the preview serves — and the session panel
+          # embeds previews in an iframe, so a `frame-ancestors` it did not
+          # choose blocks them. Exclude preview hosts from any such rule.
+          api="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/rulesets"
+          phase="$api/phases/http_response_headers_transform/entrypoint"
+          auth=(--header "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+
+          # Advisory, not fatal. This only matters if a zone rule actually sets
+          # Content-Security-Policy or X-Frame-Options; if the credentials
+          # cannot read Transform Rules we say so and let the run continue,
+          # because the final probe below reads the real response headers and
+          # would show an unwanted frame-ancestors directly.
+          if ! current="$(curl --fail-with-body --silent --show-error "${auth[@]}" "$phase")"; then
+            echo "::warning::Cannot read zone Transform Rules with this token — skipping the preview-host exclusion. Verify a preview response carries no zone-injected CSP/X-Frame-Options."
+            exit 0
+          fi
+          jq -e '.success == true and (.result.id | type == "string")' <<<"$current"
+
+          body="$(jq -c '
+            def owns_frame_header:
+              any(.action_parameters.headers.set[]?;
+                ((.name // "") | ascii_downcase) == "content-security-policy" or
+                ((.name // "") | ascii_downcase) == "x-frame-options"
+              ) or
+              any(.action_parameters.headers.remove[]?;
+                ((.name // "") | ascii_downcase) == "content-security-policy" or
+                ((.name // "") | ascii_downcase) == "x-frame-options"
+              );
+            .result
+            | .rules |= map(
+                if owns_frame_header and
+                  ((.expression // "") | contains("ends_with(http.host, \".p.kortix.com\")") | not)
+                then .expression = "(" + .expression + ") and not ends_with(http.host, \".p.kortix.com\")"
+                else .
+                end
+              )
+            | {description, rules}
+          ' <<<"$current")"
+
+          ruleset_id="$(jq -er '.result.id' <<<"$current")"
+          if ! updated="$(curl --fail-with-body --silent --show-error \
+            --request PUT "${auth[@]}" \
+            --header 'Content-Type: application/json' \
+            --data "$body" \
+            "$api/$ruleset_id")"; then
+            echo "::warning::Cannot write zone Transform Rules with this token — preview hosts are not excluded from CSP/X-Frame-Options rules."
+            exit 0
+          fi
+          jq -e '
+            .success == true and
+            all(
+              .result.rules[]
+              | select(
+                  any(.action_parameters.headers.set[]?;
+                    ((.name // "") | ascii_downcase) == "content-security-policy" or
+                    ((.name // "") | ascii_downcase) == "x-frame-options"
+                  ) or
+                  any(.action_parameters.headers.remove[]?;
+                    ((.name // "") | ascii_downcase) == "content-security-policy" or
+                    ((.name // "") | ascii_downcase) == "x-frame-options"
+                  )
+                );
+              (.expression // "") | contains("ends_with(http.host, \".p.kortix.com\")")
+            )
+          ' <<<"$updated"
+
+      - name: Create or verify proxied wildcard DNS
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records"
+          records="$({
+            curl --fail-with-body --silent --show-error --get \
+              --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              --data-urlencode "name=$PREVIEW_DNS_NAME" \
+              "$api"
+          })"
+          jq -e '.success == true' <<<"$records"
+          count="$(jq '.result | length' <<<"$records")"
+
+          if [ "$count" = 0 ]; then
+            body="$(jq -n \
+              --arg name "$PREVIEW_DNS_NAME" \
+              --arg content "$PREVIEW_DNS_TARGET" \
+              '{type:"A", name:$name, content:$content, ttl:1, proxied:true, comment:"Sandbox preview origins - kortix-preview-router Worker ingress"}')"
+            created="$({
+              curl --fail-with-body --silent --show-error \
+                --request POST \
+                --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data "$body" \
+                "$api"
+            })"
+            jq -e '
+              .success == true and
+              .result.type == "A" and
+              .result.name == "*.p.kortix.com" and
+              .result.proxied == true
+            ' <<<"$created"
+            exit 0
+          fi
+
+          if [ "$count" != 1 ]; then
+            echo "::error::Expected at most one $PREVIEW_DNS_NAME record; found $count."
+            exit 1
+          fi
+          jq -e \
+            --arg name "$PREVIEW_DNS_NAME" \
+            --arg content "$PREVIEW_DNS_TARGET" '
+              .result[0].type == "A" and
+              .result[0].name == $name and
+              .result[0].content == $content and
+              .result[0].proxied == true
+            ' <<<"$records"
+
+      - name: Create or verify nested wildcard certificate
+        run: |
+          set -euo pipefail
+          # Universal SSL covers `kortix.com` and `*.kortix.com` only — one label
+          # deep. A preview host is two (`<label>.p.kortix.com`), so it needs an
+          # advanced certificate pack or every request fails the TLS handshake
+          # before it reaches the Worker.
+          api="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/ssl/certificate_packs"
+          auth=(--header "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+
+          list_packs() {
+            curl --fail-with-body --silent --show-error "${auth[@]}" "$api"
+          }
+
+          packs="$(list_packs)"
+          jq -e '.success == true' <<<"$packs"
+          pack_id="$(jq -r --arg host "$PREVIEW_CERT_HOST" '
+            [.result[]
+              | select(.type == "advanced")
+              | select((.hosts // []) | index($host))
+              | select(.status != "expired" and .status != "deleted" and .status != "pending_deletion")
+            ][0].id // empty
+          ' <<<"$packs")"
+
+          if [ -n "$pack_id" ]; then
+            status="$(jq -r --arg id "$pack_id" '.result[] | select(.id == $id) | .status' <<<"$packs")"
+            if [ "$status" = validation_timed_out ]; then
+              restarted="$({
+                curl --fail-with-body --silent --show-error \
+                  --request PATCH \
+                  "${auth[@]}" \
+                  --header 'Content-Type: application/json' \
+                  --data '{"cloudflare_branding":false}' \
+                  "$api/$pack_id"
+              })"
+              jq -e '.success == true' <<<"$restarted"
+            fi
+          else
+            order="$(jq -n '{
+              type: "advanced",
+              hosts: ["kortix.com", "p.kortix.com", "*.p.kortix.com"],
+              validation_method: "txt",
+              validity_days: 90,
+              certificate_authority: "lets_encrypt",
+              cloudflare_branding: false
+            }')"
+            created="$({
+              curl --fail-with-body --silent --show-error \
+                --request POST \
+                "${auth[@]}" \
+                --header 'Content-Type: application/json' \
+                --data "$order" \
+                "$api/order"
+            })"
+            jq -e '.success == true' <<<"$created"
+            pack_id="$(jq -er '.result.id' <<<"$created")"
+          fi
+
+          for attempt in $(seq 1 90); do
+            packs="$(list_packs)"
+            status="$(jq -r --arg id "$pack_id" '.result[] | select(.id == $id) | .status' <<<"$packs")"
+            case "$status" in
+              active)
+                jq -e --arg id "$pack_id" --arg host "$PREVIEW_CERT_HOST" '
+                  any(.result[];
+                    .id == $id and
+                    .status == "active" and
+                    ((.hosts // []) | index($host))
+                  )
+                ' <<<"$packs"
+                exit 0
+                ;;
+              validation_timed_out|expired|deleted)
+                echo "::error::Certificate pack $pack_id reached terminal status $status."
+                exit 1
+                ;;
+            esac
+            if [ "$attempt" = 90 ]; then
+              echo "::error::Certificate pack $pack_id stayed in status $status for 15 minutes."
+              exit 1
+            fi
+            sleep 10
+          done
+
+      - name: Verify public DNS and TLS routing
+        run: |
+          set -euo pipefail
+          # A syntactically valid preview host, probed with NO credential. It
+          # must reach the API through the signed Worker route and come back
+          # 401 "Unauthorized" as JSON — which proves DNS, TLS, the Worker, the
+          # edge signature and the API host matcher all agree, and that a
+          # machine still gets JSON rather than the browser sign-in page.
+          #
+          # 401 and not 404: an anonymous request is refused BEFORE the sandbox
+          # lookup, because resolving a host label cannot use an index (see
+          # sandbox-proxy/preview-origin.ts). Reaching the refusal is the proof;
+          # whether the sandbox exists is deliberately not asked.
+          host="dev-p8081-sbx-0000000000000000000000000.p.kortix.com"
+          for attempt in $(seq 1 30); do
+            answer="$({
+              curl --silent --show-error --get \
+                --header 'accept: application/dns-json' \
+                --data-urlencode "name=$host" \
+                --data-urlencode 'type=A' \
+                'https://cloudflare-dns.com/dns-query'
+            })"
+            if jq -e 'any(.Answer[]?; .type == 1)' <<<"$answer" >/dev/null; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              echo "::error::$host did not resolve after 5 minutes."
+              exit 1
+            fi
+            sleep 10
+          done
+
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          status="$({
+            curl --silent --show-error \
+              --dump-header "$headers" \
+              --output "$body" \
+              --write-out '%{http_code}' \
+              "https://$host/"
+          })"
+          echo "HTTP status: $status"
+          grep -Ei '^x-kortix-preview-environment:' "$headers" || true
+          jq -c . "$body" || true
+          test "$status" = 401
+          tr -d '\r' < "$headers" | grep -Eiq '^x-kortix-preview-environment: dev$'
+          tr -d '\r' < "$headers" | grep -Eiq '^content-type: application/json'
+          jq -e '.error == "Unauthorized"' "$body"

@@ -22,6 +22,7 @@ import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
+  projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
   workspaceModeFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
@@ -84,6 +85,11 @@ export async function resumeStoppedSandbox(
 ): Promise<boolean> {
   if (!row.externalId) return false;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) return false;
+  if (
+    row.metadata?.stopReason === 'runtime_boot_failed' ||
+    row.metadata?.stopReason === 'runtime_wake_failed'
+  )
+    return false;
 
   const externalId = row.externalId;
   const now = new Date();
@@ -115,6 +121,8 @@ export async function resumeStoppedSandbox(
           - 'runtimeWakeLateStartStoppedAt'
           - 'opencodeReadyWaitStartedAt'
           - 'opencodeReadyWaitReason'
+          - 'opencodeUnreachableWaitStartedAt'
+          - 'opencodeNotReadyWaitStartedAt'
         ) || ${JSON.stringify(wakePatch)}::jsonb`,
     })
     .where(
@@ -347,6 +355,10 @@ export async function allocateRuntimeOnOpen(
     providerName,
     baseRef: session.baseRef ?? loaded.row.defaultBranch,
     agentName: session.agentName ?? 'default',
+    allowProjectImage: projectImageAllowedForSession(
+      session.agentName,
+      workspaceModeFromSessionMetadata(session.metadata),
+    ),
     sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
     runtimeMetadata,
     sessionMetadata,
@@ -364,6 +376,7 @@ export async function allocateRuntimeOnOpen(
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+        restoreSessionBranch: true,
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row),
     beforeActive: rehydrate
@@ -394,6 +407,18 @@ export type {
  * the client never has to know the proxy URL scheme. This is the one place the
  * per-session runtime URL is shaped; the SDK consumes it opaquely.
  */
+/**
+ * The CONTROL transport address for a session's runtime: the OpenCode/daemon
+ * REST channel, always the path proxy.
+ *
+ * This is deliberately NOT a preview origin and must never be used to build
+ * one. It is called per turn by programmatic clients holding a bearer token;
+ * resolving it through an origin would make every such request re-establish a
+ * host-scoped session (a non-indexed sandbox-label lookup) and would put turn
+ * delivery behind wildcard DNS, the certificate pack and the edge Worker.
+ * Browser-facing URLs come from `previewOriginFor` / `previewUrlTemplate`
+ * instead — see sandbox-proxy/preview-hosts.ts.
+ */
 export function sessionRuntimeUrlPath(externalId: string): string {
   return `/p/${externalId}/8000`;
 }
@@ -401,7 +426,12 @@ export function sessionRuntimeUrlPath(externalId: string): string {
 const STALE_PENDING_PROVISIONING_MS = 10 * 60 * 1000;
 const STALE_STARTED_PROVISIONING_MS = 5 * 60 * 1000;
 const STALE_RUNTIME_WAKE_MS = RUNTIME_WAKE_GRACE_MS;
-const STALE_OPENCODE_READY_MS = 5 * 60 * 1000;
+// A provider-running box normally binds the daemon within seconds. A daemon
+// that remains unreachable for 30 seconds needs an explicit restart, not five
+// minutes of repeated 8-second /start long-polls. Once the daemon answers, give
+// OpenCode itself a wider window to finish booting.
+const STALE_RUNTIME_UNREACHABLE_MS = 30_000;
+const STALE_OPENCODE_NOT_READY_MS = 90_000;
 
 function parseTimestampMs(value: unknown): number | null {
   if (value instanceof Date) return value.getTime();
@@ -510,15 +540,21 @@ async function markOpencodeReadyWaitStarted(
   reason: string,
 ): Promise<void> {
   const metadata = sandboxMetadata(row);
-  if (typeof metadata.opencodeReadyWaitStartedAt === 'string') return;
+  const reasonClockKey =
+    reason === 'unreachable'
+      ? 'opencodeUnreachableWaitStartedAt'
+      : 'opencodeNotReadyWaitStartedAt';
+  if (typeof metadata[reasonClockKey] === 'string') return;
   try {
+    const startedAt = new Date().toISOString();
     await db
       .update(sessionSandboxes)
       .set({
         metadata: {
           ...metadata,
-          opencodeReadyWaitStartedAt: new Date().toISOString(),
+          opencodeReadyWaitStartedAt: startedAt,
           opencodeReadyWaitReason: reason,
+          [reasonClockKey]: startedAt,
         },
         updatedAt: new Date(),
       })
@@ -543,7 +579,9 @@ async function clearRuntimeReadinessClocks(
           - ${RUNTIME_READINESS_CLOCK_KEYS[2]}
           - ${RUNTIME_READINESS_CLOCK_KEYS[3]}
           - ${RUNTIME_READINESS_CLOCK_KEYS[4]}
-          - ${RUNTIME_READINESS_CLOCK_KEYS[5]}`,
+          - ${RUNTIME_READINESS_CLOCK_KEYS[5]}
+          - ${RUNTIME_READINESS_CLOCK_KEYS[6]}
+          - ${RUNTIME_READINESS_CLOCK_KEYS[7]}`,
         updatedAt: new Date(),
       })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
@@ -624,7 +662,32 @@ function stoppedWakeResult(
     };
   }
   if (metadata.runtimeIdentityState === 'unavailable') return null;
-  if (!runtimeWakeRetryCoolingDown(metadata)) return null;
+  const wakeCoolingDown = runtimeWakeRetryCoolingDown(metadata);
+  if (
+    metadata.stopReason === 'runtime_boot_failed' ||
+    (metadata.stopReason === 'runtime_wake_failed' && !wakeCoolingDown)
+  ) {
+    return {
+      stage: 'failed',
+      agent_name: agentName ?? 'default',
+      retriable: false,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: opencodeSessionId,
+      runtime_url: sessionRuntimeUrlPath(row.externalId),
+      reason:
+        metadata.stopReason === 'runtime_wake_failed'
+          ? 'runtime_wake_failed'
+          : typeof metadata.runtimeParkReason === 'string'
+            ? metadata.runtimeParkReason
+            : 'runtime_boot_failed',
+      failure: {
+        category: 'sandbox-provider',
+        message: 'The session runtime did not become reachable. Restart the session to try again.',
+        retryable: true,
+      },
+    };
+  }
+  if (!wakeCoolingDown) return null;
   return {
     stage: 'stopped',
     agent_name: agentName ?? 'default',
@@ -1165,7 +1228,9 @@ export async function openSession(args: {
       sandboxMetadata(row),
       ensured.reason,
       Date.now(),
-      STALE_OPENCODE_READY_MS,
+      ensured.reason === 'unreachable'
+        ? STALE_RUNTIME_UNREACHABLE_MS
+        : STALE_OPENCODE_NOT_READY_MS,
     );
     if (staleBoot) {
       return preserveEstablishedRuntimeOnOpen(

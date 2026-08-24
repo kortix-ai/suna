@@ -1,5 +1,3 @@
-import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
@@ -25,7 +23,7 @@ export function Section({
   className?: string;
 }): ReactNode {
   return (
-    <section id={id} className={cn(SOLUTIONS_MEASURE, 'py-16 sm:py-24', className)}>
+    <section id={id} className={cn(SOLUTIONS_MEASURE, 'py-24 sm:py-30', className)}>
       {children}
     </section>
   );
@@ -37,33 +35,6 @@ export function SectionDivider(): ReactNode {
     <div className={SOLUTIONS_MEASURE}>
       <Separator />
     </div>
-  );
-}
-
-/** Eyebrow badge, headline, sub — the one heading block these pages use. */
-export function SectionHeading({
-  eyebrow,
-  title,
-  sub,
-  className,
-}: {
-  eyebrow: string;
-  title: string;
-  sub: string;
-  className?: string;
-}): ReactNode {
-  return (
-    <Reveal>
-      <div className={cn('max-w-3xl', className)}>
-        <Badge variant="kortix" className="rounded">
-          {eyebrow}
-        </Badge>
-        <h2 className="text-foreground mt-6 text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-          {title}
-        </h2>
-        <p className="text-muted-foreground mt-4 text-base leading-relaxed">{sub}</p>
-      </div>
-    </Reveal>
   );
 }
 

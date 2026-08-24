@@ -137,7 +137,6 @@ variable "api_secrets" {
     KORTIX_GITHUB_APP_PRIVATE_KEY   = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:KORTIX_GITHUB_APP_PRIVATE_KEY::"
     KORTIX_GITHUB_APP_SLUG          = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:KORTIX_GITHUB_APP_SLUG::"
     KORTIX_GITHUB_APP_STATE_SECRET  = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:KORTIX_GITHUB_APP_STATE_SECRET::"
-    KORTIX_GIT_PROXY                = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:KORTIX_GIT_PROXY::"
     KORTIX_URL                      = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:KORTIX_URL::"
     KORTIX_WARM_SNAPSHOT_ENABLED    = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:KORTIX_WARM_SNAPSHOT_ENABLED::"
     KORTIX_YOLO_URL                 = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:KORTIX_YOLO_URL::"

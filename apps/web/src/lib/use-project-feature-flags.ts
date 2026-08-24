@@ -28,13 +28,13 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
   const teams = useFeatureFlag(projectId, 'teams');
-  const voice = useFeatureFlag(projectId, 'voice');
   const llmGateway = useFeatureFlag(projectId, 'llm_gateway');
   const reviewCenter = useFeatureFlag(projectId, 'review_center');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
   const monitors = useFeatureFlag(projectId, 'monitors');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
+  const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
 
   return {
     flags: {
@@ -43,15 +43,15 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       connectors_api_discover: connectorsApiDiscover.enabled,
       agentmail_email: agentmailEmail.enabled,
       teams: teams.enabled,
-      voice: voice.enabled,
       llm_gateway: llmGateway.enabled,
       review_center: reviewCenter.enabled,
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,
       monitors: monitors.enabled,
       warm_sessions: warmSessions.enabled,
+      secrets_egress: secretsEgress.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: warmSessions.isLoading,
+    isLoading: secretsEgress.isLoading,
   };
 }

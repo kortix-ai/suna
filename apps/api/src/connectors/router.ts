@@ -1,7 +1,7 @@
 /**
  * Connector HTTP surface — one Hono router with two faces:
  *
- *   Gateway (sandbox-facing, KORTIX_CLI_TOKEN):
+ *   Gateway (sandbox-facing, KORTIX_TOKEN):
  *     GET  /v1/connectors/catalog             — catalog the session can use
  *     POST /v1/connectors/call                — { connector, action, args } → run
  *

@@ -25,12 +25,23 @@ const {
   sessionBootByTemplateIdEnabled,
 } = await import('./session-sandbox');
 
-const pinned = { activeProvider: 'platinum', activeExternalTemplateId: 'tpl_pinned' };
+const pinned = {
+  activeProvider: 'platinum',
+  activeExternalTemplateId: 'tpl_pinned',
+  activeSnapshotName: 'snap-project-current',
+};
 
 describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
-  test('boots by the pinned id when the active provider matches and id-boot is supported', () => {
+  test('boots by the pinned id when provider and image names match', () => {
     expect(
-      decideSessionBoot({ killSwitchOn: true, routing: pinned, providerName: 'platinum', providerSupportsIdBoot: true, imageIsDefault: true }),
+      decideSessionBoot({
+        killSwitchOn: true,
+        routing: pinned,
+        providerName: 'platinum',
+        providerSupportsIdBoot: true,
+        imageIsDefault: true,
+        imageSnapshotName: 'snap-project-current',
+      }),
     ).toEqual({ bootByTemplateId: 'tpl_pinned' });
   });
 
@@ -46,13 +57,98 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
     ).toEqual({ bootByTemplateId: null });
   });
 
+  test('a per-project cold image boots by the activated id when its image name matches', () => {
+    expect(
+      decideSessionBoot({
+        killSwitchOn: true,
+        routing: pinned,
+        providerName: 'platinum',
+        providerSupportsIdBoot: true,
+        imageIsDefault: true,
+        imageIsProjectImage: true,
+        imageSnapshotName: 'snap-project-current',
+      }),
+    ).toEqual({ bootByTemplateId: 'tpl_pinned' });
+  });
+
+  test('a per-project cold image name-boots when its image name differs from the activated image', () => {
+    expect(
+      decideSessionBoot({
+        killSwitchOn: true,
+        routing: pinned,
+        providerName: 'platinum',
+        providerSupportsIdBoot: true,
+        imageIsDefault: true,
+        imageIsProjectImage: true,
+        imageSnapshotName: 'snap-project-newer',
+      }),
+    ).toEqual({ bootByTemplateId: null });
+  });
+
+  test('a per-project cold image name-boots when activated image metadata is missing', () => {
+    expect(
+      decideSessionBoot({
+        killSwitchOn: true,
+        routing: { ...pinned, activeSnapshotName: null },
+        providerName: 'platinum',
+        providerSupportsIdBoot: true,
+        imageIsDefault: true,
+        imageIsProjectImage: true,
+        imageSnapshotName: 'snap-project-current',
+      }),
+    ).toEqual({ bootByTemplateId: null });
+  });
+
+  test('a resolved base image never boots an activated project-image id with a different name', () => {
+    expect(
+      decideSessionBoot({
+        killSwitchOn: true,
+        routing: pinned,
+        providerName: 'platinum',
+        providerSupportsIdBoot: true,
+        imageIsDefault: true,
+        imageIsProjectImage: false,
+        imageSnapshotName: 'snap-standard-base',
+      }),
+    ).toEqual({ bootByTemplateId: null });
+  });
+
+  test('a named activation requires the resolved image name', () => {
+    expect(
+      decideSessionBoot({
+        killSwitchOn: true,
+        routing: pinned,
+        providerName: 'platinum',
+        providerSupportsIdBoot: true,
+        imageIsDefault: true,
+      }),
+    ).toEqual({ bootByTemplateId: null });
+  });
+
+  test('a legacy activation without recoverable image metadata fails closed to name boot', () => {
+    expect(
+      decideSessionBoot({
+        killSwitchOn: true,
+        routing: { ...pinned, activeSnapshotName: null },
+        providerName: 'platinum',
+        providerSupportsIdBoot: true,
+        imageIsDefault: true,
+        imageSnapshotName: 'snap-standard-base',
+      }),
+    ).toEqual({ bootByTemplateId: null });
+  });
+
   test('rollback: a leftover Platinum id pin does NOT id-boot a Daytona session (name-boot)', () => {
     // Rolled back to Daytona: the session runs on Daytona, which has no id-boot,
     // so a stale Platinum id in the pin can never brick boot.
     expect(
       decideSessionBoot({
         killSwitchOn: true,
-        routing: { activeProvider: 'daytona', activeExternalTemplateId: 'tpl_platinum_leftover' },
+        routing: {
+          activeProvider: 'daytona',
+          activeExternalTemplateId: 'tpl_platinum_leftover',
+          activeSnapshotName: null,
+        },
         providerName: 'daytona',
         providerSupportsIdBoot: false,
       }),
@@ -73,7 +169,11 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
     expect(
       decideSessionBoot({
         killSwitchOn: true,
-        routing: { activeProvider: 'platinum', activeExternalTemplateId: null },
+        routing: {
+          activeProvider: 'platinum',
+          activeExternalTemplateId: null,
+          activeSnapshotName: null,
+        },
         providerName: 'platinum',
         providerSupportsIdBoot: true,
       }),
@@ -89,13 +189,16 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
     ).toEqual({ bootByTemplateId: null });
   });
 
-  test("disabledForSession (after a GC'd-pin 404 fallback) → name boot", () => {
+  test('disabledForSession prevents an exact project-image id boot during FAST rollback', () => {
     expect(
       decideSessionBoot({
         killSwitchOn: true,
         routing: pinned,
         providerName: 'platinum',
         providerSupportsIdBoot: true,
+        imageIsDefault: true,
+        imageIsProjectImage: true,
+        imageSnapshotName: 'snap-project-current',
         disabledForSession: true,
       }),
     ).toEqual({ bootByTemplateId: null });

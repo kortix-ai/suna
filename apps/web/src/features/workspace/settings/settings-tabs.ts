@@ -164,7 +164,6 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
   // no longer exists.
   marketplace: (p) => `/projects/${p}/customize`,
   review: (p) => `/projects/${p}/config?section=review`,
-  voice: (p) => `/projects/${p}/config?section=voice`,
   // Renamed on the move: the row is called "Feature flags" now.
   experimental: (p) => `/projects/${p}/config?section=feature-flags`,
   'feature-flags': (p) => `/projects/${p}/config?section=feature-flags`,

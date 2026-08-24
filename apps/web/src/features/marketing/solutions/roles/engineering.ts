@@ -11,7 +11,7 @@ export const engineering: RoleContent = {
 
   hero: {
     title: 'The work that never reaches the top of the queue.',
-    sub: 'Every session boots its own cloud computer, clones the repo, and cuts its own branch. The agent reproduces the failure, writes the patch, runs the suite, and opens a change request. You review a diff, not a transcript.',
+    sub: 'Each session gets its own cloud computer and its own branch. The agent reproduces the bug, writes the fix, runs the tests, and opens a change request. You review a diff.',
     microline: 'One machine per session · one branch per session · merge is default-deny',
     specs: [
       { k: 'Runs on', v: 'A real Linux machine with a shell' },
@@ -23,7 +23,7 @@ export const engineering: RoleContent = {
 
   handoff: {
     title: 'The backlog you have stopped pretending you will get to.',
-    sub: 'Not the architecture. The long tail underneath it — the reproductions, the bumps, the flakes, the mechanical migration across two hundred files. Work that is well-specified, individually small, and collectively the reason nothing else ships.',
+    sub: 'Not the rewrites. The small, well-defined work underneath them: reproductions, dependency bumps, flaky tests, a rename across two hundred files.',
     jobs: [
       {
         id: 'repro',
@@ -60,7 +60,7 @@ export const engineering: RoleContent = {
 
   output: {
     title: 'A diff on a branch, with the suite already run.',
-    sub: 'The output of an engineering session is the thing engineering already reviews. There is no new artifact to learn, no summary to trust — the change is the change, and the tests either passed on the machine that wrote it or they did not.',
+    sub: 'What comes back is a diff on a branch, with the tests already run on the machine that wrote it. There is nothing new to learn how to read.',
     artifact: {
       kind: 'diff',
       file: 'kortix/session-9f4c2b7e · retry backoff jitter',
@@ -102,7 +102,7 @@ export const engineering: RoleContent = {
 
   reach: {
     title: 'The repo, the tracker, the thread.',
-    sub: 'An engineering session already has the strongest reach on the platform, because most of the work is inside the repo it cloned. Connectors cover the rest — and every credential is resolved on our side of the wall, never inside the machine.',
+    sub: 'Most of the work happens inside the repo the session cloned. Connectors cover the rest, and their credentials stay on our side, never inside the machine.',
     rows: [
       {
         k: 'The repo itself',
@@ -131,7 +131,7 @@ export const engineering: RoleContent = {
 
   cadence: {
     title: 'Ask now, watch the ones that matter, sleep through the rest.',
-    sub: 'The same session machinery, started three different ways. Nothing about the isolation or the review changes with the trigger.',
+    sub: 'Three ways to start the same session. The isolation and the review path do not change with the trigger.',
     modes: [
       {
         id: 'on-demand',
@@ -156,7 +156,7 @@ export const engineering: RoleContent = {
 
   control: {
     title: 'Nothing merges itself.',
-    sub: 'The interesting question about an autonomous engineer is not what it can write. It is what it can land. Here is the answer, stated exactly.',
+    sub: 'The question is not what an agent can write. It is what it can land. Here is the exact answer.',
     rows: [
       {
         id: 'merge',

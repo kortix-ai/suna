@@ -47,7 +47,7 @@
  *  - CHANNELS are a closed enum of four: `packages/manifest-schema/src/
  *    constants.ts:55` → `['slack','teams','email','voice']`. Slack is live;
  *    Teams is `TEAMS_CHANNEL_ENABLED: optBoolFalse` (`apps/api/src/config.ts:364`);
- *    email and voice are experimental, per-project opt-in. Telegram, WhatsApp,
+ *    email is experimental and per-project opt-in. Telegram, WhatsApp,
  *    SMS and Discord are NOT channels, in any tense. And `channels:` is REJECTED
  *    by the v2 manifest validator — channel routing is live project state, never
  *    repo config, so no passage may say `kortix.yaml` declares a channel.
@@ -197,9 +197,9 @@ export const channels: Passage = {
   title: 'A message in Slack starts a session.',
   paragraphs: [
     'Bind a project to Slack and a message in a thread starts a session. The agent picks up its own cloud computer, does the work, and answers in the same thread: the reply streams into one message, files move both directions, and a decision it needs from you arrives as a card with buttons.',
-    'A thread is exactly one session — a unique index in the database, not a convention two services agree to honour. Slack is the surface that is live. Microsoft Teams is code-complete behind an operator switch; email and voice are experimental and opt in per project. That is the entire list, because the platform enum is closed at four.',
+    'A thread is exactly one session — a unique index in the database, not a convention two services agree to honour. Slack is the surface that is live. Microsoft Teams is code-complete behind an operator switch; email is experimental and opt in per project. That is the entire list, because the platform enum is closed at three.',
   ],
-  facts: ['Slack, live', 'Teams behind an operator switch', 'Email and voice experimental'],
+  facts: ['Slack, live', 'Teams behind an operator switch', 'Email experimental'],
   href: '/channels',
   linkLabel: 'Channels',
 };

@@ -38,28 +38,27 @@ export function chipAriaLabel(kind: string, label: string): string {
  * One visual register for every chip. Mentions and commands share the faint
  * primary tint — the surface says "this token is structured", and the prefix
  * (`@` vs `/` from `chipPrefix`) says whether it is a reference or an
- * instruction. The tint is duplicated as `dark:bg-primary/[0.08]` on purpose:
- * an unprefixed `bg-*` does not reach into the dark variant group, and without
- * the explicit override the chip would lose its tint in dark mode only.
+ * instruction. `--primary` is a themed token, so ONE `bg-primary/[0.08]` is
+ * correct in both modes; the class carried a `dark:bg-primary/[0.08]` twin
+ * that resolved to the identical declaration and changed nothing.
  * `align-baseline` keeps the chip riding the surrounding line instead of
  * stretching it.
  *
- * `text-[0.95em]`, not `text-base sm:text-sm`. The size has to be relative
- * because this chip now sits in two type contexts: the composer's editor
- * (`text-[15px] sm:text-[14px]`) and the message bubble's `text-[0.9rem]`. A
- * fixed `text-base` is very slightly smaller than the composer's own body on
- * desktop, which is what the chip already looked like — but dropped into the
- * 14.4px bubble it would render LARGER than the sentence around it. An `em`
- * keeps the chip a fixed fraction of whatever line it lands on, so "the chip
- * looks the same in both places" holds by construction rather than by two
- * files agreeing on a pixel value.
+ * `text-[0.95em]`, not a fixed size. The size has to be relative because this
+ * chip sits in two type contexts: the composer's editor (`text-base sm:text-sm`)
+ * and the message bubble's `text-[0.9rem]`. A fixed `text-base` is very
+ * slightly smaller than the composer's own body on desktop, which is what the
+ * chip already looked like — but dropped into the 14.4px bubble it would render
+ * LARGER than the sentence around it. An `em` keeps the chip a fixed fraction
+ * of whatever line it lands on, so "the chip looks the same in both places"
+ * holds by construction rather than by two files agreeing on a pixel value.
  *
  * The `kind` parameter is kept even though every kind currently resolves to
  * the same class: callers pass it, and a future kind-specific surface changes
  * this one function rather than every call site.
  */
 export function chipClass(_kind: string): string {
-  return 'rounded-sm border-[0.5px] px-1.5 py-[0.08rem] [overflow-wrap:anywhere] font-medium whitespace-nowrap align-baseline text-[0.95em] bg-primary/[0.08] text-foreground dark:bg-primary/[0.08]';
+  return 'rounded-sm border-[0.5px] px-1.5 py-[0.08rem] [overflow-wrap:anywhere] font-medium whitespace-nowrap align-baseline text-[0.95em] bg-primary/[0.08] text-foreground';
 }
 
 /**

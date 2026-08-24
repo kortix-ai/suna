@@ -5,9 +5,18 @@ import { stripTags } from '@/test-utils/strip-tags';
 import type { App } from '@kortix/sdk';
 
 import {
+  APP_GRID_DEFAULT_DENSITY,
+  APP_GRID_DENSITY,
+  APP_GRID_DENSITY_ORDER,
+  APP_GRID_DENSITY_STORAGE_KEY,
   AppPreview,
   AppPreviewOverlay,
+  DEPLOYMENT_COPY,
+  appHost,
+  deployNotice,
+  parseAppGridDensity,
   PREVIEW_SPINNER_DELAY_MS,
+  PREVIEW_TILE_ASPECT,
   PREVIEW_VIEWPORT_HEIGHT,
   PREVIEW_VIEWPORT_WIDTH,
   previewScale,
@@ -185,8 +194,26 @@ describe('previewScale', () => {
     expect(previewScale(640, 0)).toBeNull();
   });
 
-  test('the viewport is 16:9, matching the tile, so nothing is cropped', () => {
+  test('the viewport ratio IS the tile ratio, parsed from the class itself', () => {
+    // The frame is scaled to the tile's WIDTH, so a mismatch here is dead space
+    // at the bottom of every thumbnail (viewport shorter than the tile) or a
+    // crop (taller). Reading the numbers back out of `PREVIEW_TILE_ASPECT`
+    // means changing one constant without the other fails here rather than
+    // shipping a page of letterboxed tiles.
+    const parsed = /^aspect-\[(\d+)\/(\d+)\]$/.exec(PREVIEW_TILE_ASPECT);
+    expect(parsed).not.toBeNull();
+    const [, w, h] = parsed as RegExpExecArray;
+    expect(PREVIEW_VIEWPORT_WIDTH / PREVIEW_VIEWPORT_HEIGHT).toBeCloseTo(Number(w) / Number(h), 5);
+  });
+
+  test('the tile is 16:9 landscape — the shape of the page it is a picture of', () => {
+    // A 4:5 portrait tile shipped for one day. At four columns it is a 230px
+    // strip of a 1600px-tall page: the App's whole layout at 18% scale, where
+    // every card reads as the same grey rectangle. An App is a web page, and a
+    // web page is landscape.
+    expect(PREVIEW_VIEWPORT_WIDTH).toBeGreaterThan(PREVIEW_VIEWPORT_HEIGHT);
     expect(PREVIEW_VIEWPORT_WIDTH / PREVIEW_VIEWPORT_HEIGHT).toBeCloseTo(16 / 9, 5);
+    expect(PREVIEW_TILE_ASPECT).toBe('aspect-[16/9]');
   });
 
   test('the viewport is a desktop width — a phone width would defeat the point', () => {
@@ -224,5 +251,150 @@ describe('AppPreview — the card renders a desktop viewport', () => {
     expect(html).not.toContain(`width:${PREVIEW_VIEWPORT_WIDTH}px`);
     expect(html).not.toContain('visibility:hidden');
     expect(html).toContain('size-full');
+  });
+});
+
+describe('appHost — the hostname a card reads an App by', () => {
+  test('drops the scheme every App shares and any trailing slash', () => {
+    expect(appHost('https://seed.apps.kortix.com')).toBe('seed.apps.kortix.com');
+    expect(appHost('https://seed.apps.kortix.com/')).toBe('seed.apps.kortix.com');
+    expect(appHost('http://seed.apps.kortix.com//')).toBe('seed.apps.kortix.com');
+  });
+
+  test('keeps a path, which is part of what the App serves', () => {
+    // Only a TRAILING slash is noise. `/docs` is the App.
+    expect(appHost('https://seed.apps.kortix.com/docs')).toBe('seed.apps.kortix.com/docs');
+  });
+
+  test('leaves a value that carries no scheme alone', () => {
+    expect(appHost('seed.apps.kortix.com')).toBe('seed.apps.kortix.com');
+    expect(appHost('')).toBe('');
+  });
+
+  test('strips only the leading scheme, never one that appears later', () => {
+    expect(appHost('https://seed.kortix.com/r?to=https://x.com')).toBe(
+      'seed.kortix.com/r?to=https://x.com',
+    );
+  });
+});
+
+describe('deployment copy — pipeline vocabulary never reaches the reader', () => {
+  const STATUSES = [
+    'queued',
+    'validating',
+    'building',
+    'provisioning',
+    'checking',
+    'ready',
+    'failed',
+    'cancelled',
+  ] as const;
+
+  test('every status has a label', () => {
+    // A `Record` over the union, not an if-chain — a status added to the SDK
+    // union fails the typecheck here rather than silently rendering blank.
+    for (const status of STATUSES) {
+      expect(DEPLOYMENT_COPY[status]?.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('the pipeline\'s own words for its steps never reach a label', () => {
+    // These three are the build system describing itself. "Building" and
+    // "Waiting" stay — they are ordinary English that happens to match a stage
+    // name, which is the opposite problem.
+    const JARGON = ['validating', 'provisioning', 'checking'];
+    const labels = STATUSES.map((s) => DEPLOYMENT_COPY[s].label.toLowerCase());
+    for (const word of JARGON) expect(labels).not.toContain(word);
+  });
+
+  test('tone follows outcome, not stage', () => {
+    expect(DEPLOYMENT_COPY.ready.tone).toBe('success');
+    expect(DEPLOYMENT_COPY.failed.tone).toBe('destructive');
+    expect(DEPLOYMENT_COPY.cancelled.tone).toBe('muted');
+    for (const status of ['queued', 'validating', 'building', 'provisioning', 'checking'] as const) {
+      expect(DEPLOYMENT_COPY[status].tone).toBe('warning');
+    }
+  });
+});
+
+describe('deployNotice — the header speaks only when there is news', () => {
+  const at = (status: (typeof DEPLOYMENT_COPY) extends never ? never : string) =>
+    ({ status }) as unknown as Parameters<typeof deployNotice>[0];
+
+  test('silent for the state almost every App is in almost always', () => {
+    // A finished deployment is the resting state. A "Live" badge there would be
+    // permanent chrome restating the green dot next to it.
+    expect(deployNotice(at('ready'))).toBeNull();
+    expect(deployNotice(undefined)).toBeNull();
+    // Nothing is happening and nothing is broken.
+    expect(deployNotice(at('cancelled'))).toBeNull();
+  });
+
+  test('one plain word for every in-flight stage, not five different ones', () => {
+    // The header is read at a glance while using the App; `validating` versus
+    // `provisioning` is not a distinction the reader can act on there. The
+    // version list keeps the stage-by-stage detail.
+    for (const status of ['queued', 'validating', 'building', 'provisioning', 'checking'] as const) {
+      expect(deployNotice(at(status))).toEqual({ label: 'Updating', tone: 'warning' });
+    }
+  });
+
+  test('a failure says what failed, in the reader’s terms', () => {
+    expect(deployNotice(at('failed'))).toEqual({ label: 'Update failed', tone: 'destructive' });
+  });
+});
+
+/**
+ * The third defect: the gallery decided tile size for you, and chose wrong.
+ *
+ * Four columns inside a 1024px cap is a 230px tile. There is now a default that
+ * is big — two per row — and a control that trades size for count. The default
+ * is the part under test: a preference nobody sets has to land somewhere sane.
+ */
+describe('APP_GRID_DENSITY — a default size, then a choice', () => {
+  test('the default is two per row, which is what makes a tile big', () => {
+    expect(APP_GRID_DEFAULT_DENSITY).toBe('large');
+    expect(APP_GRID_DENSITY[APP_GRID_DEFAULT_DENSITY].columns).toBe(2);
+    expect(APP_GRID_DENSITY[APP_GRID_DEFAULT_DENSITY].grid).toContain('sm:grid-cols-2');
+  });
+
+  test('the control offers every density exactly once, biggest tile first', () => {
+    expect([...APP_GRID_DENSITY_ORDER].sort()).toEqual(Object.keys(APP_GRID_DENSITY).sort());
+    const counts = APP_GRID_DENSITY_ORDER.map((key) => APP_GRID_DENSITY[key].columns);
+    expect(counts).toEqual([...counts].sort((a, b) => a - b));
+    expect(new Set(counts).size).toBe(counts.length);
+  });
+
+  test('every density starts at one column and writes its classes out in full', () => {
+    for (const key of APP_GRID_DENSITY_ORDER) {
+      const { columns, grid } = APP_GRID_DENSITY[key];
+      // A phone gets one column at every density — a 300px tile is the mobile
+      // layout this whole mechanism exists to avoid.
+      expect(grid).toContain('grid-cols-1');
+      // Tailwind scans source text, so an interpolated class never reaches the
+      // stylesheet. The widest breakpoint has to name the real column count.
+      expect(grid).toContain(`grid-cols-${columns}`);
+      expect(grid).not.toContain('${');
+      expect(APP_GRID_DENSITY[key].label.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('parseAppGridDensity — the stored value is untrusted input', () => {
+  test('accepts what this build actually renders', () => {
+    for (const key of APP_GRID_DENSITY_ORDER) expect(parseAppGridDensity(key)).toBe(key);
+  });
+
+  test('rejects everything else rather than indexing into undefined', () => {
+    // `localStorage` is shared with every other tab and every past version of
+    // this page. A density this build removed, or a prototype key, would land
+    // in APP_GRID_DENSITY[value] as undefined and render a grid with no column
+    // class at all.
+    for (const bad of [null, '', 'comfortable', 'undefined', 'toString', '__proto__', 'constructor'])
+      expect(parseAppGridDensity(bad)).toBeNull();
+  });
+
+  test('the storage key is namespaced, so it cannot collide with another page', () => {
+    expect(APP_GRID_DENSITY_STORAGE_KEY).toBe('kortix.apps.grid-density');
   });
 });

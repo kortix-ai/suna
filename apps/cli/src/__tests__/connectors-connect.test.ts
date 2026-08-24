@@ -6,7 +6,7 @@ const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_STDOUT_WRITE = process.stdout.write;
 const ORIGINAL_STDERR_WRITE = process.stderr.write;
 const ENV_KEYS = [
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
   'KORTIX_SESSION_ID',
@@ -23,7 +23,7 @@ beforeEach(() => {
     saved[key] = process.env[key];
     delete process.env[key];
   }
-  process.env.KORTIX_CLI_TOKEN = 'kortix_pat_test';
+  process.env.KORTIX_TOKEN = 'kortix_pat_test';
   process.env.KORTIX_API_URL = 'https://api.test/v1';
   process.env.KORTIX_PROJECT_ID = 'project-1';
   process.env.KORTIX_SESSION_ID = 'session-1';

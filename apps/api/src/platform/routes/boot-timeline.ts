@@ -13,8 +13,8 @@
  *   2. Add this route's path suffix to `sandboxTokenPathAllowed` in
  *      middleware/auth.ts's `supabaseAuth` — a sandbox (Kortix) token is only
  *      accepted on an explicit allowlist of path suffixes (currently
- *      `/git/clone-credential`, `/turn-stream`, `/turn-question`,
- *      `/llm-catalog`); without adding `/boot-timeline` there, every relay
+ *      `/turn-stream`, `/turn-question`, `/llm-catalog`); without adding
+ *      `/boot-timeline` there, every relay
  *      POST 401s before it reaches the handler below. That file is outside
  *      this change's file set, same reasoning as main.ts not being wired here.
  */
@@ -26,6 +26,7 @@ import { db } from '../../shared/db';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import type { AppEnv } from '../../types';
 import { recordBootTimeline } from '../services/boot-timeline-store';
+import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 
 const BootMarkSchema = z.object({ label: z.string(), atMs: z.number() });
 
@@ -54,9 +55,7 @@ bootTimelineRouter.openapi(
   async (c) => {
     // Sandbox-only: this is the daemon relaying its OWN boot, never a user
     // action, so unlike turn-stream there is no PAT/dashboard fallback.
-    const authType = c.get('authType');
-    const apiKeyType = c.get('apiKeyType');
-    if (authType !== 'apiKey' || apiKeyType !== 'sandbox') {
+    if (!isSessionSandboxCredential(c)) {
       return c.json({ error: 'boot-timeline requires a sandbox token' }, 403);
     }
     const accountId = c.get('accountId');

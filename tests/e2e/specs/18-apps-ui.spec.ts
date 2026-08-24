@@ -12,6 +12,9 @@ import {
 import { dismissOnboarding, featureFlagRow, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
+
+/** A hostname is full of dots; a raw interpolation into a RegExp would match too much. */
+const escapeRe = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
 const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
 const password = 'E2eAppsUi123!';
@@ -169,7 +172,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       expect((await emptyListResponse).status()).toBe(200);
       await dismissOnboarding(page);
-      await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
+      await expect(page.getByText('No Apps yet', { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(
         session.access_token,
@@ -225,8 +228,12 @@ test.describe('18 — Kortix Apps UI', () => {
       // Same assertions as before — they just live where the controls do.
       const seededCard = page.getByRole('button', { name: 'Open Seed App' });
       await expect(seededCard).toBeVisible();
-      await expect(seededCard.getByText(seeded.url, { exact: true })).toBeVisible();
       await expect(seededCard.getByText('Deploy to see a live preview.')).toBeVisible();
+      // The hostname is NOT on the tile. Every App's URL is the same
+      // `<generated-key>.apps.<domain>` shape, so a column of them differs only
+      // in a token nobody reads — a third of the caption spent on noise. It
+      // moved to the control that opens the App, asserted below.
+      await expect(seededCard.getByText(seededUrl.host, { exact: true })).toHaveCount(0);
       // Never deployed, so it must not claim to be running.
       await expect(seededCard.getByText('Not deployed', { exact: true })).toBeVisible();
 
@@ -235,10 +242,21 @@ test.describe('18 — Kortix Apps UI', () => {
       const appModal = page.getByRole('dialog', { name: 'Seed App App' });
       await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
-      await expect(appModal.getByRole('button', { name: 'Suspend App' })).toBeDisabled();
-      await expect(appModal.getByRole('link', { name: 'Open in a new tab' })).toBeVisible();
+      await expect(
+        appModal.getByRole('button', { name: 'Put this App to sleep' }),
+      ).toBeDisabled();
+      // …and this is where the URL went: the control that opens the App names
+      // the host it will open, so the tile can stay a picture of the App.
+      const openInNewTab = appModal.getByRole('link', { name: 'Open in a new tab' });
+      await expect(openInNewTab).toBeVisible();
+      // Containment, not an exact shape: this App has no deployment, so the
+      // href is the App's own URL rather than a signed session URL, and the two
+      // differ in query and trailing slash. What must hold either way is that
+      // the control points at THIS App's host.
+      await expect(openInNewTab).toHaveAttribute('href', new RegExp(escapeRe(seededUrl.host)));
 
-      await appModal.getByRole('button', { name: 'Show versions' }).click();
+      await appModal.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
       await expect(appModal.getByText('No deployments yet.')).toBeVisible();
 
       const copy = appModal.getByRole('button', { name: 'Copy code' });

@@ -201,14 +201,13 @@ export function serializeProject(
     account_id: row.accountId,
     name: row.name,
     repo_url: row.repoUrl,
-    // Universal client-facing git origin. When the proxy is enabled, runtime
-    // clients (CLI `ship`, web) clone/push this with a Kortix token instead of
-    // the real host URL. Falls back to repo_url so callers can always use it.
-    git_origin_url: config.KORTIX_GIT_PROXY ? proxyGitUrl(row.projectId) : row.repoUrl,
+    // Runtime clients clone and push only through the Kortix Git proxy. The
+    // upstream origin and its credential remain server-side.
+    git_origin_url: proxyGitUrl(row.projectId),
     default_branch: row.defaultBranch,
     manifest_path: row.manifestPath,
     status: row.status,
-    metadata: row.metadata ?? {},
+    metadata: publicProjectMetadata(row.metadata),
     // Per-project emoji, stored in metadata (no migration — same mechanism as
     // default_sandbox_provider below and metadata.onboarding_completed_at).
     // Re-validated on read so a value written before the validator existed, or
@@ -254,6 +253,16 @@ export function serializeProject(
       config.isProviderEnabled(p),
     ),
   };
+}
+
+export function publicProjectMetadata(metadata: unknown): Record<string, unknown> {
+  if (!metadata || typeof metadata !== 'object') return {};
+  const source = metadata as Record<string, unknown>;
+  if (!source.git || typeof source.git !== 'object') return source;
+  const git = source.git as Record<string, unknown>;
+  if (!Object.hasOwn(git, 'fast_boot')) return source;
+  const { fast_boot: _fastBoot, ...publicGit } = git;
+  return { ...source, git: publicGit };
 }
 
 export function serializeProjectGitConnection(row: ProjectGitConnectionRow | null) {

@@ -652,6 +652,36 @@ function selfHostDoctor(flags: GlobalFlags): number {
       });
     }
   }
+  if (existsSync(envPath(flags.instance))) {
+    // Sandbox previews on a PUBLIC domain must have their own origins. Without
+    // KORTIX_PREVIEW_BASE_DOMAIN the API hands browsers the `/v1/p/{sandbox}/
+    // {port}/` path form, which is a correct transport for programmatic callers
+    // and a broken one for a browser: the app escapes the prefix the moment it
+    // emits anything root-absolute (`<a href="/learn">`, an XHR to `/api`,
+    // pushState, a service worker, `new WebSocket('/hmr')`). Nothing in the
+    // running stack fails when this is unset — previews just silently degrade,
+    // which is exactly how one instance served path previews for weeks before
+    // anyone noticed. So `doctor` is where it becomes loud and non-zero.
+    //
+    // Scoped to domain mode on purpose. A tunnel or laptop instance has no
+    // wildcard DNS and no certificate to put previews behind, and its client
+    // builds `p{port}-{sandbox}.localhost:{apiPort}` itself — the path form is
+    // the right answer there, not a misconfiguration.
+    const env = loadEnv(flags.instance);
+    if (env && reachabilityMode(env) === 'domain') {
+      const previewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN?.trim() ?? '';
+      const suggested = `p.${(env.KORTIX_DOMAIN ?? '').trim()}`;
+      checks.push({
+        name: 'preview-origins',
+        ok: Boolean(previewDomain),
+        detail: previewDomain
+          ? previewDomain
+          : `domain mode but KORTIX_PREVIEW_BASE_DOMAIN is empty — browsers get /v1/p/ path previews, which break root-absolute links. `
+            + `Point a *.${suggested} DNS record at this instance, then: `
+            + `kortix self-host env set KORTIX_PREVIEW_BASE_DOMAIN=${suggested} KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true`,
+      });
+    }
+  }
   const ok = checks.every((check) => check.ok);
   if (flags.json) {
     process.stdout.write(`${JSON.stringify({ instance: flags.instance, ok, checks }, null, 2)}\n`);
@@ -1215,6 +1245,19 @@ function selfHostStatus(flags: GlobalFlags): number {
     }
   } else if (report.drift) {
     process.stdout.write(`\n  ${status.ok('no drift')}${C.dim} — running images match the rendered config${C.reset}\n`);
+  }
+
+  // Preview origins, on the same screen as drift and the update outcome. An
+  // unset preview domain never makes anything fail — the path proxy answers 200
+  // — so the only way an operator learns about it is if a status screen they
+  // already read says so. `doctor` is the non-zero gate; this is the glance.
+  if (reachabilityMode(env) === 'domain') {
+    const previewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN?.trim() ?? '';
+    process.stdout.write(
+      previewDomain
+        ? `  ${status.ok('preview origins')}${C.dim} — *.${previewDomain}${C.reset}\n`
+        : `  ${status.err('preview origins NOT configured')}${C.dim} — browsers get /v1/p/ path previews, which break root-absolute links. Run \`kortix self-host doctor\`${C.reset}\n`,
+    );
   }
   process.stdout.write('\n');
   return 0;
@@ -1828,6 +1871,44 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
     }
   }
 
+  // Sandbox preview origins: serves every sandbox port a browser can open on
+  // its OWN hostname, <env>-p<port>-<sandbox>.<preview base domain>. Without it
+  // previews use the path proxy (/v1/p/<sandbox>/<port>/), which works for
+  // tools but not for a browser: an app that emits <a href="/learn">, an XHR to
+  // /api, pushState, a service worker or a WebSocket resolves those against the
+  // API origin and escapes the prefix. Same mechanics as Apps above — a
+  // *.<domain> DNS record plus per-hostname on-demand certificates, no wildcard
+  // certificate needed.
+  //
+  // On a PUBLIC domain this defaults to "configure", not "skip": the path form
+  // is a silent downgrade — everything keeps answering 200, so nobody discovers
+  // it until a user reports a preview that lost its stylesheet. `doctor` fails
+  // on the same condition (see selfHostDoctor). The default VALUE is only
+  // suggested, never assumed: an operator who has not pointed *.p.<domain> at
+  // this box must be able to say so, because advertising an origin with no DNS
+  // is worse than the path form, which always works. On a tunnel/laptop
+  // instance the prompt keeps defaulting to skip — there is no wildcard DNS to
+  // put previews behind and the client builds *.localhost origins itself.
+  if (shouldPrompt(flags)) {
+    const domainMode = reachabilityMode(env) === 'domain';
+    const suggestedPreviewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN
+      || (domainMode ? `p.${(env.KORTIX_DOMAIN ?? '').trim()}` : '');
+    const previewMode = await selectFrom(
+      domainMode
+        ? 'Sandbox preview origins (STRONGLY recommended — without them browser previews break root-absolute links): configure/skip'
+        : 'Sandbox preview origins (makes browser previews of sandbox ports work like a real site): configure/skip',
+      ['configure', 'skip'] as const,
+      env.KORTIX_PREVIEW_BASE_DOMAIN || domainMode ? 'configure' : 'skip',
+    );
+    if (previewMode === 'configure') {
+      env.KORTIX_PREVIEW_BASE_DOMAIN = await prompt(
+        'Preview base domain (needs a *.<domain> DNS record pointing at this instance; Caddy issues per-preview certificates on demand)',
+        suggestedPreviewDomain,
+      );
+      env.KORTIX_PREVIEW_ALLOW_DIRECT_EDGE = 'true';
+    }
+  }
+
   // Pipedream (optional, default skip): the ONE other env-only credential
   // that belongs here — the platform-level OAuth app Pipedream issues per
   // operator, not a per-user connection (those live in the DB and are
@@ -2363,6 +2444,13 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // reverse proxy are served instead of rejected for a missing edge signature.
     KORTIX_APPS_BASE_DOMAIN: '',
     KORTIX_APPS_ALLOW_DIRECT_EDGE: '',
+    // Sandbox preview origins. Blank = previews stay on the path proxy.
+    // KORTIX_PREVIEW_ALLOW_DIRECT_EDGE tells the API that no Cloudflare preview
+    // Worker fronts it, so a preview request arriving from the operator's own
+    // reverse proxy is served on its real Host header instead of being rejected
+    // for a missing edge signature.
+    KORTIX_PREVIEW_BASE_DOMAIN: '',
+    KORTIX_PREVIEW_ALLOW_DIRECT_EDGE: '',
     CONNECTOR_AUTH_PROVIDER: 'pipedream',
     KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: 'false',
     PIPEDREAM_CLIENT_ID: '',
@@ -2382,6 +2470,7 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
   // block is inert without a domain.
   writeKortixRuntimeAssets(root, {
     appsHostingConfigured: Boolean(env.KORTIX_APPS_BASE_DOMAIN?.trim()),
+    previewHostingConfigured: Boolean(env.KORTIX_PREVIEW_BASE_DOMAIN?.trim()),
   });
   writeFileSync(
     composePath(instance),

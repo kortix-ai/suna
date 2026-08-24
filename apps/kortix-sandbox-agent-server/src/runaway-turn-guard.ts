@@ -11,12 +11,21 @@ import { logger } from './logger'
 // conform to OpenCode's own sortable-clock id format, breaking its
 // "has this prompt already been answered" ordering check — the SDK's
 // `promptOpenCodeMessage` always mints a conforming id, so the real web/CLI
-// clients are not expected to hit this. But nothing upstream bounds it if it
-// ever happens by any other path (a future SDK bug, a malformed retry, a
-// direct API call), and each repeat is a full clean success — no error, no
-// timeout — so `turn-auto-resume.ts` (which watches `session.error`) does not
-// apply and nothing else stops it. Left unguarded this burns real tokens/cost
-// with no ceiling. Per opencode SESSION, children included: the 2026-08-18
+// clients are not expected to hit this.
+//
+// UPSTREAM NOW BOUNDS THE ORIGINAL TRIGGER — KEEP THE GUARD ANYWAY. 1.18.15
+// stopped using id ordering as the chronology signal: turn exit is now
+// `lastAssistant.parentID === lastUser.id`, and `latest()` orders by
+// `time.created`. A non-conforming caller-supplied `messageID` therefore no
+// longer breaks the already-answered check on the pinned 1.18.19. That closes
+// the ONE path we diagnosed, not the class: any other way a STANDING prompt
+// gets re-triggered still produces a full clean success per repeat — no error,
+// no timeout — so `turn-auto-resume.ts` (which watches `session.error`) does
+// not apply and nothing else stops it, and it burns real tokens with no
+// ceiling. This guard is a single counter and a string compare per completion,
+// it cannot false-abort (see MAX_CONSECUTIVE_REPEATS below), and it is the only
+// thing that bounded the 2026-08-18 incident. Cheap insurance stays.
+// Per opencode SESSION, children included: the 2026-08-18
 // Essentia incident (session `5d9e298a`) was a spawned child looping this way
 // while `relayTurnEndToApi` filtered non-root sessions out before this guard
 // ever saw a repeat — the abort must target the session that is looping.

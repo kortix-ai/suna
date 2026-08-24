@@ -36,13 +36,22 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # latest compiled Linux binary even though we no longer publish a sandbox image.
 FROM --platform=$BUILDPLATFORM oven/bun:${SANDBOX_AGENT_BUN_VERSION}-slim AS sandbox-agent
 
-WORKDIR /agent
+# The daemon builds STANDALONE (its own package.json + bun.lock, no workspace
+# root), but it shares ONE module with apps/api: the relay wire contract
+# (packages/api-contract/src/secret-relay.ts). That is reached through a tsconfig
+# `paths` mapping rather than a `"workspace:*"` dependency, because a workspace
+# dependency makes `bun install --frozen-lockfile` here fail outright
+# ("Workspace dependency ... not found / Searched in ./*") and NO image can be
+# built. So mirror the repo layout and copy the one package the mapping points
+# at — the same shape apps/sandbox/Dockerfile uses.
+WORKDIR /repo/apps/kortix-sandbox-agent-server
 
 ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
 RUN bun install --frozen-lockfile
 
+COPY packages/api-contract /repo/packages/api-contract
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 
@@ -231,7 +240,7 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 # migrate-db job (pnpm migrate, from the checkout) before the new code serves.
 
 # Copy runtime artifacts used by the layered snapshot builder.
-COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
+COPY --from=sandbox-agent /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix.version ./apps/cli/dist/kortix.version
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json

@@ -5,13 +5,14 @@ import { useTranslations } from 'next-intl';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
-import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { AppErrorCard, ClientErrorBoundary } from '@/components/common/error-boundary';
 import { isLegacyMigratedSession, sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
@@ -21,15 +22,18 @@ import {
   provisioningFailurePresentation,
 } from '@/features/session/provisioning-failure';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
+import { useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
   canMountSessionChat,
-  canShowSessionChat,
   findInitialSessionPin,
   gatedRuntimeError,
+  runtimeErrorPresentation,
+  sessionErrorSurfaceReady,
 } from '@/features/session/session-load-state';
 import {
+  AUTO_RESUME_WINDOW_MS,
   isAutoResuming,
   isRuntimeIdentityUnavailable,
   isSandboxResumable,
@@ -59,14 +63,13 @@ import {
 import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
+import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import {
   shouldShowSessionSwitchLoading,
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { projectSessionsRefetchInterval } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
-  type ProjectSession,
   formatRuntimeError,
   getProjectDetail,
   listProjectSessions,
@@ -134,6 +137,9 @@ export default function ProjectSessionPage() {
  * unrepresentable: switching sessions remounts, and a remount cannot half-apply.
  */
 function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  // Stable route-level owner. Runtime identity handoffs remount the chat, so a
+  // poll timer inside chat produces overlapping audit schedules.
+  useSessionAudit(projectId, sessionId, { poll: true, silent: true, limit: 100 });
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
@@ -173,28 +179,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: !!user && !!projectId,
-    // This query feeds the session HEADER's title. It had no interval at all,
-    // so it never refetched — the header was only ever correct because it
-    // shares this cache entry with the sidebar's list, and went stale the
-    // moment the sidebar was unmounted or had stopped polling. The name is
-    // written server-side seconds AFTER the first prompt with no event to
-    // announce it (see `sessionTitleHasLanded`), so a query that never
-    // refetches can never show it.
-    //
-    // `hasOpenSession: true` unconditionally: this route IS an open session.
-    refetchInterval: (query) =>
-      projectSessionsRefetchInterval({
-        sessions: query.state.data as ProjectSession[] | undefined,
-        hasOpenSession: true,
-      }),
+    // The always-mounted sidebar owns title/status polling for this shared key.
+    // A second observer timer here produced independent list requests between
+    // the sidebar's polls during long turns.
     refetchOnWindowFocus: false,
     ...contract('inventory'),
   });
   const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
-  const pendingPrompt = pendingSessionPromptForRecovery(
-    sessionId,
-    currentProjectSession?.metadata,
-  );
+  const pendingPrompt = pendingSessionPromptForRecovery(sessionId, currentProjectSession?.metadata);
   const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
@@ -245,7 +237,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // the resume path and wakes the box. So: re-issue /start ourselves a few times
   // (what the refresh did) before ever surfacing a manual control.
   const sandboxResumable = isSandboxResumable(sandbox);
-  const MAX_AUTO_RESUME = 3;
   const [resumeAttempts, setResumeAttempts] = useState(0);
   // ONE restart behavior for every card on this route: optimistic exit from the
   // terminal state, a real pending state, and a SURFACED failure.
@@ -280,9 +271,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           }).catch(() => undefined);
         })
         .catch((error) => {
-          errorToast(
-            error instanceof Error ? error.message : 'Could not queue the saved prompt',
-          );
+          errorToast(error instanceof Error ? error.message : 'Could not queue the saved prompt');
         });
     }
     handleRestart();
@@ -299,21 +288,36 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       errorToast('Could not copy the prompt.');
     }
   };
+  // When THIS wake started. Stamped the first time we see a resumable box and
+  // cleared the moment it stops being one, so the window measures one wake
+  // rather than the age of the tab.
+  const [resumeStartedAt, setResumeStartedAt] = useState<number | null>(null);
   useEffect(() => {
-    if (!sandboxResumable || resumeAttempts >= MAX_AUTO_RESUME) return;
-    // First attempt fires immediately (match the refresh); back off after that.
+    if (!sandboxResumable) {
+      setResumeStartedAt(null);
+      return;
+    }
+    setResumeStartedAt((at) => at ?? Date.now());
+  }, [sandboxResumable]);
+  const resumeElapsedMs = resumeStartedAt === null ? null : Date.now() - resumeStartedAt;
+  useEffect(() => {
+    if (!sandboxResumable) return;
+    if (resumeStartedAt !== null && Date.now() - resumeStartedAt >= AUTO_RESUME_WINDOW_MS) return;
+    // First attempt fires immediately (match the refresh); back off after that,
+    // and keep re-asking for as long as the wake window allows. The budget is
+    // the WINDOW, not the attempt count — see `AUTO_RESUME_WINDOW_MS`.
     const t = setTimeout(
       () => {
         setResumeAttempts((n) => n + 1);
         queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
       },
-      resumeAttempts === 0 ? 0 : 1500,
+      resumeAttempts === 0 ? 0 : Math.min(1500 * 2 ** Math.min(resumeAttempts - 1, 3), 8000),
     );
     return () => clearTimeout(t);
-  }, [sandboxResumable, resumeAttempts, projectId, sessionId, queryClient]);
-  // While we still have auto-resume attempts left, a resumable box is "waking",
-  // not "dead" — render the boot loader, never the dead-end card.
-  const autoResuming = isAutoResuming(sandbox, resumeAttempts, MAX_AUTO_RESUME);
+  }, [sandboxResumable, resumeAttempts, resumeStartedAt, projectId, sessionId, queryClient]);
+  // Inside the wake window a resumable box is "waking", not "dead" — render the
+  // boot loader, never the dead-end card.
+  const autoResuming = isAutoResuming(sandbox, { elapsedMs: resumeElapsedMs });
 
   // Belt-and-suspenders: clear the legacy active-instance cookie once on mount for
   // this route so no later navigation can be hijacked onto a stale sandbox.
@@ -347,7 +351,20 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // resume) occupies a SINGLE stable tree position for the whole pre-ready
   // lifecycle, so nothing under it remounts as the boot advances.
   const [chatReady, setChatReady] = useState(false);
+  // Stable: it rides an effect dependency inside SessionChat, and a fresh arrow
+  // every render would re-run that effect on every render of this route.
+  const handleChatReady = useCallback(() => setChatReady(true), []);
   const [loaderMounted, setLoaderMounted] = useState(true);
+  // Belt and braces for the `onTransitionEnd` unmount below: `transitionend`
+  // never fires when the tab is backgrounded mid-fade, nor under
+  // `prefers-reduced-motion` where the duration is 0. Without this the loader
+  // subtree — including its 1s boot-clock interval — stays mounted behind
+  // `opacity-0` for the rest of the session.
+  useEffect(() => {
+    if (!chatReady || !loaderMounted) return;
+    const t = setTimeout(() => setLoaderMounted(false), 350);
+    return () => clearTimeout(t);
+  }, [chatReady, loaderMounted]);
   // Seeded ONCE, on mount, in a single initializer — both halves of the hand-off
   // are read in the same pass and land in the same commit, so they cannot come
   // apart the way the old render-phase ref/setState pair could. There is no
@@ -358,17 +375,46 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // key it lives under — it replaced two raw legacy-key checks
   // (`opencode_pending_prompt:<id>` / `project_pending_prompt:<id>`).
   const [handoff] = useState(() => {
-    if (typeof window === 'undefined') return { pending: false, newSessionHint: false };
+    if (typeof window === 'undefined')
+      return { pending: false, newSessionHint: false, firstPrompt: false };
     const pending = !!readStartStash(sessionId)?.prompt;
-    return { pending, newSessionHint: pending || isSessionFresh(sessionId) };
+    // The project-home composer writes this before it navigates, so it is
+    // already in the store on this component's first render — read here, with
+    // the rest of the hand-off, rather than latched from an effect afterwards.
+    const firstPrompt = !!useFirstPromptPreviewStore.getState().previewBySession[sessionId];
+    return { pending, firstPrompt, newSessionHint: pending || isSessionFresh(sessionId) };
   });
   const [submittedOnShell, setSubmittedOnShell] = useState(false);
-  // Arriving with a stashed prompt counts as submitted for the purpose of
-  // mounting the chat (the message is already committed and needs a runtime to
-  // send it), but NOT for holding the shell in place — a stash can outlive the
-  // hand-off it describes, and only a send made HERE means the user is watching
-  // their own optimistic bubble on this shell.
-  const shellSubmitted = handoff.pending || submittedOnShell;
+  // "The shell is painting this session's first prompt right now." TWO producers
+  // put a prompt on that surface and only one of them is a send made here:
+  //
+  //  • `submittedOnShell` — typed into the shell and sent from it.
+  //  • the first-prompt preview — sent from the PROJECT HOME, which created the
+  //    session, POSTed the prompt as a durable inbox row, navigated here, and
+  //    left the text in memory for the shell to draw from its first frame (see
+  //    `useFirstPromptPreviewStore`).
+  //
+  // Only the first used to count, and the second is the flow most sessions
+  // start with — so the pin that keeps the shell on screen was false for
+  // exactly the case it exists for. See `resolveSessionOverlay` for what that
+  // cost: the user's own bubble replaced by a boot spinner, for the length of a
+  // SessionChat mount.
+  //
+  // Read live AND once at mount. Live so a preview planted a tick late still
+  // counts; at mount because `SessionChat` CLEARS the preview the instant the
+  // transcript shows the text — and that clear can land in the same commit as
+  // `chatReady`, so a purely live read would drop the pin on the exact frame
+  // the fade starts and unmount the shell instead of dissolving it.
+  const hasFirstPromptPreview = useFirstPromptPreviewStore(
+    (state) => !!state.previewBySession[sessionId],
+  );
+  const shellShowsFirstPrompt = submittedOnShell || hasFirstPromptPreview || handoff.firstPrompt;
+  // Mounting the chat takes the same evidence plus one weaker source: a stashed
+  // prompt means the message is committed and needs a runtime, so the chat
+  // should be warming up. It does NOT pin the shell — a stash can outlive the
+  // hand-off it describes, and a stale one must not hold a real session on a
+  // bubble it no longer owns.
+  const shellSubmitted = handoff.pending || shellShowsFirstPrompt;
 
   // Transcript evidence — the veto that keeps a stale hint from stranding a real
   // session on the empty new-session surface. It comes from `useSession`'s own
@@ -382,7 +428,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   }, [session.messages.length]);
   const hasTranscript = session.messages.length > 0 || sawTranscript;
   const surface = { newSessionHint: handoff.newSessionHint, hasTranscript };
-  const overlay = resolveSessionOverlay({ ...surface, submittedOnShell });
+  const overlay = resolveSessionOverlay({ ...surface, shellShowsFirstPrompt });
 
   // Drop the local hint as soon as it has done its job OR been proven wrong.
   // This used to wait on `chatReady`, which the hint itself could withhold — so
@@ -476,12 +522,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     completeSessionSwitch,
   ]);
   // Existing sessions can mount from their server-owned pin before the runtime
-  // switch completes, and `useSessionSync` paints the cached transcript out of
-  // IndexedDB without waiting for the sandbox, then revalidates over the live
-  // runtime once useSession finishes the switch. (This comment claimed the IDB
-  // hydration for a long time before anything actually called it — nothing read
-  // or wrote that cache, so every open waited out a full VM wake to show text
-  // the user already had.)
+  // switch completes; `useSessionSync` then fills the transcript from the live
+  // runtime once useSession finishes the switch.
+  //
+  // There is NO local paint any more. An IndexedDB mirror used to render the
+  // transcript without waiting for the sandbox, and it was removed because its
+  // freshness test could not see a turn ENDING — see `use-session-sync.ts`. So
+  // opening a hibernated session shows the loading state for the length of the
+  // wake again, which is honest but slower. Re-solving it needs a mirror that
+  // compares the message, not the transcript's shape.
   const canMountChat = sessionContentAvailable;
   // For a genuinely new session, hold the real chat until the user actually sends
   // their first message — the instant shell is the typing surface until then, and
@@ -587,6 +636,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         <InlineSessionError
           title="Couldn't start session"
           message="This session is no longer available, or you do not have access to it."
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/projects/${projectId}`)}
+            >
+              Back to project
+            </Button>
+          }
         />
       );
     }
@@ -662,6 +720,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           title="This session's computer was lost"
           message="Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository."
           detail={sandbox?.external_id ? `${sandbox.provider} · ${sandbox.external_id}` : undefined}
+          action={
+            <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
+              Delete session
+            </Button>
+          }
         />
       );
     }
@@ -700,8 +763,34 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         {canMountChat && (
           <div
             className={cn(
-              'absolute inset-0 flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity duration-300 ease-out',
-              chatReady ? 'opacity-100' : 'pointer-events-none opacity-0',
+              'absolute inset-0 flex min-h-0 flex-1 flex-col overflow-hidden',
+              // NO fade in. Two opacity transitions running against each other
+              // do not sum to one: at the midpoint both layers sit at 0.5, so
+              // the composite covers 1 - 0.5x0.5 = 75% and a quarter of the
+              // page behind them shows through. Identical content on both
+              // layers does not save it — the text itself washes out to 75% and
+              // back. That dip IS the "everything vanished for a millisecond".
+              //
+              // So only ONE layer animates. This one is painted, opaque, and
+              // complete underneath the whole time; the overlay above
+              // dissolves off it. Coverage is 1 at every frame of the fade.
+              !chatReady && 'pointer-events-none',
+              // `isolate` is what makes the overlay's `bg-background` below
+              // actually cover this layer. `absolute` alone is NOT a stacking
+              // context, so `SessionLayout`'s `z-10` panel wrapper (and the
+              // `z-20` handle, and `z-[35]` while a detail is expanded) resolved
+              // against a context far ABOVE both layers and painted straight
+              // through the overlay — which is how a crashed chat's "Something
+              // went wrong" card ended up drawn on top of a live "Connecting"
+              // loader. Isolating traps those z-indices in here, where they only
+              // ever needed to order this layer's own children.
+              //
+              // Scoped to the overlay's lifetime on purpose: once it unmounts
+              // this layer stacks exactly as it does today, so the expanded
+              // detail keeps competing with the shell chrome as `session-layout`
+              // intends. The panel cannot be usefully expanded behind an opaque
+              // overlay anyway.
+              loaderMounted && 'isolate',
             )}
           >
             <ProjectSessionRuntimeConnection>
@@ -711,7 +800,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                   sessionId={sessionId}
                   sessionState={session}
                   boundAgentName={boundAgentName}
-                  onChatReady={() => setChatReady(true)}
+                  chatReady={chatReady}
+                  onChatReady={handleChatReady}
                 />
               )}
             </ProjectSessionRuntimeConnection>
@@ -724,7 +814,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               if (chatReady) setLoaderMounted(false);
             }}
             className={cn(
-              'absolute inset-0 flex flex-col transition-opacity duration-300 ease-out',
+              // `bg-background` is load-bearing now that the chat below is
+              // always painted: this layer has to hide it completely until the
+              // fade starts. The instant shell brings its own opaque root
+              // (SessionLayout), but the boot loader is a transparent centred
+              // block — under it you would see the chat's own compact loader
+              // through the gaps, two spinners deep.
+              'bg-background absolute inset-0 flex flex-col transition-opacity duration-300 ease-out',
               chatReady ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
           >
@@ -826,16 +922,22 @@ function InlineSessionError({
 }) {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center px-6">
-      <div className="flex max-w-md flex-col items-center gap-3 text-center">
-        <h2 className="text-foreground/90 text-sm font-medium">{title}</h2>
-        <p className="text-muted-foreground/70 text-xs leading-relaxed">{message}</p>
-        {detail ? (
-          <p className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-md border px-2 py-1 font-mono text-xs leading-relaxed">
-            {detail}
-          </p>
-        ) : null}
-        {action}
-      </div>
+      <ErrorState
+        title={title}
+        description={message}
+        action={
+          detail || action ? (
+            <div className="flex max-w-sm flex-col items-center gap-3">
+              {detail ? (
+                <code className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-md border px-2 py-1 font-mono text-xs leading-relaxed break-all">
+                  {detail}
+                </code>
+              ) : null}
+              {action}
+            </div>
+          ) : undefined
+        }
+      />
     </div>
   );
 }
@@ -850,6 +952,7 @@ function ActiveSessionChat({
   sessionId,
   sessionState,
   boundAgentName,
+  chatReady,
   onChatReady,
 }: {
   projectId: string;
@@ -858,6 +961,9 @@ function ActiveSessionChat({
   /** The session's immutable creation agent, resolved by the page (sessions
    *  list row, falling back to /start's `agent_name`). */
   boundAgentName?: string | null;
+  /** The route has crossfaded onto this chat. Until then it is painted behind
+   *  an opaque overlay and must not take focus — see `deferComposerFocus`. */
+  chatReady?: boolean;
   onChatReady?: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -877,9 +983,9 @@ function ActiveSessionChat({
   // benign 503 racing a live `/start` wake (a parked sandbox resuming), which
   // `derivePhase` (@kortix/sdk) holds as `'starting'` until `/start` itself
   // settles or gives up (~61.5s worst case). Reading the raw field rendered
-  // the panic card — and marked `chatShowable` below true, ending the loading
+  // the panic card — and marked the chat showable below, ending the loading
   // skeleton with nothing to show — for every such race; `phase === 'error'`
-  // is the SDK's own answer to "is this real." `canShowSessionChat` below
+  // is the SDK's own answer to "is this real." `sessionErrorSurfaceReady` below
   // gets this SAME gated value, so both consumers agree.
   const runtimeError = gatedRuntimeError({
     phase: sessionState.phase,
@@ -908,6 +1014,11 @@ function ActiveSessionChat({
     if (next !== pinnedRootSessionId) setPinnedRootSessionId(next);
   }, [pinnedRootSessionId, rootSessionId]);
   const chatSessionId = selectedSession?.id ?? pinnedRootSessionId ?? rootSessionId ?? null;
+  const runtimePresentation = runtimeErrorPresentation({
+    chatSessionId,
+    runtimeError,
+    runtimeBootError,
+  });
 
   // Migrate the home-composer prompt onto the canonical SDK start-stash. Every
   // producer (project-home composer, `useConfigureThread`, the instant shell)
@@ -950,14 +1061,21 @@ function ActiveSessionChat({
     finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
   }, [chatSessionId, sessionId, projectId, queryClient]);
 
-  const chatShowable = canShowSessionChat({
-    chatSessionId,
-    runtimeError,
-    runtimeBootError,
-  });
+  // The ERROR surfaces below are ready the moment they exist — they render an
+  // `InlineSessionError` immediately, so holding the shell over one would just
+  // hide the message. The conversation is not: `chatSessionId` resolving only
+  // means SessionChat can MOUNT, and for a beat after that it still paints its
+  // own compact "starting" loader. Crossfading onto that loader replaced the
+  // instant shell's live thread — the user's bubble and its "Thinking" row —
+  // with a spinner, then swapped again a moment later. So the chat's own
+  // `onContentReady` drives the fade for the ordinary path, and this covers the
+  // two terminal ones.
+  const errorSurfaceReady = runtimePresentation.replaceSession
+    ? sessionErrorSurfaceReady({ runtimeError, runtimeBootError })
+    : false;
   useEffect(() => {
-    if (chatShowable) onChatReady?.();
-  }, [chatShowable, onChatReady]);
+    if (errorSurfaceReady) onChatReady?.();
+  }, [errorSurfaceReady, onChatReady]);
 
   useEffect(() => {
     if (!selectedOpenCodeSessionId) return;
@@ -982,7 +1100,7 @@ function ActiveSessionChat({
     sessionId,
   ]);
 
-  if (!runtimeReady && runtimeBootError) {
+  if (!runtimeReady && runtimeBootError && runtimePresentation.replaceSession) {
     return (
       <InlineSessionError
         title={tHardcodedUi.raw(
@@ -997,7 +1115,7 @@ function ActiveSessionChat({
     );
   }
 
-  if (runtimeError) {
+  if (runtimeError && runtimePresentation.replaceSession) {
     const formatted = formatRuntimeError(runtimeError);
     return (
       <InlineSessionError
@@ -1020,16 +1138,56 @@ function ActiveSessionChat({
       projectId={projectId}
       projectSessionId={sessionId}
     >
-      <ClientErrorBoundary>
+      {/* A crash in the chat is a RESOLUTION of this layer, and the route has to
+          hear about it. `onChatReady` is otherwise the only thing that lowers
+          the boot overlay, and it is reported by `SessionChat` itself — so a
+          `SessionChat` that throws could never report it, and the overlay stayed
+          at full opacity forever with its 1s boot clock still ticking. The user
+          got a permanent "Connecting" spinner over a crash that had already
+          happened, and no way out but a page reload. */}
+      <ClientErrorBoundary
+        fallback={({ error, reset }) => (
+          <SessionChatCrashCard error={error} reset={reset} onSettled={onChatReady} />
+        )}
+      >
         <SessionChat
           key={chatSessionId}
           sessionId={chatSessionId}
           projectSessionId={sessionId}
           projectId={projectId}
           boundAgentName={boundAgentName}
+          onContentReady={onChatReady}
+          deferComposerFocus={!chatReady}
           sessionState={chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined}
         />
       </ClientErrorBoundary>
     </SessionLayout>
   );
+}
+
+/**
+ * The chat's crash card, plus the one thing the card alone cannot say: this
+ * layer is done resolving, so stop covering it.
+ *
+ * `onSettled` fires in an effect rather than during render because it drives a
+ * `setState` in the route above — calling it while rendering the fallback would
+ * be a render-phase update of a different component.
+ *
+ * It deliberately does NOT reset itself: the boundary keeps the error until the
+ * user chooses. `reset()` remounts `SessionChat`, which then reports readiness
+ * again through its own path.
+ */
+function SessionChatCrashCard({
+  error,
+  reset,
+  onSettled,
+}: {
+  error: Error;
+  reset: () => void;
+  onSettled?: () => void;
+}) {
+  useEffect(() => {
+    onSettled?.();
+  }, [onSettled]);
+  return <AppErrorCard error={error} reset={reset} />;
 }

@@ -3,6 +3,10 @@
 import { DiffView } from '@/components/diff/diff-view';
 import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
 import { CopyButton } from '@/components/markdown/copy-button';
+import {
+  MarkdownFrontmatterCard,
+  parseFrontmatter,
+} from '@/components/markdown/markdown-frontmatter';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
@@ -33,12 +37,12 @@ import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-b
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   WarningIcon as AlertTriangle,
+  ArrowClockwiseIcon,
   ArrowSquareOutIcon,
   CaretRightIcon,
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
-  ArrowClockwiseIcon as GrRefresh,
   SidebarSimpleIcon as PanelRight,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
@@ -223,7 +227,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
     <div className="flex shrink-0 items-center gap-1">
       <Hint label="Refresh" side="top">
         <Button variant="ghost" size="icon-sm" type="button" onClick={handleRefresh}>
-          <GrRefresh className={cn('size-4', isLoading && 'animate-spinner-spin')} />
+          <ArrowClockwiseIcon className={cn('size-4', isLoading && 'animate-spinner-spin')} />
         </Button>
       </Hint>
       <Hint
@@ -264,7 +268,11 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { previewUrl, displayLabel, handleRefresh, openInBrowser, isLoading, navigationEnabled } =
     preview;
-  const label = previewUrl || displayLabel;
+  // NEVER the previewUrl: on a preview origin it carries a one-shot `?token=`
+  // (the user's live Supabase JWT), and this renders as visible page text —
+  // screenshot- and screen-share-capturable. previewUrl stays in the click
+  // handler, where it is used and not shown.
+  const label = displayLabel;
 
   return (
     <div className="bg-background absolute inset-0 z-10 flex items-center justify-center p-6">
@@ -297,7 +305,7 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
             onClick={handleRefresh}
             className="text-muted-foreground gap-1.5"
           >
-            <GrRefresh className={cn('size-3.5', isLoading && 'animate-spinner-spin')} />
+            <ArrowClockwiseIcon className={cn('size-3.5', isLoading && 'animate-spinner-spin')} />
             Retry preview
           </Button>
         </Hint>
@@ -933,13 +941,31 @@ function InlineTriggerTitle({
             (running ? (
               <TextShimmer className="min-w-0 truncate text-sm">{trigger.subtitle}</TextShimmer>
             ) : (
+              // Painted as a link, so it must behave like one for the keyboard
+              // too. Kept as a <span role="button"> rather than a real <button>
+              // because this content is cloned into the disclosure's own trigger
+              // button — nesting one button in another is invalid HTML.
               <span
                 className={cn(
                   'text-muted-foreground min-w-0 truncate text-sm',
                   onSubtitleClick &&
                     'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
                 )}
+                role={onSubtitleClick ? 'button' : undefined}
+                tabIndex={onSubtitleClick ? 0 : undefined}
+                // Last, so the rendered markup keeps `title="…">…</span>` — the
+                // shape the memory-tool trigger tests pin.
                 title={trigger.subtitle}
+                onKeyDown={
+                  onSubtitleClick
+                    ? (e) => {
+                        if (e.key !== 'Enter' && e.key !== ' ') return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onSubtitleClick();
+                      }
+                    : undefined
+                }
                 onClick={
                   onSubtitleClick
                     ? (e) => {
@@ -976,12 +1002,14 @@ function ToolHeaderRow({
   running,
   onSubtitleClick,
   outcome = 'ok',
+  action,
 }: {
   icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
   running: boolean;
   onSubtitleClick?: () => void;
   outcome?: ToolOutcome;
+  action?: React.ReactNode;
 }) {
   const triggerIsEmpty = isTriggerTitle(trigger) ? !trigger.title && !trigger.subtitle : false;
 
@@ -1004,6 +1032,11 @@ function ToolHeaderRow({
           trigger
         )}
       </div>
+      {/* Outside the `flex-1` wrapper, so it is the row's far right edge and
+          the title/subtitle inside that wrapper take the truncation. `ml-auto`
+          is the belt to the flex-1 braces: a trigger with no subtitle and no
+          args renders a title that does not fill the wrapper. */}
+      {action && <span className="ml-auto flex shrink-0 items-center">{action}</span>}
     </>
   );
 }
@@ -1130,6 +1163,7 @@ function PanelToolRow({
   open,
   onOpenChange,
   className,
+  action,
 }: {
   icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
@@ -1142,6 +1176,7 @@ function PanelToolRow({
   open: boolean;
   onOpenChange: (value: boolean) => void;
   className?: string;
+  action?: React.ReactNode;
 }) {
   const hasBody = Boolean(children);
   // Same substitution the inline header makes, from the same context — a failed
@@ -1179,6 +1214,10 @@ function PanelToolRow({
           {badge}
         </span>
       )}
+      {/* After the badge, before the chevron: the badge counts what the row
+          holds, the chevron opens it, and the action leaves for somewhere else
+          — so the two that concern THIS row stay adjacent to it. */}
+      {action && <span className="flex shrink-0 items-center">{action}</span>}
       {hasBody && (
         <CaretRightIcon
           aria-hidden
@@ -1271,7 +1310,26 @@ function ActivatableToolRow({
   );
 }
 
-// Inline row that expands/collapses its children in place (the default layout).
+/**
+ * Inline row that expands/collapses its children in place (the default layout).
+ *
+ * A row with no children is NOT a disclosure. It used to be one anyway: the
+ * trigger was rendered unconditionally, so a childless row carried
+ * `role="button"`, `aria-expanded="false"` and `tabIndex={0}` and answered a
+ * click by toggling state that rendered nothing. The row said "press me to
+ * open" to a screen reader, to the keyboard and to the pointer, three times
+ * over, and then did nothing at all.
+ *
+ * It is most visible on a sub-agent row whose child session is not resident —
+ * `useOpenCodeMessages` only holds a child's transcript while the parent is
+ * streaming it, and `pruneDetachedSessions` evicts the older ones once a turn
+ * dispatches more than a couple of agents. So the LAST agent in a group of
+ * three opens and the first two are dead rows. But the defect belongs to every
+ * childless tool, so the fix belongs here.
+ *
+ * `PanelToolRow` has always gated its trigger this way. The two surfaces are
+ * one behaviour presented twice; this is the half that had drifted.
+ */
 function CollapsibleToolRow({
   header,
   children,
@@ -1285,18 +1343,22 @@ function CollapsibleToolRow({
   open: boolean;
   onOpenChange: (value: boolean) => void;
 }) {
+  const hasBody = Boolean(children);
+
+  const row = (
+    <div
+      data-component="tool-trigger"
+      className={cn(TOOL_ROW_CLASS, hasBody && !locked && 'cursor-pointer')}
+    >
+      {header}
+    </div>
+  );
+
   return (
     <Disclosure open={open} onOpenChange={onOpenChange}>
-      <DisclosureTrigger>
-        <div
-          data-component="tool-trigger"
-          className={cn(TOOL_ROW_CLASS, children && !locked && 'cursor-pointer')}
-        >
-          {header}
-        </div>
-      </DisclosureTrigger>
+      {hasBody ? <DisclosureTrigger>{row}</DisclosureTrigger> : row}
 
-      {children && open && <div className="mt-1 mb-1 overflow-hidden text-xs">{children}</div>}
+      {hasBody && open && <div className="mt-1 mb-1 overflow-hidden text-xs">{children}</div>}
     </Disclosure>
   );
 }
@@ -1313,6 +1375,7 @@ export function BasicTool({
   onClick,
   className,
   durationMs: durationMsProp,
+  triggerAction,
 }: BasicToolProps) {
   const running = useContext(ToolRunningContext);
   const contextDuration = useContext(ToolDurationContext);
@@ -1363,6 +1426,7 @@ export function BasicTool({
         open={open}
         onOpenChange={handleOpenChange}
         className={className}
+        action={triggerAction}
       >
         {children}
       </PanelToolRow>
@@ -1376,6 +1440,7 @@ export function BasicTool({
       running={running}
       onSubtitleClick={onSubtitleClick}
       outcome={outcome}
+      action={triggerAction}
     />
   );
 
@@ -1438,6 +1503,40 @@ export function ToolCodeCard({
         <CopyOverlay code={code}>
           <div data-scrollable className={cn('max-h-96 overflow-auto', pad, 'pr-11')}>
             <HighlightedCode code={code} language={language} />
+          </div>
+        </CopyOverlay>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The markdown counterpart to {@link ToolCodeCard}: same chrome — trigger-aligned
+ * indent, `border`/`bg-popover` card, copy overlay — with rendered prose instead
+ * of a highlighted-source pane.
+ *
+ * YAML frontmatter (agent/skill headers, notes with metadata) goes through
+ * `parseFrontmatter` so the `---` fences do not become a stray rule and a giant
+ * heading. Content with none passes through unchanged.
+ *
+ * `allowHtml={false}`: this reads as a stored file, not chat prose.
+ */
+export function ToolMarkdownCard({ code, className }: { code: string; className?: string }) {
+  const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
+  if (!code) return null;
+  const { frontmatter, body } = parseFrontmatter(code);
+  return (
+    <div className={cn(indent && 'mt-1.5', indent, className)}>
+      <div className={cn('relative', frame)}>
+        <CopyOverlay code={code}>
+          <div
+            data-scrollable
+            className={cn('max-h-96 overflow-auto', pad, 'pr-11', MD_FLUSH_CLASSES)}
+          >
+            {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
+            <UnifiedMarkdown content={body} isStreaming={false} allowHtml={false} />
           </div>
         </CopyOverlay>
       </div>

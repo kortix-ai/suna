@@ -26,45 +26,84 @@ interface TextPartLike extends PartLike {
 // ============================================================================
 
 /**
- * Display order: WIRE ID first for two well-formed wire ids, `time.created`
- * otherwise, untimed messages (optimistic stubs) last.
+ * Display order, as a TOTAL order over two disjoint segments.
  *
- * The wire id is the message's POSITION: OpenCode's own loop resolves "is
- * this answered?" by id order, and every id that reaches the transcript is
- * placed by the control plane (the proxy's wire-id repair lifts a stale
- * client id; the drain re-mints a queued prompt above the live turn). So for
- * wire ids, id order IS conversation order.
+ *   1. PLACED — the message has a wire id, so the server has given it a
+ *      position. Ordered by that id.
+ *   2. LOCAL — an optimistic stub, or a queued inbox row the transcript has
+ *      not echoed yet. Ordered by the instant the user sent it, untimed last.
  *
- * `time.created` is NOT: OpenCode stamps it at PERSISTENCE, from arrival
- * wall-clock. A batch of queued prompts is posted concurrently on purpose
- * (so one step answers them all), and their arrival order is the network's —
- * sorting by it displayed "B4, FIRST, B2, B3" for a burst the model itself
- * read, and answered, in id order. It remains the fallback for anything
- * without two well-formed wire ids, where it is the only clock there is.
+ * Every placed message precedes every local one, because a local placeholder
+ * exists precisely because the server has not placed it yet; the moment it is
+ * echoed it gains a wire id and moves into segment 1.
  *
- * A message with no timestamp AND no orderable id (a host's plain stub)
- * sorts as newest — it is the latest thing the user did — and two such keep
- * their INPUT order. Equal keys keep id order. A weak order (stable sort),
- * never a partial one.
+ * The wire id is the message's POSITION: OpenCode's own loop resolves "is this
+ * answered?" by id order, and every id that reaches the transcript is placed by
+ * the control plane (the proxy's wire-id repair lifts a stale client id; the
+ * drain re-mints a queued prompt above the live turn). So for wire ids, id
+ * order IS conversation order.
+ *
+ * `time.created` is NOT, which is why it only ever orders segment 2. OpenCode
+ * stamps it at PERSISTENCE, from arrival wall-clock. A batch of queued prompts
+ * is posted concurrently on purpose (so one step answers them all), and their
+ * arrival order is the network's — sorting placed messages by it displayed
+ * "B4, FIRST, B2, B3" for a burst the model itself read, and answered, in id
+ * order.
+ *
+ * WHY THE SEGMENTS. This function used to switch ordering per PAIR: wire-id
+ * order when both ids were well-formed wire ids, `time.created` for every pair
+ * involving anything else. That is not an order at all. Two placed messages A,
+ * B and one queued row S whose host-fabricated stamp sat below the box clock
+ * compared as A < B (by id), S < A (by time) and B < S (by time) — a cycle.
+ * `Array.prototype.sort` may emit any permutation of a cyclic comparator, and
+ * V8 switches algorithm with input length, so three prompts sent "who", "are",
+ * "you" rendered "who", "you", "are". `groupMessagesIntoTurns` walks the same
+ * sorted list to attach assistant messages that carry no `parentID`, so the
+ * replies re-parented too, and a queued row could sort ABOVE the whole
+ * transcript. Segmenting removes the mixed comparison, and with it the need
+ * for any host to fabricate a timestamp to keep a queued row in place.
+ *
+ * A message with no timestamp AND no wire id (a host's plain stub) sorts last —
+ * it is the latest thing the user did — and two such are a TIE, so the stable
+ * sort keeps the order the host handed them over in. Equal timestamps keep id
+ * order.
  */
 const WIRE_DISPLAY_ID = /^msg_[0-9a-f]{12}/;
+
+/** `0` for a message the server has placed, `1` for one only this tab knows. */
+function displaySegment(id: string): 0 | 1 {
+  return WIRE_DISPLAY_ID.test(id) ? 0 : 1;
+}
+
+function compareIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 
 export function compareMessagesForDisplay(
   a: { info: { id: string; time?: { created?: number } } },
   b: { info: { id: string; time?: { created?: number } } },
 ): number {
-  const aWire = WIRE_DISPLAY_ID.test(a.info.id);
-  const bWire = WIRE_DISPLAY_ID.test(b.info.id);
-  if (aWire && bWire) {
-    return a.info.id < b.info.id ? -1 : a.info.id > b.info.id ? 1 : 0;
-  }
+  const segmentA = displaySegment(a.info.id);
+  const segmentB = displaySegment(b.info.id);
+  if (segmentA !== segmentB) return segmentA - segmentB;
+
+  // Placed: the wire id is the position, and it is the only clock that agrees
+  // with the loop that produced the messages.
+  if (segmentA === 0) return compareIds(a.info.id, b.info.id);
+
+  // Local: the send instant is the only record of what the user did, and it is
+  // this tab's own clock for both sides, so it is comparable. Untimed last.
   const at = typeof a.info.time?.created === 'number' ? a.info.time.created : null;
   const bt = typeof b.info.time?.created === 'number' ? b.info.time.created : null;
+  // Two untimed stubs are a TIE, so the stable sort keeps the order the host
+  // handed them over in. That is the only signal left about which came first,
+  // and an id tiebreak here would reorder `groupMessagesIntoTurns`' own
+  // sequential fallback (`u1`, `a1`, `a2` regrouped as `a1`, `a2`, `u1`).
   if (at === null && bt === null) return 0;
   if (at === null) return 1;
   if (bt === null) return -1;
   if (at !== bt) return at < bt ? -1 : 1;
-  return a.info.id < b.info.id ? -1 : a.info.id > b.info.id ? 1 : 0;
+  return compareIds(a.info.id, b.info.id);
 }
 
 /**

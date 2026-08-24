@@ -42,13 +42,13 @@ describe('sessions new CLI flow', () => {
     origin = join(root, 'origin.git');
     originalCwd = process.cwd();
     previousConfigFile = process.env.KORTIX_CONFIG_FILE;
-    previousCliToken = process.env.KORTIX_CLI_TOKEN;
+    previousCliToken = process.env.KORTIX_TOKEN;
     previousApiUrl = process.env.KORTIX_API_URL;
     previousProjectId = process.env.KORTIX_PROJECT_ID;
     previousServiceToken = process.env.KORTIX_TOKEN;
     previousBashEnv = process.env.BASH_ENV;
     previousDisableSandboxEnvFile = process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE;
-    delete process.env.KORTIX_CLI_TOKEN;
+    delete process.env.KORTIX_TOKEN;
     delete process.env.KORTIX_API_URL;
     delete process.env.KORTIX_PROJECT_ID;
     delete process.env.KORTIX_TOKEN;
@@ -193,8 +193,8 @@ describe('sessions new CLI flow', () => {
     process.chdir(originalCwd);
     if (previousConfigFile === undefined) delete process.env.KORTIX_CONFIG_FILE;
     else process.env.KORTIX_CONFIG_FILE = previousConfigFile;
-    if (previousCliToken === undefined) delete process.env.KORTIX_CLI_TOKEN;
-    else process.env.KORTIX_CLI_TOKEN = previousCliToken;
+    if (previousCliToken === undefined) delete process.env.KORTIX_TOKEN;
+    else process.env.KORTIX_TOKEN = previousCliToken;
     if (previousApiUrl === undefined) delete process.env.KORTIX_API_URL;
     else process.env.KORTIX_API_URL = previousApiUrl;
     if (previousProjectId === undefined) delete process.env.KORTIX_PROJECT_ID;

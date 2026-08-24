@@ -36,7 +36,10 @@ const THIS_FILE = resolve(import.meta.path);
 const WARM_SESSION_MODULES = ['hooks/projects/use-warm-project-session.ts'] as const;
 
 /** Allowed in `WARM_SESSION_MODULES`, banned everywhere else. */
-const GOVERNED_WARM_SESSION_CALLS = ['ensureWarmProjectSession', 'claimWarmProjectSession'] as const;
+const GOVERNED_WARM_SESSION_CALLS = [
+  'ensureWarmProjectSession',
+  'claimWarmProjectSession',
+] as const;
 
 /** Banned everywhere, with no exception. */
 const FORBIDDEN_WARM_SESSION_REFERENCES = ['WARM_PROJECT_SESSIONS_ENABLED'] as const;
@@ -91,5 +94,16 @@ describe('client warm-session architecture', () => {
     const violations = scan(FORBIDDEN_WARM_SESSION_REFERENCES, () => false);
 
     expect(violations).toEqual([]);
+  });
+
+  test('replenishes an adopted warm session only after its start request settles', () => {
+    const source = readFileSync(
+      resolve(WEB_SOURCE_ROOT, 'hooks/projects/use-new-project-session.ts'),
+      'utf8',
+    );
+
+    expect(source).toContain('replenish: false');
+    expect(source).toContain('started.then(replenish, replenish)');
+    expect(source).toContain('createWarmSession(projectId');
   });
 });

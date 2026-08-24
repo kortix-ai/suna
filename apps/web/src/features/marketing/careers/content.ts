@@ -89,7 +89,8 @@ export const openings = [
   {
     id: 'product-eng',
     name: 'Product / Eng',
-    summary: 'Own the platform end to end — the agent runtime, the product around it, and the taste that holds both together.',
+    summary:
+      'Own the platform end to end — the agent runtime, the product around it, and the taste that holds both together.',
     bullets: [
       'Built 0 to 1 and 1 to n at a startup.',
       'Has run their own product or company. The stretch matters more than the outcome.',

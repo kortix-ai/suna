@@ -119,6 +119,58 @@ export function grantForSeats(seatCount: number): number {
   return INCLUDED_CREDITS_PER_SEAT_USD * Math.max(1, seatCount);
 }
 
+/**
+ * Included-usage share of every subscription dollar: $25 of each $40 seat.
+ * The one ratio the whole renewal-grant rule reduces to — see
+ * `resolveRenewalGrant`.
+ */
+export const INCLUDED_CREDITS_RATIO = INCLUDED_CREDITS_PER_SEAT_USD / PER_SEAT_PRICE_USD;
+
+/**
+ * THE renewal-grant rule: what a paid subscription-cycle invoice puts in the
+ * wallet. One resolver, resolved from the SUBSCRIPTION that was billed, in
+ * precedence order:
+ *
+ *   1. Per-seat: seats × $25 — the seat count is the contract. (For the
+ *      standard $40 seat price this equals amount × INCLUDED_CREDITS_RATIO
+ *      exactly; the seat count stays authoritative for discounted invoices.)
+ *   2. A tier with a configured monthly grant (v3 credit plans, free): that
+ *      grant, unchanged.
+ *   3. Everything else that PAID — the legacy zoo (machine subscriptions,
+ *      legacy `pro`, retired tier_* keys with no grant): the money that
+ *      actually moved × INCLUDED_CREDITS_RATIO. Before this rule those
+ *      renewals granted 0: a $40/mo "Kortix Computer" customer paid every
+ *      month, sat at a $0 wallet, and could not run anything. There is no
+ *      per-key mapping table to maintain — the paid invoice IS the mapping.
+ *
+ * Pure — testable without Stripe or a DB.
+ */
+export function resolveRenewalGrant(args: {
+  tierName: string;
+  billingModel: string | null | undefined;
+  seatCount: number | null | undefined;
+  /** invoice.amount_paid, in USD (Stripe reports cents — divide by 100). */
+  amountPaidUsd: number;
+}): { credits: number; description: string } {
+  if (args.tierName === 'per_seat' || isPerSeatAccount(args.billingModel)) {
+    const seats = Math.max(1, args.seatCount ?? 1);
+    const credits = grantForSeats(seats);
+    return {
+      credits,
+      description: `Monthly renewal: ${credits} credits (${seats} ${seats === 1 ? 'seat' : 'seats'})`,
+    };
+  }
+  const configured = getMonthlyCredits(args.tierName);
+  if (configured > 0) {
+    return { credits: configured, description: `Monthly renewal: ${configured} credits` };
+  }
+  const credits = Math.round(Math.max(0, args.amountPaidUsd) * INCLUDED_CREDITS_RATIO * 100) / 100;
+  return {
+    credits,
+    description: `Monthly renewal: ${credits} credits (legacy subscription, $${args.amountPaidUsd} paid)`,
+  };
+}
+
 // ─── Compute instance definitions ───────────────────────────────────────────
 // Single source of truth for the machine tiers we sell.  Prices and specs must
 // stay in sync with the frontend's DISPLAY_PRICES / FALLBACK_TYPES in

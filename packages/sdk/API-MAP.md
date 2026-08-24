@@ -269,9 +269,7 @@ facade as `kortix.billing.{checkout, subscription, credits}`:
 Slack/email inbound-outbound installs live in `projects-client/channels.ts`; hooks remain web-local.
 Also now wrapped: Slack file download/upload proxies
 (`project(id).channels.slack.{getFile, uploadFile}` →
-`GET/POST /v1/projects/:id/channels/slack/file[/upload]`) and the Meet
-"bot speaks" action (`project(id).channels.meet.speak(botId, text, voice?)`
-→ `POST /v1/projects/:id/channels/meet/speak`).
+`GET/POST /v1/projects/:id/channels/slack/file[/upload]`).
 
 ### 18. Account audit log (Enterprise)  ✅ (client + facade) / 🟡 (hooks)
 Event list + CSV/JSONL export + outbound SIEM webhook CRUD, gated server-side on `audit.read`/`account.write` + the account's `auditAccess` entitlement. `projects-client/audit.ts` ✅; facade `kortix.accounts.audit.{log, export, webhooks: {list,create,update,remove}}` ✅ (accountId-first, like the rest of `kortix.accounts.*`); no hooks yet (this is an admin-console surface, low priority for the agent-product hooks):

@@ -45,6 +45,24 @@ export function workingPollMs(projection: WorkingProjection): number {
   return projection.state === 'working' ? WORKING_POLL_ACTIVE_MS : WORKING_POLL_IDLE_MS;
 }
 
+/**
+ * Which side of a turn boundary a status frame is on.
+ *
+ * The runtime does NOT emit one frame per turn. Measured mid-turn on the local
+ * stack, it alternated `busy` → `retry` → `busy` about every 140ms, and an
+ * effect keyed on the observation INSTANT therefore re-invalidated `/turn` and
+ * `/prompts` at that rate, once per mount. A `busy`→`retry` flip is not news
+ * about whether a turn is open; only crossing between `idle` and not-idle is.
+ *
+ * `'none'` is deliberately distinct from `'idle'`: silence is not an
+ * observation, and collapsing them would stop the FIRST frame of a turn from
+ * reading as a change.
+ */
+export function streamTurnPhase(status: SessionStatus | undefined): 'idle' | 'active' | 'none' {
+  if (!status) return 'none';
+  return status.type === 'idle' ? 'idle' : 'active';
+}
+
 /** One `GET .../turn` answer plus the instant the read was ISSUED. Stamping at
  *  issue rather than arrival is what lets the projection tell "this read is
  *  older than the send" from "this read answers the send". */
@@ -62,6 +80,9 @@ export function buildWorkingInputs(input: {
   inbox: WorkingInboxInput | undefined;
   status: SessionStatus | undefined;
   statusAtMs: number;
+  /** When the runtime's own output last reached this tab for this session
+   *  (`useSyncStore.sessionActivityAt`). 0/undefined when it never has. */
+  activityAtMs?: number;
   optimistic: SendReceipt | null;
   abort?: AbortReceipt | null;
   nowMs: number;
@@ -74,6 +95,11 @@ export function buildWorkingInputs(input: {
     server: input.turn
       ? { turns: input.turn.turns, lastEnded: input.turn.last_ended, atMs: input.turn.atMs }
       : null,
+    // The runtime's own output, which is not an observation OF the runtime but
+    // the runtime itself — see `WorkingActivityInput`. It is what answers when
+    // every observer has gone quiet: a dropped status frame, a poll throttled
+    // by a backgrounded tab.
+    activity: input.activityAtMs ? { atMs: input.activityAtMs } : null,
     // Silence is not an observation. A session with no status frame yet feeds
     // NOTHING here — the old code read "no status" as idle, which unmasked
     // live turns whenever a frame was dropped.
@@ -162,6 +188,12 @@ export function useSessionWorking(
   }, [status, streamKey]);
   const stream = observed && observed.key === streamKey ? observed : null;
 
+  // The runtime's own output for THIS session's wire id. Quantized to a second
+  // in the store, so subscribing here cannot re-render at the stream's rate.
+  const activityAtMs = useSyncStore((s) =>
+    streamKey ? s.sessionActivityAt[streamKey] : undefined,
+  );
+
   const canRead = enabled && !!projectId && !!sessionId;
 
   const inputsFor = (turn: SessionTurnObservation | undefined, nowMs: number): WorkingInputs =>
@@ -170,6 +202,7 @@ export function useSessionWorking(
       inbox,
       status: stream?.status,
       statusAtMs: stream?.atMs ?? 0,
+      activityAtMs,
       optimistic,
       abort,
       nowMs,
@@ -207,16 +240,19 @@ export function useSessionWorking(
   // input with a life shorter than its own poll interval, and the turn ending
   // is exactly when a `waiting` row becomes a running one.
   const queryClient = useQueryClient();
-  const streamAtMs = stream?.atMs ?? 0;
+  // Keyed on the PHASE, not on the observation instant. The instant changes on
+  // every frame, and the runtime emits many per turn — see `streamTurnPhase`
+  // for the measured `busy`/`retry` oscillation this stops re-fetching on.
+  const streamPhase = streamTurnPhase(stream?.status);
   useEffect(() => {
-    if (!canRead || !streamAtMs) return;
+    if (!canRead || streamPhase === 'none') return;
     void queryClient.invalidateQueries({
       queryKey: qk.project.sessionTurn(projectId, sessionId),
     });
     void queryClient.invalidateQueries({
       queryKey: qk.project.sessionPrompts(projectId, sessionId),
     });
-  }, [canRead, projectId, sessionId, streamAtMs, queryClient]);
+  }, [canRead, projectId, sessionId, streamPhase, queryClient]);
 
   // Re-evaluated on every render because `nowMs` moves — the projection is
   // pure, so this costs one object and cannot drift from the poll's own view.

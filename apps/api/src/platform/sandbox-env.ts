@@ -8,8 +8,7 @@
  * (`${KORTIX_API_URL}/v1/router/{service}`) from those two and authenticate
  * with `KORTIX_TOKEN`, and the kortix-api router injects the real upstream key
  * server-side. The only credentials that legitimately live inside a sandbox
- * are that `KORTIX_TOKEN` (and its auth aliases) plus per-session tokens we
- * mint explicitly.
+ * are the one session-scoped `KORTIX_TOKEN` we mint explicitly.
  *
  * See router/config/proxy-services.ts for the upstream keys these map to.
  *
@@ -21,14 +20,10 @@
 
 /**
  * Auth/identity credentials we DO set into the sandbox on purpose — the
- * sandbox service key (+ its aliases) and per-session tokens. Everything else
- * matching a secret shape is stripped.
+ * session token. Everything else matching a secret shape is stripped.
  */
 const SANDBOX_ALLOWED_CREDENTIALS: ReadonlySet<string> = new Set([
   'KORTIX_TOKEN',
-  'INTERNAL_SERVICE_KEY',
-  'TUNNEL_TOKEN',
-  'KORTIX_CLI_TOKEN',
 ]);
 
 /**

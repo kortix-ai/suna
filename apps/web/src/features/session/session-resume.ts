@@ -47,18 +47,48 @@ export function isRuntimeIdentityUnavailable(
  */
 export function isSandboxResumable(sandbox: ResumableSandboxLike | null | undefined): boolean {
   if (isRuntimeIdentityUnavailable(sandbox)) return false;
+  const stopReason = sandbox?.metadata?.stopReason;
+  if (stopReason === 'runtime_boot_failed' || stopReason === 'runtime_wake_failed') return false;
   return !!sandbox && sandbox.status === 'stopped' && !!sandbox.external_id;
 }
 
 /**
- * While auto-resume attempts remain, a resumable box is "waking", not "dead" —
- * the page shows the boot loader rather than the terminal card. Once attempts are
- * exhausted it falls through to a manual Restart.
+ * How long a resumable box is allowed to be "waking" before the page stops
+ * waiting and offers a manual Restart.
+ *
+ * This replaced an ATTEMPT budget — three tries spaced 1500ms, so roughly THREE
+ * SECONDS in total. A sandbox resume does not fit in three seconds: measured end
+ * to end on dev (2026-08-24), `/start` alone answers in ~1.9s and the runtime
+ * becomes reachable ~3s after that, and a loaded or image-heavy box is slower
+ * still. So a perfectly healthy box that was merely asleep ran out of budget
+ * MID-WAKE, and the page swapped its loader for the dead-end card
+ *
+ *     "session <id> is stopped — The sandbox for this session was stopped.
+ *      Open a new session to continue."
+ *
+ * moments before that same box came up and the session loaded fine. Reported in
+ * exactly those terms: "ALL OF THEM WILL SHOW ME THE ERROR AFTER TRYING TO
+ * CONNECT FOR A WHILE & THEN THEY WILL CONNECT".
+ *
+ * A count cannot express "how long is it reasonable to wait for a machine to
+ * boot" — it only counts how many times we asked, which says more about our
+ * retry spacing than about the sandbox. A deadline says the thing we mean.
+ */
+export const AUTO_RESUME_WINDOW_MS = 90_000;
+
+/**
+ * Is this box still within its wake window — i.e. "waking", not "dead"?
+ *
+ * The page shows the boot loader while this is true and falls through to a
+ * manual Restart once it is false.
  */
 export function isAutoResuming(
   sandbox: ResumableSandboxLike | null | undefined,
-  attempts: number,
-  maxAttempts: number,
+  clock: { elapsedMs: number | null; windowMs?: number },
 ): boolean {
-  return isSandboxResumable(sandbox) && attempts < maxAttempts;
+  if (!isSandboxResumable(sandbox)) return false;
+  // No clock yet means the wait has only just begun — never treat "unknown" as
+  // "expired", which is how a first paint would land straight on the dead end.
+  if (clock.elapsedMs === null) return true;
+  return clock.elapsedMs < (clock.windowMs ?? AUTO_RESUME_WINDOW_MS);
 }

@@ -201,7 +201,7 @@ function EffortIcon({ value, className }: { value: string | null; className?: st
   switch (value) {
     case null:
     case 'auto':
-      return <GaugeIcon className={className} weight="bold" />;
+      return <GaugeIcon className={className} />;
     case 'none':
       return <CellSignalNoneIcon className={className} weight="fill" />;
     case 'low':
@@ -299,7 +299,12 @@ export function ReasoningEffortSelector({
         >
           <EffortIcon value={current} className="size-4 shrink-0" />
           <span className="max-w-[7rem] truncate">{current ? label(current) : 'Auto'}</span>
-          <CaretDownIcon className={cn('size-3 opacity-50', open && 'rotate-180')} />
+          <CaretDownIcon
+            className={cn(
+              'size-3 opacity-50 transition-transform duration-200 ease-out',
+              open && 'rotate-180',
+            )}
+          />
         </Button>
       </DropdownMenuTrigger>
 
@@ -309,17 +314,13 @@ export function ReasoningEffortSelector({
               model's own default once an override is set, and without it the
               control would be a one-way door. */}
           <DropdownMenuRadioItem value={AUTO} disabled={pending}>
-            <span className="flex items-center gap-2">
-              <EffortIcon value={null} className="size-4 shrink-0" />
-              Auto
-            </span>
+            <EffortIcon value={null} className="size-4 shrink-0" />
+            Auto
           </DropdownMenuRadioItem>
           {values.map((value) => (
             <DropdownMenuRadioItem key={value} value={value} disabled={pending}>
-              <span className="flex items-center gap-2">
-                <EffortIcon value={value} className="size-4 shrink-0" />
-                {label(value)}
-              </span>
+              <EffortIcon value={value} className="size-4 shrink-0" />
+              {label(value)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

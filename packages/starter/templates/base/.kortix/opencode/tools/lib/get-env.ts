@@ -3,12 +3,15 @@ import { resolve, dirname } from "path";
 
 const S6_ENV_DIR =
   process.env.S6_ENV_DIR || "/run/s6/container_environment";
-const LIVE_ENV_FILES = [
-  process.env.KORTIX_AGENT_ENV_FILE,
-  "/dev/shm/kortix/agent-env.sh",
-  "/tmp/pt-env",
-  "/etc/pt-env",
-].filter((path): path is string => !!path);
+
+function liveEnvFiles(): string[] {
+  return [
+    process.env.KORTIX_AGENT_ENV_FILE,
+    "/dev/shm/kortix/agent-env.sh",
+    "/tmp/pt-env",
+    "/etc/pt-env",
+  ].filter((path): path is string => !!path);
+}
 
 /**
  * Parsed .env file cache.
@@ -123,7 +126,7 @@ function parseLiveEnvFile(path: string): Record<string, string> {
 }
 
 function getLiveEnvValue(key: string): string | undefined {
-  for (const path of LIVE_ENV_FILES) {
+  for (const path of liveEnvFiles()) {
     try {
       const stat = existsSync(path) ? statSync(path) : null;
       if (!stat) continue;

@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kortix/sdk';
-import { loadAuth } from '../api/auth.ts';
+import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { activeAccount } from '../api/config.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool } from '../command-helpers.ts';
@@ -34,6 +34,16 @@ Subcommands:
   session <session-id> --project <project-id> [--json]
                                    One session's canonical ordered timeline.
 
+Stream the trail to a SIEM (needs account.write; create/enable also needs the
+Enterprise entitlement — disable and delete never do):
+  webhooks ls [--json]            List audit webhooks.
+  webhooks add --name <n> --url <u> [--action-prefix <p>]
+                                  Create one. The signing secret prints ONCE,
+                                  and a test delivery fires immediately.
+  webhooks enable <webhook-id>    Resume delivery.
+  webhooks disable <webhook-id>   Pause delivery, keeping the endpoint.
+  webhooks rm <webhook-id>        Delete permanently.
+
 Filters (ls, export, project):
   --since <when>       Only events at or after this point. ISO-8601, or a
                        relative span like 30m, 24h, 7d, 2w.
@@ -58,7 +68,11 @@ Options:
   --all                Follow cursors until every matching event is returned.
   --format <f>         export: csv (default) | jsonl.
   --out <file>         export: write to a file instead of stdout.
+  --name <n>           webhooks add: a label for this endpoint.
+  --url <u>            webhooks add: the http(s) endpoint to POST events to.
+  --action-prefix <p>  webhooks add: only deliver actions with this prefix.
   --account <id>       Operate on this account (default: active account).
+  --host <name>        Operate against a non-default Kortix host.
   --json               Machine-readable output.
   -h, --help           Show this help.
 
@@ -69,7 +83,23 @@ Examples:
   kortix audit ls --project <project-id> --all
   kortix audit session <session-id> --project <project-id>
   kortix audit export --since 30d --format jsonl --out audit.jsonl
+  kortix audit webhooks add --name splunk --url https://siem.corp.com/kortix
 `;
+
+interface AuditWebhook {
+  webhook_id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  action_prefix: string | null;
+  last_delivered_at: string | null;
+  last_error_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+  secret?: string;
+  test?: { ok: boolean; status?: number; error?: string };
+}
 
 const RELATIVE_SPAN = /^(\d+)\s*(m|h|d|w)$/i;
 const SPAN_MS: Record<string, number> = {
@@ -141,13 +171,19 @@ interface AuditContext {
   auth: NonNullable<ReturnType<typeof loadAuth>>;
 }
 
-function resolveAccountContext(accountArg?: string): AuditContext | null {
-  const auth = loadAuth();
+function resolveAccountContext(accountArg?: string, hostArg?: string): AuditContext | null {
+  // --host names a logged-in host other than the active one; its own stored
+  // account is the default scope there (never the global active account).
+  const auth = hostArg ? loadAuthForHost(hostArg) : loadAuth();
   if (!auth?.token) {
-    process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);
+    process.stderr.write(
+      hostArg
+        ? `${status.err(`Host "${hostArg}" is not logged in.`)} Run \`kortix login --host ${hostArg}\`.\n`
+        : `${status.err('Not logged in. Run `kortix login`.')}\n`,
+    );
     return null;
   }
-  const accountId = accountArg || activeAccount()?.id || auth.account_id || '';
+  const accountId = accountArg || (hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
   if (!accountId) {
     process.stderr.write(
       `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
@@ -283,11 +319,20 @@ export async function runAudit(argv: string[]): Promise<number> {
   }
   const sub = argv[0];
   const rest = argv.slice(1);
+  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
+  // subcommands below own dedicated help text, so without this a bare
+  // `--help` falls through as an ordinary positional arg and the command
+  // runs (or fails on auth) instead of printing usage.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let all = false;
   try {
     f.account = takeFlagValue(rest, ['--account']);
+    f.host = takeFlagValue(rest, ['--host']);
     f.action = takeFlagValue(rest, ['--action']);
     f.actor = takeFlagValue(rest, ['--actor']);
     f.actorType = takeFlagValue(rest, ['--actor-type']);
@@ -306,6 +351,9 @@ export async function runAudit(argv: string[]): Promise<number> {
     f.cursor = takeFlagValue(rest, ['--cursor']);
     f.format = takeFlagValue(rest, ['--format']);
     f.out = takeFlagValue(rest, ['--out']);
+    f.name = takeFlagValue(rest, ['--name']);
+    f.url = takeFlagValue(rest, ['--url']);
+    f.actionPrefix = takeFlagValue(rest, ['--action-prefix']);
     json = takeFlagBool(rest, ['--json']);
     all = takeFlagBool(rest, ['--all']);
   } catch (err) {
@@ -314,7 +362,7 @@ export async function runAudit(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext(f.account);
+  const ctx = resolveAccountContext(f.account, f.host);
   if (!ctx) return 1;
   const base = `/accounts/${ctx.accountId}/audit`;
 
@@ -522,6 +570,135 @@ export async function runAudit(argv: string[]): Promise<number> {
         }
         process.stdout.write('\n');
         return 0;
+      }
+
+      case 'webhooks': {
+        const verb = positional[0];
+        const webhookId = positional[1];
+        switch (verb) {
+          case undefined:
+          case 'ls':
+          case 'list': {
+            const { webhooks } = await ctx.client.get<{ webhooks: AuditWebhook[] }>(
+              `${base}/webhooks`,
+            );
+            if (json) {
+              emitJson(webhooks);
+              return 0;
+            }
+            if (webhooks.length === 0) {
+              process.stdout.write(
+                `\n  ${C.dim}No audit webhooks. Add one with ` +
+                  `${C.reset}${C.cyan}kortix audit webhooks add --name <n> --url <u>${C.reset}\n\n`,
+              );
+              return 0;
+            }
+            const nameW = Math.max(...webhooks.map((w) => w.name.length), 4);
+            const urlW = Math.min(Math.max(...webhooks.map((w) => w.url.length), 3), 48);
+            process.stdout.write('\n');
+            process.stdout.write(
+              `  ${C.dim}${pad('NAME', nameW)}   ${pad('URL', urlW)}   ${pad('STATE', 8)}   ${pad('PREFIX', 12)}   WEBHOOK ID${C.reset}\n`,
+            );
+            for (const w of webhooks) {
+              const state = w.enabled ? 'enabled' : `${C.yellow}disabled${C.reset}`;
+              process.stdout.write(
+                `  ${pad(w.name, nameW)}   ${pad(truncate(w.url, urlW), urlW)}   ${pad(state, 8)}   ` +
+                  `${pad(w.action_prefix ?? 'all', 12)}   ${C.faded}${w.webhook_id}${C.reset}\n`,
+              );
+              if (w.last_error) {
+                process.stdout.write(
+                  `  ${C.red}└ last error${C.reset} ${C.dim}${w.last_error_at?.slice(0, 19).replace('T', ' ') ?? ''}${C.reset} ${truncate(w.last_error, 80)}\n`,
+                );
+              }
+            }
+            process.stdout.write(
+              `\n  ${C.dim}${webhooks.length} webhook${webhooks.length === 1 ? '' : 's'}${C.reset}\n\n`,
+            );
+            return 0;
+          }
+
+          case 'add':
+          case 'create': {
+            if (!f.name) {
+              process.stderr.write(`${status.err('Pass --name <label>.')}\n`);
+              return 2;
+            }
+            if (!f.url) {
+              process.stderr.write(`${status.err('Pass --url <https endpoint>.')}\n`);
+              return 2;
+            }
+            const created = await ctx.client.post<AuditWebhook>(`${base}/webhooks`, {
+              name: f.name,
+              url: f.url,
+              ...(f.actionPrefix ? { action_prefix: f.actionPrefix } : {}),
+            });
+            if (json) {
+              emitJson(created);
+              return 0;
+            }
+            process.stdout.write(
+              `${status.ok(`Created webhook ${C.bold}${created.name}${C.reset} → ${created.url}`)}\n\n`,
+            );
+            process.stdout.write(`  ${created.secret ?? '(no secret returned)'}\n\n`);
+            process.stdout.write(
+              `${status.warn('This is the only time the signing secret is shown. Store it now.')}\n`,
+            );
+            process.stdout.write(`  ${C.dim}webhook_id ${C.reset}${created.webhook_id}\n`);
+            // The server fires one test delivery on create so a mistyped URL
+            // surfaces now, not at the first real event.
+            if (created.test) {
+              process.stdout.write(
+                created.test.ok
+                  ? `  ${C.dim}test       ${C.reset}${C.green}delivered${C.reset}${created.test.status ? ` ${C.faded}(HTTP ${created.test.status})${C.reset}` : ''}\n`
+                  : `  ${C.dim}test       ${C.reset}${C.red}failed${C.reset} ${created.test.error ?? `HTTP ${created.test.status}`}\n`,
+              );
+            }
+            return 0;
+          }
+
+          case 'enable':
+          case 'disable': {
+            if (!webhookId) {
+              process.stderr.write(
+                `${status.err('Pass a webhook id (see `kortix audit webhooks ls`).')}\n`,
+              );
+              return 2;
+            }
+            const updated = await ctx.client.patch<AuditWebhook>(
+              `${base}/webhooks/${encodeURIComponent(webhookId)}`,
+              { enabled: verb === 'enable' },
+            );
+            if (json) {
+              emitJson(updated);
+              return 0;
+            }
+            process.stdout.write(
+              `${status.ok(`${C.bold}${updated.name}${C.reset} ${updated.enabled ? 'enabled' : 'disabled'}`)}\n`,
+            );
+            return 0;
+          }
+
+          case 'rm':
+          case 'delete': {
+            if (!webhookId) {
+              process.stderr.write(
+                `${status.err('Pass a webhook id (see `kortix audit webhooks ls`).')}\n`,
+              );
+              return 2;
+            }
+            await ctx.client.delete(`${base}/webhooks/${encodeURIComponent(webhookId)}`);
+            process.stdout.write(
+              `${status.ok(`Deleted webhook ${C.bold}${webhookId}${C.reset}`)}\n`,
+            );
+            return 0;
+          }
+
+          default:
+            process.stderr.write(
+              `${status.err(`unknown webhooks verb "${verb}" — use ls|add|enable|disable|rm`)}\n`,
+            );
+            return 2;
+        }
       }
 
       default:

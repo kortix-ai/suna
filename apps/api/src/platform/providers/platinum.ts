@@ -41,6 +41,7 @@
 
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
+import { currentInstanceId, sandboxBelongsToThisInstance } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
 import { platinumJson } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
@@ -315,6 +316,10 @@ export class PlatinumProvider implements SandboxProvider {
         'kortix.env': config.INTERNAL_KORTIX_ENV,
         'kortix.workload': workloadType,
         ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
+        // Instance scope for local dev on a shared DB (projects/instance-scope.ts):
+        // `listManagedRunningSandboxes` skips another instance's boxes. Absent
+        // in deployed environments.
+        ...(currentInstanceId() ? { 'kortix.instance': currentInstanceId()! } : {}),
       },
     };
     if (dedup) {
@@ -551,6 +556,10 @@ export class PlatinumProvider implements SandboxProvider {
         const metadata = sandbox.metadata ?? {};
         if (String(metadata['kortix.managed'] ?? '') !== 'true') continue;
         if (String(metadata['kortix.env'] ?? '') !== config.INTERNAL_KORTIX_ENV) continue;
+        // Instance scope beside the env scope: another local instance's box is
+        // not ours to stop. Unstamped boxes stay everyone's. No-op when
+        // KORTIX_INSTANCE_ID is unset.
+        if (!sandboxBelongsToThisInstance({ instanceId: metadata['kortix.instance'] })) continue;
         if (String(sandbox.state ?? '').toLowerCase() !== 'running') continue;
         const rawCreatedAt = sandbox.created_at ?? sandbox.createdAt ?? null;
         const createdAt = rawCreatedAt ? new Date(rawCreatedAt) : null;

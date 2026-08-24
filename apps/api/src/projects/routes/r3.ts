@@ -10,7 +10,6 @@ import { kickRoutedPreBuild, templateBuildProviders } from '../../snapshots/buil
 import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
-import { parseBasicAuthHeader } from '../git-backends';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName, resolveProjectSecretForConsumer } from '../secrets';
 import {
@@ -26,6 +25,8 @@ import {
   UpdateSecretStrategyInputSchema,
 } from '@kortix/api-contract';
 import { parseEgressPolicy } from '../../secrets/strategy';
+import { featureDisabledBody } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import {
   findBoundaryDestinationConflict,
   networkBoundaryPolicyError,
@@ -36,19 +37,16 @@ import {
   projectSecrets,
   projectSessionSecretHandles,
   projects,
-  sessionSandboxes,
   type SecretEgressPolicy,
 } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
-  assertAgentSessionWorkspaceAllowsRepository,
   loadProjectForUser,
   assertProjectCapability,
 } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
-import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
+import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
 import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection, type SecretAgentGrantConfig } from '../lib/serializers';
-import { sessionWorkspaceAllowsRepositoryAccess } from '../lib/session-workspace-access';
 
 type ProjectSecretConsumer = z.infer<typeof SecretConsumerSchema>;
 
@@ -219,7 +217,7 @@ projectsApp.openapi(
 // middleware enforces that the URL's `:projectId` matches the token's
 // project_id, so the token is useless outside this one project. They're
 // auto-minted at session-create time and injected into the sandbox as
-// `KORTIX_CLI_TOKEN` so the in-container CLI works with zero config.
+// `KORTIX_TOKEN` so the in-container CLI works with zero config.
 
 
 projectsApp.openapi(
@@ -359,111 +357,6 @@ projectsApp.openapi(
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId, projectId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
   return c.json({ ok: true });
-},
-);
-
-// GET /v1/projects/:projectId/git/clone-credential
-// Runtime-only clone credential fetch. A session sandbox calls this endpoint
-// with its sandbox-scoped KORTIX_TOKEN and gets a fresh provider credential
-// just-in-time. Browser sessions must not receive raw Git tokens.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/git/clone-credential',
-    tags: ['github'],
-    summary: 'GET /:projectId/git/clone-credential',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(403, 404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const authType = (c as any).get('authType') as string | undefined;
-  const tokenProjectId = (c as any).get('tokenProjectId') as string | undefined;
-
-  let projectRow: typeof projects.$inferSelect | null = null;
-
-  if (authType === 'pat') {
-    if (tokenProjectId !== projectId) {
-      return c.json({ error: 'clone credentials require a project-scoped runtime token' }, 403);
-    }
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
-    projectRow = loaded.row;
-  } else if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
-    const accountId = (c as any).get('accountId') as string | undefined;
-    const sandboxId = (c as any).get('sandboxId') as string | undefined;
-    if (!accountId || !sandboxId) {
-      return c.json({ error: 'clone credentials require a sandbox token' }, 403);
-    }
-    const [sandbox] = await db
-      .select({
-        sandboxId: sessionSandboxes.sandboxId,
-        sessionId: sessionSandboxes.sessionId,
-      })
-      .from(sessionSandboxes)
-      .where(and(
-        eq(sessionSandboxes.sandboxId, sandboxId),
-        eq(sessionSandboxes.projectId, projectId),
-        eq(sessionSandboxes.accountId, accountId),
-        inArray(sessionSandboxes.status, ['provisioning', 'active']),
-      ))
-      .limit(1);
-    if (!sandbox) {
-      return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
-    }
-    if (
-      !(await sessionWorkspaceAllowsRepositoryAccess({
-        sessionId: sandbox.sessionId,
-        accountId,
-        projectId,
-      }))
-    ) {
-      return c.json({ error: 'sandbox workspace does not allow repository access' }, 403);
-    }
-    const [row] = await db
-      .select()
-      .from(projects)
-      .where(and(
-        eq(projects.projectId, projectId),
-        eq(projects.accountId, accountId),
-      ))
-      .limit(1);
-    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-    projectRow = row;
-  } else {
-    return c.json({ error: 'clone credentials are only available to runtime tokens' }, 403);
-  }
-  if (!projectRow) return c.json({ error: 'Not found' }, 404);
-
-  const gitAuth = await resolveProjectGitAuth(projectRow);
-  const upstream = await resolveProjectUpstream(projectRow, 'write');
-  const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
-  if (!credential) {
-    return c.json({
-      repo_url: upstream?.url ?? projectRow.repoUrl,
-      auth: null,
-      source: gitAuth.authSource,
-    });
-  }
-
-  return c.json({
-    repo_url: upstream?.url ?? projectRow.repoUrl,
-    auth: {
-      username: credential.username,
-      token: credential.token,
-      type: 'basic',
-    },
-    source: gitAuth.authSource,
-    expires_at: null,
-  });
 },
 );
 
@@ -832,6 +725,18 @@ projectsApp.openapi(
   if (!existing && value === null) {
     return c.json({ error: 'value is required' }, 400);
   }
+  // Network-Enforced Secrets is an experimental feature (`secrets_egress`).
+  // With the flag off a project cannot MOVE a secret into egress delivery — a
+  // new egress secret, or an existing non-egress one switched to it. A secret
+  // that is already egress keeps serving and stays editable, so turning the
+  // flag off never strands one. Runtime/broker/denied are unaffected.
+  if (
+    explicitStrategy === 'egress' &&
+    existing?.strategy !== 'egress' &&
+    !resolveFeatureFlag(loaded.row.metadata, 'secrets_egress')
+  ) {
+    return c.json(featureDisabledBody('secrets_egress'), 403);
+  }
   // An identifier is a stable handle to ONE secret — redefining its underlying
   // KEY via upsert would silently retarget every agent grant that references
   // it. Reject instead of a surprising in-place key swap.
@@ -1103,6 +1008,17 @@ projectsApp.openapi(
       )
       .limit(1);
     if (!existing) return c.json({ error: 'Not found' }, 404);
+    // Network-Enforced Secrets (`secrets_egress`) is experimental and off by
+    // default. Moving a secret INTO egress delivery needs the flag; a secret
+    // already on egress can still be edited or moved OFF it, so turning the
+    // flag off never strands one.
+    if (
+      parsed.data.strategy === 'egress' &&
+      existing.strategy !== 'egress' &&
+      !resolveFeatureFlag(loaded.row.metadata, 'secrets_egress')
+    ) {
+      return c.json(featureDisabledBody('secrets_egress'), 403);
+    }
     if (existing.strategyLocked && existing.strategy !== parsed.data.strategy) {
       return c.json(
         { error: 'This secret delivery strategy is locked', code: 'secret_strategy_locked' },

@@ -164,8 +164,9 @@ describe('ExpandableRegion — motion', () => {
     const markup = renderRegion();
     expect(markup).toContain('transition-[max-height]');
     expect(markup).toContain('transition-opacity');
-    // Principle: never `transition: all`. The Button base ships `transition-all`;
-    // the className below has to win the twMerge `transition` group.
+    // Principle: never `transition: all`. The Button base now ships an explicit
+    // property list, and the className below still has to win the twMerge
+    // `transition` group.
     expect(markup).toContain('transition-[color,scale]');
     expect(markup).not.toContain('transition-all');
     expect(markup).toContain('motion-reduce:transition-none');

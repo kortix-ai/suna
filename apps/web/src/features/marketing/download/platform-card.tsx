@@ -97,7 +97,7 @@ export function PlatformCard({
                 `href` — and would silently render a Download button for a row
                 that meant to say it has no build. */}
             {row.status !== undefined ? (
-              // Height-matched to the `magic-sm` button opposite it. Both cards
+              // Height-matched to the `sm` button opposite it. Both cards
               // share one grid row and `mt-auto` bottom-aligns their lists, so a
               // shorter trailing slot here would knock every seam in this card
               // out of line with the one beside it.
@@ -109,7 +109,7 @@ export function PlatformCard({
             ) : (
               <Button
                 asChild
-                size="magic-sm"
+                size="sm"
                 variant={row.id === filled ? 'default' : 'outline'}
                 className="shrink-0 active:scale-[0.97]"
               >

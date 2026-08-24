@@ -4291,7 +4291,15 @@
       "line301JsxTextRequestDemo": "Request demo",
       "line312JsxTextGetStarted": "Get started",
       "line322JsxAttrAriaLabelOpenMenu": "Open menu",
-      "line348JsxAttrAriaLabelCloseMenu": "Close menu"
+      "line348JsxAttrAriaLabelCloseMenu": "Close menu",
+      "copySymbolSvg": "Copy symbol as SVG",
+      "copyWordmarkSvg": "Copy wordmark as SVG",
+      "downloadBrandAssets": "Download brand assets",
+      "svgCopied": "SVG copied to clipboard",
+      "copyFailed": "Copy failed",
+      "home": "Home",
+      "logIn": "Log in",
+      "back": "Back"
     },
     "componentsHomeSimpleFooter": {
       "line50JsxAttrAriaLabelToggleTheme": "Toggle theme"
@@ -7018,7 +7026,6 @@
     "autoAppPublicShareSessionTokenPageJsxTextOpenAppa9aa1bb9": "Open app",
     "autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8": "Start session",
     "autoAppPublicShareSessionTokenPageJsxTextSignInb66c3487": "Sign in to start",
-    "autoAppPublicShareSessionTokenPageJsxAttrSandboxAllow2840c013": "allow-same-origin allow-scripts allow-forms allow-popups allow-downloads",
     "autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063": "allow-same-origin allow-scripts allow-forms allow-popups allow-downloads",
     "autoAppPublicTemplatesShareIdErrorJsxAttrDescriptionWeCouldn8189e2ca": "We couldn't load this template. Try again, or reload if it keeps happening.",
     "autoAppSystemDebugErrorPageJsxTextPreviewVariant8b7cfd4d": "Preview variant",

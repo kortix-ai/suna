@@ -202,19 +202,14 @@ describe('pushSessionScopeToSandbox', () => {
     expect(posted).toEqual([]);
   });
 
-  test('stamps the LLM-gateway strip alongside the snapshot when gateway is on', async () => {
-    // The 42/47-vs-47/47 split between opencode and shells comes from
-    // KORTIX_OPENCODE_DENY_ENV. The scope push must re-stamp it so a respin
-    // does not silently drop the gateway routing back to native provider keys.
+  test('stamps LLM gateway mode without a provider-key deny list', async () => {
     gatewayEnabled = true;
     const result = await pushSessionScopeToSandbox(INPUT);
 
     expect(result).toEqual({ applied: true });
     expect(posted).toHaveLength(1);
     expect(posted[0].llmGatewayEnabled).toBe(true);
-    // nativeProviderEnvNames() reads the live model catalog; we only assert
-    // the field was forwarded, not its exact contents (catalog-dependent).
-    expect(typeof posted[0].llmGatewayDenyEnv).toBe('string');
+    expect(posted[0].llmGatewayDenyEnv).toBeUndefined();
   });
 
   test('a fetch failure is reported, not thrown at the caller', async () => {

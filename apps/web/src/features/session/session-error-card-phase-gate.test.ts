@@ -25,10 +25,14 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  gatedRuntimeError,
+  runtimeErrorPresentation,
+  sessionErrorSurfaceReady,
+} from './session-load-state';
+import {
   canRenderCachedTranscriptWhileSandboxDown,
   type StoppedSandboxCacheState,
 } from './session-terminal-state';
-import { canShowSessionChat, gatedRuntimeError } from './session-load-state';
 
 /** The literal shape a benign wake-race 503 arrives in — same fixture the SDK's own `derivePhase` tests use. */
 const WAKE_RACE_503 = { status: 503, body: { error: 'sandbox not ready (status: stopped)' } };
@@ -46,9 +50,11 @@ function wouldShowErrorCard(input: {
   runtimeBootError: unknown;
 }): boolean {
   const runtimeError = gatedRuntimeError({ phase: input.phase, runtimeError: input.runtimeError });
-  // page.tsx renders the card the moment the gated value is truthy — before
-  // even checking `chatShowable`/`chatSessionId`.
-  return Boolean(runtimeError);
+  return runtimeErrorPresentation({
+    chatSessionId: input.chatSessionId,
+    runtimeError,
+    runtimeBootError: input.runtimeBootError,
+  }).replaceSession;
 }
 
 describe('the page-level phase gate: a benign wake-race 503 never shows the error card', () => {
@@ -76,6 +82,17 @@ describe('the page-level phase gate: a benign wake-race 503 never shows the erro
     ).toBe(true);
   });
 
+  test('a settled runtime error does not replace a resolved conversation', () => {
+    expect(
+      wouldShowErrorCard({
+        phase: 'error',
+        runtimeError: WAKE_RACE_503,
+        chatSessionId: 'ses_cached',
+        runtimeBootError: null,
+      }),
+    ).toBe(false);
+  });
+
   test('reverting the gate — reading the raw runtimeError directly, ignoring phase — WOULD show the card', () => {
     // This is literally what page.tsx did before T2 gated on `phase`:
     // `if (sessionState.runtimeError) { ...show the card... }`. Simulated
@@ -98,29 +115,43 @@ describe('the page-level phase gate: a benign wake-race 503 never shows the erro
   test('no runtime error at all: never shows the card, any phase', () => {
     for (const phase of ['starting', 'ready', 'error'] as const) {
       expect(
-        wouldShowErrorCard({ phase, runtimeError: null, chatSessionId: null, runtimeBootError: null }),
+        wouldShowErrorCard({
+          phase,
+          runtimeError: null,
+          chatSessionId: null,
+          runtimeBootError: null,
+        }),
       ).toBe(false);
     }
   });
 });
 
-describe('chatShowable agrees with the same gated value the error card reads', () => {
-  test('a benign 503-during-wake keeps the chat NOT showable (still loading), not error-showable', () => {
+describe('the crossfade trigger agrees with the same gated value the error card reads', () => {
+  test('a benign 503-during-wake does NOT end the boot shell (still loading), and shows no card', () => {
     const runtimeError = gatedRuntimeError({ phase: 'starting', runtimeError: WAKE_RACE_503 });
     expect(runtimeError).toBeNull();
-    // With no chatSessionId yet and no boot error, canShowSessionChat is false —
-    // the route stays on its loading skeleton, never flashes an error card.
-    expect(
-      canShowSessionChat({ chatSessionId: null, runtimeError, runtimeBootError: null }),
-    ).toBe(false);
+    // No boot error either — the route stays on the instant shell and never
+    // flashes an error card.
+    expect(sessionErrorSurfaceReady({ runtimeError, runtimeBootError: null })).toBe(false);
   });
 
-  test('once phase settles to error, chatShowable flips true and the SAME value renders the card', () => {
+  test('once phase settles to error, the fade starts and the SAME value renders the card', () => {
     const runtimeError = gatedRuntimeError({ phase: 'error', runtimeError: WAKE_RACE_503 });
     expect(runtimeError).toBe(WAKE_RACE_503);
-    expect(
-      canShowSessionChat({ chatSessionId: null, runtimeError, runtimeBootError: null }),
-    ).toBe(true);
+    const presentation = runtimeErrorPresentation({
+      chatSessionId: null,
+      runtimeError,
+      runtimeBootError: null,
+    });
+    expect(presentation.replaceSession).toBe(true);
+    expect(sessionErrorSurfaceReady({ runtimeError, runtimeBootError: null })).toBe(true);
+  });
+
+  test('a resolved transcript pin alone does not start the fade — the chat reports its own content', () => {
+    // Regression guard: this predicate used to take `chatSessionId` and fire on
+    // it, which crossfaded the instant shell onto SessionChat's compact
+    // "starting" loader instead of onto the conversation.
+    expect(sessionErrorSurfaceReady({ runtimeError: null, runtimeBootError: null })).toBe(false);
   });
 });
 

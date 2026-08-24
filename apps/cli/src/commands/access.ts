@@ -83,7 +83,17 @@ Project members:
   grant <user-id> --role <r>        Set a member's project role.
   revoke <user-id>                  Remove a member's project access.
   pending [--json]                  List pending project invitations.
+  resend <invite-id>                Re-send an invite email + refresh its
+                                    14-day expiry. Prints the link too.
   cancel <invite-id>                Cancel a pending invitation.
+
+Access requests (people asking to join this project):
+  requests ls [--json]              List pending access requests.
+  requests approve <req-id>         Approve one — grants the project role.
+           [--role <r>]             Default: member.
+  requests reject <req-id>          Reject one.
+
+Every verb in these two blocks needs project.members.manage.
 
 Project roles: ${ROLES.join(', ')}. Account roles: owner, admin, member.
 Run \`kortix roles ls\` for every role, \`kortix permissions ls\` for the catalog.
@@ -162,6 +172,14 @@ export async function runAccess(argv: string[]): Promise<number> {
   }
   const sub = argv[0];
   const rest = argv.slice(1);
+  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
+  // subcommands below own dedicated help text, so without this a bare
+  // `--help` falls through as an ordinary positional arg and the command
+  // runs (or fails on auth) instead of printing usage.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let accountScope = false;
@@ -341,6 +359,40 @@ export async function runAccess(argv: string[]): Promise<number> {
         process.stdout.write(`${status.ok(`Cancelled invite ${C.bold}${inviteId}${C.reset}`)}\n`);
         return 0;
       }
+      case 'resend': {
+        const inviteId = positional[0];
+        if (!inviteId) return missing('an invite id (see `kortix access pending`)');
+        const resp = await ctx.client.post<{
+          ok: boolean;
+          expires_at: string;
+          invite_url: string;
+          /** False on every deployment with no email provider configured. */
+          email_sent: boolean;
+          email_skip_reason: string | null;
+        }>(`${base}/access/pending-invites/${encodeURIComponent(inviteId)}/resend`, {});
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
+        // Same rule as `invite`: the server says whether an email left the
+        // building, and hands back the link precisely so a skipped send is
+        // recoverable. Never print a green tick over a delivery that did not
+        // happen.
+        if (resp.email_sent === false) {
+          process.stdout.write(
+            `${status.warn(`Invite ${C.bold}${inviteId}${C.reset} refreshed — but NO email was sent${resp.email_skip_reason ? ` (${resp.email_skip_reason})` : ''}.`)}\n`,
+          );
+        } else {
+          process.stdout.write(
+            `${status.ok(`Re-sent invite ${C.bold}${inviteId}${C.reset}`)} ${C.dim}(expires ${resp.expires_at})${C.reset}\n`,
+          );
+        }
+        process.stdout.write(`  ${C.bold}${resp.invite_url}${C.reset}\n`);
+        return 0;
+      }
+      case 'requests':
+      case 'access-requests':
+        return await accessRequests(ctx, positional, role, json);
       default:
         process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
         return 2;
@@ -348,6 +400,99 @@ export async function runAccess(argv: string[]): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+// ─── Access requests ────────────────────────────────────────────────────────
+//
+// Someone who can SEE a project they are not on asks to join; a manager
+// approves (granting a project role in the same step) or rejects. Distinct from
+// `invite`, which starts from the manager's side.
+
+interface ProjectAccessRequest {
+  request_id: string;
+  requester_user_id: string;
+  requester_email: string | null;
+  message: string | null;
+  status: string;
+  created_at: string;
+}
+
+async function accessRequests(
+  ctx: { client: ApiClient; projectId: string },
+  positional: string[],
+  role: ProjectRole | undefined,
+  json: boolean,
+): Promise<number> {
+  const base = `/projects/${ctx.projectId}/access-requests`;
+  const action = positional[0] ?? 'ls';
+
+  if (action === 'ls' || action === 'list') {
+    const { requests } = await ctx.client.get<{ requests: ProjectAccessRequest[] }>(base);
+    if (json) {
+      emitJson({ requests });
+      return 0;
+    }
+    if (requests.length === 0) {
+      process.stdout.write(`  ${C.dim}No pending access requests.${C.reset}\n`);
+      return 0;
+    }
+    const whoW = Math.max(
+      ...requests.map((r) => (r.requester_email ?? r.requester_user_id).length),
+      9,
+    );
+    process.stdout.write('\n');
+    process.stdout.write(`  ${C.dim}${pad('REQUESTER', whoW)}   REQUEST ID${C.reset}\n`);
+    for (const r of requests) {
+      process.stdout.write(
+        `  ${pad(r.requester_email ?? r.requester_user_id, whoW)}   ${C.faded}${r.request_id}${C.reset}\n`,
+      );
+      if (r.message) process.stdout.write(`    ${C.dim}${r.message}${C.reset}\n`);
+    }
+    process.stdout.write(
+      `\n  ${C.dim}${requests.length} request${requests.length === 1 ? '' : 's'}${C.reset}\n\n`,
+    );
+    return 0;
+  }
+
+  const requestId = positional[1];
+  if (action === 'approve') {
+    if (!requestId) return missing('a request id (see `kortix access requests ls`)');
+    if (role && !ROLES.includes(role)) {
+      process.stderr.write(`${status.err(`--role must be one of ${ROLES.join(', ')}`)}\n`);
+      return 2;
+    }
+    // The server defaults an omitted role to `member`; send it only when asked
+    // so the default lives in one place.
+    const resp = await ctx.client.post<{
+      request: ProjectAccessRequest;
+      member: { email: string | null; effective_project_role: string | null };
+    }>(`${base}/${encodeURIComponent(requestId)}/approve`, role ? { role } : {});
+    if (json) {
+      emitJson(resp);
+      return 0;
+    }
+    process.stdout.write(
+      `${status.ok(`Approved ${C.bold}${resp.member.email ?? resp.request.requester_user_id}${C.reset} → ${resp.member.effective_project_role ?? 'member'}`)}\n`,
+    );
+    return 0;
+  }
+  if (action === 'reject' || action === 'deny') {
+    if (!requestId) return missing('a request id (see `kortix access requests ls`)');
+    const resp = await ctx.client.post<{ request: ProjectAccessRequest }>(
+      `${base}/${encodeURIComponent(requestId)}/reject`,
+      {},
+    );
+    if (json) {
+      emitJson(resp);
+      return 0;
+    }
+    process.stdout.write(
+      `${status.ok(`Rejected request ${C.bold}${requestId}${C.reset}`)}\n`,
+    );
+    return 0;
+  }
+  process.stderr.write(`${status.err(`unknown requests action "${action}" — use ls, approve, or reject`)}\n`);
+  return 2;
 }
 
 // ─── The canonical surface ──────────────────────────────────────────────────

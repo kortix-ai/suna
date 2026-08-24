@@ -233,12 +233,6 @@ const CASES: WCase[] = [
   },
   // ── Customize (write) ────────────────────────────────────────────────────
   {
-    name: 'meet bot name (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
-    path: () => `/v1/projects/${PROJECT}/channels/meet/name`, body: {},
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
-  },
-  {
     // Strict body (ModelDefaultBody) is validated at the OpenAPI layer BEFORE the
     // handler, so send a schema-valid body — otherwise a 400 pre-empts the gate.
     name: 'model-defaults PUT (customize.write)',

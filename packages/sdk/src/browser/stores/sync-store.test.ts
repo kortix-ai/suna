@@ -110,14 +110,18 @@ describe("ascendingId", () => {
 });
 
 describe("useSyncStore — upsertMessage (ascending-id-ordered inserts)", () => {
-	test("inserts messages sorted by id, not by call order", () => {
+	// Was "sorted by id, not by call order". The transcript is ordered by
+	// `time.created` — the key the server itself pages by — because ids
+	// stopped ascending with time in OpenCode 1.18.15. An id-sorted insert
+	// dropped a brand-new SSE message into the middle of the transcript.
+	test("inserts messages by time.created, not by call order and not by id", () => {
 		const store = useSyncStore.getState();
-		store.upsertMessage("ses_1", userMessage("msg_b"));
-		store.upsertMessage("ses_1", userMessage("msg_a"));
-		store.upsertMessage("ses_1", userMessage("msg_c"));
+		store.upsertMessage("ses_1", { ...userMessage("msg_b"), time: { created: 20 } });
+		store.upsertMessage("ses_1", { ...userMessage("msg_c"), time: { created: 10 } });
+		store.upsertMessage("ses_1", { ...userMessage("msg_a"), time: { created: 30 } });
 
 		const ids = useSyncStore.getState().messages.ses_1.map((m) => m.id);
-		expect(ids).toEqual(["msg_a", "msg_b", "msg_c"]);
+		expect(ids).toEqual(["msg_c", "msg_b", "msg_a"]);
 	});
 
 	test("updates an existing message in place instead of duplicating it", () => {
@@ -2332,6 +2336,7 @@ describe("useSyncStore — stageSessionRevert", () => {
 		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
 			messageId: "msg_2",
 			watermark: "msg_3",
+			hiddenIds: ["msg_2", "msg_3"],
 			staged: true,
 		});
 	});
@@ -2357,6 +2362,7 @@ describe("useSyncStore — stageSessionRevert", () => {
 		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
 			messageId: "msg_2",
 			watermark: "msg_2",
+			hiddenIds: ["msg_2"],
 			staged: true,
 		});
 	});
@@ -2375,6 +2381,7 @@ describe("useSyncStore — stageSessionRevert", () => {
 		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
 			messageId: "msg_2",
 			watermark: "msg_2",
+			hiddenIds: ["msg_2"],
 			staged: true,
 		});
 	});
@@ -2396,6 +2403,7 @@ describe("useSyncStore — commitSessionRevert / clearSessionRevert", () => {
 		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
 			messageId: "msg_1",
 			watermark: "msg_1",
+			hiddenIds: ["msg_1"],
 			staged: false,
 		});
 	});
@@ -2477,6 +2485,7 @@ describe("useSyncStore — applyEvent(session.next.revert.staged/.cleared/.commi
 		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
 			messageId: "msg_2",
 			watermark: "msg_2",
+			hiddenIds: ["msg_2"],
 			staged: true,
 		});
 	});
@@ -2644,6 +2653,7 @@ describe("useSyncStore — syncSessionRevertFromInfo (reload / cross-tab recover
 		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
 			messageId: "msg_2",
 			watermark: "msg_2",
+			hiddenIds: ["msg_2"],
 			staged: true,
 		});
 	});
@@ -3048,10 +3058,12 @@ describe("useSyncStore — cache-sourced messages are provisional until the runt
 			],
 			{ source: "cache" },
 		);
+		// The disk copy is stored in the order it was written, not re-sorted
+		// by id — see `hydrate`.
 		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
 			"msg_a",
-			"msg_c",
 			"msg_phantom",
+			"msg_c",
 		]);
 		// The runtime's tail covers that range and knows nothing of the phantom.
 		store.hydrate("ses_1", [
@@ -3133,5 +3145,154 @@ describe("useSyncStore — a removed user message the control plane still owns k
 			properties: { sessionID: "ses_1", messageID: "msg_x" },
 		} as never);
 		expect(useSyncStore.getState().messages.ses_1).toEqual([]);
+	});
+});
+
+// ============================================================================
+// Ids are not a chronology.
+//
+// OpenCode 1.18.15 retired the invariant that message ids ascend with time:
+// turn exit reads `lastAssistant.parentID === lastUser.id`, and
+// `MessageV2.latest()` orders by `time.created` with the id only as a
+// tie-break. `MessageV2.page()` — the endpoint every transcript read comes
+// from — has ALWAYS ordered by `time_created` in both versions, so the store's
+// job is to PRESERVE the page order, never to re-derive one from id strings.
+// ============================================================================
+
+/** A message whose id deliberately disagrees with its position in time. */
+function timedUser(id: string, created: number, sessionID = "ses_1"): UserMessage {
+	return { ...userMessage(id, sessionID), time: { created } };
+}
+
+/** An assistant message carrying NO `parentID` — the legacy wire shape the
+ *  `m.id > parentId` comparison existed for. */
+function parentlessAssistant(id: string, created: number, sessionID = "ses_1"): AssistantMessage {
+	const { parentID: _parentID, ...rest } = assistantMessage(id, sessionID);
+	return { ...rest, time: { created } } as AssistantMessage;
+}
+
+describe("hydrate preserves the server's page order", () => {
+	test("a page whose ids descend is stored exactly as the server sent it", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: timedUser("msg_zz", 10), parts: [] },
+			{ info: timedUser("msg_aa", 20), parts: [] },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_zz",
+			"msg_aa",
+		]);
+	});
+
+	test("a locally-known message the page lacks is placed by time, not by id", () => {
+		const store = useSyncStore.getState();
+		// Arrives over SSE first; the next page read has not caught up with it.
+		store.upsertMessage("ses_1", timedUser("msg_aa", 30));
+		store.hydrate("ses_1", [
+			{ info: timedUser("msg_zz", 10), parts: [] },
+			{ info: timedUser("msg_yy", 20), parts: [] },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_zz",
+			"msg_yy",
+			"msg_aa",
+		]);
+	});
+});
+
+describe("session.error stub reconciliation reads parentID and time, never id order", () => {
+	function stageFailedTurn(userId: string, created: number): string {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", timedUser(userId, created));
+		store.applyEvent({
+			id: "evt_err",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "ModelNotFound" } },
+			},
+		} as never);
+		const stub = useSyncStore.getState().messages.ses_1.find((m) => m.id.endsWith("_error"));
+		expect(stub).toBeDefined();
+		return stub!.id;
+	}
+
+	test("the real reply retires the stub even when its id sorts BELOW the prompt's", () => {
+		const stubId = stageFailedTurn("msg_user", 10);
+
+		// The turn's own answer, with no `parentID` on the wire and an id that
+		// sorts below the prompt. `m.id > parentId` said "not a reply" and left
+		// a stale error stub sitting beside the real answer forever.
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: timedUser("msg_user", 10), parts: [] },
+			{ info: parentlessAssistant("msg_aaa", 20), parts: [] },
+		]);
+
+		const ids = useSyncStore.getState().messages.ses_1.map((m) => m.id);
+		expect(ids).not.toContain(stubId);
+		expect(ids).toContain("msg_aaa");
+	});
+
+	test("an EARLIER turn's parentless reply does not retire this turn's stub", () => {
+		const stubId = stageFailedTurn("msg_user", 10);
+
+		// An assistant message from a turn that finished BEFORE this prompt, and
+		// whose id happens to sort above it. `m.id > parentId` called it this
+		// turn's answer and deleted the only record of the failure — the
+		// 2026-08-19 `ModelNotFound` report, where the turn rendered nothing.
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: parentlessAssistant("msg_zzz", 5), parts: [] },
+			{ info: timedUser("msg_user", 10), parts: [] },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toContain(stubId);
+	});
+});
+
+describe("the confirmed echo lands where the server put it", () => {
+	test("message.updated inserts the real message by time, not at a binary index", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: timedUser("msg_zz", 10), parts: [] },
+			{ info: parentlessAssistant("msg_yy", 20), parts: [] },
+		]);
+		store.optimisticAdd("ses_1", timedUser("msg_opt", 30), [
+			textPart("prt_opt", "msg_opt", "next prompt"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_opt");
+
+		store.applyEvent({
+			type: "message.updated",
+			properties: { info: timedUser("msg_aa", 30) },
+		} as never);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_zz",
+			"msg_yy",
+			"msg_aa",
+		]);
+	});
+});
+
+describe("a committed revert deletes the captured set, not a string range", () => {
+	test("a reverted reply whose id sorts below the boundary is still deleted", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: timedUser("msg_c", 10), parts: [] },
+			{ info: timedUser("msg_b", 20), parts: [textPart("prt_b", "msg_b", "edited away")] },
+			{ info: parentlessAssistant("msg_a", 30), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_b");
+
+		store.applyEvent({
+			type: "session.next.revert.committed",
+			properties: { sessionID: "ses_1", messageID: "msg_b" },
+		} as never);
+
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1?.map((m) => m.id)).toEqual(["msg_c"]);
+		expect(state.parts.msg_b).toBeUndefined();
 	});
 });

@@ -16,7 +16,7 @@ import { renderContext, renderHostNotice } from '../host-notice.ts';
 import { stripAnsi } from '../style.ts';
 
 const ENV_KEYS = [
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',

@@ -1,6 +1,6 @@
 ---
 name: kortix-harness-refinement
-description: The continual-harness refinement protocol — how an agent inspects its recent trajectory for failure signatures and improves its own harness (agent prompts, sub-agents, skills, memory) in place, mid-session, landing changes on the session branch immediately and promoting them to `main` only through a change request. Load this skill when a refinement prompt arrives mid-session, when the `harness-reflector` agent runs, or whenever you decide your own scaffolding needs repair.
+description: The continual-harness refinement protocol — how an agent inspects its recent trajectory for failure signatures and improves its own harness (agent prompts, sub-agents, skills, memory) in place, mid-session, landing changes on the session branch immediately and promoting them to `main` only through a change request. Load this skill when a refinement prompt arrives mid-session, when the `harness-reflector` agent runs, or whenever you decide your own scaffolding needs repair. The sub-agent fan-out in this skill is for the top-level `harness-reflector` run only; if you loaded this as a subagent, do the four passes yourself and skip the fan-out.
 ---
 
 <skill name="kortix-harness-refinement">
@@ -91,6 +91,11 @@ touch one or two components, not all four.
 </four-passes>
 
 <project-review-fanout>
+This section applies only to the top-level `harness-reflector` run. If you
+loaded this skill as a subagent, skip the fan-out and review the sessions
+yourself — the runtime rejects a subagent spawning a subagent ("Subagent
+depth limit reached").
+
 For project-level reflection (the `harness-reflector` run), do not skim a
 digest and call it a review. Work through every session:
 

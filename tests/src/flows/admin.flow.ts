@@ -1333,3 +1333,33 @@ flow(
     });
   },
 );
+
+// ADM-24 — the live-Stripe-subscription read the detail sheet renders next to
+// the resolved plan badge. An account with no stripe_subscription_id answers
+// {subscription:null} WITHOUT any Stripe call, which is the whole locally
+// assertable contract (the local profile excludes Stripe).
+flow("ADM-24", { domain: "admin", routes: ["GET /v1/admin/api/accounts/:id/subscription"] }, async (ctx) => {
+  await ctx.step("ANON → 401", async () => {
+    const r = await ctx.client.as(ctx.P.ANON).get("/v1/admin/api/accounts/:id/subscription", { params: { id: NOPE } });
+    r.status(401);
+  });
+  await ctx.step("non-admin OWNER → 403", async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/admin/api/accounts/:id/subscription", { params: { id: NOPE } });
+    r.status(403);
+  });
+  if (ctx.env.capabilities.admin) {
+    await ctx.step("platform admin on an account with no subscription on file → 200 {subscription:null}", async () => {
+      const account = await ctx.fixtures.team({ name: ctx.fixtures.name("admin-no-subscription") });
+      const r = await ctx.client
+        .withBearer(ctx.env.adminToken!, "ADMIN_TOKEN")
+        .get("/v1/admin/api/accounts/:id/subscription", { params: { id: account.id } });
+      r.status(200).body().has("$.subscription", null);
+    });
+    await ctx.step("malformed account id → 200 {subscription:null} (shape-checked, no 22P02 500)", async () => {
+      const r = await ctx.client
+        .withBearer(ctx.env.adminToken!, "ADMIN_TOKEN")
+        .get("/v1/admin/api/accounts/:id/subscription", { params: { id: "not-a-uuid" } });
+      r.status(200).body().has("$.subscription", null);
+    });
+  }
+});

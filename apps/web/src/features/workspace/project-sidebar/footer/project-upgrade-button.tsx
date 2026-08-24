@@ -1,12 +1,10 @@
 'use client';
 
-import Hint from '@/components/ui/hint';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { resolvedPlan, useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { ArrowUpRightIcon as ArrowUpRight } from '@phosphor-icons/react';
 import { useCallback } from 'react';
 
 interface SidebarUpgradeButtonProps {
@@ -14,8 +12,18 @@ interface SidebarUpgradeButtonProps {
   className?: string;
 }
 
-const upgradeButtonClassName =
-  'text-background border-border  bg-foreground dark:bg-foreground dark:hover:bg-foreground/80 hover:bg-foreground/90 flex items-center justify-center border-[1.2px] text-center hover:text-background';
+/**
+ * The one solid button in the footer, and deliberately the only one.
+ *
+ * Everything else down here is an alert — tinted text on the sidebar's own
+ * background (see `sidebar-alert.tsx`). This is an offer, so it inverts: a
+ * filled row at `h-9`, one step taller than the `h-8` alerts above it. That
+ * single difference in weight is the whole hierarchy, which is why the border
+ * is gone — a rim around a solid black button adds chrome and no information.
+ *
+ * `active:` is spelled out because the sidebar recipe's own
+ * `active:bg-sidebar-accent` would flash this button light grey on press.
+ */
 
 function useSidebarUpgrade(accountId?: string) {
   const { data: accountState } = useAccountState({ accountId });
@@ -42,7 +50,7 @@ function useSidebarUpgrade(accountId?: string) {
   // Kept on top of that: a per-seat account with no live Stripe subscription
   // does NOT self-heal, so the resolver still reports it free. It is never "on
   // Free" from the customer's side — it gets the balance/top-up warning instead
-  // of an "Upgrade Plan" pitch.
+  // of an "Upgrade plan" pitch.
   const isPerSeat = accountState.billing_model === 'per_seat';
   const show = isFreeOrNoPlan && !hasActiveSubscription && !isPerSeat;
 
@@ -59,34 +67,12 @@ export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeBut
       <SidebarMenuButton
         type="button"
         size="md"
-        className={cn(
-          'relative flex w-full items-center justify-center',
-          upgradeButtonClassName,
-          className,
-        )}
+        variant="primary"
+        className={cn(className)}
         onClick={handleClick}
       >
-        Upgrade Plan
+        Upgrade plan
       </SidebarMenuButton>
     </SidebarMenuItem>
-  );
-}
-
-export function SidebarUpgradeRailItem({ accountId }: { accountId?: string }) {
-  const { show, handleClick } = useSidebarUpgrade(accountId);
-
-  if (!show) return null;
-
-  return (
-    <Hint label="Upgrade">
-      <SidebarMenuButton
-        type="button"
-        aria-label="Upgrade"
-        onClick={handleClick}
-        className={cn(upgradeButtonClassName, '[&_svg]:text-background size-8 [&_svg]:size-4!')}
-      >
-        <ArrowUpRight />
-      </SidebarMenuButton>
-    </Hint>
   );
 }

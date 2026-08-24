@@ -27,7 +27,7 @@ const code = wizard.replace(/^[ \t]*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g,
 describe('project onboarding wizard — permission gate', () => {
   test('does not mount for a caller who cannot write the project', () => {
     expect(code).toContain(
-      "const cannotSetUpProject = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === false;",
+      'const cannotSetUpProject = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === false;',
     );
     expect(code).toContain("onboarding.status === 'pending' && !cannotSetUpProject");
     expect(code).toContain('if (!isPending) return null;');
@@ -45,7 +45,7 @@ describe('project onboarding wizard — permission gate', () => {
   // denial, so a slow probe never drops Tools/Slack for someone entitled.
   test('the connector steps drop only on a received denial', () => {
     expect(code).toContain(
-      "const canReadConnectors = caps[PROJECT_ACTIONS.PROJECT_CONNECTOR_READ]?.allowed !== false;",
+      'const canReadConnectors = caps[PROJECT_ACTIONS.PROJECT_CONNECTOR_READ]?.allowed !== false;',
     );
     expect(code).toContain('buildSteps(connectorsEnabled, canReadConnectors)');
   });
@@ -60,14 +60,10 @@ describe('project onboarding wizard — permission gate', () => {
 
   // This component mounts on every project load, so two singular `/effective`
   // GETs here are two on every load.
-  test('both leaves ride one batched probe', () => {
-    expect(code).toContain('useProjectCans(projectId, ONBOARDING_GATE_ACTIONS)');
+  test('both leaves ride the shared project-page batch', () => {
+    expect(code).toContain('useProjectPageCans(projectId)');
     expect(code).not.toContain('useProjectCan(');
-    const list = code.slice(
-      code.indexOf('const ONBOARDING_GATE_ACTIONS'),
-      code.indexOf('];', code.indexOf('const ONBOARDING_GATE_ACTIONS')),
-    );
-    expect(list).toContain('PROJECT_ACTIONS.PROJECT_WRITE');
-    expect(list).toContain('PROJECT_ACTIONS.PROJECT_CONNECTOR_READ');
+    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_WRITE]');
+    expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_CONNECTOR_READ]');
   });
 });

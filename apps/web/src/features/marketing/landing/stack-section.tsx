@@ -76,7 +76,7 @@ export function StackSection() {
   const [open, setOpen] = useState<StackLayerId>('models');
 
   return (
-    <section id="stack" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+    <section id="stack" className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
       <Reveal>
         <div className="max-w-3xl">
           <Badge variant="kortix" className="rounded">

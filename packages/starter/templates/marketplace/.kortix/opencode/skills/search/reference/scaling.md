@@ -67,7 +67,7 @@ This is the manual version of a checkpoint: the filesystem is the record of comp
 There is no separate "extract" tool — **you are the model**. For a handful of pages, read the returned markdown and pull the facts inline. For a large pool, two routes:
 
 - **Mechanical pulls** — when you need a specific field from many saved pages (a price, a date, a version), `grep`/`bash` over `pages/*.md` rather than re-reading each in context.
-- **Delegate** — split the pool by subtopic and hand each to a parallel subagent (or a background session for long-running work). Each returns distilled notes; you combine them. This keeps any single context small and lets independent reads run at once.
+- **Delegate** — split the pool by subtopic and hand each to a parallel subagent (or a background session for long-running work). Each returns distilled notes; you combine them. This keeps any single context small and lets independent reads run at once. Subagent fan-out is available to the top-level agent only — the runtime rejects a subagent spawning another subagent ("Subagent depth limit reached"). If you are already a subagent, fall back to the disk-backed batching above, or spawn a background Kortix session, which is a fresh sandbox and always allowed.
 
 Escalate to delegation once a single pass would blow past a comfortable context — roughly when you're past a dozen full pages or several distinct subtopics.
 

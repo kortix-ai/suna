@@ -1076,9 +1076,6 @@
     "galleryTitle": "需要照片库许可",
     "galleryMessage": "请在您的设置中启用照片库访问以选择图像。"
   },
-  "audio": {
-    "transcriptionFailed": "转录音频失败。请再试一次。"
-  },
   "loading": {
     "threads": "正在加载聊天记录...",
     "triggers": "正在加载触发器..."

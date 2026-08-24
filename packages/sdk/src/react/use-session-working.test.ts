@@ -12,6 +12,7 @@ import {
   WORKING_POLL_IDLE_MS,
   buildWorkingInputs,
   workingPollMs,
+  streamTurnPhase,
 } from './use-session-working';
 
 const T0 = Date.parse('2026-08-18T10:00:00.000Z');
@@ -269,5 +270,37 @@ describe('an equal-valued status rewrite is not a new observation', () => {
     expect(projectWorking(inputsAt(T0 + 1_000)).state).toBe('working');
     expect(projectWorking(inputsAt(T0 + STREAM_OBSERVATION_MAX_MS + 1)).state).toBe('idle');
     expect(workingExpiryAtMs(inputsAt(T0 + 1_000))).toBe(T0 + STREAM_OBSERVATION_MAX_MS);
+  });
+});
+
+/**
+ * The SSE-triggered refetch used to fire on EVERY status frame, and the runtime
+ * does not emit one frame per turn.
+ *
+ * MEASURED on the local stack 2026-08-21, mid-turn, one session: the status
+ * alternated `busy` → `retry` → `busy` roughly every 140ms. Each flip minted a
+ * new observation instant, and the effect keyed on that instant invalidated
+ * BOTH `GET .../turn` and `GET .../prompts` — times the three mounts that
+ * observe one session (`useSession`, the composer, the session panel). None of
+ * it was news: a `busy`→`retry` flip says nothing whatsoever about whether the
+ * control plane still holds a turn open.
+ *
+ * What IS news is the turn boundary, and that is a change of PHASE.
+ */
+describe('streamTurnPhase', () => {
+  test('busy and retry are one phase — the turn is running either way', () => {
+    expect(streamTurnPhase({ type: 'busy' } as SessionStatus)).toBe('active');
+    expect(streamTurnPhase({ type: 'retry' } as unknown as SessionStatus)).toBe('active');
+  });
+
+  test('idle is its own phase — this is the end-of-turn edge worth a refetch', () => {
+    expect(streamTurnPhase({ type: 'idle' } as SessionStatus)).toBe('idle');
+  });
+
+  test('no frame observed is not a phase, and must not pose as idle', () => {
+    // Silence is not an observation anywhere else in this file either; a
+    // session with no frame yet has to stay distinguishable from an idle one,
+    // or the first frame of a turn would not read as a change.
+    expect(streamTurnPhase(undefined)).toBe('none');
   });
 });

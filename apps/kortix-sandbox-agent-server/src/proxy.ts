@@ -4,6 +4,8 @@ import type { ServerWebSocket } from 'bun'
 
 import type { Config } from './config'
 import { logger } from './logger'
+import { createPartRouter } from './routes/part'
+import { stripInlineAttachmentBytes } from './inline-attachments'
 import type { Opencode } from './opencode'
 import { isRepoMaterialized } from './git'
 import { createHealthRouter, type SandboxBootState } from './routes/health'
@@ -17,6 +19,7 @@ import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
 import { createWebProxyRouter } from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
+import { registerAgentSwapBlocker } from './runtime-assets'
 import type { ProjectEnvStore } from './project-env'
 import {
   KORTIX_USER_CONTEXT_HEADER,
@@ -181,6 +184,10 @@ export function buildOpencodeApp(
   kortixRouter.route('/git/', gitRouter)
   kortixRouter.route('/pty', ptyRouter)
   kortixRouter.route('/pty/', ptyRouter)
+  // /kortix/part — attachment bytes on demand; see routes/part.ts.
+  const partRouter = createPartRouter(opencode)
+  kortixRouter.route('/part', partRouter)
+  kortixRouter.route('/part/', partRouter)
   if (envRouter) {
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)
@@ -364,6 +371,48 @@ export function buildOpencodeApp(
         if (!STRIP_RESPONSE_HEADERS.has(key.toLowerCase())) respHeaders.set(key, value)
       })
 
+      // The transcript list leaves this box WITHOUT its attachment bytes.
+      //
+      // Every `data:` url in a file part is the whole file, base64'd, and the
+      // list re-ships every one of them on every read. Measured on a real
+      // session (essentia, 2026-08-24): 20 messages = 7-19 MB, reads dying on
+      // the browser's 30s deadline, and a retry re-issuing the whole thing.
+      // The same read answered here, in-VM, in 276 ms — the cost was entirely
+      // the bytes leaving. They now leave one part at a time, on demand, via
+      // /kortix/part (see routes/part.ts). Buffering the JSON here is cheap
+      // for the same reason: it is the in-VM copy.
+      const listMatch = method === 'GET' && upstream.ok
+        ? /^\/session\/([^/]+)\/message\/?$/.exec(url.pathname)
+        : null
+      if (listMatch && (upstream.headers.get('content-type') ?? '').includes('application/json')) {
+        const sessionID = decodeURIComponent(listMatch[1] ?? '')
+        const text = await upstream.text()
+        let body = text
+        try {
+          const stripped = stripInlineAttachmentBytes(
+            JSON.parse(text),
+            (messageID, partID) =>
+              `/kortix/part/${encodeURIComponent(sessionID)}/${encodeURIComponent(messageID)}/${encodeURIComponent(partID)}`,
+          )
+          if (stripped.stripped > 0) {
+            body = JSON.stringify(stripped.value)
+            logger.info('[proxy] stripped inline attachment bytes from message list', {
+              sessionID,
+              parts: stripped.stripped,
+              savedBytes: stripped.savedBytes,
+              bytes: body.length,
+            })
+          }
+        } catch {
+          // Not the JSON we expected — pass it through untouched. This path
+          // must never be the reason a transcript read fails.
+        }
+        respHeaders.delete('content-length')
+        respHeaders.delete('content-encoding')
+        respHeaders.set('content-type', 'application/json; charset=utf-8')
+        return new Response(body, { status: upstream.status, statusText: upstream.statusText, headers: respHeaders })
+      }
+
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -410,6 +459,14 @@ export function startProxy(
   // Constructed once, outside reload() — pty state must survive a config
   // hot-swap (warm-snapshot restore) exactly like `opencode`/`bootState` do.
   const ptyRegistry = createPtyRegistry(cfg)
+  // A staged daemon update must not exit this process while somebody has a
+  // terminal open — the PTY dies with the daemon that spawned it. The registry
+  // is the only thing that knows, so it answers the question rather than the
+  // updater guessing at it. A busy box just keeps the staging: the supervisor
+  // installs it at the next start.
+  registerAgentSwapBlocker('pty', () =>
+    ptyRegistry.list().some((entry) => entry.status === 'running'),
+  )
   let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
 
   const server = Bun.serve<OpencodeWsData>({

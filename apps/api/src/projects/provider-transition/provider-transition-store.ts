@@ -59,14 +59,45 @@ export interface ActiveRouting {
   activeProvider: string | null;
   /** The exact provider template id activation pinned. Boot should pin by this. */
   activeExternalTemplateId: string | null;
+  /** The exact image name associated with activeExternalTemplateId. */
+  activeSnapshotName: string | null;
   generation: number;
 }
 
 /**
+ * Recover the image name written by provider-transition activations that
+ * predate ACTIVE_SNAPSHOT_NAME_META_KEY. The legacy marker is usable only when
+ * every routing identity still matches the current project row. A later
+ * transition marker can overwrite this nested object, so any mismatch must
+ * fail closed to name boot.
+ */
+function recoverLegacyActiveSnapshotName(
+  meta: Record<string, unknown>,
+  activeProvider: string | null,
+  activeExternalTemplateId: string | null,
+  generation: number,
+): string | null {
+  if (!activeProvider || !activeExternalTemplateId) return null;
+  const marker = asMeta(meta[TRANSITION_META_KEY]);
+  const snapshotName = marker.snapshot_name;
+  if (
+    marker.status !== 'activated' ||
+    marker.target_provider !== activeProvider ||
+    marker.external_template_id !== activeExternalTemplateId ||
+    marker.generation !== generation ||
+    typeof snapshotName !== 'string' ||
+    snapshotName.length === 0
+  ) {
+    return null;
+  }
+  return snapshotName;
+}
+
+/**
  * Read the active routing identity from a SINGLE project row — pin + activated
- * external template id are written together in the activation transaction, so a
- * single row read gets them atomically. No path may derive the active provider
- * from an in-flight transition.
+ * external template id and image name are written together in the activation
+ * transaction, so a single row read gets them atomically. No path may derive the
+ * active provider from an in-flight transition.
  */
 export async function readActiveRouting(db: Database, projectId: string): Promise<ActiveRouting | null> {
   const [row] = await db
@@ -78,10 +109,19 @@ export async function readActiveRouting(db: Database, projectId: string): Promis
   const meta = asMeta(row.metadata);
   const pin = meta[PIN_META_KEY];
   const extId = meta[ACTIVE_EXTERNAL_ID_META_KEY];
+  const activeProvider = typeof pin === 'string' ? pin : null;
+  const activeExternalTemplateId = typeof extId === 'string' ? extId : null;
+  const generation = row.generation ?? 0;
+  const currentSnapshotName = meta[ACTIVE_SNAPSHOT_NAME_META_KEY];
+  const activeSnapshotName =
+    typeof currentSnapshotName === 'string'
+      ? currentSnapshotName
+      : recoverLegacyActiveSnapshotName(meta, activeProvider, activeExternalTemplateId, generation);
   return {
-    activeProvider: typeof pin === 'string' ? pin : null,
-    activeExternalTemplateId: typeof extId === 'string' ? extId : null,
-    generation: row.generation ?? 0,
+    activeProvider,
+    activeExternalTemplateId,
+    activeSnapshotName,
+    generation,
   };
 }
 
@@ -556,15 +596,25 @@ export async function activateWithCas(
      *  requires the row's lease_epoch to still match (zombie fencing). */
     leaseEpoch?: number;
   },
-): Promise<{ activated: boolean; reason: 'won' | 'lost_cas' | 'lost_lease' | 'project_missing' }> {
+): Promise<{
+  activated: boolean;
+  reason: 'won' | 'lost_cas' | 'lost_lease' | 'project_missing' | 'project_archived';
+}> {
   return db.transaction(async (tx) => {
     const [project] = await tx
-      .select({ metadata: projects.metadata, generation: projects.sandboxProviderGeneration })
+      .select({
+        metadata: projects.metadata,
+        generation: projects.sandboxProviderGeneration,
+        status: projects.status,
+      })
       .from(projects)
       .where(eq(projects.projectId, args.projectId))
       .for('update')
       .limit(1);
     if (!project) return { activated: false, reason: 'project_missing' as const };
+    if (project.status === 'archived') {
+      return { activated: false, reason: 'project_archived' as const };
+    }
 
     // Lease fence: a fenced-out zombie must not win activation even at a matching
     // generation. Read the row's epoch under the project lock; a mismatch means a

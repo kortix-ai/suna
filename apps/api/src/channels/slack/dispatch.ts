@@ -42,7 +42,7 @@ import {
   clearThreadErrorNotice,
   inboundMessageKey,
 } from './dedup';
-import { escapeMrkdwn, sessionWebUrl, stripMentions } from './util';
+import { escapeMrkdwn, mentionsUser, sessionWebUrl, stripMentions } from './util';
 import { config } from '../../config';
 import type {
   EventClass,
@@ -428,7 +428,48 @@ export async function classifyEvent(
   event: SlackEvent,
   botUserId: string | null,
 ): Promise<EventClass> {
-  if (event.type === 'app_mention') return 'mention';
+  // AN app_mention MUST ACTUALLY MENTION THIS PROJECT'S BOT.
+  //
+  // PROD 2026-08-20. A user typed `@Kortix hey man` in a channel that also has
+  // the "Incident reporter" bot in it, and Incident reporter answered:
+  //
+  //   mentioned bot   U0B7QL26690  (Kortix)
+  //   bot that replied U0B5W5XN49Y  (Incident reporter)
+  //   session created inside kortix-incident-reporter
+  //
+  // Two Kortix-platform apps in one workspace, each with its own BYO webhook at
+  // /slack/events/{projectId}. Whichever project the callback lands on answers,
+  // because this line accepted EVERY app_mention on the strength of its type
+  // alone. `botUserId` was already loaded and already passed in — it was simply
+  // never consulted, while the plain-`message` branch below has checked it all
+  // along. The asymmetry is the whole bug: the same event, arriving as the other
+  // Slack event type, was routed correctly.
+  //
+  // A cross-wired Events Request URL or a swapped signing-secret/token pair can
+  // deliver the event here, and that may well also be true. It does not matter:
+  // a project that is not the one addressed must decline, so a misconfiguration
+  // is a bot that stays quiet rather than a bot that impersonates another.
+  //
+  // Fails OPEN when we do not know our own bot id, which is a real state for a
+  // BYO app that has never run `link-bot`. Refusing those would take every such
+  // workspace's mentions offline to fix a two-bot workspace's routing, so it is
+  // logged instead — the degradation is visible, and link-bot closes it.
+  if (event.type === 'app_mention') {
+    if (!botUserId) {
+      console.warn(
+        '[slack] app_mention accepted without verifying the mentioned bot: this project has no ' +
+          'recorded bot user id (run `link-bot`). In a workspace with more than one Kortix app ' +
+          'installed, this is how the wrong bot answers.',
+      );
+      return 'mention';
+    }
+    if (mentionsUser(event.text ?? '', botUserId)) return 'mention';
+    console.warn(
+      `[slack] ignoring an app_mention that does not mention this project's bot (${botUserId}) — ` +
+        'it is addressed to another app in this workspace',
+    );
+    return 'ignore';
+  }
   if (event.type !== 'message') return 'ignore';
   if (event.subtype) {
     // Allow these user-generated subtypes through:
@@ -458,7 +499,7 @@ export async function classifyEvent(
   // case), the exactly-once `inboundMessageKey` gate — keyed on the shared
   // (team, channel, ts) — collapses them into a single run, so this never
   // double-answers.
-  if (botUserId && (event.text ?? '').includes(`<@${botUserId}>`)) return 'mention';
+  if (botUserId && mentionsUser(event.text ?? '', botUserId)) return 'mention';
   if (event.channel_type === 'im') return 'dm';
   if (event.thread_ts && (await threadIsOwned(teamId, event.thread_ts))) return 'follow_up';
   return 'ignore';

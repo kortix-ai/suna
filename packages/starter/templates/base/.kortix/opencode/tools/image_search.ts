@@ -1,10 +1,10 @@
-import { tool } from "@opencode-ai/plugin";
+import { tool } from "./lib/tool";
 import { getEnv, getKortixRouterBase } from "./lib/get-env";
-// NOTE: `replicate` is imported lazily inside enrichImages() — a top-level
-// import makes opencode load this heavy SDK at sandbox boot (tool modules are
-// evaluated eagerly), adding ~seconds to cold start. Deferred to first use.
 
 const SERPER_DEFAULT_URL = "https://google.serper.dev";
+const REPLICATE_DEFAULT_URL = "https://api.replicate.com/v1";
+const REPLICATE_POLL_INTERVAL_MS = 500;
+const REPLICATE_TIMEOUT_MS = 120_000;
 
 function getSerperImagesUrl(): string {
   const override = getKortixRouterBase("serper");
@@ -39,6 +39,13 @@ interface EnrichedImage {
   description: string;
 }
 
+interface ReplicatePrediction {
+  id?: string;
+  status?: "starting" | "processing" | "succeeded" | "failed" | "canceled";
+  output?: unknown;
+  error?: unknown;
+}
+
 function extractImages(data: SerperResponse): EnrichedImage[] {
   return (data.images ?? []).map((img) => ({
     url: img.imageUrl,
@@ -51,7 +58,8 @@ function extractImages(data: SerperResponse): EnrichedImage[] {
 }
 
 async function describeImage(
-  replicate: Replicate,
+  replicateBaseURL: string,
+  replicateToken: string,
   imageUrl: string,
 ): Promise<string> {
   try {
@@ -72,9 +80,48 @@ async function describeImage(
     const b64 = Buffer.from(imageBytes).toString("base64");
     const dataUrl = `data:${contentType};base64,${b64}`;
 
-    const output: unknown = await replicate.run(MOONDREAM_MODEL, {
-      input: { image: dataUrl, prompt: MOONDREAM_PROMPT },
+    const version = MOONDREAM_MODEL.split(":", 2)[1]!;
+    const headers = {
+      Authorization: `Bearer ${replicateToken}`,
+      "Content-Type": "application/json",
+      Prefer: "wait",
+    };
+    const baseURL = replicateBaseURL.replace(/\/+$/, "");
+    const created = await fetch(`${baseURL}/predictions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        version,
+        input: { image: dataUrl, prompt: MOONDREAM_PROMPT },
+      }),
+      signal: AbortSignal.timeout(REPLICATE_TIMEOUT_MS),
     });
+    const createdText = await created.text();
+    if (!created.ok) throw new Error(`${created.status} Error: ${createdText}`);
+    let prediction = JSON.parse(createdText) as ReplicatePrediction;
+
+    const deadline = Date.now() + REPLICATE_TIMEOUT_MS;
+    while (
+      prediction.status !== "succeeded" &&
+      prediction.status !== "failed" &&
+      prediction.status !== "canceled"
+    ) {
+      if (!prediction.id || Date.now() >= deadline) {
+        throw new Error("Replicate prediction timed out");
+      }
+      await new Promise((resolve) => setTimeout(resolve, REPLICATE_POLL_INTERVAL_MS));
+      const polled = await fetch(`${baseURL}/predictions/${prediction.id}`, {
+        headers: { Authorization: `Bearer ${replicateToken}` },
+        signal: AbortSignal.timeout(REPLICATE_TIMEOUT_MS),
+      });
+      const polledText = await polled.text();
+      if (!polled.ok) throw new Error(`${polled.status} Error: ${polledText}`);
+      prediction = JSON.parse(polledText) as ReplicatePrediction;
+    }
+    if (prediction.status !== "succeeded") {
+      throw new Error(`Prediction ${prediction.status}: ${String(prediction.error ?? "")}`);
+    }
+    const output = prediction.output;
 
     if (typeof output === "string") return output.trim();
     if (output && typeof output === "object" && Symbol.iterator in output) {
@@ -90,25 +137,24 @@ async function describeImage(
 }
 
 async function enrichImages(images: EnrichedImage[]): Promise<EnrichedImage[]> {
-  const replicateBaseUrl = getKortixRouterBase("replicate") ?? undefined;
+  const replicateRouterBaseURL = getKortixRouterBase("replicate");
+  const replicateBaseURL = replicateRouterBaseURL ?? REPLICATE_DEFAULT_URL;
   // Route through the Kortix router (derived from KORTIX_API_URL); auth with
   // KORTIX_SANDBOX_TOKEN (KORTIX_TOKEN kept as a legacy fallback). Fall back
   // to a raw REPLICATE_API_TOKEN only when unset.
-  const replicateToken = replicateBaseUrl
+  const replicateToken = replicateRouterBaseURL
     ? getEnv("KORTIX_SANDBOX_TOKEN") || getEnv("KORTIX_TOKEN")
     : getEnv("REPLICATE_API_TOKEN");
   if (!replicateToken || images.length === 0) return images;
 
-  const Replicate = (await import("replicate")).default;
-  const replicate = new Replicate({
-    auth: replicateToken,
-    ...(replicateBaseUrl ? { baseUrl: replicateBaseUrl } : {}),
-  });
-
   return Promise.all(
     images.map(async (img) => {
       try {
-        const description = await describeImage(replicate, img.url);
+        const description = await describeImage(
+          replicateBaseURL,
+          replicateToken,
+          img.url,
+        );
         return { ...img, description: description || img.description };
       } catch {
         return img;

@@ -52,15 +52,8 @@ export function __resetBootTimelineRelayForTests(): void {
 async function doRelay(timeline: BootMark[]): Promise<void> {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  // The SANDBOX credential, not the session PAT. This route is sandbox-only:
-  // its handler requires `apiKeyType === 'sandbox'` and rejects a PAT outright,
-  // so the old "prefer KORTIX_CLI_TOKEN, this route accepts either" order sent
-  // the one token that cannot work on a normal session. Canonical name first,
-  // legacy KORTIX_TOKEN alias second for daemons baked before the rename.
-  //
-  // It is also the right credential on the merits: this is the daemon
-  // reporting its OWN boot, which is the sandbox's identity, not the user's.
-  const token = (process.env.KORTIX_SANDBOX_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  // The API accepts this session-bound credential for daemon lifecycle events.
+  const token = (process.env.KORTIX_TOKEN || '').trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) return
   if (timeline.length === 0) return

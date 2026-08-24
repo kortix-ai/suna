@@ -14,8 +14,7 @@
  *    install_url) / 400 / 502 / 200. create-repo & link-repository need a real
  *    install or PAT → 400/409/502/503.
  *  - git-token: 409 for BYO / 503 if managed git unconfigured / 200 push token.
- *  - clone-credential: only runtime tokens (sandbox / project PAT) → a user JWT
- *    is rejected 403.
+ *  - upstream credentials remain inside the Git proxy.
  */
 import { flow } from "../core/flow";
 
@@ -147,34 +146,6 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
-      r.status([403, 404]);
-    });
-  },
-);
-
-flow(
-  "GH-11",
-  { domain: "git", routes: ["GET /v1/projects/:projectId/git/clone-credential"] },
-  async (ctx) => {
-    const p = await ctx.fixtures.sharedProject();
-    await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/git/clone-credential", { params: { projectId: p.id } });
-      r.status(401);
-    });
-    await ctx.step("user JWT is not a runtime token → 403", async () => {
-      // clone-credential is for sandbox / project-scoped PAT runtime tokens only;
-      // a plain user JWT is rejected.
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/git/clone-credential", { params: { projectId: p.id } });
-      r.status([403, 404]);
-    });
-    await ctx.step("account PAT (not project-scoped) → 403", async () => {
-      const r = await ctx.client
-        .as(ctx.P.PAT_ACCT)
-        .get("/v1/projects/:projectId/git/clone-credential", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },

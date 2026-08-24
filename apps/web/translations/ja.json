@@ -4227,7 +4227,15 @@
       "line301JsxTextRequestDemo": "デモをリクエスト",
       "line312JsxTextGetStarted": "始める",
       "line322JsxAttrAriaLabelOpenMenu": "メニューを開く",
-      "line348JsxAttrAriaLabelCloseMenu": "メニューを閉じる"
+      "line348JsxAttrAriaLabelCloseMenu": "メニューを閉じる",
+      "copySymbolSvg": "シンボルをSVGでコピー",
+      "copyWordmarkSvg": "ワードマークをSVGでコピー",
+      "downloadBrandAssets": "ブランドアセットをダウンロード",
+      "svgCopied": "SVGをクリップボードにコピーしました",
+      "copyFailed": "コピーに失敗しました",
+      "home": "ホーム",
+      "logIn": "ログイン",
+      "back": "戻る"
     },
     "componentsHomeSimpleFooter": {
       "line50JsxAttrAriaLabelToggleTheme": "テーマを切り替え"
@@ -7084,7 +7092,6 @@
     "autoAppPublicShareSessionTokenPageJsxTextOpenAppa9aa1bb9": "アプリを開く",
     "autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8": "セッションを開始する",
     "autoAppPublicShareSessionTokenPageJsxTextSignInb66c3487": "サインインして開始する",
-    "autoAppPublicShareSessionTokenPageJsxAttrSandboxAllow2840c013": "同一オリジンの許可 スク��プトの許可 フォームの許可 ポップアップの許可 ダウンロードの許可",
     "autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063": "同一オリジンの許可 スクリプトの許可 フォームの許可 ポップアップの許可 ダウンロードの許可",
     "autoAppPublicTemplatesShareIdErrorJsxAttrDescriptionWeCouldn8189e2ca": "このテンプレートを読み込めませんでした。もう一度試すか、繰り返し発生する場合はリロードしてください。",
     "autoAppSystemDebugErrorPageJsxTextPreviewVariant8b7cfd4d": "プレビュー版",

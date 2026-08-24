@@ -10,6 +10,20 @@ import type {
   ChangeRequestsListResponse,
 } from '../api/types.ts';
 
+/** GET /projects/:id/version-diff — a summary, no patch body. */
+interface VersionDiffPreview {
+  from: string;
+  into: string;
+  from_sha: string | null;
+  into_sha: string | null;
+  merge_base: string | null;
+  files_changed: number;
+  additions: number;
+  deletions: number;
+  is_up_to_date: boolean;
+  is_same_ref: boolean;
+}
+
 const HELP = help`Usage: kortix cr <subcommand> [options]
 
 Open, review, and merge Kortix change requests. A CR proposes merging one
@@ -25,17 +39,25 @@ Subcommands:
   open --head <ver> [--base <ver>]       Open a new CR.
        --title "<text>" [--description "<text>"]
   merge <cr> [--message "<text>"]        Merge an open CR into its base.
+  merge-preview <cr> [--json]            Can it merge? Lists any conflicts.
+  request-changes <cr> --message "<t>"   Ask the agent that opened it to revise.
   close <cr>                             Close an open CR without merging.
   reopen <cr>                            Reopen a closed CR.
+  version-diff --from <head> --into <base> Summarize what merging <head> into <base>
+                [--json]                 before opening a CR.
 
 <cr> can be a CR number (e.g. 3) or a CR uuid.
+
+request-changes records the note on the CR and delivers it to the originating
+session, booting its sandbox if it is asleep. It needs project.review.act —
+the same leaf the Review Center uses, not gitops.push.
 
 Global options:
   --project <id>     Operate on this project id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
-Inside an agent sandbox the CLI reads KORTIX_CLI_TOKEN and KORTIX_PROJECT_ID
+Inside an agent sandbox the CLI reads KORTIX_TOKEN and KORTIX_PROJECT_ID
 from the environment automatically — you don't need to log in or link.
 (KORTIX_TOKEN is the sandbox service key, not a CLI token.)
 `;
@@ -48,6 +70,14 @@ export async function runCr(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
+  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
+  // subcommands below own dedicated help text, so without this a bare
+  // `--help` falls through as an ordinary positional arg and the command
+  // runs (or fails on auth) instead of printing usage.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let json = false;
@@ -76,6 +106,14 @@ export async function runCr(argv: string[]): Promise<number> {
       return crOpen(rest, ctxOpts);
     case 'merge':
       return crMerge(rest, ctxOpts);
+    case 'merge-preview':
+    case 'preview':
+      return crMergePreview(rest[0], ctxOpts, json);
+    case 'request-changes':
+    case 'changes':
+      return crRequestChanges(rest, ctxOpts, json);
+    case 'version-diff':
+      return crVersionDiff(rest, ctxOpts, json);
     case 'close':
       return crClose(rest[0], ctxOpts);
     case 'reopen':
@@ -478,6 +516,173 @@ async function crMerge(argv: string[], opts: CtxOpts): Promise<number> {
   const label = result.merge.fast_forward ? 'fast-forward' : '3-way merge';
   process.stdout.write(
     `\n  ${C.green}✓${C.reset} Merged ${C.bold}CR #${cr.number}${C.reset} ${C.dim}(${label})${C.reset}  ${C.faded}${sha}${C.reset}\n\n`,
+  );
+  return 0;
+}
+
+/**
+ * Merge preview, on its own.
+ *
+ * `show` already prints it for an open CR, but a caller that only wants the
+ * verdict — an agent deciding whether to resolve conflicts before it asks a
+ * human — should not have to parse a whole panel or opt into `--json` on show.
+ */
+async function crMergePreview(
+  ref: string | undefined,
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  const cr = await resolveCr(ctx, ref);
+  if (!cr) return 1;
+
+  let preview: ChangeRequestMergePreview;
+  try {
+    preview = await ctx.client.get<ChangeRequestMergePreview>(
+      `/projects/${ctx.projectId}/change-requests/${cr.cr_id}/merge-preview`,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(preview);
+    return 0;
+  }
+
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.bold}#${cr.number}${C.reset}  ${displayBranch(cr.head_ref)} → ${displayBranch(cr.base_ref)}\n`,
+  );
+  if (preview.is_up_to_date) {
+    process.stdout.write(`  ${C.dim}Already at base — nothing to merge.${C.reset}\n\n`);
+    return 0;
+  }
+  if (preview.can_merge) {
+    process.stdout.write(
+      `  ${C.green}✓${C.reset} Mergeable cleanly${preview.can_fast_forward ? ' (fast-forward)' : ''}.\n\n`,
+    );
+    return 0;
+  }
+  process.stdout.write(
+    `  ${C.yellow}⚠${C.reset} Conflicts in ${preview.conflicts.length} file${preview.conflicts.length === 1 ? '' : 's'}:\n`,
+  );
+  for (const path of preview.conflicts) {
+    process.stdout.write(`    ${C.faded}${path}${C.reset}\n`);
+  }
+  process.stdout.write('\n');
+  // A conflicted CR cannot be shipped as it stands — say so in the exit code
+  // too, so a script can branch on it without reading the text.
+  return 1;
+}
+
+/**
+ * "Request changes" — the human review decision the Review Center sends. It
+ * records the note on the CR (CRs have no comment table) and delivers it to
+ * the agent that opened the change, which then revises it.
+ */
+async function crRequestChanges(
+  argv: string[],
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
+  let message: string | undefined;
+  try {
+    message = takeFlagValue(argv, ['--message', '--feedback', '-m']);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  const feedback = (message ?? '').trim();
+  if (!feedback) {
+    process.stderr.write(`${status.err('Pass --message "<what to change>".')}\n`);
+    return 2;
+  }
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  const cr = await resolveCr(ctx, argv[0]);
+  if (!cr) return 1;
+
+  let resp: { change_request: ChangeRequest; delivering: boolean };
+  try {
+    resp = await ctx.client.post<{ change_request: ChangeRequest; delivering: boolean }>(
+      `/projects/${ctx.projectId}/change-requests/${cr.cr_id}/request-changes`,
+      { feedback },
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+  // `delivering` is the server saying it has an originating session to prompt.
+  // Delivery itself is fire-and-forget, so never claim the agent received it.
+  process.stdout.write(
+    resp.delivering
+      ? `${status.ok(`Delivering to the agent — it will revise ${C.bold}CR #${cr.number}${C.reset}`)}\n`
+      : `${status.ok(`Saved on ${C.bold}CR #${cr.number}${C.reset}`)} ${C.dim}(no originating session to deliver to)${C.reset}\n`,
+  );
+  return 0;
+}
+
+/**
+ * Diff two versions WITHOUT a CR — the same summary the dashboard's "Open
+ * change request" dialog shows live, so a caller can tell whether there is
+ * anything to propose before it opens one.
+ */
+async function crVersionDiff(argv: string[], opts: CtxOpts, json = false): Promise<number> {
+  let fromRef: string | undefined;
+  let intoRef: string | undefined;
+  try {
+    fromRef = takeFlagValue(argv, ['--from', '--head']);
+    intoRef = takeFlagValue(argv, ['--into', '--base']);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  if (!fromRef) fromRef = process.env.KORTIX_BRANCH_NAME || process.env.KORTIX_HEAD_REF;
+  if (!fromRef || !intoRef) {
+    process.stderr.write(
+      `${status.err('Pass --from <version> and --into <version>.')}\n`,
+    );
+    return 2;
+  }
+
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  const params = new URLSearchParams({ from: fromRef, into: intoRef });
+  let diff: VersionDiffPreview;
+  try {
+    diff = await ctx.client.get<VersionDiffPreview>(
+      `/projects/${ctx.projectId}/version-diff?${params.toString()}`,
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(diff);
+    return 0;
+  }
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${displayBranch(diff.from)} → ${displayBranch(diff.into)}\n`,
+  );
+  if (diff.is_same_ref) {
+    process.stdout.write(`  ${C.dim}Same version — nothing to compare.${C.reset}\n\n`);
+    return 0;
+  }
+  if (diff.is_up_to_date || diff.files_changed === 0) {
+    process.stdout.write(`  ${C.dim}No changes — nothing to propose.${C.reset}\n\n`);
+    return 0;
+  }
+  process.stdout.write(
+    `  ${diff.files_changed} file${diff.files_changed === 1 ? '' : 's'},` +
+      ` ${C.green}+${diff.additions}${C.reset} ${C.red}-${diff.deletions}${C.reset}\n\n`,
   );
   return 0;
 }

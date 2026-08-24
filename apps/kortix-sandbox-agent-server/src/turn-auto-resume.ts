@@ -11,10 +11,34 @@ import type { OpencodeTurnError } from './opencode-events';
 //
 // WHY here and not lower in the stack: the gateway cannot replay a stream whose
 // bytes were already relayed (a fresh sample would splice two different
-// generations), and opencode (pinned npm) does not retry an error that arrives
-// mid-stream. The agent server is the platform-owned layer that already watches
-// `session.error` and owns the session lifecycle — the only place a turn can be
-// resumed with full context.
+// generations). The agent server is the platform-owned layer that already
+// watches `session.error` and owns the session lifecycle — the only place a
+// turn can be resumed with full context.
+//
+// THIS RUNS ON TOP OF UPSTREAM RETRIES — verified against the real binaries
+// 2026-08-20 (`SessionRetry` module, symbols read out of both bundles):
+//   1.17.11 — `retryable()` returns a retry only for an `APIError` with
+//     `isRetryable === true` or `statusCode >= 500`. No attempt cap constant.
+//     The comment this replaces ("opencode does not retry an error that arrives
+//     mid-stream") was written against THIS build and was true for it.
+//   1.18.19 — same `APIError` gate, but the retried class is much broader: the
+//     message AND `responseBody` are matched against six regexes covering
+//     `429|500|502|503|504|524`, rate limits, `overloaded|service
+//     unavailable|internal server error`, `terminated|fetch failed|network
+//     error|connection error|socket hang up|econnreset|etimedout|getaddrinfo`,
+//     request/stream timeouts, and `try your request again|resource exhausted`.
+//     `RETRY_MAX_RETRIES = 5`, `RETRY_INITIAL_DELAY = 2000ms`,
+//     `RETRY_BACKOFF_FACTOR = 2`, jitter 0.25, capped at 30s without a
+//     `retry-after` header.
+// So on 1.18.19 most of `TRANSIENT_MESSAGE` below OVERLAPS upstream's list, and
+// a turn that reaches `session.error` has usually already burned ~5 upstream
+// attempts (~60s) before this module adds up to 3 more re-prompts (5s/15s/45s).
+// That is intentional layering, not a bug — upstream retries the same model
+// call, this re-prompts the turn — but it is a real multiplier on time-to-fail,
+// so shortening MAX_ATTEMPTS_PER_WINDOW is the first lever if a turn ever looks
+// like it is retrying "forever". Errors that are NOT `APIError` instances are
+// still not retried by either opencode build; those reach here on the first
+// failure.
 //
 // LOOP SAFETY: a failed turn can end in `session.idle` as well as
 // `session.error`, so resetting a counter on idle would re-arm the budget on

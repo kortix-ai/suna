@@ -3,7 +3,6 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from '@/lib/toast';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import {
   CheckIcon as Check,
@@ -12,6 +11,7 @@ import {
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
+import { errorToast, successToast } from '../ui/toast';
 
 interface ReferralCodeSectionProps {
   referralCode?: {
@@ -29,9 +29,9 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
     if (await copyToClipboard(text)) {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
-      toast.success(t('linkCopied'));
+      successToast(t('linkCopied'));
     } else {
-      toast.error('Failed to copy');
+      errorToast('Failed to copy');
     }
   };
 

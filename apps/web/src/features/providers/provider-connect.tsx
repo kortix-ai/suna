@@ -84,6 +84,10 @@ import { ChatGptSubscriptionConnect } from '@/features/workspace/customize/secti
 import { ProviderDetail } from '@/features/workspace/customize/sections/llm-provider/provider-detail';
 import { useConnectedProviders } from '@/features/workspace/customize/sections/llm-provider/use-connected-providers';
 import {
+  useLiveLlmProviderCatalog,
+  useLlmProviderCatalogRevision,
+} from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
+import {
   envVarPlaceholder,
   orderProviderRows,
   prettyFieldLabel,
@@ -774,6 +778,8 @@ export function ProviderConnect({
   enabled = true,
   className,
 }: ProviderConnectProps) {
+  useLiveLlmProviderCatalog(projectId, enabled);
+  useLlmProviderCatalogRevision();
   const { connectedProviders, providerStateLoading } = useConnectedProviders(projectId, enabled);
   const queryClient = useQueryClient();
 
@@ -809,10 +815,9 @@ export function ProviderConnect({
   const pendingProviderId =
     pendingRequest && !connectedIds.has(pendingRequest) ? pendingRequest : null;
 
-  const searchable = useMemo(
-    () => LLM_PROVIDERS.filter((provider) => provider.id !== 'kortix'),
-    [],
-  );
+  // The revision subscription above re-renders this component after the live
+  // catalog replaces the module binding.
+  const searchable = LLM_PROVIDERS.filter((provider) => provider.id !== 'kortix');
 
   /**
    * THE list, in a FIXED order that a save never disturbs — see

@@ -1,17 +1,18 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import Hint from '@/components/ui/hint';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
-import { SessionDetailPanel } from '@/features/session/action-panel/session-detail-panel';
-import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
 import {
   aspectChangedWidth,
   resolveSideSize,
 } from '@/features/session/action-panel/easy/easy-panel-logic';
+import { SessionDetailPanel } from '@/features/session/action-panel/session-detail-panel';
+import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
 import { MobileToolDrawer } from '@/features/session/mobile-tool-drawer';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
@@ -172,6 +173,8 @@ export const SessionLayout = memo(function SessionLayout({
   const { data: auditData } = useSessionAudit(projectId, projectSessionId, {
     enabled: !transient && !booting && !!projectId && !!projectSessionId,
     silent: true,
+    // A badge, not a timeline: pending approvals are recent by construction.
+    limit: 100,
   });
   const auditPendingCount = (auditData?.actions ?? []).filter(isPendingAction).length;
 
@@ -575,7 +578,7 @@ export const SessionLayout = memo(function SessionLayout({
               maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 0 : 65) : 100}
               collapsible={isExpanded || isAnimating}
               className={cn(
-                'relative flex flex-col overflow-hidden bg-transparent transition-[padding] duration-300 ease-out',
+                'relative flex w-full flex-col overflow-hidden bg-transparent transition-[padding] duration-300 ease-out',
                 isExpanded && !isAnimating && 'pointer-events-none opacity-0',
               )}
             >
@@ -660,7 +663,11 @@ function PanelHeaderSwitcher({
       delayDuration={300}
       // No ⌘I hint here: that shortcut toggles the right side as a whole, and
       // this Advanced-mode button is a narrower thing — the detail panel only.
-      label={<span className="flex items-center gap-1.5">{isSidePanelOpen ? 'Close' : 'Open'} panel</span>}
+      label={
+        <span className="flex items-center gap-1.5">
+          {isSidePanelOpen ? 'Close' : 'Open'} panel
+        </span>
+      }
     >
       <Button
         variant="ghost"
@@ -697,14 +704,19 @@ function PanelHeaderSwitcher({
           <TabsTrigger size="xs" value="browser" className="h-7 w-fit">
             Browser
           </TabsTrigger>
-          <TabsTrigger size="xs" value="explorer" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="explorer" className="hit-area-2 h-7 w-fit">
             Files
           </TabsTrigger>
-          <TabsTrigger size="xs" value="terminal" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="terminal" className="hit-area-2 h-7 w-fit">
             Terminal
           </TabsTrigger>
-          <TabsTrigger size="xs" value="audit" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="audit" className="hit-area-2 h-7 w-fit gap-1.5">
             Audit
+            {auditBadge > 0 ? (
+              <Badge variant="secondary" size="xs" className="tabular-nums">
+                {auditBadge}
+              </Badge>
+            ) : null}
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -713,7 +725,7 @@ function PanelHeaderSwitcher({
           variant="ghost"
           size="sm"
           onClick={onToggleMode}
-          className="text-muted-foreground hover:text-foreground h-7 cursor-pointer text-xs"
+          className="text-muted-foreground hover:text-foreground hit-area-2 h-7 cursor-pointer text-xs"
         >
           Easy
         </Button>

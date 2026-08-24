@@ -1,9 +1,10 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import { scope } from './content';
-import { Eyebrow, Section, SectionHeader } from './shared';
+import { Eyebrow, Section } from './shared';
 
 /**
  * The three axes of reach, next to the file that sets them. The snippet is real
@@ -13,7 +14,7 @@ import { Eyebrow, Section, SectionHeader } from './shared';
 export function ScopeSection() {
   return (
     <Section id="scope">
-      <SectionHeader eyebrow={scope.eyebrow} title={scope.title} sub={scope.sub} />
+      <SectionHeader eyebrow={scope.eyebrow} title={scope.title} description={scope.sub} />
 
       <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
         <Reveal delay={0.06} className="lg:col-span-7">

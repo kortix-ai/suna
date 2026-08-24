@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import { useKortixRouteProjectId } from '../route-project';
 import { contract } from '../query-contracts';
@@ -32,6 +32,7 @@ import { shouldLoadProjectModelPicker } from './provider-load-plan';
 export { GATEWAY_PROVIDER_IDS };
 
 export function useOpenCodeProviders() {
+  const queryClient = useQueryClient();
   const runtimeReady = useOpenCodeRuntimeReady();
   const projectId = useKortixRouteProjectId();
   const projectDetailQuery = useQuery({
@@ -52,7 +53,16 @@ export function useOpenCodeProviders() {
   const gatewayProvidersQuery = useQuery<ProviderListResponse>({
     queryKey: ['project-providers', projectId, 'gateway'],
     queryFn: async () => {
-      const catalog = await getProjectModelPicker(projectId!);
+      // The picker is read through ITS OWN entry (`qk.project.modelPicker`),
+      // which `useProjectModels` also observes. Calling the fetcher directly
+      // here made two concurrent `GET /model-picker` on every session open
+      // (measured: both 83 KB, 1 ms apart). fetchQuery dedupes the in-flight
+      // read and fills the shared entry.
+      const catalog = await queryClient.fetchQuery({
+        queryKey: qk.project.modelPicker(projectId!),
+        queryFn: () => getProjectModelPicker(projectId!),
+        ...contract('config'),
+      });
       const providers = projectLlmCatalogToProviderList(catalog);
       setLSCache(LS_PROVIDERS, providers, gatewayCacheScope);
       return providers;

@@ -1,15 +1,13 @@
 'use client';
 
-import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import type { ReactNode } from 'react';
 
 /**
- * The one section shell this page uses. Every section is the same width, the
- * same rhythm, and the same header shape, so the page reads as one document
- * rather than a stack of blocks. Matches the landing page shell exactly.
+ * The one section shell this page uses. Every section is the same width and
+ * the same rhythm, so the page reads as one document rather than a stack of
+ * blocks. Headings come from `component/section-header`.
  */
 export function Section({
   id,
@@ -21,37 +19,9 @@ export function Section({
   className?: string;
 }) {
   return (
-    <section id={id} className={cn('mx-auto max-w-7xl px-6 py-16 sm:py-24', className)}>
+    <section id={id} className={cn('mx-auto max-w-7xl px-6 py-24 sm:py-30', className)}>
       {children}
     </section>
-  );
-}
-
-export function SectionHeader({
-  eyebrow,
-  title,
-  sub,
-  className,
-}: {
-  eyebrow: string;
-  title: string;
-  sub?: string;
-  className?: string;
-}) {
-  return (
-    <Reveal>
-      <div className={cn('max-w-3xl', className)}>
-        <Badge variant="kortix" className="rounded">
-          {eyebrow}
-        </Badge>
-        <h2 className="text-foreground mt-6 text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-          {title}
-        </h2>
-        {sub ? (
-          <p className="text-muted-foreground mt-4 text-base leading-relaxed">{sub}</p>
-        ) : null}
-      </div>
-    </Reveal>
   );
 }
 

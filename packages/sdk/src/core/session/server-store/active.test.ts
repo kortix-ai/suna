@@ -144,6 +144,9 @@ test('deriveSubdomainOpts always returns a fully-populated options object', () =
     sandboxId: 'sb-1',
     backendPort: 8008,
     apiBaseUrl: 'http://localhost:8008/v1',
+    // Null until GET /v1/p/config answers; that is the path form, which is
+    // correct for a deployment that serves no preview domain.
+    previewUrlTemplate: null,
   });
 });
 
@@ -197,4 +200,13 @@ test('switching sessions re-points the preview URL instead of keeping the old sa
 
   setCurrentRuntime('https://staging-api.kortix.com/v1/p/sb-b/8000', 'sb-b');
   expect(rewriteLocalhostUrl(3000, '/', deriveSubdomainOpts())).toContain('/p/sb-b/3000/');
+});
+
+test('deriveSubdomainOpts carries the preview template every host app builds URLs from', async () => {
+  // useSandboxProxy, proxySandboxUrl, buildStaticFilePreviewUrl and the
+  // app-preview iframe all build from this. Omitting previewUrlTemplate made
+  // every one of them fall back to the path form no matter what the deployment
+  // advertised — which is exactly what a user saw in the session panel.
+  const { deriveSubdomainOpts } = await import('./active');
+  expect(Object.keys(deriveSubdomainOpts())).toContain('previewUrlTemplate');
 });

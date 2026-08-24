@@ -130,7 +130,8 @@ gh run list --repo kortix-ai/suna --workflow build-staging.yml --branch staging 
 
 ### Step 6 — merge the release PR, then verify
 After the release PR merges to `prod`, `deploy-prod.yml` retags staging images to
-`:X.Y.Z` + `:latest`, runs prod migrations, rolls EKS, cuts the GitHub Release,
+`:X.Y.Z` + `:latest`, runs prod migrations, rolls ECS Fargate
+(`infra/scripts/ecs-deploy.sh` for `api` + `gateway`), cuts the GitHub Release,
 and Vercel deploys `prod` to `kortix.com`.
 
 ```bash
@@ -180,16 +181,17 @@ target's prebuilt images (zero rebuild):
 gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref main \
   -f version=vX.Y.Z -f reason="<incident summary>" -f confirm="ROLLBACK PROD"
 ```
-It opens a review-gated PR into `prod` that re-points `infra/k8s/envs/prod/values.yaml`
-+ `gateway-values.yaml` `image.tag` at `:X.Y.Z`. A reviewer merges it → Argo CD
-(auto-sync + selfHeal) rolls kortix-api + kortix-gateway to those images. Then:
+It re-tags the prebuilt, immutable `:vX.Y.Z` API and gateway images as `:latest`
+and runs `infra/scripts/ecs-deploy.sh` for both services — one dispatch, no PR,
+no GitOps step. Full mechanics and the Vercel clobber trap: the **kortix-rollback**
+skill. Then:
 - **Frontend:** Vercel → kortix.com → Deployments → the `vX.Y.Z` prod deployment →
   **Instant Rollback** (do this AFTER the merge so the Vercel rebuild can't clobber it).
 - **DB:** left as-is. Forward-only migrations are additive, so the live schema is a
   superset of any older release — older code runs fine; reversing migrations is unsafe.
 - **VERSION** stays at the current prod number so deploy-prod's retag can't overwrite
-  the `:X.Y.Z` rollback image. The deploy-prod run on the merge goes partly red
-  (version-watch / release-create) — cosmetic; Argo does the real roll.
+  the `:X.Y.Z` rollback image. A deploy-prod run may go partly red
+  (version-watch / release-create) — cosmetic; ECS does the real roll.
 
 The next promote of `staging` supersedes the rollback cleanly (`merge -s ours`) and moves
 prod forward — i.e. "fix forward" just works again.
@@ -201,5 +203,5 @@ prod forward — i.e. "fix forward" just works again.
 3. title + notes written in kortix-voice, accurate to the log.
 4. `staging.kortix.com` and `staging-api.kortix.com` verified on the staging SHA.
 5. `promote.yml` run with title + notes; release PR merged into `prod`.
-6. deploy-prod ran, EKS green, api.kortix.com on the new version.
+6. deploy-prod ran, ECS services green, api.kortix.com on the new version.
 7. GitHub Release shows the title + notes → `/changelog` reads cleanly.

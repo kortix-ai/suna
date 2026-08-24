@@ -506,9 +506,6 @@
     "galleryTitle": "Permiso de Galería Necesario",
     "galleryMessage": "Por favor activa el acceso a la galería en tus ajustes para elegir imágenes."
   },
-  "audio": {
-    "transcriptionFailed": "Error al transcribir el audio. Por favor intenta de nuevo."
-  },
   "billing": {
     "loadingPaywall": "Cargando planes...",
     "checkoutUnavailable": "Checkout móvil no disponible",

@@ -55,6 +55,21 @@ export interface SubdomainUrlOptions {
    * *.localhost subdomain DNS resolution isn't available.
    */
   apiBaseUrl: string;
+  /**
+   * The origin template this deployment serves previews on, from
+   * `GET /v1/p/config` — e.g. `https://dev-p{port}-{sandbox}.p.kortix.com`.
+   *
+   * When present it wins over every other form, because it is the only one that
+   * gives the proxied app its OWN origin. Under the path form an app escapes
+   * the prefix the moment it emits anything root-absolute (`<a href="/learn">`,
+   * `fetch('/api')`, `history.pushState`, CSS `url(/x.png)`, a service worker,
+   * a WebSocket) — the browser resolves those against the API origin and the
+   * prefix is gone. No amount of rewriting closes that set; a real origin does.
+   *
+   * Absent (or unfetched, or a deployment that serves no preview domain) means
+   * the path form, which still works for everything that is not a browser.
+   */
+  previewUrlTemplate?: string | null;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -74,6 +89,15 @@ const LOCALHOST_URL_REGEX =
  */
 const SUBDOMAIN_URL_REGEX =
   /^https?:\/\/p(\d+)-([^.]+)\.localhost(?::(\d+))?(\/.*)?$/;
+
+/**
+ * A deployed preview ORIGIN: `{env}-p{port}-{sandbox-label}.{domain}`. Matched
+ * on the label shape rather than on a configured domain so a URL is still
+ * recognizable as a preview after it has been copied, stored, or handed back
+ * without the options that built it.
+ */
+const PREVIEW_ORIGIN_URL_REGEX =
+  /^https?:\/\/(?:dev|staging|prod|preview)-p(\d+)-([a-z0-9-]+)\.[^/]+?(?::(\d+))?(\/.*)?$/i;
 
 /**
  * Ports that should NOT be rewritten — they're already exposed/handled natively
@@ -361,6 +385,47 @@ function isBackendOnLocalhost(apiBaseUrl: string): boolean {
 }
 
 /**
+ * A sandbox external id as a DNS label: lowercased because browsers lowercase
+ * the Host header, `_` → `-` because an underscore is not a legal hostname
+ * character. The API resolves the label back to the canonical id
+ * (`resolveExternalIdFromHostLabel`), so this must match its rule exactly.
+ */
+function sandboxHostLabel(sandboxId: string): string {
+  return sandboxId.trim().toLowerCase().split('_').join('-');
+}
+
+/**
+ * Linear trailing-slash strip. The regex form (`/\/+$/`) backtracks
+ * quadratically on adversarial input (CodeQL js/polynomial-redos) — the same
+ * reason `rewriteLocalhostUrl` strips `apiBaseUrl` this way below.
+ */
+export function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return value.slice(0, end);
+}
+
+/**
+ * Fill the deployment's preview-origin template, or null when there is none —
+ * or when it does not carry both slots, in which case every preview would
+ * collapse onto one hostname and serve the wrong sandbox.
+ */
+function previewOriginUrl(
+  port: number,
+  safePath: string,
+  opts: SubdomainUrlOptions,
+): string | null {
+  const template = opts.previewUrlTemplate;
+  if (!template || !template.includes('{port}') || !template.includes('{sandbox}')) return null;
+  const origin = template
+    .split('{port}')
+    .join(String(port))
+    .split('{sandbox}')
+    .join(sandboxHostLabel(opts.sandboxId));
+  return `${stripTrailingSlashes(origin)}${safePath}`;
+}
+
+/**
  * Whether these options can actually address a sandbox.
  *
  * Both proxy schemes put the sandbox id in a structural slot — the `/p/{id}/`
@@ -415,17 +480,18 @@ export function rewriteLocalhostUrl(
 
   if (!hasPreviewTarget(subdomainOpts)) return toInternalUrl(port, safePath);
 
+  // Preview ORIGIN — the app is alone on its own hostname and believes it is
+  // at `/`. Preferred over both forms below whenever the deployment has one.
+  const originUrl = previewOriginUrl(port, safePath, subdomainOpts);
+  if (originUrl) return originUrl;
+
   // Path-based proxy whenever the backend is NOT on the user's machine.
   // The subdomain scheme below relies on *.localhost DNS pointing at 127.0.0.1
   // (browser-native) to reach kortix-api. That only works when kortix-api is
   // actually on the user's box. Otherwise we always go path-based through the
   // public API base URL (which terminates at whichever ingress fronts the API).
   if (!isBackendOnLocalhost(subdomainOpts.apiBaseUrl)) {
-    // Linear trailing-slash strip — the regex form (/\/+$/) backtracks
-    // quadratically on adversarial input (CodeQL js/polynomial-redos).
-    let baseEnd = subdomainOpts.apiBaseUrl.length;
-    while (baseEnd > 0 && subdomainOpts.apiBaseUrl.charCodeAt(baseEnd - 1) === 47 /* '/' */) baseEnd--;
-    const base = subdomainOpts.apiBaseUrl.slice(0, baseEnd);
+    const base = stripTrailingSlashes(subdomainOpts.apiBaseUrl);
     return `${base}/p/${subdomainOpts.sandboxId}/${port}${safePath}`;
   }
 
@@ -434,9 +500,12 @@ export function rewriteLocalhostUrl(
   // The proxied app sees itself at root `/`, so absolute paths, redirects
   // (Location: /foo), service workers, WebSockets, and any framework that
   // assumes root-mounting all work natively. The API has a top-level Bun
-  // fetch handler (apps/api/src/sandbox-proxy/subdomain.ts) that matches
+  // fetch handler (apps/api/src/sandbox-proxy/preview-origin.ts) that matches
   // this hostname pattern, validates first-request auth, and forwards.
-  return `http://p${port}-${subdomainOpts.sandboxId}.localhost:${subdomainOpts.backendPort}${safePath}`;
+  // Label-encoded exactly like the deployed form: a hostname cannot carry an
+  // uppercase ULID or the `_` in `sbx_…`, and the API resolves either form of
+  // preview host through the same label lookup.
+  return `http://p${port}-${sandboxHostLabel(subdomainOpts.sandboxId)}.localhost:${subdomainOpts.backendPort}${safePath}`;
 }
 
 export function buildStaticFilePreviewUrl(
@@ -574,6 +643,32 @@ export function parseSubdomainUrl(url: string): {
     };
   }
 
+  // Deployed preview origin: {env}-p{port}-{sandbox}.{domain}/{path}. Without
+  // this branch every reverse-mapping surface returns null the moment a
+  // deployment has a preview domain — the URL is a preview, it just is not one
+  // of the two shapes this function used to know.
+  const originMatch = url.match(PREVIEW_ORIGIN_URL_REGEX);
+  if (originMatch) {
+    let backendPort = 443;
+    try {
+      const parsed = new URL(url);
+      backendPort = parsed.port
+        ? parseInt(parsed.port, 10)
+        : parsed.protocol === 'https:'
+          ? 443
+          : 80;
+    } catch {
+      // Matched the shape but is not a parseable URL — fall through to null.
+      return null;
+    }
+    return {
+      port: parseInt(originMatch[1], 10),
+      sandboxId: originMatch[2],
+      backendPort,
+      path: originMatch[4] || '/',
+    };
+  }
+
   // Try path-based format: /v1/p/{sandboxId}/{port}/{path}
   const pathMatch = url.match(PATH_PROXY_URL_REGEX);
   if (pathMatch) {
@@ -596,8 +691,10 @@ export function parseSubdomainUrl(url: string): {
 /**
  * Try to reverse-map a proxy URL back to its internal localhost equivalent.
  *
- * Handles `http://p{port}-{sandboxId}.localhost:{backendPort}/{path}` →
- * `http://localhost:{port}{path}`.
+ * Handles all three forms — the deployed origin
+ * (`{env}-p{port}-{sandbox}.{domain}`), the localhost origin
+ * (`p{port}-{sandbox}.localhost:{backendPort}`), and the path proxy
+ * (`/v1/p/{sandbox}/{port}`) — → `http://localhost:{port}{path}`.
  *
  * Returns null if the URL can't be reverse-mapped.
  */
@@ -619,7 +716,11 @@ export function proxyUrlToInternal(proxyUrl: string): string | null {
  * Use this to prevent double-proxying.
  */
 export function isPreviewUrl(url: string): boolean {
-  return isSubdomainUrl(url) || PATH_PROXY_URL_REGEX.test(url);
+  return (
+    isSubdomainUrl(url)
+    || PREVIEW_ORIGIN_URL_REGEX.test(url)
+    || PATH_PROXY_URL_REGEX.test(url)
+  );
 }
 
 /**

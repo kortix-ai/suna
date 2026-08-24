@@ -22,6 +22,7 @@ import './routes/github-repositories';
 import './routes/r2';
 import './routes/r3';
 import './routes/secret-broker';
+import './routes/secret-relay';
 import './routes/setup-links';
 import './routes/r4';
 import './routes/oauth2-connectors';

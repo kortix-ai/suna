@@ -15,7 +15,11 @@ const WORKSPACE = '/workspace'
 // Minimal opencode + apps/api mock. opencode: GET /session/:id (root, no
 // parentID) and GET /session/:id/message (last assistant message with a
 // completed timestamp we control). apps/api: POST .../turn-stream counts calls.
-function startMocks(getCompletedAt: () => number, turnStreamOk: () => boolean = () => true) {
+function startMocks(
+  getCompletedAt: () => number,
+  turnStreamOk: () => boolean = () => true,
+  getMessages?: () => unknown[],
+) {
   let turnStreamCalls = 0
   const turnStreamBodies: Array<Record<string, unknown>> = []
   const server = Bun.serve({
@@ -33,16 +37,18 @@ function startMocks(getCompletedAt: () => number, turnStreamOk: () => boolean = 
       }
       // opencode: message list for the root turn — one completed assistant reply.
       if (url.pathname === `/session/${ROOT}/message`) {
-        return Response.json([
-          { info: { id: 'msg_turn_1', role: 'user' } },
-          {
-            info: {
-              role: 'assistant',
-              parentID: 'msg_turn_1',
-              time: { completed: getCompletedAt() },
+        return Response.json(
+          getMessages?.() ?? [
+            { info: { id: 'msg_turn_1', role: 'user' } },
+            {
+              info: {
+                role: 'assistant',
+                parentID: 'msg_turn_1',
+                time: { completed: getCompletedAt() },
+              },
             },
-          },
-        ])
+          ],
+        )
       }
       // opencode: session lookup — root has no parentID.
       if (url.pathname === `/session/${ROOT}`) {
@@ -67,7 +73,7 @@ beforeEach(() => {
     SLACK_THREAD_TS: process.env.SLACK_THREAD_TS,
     KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
     KORTIX_SESSION_ID: process.env.KORTIX_SESSION_ID,
-    KORTIX_SANDBOX_TOKEN: process.env.KORTIX_SANDBOX_TOKEN,
+    KORTIX_TOKEN: process.env.KORTIX_TOKEN,
     KORTIX_API_URL: process.env.KORTIX_API_URL,
   }
 })
@@ -81,7 +87,7 @@ afterEach(() => {
 function sessionEnv(apiUrl: string) {
   process.env.KORTIX_PROJECT_ID = 'proj_1'
   process.env.KORTIX_SESSION_ID = 'sess_1'
-  process.env.KORTIX_SANDBOX_TOKEN = 'tok'
+  process.env.KORTIX_TOKEN = 'tok'
   process.env.KORTIX_API_URL = apiUrl
 }
 
@@ -122,13 +128,123 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
     delete process.env.SLACK_THREAD_TS
     process.env.KORTIX_PROJECT_ID = 'proj_1'
     process.env.KORTIX_SESSION_ID = 'sess_1'
-    process.env.KORTIX_SANDBOX_TOKEN = 'tok'
+    process.env.KORTIX_TOKEN = 'tok'
     process.env.KORTIX_API_URL = m.baseUrl
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
       await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
       expect(m.calls()).toBe(1)
+    } finally {
+      m.stop()
+    }
+  })
+
+  // A prompt forwarded into a live turn (or a synthetic `<pty_exited>`
+  // wake-up) leaves a USER message as the newest row when the turn ends. The
+  // relay must still NAME the turn the newest assistant answered — an unnamed
+  // relay loses the dedup signature (double finalizes, observed live
+  // 2026-08-20: reconciles at 12:59:17 AND 12:59:19 for one end) and starves
+  // the forwarded-turn reconciler of its primary key.
+  test('a trailing user message does not unname the relay', async () => {
+    const m = startMocks(
+      () => 1000,
+      () => true,
+      () => [
+        { info: { id: 'msg_turn_1', role: 'user' } },
+        { info: { role: 'assistant', parentID: 'msg_turn_1', time: { completed: 1000 } } },
+        { info: { id: 'msg_turn_2', role: 'user' } },
+      ],
+    )
+    sessionEnv(m.baseUrl)
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.bodies()[0]?.turn_message_id).toBe('msg_turn_1')
+      expect(m.calls()).toBe(1)
+    } finally {
+      m.stop()
+    }
+  })
+
+  // EXPECTATION FLIPPED. This shape used to relay UNNAMED, on the theory that an
+  // open newest assistant means "a turn is running, name nothing". It conflated
+  // two turns: `msg_turn_2` is the one still running, and `msg_turn_1` provably
+  // COMPLETED. Selecting by PARENT LINKAGE instead of array position names the
+  // turn that actually ended — the racing turn's row is untouched — and it
+  // restores the `completedAt` dedup signature, without which this relay could
+  // double-finalize.
+  test('an OPEN racing turn does not unname the OLDER turn that completed', async () => {
+    const m = startMocks(
+      () => 1000,
+      () => true,
+      () => [
+        { info: { id: 'msg_turn_1', role: 'user' } },
+        { info: { role: 'assistant', parentID: 'msg_turn_1', time: { completed: 1000 } } },
+        { info: { id: 'msg_turn_2', role: 'user' } },
+        { info: { role: 'assistant', parentID: 'msg_turn_2', time: {} } },
+      ],
+    )
+    sessionEnv(m.baseUrl)
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.bodies()[0]?.turn_message_id).toBe('msg_turn_1')
+      // Named ⇒ it carries a dedup signature ⇒ the second observation is a no-op.
+      expect(m.calls()).toBe(1)
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('a completed STEP of the turn still streaming keeps the relay unnamed', async () => {
+    // One turn, two steps: the first step completed while its tools run and the
+    // second step is open. Both are parented to `msg_turn_1`, so this is NOT a
+    // finished turn — naming it would let completeSandboxTurn close the row of a
+    // turn that is still running. Unnamed is the honest answer; the tip fallback
+    // in the forwarded-turn reconciler resolves it server-side.
+    const m = startMocks(
+      () => 1000,
+      () => true,
+      () => [
+        { info: { id: 'msg_turn_1', role: 'user' } },
+        { info: { role: 'assistant', parentID: 'msg_turn_1', time: { completed: 1000 } } },
+        { info: { role: 'assistant', parentID: 'msg_turn_1', time: {} } },
+      ],
+    )
+    sessionEnv(m.baseUrl)
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.bodies()[0]?.turn_message_id).toBeUndefined()
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('an open assistant with NO parentID proves nothing, so the relay stays unnamed', async () => {
+    // Without the open row's `parentID` there is no way to prove the completed
+    // row belongs to a different turn. Keep the conservative answer.
+    const m = startMocks(
+      () => 1000,
+      () => true,
+      () => [
+        { info: { id: 'msg_turn_1', role: 'user' } },
+        { info: { role: 'assistant', parentID: 'msg_turn_1', time: { completed: 1000 } } },
+        { info: { role: 'assistant', time: {} } },
+      ],
+    )
+    sessionEnv(m.baseUrl)
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.bodies()[0]?.turn_message_id).toBeUndefined()
     } finally {
       m.stop()
     }

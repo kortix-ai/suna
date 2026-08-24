@@ -10,6 +10,8 @@ import { FileViewer, isHtml, isMarkdown, isSvg, languageFor } from './file-viewe
 
 const SHARE_CONTEXT = { projectId: 'p1', sessionId: 's1' };
 
+const FILE_VIEWER_SOURCE = readFileSync(new URL('./file-viewer.tsx', import.meta.url), 'utf8');
+
 function Wrapped({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={new QueryClient()}>
@@ -18,11 +20,13 @@ function Wrapped({ children }: { children: React.ReactNode }) {
   );
 }
 
+// `ViewerActions` reads `usePublicShareLink`, which is a react-query hook — so
+// even the no-share-context case needs a QueryClientProvider around it.
 function render(fileName: string, content = 'x'): string {
   return renderToStaticMarkup(
-    <TooltipProvider>
+    <Wrapped>
       <FileViewer content={content} fileName={fileName} path={`/workspace/${fileName}`} />
-    </TooltipProvider>,
+    </Wrapped>,
   );
 }
 
@@ -134,42 +138,119 @@ describe('FileViewer toolbar', () => {
     expect(isMarkdown('notes.md')).toBe(true);
   });
 
-  test('svg keeps the shared actions in their usual place', () => {
-    // "Open in a new tab" stays absent: `isBrowserViewable` excludes SVG on
-    // purpose (it can carry <script> and a top-level tab has no sandbox
-    // attribute), and routing SVG through the text path must not re-grant it.
+  test('svg gets the same actions as every other file', () => {
+    // Routing SVG down the text path must not give it a toolbar of its own.
+    // "Open in a new tab" is gone for every file now, and SVG had an extra
+    // reason to never have it: it can carry <script>, and a top-level tab has
+    // no sandbox attribute (`isBrowserViewable` excludes it on purpose).
     const svg = render('logo.svg', '<svg xmlns="http://www.w3.org/2000/svg" />');
+    expect(svg).toContain('aria-label="Copy file contents"');
     expect(svg).not.toContain('aria-label="Open in a new tab"');
   });
 });
 
-describe('FileViewer share control', () => {
-  test('a text file with share context gets the share button', () => {
+// ── The split button ────────────────────────────────────────────────────────
+// The toolbar used to be six flat icon peers. Everything that is a way of
+// TAKING the output with you now lives in one labelled control plus a caret,
+// and only full screen and close — which act on the panel, not the file — stay
+// outside it. These lock the shape, because "one more little icon button" is
+// exactly how the old row grew.
+
+describe('FileViewer actions', () => {
+  test('the primary action is a word, with no icon at all', () => {
+    // Owner direction: an icon beside a label that already reads "Copy" is
+    // decoration, and decoration is what made the old row unreadable. The
+    // button's whole content is the word — asserted on the rendered element,
+    // not on its neighbours, so a re-added <svg> fails this immediately.
     const md = renderShareable('notes.txt', 'hi');
-    expect(md).toContain('title="Copy public link"');
+    const open = md.indexOf('aria-label="Copy file contents"');
+    expect(open).toBeGreaterThan(-1);
+    const button = md.slice(md.lastIndexOf('<button', open), md.indexOf('</button>', open));
+    expect(button).not.toContain('<svg');
+    expect(button.endsWith('>Copy')).toBe(true);
   });
 
-  test('the share button is absent without share context, not disabled', () => {
-    expect(render('notes.txt', 'hi')).not.toContain('title="Copy public link"');
+  test('Copy link and Download file are behind the caret, not beside it', () => {
+    const md = renderShareable('notes.txt', 'hi');
+    expect(md).toContain('aria-label="More actions"');
+    // Radix renders menu content only once opened, so the items themselves
+    // cannot appear in static markup — their absence here is the proof they
+    // are not sitting in the toolbar row.
+    expect(md).not.toContain('title="Copy public link"');
+    expect(md).not.toContain('aria-label="Download"');
+  });
+
+  test('the removed icon peers stay removed', () => {
+    // Two controls were deleted outright, not moved: "Ask for changes" (the
+    // composer prefill) and, for files, "Open in a new tab".
+    const md = renderShareable('notes.txt', 'hi');
+    expect(md).not.toContain('aria-label="Ask for changes"');
+    expect(md).not.toContain('aria-label="Open in a new tab"');
+  });
+
+  test('full screen and close stay outside the group — they act on the panel', () => {
+    const md = renderShareable('notes.txt', 'hi');
+    expect(md).toContain('aria-label="Full screen"');
+  });
+
+  test('a file with nothing but its text offers no caret at all', () => {
+    // No path (nothing to download) and no share context (no link to mint), so
+    // Copy is the only action. A menu holding zero items is a click for
+    // nothing, so the group collapses to the lone button.
+    const bare = renderToStaticMarkup(
+      <Wrapped>
+        <FileViewer content="hi" fileName="notes.txt" />
+      </Wrapped>,
+    );
+    expect(bare).toContain('aria-label="Copy file contents"');
+    expect(bare).not.toContain('aria-label="More actions"');
   });
 
   test('share context alone is not enough — a file with no path cannot be shared', () => {
+    // `fileShareInput` returns null without a path, which is what withholds
+    // Copy link. Download needs the path too, so nothing is left for a menu.
     const noPath = renderToStaticMarkup(
       <Wrapped>
         <FileViewer content="hi" fileName="notes.txt" shareContext={SHARE_CONTEXT} />
       </Wrapped>,
     );
-    expect(noPath).not.toContain('title="Copy public link"');
+    expect(noPath).not.toContain('aria-label="More actions"');
   });
 
-  test('the share control sits with the other toolbar actions, not alone', () => {
-    // The regression this locks: PreviewShell rendered ShareFileButton and
-    // FileViewer did not, so every markdown and text output lost its public
-    // link while rich files kept theirs. The two toolbars are contractually
-    // identical — see the header of viewer-actions.tsx.
-    const md = renderShareable('notes.txt', 'hi');
-    expect(md).toContain('title="Copy public link"');
-    expect(md).toContain('aria-label="Full screen"');
+  test('a path with no share context still earns the caret — Download lives there', () => {
+    expect(render('notes.txt', 'hi')).toContain('aria-label="More actions"');
+  });
+});
+
+// ── The two toolbars are one toolbar ───────────────────────────────────────
+// `FileViewer` (text) and `PreviewShell` (everything else) are contractually
+// required to render the same controls. The regression that contract exists
+// for: `PreviewShell` rendered the share button and `FileViewer` did not, so
+// every markdown and text output silently lost its public link. Routing both
+// through `ViewerActions` is what makes that structural rather than a habit —
+// so what is asserted is that neither file has grown its own copy again.
+
+const PREVIEW_SOURCE = readFileSync(new URL('./file-preview.tsx', import.meta.url), 'utf8');
+
+describe('shared toolbar contract', () => {
+  test('both toolbars build their actions with ViewerActions', () => {
+    expect(FILE_VIEWER_SOURCE).toContain('<ViewerActions');
+    expect(PREVIEW_SOURCE).toContain('<ViewerActions');
+  });
+
+  test('neither hand-rolls a download, share or new-tab control of its own', () => {
+    for (const source of [FILE_VIEWER_SOURCE, PREVIEW_SOURCE]) {
+      expect(source).not.toContain('<DownloadButton');
+      expect(source).not.toContain('<ShareFileButton');
+      expect(source).not.toContain('<OpenInNewTabButton');
+    }
+  });
+
+  test('both use the shared full-screen control rather than their own copy', () => {
+    for (const source of [FILE_VIEWER_SOURCE, PREVIEW_SOURCE]) {
+      expect(source).toContain('<PanelWidthButton');
+      expect(source).not.toContain("aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}");
+    }
   });
 });
 
@@ -190,11 +271,6 @@ permission:
 
 You are **Veyris Internal**.
 `;
-
-const FILE_VIEWER_SOURCE = readFileSync(
-  new URL('./file-viewer.tsx', import.meta.url),
-  'utf8',
-);
 
 describe('FileViewer — markdown frontmatter', () => {
   // Rendered assertions live in markdown-frontmatter.test.ts: `parseFrontmatter`

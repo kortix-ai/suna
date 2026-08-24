@@ -124,12 +124,6 @@ export function useOptionalSessionPanel(): SessionPanelValue | null {
   return useContext(SessionPanelContext);
 }
 
-/** The path's last segment — used only to decide whether the path hint in
- *  "Ask for changes" would just repeat the display name (W12). */
-function basenameOf(path: string): string {
-  return path.split('/').pop() ?? path;
-}
-
 export function SessionPanelProvider({
   sessionId,
   messages,
@@ -437,20 +431,6 @@ export function SessionPanelProvider({
       // (`setPanelSplit(null)`, for steps/context/audit) would otherwise win.
       const split = isWideDeliverable(output) ? 70 : null;
 
-      // "Ask for changes" (W12): hand the composer a starter line naming this
-      // deliverable and step out of the way. The path hint only earns its
-      // parenthetical when it says something the display name didn't already —
-      // most outputs have no separate title, so path and name agree.
-      const askForChanges = () => {
-        track('ask_for_changes_clicked', { kind: output.kind });
-        const pathHint =
-          output.path && basenameOf(output.path) !== displayName ? ` (\`${output.path}\`)` : '';
-        useSessionComposerPrefillStore
-          .getState()
-          .setPrefill(sessionId, `In ${displayName}${pathHint}, `);
-        closeDetail();
-      };
-
       // Present (W14): only for outputs derive-panels.ts tagged with a real
       // deck name (a presentation_gen create/export call — never a `show`n
       // .pptx FILE, which has no metadata.json/slide-html behind it).
@@ -503,7 +483,6 @@ export function SessionPanelProvider({
                   : undefined
               }
               onClose={closeDetail}
-              onAskForChanges={askForChanges}
               onSendToAgent={() => sendAppToAgent(output)}
             />
           ),
@@ -533,7 +512,6 @@ export function SessionPanelProvider({
               projectId && projectSessionId ? { projectId, sessionId: projectSessionId } : undefined
             }
             onClose={closeDetail}
-            onAskForChanges={askForChanges}
             onPresent={present}
           />
         ),

@@ -67,7 +67,11 @@ function statusVariant(status?: string) {
 
 /** Best-effort copyable URL for a public share, defensively reading its shape. */
 function shareUrl(share: SessionPublicShare): string {
-  const raw: string = share.public_path ?? share.proxy_path ?? share.public_token ?? '';
+  // `public_url` first: it is the share's own origin, already absolute. The
+  // others are paths on the API origin and only work where no preview domain is
+  // configured.
+  const raw: string =
+    share.public_url ?? share.public_path ?? share.proxy_path ?? share.public_token ?? '';
   if (!raw) return '';
   if (/^https?:\/\//.test(raw)) return raw;
   if (typeof window !== 'undefined') {

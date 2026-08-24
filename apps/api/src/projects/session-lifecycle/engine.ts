@@ -20,6 +20,12 @@ import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import {
+  currentInstanceId,
+  sandboxBelongsToThisInstance,
+  sandboxInstanceId,
+} from '../instance-scope';
+import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
@@ -508,7 +514,16 @@ export async function continueSession(
     await sleep(POLL_INTERVAL_MS);
   }
 
-  if (command.opencodeEnv) {
+  // Converge the box BEFORE the prompt goes on the wire — every time, not only
+  // when this prompt carries an `opencodeEnv` override. The proxied
+  // `prompt_async` route has always done this (sandbox-proxy/pre-prompt-env-sync);
+  // this wake path did it only behind `if (command.opencodeEnv)`, so an ordinary
+  // `session.send()` prompt onto a box that had to be WOKEN reached OpenCode
+  // with whatever the box had at boot: a stale gateway base URL after a
+  // KORTIX_URL rotation, stale secrets, a stale model catalog. The sync is
+  // cheap and self-deduping (revision + model signature); an unchanged box
+  // costs one skipped push.
+  {
     const sandbox = opened.sandbox as {
       external_id?: string | null;
       provider?: string | null;
@@ -576,6 +591,9 @@ export async function continueSession(
   });
 }
 
+/** How far out a released foreign command is re-queued; the owner's drain ticks every 1s. */
+const INSTANCE_RELEASE_DELAY_MS = 2_000;
+
 export async function drainSessionLifecycleQueue(
   input: {
     workerId?: string;
@@ -585,7 +603,7 @@ export async function drainSessionLifecycleQueue(
     /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
     availableBefore?: Date;
   } = {},
-): Promise<{ claimed: number; succeeded: number; failed: number; queued: number }> {
+): Promise<{ claimed: number; succeeded: number; failed: number; queued: number; released: number }> {
   const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
   // COALESCE a burst before claiming. A targeted kick fires per POST, and the
   // composer sends a burst's POSTs concurrently — their arrival order is the
@@ -614,7 +632,44 @@ export async function drainSessionLifecycleQueue(
       rows.push(...siblings.filter((sib) => !rows.some((r) => r.commandId === sib.commandId)));
     }
   }
-  const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };
+  const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0, released: 0 };
+
+  // INSTANCE SCOPE (local dev on a shared DB — projects/instance-scope.ts).
+  // A command whose session's sandbox was provisioned by ANOTHER API instance
+  // goes back on the queue for that instance: executing it here would push
+  // this instance's `KORTIX_URL` (its tunnel) into a box that is not ours.
+  // Gated on `KORTIX_INSTANCE_ID`, so deployed environments never run the
+  // lookup. Done here, after the claim and the sibling sweep, so every
+  // command type and every claim path is covered.
+  const mine = currentInstanceId();
+  if (mine && rows.length > 0) {
+    const sessionIds = [...new Set(rows.map((r) => r.sessionId).filter((v): v is string => !!v))];
+    const metadataBySession =
+      sessionIds.length > 0 ? await loadSandboxMetadataForSessions(sessionIds) : new Map();
+    const availableAt = new Date(Date.now() + INSTANCE_RELEASE_DELAY_MS);
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      const row = rows[i];
+      if (!row.sessionId) continue;
+      const metadata = metadataBySession.get(row.sessionId);
+      if (metadata === undefined || sandboxBelongsToThisInstance(metadata)) continue;
+      const owner = sandboxInstanceId(metadata);
+      await releaseCommandToOwningInstance(row.commandId, { availableAt, owner }).catch((err) => {
+        logger.warn('[session-lifecycle] instance-scope release failed; lock expiry will reclaim', {
+          commandId: row.commandId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      logger.info('[session-lifecycle] command belongs to another instance — released', {
+        commandId: row.commandId,
+        sessionId: row.sessionId,
+        commandType: row.commandType,
+        owner,
+        instance: mine,
+      });
+      rows.splice(i, 1);
+      out.released += 1;
+    }
+  }
 
   // ONE LANE PER SESSION, and the lanes run concurrently.
   //
@@ -1063,9 +1118,15 @@ async function readDeliveredWireIdFloor(
  * Mint the wire id this attempt delivers with, placed above the root's newest
  * message, and persist it before the POST.
  *
- * TWO callers need this, for one reason. OpenCode resolves "has this prompt
- * already been answered?" by ID ORDER, so an id that sorts below what is on
- * record is accepted and then silently never runs:
+ * TWO callers need this, for one reason. On a box running opencode <= 1.18.14
+ * (the baked 1.17.11 on every image built before 2026-08-20) the loop resolves
+ * "has this prompt already been answered?" by ID ORDER, so an id that sorts
+ * below what is on record is accepted and then silently never runs. From
+ * 1.18.15 the exit test is `lastAssistant.parentID === lastUser.id` and a low
+ * id no longer drops the prompt — but it still places the message BELOW the
+ * answer on screen, because `MessageV2.page()` orders by `time_created` then
+ * `id` in both versions. Re-minting is required on the old boxes and is
+ * cosmetic-but-still-wanted on the new ones:
  *
  *  - a REDELIVERY: the abandoned attempt may already have persisted its user
  *    message, and repeating that id reads as already answered;
@@ -1126,10 +1187,21 @@ async function remintWireMessageId(
   if (newest !== null && minted.time <= newest) {
     // The lift refused: `MAX_WIRE_ID_CLOCK_CORRECTION` (1h) caps how far a
     // transcript may drag an id, and past that cap the id we are about to send
-    // sorts BELOW what is on record — OpenCode will read it as answered and the
-    // turn will never run. Nothing here can repair it, so it is reported loudly
-    // rather than dropped quietly.
-    logger.error('[session-lifecycle] re-minted wire id could not clear the transcript', {
+    // sorts BELOW what is on record.
+    //
+    // WHAT THAT COSTS DEPENDS ON THE BOX'S OPENCODE VERSION, so this is a WARN
+    // and not an ERROR, and it no longer claims the turn is lost:
+    //  - opencode <= 1.18.14 (baked 1.17.11): the loop's exit check is an id
+    //    compare, so the prompt is read as already answered and the turn does
+    //    not run. Nothing here can repair that; `forwarded-strand-reconcile`
+    //    picks it up at turn end.
+    //  - opencode >= 1.18.15: the exit check is
+    //    `lastAssistant.parentID === lastUser.id`. The turn RUNS. The only
+    //    damage is transcript position — the message renders below the answer
+    //    that precedes it, because `MessageV2.page()` orders by `time_created`.
+    // Reported either way, because a refused lift always means the clock
+    // estimate is wrong by more than an hour.
+    logger.warn('[session-lifecycle] re-minted wire id could not clear the transcript', {
       session_id: row.sessionId,
       command_id: row.commandId,
       minted_time: minted.time.toString(),
@@ -2019,10 +2091,15 @@ function isProviderName(value: string | null): value is ProviderName {
 /**
  * The wire `messageID` is SUPPLIED, never minted here.
  *
- * OpenCode orders its transcript by the id's clock prefix and decides "has this
- * prompt already been answered?" from that order, so an id has to be placed
- * above everything already on record. The process holding the transcript is the
- * one that can do that: the browser/CLI for a first delivery, and the
+ * OpenCode orders its transcript by `time_created` then by the id's clock
+ * prefix (`MessageV2.page()`, unchanged across 1.17.11 and 1.18.19), so an id
+ * has to be placed above everything already on record. On a box running
+ * opencode <= 1.18.14 that placement is also what decides "has this prompt
+ * already been answered?" — the loop's exit check is an id compare there, and
+ * a badly placed id means the turn never runs. From 1.18.15 the exit check is
+ * `lastAssistant.parentID === lastUser.id`, so a bad id costs display order
+ * rather than the turn. The process holding the transcript is the
+ * one that can place it: the browser/CLI for a first delivery, and the
  * redelivery path here — which re-reads the transcript before it re-mints (see
  * `remintWireMessageId`). Every other producer (triggers, Slack, approval
  * resume) still sends no `messageID`, exactly as before, and gets a

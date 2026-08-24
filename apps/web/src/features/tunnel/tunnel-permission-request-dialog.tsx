@@ -20,12 +20,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { errorToast, successToast } from '@/components/ui/toast';
 import {
   useApprovePermissionRequest,
   useDenyPermissionRequest,
   type TunnelPermissionRequest,
 } from '@/hooks/tunnel/use-tunnel';
-import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useTunnelStore } from '@/stores/tunnel-store';
 import {
@@ -105,10 +105,10 @@ export function TunnelPermissionRequestDialog() {
         expiresAt,
       });
       removePendingRequest(currentRequest.requestId);
-      toast.success(`Granted ${currentRequest.capability} access`);
+      successToast(`Granted ${currentRequest.capability} access`);
     } catch (err) {
       console.error('Failed to approve:', err);
-      toast.error('Failed to grant access', {
+      errorToast('Failed to grant access', {
         description: err instanceof Error ? err.message : undefined,
       });
     }
@@ -118,10 +118,10 @@ export function TunnelPermissionRequestDialog() {
     try {
       await denyMutation.mutateAsync(currentRequest.requestId);
       removePendingRequest(currentRequest.requestId);
-      toast.success('Request denied');
+      successToast('Request denied');
     } catch (err) {
       console.error('Failed to deny:', err);
-      toast.error('Failed to deny request', {
+      errorToast('Failed to deny request', {
         description: err instanceof Error ? err.message : undefined,
       });
     }

@@ -65,10 +65,10 @@ export const hero = {
   microline: 'OpenCode-native · Versioned · Deny by default · Human-merged',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
-    { k: 'An agent is', v: 'An OpenCode agent, plus its grants' },
-    { k: 'A skill is', v: 'A folder with a SKILL.md' },
-    { k: 'Governance', v: 'Deny by default' },
-    { k: 'Both land via', v: 'A change request to main' },
+    { k: 'An agent is', v: 'An OpenCode agent, plus its grants', visual: 'grants' },
+    { k: 'A skill is', v: 'A folder with a SKILL.md', visual: 'tree' },
+    { k: 'Governance', v: 'Deny by default', visual: 'gate' },
+    { k: 'Both land via', v: 'A change request to main', visual: 'diff' },
   ],
 } as const;
 

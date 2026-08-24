@@ -64,6 +64,13 @@ export {
   useOpenCodeSessionTodo as useRuntimeSessionTodo,
   useOpenCodeSessions as useRuntimeSessions,
 } from './use-opencode-sessions/sessions';
+// The session's file changes — branch commits + working tree, ONE query key.
+// Every Changes surface reads this; see `use-opencode-sessions/vcs.ts`.
+export {
+  useOpenCodeVcsDiff as useRuntimeVcsDiff,
+  type VcsDiffMode,
+  type VcsFileDiff,
+} from './use-opencode-sessions/vcs';
 export { useOpenCodeRuntimeReady as useRuntimeReady } from './use-opencode-sessions/keys';
 export { useOpenCodeEventStream as useRuntimeEventStream } from './use-opencode-events';
 export { useOpenCodeLocal as useRuntimeLocal } from './use-opencode-local';

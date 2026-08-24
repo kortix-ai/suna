@@ -22,15 +22,14 @@ describe('buildSessionRuntimeEnv', () => {
     expect(env.KORTIX_BRANCH_NAME).toBe(base.sessionId);
   });
 
-  test('adds first-turn and model payload without changing root ownership', () => {
+  test('adds the model without embedding the first turn in the environment', () => {
     const env = buildSessionRuntimeEnv({
       ...base,
-      initialPrompt: 'answer this Slack thread',
       opencodeModel: 'anthropic/claude-sonnet-4-6',
     });
 
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
-    expect(env.KORTIX_INITIAL_PROMPT).toBe('answer this Slack thread');
+    expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
   });
   test('boots the platform meta agent through OpenCode REST', () => {

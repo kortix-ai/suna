@@ -154,254 +154,293 @@ export function openAiSseFromFullStream(
   // finish/usage/[DONE] frames below must become no-ops instead of crashing.
   let cancelled = false;
 
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const emit = (bytes: Uint8Array): void => {
-        if (!cancelled) controller.enqueue(bytes);
-      };
-      let usage: LanguageModelUsage | undefined;
-      let finishReason: FinishReason | undefined;
-      // Cost (when present) only ever arrives on `finish-step` — the `finish`
-      // part carries totalUsage but no providerMetadata of its own. The
-      // gateway's tool loop is always single-step per call (see model.ts's
-      // `toToolSet` — no `execute`, so the SDK stops after the tool call
-      // instead of continuing to a second step), so the last `finish-step`
-      // seen is the authoritative one, same as `usage`/`finishReason` above.
-      let providerMetadata: ProviderMetadata | undefined;
-      try {
-        for (;;) {
-          const next = await iterator.next();
-          if (next.done) break;
-          const part = next.value;
-          switch (part.type) {
-            case 'start':
-            case 'start-step': {
-              // Liveness only — carries no model output, so it must not open a
-              // `data:` frame (that would make the probe treat a prefilling
-              // stream as having produced content).
-              emit(STREAM_OPEN_FRAME);
-              break;
-            }
-            case 'text-delta': {
-              if (!roleSent) {
-                emit(delta({ role: 'assistant', content: '' }));
-                roleSent = true;
-              }
-              const text = part.text as string;
-              if (text) emit(delta({ content: text }));
-              break;
-            }
-            case 'reasoning-delta': {
-              if (!roleSent) {
-                emit(delta({ role: 'assistant', content: '' }));
-                roleSent = true;
-              }
-              const text = part.text as string;
-              if (text) emit(delta({ reasoning: text }));
-              break;
-            }
-            case 'tool-input-start': {
-              if (!roleSent) {
-                emit(delta({ role: 'assistant', content: '' }));
-                roleSent = true;
-              }
-              const tid = part.id as string;
-              const index = nextToolIndex++;
-              toolIndex.set(tid, index);
-              streamedTools.add(tid);
-              emit(
-                delta({
-                  tool_calls: [
-                    {
-                      index,
-                      id: tid,
-                      type: 'function',
-                      function: { name: part.toolName as string, arguments: '' },
-                    },
-                  ],
-                }),
-              );
-              break;
-            }
-            case 'tool-input-delta': {
-              const tid = part.id as string;
-              const index = toolIndex.get(tid);
-              if (index === undefined) break;
-              emit(
-                delta({
-                  tool_calls: [{ index, function: { arguments: (part.delta as string) ?? '' } }],
-                }),
-              );
-              break;
-            }
-            case 'tool-call': {
-              const tid = part.toolCallId as string;
-              if (streamedTools.has(tid)) break; // already streamed via input-start/delta
-              if (!roleSent) {
-                emit(delta({ role: 'assistant', content: '' }));
-                roleSent = true;
-              }
-              const index = nextToolIndex++;
-              emit(
-                delta({
-                  tool_calls: [
-                    {
-                      index,
-                      id: tid,
-                      type: 'function',
-                      function: {
-                        name: part.toolName as string,
-                        arguments: JSON.stringify(part.input ?? {}),
-                      },
-                    },
-                  ],
-                }),
-              );
-              break;
-            }
-            case 'finish': {
-              usage = part.totalUsage as LanguageModelUsage;
-              finishReason = part.finishReason as FinishReason;
-              break;
-            }
-            case 'finish-step': {
-              if (!usage) usage = part.usage as LanguageModelUsage;
-              if (!finishReason) finishReason = part.finishReason as FinishReason;
-              providerMetadata = part.providerMetadata as ProviderMetadata | undefined;
-              break;
-            }
-            case 'error': {
-              // A structured upstream failure (auth, overloaded, content filter).
-              // Emit the OpenAI-shaped error frame the gateway probe detects so it
-              // fails over / surfaces the real cause instead of a blank stop.
-              const err = part.error;
-              // `@ai-sdk/openai`/`@ai-sdk/openai-compatible`'s OWN in-band
-              // streaming error frame (OpenAI's `data: {"error":{"message":...,
-              // "type":...,"code":...}}` convention) is enqueued as a PLAIN
-              // OBJECT, never an `Error` instance — `{message, type, param,
-              // code}` straight from the parsed upstream JSON (see those
-              // packages' chat-completions stream transform). Anthropic/Bedrock
-              // provider errors, by contrast, ARE genuine `Error`/AISDKError
-              // instances. Both shapes carry a `.message` string; check for that
-              // structurally rather than assuming one specific class.
-              const errObj =
-                err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
-              const rawMessage =
-                err instanceof Error
-                  ? err.message
-                  : typeof err === 'string'
-                    ? err
-                    : typeof errObj?.message === 'string'
-                      ? errObj.message
-                      : 'Upstream error';
-              // Some provider errors (AWS credential/SigV4 failures, an AI-SDK
-              // error class without a `.statusCode`) never carry a numeric code —
-              // fall back to classifying the message itself so a terminal auth
-              // failure is still recognizable as one downstream, same as
-              // toTransportError (index.ts) does for the non-streaming path.
-              const rawCode = errObj?.statusCode ?? errObj?.code;
-              const code =
-                typeof rawCode === 'number' || typeof rawCode === 'string'
-                  ? rawCode
-                  : looksLikeTerminalAuthFailure(rawMessage)
-                    ? 401
-                    : undefined;
-              // `@ai-sdk/*` wraps an HTTP failure in an APICallError whose
-              // `.message` is the upstream's real `error.message` ONLY when the
-              // body parsed against the provider's error schema; if it didn't (a
-              // non-OpenAI-shaped error, an HTML error page, a plain string,
-              // ...) the AI SDK falls back to `response.statusText` — a generic
-              // "Bad Request" / "Internal Server Error" / "Bad Gateway" that
-              // tells the caller nothing. The actionable message then lives
-              // ONLY in `.responseBody` (raw) / `.data` (parsed when the schema
-              // matched). Mine those for the real message whenever the
-              // `.message` is a generic status text, so the caller sees "context
-              // length exceeded from messages" (and the gateway classifies a
-              // 400 as 400) instead of a useless "Bad Gateway". Keep the
-              // original generic message + the raw body in `detail` so a
-              // diagnosis that needs them still can. (2026-08-01: upstream 400
-              // surfaced as "Bad Gateway".)
-              let message = rawMessage;
-              let detailCode: string | number | undefined;
-              if (err instanceof Error && isGenericStatusText(rawMessage)) {
-                // `.data` is the schema-PARSED body (only present when it matched
-                // the provider's error schema — in which case `.message` would
-                // usually already be the real one, but mine it anyway in case a
-                // custom errorToMessage returned a generic value); `.responseBody`
-                // is the RAW string, the reliable source for everything else.
-                const fromData = extractUpstreamErrorDetail(errObj?.data);
-                const fromBody =
-                  typeof errObj?.responseBody === 'string' && errObj.responseBody.length > 0
-                    ? parseUpstreamErrorBody(errObj.responseBody, rawMessage)
-                    : null;
-                const mined = fromData ?? fromBody;
-                if (mined && mined.message && !isGenericStatusText(mined.message)) {
-                  message = mined.message;
-                  detailCode = mined.code;
-                }
-              }
-              // `@ai-sdk/*`'s APICallError also stashes the actionable fields
-              // (`.responseBody` raw, `.data` parsed, `.url`) here — keep them
-              // on the emitted frame's `detail` so `sseErrorFrame` carries them
-              // to the logs. Bounded so a huge upstream body can't blow up a log
-              // line.
-              const detail: Record<string, unknown> = {};
-              const responseBody = errObj?.responseBody;
-              if (typeof responseBody === 'string' && responseBody.length > 0) {
-                detail.responseBody = responseBody.slice(0, 2000);
-              }
-              if (errObj?.data !== undefined) detail.data = errObj.data;
-              if (typeof errObj?.url === 'string') detail.url = errObj.url;
-              // If a body-mined STRING code is present AND there is no numeric
-              // status code, the string IS the frame's code (preserves the
-              // existing contract for plain-object error parts like the
-              // "overloaded_error" frame — `upstream_code` stays the string).
-              // When a numeric status code IS available (the APICallError case),
-              // it MUST win as `code` so the pipeline's statusForErrorFrame
-              // classifies the HTTP status correctly (a 400 as 400, not a blanket
-              // 502 "Bad Gateway"); the upstream's own string code survives in
-              // `detail` (responseBody/data) for anything that needs it.
-              const finalCode =
-                typeof code === 'number' || detailCode === undefined ? code : detailCode;
-              emit(
-                sse({
-                  error: {
-                    message,
-                    ...(finalCode != null ? { code: finalCode } : {}),
-                    ...(Object.keys(detail).length > 0 ? detail : {}),
-                  },
-                }),
-              );
-              break;
-            }
-            default:
-              break;
-          }
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const code =
-          (err as { statusCode?: number })?.statusCode ??
-          (looksLikeTerminalAuthFailure(message) ? 401 : undefined);
-        emit(sse({ error: { message, ...(code != null ? { code } : {}) } }));
-      }
+  // Backpressure bridge. The producer drives the provider iterator as fast as
+  // it yields; a ReadableStream's default queue holds 1 chunk, so without this
+  // a consumer slower than the provider (a stalled reader, a slow client link,
+  // socket backpressure at Caddy/Cloudflare) makes the ENTIRE completion pile
+  // up in the controller queue. Measured 2026-08-24: a 100k-part completion
+  // with a consumer that read one frame then stalled grew RSS by 85.2 MiB —
+  // memory the admission budget never sees, because it charges the REQUEST
+  // size. `awaitDemand()` parks the producer when the queue is full; `pull()`
+  // wakes it, so the provider is read only as fast as the client drains.
+  //
+  // The producer is DETACHED from `start()` on purpose: a ReadableStream does
+  // not call `pull()` until the promise returned by `start()` settles, so an
+  // awaited loop there would park forever waiting for a wake that cannot come.
+  let resume: (() => void) | null = null;
+  const wake = (): void => {
+    const resolve = resume;
+    resume = null;
+    resolve?.();
+  };
 
-      // Terminal finish chunk + usage-only chunk (OpenAI include_usage semantics)
-      // + [DONE]. The usage chunk carries `model` so the SSE usage extractor books
-      // the right model even if no content chunk did. Skipped entirely once
-      // cancelled — the controller is no longer writable, and there's no
-      // client left to receive a synthetic finish/[DONE] anyway.
+  const produce = async (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+  ): Promise<void> => {
+    const emit = (bytes: Uint8Array): void => {
+      if (!cancelled) controller.enqueue(bytes);
+    };
+    const awaitDemand = async (): Promise<void> => {
       if (cancelled) return;
-      emit(delta({}, mapFinishReason(finishReason)));
-      emit(
-        sse({
-          ...base,
-          choices: [],
-          usage: mapUsage(usage, providerMetadata),
-        }),
-      );
-      emit(enc.encode('data: [DONE]\n\n'));
-      controller.close();
+      if ((controller.desiredSize ?? 1) > 0) return;
+      await new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+    };
+    let usage: LanguageModelUsage | undefined;
+    let finishReason: FinishReason | undefined;
+    // Cost (when present) only ever arrives on `finish-step` — the `finish`
+    // part carries totalUsage but no providerMetadata of its own. The
+    // gateway's tool loop is always single-step per call (see model.ts's
+    // `toToolSet` — no `execute`, so the SDK stops after the tool call
+    // instead of continuing to a second step), so the last `finish-step`
+    // seen is the authoritative one, same as `usage`/`finishReason` above.
+    let providerMetadata: ProviderMetadata | undefined;
+    try {
+      for (;;) {
+        await awaitDemand();
+        if (cancelled) break;
+        const next = await iterator.next();
+        if (next.done) break;
+        const part = next.value;
+        switch (part.type) {
+          case 'start':
+          case 'start-step': {
+            // Liveness only — carries no model output, so it must not open a
+            // `data:` frame (that would make the probe treat a prefilling
+            // stream as having produced content).
+            emit(STREAM_OPEN_FRAME);
+            break;
+          }
+          case 'text-delta': {
+            if (!roleSent) {
+              emit(delta({ role: 'assistant', content: '' }));
+              roleSent = true;
+            }
+            const text = part.text as string;
+            if (text) emit(delta({ content: text }));
+            break;
+          }
+          case 'reasoning-delta': {
+            if (!roleSent) {
+              emit(delta({ role: 'assistant', content: '' }));
+              roleSent = true;
+            }
+            const text = part.text as string;
+            if (text) emit(delta({ reasoning: text }));
+            break;
+          }
+          case 'tool-input-start': {
+            if (!roleSent) {
+              emit(delta({ role: 'assistant', content: '' }));
+              roleSent = true;
+            }
+            const tid = part.id as string;
+            const index = nextToolIndex++;
+            toolIndex.set(tid, index);
+            streamedTools.add(tid);
+            emit(
+              delta({
+                tool_calls: [
+                  {
+                    index,
+                    id: tid,
+                    type: 'function',
+                    function: { name: part.toolName as string, arguments: '' },
+                  },
+                ],
+              }),
+            );
+            break;
+          }
+          case 'tool-input-delta': {
+            const tid = part.id as string;
+            const index = toolIndex.get(tid);
+            if (index === undefined) break;
+            emit(
+              delta({
+                tool_calls: [{ index, function: { arguments: (part.delta as string) ?? '' } }],
+              }),
+            );
+            break;
+          }
+          case 'tool-call': {
+            const tid = part.toolCallId as string;
+            if (streamedTools.has(tid)) break; // already streamed via input-start/delta
+            if (!roleSent) {
+              emit(delta({ role: 'assistant', content: '' }));
+              roleSent = true;
+            }
+            const index = nextToolIndex++;
+            emit(
+              delta({
+                tool_calls: [
+                  {
+                    index,
+                    id: tid,
+                    type: 'function',
+                    function: {
+                      name: part.toolName as string,
+                      arguments: JSON.stringify(part.input ?? {}),
+                    },
+                  },
+                ],
+              }),
+            );
+            break;
+          }
+          case 'finish': {
+            usage = part.totalUsage as LanguageModelUsage;
+            finishReason = part.finishReason as FinishReason;
+            break;
+          }
+          case 'finish-step': {
+            if (!usage) usage = part.usage as LanguageModelUsage;
+            if (!finishReason) finishReason = part.finishReason as FinishReason;
+            providerMetadata = part.providerMetadata as ProviderMetadata | undefined;
+            break;
+          }
+          case 'error': {
+            // A structured upstream failure (auth, overloaded, content filter).
+            // Emit the OpenAI-shaped error frame the gateway probe detects so it
+            // fails over / surfaces the real cause instead of a blank stop.
+            const err = part.error;
+            // `@ai-sdk/openai`/`@ai-sdk/openai-compatible`'s OWN in-band
+            // streaming error frame (OpenAI's `data: {"error":{"message":...,
+            // "type":...,"code":...}}` convention) is enqueued as a PLAIN
+            // OBJECT, never an `Error` instance — `{message, type, param,
+            // code}` straight from the parsed upstream JSON (see those
+            // packages' chat-completions stream transform). Anthropic/Bedrock
+            // provider errors, by contrast, ARE genuine `Error`/AISDKError
+            // instances. Both shapes carry a `.message` string; check for that
+            // structurally rather than assuming one specific class.
+            const errObj =
+              err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
+            const rawMessage =
+              err instanceof Error
+                ? err.message
+                : typeof err === 'string'
+                  ? err
+                  : typeof errObj?.message === 'string'
+                    ? errObj.message
+                    : 'Upstream error';
+            // Some provider errors (AWS credential/SigV4 failures, an AI-SDK
+            // error class without a `.statusCode`) never carry a numeric code —
+            // fall back to classifying the message itself so a terminal auth
+            // failure is still recognizable as one downstream, same as
+            // toTransportError (index.ts) does for the non-streaming path.
+            const rawCode = errObj?.statusCode ?? errObj?.code;
+            const code =
+              typeof rawCode === 'number' || typeof rawCode === 'string'
+                ? rawCode
+                : looksLikeTerminalAuthFailure(rawMessage)
+                  ? 401
+                  : undefined;
+            // `@ai-sdk/*` wraps an HTTP failure in an APICallError whose
+            // `.message` is the upstream's real `error.message` ONLY when the
+            // body parsed against the provider's error schema; if it didn't (a
+            // non-OpenAI-shaped error, an HTML error page, a plain string,
+            // ...) the AI SDK falls back to `response.statusText` — a generic
+            // "Bad Request" / "Internal Server Error" / "Bad Gateway" that
+            // tells the caller nothing. The actionable message then lives
+            // ONLY in `.responseBody` (raw) / `.data` (parsed when the schema
+            // matched). Mine those for the real message whenever the
+            // `.message` is a generic status text, so the caller sees "context
+            // length exceeded from messages" (and the gateway classifies a
+            // 400 as 400) instead of a useless "Bad Gateway". Keep the
+            // original generic message + the raw body in `detail` so a
+            // diagnosis that needs them still can. (2026-08-01: upstream 400
+            // surfaced as "Bad Gateway".)
+            let message = rawMessage;
+            let detailCode: string | number | undefined;
+            if (err instanceof Error && isGenericStatusText(rawMessage)) {
+              // `.data` is the schema-PARSED body (only present when it matched
+              // the provider's error schema — in which case `.message` would
+              // usually already be the real one, but mine it anyway in case a
+              // custom errorToMessage returned a generic value); `.responseBody`
+              // is the RAW string, the reliable source for everything else.
+              const fromData = extractUpstreamErrorDetail(errObj?.data);
+              const fromBody =
+                typeof errObj?.responseBody === 'string' && errObj.responseBody.length > 0
+                  ? parseUpstreamErrorBody(errObj.responseBody, rawMessage)
+                  : null;
+              const mined = fromData ?? fromBody;
+              if (mined && mined.message && !isGenericStatusText(mined.message)) {
+                message = mined.message;
+                detailCode = mined.code;
+              }
+            }
+            // `@ai-sdk/*`'s APICallError also stashes the actionable fields
+            // (`.responseBody` raw, `.data` parsed, `.url`) here — keep them
+            // on the emitted frame's `detail` so `sseErrorFrame` carries them
+            // to the logs. Bounded so a huge upstream body can't blow up a log
+            // line.
+            const detail: Record<string, unknown> = {};
+            const responseBody = errObj?.responseBody;
+            if (typeof responseBody === 'string' && responseBody.length > 0) {
+              detail.responseBody = responseBody.slice(0, 2000);
+            }
+            if (errObj?.data !== undefined) detail.data = errObj.data;
+            if (typeof errObj?.url === 'string') detail.url = errObj.url;
+            // If a body-mined STRING code is present AND there is no numeric
+            // status code, the string IS the frame's code (preserves the
+            // existing contract for plain-object error parts like the
+            // "overloaded_error" frame — `upstream_code` stays the string).
+            // When a numeric status code IS available (the APICallError case),
+            // it MUST win as `code` so the pipeline's statusForErrorFrame
+            // classifies the HTTP status correctly (a 400 as 400, not a blanket
+            // 502 "Bad Gateway"); the upstream's own string code survives in
+            // `detail` (responseBody/data) for anything that needs it.
+            const finalCode =
+              typeof code === 'number' || detailCode === undefined ? code : detailCode;
+            emit(
+              sse({
+                error: {
+                  message,
+                  ...(finalCode != null ? { code: finalCode } : {}),
+                  ...(Object.keys(detail).length > 0 ? detail : {}),
+                },
+              }),
+            );
+            break;
+          }
+          default:
+            break;
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code =
+        (err as { statusCode?: number })?.statusCode ??
+        (looksLikeTerminalAuthFailure(message) ? 401 : undefined);
+      emit(sse({ error: { message, ...(code != null ? { code } : {}) } }));
+    }
+
+    // Terminal finish chunk + usage-only chunk (OpenAI include_usage semantics)
+    // + [DONE]. The usage chunk carries `model` so the SSE usage extractor books
+    // the right model even if no content chunk did. Skipped entirely once
+    // cancelled — the controller is no longer writable, and there's no
+    // client left to receive a synthetic finish/[DONE] anyway.
+    if (cancelled) return;
+    emit(delta({}, mapFinishReason(finishReason)));
+    emit(
+      sse({
+        ...base,
+        choices: [],
+        usage: mapUsage(usage, providerMetadata),
+      }),
+    );
+    emit(enc.encode('data: [DONE]\n\n'));
+    controller.close();
+  };
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      void produce(controller);
+    },
+    pull() {
+      // Demand arrived: let the parked producer emit its next frame.
+      wake();
     },
     // The downstream consumer (pipeline/streaming.ts's relayStream) cancels
     // its reader the moment the INBOUND client disconnects — without this
@@ -417,6 +456,9 @@ export function openAiSseFromFullStream(
     // `upstreamBody.getReader().cancel()` did.
     async cancel(reason) {
       cancelled = true;
+      // Unpark the producer so it observes `cancelled` and unwinds instead of
+      // waiting for demand that will never arrive.
+      wake();
       await iterator.return?.(reason);
     },
   });

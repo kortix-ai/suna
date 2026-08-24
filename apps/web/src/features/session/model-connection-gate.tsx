@@ -1,6 +1,6 @@
 'use client';
 
-import { CreditCardIcon as CreditCard, KeyIcon as KeyRound } from '@phosphor-icons/react';
+import { CreditCardIcon, KeyIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,7 @@ export function ModelConnectionGate({
       {modal}
       <EmptyState
         className={className}
-        icon={KeyRound}
+        icon={KeyIcon}
         size={size}
         title="Connect a model to start chatting"
         description={
@@ -43,12 +43,12 @@ export function ModelConnectionGate({
         action={
           showUpgradeOption ? (
             <Button type="button" size="sm" onClick={openUpgrade}>
-              <CreditCard className="size-3.5" />
+              <CreditCardIcon className="size-3.5" />
               Upgrade
             </Button>
           ) : (
             <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
-              <KeyRound className="size-3.5" />
+              <KeyIcon className="size-3.5" />
               Bring your own key
             </Button>
           )
@@ -61,7 +61,7 @@ export function ModelConnectionGate({
               variant="outline"
               onClick={() => openConnectProvider('providers')}
             >
-              <KeyRound className="size-3.5" />
+              <KeyIcon className="size-3.5" />
               Bring your own key
             </Button>
           ) : undefined
@@ -116,11 +116,11 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
               initial={reduceMotion ? false : { y: '-100%' }}
               animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
               exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
-              className="border-border bg-foreground/10 dark:bg-accent mx-3 -mt-3 rounded-b-xl border"
+              className="border-border bg-muted mx-3 -mt-3 rounded-b-md border"
             >
               <div className="flex items-center justify-between gap-3 pt-[18px] pr-2 pb-1.5 pl-4">
                 <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
-                  <KeyRound className="size-3.5 shrink-0" />
+                  <KeyIcon className="size-3.5 shrink-0" />
                   <span className="truncate">
                     No model connected
                     <span className="hidden sm:inline"> — connect one to start chatting</span>
@@ -128,22 +128,25 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {showUpgradeOption && (
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
                       onClick={openUpgrade}
-                      className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] active:scale-[0.96]"
+                      className="hit-area-1 gap-1.5 rounded-full text-xs"
                     >
-                      <CreditCard className="size-3.5" />
+                      <CreditCardIcon className="size-3.5 shrink-0" />
                       Upgrade
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button
                     type="button"
+                    size="sm"
                     onClick={() => openConnectProvider('providers')}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-xs font-medium transition-[background-color,transform] active:scale-[0.96]"
+                    className="hit-area-1 rounded-full text-xs"
                   >
                     Connect model
-                  </button>
+                  </Button>
                 </div>
               </div>
             </m.div>

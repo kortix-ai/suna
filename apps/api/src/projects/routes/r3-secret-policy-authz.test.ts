@@ -102,6 +102,37 @@ describe('DELETE /:projectId/secrets/:name', () => {
   });
 });
 
+/**
+ * Network-Enforced Secrets (`secrets_egress`) is experimental and off by
+ * default. Both write paths refuse to move a secret INTO egress delivery when
+ * the flag is off; a secret already on egress stays editable, so the gate never
+ * strands one. End-to-end HTTP proof (flag off → 403 feature_disabled, flag on
+ * → 200) is exercised against the live API in the verification recipe.
+ */
+describe('secrets_egress gates entering egress delivery', () => {
+  test('POST refuses a NEW egress secret when the flag is off, before the write', () => {
+    const src = handlerSource('post', '/{projectId}/secrets');
+    expect(src).toContain("resolveFeatureFlag(loaded.row.metadata, 'secrets_egress')");
+    expect(src).toContain("featureDisabledBody('secrets_egress')");
+    // Conditional on ENTERING egress: an already-egress row is not re-gated.
+    expect(src).toContain("explicitStrategy === 'egress'");
+    expect(src).toContain("existing?.strategy !== 'egress'");
+    const gate = src.indexOf("featureDisabledBody('secrets_egress')");
+    const write = src.indexOf('.insert(projectSecrets)');
+    expect(gate).toBeGreaterThan(-1);
+    expect(write).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(write);
+  });
+
+  test('PUT strategy refuses switching a non-egress row to egress when the flag is off', () => {
+    const src = handlerSource('put', '/{projectId}/secrets/{identifier}/strategy');
+    expect(src).toContain("resolveFeatureFlag(loaded.row.metadata, 'secrets_egress')");
+    expect(src).toContain("featureDisabledBody('secrets_egress')");
+    expect(src).toContain("parsed.data.strategy === 'egress'");
+    expect(src).toContain("existing.strategy !== 'egress'");
+  });
+});
+
 describe('POST /:projectId/secrets/sync', () => {
   const src = handlerSource('post', '/{projectId}/secrets/sync');
 
