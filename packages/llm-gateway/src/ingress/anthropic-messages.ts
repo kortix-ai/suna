@@ -496,58 +496,96 @@ export function chatSseToAnthropicSse(
   };
 
   let buffer = '';
+  // Same backpressure bridge as transports/ai-sdk/sse.ts: park the producer
+  // when the queue is full so a slow client cannot make the whole translated
+  // completion accumulate here. `cancel()` below is new — without it a client
+  // disconnect never reached the upstream stream, so the provider kept
+  // generating (and billing) a turn nobody would read, and relayStream never
+  // settled its usage.
+  const reader = openAiStream.getReader();
+  let cancelled = false;
+  let resume: (() => void) | null = null;
+  const wake = (): void => {
+    const resolve = resume;
+    resume = null;
+    resolve?.();
+  };
+
+  const produce = async (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+  ): Promise<void> => {
+    const awaitDemand = async (): Promise<void> => {
+      if (cancelled) return;
+      if ((controller.desiredSize ?? 1) > 0) return;
+      await new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+    };
+    try {
+      while (true) {
+        await awaitDemand();
+        if (cancelled) break;
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        for (
+          let newlineAt = buffer.indexOf('\n');
+          newlineAt >= 0;
+          newlineAt = buffer.indexOf('\n')
+        ) {
+          const line = buffer.slice(0, newlineAt).replace(/\r$/, '');
+          buffer = buffer.slice(newlineAt + 1);
+          if (!line.startsWith('data:')) continue;
+          const dataStr = line.slice(5).trim();
+          if (!dataStr) continue;
+          if (dataStr === '[DONE]') {
+            finishAnthropicStream(controller, encoder, state);
+            return;
+          }
+          let chunk: Record<string, unknown>;
+          try {
+            chunk = JSON.parse(dataStr) as Record<string, unknown>;
+          } catch {
+            continue;
+          }
+          if (chunk.error) {
+            ensureMessageStart(controller, encoder, state);
+            const err = chunk.error as Record<string, unknown>;
+            controller.enqueue(
+              sseFrame(encoder, 'error', {
+                type: 'error',
+                error: {
+                  type: typeof err.type === 'string' ? err.type : 'api_error',
+                  message: typeof err.message === 'string' ? err.message : 'upstream error',
+                },
+              }),
+            );
+            continue;
+          }
+          handleOpenAiChunk(controller, encoder, state, chunk);
+        }
+      }
+    } catch {
+      // Upstream stream broke — finish with what we have rather than hang
+      // the client forever without a message_stop.
+    } finally {
+      if (!cancelled) finishAnthropicStream(controller, encoder, state);
+    }
+  };
 
   return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const reader = openAiStream.getReader();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          for (
-            let newlineAt = buffer.indexOf('\n');
-            newlineAt >= 0;
-            newlineAt = buffer.indexOf('\n')
-          ) {
-            const line = buffer.slice(0, newlineAt).replace(/\r$/, '');
-            buffer = buffer.slice(newlineAt + 1);
-            if (!line.startsWith('data:')) continue;
-            const dataStr = line.slice(5).trim();
-            if (!dataStr) continue;
-            if (dataStr === '[DONE]') {
-              finishAnthropicStream(controller, encoder, state);
-              return;
-            }
-            let chunk: Record<string, unknown>;
-            try {
-              chunk = JSON.parse(dataStr) as Record<string, unknown>;
-            } catch {
-              continue;
-            }
-            if (chunk.error) {
-              ensureMessageStart(controller, encoder, state);
-              const err = chunk.error as Record<string, unknown>;
-              controller.enqueue(
-                sseFrame(encoder, 'error', {
-                  type: 'error',
-                  error: {
-                    type: typeof err.type === 'string' ? err.type : 'api_error',
-                    message: typeof err.message === 'string' ? err.message : 'upstream error',
-                  },
-                }),
-              );
-              continue;
-            }
-            handleOpenAiChunk(controller, encoder, state, chunk);
-          }
-        }
-      } catch {
-        // Upstream stream broke — finish with what we have rather than hang
-        // the client forever without a message_stop.
-      } finally {
-        finishAnthropicStream(controller, encoder, state);
-      }
+    start(controller) {
+      // Detached: `pull()` never fires while `start()`'s promise is
+      // pending, and the loop below parks waiting for exactly that pull.
+      void produce(controller);
+    },
+    pull() {
+      wake();
+    },
+    async cancel(reason) {
+      cancelled = true;
+      wake();
+      await reader.cancel(reason).catch(() => undefined);
     },
   });
 }

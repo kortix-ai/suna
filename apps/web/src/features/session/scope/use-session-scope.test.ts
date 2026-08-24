@@ -1,7 +1,10 @@
 import type { AdminConnector, Connection, ProjectSecret } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
+import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 
 import {
+  createSessionScopeCatalogSources,
   loadSessionScopeCatalog,
   sessionScopeCatalogQueryKey,
   sessionScopeQueryKey,
@@ -71,13 +74,39 @@ describe('session scope query keys', () => {
       false,
       true,
     ]);
-    expect(sessionScopeCatalogQueryKey('project-1', { secrets: false, connectors: true })).not.toEqual(
-      sessionScopeCatalogQueryKey('project-1'),
-    );
+    expect(
+      sessionScopeCatalogQueryKey('project-1', { secrets: false, connectors: true }),
+    ).not.toEqual(sessionScopeCatalogQueryKey('project-1'));
   });
 });
 
 describe('loadSessionScopeCatalog', () => {
+  test('reuses the canonical project-secrets cache', async () => {
+    const queryClient = new QueryClient();
+    let calls = 0;
+    const response = { items: [secret('MAIL_TOKEN')], required: [], optional: [] };
+    const fetchSecrets = async () => {
+      calls += 1;
+      return response;
+    };
+    const sources = createSessionScopeCatalogSources(queryClient, fetchSecrets);
+
+    const [canonical, catalogItems] = await Promise.all([
+      queryClient.fetchQuery({
+        queryKey: qk.project.secrets('project-1'),
+        queryFn: fetchSecrets,
+        staleTime: 60_000,
+      }),
+      sources.listSecrets('project-1'),
+    ]);
+
+    expect(calls).toBe(1);
+    expect(canonical).toEqual(response);
+    expect(catalogItems).toEqual(response.items);
+    expect(await sources.listSecrets('project-1')).toEqual(response.items);
+    expect(calls).toBe(1);
+  });
+
   test('loads all catalog axes as ready states', async () => {
     const calls: string[] = [];
     const result = await loadSessionScopeCatalog('project-1', {
@@ -95,11 +124,7 @@ describe('loadSessionScopeCatalog', () => {
       },
     });
 
-    expect(calls).toEqual([
-      'secrets:project-1',
-      'connectors:project-1',
-      'connections:project-1',
-    ]);
+    expect(calls).toEqual(['secrets:project-1', 'connectors:project-1', 'connections:project-1']);
     expect(result.raw.secrets).toEqual({
       status: 'ready',
       items: [secret('MAIL_TOKEN')],
@@ -192,9 +217,7 @@ describe('loadSessionScopeCatalog', () => {
 // Source pins. Both call sites gate a query on a manager-tier leaf; neither
 // behaviour is observable from the pure loader above, and both are one careless
 // edit away from silently sending the request again.
-const scopeSrc = await Bun.file(
-  new URL('./use-session-scope.ts', import.meta.url).pathname,
-).text();
+const scopeSrc = await Bun.file(new URL('./use-session-scope.ts', import.meta.url).pathname).text();
 const gateSrc = await Bun.file(
   new URL('../use-model-connection-gate.tsx', import.meta.url).pathname,
 ).text();

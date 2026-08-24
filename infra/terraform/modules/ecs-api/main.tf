@@ -427,7 +427,7 @@ resource "aws_lb_target_group" "this" {
     matcher             = "200-399"
   }
 
-  deregistration_delay = 30
+  deregistration_delay = var.deregistration_delay
   tags                 = var.tags
 }
 
@@ -484,6 +484,10 @@ resource "aws_ecs_task_definition" "this" {
     name      = var.container_name
     image     = var.image
     essential = true
+    # Give the app time to finish in-flight work after SIGTERM. Without this
+    # ECS defaults to 30s, so a streaming response longer than that was killed
+    # on every deploy, scale-in and Spot reclaim.
+    stopTimeout = var.stop_timeout
     portMappings = [{
       containerPort = var.container_port
       protocol      = "tcp"

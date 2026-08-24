@@ -42,10 +42,7 @@ function anthropicErrorResponse(status: number, message: string): Response {
   );
 }
 
-export function createGateway(
-  hooks: GatewayHooks,
-  deps: GatewayDeps = {},
-) {
+export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
   const logger = deps.logger ?? console;
   const runtime: HandlerRuntime = {
     hooks,
@@ -128,10 +125,17 @@ export function createGateway(
 
     const streaming = anthropicBody.stream === true;
     const chatBody = anthropicMessagesToChat(anthropicBody as unknown as AnthropicMessagesRequest);
+    // Read what the response translation needs BEFORE dispatch, so neither the
+    // Anthropic body nor the translated one has to stay reachable across the
+    // upstream call.
+    const model = typeof chatBody.model === 'string' ? chatBody.model : undefined;
+    (anthropicBody as unknown) = null;
 
     const upstream = await handleChatCompletions(runtime, {
       authorization: req.authorization,
-      rawBody: JSON.stringify(chatBody),
+      rawBody: '',
+      parsedBody: chatBody as Record<string, unknown>,
+      signal: req.signal,
     });
 
     if (!upstream.ok) {
@@ -147,7 +151,6 @@ export function createGateway(
 
     const contentType = upstream.headers.get('content-type') ?? '';
     if (streaming && contentType.includes('text/event-stream') && upstream.body) {
-      const model = typeof chatBody.model === 'string' ? chatBody.model : undefined;
       const anthropicStream = chatSseToAnthropicSse(upstream.body, { model });
       return new Response(anthropicStream, {
         status: 200,

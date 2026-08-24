@@ -47,6 +47,8 @@ export function isRuntimeIdentityUnavailable(
  */
 export function isSandboxResumable(sandbox: ResumableSandboxLike | null | undefined): boolean {
   if (isRuntimeIdentityUnavailable(sandbox)) return false;
+  const stopReason = sandbox?.metadata?.stopReason;
+  if (stopReason === 'runtime_boot_failed' || stopReason === 'runtime_wake_failed') return false;
   return !!sandbox && sandbox.status === 'stopped' && !!sandbox.external_id;
 }
 

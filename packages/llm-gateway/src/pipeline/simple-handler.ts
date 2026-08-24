@@ -21,6 +21,18 @@ export interface ChatCompletionRequest {
   authorization: string | undefined;
   rawBody: string;
   signal?: AbortSignal;
+  /**
+   * An already-parsed body, used by the Anthropic ingress.
+   *
+   * That ingress parses the raw body, translates it, and used to
+   * `JSON.stringify` the result only for this handler to `JSON.parse` it
+   * straight back. On an image-heavy request that round trip is the
+   * difference between charging 3x the wire size and holding 5.03x
+   * (measured 2026-08-24: 16 MiB of images -> +80.5 MiB on /v1/messages
+   * versus +32.1 MiB on /chat/completions), which is how a single admitted
+   * request could exceed the whole task's memory.
+   */
+  parsedBody?: Record<string, unknown>;
 }
 
 export interface GatewayDeps {
@@ -36,6 +48,22 @@ export interface HandlerRuntime {
   fetchImpl?: FetchImpl;
   imageWindow?: ImageWindowOptions;
 }
+
+/**
+ * Deadline for the provider's response HEADERS (time to first byte).
+ *
+ * There was no upstream timeout at all: `callUpstream` passed only the client's
+ * signal, Bun's `idleTimeout` is 0, and no load balancer bounds that leg. A
+ * provider that accepts the TCP connection and never answers therefore pinned
+ * an admission reservation forever while Cloudflare gave the caller a 524 at
+ * 100s. This fires first, so the caller gets a typed 503 it can retry.
+ *
+ * Headers only: once the stream is flowing, `relayStream`'s heartbeat and its
+ * 90-minute inactivity budget govern it — a long-thinking model is not a
+ * timeout.
+ */
+const UPSTREAM_HEADERS_TIMEOUT_MS =
+  Number(process.env.GATEWAY_UPSTREAM_HEADERS_TIMEOUT_MS) || 90_000;
 
 const EMPTY_USAGE: TokenCounts = {
   promptTokens: 0,
@@ -197,7 +225,8 @@ export async function handleChatCompletions(
   // multimodal request for the whole prefill.
   let body: Record<string, unknown> | null;
   try {
-    body = JSON.parse(req.rawBody) as Record<string, unknown>;
+    body = req.parsedBody ?? (JSON.parse(req.rawBody) as Record<string, unknown>);
+    req.parsedBody = undefined;
     req.rawBody = '';
   } catch {
     req.rawBody = '';
@@ -287,9 +316,12 @@ export async function handleChatCompletions(
   if (streaming) body.stream_options = { include_usage: true };
   let upstream: Response;
   try {
+    // Abort the dispatch if the provider has not produced response headers in
+    // time — combined with the client's own signal so a disconnect still wins.
+    const headersDeadline = AbortSignal.timeout(UPSTREAM_HEADERS_TIMEOUT_MS);
     const dispatch = callUpstream(body, descriptor, {
       fetchImpl,
-      signal: req.signal,
+      signal: req.signal ? AbortSignal.any([req.signal, headersDeadline]) : headersDeadline,
       requestId: id,
     });
     // Dispatch has serialized (openai-compat) or translated (ai-sdk) the
@@ -314,6 +346,18 @@ export async function handleChatCompletions(
       candidatesTried: [descriptor.provider],
     });
     if (error instanceof UpstreamHttpError) return rawProviderError(error);
+    // A headers timeout is "try again", not "this request is malformed".
+    const timedOut = (error as { name?: unknown })?.name === 'TimeoutError' && !req.signal?.aborted;
+    if (timedOut)
+      return gatewayErrorResponse(503, {
+        message: `Provider ${descriptor.provider} sent no response headers within ${UPSTREAM_HEADERS_TIMEOUT_MS}ms`,
+        code: 'upstream_timeout',
+        provider: descriptor.provider,
+        requestedModel,
+        resolvedModel: descriptor.resolvedModel ?? routedModel,
+        requestId: id,
+        suggestion: 'Retry the request, or choose another model.',
+      });
     return gatewayErrorResponse(502, {
       message: error instanceof Error ? error.message : 'Provider request failed',
       code: 'upstream_error',

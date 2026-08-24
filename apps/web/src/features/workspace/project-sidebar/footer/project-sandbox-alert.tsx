@@ -16,7 +16,7 @@ import {
   type SandboxAlertSeverity,
   formatSandboxProviders,
   resolveSandboxAlertSeverity,
-  sandboxHealthIsActive,
+  sandboxHealthRefetchInterval,
   selectCurrentSandboxFailure,
   selectSandboxStatus,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
@@ -29,7 +29,7 @@ import {
 } from '@/features/workspace/project-sidebar/footer/sidebar-alert';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
-import { useProjectCans } from '@/lib/use-project-can';
+import { useProjectPageCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type ProjectSandboxHealth,
@@ -113,12 +113,7 @@ export function useSandboxHealth(projectId: string) {
     queryKey: SANDBOX_HEALTH_QUERY_KEY(projectId),
     queryFn: () => getProjectSandboxHealth(projectId),
     staleTime: 30_000,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (!data) return 30_000;
-      if (sandboxHealthIsActive(data)) return 8_000;
-      return 120_000;
-    },
+    refetchInterval: (query) => sandboxHealthRefetchInterval(query.state.data),
     refetchOnWindowFocus: true,
   });
 }
@@ -154,12 +149,6 @@ export function useSandboxRecovery(projectId: string) {
   return { retry, fixWithAgent };
 }
 
-/** The two leaves the alert's controls assert, batched into one probe. */
-const SANDBOX_ALERT_GATE_ACTIONS: readonly string[] = [
-  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
-  PROJECT_ACTIONS.PROJECT_WRITE,
-];
-
 function SandboxAlertContent({
   projectId,
   health,
@@ -185,7 +174,7 @@ function SandboxAlertContent({
   // image (project.write). Neither leaf is in the member floor role (#6522), so
   // for a member every one of those buttons was a "forbidden" waiting to
   // happen. Hidden on a RECEIVED denial only, one batched probe for both.
-  const caps = useProjectCans(projectId, SANDBOX_ALERT_GATE_ACTIONS);
+  const caps = useProjectPageCans(projectId);
   const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed !== false;
   const canRecover = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed !== false;
   const status = selectSandboxStatus(health);

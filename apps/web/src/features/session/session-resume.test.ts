@@ -22,6 +22,18 @@ describe('isSandboxResumable', () => {
     expect(isSandboxResumable({ status: 'active', external_id: 'sbx_1' })).toBe(false);
   });
 
+  test('deliberate boot and wake failure parks require an explicit restart', () => {
+    for (const stopReason of ['runtime_boot_failed', 'runtime_wake_failed']) {
+      expect(
+        isSandboxResumable({
+          status: 'stopped',
+          external_id: 'sbx_1',
+          metadata: { stopReason },
+        }),
+      ).toBe(false);
+    }
+  });
+
   test('null / undefined sandbox → not resumable', () => {
     expect(isSandboxResumable(null)).toBe(false);
     expect(isSandboxResumable(undefined)).toBe(false);

@@ -156,13 +156,27 @@ module "gateway" {
   # ALBRequestCountPerTarget policy, which the module skips while the value is
   # 0 (its default) — the gateway had CPU/memory tracking only, and an
   # I/O-bound gateway blocked on upstream models never moves either metric.
-  task_cpu                   = 512
-  task_memory                = 1024
+  # Sizing: memory is the gateway's binding constraint, not CPU — it holds
+  # request bodies (multimodal turns reach tens of MB) while it forwards them.
+  # 2 GiB gives admission a 1 GiB budget (memory-budget.ts takes 50%), i.e.
+  # ~341 MiB of concurrent wire bytes at the measured 3x amplification. The old
+  # 512 MiB (dev) / 1 GiB (staging, prod) sat right on top of the size that
+  # OOM-killed the Essentia gateway on a single 28 MB request.
+  #
+  # Capacity comes from REPLICAS, not from one big task: the gateway is
+  # stateless and ALBRequestCountPerTarget already scales it. min_capacity is
+  # the floor that survives an AZ or Spot loss without a cold start.
+  # deregistration_delay + stop_timeout let a draining task finish its
+  # in-flight streams (main.ts drains for GATEWAY_DRAIN_MS first).
+  task_cpu                   = 1024
+  task_memory                = 2048
   desired_count              = 2
   min_capacity               = 2
-  max_capacity               = 6
+  max_capacity               = 8
   use_fargate_spot           = true
   fargate_base_on_demand     = 1
+  deregistration_delay       = 300
+  stop_timeout               = 120
   requests_per_target_target = 120
   tags                       = local.tags
 }

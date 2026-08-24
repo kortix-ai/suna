@@ -1235,6 +1235,8 @@ describe('project session API contract', () => {
           initSucceededAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
           opencodeReadyWaitStartedAt: staleReadyWaitStartedAt,
           opencodeReadyWaitReason: 'unreachable',
+          opencodeUnreachableWaitStartedAt: staleReadyWaitStartedAt,
+          opencodeNotReadyWaitStartedAt: staleReadyWaitStartedAt,
           runtimeIdentityState: 'unavailable',
           runtimeUnavailableReason: 'runtime_not_ready_timeout',
         },
@@ -1269,6 +1271,8 @@ describe('project session API contract', () => {
     const resumedMetadata = sessionSandboxRows[0]!.metadata as Record<string, unknown>;
     expect(resumedMetadata.opencodeReadyWaitStartedAt).toBeUndefined();
     expect(resumedMetadata.opencodeReadyWaitReason).toBeUndefined();
+    expect(resumedMetadata.opencodeUnreachableWaitStartedAt).toBeUndefined();
+    expect(resumedMetadata.opencodeNotReadyWaitStartedAt).toBeUndefined();
     expect(resumedMetadata.runtimeIdentityState).toBeUndefined();
     expect(resumedMetadata.runtimeUnavailableReason).toBeUndefined();
     expect(resumedMetadata.runtimeWakeStartedAt).toEqual(expect.any(String));
@@ -1397,6 +1401,57 @@ describe('project session API contract', () => {
       },
     });
     expect(providerStartCalls).toBe(1);
+
+  });
+
+  test('an expired runtime wake failure requires an explicit restart', async () => {
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-expired-wake-failure',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          stopReason: 'runtime_wake_failed',
+          runtimeWakeError: 'start_failed',
+          runtimeWakeRetryAfterAt: new Date(Date.now() - 1_000).toISOString(),
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-expired-wake-failure',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(false);
+
+    const response = await createApp().request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_wake_failed',
+    });
+    expect(providerStartCalls).toBe(0);
   });
 
   test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
@@ -3342,7 +3397,7 @@ describe('project session API contract', () => {
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
           opencodeReadyWaitReason: 'unreachable',
         },
         lastUsedAt: null,
@@ -3373,6 +3428,63 @@ describe('project session API contract', () => {
     const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
     expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
     expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
+
+    const retry = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_unreachable_timeout',
+      sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
+    });
+    expect(providerStartCalls).toBe(0);
+  });
+
+  test('dashboard start resets the readiness clock when not-ready changes to unreachable', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-readiness-reason-change',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          opencodeReadyWaitReason: 'not_ready',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    opencodeEnsureReason = 'unreachable';
+
+    const before = Date.now();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'starting', reason: 'unreachable' });
+    const metadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(metadata.opencodeReadyWaitReason).toBe('unreachable');
+    expect(Date.parse(String(metadata.opencodeReadyWaitStartedAt))).toBeGreaterThanOrEqual(before);
+    expect(providerStopCalls).toBe(0);
   });
 
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
