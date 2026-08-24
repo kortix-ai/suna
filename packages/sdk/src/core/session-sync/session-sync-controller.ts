@@ -15,27 +15,30 @@ const TAIL_RETRY_BASE_MS = 1_000;
 /** Ceiling for the retry backoff — a box that comes back is picked up within it. */
 const TAIL_RETRY_MAX_MS = 15_000;
 
-export const SESSION_SYNC_PAGE_SIZE = 50;
+export const SESSION_SYNC_PAGE_SIZE = 100;
 
 /**
  * The FIRST page — the one the user waits on.
  *
  * Time to first paint is bytes, not messages. Measured on a heavy session
- * (essentia, 2026-08-24, a run with hundreds of image reads whose parts carry
- * base64):
+ * (essentia, 2026-08-24, a run with hundreds of image reads whose parts carried
+ * base64 — BEFORE the attachment bytes were stripped from the list):
  *
  *   message?limit=50   ->   8,228 kB   30.39 s
  *   message?limit=50   ->  24,460 kB   48.76 s
  *   message?limit=50   ->  20,284 kB   35.74 s
  *   message?limit=50   ->  25,125 kB   29.23 s
  *
- * Roughly 165-500 kB PER MESSAGE. The first screen does not need fifty of
- * those; it needs enough to fill a view. Twenty is a full view plus buffer,
- * and on that session it is ~3-10 MB instead of ~8-25 MB.
+ * That was 165-500 kB PER MESSAGE, and it drove the first page down to 20.
+ * With the bytes gone (`stripInlineAttachmentBytes`, same session, same day)
+ * a message is ~2-7 kB: `limit=20` measured 132 kB, an older page of 50
+ * measured 345-420 kB. At that weight a small first page is a false economy —
+ * on a normal viewport 20 messages do not fill the screen, so the top sentinel
+ * pulled two more pages before the reader touched anything, and three round
+ * trips (each paying a CORS preflight, one measured at 3.34 s) replaced one.
  *
- * Older pages keep the larger size on purpose: by then the user is scrolling
- * deliberately, a spinner is honest, and fewer round trips is the better trade
- * — each page also costs a CORS preflight, one of which measured 3.34 s.
+ * Fifty fills the view. Older pages go to a hundred: by then the reader is
+ * scrolling deliberately, a spinner is honest, and fewer round trips wins.
  *
  * NOTE this is not what fixed the blank transcript. That was structural:
  * `hydrate` ran only after a multi-page backward walk, so NOTHING rendered at
@@ -43,7 +46,7 @@ export const SESSION_SYNC_PAGE_SIZE = 50;
  * before that single paint, and a longer blank. The walk is gone (see
  * `loadTail`); this only makes the first paint lighter.
  */
-export const SESSION_SYNC_TAIL_PAGE_SIZE = 20;
+export const SESSION_SYNC_TAIL_PAGE_SIZE = 50;
 
 /**
  * How far back the tail read will walk to complete a turn before it stops and

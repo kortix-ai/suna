@@ -12,6 +12,35 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `session-open-overfetch` — one read where there were three, one entry where there were two — DONE
+
+**Files (SDK):** `core/session-sync/session-sync-controller.ts` (tail 20 -> 50,
+older 50 -> 100 — the bytes are gone, so a page is ~2-7 kB a message) ·
+`react/use-opencode-sessions/agents.ts` (its `/detail` read goes through the
+canonical `qk.project.detail` entry via `fetchQuery` instead of a private
+fetch) · `react/use-opencode-sessions/providers.ts` (its `/model-picker` read
+goes through `qk.project.modelPicker` the same way). Web/API changes in the
+same PR: history autoload only after the reader scrolls up; the audit badge no
+longer drains the audit write queue and asks for 100 rows not 1000; the sidebar
+probes seven IAM leaves in one `effective:batch`; the 4 MB provider catalog
+bootstrap waits for idle.
+
+**What.** A HAR of one cold session open on a self-host (322 requests,
+7.35 MB) after the attachment strip: `message?limit=20` + two `before=` pages
+fired on mount because 20 stripped messages do not fill a viewport and the top
+sentinel sat inside its 400px margin; `/detail` and `/model-picker` each fetched
+twice, concurrently, from hooks calling the fetcher directly under their own
+keys; `/audit?limit=1000` 503'd at the 25 s deadline twice because the badge
+poll awaited a bulk INSERT it never reads; seven sidebar probes = fourteen
+round trips; and `llm-catalog/providers` was 4 MB, 55 % of the page, for a
+Customize surface nobody had opened.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm test` (below) · apps/web
+tsc + eslint clean, session + sidebar suites green · apps/api tsc clean,
+project-audit tests green.
+
+---
+
 ### 2026-08-24 — session `strip-attachment-bytes` — the transcript stops shipping file bytes — DONE
 
 **Files (SDK):** `platform/auth-core.ts` (`DEFAULT_FETCH_TIMEOUT_MS` 30s -> 120s, with

@@ -2016,8 +2016,18 @@ export function SessionChat({
   }, []);
 
   // Dismiss popup on scroll
-  const handleChatScroll = useCallback(() => {
+  // Set the first time the reader scrolls the transcript UP, and read by the
+  // older-history sentinel: history loads when someone reaches for it, never
+  // because the first page happened to be shorter than the viewport.
+  const readerScrolledUpRef = useRef(false);
+  const lastScrollTopRef = useRef<number | null>(null);
+  const handleChatScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     setSelectionPopup(null);
+    const top = event.currentTarget.scrollTop;
+    if (lastScrollTopRef.current !== null && top < lastScrollTopRef.current) {
+      readerScrolledUpRef.current = true;
+    }
+    lastScrollTopRef.current = top;
   }, []);
 
   // When user clicks "Reply" in the popup
@@ -2849,6 +2859,7 @@ export function SessionChat({
             isLoadingOlder,
             lastPullFailed: olderPullFailed,
             autoLoadedPages,
+            readerScrolledUp: readerScrolledUpRef.current,
           })
         ) {
           setAutoLoadedPages((pages) => pages + 1);
