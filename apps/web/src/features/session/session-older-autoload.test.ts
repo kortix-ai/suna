@@ -6,6 +6,7 @@ import {
 } from './session-older-autoload';
 
 const IN_VIEW = {
+  readerScrolledUp: true,
   isIntersecting: true,
   hasOlder: true,
   isLoadingOlder: false,
@@ -44,6 +45,17 @@ describe('older-history autoload', () => {
 
   test('pulls the previous page once the top sentinel comes into view', () => {
     expect(shouldLoadOlderHistory(IN_VIEW)).toBe(true);
+  });
+
+  /**
+   * Measured on a real session: a first page shorter than the viewport put the
+   * top sentinel inside its 400px margin on MOUNT, so a session open cost
+   * three reads (`limit=20` + two `before=` pages) before the reader touched
+   * anything. History is for readers who reach for it.
+   */
+  test('does not pull before the reader has scrolled up, even with the sentinel in view', () => {
+    expect(shouldLoadOlderHistory({ ...IN_VIEW, readerScrolledUp: false })).toBe(false);
+    expect(shouldLoadOlderHistory({ ...IN_VIEW, readerScrolledUp: undefined })).toBe(false);
   });
 
   test('does not pull while the sentinel is out of view', () => {

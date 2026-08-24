@@ -9,7 +9,7 @@ import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectPageCans } from '@/lib/use-project-can';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -86,10 +86,8 @@ export function useModelConnectionGate(
     ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
-  const canWriteProviders =
-    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_WRITE, {
-      accountId: projectDetailQuery.data?.project.account_id,
-    }).allowed === true;
+  const caps = useProjectPageCans(projectId ?? undefined);
+  const canWriteProviders = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
 
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectModalTab, setProjectModalTab] = useState<'providers' | 'models'>('providers');
@@ -103,10 +101,7 @@ export function useModelConnectionGate(
   // performed by asking the server to refuse. Gate it on the leaf instead.
   // `allowed === true` also holds the query while the probe is still loading,
   // so it fires once, when the answer is known, or not at all.
-  const canReadSecrets =
-    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_SECRET_READ, {
-      accountId: projectDetailQuery.data?.project.account_id,
-    }).allowed === true;
+  const canReadSecrets = caps[PROJECT_ACTIONS.PROJECT_SECRET_READ]?.allowed === true;
   const secretsQuery = useQuery({
     queryKey: qk.project.secrets(projectId ?? ''),
     queryFn: () => listProjectSecrets(projectId as string),
@@ -140,9 +135,7 @@ export function useModelConnectionGate(
   );
   const modelsByKey = useMemo(
     () =>
-      new Map(
-        baseModels.map((model) => [`${model.providerID}:${model.modelID}`, model] as const),
-      ),
+      new Map(baseModels.map((model) => [`${model.providerID}:${model.modelID}`, model] as const)),
     [baseModels],
   );
   const isSelectableModel = useCallback(

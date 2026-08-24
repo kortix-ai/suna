@@ -21,6 +21,54 @@ linked, not inlined.
 
 ## Register
 
+### A deliberate runtime failure park must require explicit restart (2026-08-24)
+
+**When:** returning a stopped sandbox after `runtime_boot_failed` or
+`runtime_wake_failed`. Do not classify that row as an ordinary hibernated
+sandbox. Automatic `/start` retries can otherwise resume the same broken runtime
+and repeat the full readiness timeout forever. *Incident:* an Essentia E2B
+session issued consecutive 9.6–10.2 second `/start` calls for over 80 seconds;
+the existing 5-minute server window then parked and auto-resumed the same box.
+*Enforcer:* API repeated-start and web resumability regression tests.
+
+### Fence provider-status caches against lifecycle mutations (2026-08-24)
+
+**When:** caching a confirmed provider `running` result. Capture a lifecycle
+generation before the provider read. Cache the result only if that generation
+is unchanged. Invalidate before and after start, stop, and remove operations.
+An in-flight status read can otherwise finish after a stop and resurrect stale
+`running` state. *Near-miss:* the Essentia `/start` latency optimization added
+an E2B cache that could hide a completed pause for 1.5 seconds.
+*Enforcer:* `e2b.test.ts` holds `getInfo()` across `stop()` and rejects revival.
+
+### One React Query key needs one poll owner (2026-08-24)
+
+**When:** mounting the same query through several session-page components. Give
+exactly one stable route-level observer a `refetchInterval`; make every other
+observer a cache reader with `refetchOnMount: false`. In-flight deduplication
+does not merge independent timers or late stale mounts. *Incident:* five audit
+observers produced 9 requests during one Essentia session load.
+*Enforcer:* `session-audit-shared.test.ts` pins one owner and cache-reader mounts.
+
+### Browser idle is not network idle (2026-08-24)
+
+**When:** deferring a large non-critical request. Do not use
+`requestIdleCallback` as a first-paint network gate; network waits create idle
+main-thread windows immediately. Fetch at the user-demand boundary instead.
+*Incident:* an idle callback started the 4.07 MB LLM catalog during every
+session open. *Enforcer:* `llm-catalog-demand-loading.test.ts` bans layout boot.
+
+### A successful surface deploy must not inherit skipped unrelated ancestors (2026-08-24)
+
+**When:** chaining Dev deployment, canonical verification, and self-host channel
+promotion jobs. Add `always()` and assert the direct prerequisite result for
+each post-deploy job. A normal `if:` can inherit a skipped transitive ancestor,
+skip verification, and leave the mutable self-host tag on an older image even
+after the immutable image deployed successfully.
+*Incident:* a Dev frontend deployed a transcript fix, but its DNS verification
+and `:dev` promotion skipped. Self-host frontends kept a stale blank transcript.
+*Enforcer:* `tests/unit/web-ecs-workflow.test.ts` pins the post-deploy conditions.
+
 ### Submit an initial session prompt exactly once (2026-08-23)
 
 **When:** creating a session with `initial_prompt`. Do not submit the same
@@ -2083,3 +2131,192 @@ installed shim's `cmd-shim-target` metadata and validate that exact target.
 
 *Incident:* the live E2B build installed OpenCode 1.18.19 and printed its
 version, then failed before the native-binary assertion.
+
+## Missing managed runtime binaries are recoverable drift, not an unreadable runtime
+
+2026-08-23. Existing sandbox disks created before the managed OpenCode link
+could update their CLI and agent, but never became ready. Runtime convergence
+treated an unreadable OpenCode health endpoint as a busy or transient runtime.
+The required managed binary did not exist, so the endpoint could never recover.
+
+**The rule.** Distinguish a missing managed binary from a temporarily
+unreadable process. Install and restart when the managed link is absent. Defer
+when the managed link exists but the process cannot report its version.
+
+**The enforcement.** Runtime convergence tests cover both states. A missing
+managed link installs the manifest version and restarts OpenCode. An existing
+link with unreadable health performs no install and no restart.
+
+*Incident:* old session disks remained in `runtimeReady=false` after a runtime
+upgrade because OpenCode convergence reported `opencode did not report its
+version` on every start.
+
+## A transcript list must never carry attachment bytes
+
+2026-08-24. On a self-host, sessions with hundreds of agent image reads stopped
+rendering. Every file part carried its whole file as a `data:` url, so
+`GET /session/:id/message?limit=20` weighed 7–19 MB. The SDK's 30 s fetch
+deadline killed the read at exactly 30.00 s, the tail retry re-issued it, and
+the browser downloaded tens of megabytes for a screen that never painted. The
+same read answered inside the sandbox in 276 ms; the bytes leaving the sandbox
+were the entire cost.
+
+**The rule.** The message list carries a *reference* to an attachment — type,
+mime, filename, id — never its bytes. Bytes are served per part, on demand,
+`immutable` with a strong ETag. Strip at the daemon (the source) AND at the
+API proxy (for sandboxes on an older daemon image); a reference is not a
+`data:` url, so the two passes compose.
+
+**The enforcement.** `kortix-sandbox-agent-server/src/__tests__/attachment-strip.test.ts`
+drives the real Hono app end to end: the list carries the reference, the part
+endpoint returns the exact bytes, 304 on ETag, 404 on unknown, and the
+single-message read is NOT stripped. `apps/api/src/sandbox-proxy/inline-attachments.test.ts`
+pins the pure transform, including "unrecognised payload passes through
+untouched" — the strip runs on every response on that path and must never be
+the reason a read fails.
+
+*Incident:* essentia `5306fd8d`, five consecutive reads at 29.23–30.08 s,
+78 MB transferred, nothing rendered. PR #6829.
+
+## A wake budget is a deadline, not an attempt count
+
+2026-08-24. Auto-resume was three attempts spaced 1500 ms — about three
+seconds — and a self-host's E2B resume takes 8.0–8.8 s. Every healthy sleeping
+box ran out of budget mid-wake, and the page replaced its loader with
+"session <id> is stopped — open a new session to continue" moments before the
+same box came up. Users read it as "all my sessions are broken".
+
+**The rule.** Anything that waits for a machine to boot is bounded by a
+deadline measured from the first observation of the resumable box, never by
+how many times we asked. A count describes our retry spacing, not the machine.
+
+**The enforcement.** `apps/web/src/features/session/session-resume.test.ts`
+asserts `AUTO_RESUME_WINDOW_MS >= 60_000` and that a null clock is
+"just started", not "expired".
+
+*Incident:* essentia, every stopped session, 2026-08-24. PR #6827.
+
+## Sandbox-isolation guards read the agent binding, never the caller's session id
+
+2026-08-24. 43 `backend`-origin sessions in one project were listed in the
+sidebar and every `/start` answered 404. `isSessionTargetVisibleToCaller`
+narrowed on `callerSessionId`, which `resolveSupabaseAuth` sets to the
+Supabase LOGIN session id for every signed-in human — non-null, and never a
+Kortix session id — so every human failed the sibling check meant for sandbox
+credentials. The same regression had already been fixed for the
+manager-override gate and documented in its test; the remedy was not carried
+to this guard.
+
+**The rule.** A guard that asks "is this caller a session-bound credential"
+reads `boundCredentialSessionId` (`callerKortixSessionId(c)`: null for a
+browser JWT, the real id for anything bound). `callerSessionId` cannot answer
+that question.
+
+**The enforcement.** `apps/api/src/__tests__/unit-connector-share.test.ts`
+pins a human with a login session id passing, a sibling sandbox credential
+still blocked, and the own-session credential still allowed.
+
+*Incident:* essentia project `e7170bf8`, origin counts user 568 / backend 43.
+PR #6828.
+||||||| base
+
+## Measure the amplification factor; never decode what you can forward
+
+2026-08-24. The gateway's ai-sdk transport decoded every `data:` image with
+`atob(raw).split('').map(c => c.charCodeAt(0))` — one JavaScript string per
+byte, 89 MB resident for a 6.7 MB image — and then let provider-utils re-encode
+the bytes through a `String.fromCodePoint` concat loop. The admission budget
+charged 3x per wire byte on the assumption that the parsed graph was the only
+copy. Both `@ai-sdk/anthropic` and `@ai-sdk/amazon-bedrock` accept a base64
+STRING and serialize it through the identity `convertToBase64`.
+
+**The rule.** A passthrough forwards bytes in the encoding it received them.
+Before charging a memory budget, measure the real peak with a mounted request
+through the real handler and write the number next to the constant
+(`memory-envelope.test.ts`: 2.25x openai-compat, 2.9x anthropic, 0.61x steady
+state on 2026-08-24). A budget factor without a measurement is a wish.
+
+**Bound the inputs a client can grow without limit.** A screenshot-per-step
+agent re-sends every screenshot on every turn. Providers already cap images
+per request (Bedrock Converse: 20). The gateway keeps the newest 12 of >20 and
+replaces older ones with a one-line notice, with hysteresis so the prefix
+stays cache-stable for 8 turns.
+
+*Incident:* Essentia 2026-08-22, 40-screenshot / 28 MB request, cgroup OOM.
+Enforcement: `memory-envelope.test.ts` (peak factor < 6x, all 40 images
+forwarded byte-for-byte on both routes), `image-window.test.ts`.
+
+## A re-framed body must not carry the provider's framing headers
+
+2026-08-24. The gateway forwarded `upstream.headers` unchanged on both response
+paths. `fetch` had already gunzipped the provider body and the gateway
+re-materialized it (a string, or a relayed stream), but the response still
+said `content-encoding: gzip` with the compressed `content-length`. The API
+reverse proxy's `fetch` threw `ZlibError` on every non-streaming completion
+and answered `502 gateway_proxy_unreachable` while the gateway itself had
+logged a 200. Caddy on a self-host box passes the same pair straight to the
+client.
+
+**The rule.** When a proxy decodes or re-frames a body, it owns the framing.
+Strip `content-encoding`, `content-length`, `transfer-encoding` and the
+hop-by-hop set (RFC 7230 §6.1) before forwarding; keep everything else.
+`curl` without `--compressed` ignores `content-encoding`, so a curl-only
+check passes while every `fetch`-based client fails — test through the real
+next hop.
+
+*Incident:* local stack, found during the passthrough e2e for the memory work
+above; the same code is live on dev. Enforcement: `simple-handler.test.ts`
+"drops wire-framing headers", `passthroughHeaders()` on all three response
+paths.
+
+## The edge never rewrites an origin error
+
+2026-08-24. The `api-router` Worker replaced every origin 502/503/504 with a
+synthetic `503 MAINTENANCE_MODE` "Service maintenance" page. On dev, 5 of 8
+non-streaming completions were failing with a gateway content-encoding bug
+(origin 502) and every user, log line and OpenCode retry classifier saw
+"Kortix is temporarily unavailable" instead. The gateway's own health showed
+`errors: 0` and 3.6 h of uptime: nothing was in maintenance and nothing had
+crashed.
+
+**The rule.** A proxy passes the origin's status, body and headers through
+unchanged. The only synthetic error it may produce is for an origin it could
+not reach at all, and that response names itself (`502 origin_unreachable`,
+`X-Origin-Status: fetch-error`, `Retry-After`). A maintenance page comes only
+from an explicit admin state. When a proxy catches an exception, the response
+carries the exception class and message (`gateway_proxy_error` with `cause`
+and `detail`), not a generic "unreachable".
+
+*Incident:* dev, found while verifying the gateway passthrough work above.
+Enforcement: `worker.test.mjs` origin-passthrough tests; `wire.ts` proxy
+error envelope.
+
+## Shedding load only works if you also stop the upload
+
+2026-08-24, found by stress-testing the gateway in its real container. Three
+separate defects, each of which alone breaks the "never OOM, never 502"
+promise, and none of which unit tests could see:
+
+1. **A refused request keeps arriving.** Admission correctly returned 503 for
+   60 concurrent 27 MiB uploads and the 2 GiB container was OOM-killed anyway:
+   ~1.3 GB of refused body was still buffered on the way in. A rejection must
+   `cancel()` the request body, not just answer.
+2. **A client that vanishes mid-upload strands its reservation.** Bun never
+   settles a pending `reader.read()` on abort, so the read awaited forever
+   holding the lease. One aborted 2.8 MB upload leaked 8,521,827 reserved
+   bytes permanently; enough of them and an idle process 503s everything.
+   Cancel the reader from an `abort` listener.
+3. **An amplification constant measured on ONE request is wrong.** Isolated, a
+   27 MiB request peaks at 2.3x. Under concurrency the transients overlap and
+   GC lags, and 3x OOMs. The default is now 6x.
+
+**The rule.** Test admission control with a real container under a real memory
+limit and hostile clients — overload, abort storms, slow consumers. A unit test
+that asserts "returns 503" proves nothing about survival: all three defects
+above passed every unit test in the suite. Assert the process afterwards:
+`OOMKilled=false`, `RestartCount=0`, and the admission counter back at zero.
+
+*Evidence:* 1074/1074 200s at 12 rps mixed (p99 0.32s, peak 322 MiB/2048, no
+leak); the 60x27 MiB overload that killed the container now peaks at 827 MiB
+and stays healthy. Enforcement: `read-bounded-body.test.ts` abort cases,
+`memory-envelope.test.ts` backpressure case.

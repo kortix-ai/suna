@@ -47,18 +47,31 @@ export type InflightLease =
     }
   | { ok: false; reason: 'too_large' | 'overloaded'; retryAfterSeconds?: number };
 
-export type InflightResizeResult =
-  | { ok: true }
-  | { ok: false; reason: 'too_large' | 'overloaded' };
+export type InflightResizeResult = { ok: true } | { ok: false; reason: 'too_large' | 'overloaded' };
 
 /**
- * Measured against the shapes this pipeline actually builds: the raw body as a
- * UTF-16 string (~2x for JSON, which is overwhelmingly ASCII), plus the parsed
- * object graph. Three is deliberately conservative — being wrong here in the
- * generous direction costs throughput; being wrong in the other direction costs
- * the container.
+ * How much resident memory one wire byte really costs while it is in flight.
+ *
+ * A gateway that only forwarded bytes would need ~1x. This one has to PARSE
+ * the request to route it (pick the model, apply generation defaults, cap
+ * inline images), and a JSON body with base64 images inline therefore exists
+ * as: the arriving bytes, the decoded string, the parsed object graph, and the
+ * serialized provider payload. Those overlap in time.
+ *
+ * MEASURED, not guessed, and measured under CONCURRENCY — which is the part
+ * that matters. One isolated 27 MiB request peaks at ~2.3x
+ * (memory-envelope.test.ts). But when many run at once their transient copies
+ * overlap and GC lags behind, so the real figure is far higher: at 3x, 60
+ * concurrent 27 MiB uploads OOM-killed a 2 GiB container on 2026-08-24 even
+ * though admission was working exactly as designed.
+ *
+ * 6 is the safety margin that keeps that same load alive. Being wrong in the
+ * generous direction costs throughput on the largest requests (they queue, and
+ * callers get a retryable 503); being wrong in the other direction costs the
+ * whole container and every request on it. Override per deployment with
+ * GATEWAY_BODY_AMPLIFICATION.
  */
-export const DEFAULT_BODY_AMPLIFICATION = 3;
+export const DEFAULT_BODY_AMPLIFICATION = 6;
 
 export class InflightBudget {
   private readonly maxBytes: number;

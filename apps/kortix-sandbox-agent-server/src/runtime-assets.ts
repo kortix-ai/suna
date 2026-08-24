@@ -168,6 +168,8 @@ export interface RuntimeAssetsOptions {
   /** Test seams. The production installer also publishes the stable native link. */
   installOpencode?: (version: string) => Promise<void>
   readOpencodeVersion?: (baseUrl: string) => Promise<string | null>
+  /** Test seam for old snapshots that predate the managed OpenCode link. */
+  opencodeBinaryExists?: () => Promise<boolean>
   turnProbe?: (baseUrl: string, workspace: string) => Promise<boolean | null>
   /** Baked dependency dir holding the `@opencode-ai/plugin` pin. */
   opencodeDepsDir?: string
@@ -1036,20 +1038,36 @@ export async function reconcileRuntimeAssets(
         const readVersion = options.readOpencodeVersion ?? readOpencodeVersion
         const installed = await readVersion(seam.opencodeBaseUrl())
         const pin = await readPluginPin(depsDir)
+        const binaryExists =
+          installed !== null ||
+          (await (options.opencodeBinaryExists ?? (async () => {
+            try {
+              await stat(OPENCODE_CURRENT_LINK)
+              return true
+            } catch {
+              return false
+            }
+          }))())
+        const binaryMissing = installed === null && !binaryExists
         const binaryStale = installed !== null && installed !== expected
         // The pin can drift from the binary on its own — a pass that installed
         // the binary and then failed the pin refresh leaves exactly that — and
         // a pin that does not match makes opencode refetch the plugin on every
         // boot. It is worth one idle-only repair even when the binary is fine.
         const pinStale = pin !== null && pin !== expected
-        if (installed === null) {
+        if (installed === null && !binaryMissing) {
           reasons.opencode = 'opencode did not report its version'
-        } else if (!binaryStale && !pinStale) {
+        } else if (installed !== null && !binaryMissing && !binaryStale && !pinStale) {
           opencode = 'current'
           nextState.opencode_version = installed
         } else {
           const probe = options.turnProbe ?? opencodeTurnInFlight
-          const turnInFlight = await probe(seam.opencodeBaseUrl(), seam.workspace)
+          // A missing managed binary cannot own a turn. Probing its absent
+          // runtime returns "unreadable" forever and previously prevented old
+          // snapshots from ever repairing themselves.
+          const turnInFlight = binaryMissing
+            ? false
+            : await probe(seam.opencodeBaseUrl(), seam.workspace)
           if (turnInFlight !== false) {
             reasons.opencode =
               turnInFlight === null ? 'turn state unreadable' : 'a turn is in flight'
@@ -1060,7 +1078,7 @@ export async function reconcileRuntimeAssets(
             })
           } else {
             const install = options.installOpencode ?? installOpencodeVersion
-            if (binaryStale) await install(expected)
+            if (binaryStale || binaryMissing) await install(expected)
             // SAME STEP as the binary, always. A binary and a plugin that
             // disagree is the state this whole block exists to avoid.
             const pinResult = await refreshOpencodePluginPin(depsDir, expected)
@@ -1070,14 +1088,14 @@ export async function reconcileRuntimeAssets(
             // Only a NEW BINARY needs the process replaced: the plugin is read
             // when opencode boots, so a refreshed pin takes effect on its own at
             // the next start and buys nothing by cutting this one short.
-            if (binaryStale) await seam.restartOpencode()
+            if (binaryStale || binaryMissing) await seam.restartOpencode()
             opencode = 'updated'
             nextState.opencode_version = expected
             logger.info('[runtime-assets] opencode converged', {
               from: installed,
               to: expected,
               pin: pinResult,
-              restarted: binaryStale,
+              restarted: binaryStale || binaryMissing,
             })
           }
         }

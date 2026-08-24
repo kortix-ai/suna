@@ -12,6 +12,7 @@
  */
 
 import type { PermissionProbeInput, PermissionProbeTarget } from '@/lib/iam-client';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useCan, useCans, type CanResult } from '@/lib/use-permission';
 
 export type { CanResult };
@@ -51,4 +52,26 @@ export function useProjectCans(
   options?: { accountId?: string },
 ): Record<string, CanResult> {
   return useCans({ projectId, accountId: options?.accountId }, actions);
+}
+
+/**
+ * Fixed permission batch shared by every always-mounted project-page gate.
+ * Exact action-list identity is part of the SDK query key, so a stable union
+ * lets React Query collapse all consumers into one `effective:batch` request.
+ */
+export const PROJECT_PAGE_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_READ,
+  PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+  PROJECT_ACTIONS.PROJECT_AGENT_READ,
+  PROJECT_ACTIONS.PROJECT_SKILL_READ,
+  PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+  PROJECT_ACTIONS.PROJECT_SECRET_READ,
+  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
+  PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_FILE_READ,
+] as const;
+
+export function useProjectPageCans(projectId: string | undefined): Record<string, CanResult> {
+  return useProjectCans(projectId, PROJECT_PAGE_ACTIONS);
 }

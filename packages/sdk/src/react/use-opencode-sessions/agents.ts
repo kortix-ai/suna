@@ -1,11 +1,12 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
 import { getProjectDetail, type ProjectConfigSummary } from '../../core/rest/projects-client';
+import { contract } from '../query-contracts';
 import { qk } from '../query-keys';
 
 // Re-export filtered agents hook for UI agent selectors
@@ -22,6 +23,7 @@ export { useVisibleAgents } from '../use-visible-agents';
  * this falls back to the sandbox OpenCode runtime.
  */
 export function useOpenCodeAgents(options?: { directory?: string; projectId?: string | null }) {
+  const queryClient = useQueryClient();
   const directory = options?.directory;
   const projectId = options?.projectId ?? null;
   const runtimeReady = useOpenCodeRuntimeReady();
@@ -46,7 +48,16 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
         : opencodeKeys.agents(),
     queryFn: async () => {
       if (projectId) {
-        const detail = await getProjectDetail(projectId);
+        // Through the CANONICAL entry, not a private fetch. This slot keeps its
+        // own key (see above) but it used to issue its own `GET /detail` too —
+        // concurrently with `useProjectConfig`'s, 259 ms apart on a real
+        // session open, both 88 KB. Same fetcher, same response: fetchQuery on
+        // the shared key dedupes an in-flight read and serves a fresh one.
+        const detail = await queryClient.fetchQuery({
+          queryKey: qk.project.detail(projectId),
+          queryFn: () => getProjectDetail(projectId),
+          ...contract('config'),
+        });
         const agents = projectConfigAgentsToOpenCodeAgents(detail.config);
         setLSCache(LS_AGENTS, agents, cacheScope);
         return agents;

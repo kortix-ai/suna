@@ -11,12 +11,18 @@ import {
   type ProjectSecret,
   type SessionScopeInput,
 } from '@kortix/sdk';
-import { qk, useProjectConfig } from '@kortix/sdk/react';
-import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { contract, qk, useProjectConfig } from '@kortix/sdk/react';
+import {
+  useIsFetching,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCans } from '@/lib/use-project-can';
+import { useProjectPageCans } from '@/lib/use-project-can';
 
 import {
   buildSessionScopeSelectionCatalog,
@@ -69,24 +75,29 @@ export interface SessionScopeCatalogPermits {
 
 const ALL_CATALOG_PERMITS: SessionScopeCatalogPermits = { secrets: true, connectors: true };
 
-/** Module-level so the identity is stable across renders — `useProjectCans`
- *  keys its query on this array. */
-const SCOPE_CATALOG_ACTIONS = [
-  PROJECT_ACTIONS.PROJECT_SECRET_READ,
-  PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
-] as const;
-
 /** A request that was never made. Distinct from a request that FAILED: it
  *  yields the same 'unavailable' state but carries no error, so
  *  `firstCatalogError` stays quiet and nothing surfaces a phantom failure. */
 const SKIPPED = Symbol('skipped-catalog-axis');
 type MaybeSkipped<T> = readonly T[] | typeof SKIPPED;
 
-const sdkCatalogSources: SessionScopeCatalogSources = {
-  listSecrets: async (projectId) => (await listProjectSecrets(projectId)).items,
-  listConnectors: async (projectId) => (await listConnectors(projectId)).connectors,
-  listConnections: async (projectId) => (await listConnections(projectId)).connections,
-};
+export function createSessionScopeCatalogSources(
+  queryClient: QueryClient,
+  fetchSecrets: typeof listProjectSecrets = listProjectSecrets,
+): SessionScopeCatalogSources {
+  return {
+    listSecrets: async (projectId) =>
+      (
+        await queryClient.fetchQuery({
+          queryKey: qk.project.secrets(projectId),
+          queryFn: () => fetchSecrets(projectId),
+          ...contract('config'),
+        })
+      ).items,
+    listConnectors: async (projectId) => (await listConnectors(projectId)).connectors,
+    listConnections: async (projectId) => (await listConnections(projectId)).connections,
+  };
+}
 
 function rejectedCatalogError(axis: string, reason: unknown): Error {
   if (reason instanceof Error) return reason;
@@ -131,7 +142,7 @@ export function sessionScopeCatalogQueryKey(
 
 export async function loadSessionScopeCatalog(
   projectId: string,
-  sources: SessionScopeCatalogSources = sdkCatalogSources,
+  sources: SessionScopeCatalogSources,
   permits: SessionScopeCatalogPermits = ALL_CATALOG_PERMITS,
 ): Promise<LoadedSessionScopeCatalog> {
   const [secretsResult, connectorsResult, connectionsResult] = await Promise.allSettled([
@@ -173,6 +184,10 @@ const unavailableCatalog = (): SessionScopeSelectionCatalog => ({
 
 export function useSessionScope({ projectId, sessionId, agentName }: UseSessionScopeInput) {
   const queryClient = useQueryClient();
+  const catalogSources = useMemo(
+    () => createSessionScopeCatalogSources(queryClient),
+    [queryClient],
+  );
   const projectConfig = useProjectConfig(projectId);
   // useProjectConfig now rides the shared qk.project.detail(id) entry (a
   // `select` projection, not its own key) — track fetch/error state on THAT
@@ -209,7 +224,7 @@ export function useSessionScope({ projectId, sessionId, agentName }: UseSessionS
   });
   // Ask ONCE for both leaves (useProjectCans batches into a single probe), then
   // only request the axes this user may actually read.
-  const catalogCaps = useProjectCans(projectId ?? undefined, SCOPE_CATALOG_ACTIONS);
+  const catalogCaps = useProjectPageCans(projectId ?? undefined);
   const secretsCap = catalogCaps[PROJECT_ACTIONS.PROJECT_SECRET_READ];
   const connectorsCap = catalogCaps[PROJECT_ACTIONS.PROJECT_CONNECTOR_READ];
   const catalogPermits = useMemo<SessionScopeCatalogPermits>(
@@ -223,7 +238,7 @@ export function useSessionScope({ projectId, sessionId, agentName }: UseSessionS
 
   const catalogQuery = useQuery({
     queryKey: sessionScopeCatalogQueryKey(projectId, catalogPermits),
-    queryFn: () => loadSessionScopeCatalog(projectId as string, sdkCatalogSources, catalogPermits),
+    queryFn: () => loadSessionScopeCatalog(projectId as string, catalogSources, catalogPermits),
     enabled: Boolean(projectId) && catalogPermitsResolved,
     retry: false,
     staleTime: 30_000,

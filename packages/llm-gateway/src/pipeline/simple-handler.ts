@@ -8,11 +8,12 @@ import type {
   UsageEvent,
 } from '../domain';
 import { GatewayResolutionError, UpstreamHttpError } from '../errors';
-import { callUpstream, type FetchImpl } from '../http';
-import { extractUsageFromJson, type ExtractedUsage } from '../usage';
+import { type FetchImpl, callUpstream } from '../http';
+import { type ExtractedUsage, extractUsageFromJson } from '../usage';
 import { calculateCost } from '../usage/pricing';
-import { applyGenerationDefaults } from './generation-defaults';
 import { gatewayErrorResponse } from './error-response';
+import { applyGenerationDefaults } from './generation-defaults';
+import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
 import { relayStream } from './streaming';
 import { createTraceEmitter } from './trace';
 
@@ -20,18 +21,49 @@ export interface ChatCompletionRequest {
   authorization: string | undefined;
   rawBody: string;
   signal?: AbortSignal;
+  /**
+   * An already-parsed body, used by the Anthropic ingress.
+   *
+   * That ingress parses the raw body, translates it, and used to
+   * `JSON.stringify` the result only for this handler to `JSON.parse` it
+   * straight back. On an image-heavy request that round trip is the
+   * difference between charging 3x the wire size and holding 5.03x
+   * (measured 2026-08-24: 16 MiB of images -> +80.5 MiB on /v1/messages
+   * versus +32.1 MiB on /chat/completions), which is how a single admitted
+   * request could exceed the whole task's memory.
+   */
+  parsedBody?: Record<string, unknown>;
 }
 
 export interface GatewayDeps {
   fetchImpl?: FetchImpl;
   logger?: GatewayLogger;
+  /** Inline-image cap per request. See pipeline/image-window.ts. */
+  imageWindow?: ImageWindowOptions;
 }
 
 export interface HandlerRuntime {
   hooks: GatewayHooks;
   logger: GatewayLogger;
   fetchImpl?: FetchImpl;
+  imageWindow?: ImageWindowOptions;
 }
+
+/**
+ * Deadline for the provider's response HEADERS (time to first byte).
+ *
+ * There was no upstream timeout at all: `callUpstream` passed only the client's
+ * signal, Bun's `idleTimeout` is 0, and no load balancer bounds that leg. A
+ * provider that accepts the TCP connection and never answers therefore pinned
+ * an admission reservation forever while Cloudflare gave the caller a 524 at
+ * 100s. This fires first, so the caller gets a typed 503 it can retry.
+ *
+ * Headers only: once the stream is flowing, `relayStream`'s heartbeat and its
+ * 90-minute inactivity budget govern it — a long-thinking model is not a
+ * timeout.
+ */
+const UPSTREAM_HEADERS_TIMEOUT_MS =
+  Number(process.env.GATEWAY_UPSTREAM_HEADERS_TIMEOUT_MS) || 90_000;
 
 const EMPTY_USAGE: TokenCounts = {
   promptTokens: 0,
@@ -123,11 +155,38 @@ function rawProviderError(error: UpstreamHttpError): Response {
   });
 }
 
+// Headers that describe the provider's WIRE framing, not its payload. `fetch`
+// already decompressed the body and this gateway re-frames it (a relayed
+// stream or a re-materialized string), so forwarding them lies to the next
+// hop: the API reverse proxy's `fetch` saw `content-encoding: gzip` on a
+// plaintext body and threw `ZlibError` on every non-streaming completion
+// (local stack, 2026-08-24), and Caddy would hand the same pair straight to
+// the client. Hop-by-hop headers (RFC 7230 §6.1) are dropped for the same
+// reason.
+const FRAMING_HEADERS = [
+  'content-encoding',
+  'content-length',
+  'transfer-encoding',
+  'connection',
+  'keep-alive',
+  'proxy-connection',
+  'te',
+  'trailer',
+  'upgrade',
+];
+
+export function passthroughHeaders(upstream: Headers): Headers {
+  const headers = new Headers(upstream);
+  for (const name of FRAMING_HEADERS) headers.delete(name);
+  return headers;
+}
+
 export async function handleChatCompletions(
   runtime: HandlerRuntime,
   req: ChatCompletionRequest,
 ): Promise<Response> {
   const { hooks, logger, fetchImpl } = runtime;
+  const imageWindow = runtime.imageWindow ?? DEFAULT_IMAGE_WINDOW;
   const id = requestId();
   const startedAt = new Date().toISOString();
   const startedMs = Date.now();
@@ -160,9 +219,14 @@ export async function handleChatCompletions(
   }
   const principal = admission.principal;
 
-  let body: Record<string, unknown>;
+  // `body` is the ONLY reference to the parsed request graph from here on.
+  // It is nulled the moment dispatch has taken it (below), so a slow
+  // time-to-first-byte upstream does not pin one extra copy of a multi-MB
+  // multimodal request for the whole prefill.
+  let body: Record<string, unknown> | null;
   try {
-    body = JSON.parse(req.rawBody) as Record<string, unknown>;
+    body = req.parsedBody ?? (JSON.parse(req.rawBody) as Record<string, unknown>);
+    req.parsedBody = undefined;
     req.rawBody = '';
   } catch {
     req.rawBody = '';
@@ -178,6 +242,13 @@ export async function handleChatCompletions(
     });
   }
 
+  const window = applyImageWindow(body, imageWindow);
+  if (window.dropped > 0) {
+    logger.info(
+      `[gateway] image window ${id}: kept ${window.total - window.dropped} of ${window.total} inline images`,
+    );
+  }
+
   const requestedModel = typeof body.model === 'string' ? body.model : '';
   let routedModel = requestedModel;
   try {
@@ -188,8 +259,7 @@ export async function handleChatCompletions(
       })) ?? null;
     routedModel = route?.primaryModel || requestedModel;
     body.model = routedModel;
-    const defaults =
-      route?.generationDefaultsForModel?.(routedModel) ?? route?.generationDefaults;
+    const defaults = route?.generationDefaultsForModel?.(routedModel) ?? route?.generationDefaults;
     body = applyGenerationDefaults(body, defaults);
   } catch (error) {
     refundHold(hooks, principal);
@@ -246,11 +316,19 @@ export async function handleChatCompletions(
   if (streaming) body.stream_options = { include_usage: true };
   let upstream: Response;
   try {
-    upstream = await callUpstream(body, descriptor, {
+    // Abort the dispatch if the provider has not produced response headers in
+    // time — combined with the client's own signal so a disconnect still wins.
+    const headersDeadline = AbortSignal.timeout(UPSTREAM_HEADERS_TIMEOUT_MS);
+    const dispatch = callUpstream(body, descriptor, {
       fetchImpl,
-      signal: req.signal,
+      signal: req.signal ? AbortSignal.any([req.signal, headersDeadline]) : headersDeadline,
       requestId: id,
     });
+    // Dispatch has serialized (openai-compat) or translated (ai-sdk) the
+    // body synchronously up to its first await; this frame no longer needs
+    // the parsed graph. Drop it before waiting on the provider.
+    body = null;
+    upstream = await dispatch;
   } catch (error) {
     refundHold(hooks, principal);
     emit({
@@ -268,6 +346,18 @@ export async function handleChatCompletions(
       candidatesTried: [descriptor.provider],
     });
     if (error instanceof UpstreamHttpError) return rawProviderError(error);
+    // A headers timeout is "try again", not "this request is malformed".
+    const timedOut = (error as { name?: unknown })?.name === 'TimeoutError' && !req.signal?.aborted;
+    if (timedOut)
+      return gatewayErrorResponse(503, {
+        message: `Provider ${descriptor.provider} sent no response headers within ${UPSTREAM_HEADERS_TIMEOUT_MS}ms`,
+        code: 'upstream_timeout',
+        provider: descriptor.provider,
+        requestedModel,
+        resolvedModel: descriptor.resolvedModel ?? routedModel,
+        requestId: id,
+        suggestion: 'Retry the request, or choose another model.',
+      });
     return gatewayErrorResponse(502, {
       message: error instanceof Error ? error.message : 'Provider request failed',
       code: 'upstream_error',
@@ -338,7 +428,7 @@ export async function handleChatCompletions(
         signal: req.signal,
         settle: async (usage) => settle(usage),
       }),
-      { status: upstream.status, headers: upstream.headers },
+      { status: upstream.status, headers: passthroughHeaders(upstream.headers) },
     );
   }
 
@@ -354,6 +444,6 @@ export async function handleChatCompletions(
   return new Response(responseText, {
     status: upstream.status,
     statusText: upstream.statusText,
-    headers: upstream.headers,
+    headers: passthroughHeaders(upstream.headers),
   });
 }

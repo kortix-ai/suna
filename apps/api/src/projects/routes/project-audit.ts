@@ -397,9 +397,18 @@ projectsApp.openapi(
       if (cursorCondition) eventConditions.push(cursorCondition);
     }
     // Audit writes are buffered off the request path (shared/audit-queue.ts).
-    // A reader must observe every event already emitted, so drain the queue
-    // before querying.
-    await flushAuditEvents();
+    // A reader of EVENTS must observe every event already emitted, so drain
+    // the queue before querying them.
+    //
+    // Only then. `include_events=false` is the badge poll — every open session
+    // tab asks every 15 s for the pending-approval COUNT and never reads an
+    // event row — and draining the queue on its behalf meant every one of
+    // those polls waited on a bulk INSERT into `audit_events`. On a self-host
+    // with 3.9 M rows that insert hit the statement timeout (57014), the
+    // request hit the 25 s server deadline, and the badge answered 503 twice
+    // per session open, forever (essentia, 2026-08-24). A count of pending
+    // connector calls does not depend on the audit queue at all.
+    if (audited && includeEvents) await flushAuditEvents();
     const fetchedEvents = audited && includeEvents
       ? await db
           .select()

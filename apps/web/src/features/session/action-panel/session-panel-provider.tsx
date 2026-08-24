@@ -28,6 +28,7 @@
 
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
+import { SharedPreviewProvider } from '@/features/session/shared-preview';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { track } from '@/lib/track';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
@@ -52,12 +53,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { collectAllToolParts } from './shared/collect-tool-parts';
-import { type OutputItem, deriveContext, deriveOutputs } from './shared/derive-panels';
-import { groupSteps } from './shared/group-steps';
-import { latestRunCallIds, latestRunMessages } from './shared/latest-run';
-import { selectPrimaryDeliverable, sortOutputs } from './shared/output-priority';
-import { deriveRunOutcome } from './shared/run-outcome';
 import { AppPreview } from './easy/app-preview';
 import type { Detail } from './easy/detail-view';
 import {
@@ -74,6 +69,12 @@ import {
 import { FilePreview, reportsIntrinsicSize } from './easy/file-preview';
 import { StepDetailBody } from './easy/step-detail-body';
 import { StepIcon } from './easy/step-icon';
+import { collectAllToolParts } from './shared/collect-tool-parts';
+import { deriveContext, deriveOutputs, type OutputItem } from './shared/derive-panels';
+import { groupSteps } from './shared/group-steps';
+import { latestRunCallIds, latestRunMessages } from './shared/latest-run';
+import { selectPrimaryDeliverable, sortOutputs } from './shared/output-priority';
+import { deriveRunOutcome } from './shared/run-outcome';
 
 /** Where an open was triggered from. Telemetry only (W5) — never read for
  *  behavior, only reported alongside `deliverable_opened`. */
@@ -805,5 +806,9 @@ export function SessionPanelProvider({
     ],
   );
 
-  return <SessionPanelContext.Provider value={value}>{children}</SessionPanelContext.Provider>;
+  return (
+    <SessionPanelContext.Provider value={value}>
+      <SharedPreviewProvider>{children}</SharedPreviewProvider>
+    </SessionPanelContext.Provider>
+  );
 }

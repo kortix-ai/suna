@@ -196,10 +196,41 @@ export function isSessionTargetVisibleToCaller(
    *  do sibling-isolation alone stay unchanged. */
   ownership: SessionNarrowingContext,
 ): boolean {
+  // The AGENT binding, never the raw `callerSessionId`.
+  //
+  // `resolveSupabaseAuth` sets `c.get('sessionId')` to the SUPABASE LOGIN
+  // session id for every signed-in human (middleware/auth.ts), so
+  // `callerSessionId` is non-null for ordinary dashboard users and can never
+  // equal a Kortix session id. Reading it here made all three conditions below
+  // true for ANY human opening ANY backend-origin session, so the narrowing
+  // returned false and `/start` answered 404 — a session listed in the sidebar
+  // that could never be opened. Measured on a live self-host (essentia,
+  // 2026-08-24): 43 backend-origin sessions in one project, all unopenable,
+  // while `user`- and `schedule`-origin sessions in the same project opened
+  // fine.
+  //
+  // `callerKortixSessionId()` is the value this guard always wanted — it
+  // returns null for a Supabase browser JWT and the real session id for
+  // anything session-bound, and its own doc says the isolation guards "read
+  // this as 'narrow me'". `access.ts` already threads it in as
+  // `boundCredentialSessionId`.
+  //
+  // This does NOT widen sandbox access. A session-bound credential still
+  // carries its real id, so it still reaches only its own backend session; a
+  // human simply stops being mistaken for one and falls through to the
+  // ordinary ownership/visibility/grant checks below.
+  //
+  // The field stays optional, so a caller that does narrowing alone and never
+  // sourced the binding keeps its previous behaviour rather than silently
+  // widening.
+  const binding =
+    ownership.boundCredentialSessionId !== undefined
+      ? ownership.boundCredentialSessionId
+      : ownership.callerSessionId;
   return !(
     ownership.origin === 'backend' &&
-    ownership.callerSessionId != null &&
-    ownership.callerSessionId !== ownership.sessionId
+    binding != null &&
+    binding !== ownership.sessionId
   );
 }
 

@@ -7,6 +7,8 @@ export const RUNTIME_READINESS_CLOCK_KEYS = [
   'runtimeWakeFailedAt',
   'opencodeReadyWaitStartedAt',
   'opencodeReadyWaitReason',
+  'opencodeUnreachableWaitStartedAt',
+  'opencodeNotReadyWaitStartedAt',
 ] as const;
 
 function parseTimestampMs(value: unknown): number | null {
@@ -35,7 +37,15 @@ export function staleOpencodeReadyReason(
   staleAfterMs = 5 * 60 * 1000,
 ): string | null {
   if (reason !== 'not_ready' && reason !== 'unreachable') return null;
-  const readyWaitStartedAtMs = parseTimestampMs(metadata.opencodeReadyWaitStartedAt);
+  const reasonStartedAt =
+    reason === 'unreachable'
+      ? metadata.opencodeUnreachableWaitStartedAt
+      : metadata.opencodeNotReadyWaitStartedAt;
+  const legacyStartedAt =
+    metadata.opencodeReadyWaitReason === undefined || metadata.opencodeReadyWaitReason === reason
+      ? metadata.opencodeReadyWaitStartedAt
+      : null;
+  const readyWaitStartedAtMs = parseTimestampMs(reasonStartedAt) ?? parseTimestampMs(legacyStartedAt);
   if (!readyWaitStartedAtMs || nowMs - readyWaitStartedAtMs <= staleAfterMs) return null;
   return reason === 'not_ready' ? 'runtime_not_ready_timeout' : 'runtime_unreachable_timeout';
 }

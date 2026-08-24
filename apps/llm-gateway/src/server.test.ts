@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 process.env.KORTIX_API_URL = process.env.KORTIX_API_URL ?? 'https://api.test.invalid';
 process.env.GATEWAY_INTERNAL_TOKEN = process.env.GATEWAY_INTERNAL_TOKEN ?? 'test-internal-token';
 
-const { buildServer } = await import('./server');
+const { buildServer, cloudflareSafe, UPSTREAM_STATUS_HEADER } = await import('./server');
 
 // Piece B: `POST /v1/messages` (+ the `/v1/llm/messages` and `/v1/openai/messages`
 // aliases, mirroring the `/v1/chat/completions` alias namespaces) must be
@@ -84,10 +84,18 @@ describe('standalone gateway inference routes', () => {
         return Response.json({ route: { policyId: 'direct', primaryModel: 'large-model' } });
       }
       if (url.endsWith('/internal/gateway/resolve-upstream')) {
-        return Response.json({ candidates: [{
-          provider: 'mock', kind: 'openai-compat', baseUrl: 'https://provider.test/v1',
-          apiKey: 'key', billingMode: 'none', markup: 0,
-        }] });
+        return Response.json({
+          candidates: [
+            {
+              provider: 'mock',
+              kind: 'openai-compat',
+              baseUrl: 'https://provider.test/v1',
+              apiKey: 'key',
+              billingMode: 'none',
+              markup: 0,
+            },
+          ],
+        });
       }
       if (url.endsWith('/internal/gateway/usage') || url.endsWith('/internal/gateway/trace')) {
         return Response.json({ ok: true });
@@ -107,7 +115,12 @@ describe('standalone gateway inference routes', () => {
       const image = 'a'.repeat(28 * 1024 * 1024);
       const requestBody = JSON.stringify({
         model: 'large-model',
-        messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${image}` } }] }],
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${image}` } }],
+          },
+        ],
       });
       const response = await app.request('/v1/chat/completions', {
         method: 'POST',
@@ -126,4 +139,35 @@ describe('standalone gateway inference routes', () => {
       globalThis.fetch = originalFetch;
     }
   }, 30_000);
+});
+
+describe('cloudflareSafe', () => {
+  test('maps a JSON 502 to 503, keeps the original status in header and body, sets retry-after', async () => {
+    const res = await cloudflareSafe(
+      new Response(
+        JSON.stringify({ error: { code: 'upstream_error', message: 'provider down' } }),
+        {
+          status: 502,
+          headers: { 'content-type': 'application/json', 'x-request-id': 'req_1' },
+        },
+      ),
+    );
+    expect(res.status).toBe(503);
+    expect(res.headers.get(UPSTREAM_STATUS_HEADER)).toBe('502');
+    expect(res.headers.get('retry-after')).toBe('5');
+    expect(res.headers.get('x-request-id')).toBe('req_1');
+    expect(await res.json()).toMatchObject({
+      error: { code: 'upstream_error' },
+      upstream_status: 502,
+    });
+  });
+
+  test('maps 504 and leaves every other status untouched', async () => {
+    expect((await cloudflareSafe(new Response('x', { status: 504 }))).status).toBe(503);
+    for (const status of [200, 400, 401, 402, 413, 429, 500, 503]) {
+      const res = await cloudflareSafe(new Response('x', { status }));
+      expect(res.status).toBe(status);
+      expect(res.headers.get(UPSTREAM_STATUS_HEADER)).toBeNull();
+    }
+  });
 });

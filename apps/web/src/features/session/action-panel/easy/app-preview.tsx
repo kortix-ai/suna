@@ -25,6 +25,7 @@ import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { useSharedPreview, useSharedPreviewDestination } from '@/features/session/shared-preview';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
@@ -133,13 +134,22 @@ export function AppPreview({
   const port = useMemo(() => parseLocalhostUrl(current)?.port ?? 0, [current]);
 
   const proxied = useMemo(() => proxyUrl(current) ?? current, [proxyUrl, current]);
+  const sharedPreview = useSharedPreview(proxied);
   // Null while the auth token is still being fetched — the landing state holds.
-  const previewUrl = useAuthenticatedPreviewUrl(proxied);
+  const standalonePreviewUrl = useAuthenticatedPreviewUrl(sharedPreview ? '' : proxied);
+  const previewUrl = sharedPreview?.previewUrl ?? standalonePreviewUrl;
   const hasPreview = !!previewUrl;
 
   const [refreshKey, setRefreshKey] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
+  const [standaloneIsLoading, setStandaloneIsLoading] = useState(true);
+  const [standaloneHasError, setStandaloneHasError] = useState(false);
+  const isLoading = sharedPreview?.isLoading ?? standaloneIsLoading;
+  const hasError = sharedPreview?.hasError ?? standaloneHasError;
+  const [sharedDestination, setSharedDestination] = useState<HTMLDivElement | null>(null);
+  const focusSharedPreview = useSharedPreviewDestination(
+    sharedPreview ? proxied : '',
+    sharedDestination,
+  );
 
   const [addressValue, setAddressValue] = useState(current);
   const [isEditing, setIsEditing] = useState(false);
@@ -188,7 +198,8 @@ export function AppPreview({
   // token fetch that produces `previewUrl` can itself take a few seconds, and
   // arming at mount burned that wait against the app's budget.
   useEffect(() => {
-    if (!shouldArmLoadTimeout({ isLoading, noApp, hasPreview }) || !previewUrl) return;
+    if (sharedPreview || !shouldArmLoadTimeout({ isLoading, noApp, hasPreview }) || !previewUrl)
+      return;
 
     const startedAt = Date.now();
     let unreachableSince = 0;
@@ -198,8 +209,8 @@ export function AppPreview({
 
     const fail = () => {
       alive = false;
-      setIsLoading(false);
-      setHasError(true);
+      setStandaloneIsLoading(false);
+      setStandaloneHasError(true);
     };
 
     // Sandbox health is read from the store at decision time, not closed over:
@@ -251,7 +262,7 @@ export function AppPreview({
       clearTimeout(deadline);
       if (timer) clearTimeout(timer);
     };
-  }, [isLoading, refreshKey, noApp, hasPreview, previewUrl]);
+  }, [sharedPreview, isLoading, refreshKey, noApp, hasPreview, previewUrl]);
 
   // Nothing to load, so land the cursor on the address bar — the fastest way
   // in once you know the port. `focusWithoutScroll`: this fires while the
@@ -263,9 +274,19 @@ export function AppPreview({
   }, [noApp]);
 
   const reload = useCallback(() => {
-    setIsLoading(true);
-    setHasError(false);
+    if (sharedPreview) {
+      sharedPreview.handleRefresh();
+      return;
+    }
+    setStandaloneIsLoading(true);
+    setStandaloneHasError(false);
     setRefreshKey((k) => k + 1);
+  }, [sharedPreview]);
+
+  const resetNavigationLoad = useCallback(() => {
+    setStandaloneIsLoading(true);
+    setStandaloneHasError(false);
+    setRefreshKey((key) => key + 1);
   }, []);
 
   const navigateTo = useCallback(
@@ -275,9 +296,9 @@ export function AppPreview({
       useBrowserRecentsStore.getState().addRecent(next);
       setHistory((prev) => [...prev.slice(0, index + 1), next]);
       setIndex((i) => i + 1);
-      reload();
+      resetNavigationLoad();
     },
-    [index, reload],
+    [index, resetNavigationLoad],
   );
 
   const canGoBack = index > 0;
@@ -286,14 +307,14 @@ export function AppPreview({
   const goBack = useCallback(() => {
     if (!canGoBack) return;
     setIndex((i) => i - 1);
-    reload();
-  }, [canGoBack, reload]);
+    resetNavigationLoad();
+  }, [canGoBack, resetNavigationLoad]);
 
   const goForward = useCallback(() => {
     if (!canGoForward) return;
     setIndex((i) => i + 1);
-    reload();
-  }, [canGoForward, reload]);
+    resetNavigationLoad();
+  }, [canGoForward, resetNavigationLoad]);
 
   /**
    * Sandbox ports only. A bare port, `:port`, `localhost:port`, `127.0.0.1:port`
@@ -517,6 +538,14 @@ export function AppPreview({
               </div>
             </div>
           )
+        ) : sharedPreview ? (
+          <div
+            ref={setSharedDestination}
+            tabIndex={0}
+            aria-label={`${name} content`}
+            onFocus={focusSharedPreview}
+            className="h-full w-full"
+          />
         ) : hasPreview ? (
           <iframe
             key={refreshKey}
@@ -532,13 +561,13 @@ export function AppPreview({
               // `isLoading` also disarms the port watch: its effect is gated on
               // `shouldArmLoadTimeout`, so the state change tears it down.
               const next = previewLoadSuccessState();
-              setIsLoading(next.isLoading);
-              setHasError(next.hasError);
+              setStandaloneIsLoading(next.isLoading);
+              setStandaloneHasError(next.hasError);
             }}
             onError={() => {
               // A real error event is its own evidence — no probe needed.
-              setIsLoading(false);
-              setHasError(true);
+              setStandaloneIsLoading(false);
+              setStandaloneHasError(true);
             }}
           />
         ) : (

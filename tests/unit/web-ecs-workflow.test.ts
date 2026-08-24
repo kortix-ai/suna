@@ -44,6 +44,16 @@ describe('web ECS migration', () => {
     expect(webDeploy).toContain('${{ needs.build-frontend.outputs.image }}');
     expect(workflow).toContain('base=https://dev.kortix.com');
     expect(workflow).toContain('  publish-web-ecs-dns:');
+    const webDnsStart = workflow.indexOf('  publish-web-ecs-dns:');
+    const webDns = workflow.slice(webDnsStart, webVerifyStart);
+    expect(webDns).toContain('if: ${{ always()');
+    expect(webDns).toContain("needs.deploy-web-ecs.result == 'success'");
+    const webVerify = workflow.slice(
+      webVerifyStart,
+      workflow.indexOf('  promote-dev-channel-frontend:'),
+    );
+    expect(webVerify).toContain('if: ${{ always()');
+    expect(webVerify).toContain("needs.publish-web-ecs-dns.result == 'success'");
     expect(workflow).toContain('node infra/scripts/sync-web-dns.mjs dev "$alb"');
     expect(workflow).not.toContain('detach-web-dev-vercel-domain');
     expect(workflow).not.toContain('detach-vercel-web-domain.mjs');

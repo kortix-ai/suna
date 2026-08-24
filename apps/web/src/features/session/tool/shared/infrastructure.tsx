@@ -15,6 +15,12 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { isEmptyShowPart } from '@/features/session/session-activity-groups';
+import {
+  usePublishSharedPreview,
+  useSharedPreview,
+  useSharedPreviewHasPanelDestination,
+  useSharedPreviewInlineDestination,
+} from '@/features/session/shared-preview';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import {
   ToolSurfaceContext,
@@ -191,20 +197,36 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
     setHasError(true);
   }, []);
 
-  return {
-    navigationEnabled,
-    proxy,
-    previewUrl,
-    isLoading,
-    hasError,
-    refreshKey,
-    handleRefresh,
-    displayLabel,
-    navigateToPreviewTab,
-    openInBrowser,
-    onLoad,
-    onError,
-  };
+  return useMemo(
+    () => ({
+      navigationEnabled,
+      proxy,
+      previewUrl,
+      isLoading,
+      hasError,
+      refreshKey,
+      handleRefresh,
+      displayLabel,
+      navigateToPreviewTab,
+      openInBrowser,
+      onLoad,
+      onError,
+    }),
+    [
+      navigationEnabled,
+      proxy,
+      previewUrl,
+      isLoading,
+      hasError,
+      refreshKey,
+      handleRefresh,
+      displayLabel,
+      navigateToPreviewTab,
+      openInBrowser,
+      onLoad,
+      onError,
+    ],
+  );
 }
 
 export type ServicePreviewState = ReturnType<typeof useServicePreview>;
@@ -213,6 +235,7 @@ export type ServicePreviewState = ReturnType<typeof useServicePreview>;
 // so they never render twice around the same iframe.
 export function ServicePreviewActions({ preview }: { preview: ServicePreviewState }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const sharedPreview = useSharedPreview(preview.proxy?.proxyUrl ?? '');
   const {
     navigationEnabled,
     proxy,
@@ -221,7 +244,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
     handleRefresh,
     navigateToPreviewTab,
     openInBrowser,
-  } = preview;
+  } = sharedPreview ?? preview;
 
   return (
     <div className="flex shrink-0 items-center gap-1">
@@ -266,8 +289,9 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
 
 export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const sharedPreview = useSharedPreview(preview.proxy?.proxyUrl ?? '');
   const { previewUrl, displayLabel, handleRefresh, openInBrowser, isLoading, navigationEnabled } =
-    preview;
+    sharedPreview ?? preview;
   // NEVER the previewUrl: on a preview origin it carries a one-shot `?token=`
   // (the user's live Supabase JWT), and this renders as visible page text —
   // screenshot- and screen-share-capturable. previewUrl stays in the click
@@ -316,12 +340,32 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
 
 export function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
   const fill = useContext(ToolSurfaceContext) === 'panel';
-  const { previewUrl, displayLabel, isLoading, hasError, refreshKey, onLoad, onError } = preview;
+  const { previewUrl, displayLabel, isLoading, hasError } = preview;
   const linkOnlyPreview = prefersPreviewLink(previewUrl);
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const previewKey = preview.proxy?.proxyUrl ?? null;
+  const sharedPreviewKey = linkOnlyPreview ? null : previewKey;
+  const [inlineDestination, setInlineDestination] = useState<HTMLDivElement | null>(null);
+  const { owner, isOwner, shared } = usePublishSharedPreview(sharedPreviewKey, preview);
+  const focusSharedPreview = useSharedPreviewInlineDestination(
+    sharedPreviewKey,
+    owner,
+    inlineDestination,
+  );
+  const hasPanelDestination = useSharedPreviewHasPanelDestination(sharedPreviewKey);
 
   return (
     <div
+      ref={setInlineDestination}
+      tabIndex={previewUrl && !linkOnlyPreview && isOwner && !hasPanelDestination ? 0 : undefined}
+      aria-label={
+        previewUrl && !linkOnlyPreview && isOwner && !hasPanelDestination
+          ? `${displayLabel} content`
+          : undefined
+      }
+      onFocus={() => {
+        if (!hasPanelDestination) focusSharedPreview();
+      }}
       className={cn(
         'bg-secondary relative w-full overflow-hidden',
         fill ? 'h-full' : 'aspect-video',
@@ -338,15 +382,15 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
         </div>
       )}
       {(hasError || linkOnlyPreview) && <ServicePreviewUrlFallback preview={preview} />}
-      {previewUrl && !linkOnlyPreview && (
+      {!shared && previewUrl && !linkOnlyPreview && (
         <iframe
-          key={refreshKey}
+          key={preview.refreshKey}
           src={previewUrl}
           title={displayLabel}
           className="bg-secondary absolute inset-0 h-full w-full border-0"
           sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
-          onLoad={onLoad}
-          onError={onError}
+          onLoad={preview.onLoad}
+          onError={preview.onError}
         />
       )}
     </div>
