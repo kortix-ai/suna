@@ -29,7 +29,15 @@ import {
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ElementType,
+  type ReactNode,
+} from 'react';
 import { useFileExplorerSource } from '../explorer-source';
 import { buildGitStatusMap } from '../hooks';
 import {
@@ -79,6 +87,7 @@ export function DriveExplorer({
   embedded = false,
   shareContext,
   leading,
+  listingAs,
   panels,
   children,
 }: {
@@ -89,12 +98,23 @@ export function DriveExplorer({
    * strip. Sharing the row is what lets that host drop its own header.
    */
   leading?: ReactNode;
+  /**
+   * Element type for the listing region.
+   *
+   * A tabbed host passes a `TabsContent` wrapper, so the listing IS the tab
+   * panel while its tab strip rides in `leading`. The row and the listing are
+   * siblings, which is the whole point: the panel never contains the tablist
+   * that controls it, and the host still gets one row instead of two.
+   */
+  listingAs?: ElementType<{ className?: string; children?: ReactNode }>;
   /** Rendered inside the relative content area (slide-in side panels). */
   panels?: ReactNode;
   /** Rendered at the root (portal dialogs owned by the wrapping surface). */
   children?: ReactNode;
 } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // Plain <div> unless a tabbed host claims the listing as its panel.
+  const ListingRegion = listingAs ?? 'div';
   const source = useFileExplorerSource();
   const { capabilities } = source;
   const canWrite = capabilities.write;
@@ -762,7 +782,7 @@ export function DriveExplorer({
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1">
+      <ListingRegion className="relative min-h-0 flex-1">
         <div className="absolute inset-0 overflow-y-auto">
           {isLoading && showSkeleton && (
             <div className="animate-in fade-in-0 p-4 duration-200">
@@ -921,7 +941,7 @@ export function DriveExplorer({
         </div>
 
         {panels}
-      </div>
+      </ListingRegion>
 
       {/* Drag & drop overlay */}
       {canWrite && isDragOverPage && (

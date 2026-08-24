@@ -6,6 +6,7 @@ import Loading from '@/components/ui/loading';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FilesStoreProvider, useFilesStore } from '@/features/files';
 import { SandboxFileExplorer } from '@/features/files/sandbox-file-explorer';
+import { DRIVE_ACTION_ROW_CLASS } from '@/features/project-files';
 import {
   useOpenChangeRequest,
   useSessionBaseRef,
@@ -155,70 +156,100 @@ function SessionFilesExplorerInner({
       onValueChange={(next) => onModeChange(next as SessionPanelMode)}
       className="flex h-full min-h-0 flex-col gap-0"
     >
-      <div className="border-border/60 flex h-11 shrink-0 items-center gap-3 border-b px-2">
-        {/* The list draws the rule; this row already has one, so it keeps only
-            the sliding underline. Triggers carry no padding so the first tab's
-            text starts on the same 8px edge as the panel below it. */}
-        <TabsList type="underline" className="h-11 gap-5 border-b-0">
-          <TabsTrigger value="files" className="w-fit flex-none px-0">
-            All files
-          </TabsTrigger>
-          <TabsTrigger value="changes" className="w-fit flex-none gap-1.5 px-0">
-            Changes
-            {changedCount > 0 && (
-              <Badge variant="secondary" size="tabular">
-                {changedCount}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
-
-        {mode === 'changes' && changedCount > 0 && (
-          <Button
-            size="sm"
-            className="ml-auto shrink-0 gap-1.5 active:scale-[0.96]"
-            onClick={openChangeRequest}
-            disabled={asking}
-          >
-            {asking ? <Loading className="size-3.5 shrink-0" /> : null}
-            Propose changes
-          </Button>
-        )}
-      </div>
-
-      <TabsContent value="files" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {mode === 'files' ? (
+        // The tabs ride in the explorer's OWN action row, so All files shows
+        // one row — tabs left, the explorer's + and ... right — instead of a
+        // tab row stacked over a half-empty toolbar. `listingAs` makes the
+        // listing the tab panel; it is a sibling of that row, so the panel
+        // never contains the tablist that controls it.
         <SandboxFileExplorer
           embedded
+          leading={<PanelTabs changedCount={changedCount} />}
+          listingAs={FilesTabPanel}
           shareContext={
             projectId && projectSessionId ? { projectId, sessionId: projectSessionId } : undefined
           }
         />
-      </TabsContent>
+      ) : (
+        <>
+          {/* The explorer's row class verbatim, so the tab strip does not move
+              a pixel when you switch tabs. */}
+          <div className={DRIVE_ACTION_ROW_CLASS}>
+            <PanelTabs changedCount={changedCount} />
+            {changedCount > 0 && (
+              <Button
+                size="xs"
+                className="ml-auto shrink-0 gap-1.5 active:scale-[0.96]"
+                onClick={openChangeRequest}
+                disabled={asking}
+              >
+                {asking ? <Loading className="size-3.5 shrink-0" /> : null}
+                Propose changes
+              </Button>
+            )}
+          </div>
 
-      <TabsContent value="changes" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* Where this work is and where it is going. Both are names, so both
+          <TabsContent value="changes" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {/* Where this work is and where it is going. Both are names, so both
             are chips; the only words are the part neither chip can show. */}
-        <div className="flex flex-wrap items-center gap-1.5 px-2 pt-2">
-          {versionId && (
-            <>
-              <Badge variant="outline" size="sm" className="font-mono">
-                {versionId}
-              </Badge>
-              <ArrowRightIcon aria-hidden className="text-muted-foreground/40 size-3 shrink-0" />
-              {/* The arrow is decorative, so the relationship is stated once
+            <div className="flex flex-wrap items-center gap-1.5 px-2 pt-2">
+              {versionId && (
+                <>
+                  <Badge variant="outline" size="sm" className="font-mono">
+                    {versionId}
+                  </Badge>
+                  <ArrowRightIcon
+                    aria-hidden
+                    className="text-muted-foreground/40 size-3 shrink-0"
+                  />
+                  {/* The arrow is decorative, so the relationship is stated once
                   for anyone who cannot see it. */}
-              <span className="sr-only">into</span>
-            </>
-          )}
-          <Badge variant="outline" size="sm" className="max-w-32 min-w-0 font-mono">
-            <span className="truncate">{baseRef}</span>
-          </Badge>
-          <span className="text-muted-foreground text-xs">not applied yet</span>
-        </div>
-        <div className="min-h-0 flex-1">
-          <SessionDiffViewer />
-        </div>
-      </TabsContent>
+                  <span className="sr-only">into</span>
+                </>
+              )}
+              <Badge variant="outline" size="sm" className="max-w-32 min-w-0 font-mono">
+                <span className="truncate">{baseRef}</span>
+              </Badge>
+              <span className="text-muted-foreground text-xs">not applied yet</span>
+            </div>
+            <div className="min-h-0 flex-1">
+              <SessionDiffViewer />
+            </div>
+          </TabsContent>
+        </>
+      )}
     </Tabs>
   );
+}
+
+/** The tab strip, shared by both branches so it renders identically on each. */
+function PanelTabs({ changedCount }: { changedCount: number }) {
+  return (
+    // The row draws the rule, so the list keeps only the sliding underline,
+    // and fills the row's height so that underline lands on the row's border.
+    // Triggers carry no padding, so the first tab's text starts on the row's
+    // own left edge.
+    <TabsList type="underline" className="h-full gap-5 border-b-0">
+      <TabsTrigger value="files" className="w-fit flex-none px-0">
+        All files
+      </TabsTrigger>
+      <TabsTrigger value="changes" className="w-fit flex-none gap-1.5 px-0">
+        Changes
+        {changedCount > 0 && (
+          <Badge variant="secondary" size="tabular">
+            {changedCount}
+          </Badge>
+        )}
+      </TabsTrigger>
+    </TabsList>
+  );
+}
+
+/**
+ * The All files panel — the explorer's listing region, wearing the tab-panel
+ * role. Declared at module scope rather than inline, so the listing is not
+ * torn down and remounted on every render of its host.
+ */
+function FilesTabPanel(props: { className?: string; children?: React.ReactNode }) {
+  return <TabsContent value="files" {...props} />;
 }

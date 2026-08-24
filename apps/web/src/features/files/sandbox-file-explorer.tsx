@@ -15,7 +15,7 @@ import {
   CloudSlashIcon as ServerOff,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useState, type ReactNode } from 'react';
+import { useState, type ElementType, type ReactNode } from 'react';
 import { useServerHealth } from './hooks';
 import { sandboxExplorerSource } from './sandbox-explorer-source';
 
@@ -29,16 +29,24 @@ export function SandboxFileExplorer({
   embedded = false,
   shareContext,
   leading,
+  listingAs,
 }: {
   embedded?: boolean;
   shareContext?: { projectId: string; sessionId: string };
   /** Host chrome for the start of the explorer's action row — see {@link DriveExplorer}. */
   leading?: ReactNode;
+  /** Element type for the listing region — see {@link DriveExplorer}. */
+  listingAs?: ElementType<{ className?: string; children?: ReactNode }>;
 } = {}) {
   return (
     <FileExplorerSourceProvider value={sandboxExplorerSource}>
       <SandboxServerGate leading={leading}>
-        <DriveExplorer embedded={embedded} shareContext={shareContext} leading={leading} />
+        <DriveExplorer
+          embedded={embedded}
+          shareContext={shareContext}
+          leading={leading}
+          listingAs={listingAs}
+        />
       </SandboxServerGate>
     </FileExplorerSourceProvider>
   );
