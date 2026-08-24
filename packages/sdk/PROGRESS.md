@@ -12,6 +12,43 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-24 — session `fabricated-idle-veto` — a fabricated idle frame can no longer contradict the ledger — DONE (PR open, not merged)
+
+**Files:** `core/session/working.ts` (`WorkingStreamInput.origin?: 'wire' | 'local'`;
+the idle-frame veto and the "fresher frame outranks the open row" ordering now apply
+to WIRE frames only) · `react/use-session-working.ts` (`buildWorkingInputs` threads
+`statusOrigin`; the hook reads `sessionStatusOrigin`) ·
+`browser/stores/sync-store.ts` (`sessionStatusOrigin` slice; `setStatus(id, status,
+origin='wire')`; same-value writes keep object identity but may flip origin;
+`clearSession` marks its fabricated idle `local`; `applyEvent` honors a
+`synthetic: true` event marker) · `react/use-opencode-events/use-event-stream-refs.ts`
+(`markSessionIdleLocally` / `markSessionAbortedLocally` mark their events synthetic) ·
+`react/use-opencode-events/index.ts` (hydrate snapshot writes are synthetic; the
+fill-gap guard now lets a snapshot overwrite a `local` frame, so a wrong sweep
+self-heals) + tests in all five areas.
+**Public surface: additive only** — the optional `origin` field on
+`WorkingStreamInput` and `statusOrigin` on `buildWorkingInputs`; snapshots unchanged.
+
+**Why.** Reported from dev (2026-08-24): mid-turn — long `run command` /
+tool calls — the busy indicator disappears, the composer swaps Stop for Send, the
+transcript freezes (the liveness poll gates on the projection), and the UI comes
+back for a couple of seconds right as the reply streams. Root cause: locally
+fabricated idle frames (`reconcileMissingBusySessions` sweeping the GLOBAL status
+map with a per-sandbox snapshot, `markSessionAbortedLocally` on
+`server.instance.disposed`, `clearSession`) were indistinguishable from the
+runtime's own frames, and the (deliberately unbounded, #6807) idle veto let one
+fabricated frame discard every fresh `/turn` read for the rest of a quiet turn —
+while the fill-gap guard blocked the snapshot from ever correcting the slot.
+
+**Gates:** `typecheck` clean (both projects) · `pnpm run test` (isolated runner)
+171 files / **2513 pass / 0 fail** · `smoke:install` passed.
+**Known follow-ups (not done here):** the sweep is still scope-blind
+(cross-sandbox absence fabricates local idles — now harmless to the projection but
+still wrong for child-session raw-slot readers); a session whose ledger row is
+lost server-side while its SSE is dead still freezes until visibility/remount.
+
+---
+
 ### 2026-08-24 — session `composio-connect-link-types` — generic connector authorization results — DONE
 
 **Files:** `core/rest/projects-client/connectors.ts` + test and both public-surface snapshots.

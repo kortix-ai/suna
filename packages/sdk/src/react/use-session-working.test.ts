@@ -147,12 +147,34 @@ describe('buildWorkingInputs', () => {
         nowMs: T0,
       }).stream;
 
-    expect(at({ type: 'busy' })).toEqual({ type: 'busy', atMs: T0 });
-    expect(at({ type: 'retry' })).toEqual({ type: 'retry', atMs: T0 });
-    expect(at({ type: 'idle' })).toEqual({ type: 'idle', atMs: T0 });
+    // `origin: 'wire'` is the default: an unmarked frame is the runtime's own,
+    // and only `sessionStatusOrigin` (threaded via `statusOrigin`) demotes one
+    // to `'local'`.
+    expect(at({ type: 'busy' })).toEqual({ type: 'busy', origin: 'wire', atMs: T0 });
+    expect(at({ type: 'retry' })).toEqual({ type: 'retry', origin: 'wire', atMs: T0 });
+    expect(at({ type: 'idle' })).toEqual({ type: 'idle', origin: 'wire', atMs: T0 });
     // No status frame observed at all is NOT an idle frame — silence is not
     // an observation, and treating it as one is how a live turn got unmasked.
     expect(at(undefined)).toBeNull();
+  });
+
+  test('a local origin is threaded through to the stream input', () => {
+    // The fabricators (`markSessionIdleLocally`, `clearSession`, the hydrate
+    // snapshot) write `'local'` into `sessionStatusOrigin`; the hook passes it
+    // here, and `projectWorking` then refuses to let the frame contradict the
+    // server's open turn. Dropping the field on this seam would silently
+    // restore the fabricated-idle veto.
+    const inputs = buildWorkingInputs({
+      turn: undefined,
+      inbox: undefined,
+      status: { type: 'idle' } as never,
+      statusAtMs: T0,
+      statusOrigin: 'local',
+      optimistic: null,
+      nowMs: T0,
+    });
+
+    expect(inputs.stream).toEqual({ type: 'idle', origin: 'local', atMs: T0 });
   });
 
   test('the stop receipt is passed through, so a doomed turn stops deciding', () => {

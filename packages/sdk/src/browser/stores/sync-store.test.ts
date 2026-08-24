@@ -2845,6 +2845,84 @@ describe("useSyncStore — setStatus writes an observation, never a heartbeat", 
 	});
 });
 
+/**
+ * WHO minted a frame travels with it. A tab-fabricated idle (the missing-busy
+ * sweep, a synthetic abort, `clearSession`) is `'local'`; `projectWorking`
+ * lets it answer for a silent session but never lets it contradict the
+ * server's open `/turn` row. Unmarked, one fabricated frame vetoed the
+ * lifecycle authority for the rest of a quiet turn (dev, 2026-08-24: busy
+ * indicator gone, Send instead of Stop, transcript poll off — mid-run).
+ */
+describe("useSyncStore — sessionStatusOrigin: who minted the frame", () => {
+	test("a plain write is wire by default", () => {
+		useSyncStore.getState().setStatus("ses_1", { type: "busy" });
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("wire");
+	});
+
+	test("an explicit local write records local", () => {
+		useSyncStore.getState().setStatus("ses_1", { type: "idle" }, "local");
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("local");
+	});
+
+	test("an equal value with a NEW origin updates origin but keeps identity", () => {
+		// The identity rule above must hold — re-stamping an unchanged value
+		// restarts the staleness clock — but who said it is still news: a wire
+		// frame landing over a fabricated one restores its right to veto.
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "idle" }, "local");
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { type: "idle" }, "wire");
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).toBe(first);
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("wire");
+	});
+
+	test("a synthetic session.idle event lands with local origin", () => {
+		// `markSessionIdleLocally` routes through `applyEvent` with
+		// `synthetic: true` — a field no wire `Event` carries.
+		useSyncStore.getState().applyEvent({
+			type: "session.idle",
+			synthetic: true,
+			properties: { sessionID: "ses_1" },
+		} as never);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: "idle" });
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("local");
+	});
+
+	test("a wire session.idle event lands with wire origin", () => {
+		useSyncStore.getState().applyEvent({
+			type: "session.idle",
+			properties: { sessionID: "ses_1" },
+		} as never);
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("wire");
+	});
+
+	test("a synthetic session.error marks its idle write local", () => {
+		// `markSessionAbortedLocally` fires on `server.instance.disposed` for
+		// EVERY non-idle session in the tab — an inference about the runtime,
+		// never the runtime speaking.
+		useSyncStore.getState().setStatus("ses_1", { type: "busy" });
+		useSyncStore.getState().applyEvent({
+			type: "session.error",
+			synthetic: true,
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "AbortError", data: { message: "disposed" } },
+			},
+		} as never);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: "idle" });
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("local");
+	});
+
+	test("clearSession's fabricated idle is local", () => {
+		useSyncStore.getState().setStatus("ses_1", { type: "busy" });
+		useSyncStore.getState().clearSession("ses_1");
+		expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: "idle" });
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("local");
+	});
+});
+
 describe("sameSessionStatus", () => {
 	test("compares exactly the fields the retry readers read", () => {
 		expect(sameSessionStatus({ type: "busy" }, { type: "busy" })).toBe(true);

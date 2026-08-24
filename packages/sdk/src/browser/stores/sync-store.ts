@@ -56,6 +56,20 @@ export function sameSessionStatus(
 	return a.attempt === b.attempt && a.message === b.message && a.next === b.next;
 }
 
+/**
+ * WHO minted a status-bearing event handed to `applyEvent`. A tab-synthesized
+ * event (`markSessionIdleLocally`, `markSessionAbortedLocally`, the hydrate
+ * snapshot fill) carries `synthetic: true` — a field no wire `Event` has — and
+ * its status write lands with `'local'` origin so it can never contradict the
+ * control plane's turn authority (`WorkingStreamInput.origin`). Everything off
+ * the wire stays `'wire'`.
+ */
+function syntheticEventOrigin(event: unknown): "wire" | "local" {
+	return (event as { synthetic?: boolean } | null | undefined)?.synthetic === true
+		? "local"
+		: "wire";
+}
+
 /** The two `Part` variants that carry streaming `.text` (vs. tool/file/etc.
  *  parts, which don't). Narrows a `Part` down so `.text` is safe to read
  *  without a cast — every `Part` member shares `id`/`sessionID`/`messageID`/
@@ -147,6 +161,19 @@ interface SyncState {
 	messages: Record<string, Message[]>;
 	parts: Record<string, Part[]>;
 	sessionStatus: Record<string, SessionStatus>;
+	/**
+	 * WHO minted each session's current `sessionStatus` value: `'wire'` for the
+	 * runtime's own SSE frame, `'local'` for a tab-synthesized one (the
+	 * missing-busy sweep, a synthetic abort, `clearSession`). Absent means
+	 * `'wire'` — the field is additive.
+	 *
+	 * `useSessionWorking` threads this into `projectWorking`
+	 * (`WorkingStreamInput.origin`): only the runtime's own idle frame may
+	 * contradict the control plane's open `/turn` row. Without the bit, one
+	 * fabricated idle vetoed the lifecycle authority for the rest of a quiet
+	 * turn (dev, 2026-08-24).
+	 */
+	sessionStatusOrigin: Record<string, "wire" | "local">;
 	/**
 	 * When the RUNTIME'S OWN OUTPUT last reached this tab, per session.
 	 *
@@ -246,7 +273,7 @@ interface SyncState {
 		delta: string,
 		eventID?: string,
 	) => void;
-	setStatus: (sessionID: string, status: SessionStatus) => void;
+	setStatus: (sessionID: string, status: SessionStatus, origin?: "wire" | "local") => void;
 	setDiff: (sessionID: string, diffs: FileDiff[]) => void;
 	setTodo: (sessionID: string, todos: Todo[]) => void;
 	/**
@@ -1053,6 +1080,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	messages: {},
 	parts: {},
 	sessionStatus: {},
+	sessionStatusOrigin: {},
 	sessionActivityAt: {},
 	diffs: {},
 	todos: {},
@@ -1263,7 +1291,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		});
 	},
 
-	setStatus: (sessionID, status) =>
+	setStatus: (sessionID, status, origin = "wire") =>
 		set((s) => {
 			// A value that did not change is not news. `useSessionWorking` stamps
 			// its stream observation from this object's IDENTITY, so an
@@ -1271,8 +1299,18 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// `STREAM_OBSERVATION_MAX_MS` from zero on every write — the bound
 			// that stops a dead stream from deciding was never reached. See
 			// `sameSessionStatus`.
-			if (sameSessionStatus(s.sessionStatus[sessionID], status)) return s;
-			return { sessionStatus: { ...s.sessionStatus, [sessionID]: status } };
+			if (sameSessionStatus(s.sessionStatus[sessionID], status)) {
+				// The VALUE is not news, but who said it can be: a wire frame
+				// landing over a fabricated one (or the reverse) changes what the
+				// frame is allowed to decide. Update only the origin — the status
+				// object keeps its identity so nothing re-stamps a stale value.
+				if ((s.sessionStatusOrigin[sessionID] ?? "wire") === origin) return s;
+				return { sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin } };
+			}
+			return {
+				sessionStatus: { ...s.sessionStatus, [sessionID]: status },
+				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
+			};
 		}),
 
 	setDiff: (sessionID, diffs) =>
@@ -1533,6 +1571,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				parts: nextParts,
 				sessionActivityAt: nextActivity,
 				sessionStatus: { ...s.sessionStatus, [sessionID]: { type: "idle" } as SessionStatus },
+				// Fabricated, not observed — a cache handoff says nothing about
+				// whether the runtime is running. Marked local so it can never
+				// veto the control plane's open turn (`WorkingStreamInput.origin`).
+				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: "local" as const },
 				diffs: { ...s.diffs, [sessionID]: [] },
 				todos: { ...s.todos, [sessionID]: [] },
 				sessionRevert: { ...s.sessionRevert, [sessionID]: null },
@@ -2049,6 +2091,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			messages: {},
 			parts: {},
 			sessionStatus: {},
+			sessionStatusOrigin: {},
 			diffs: {},
 			todos: {},
 			sessionRevert: {},
@@ -2404,12 +2447,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					status: SessionStatus;
 				};
 				if (props.sessionID && props.status)
-					store.setStatus(props.sessionID, props.status);
+					store.setStatus(props.sessionID, props.status, syntheticEventOrigin(event));
 				return;
 			}
 		case "session.idle": {
 			const sessionID = (event.properties as { sessionID: string }).sessionID;
-			if (sessionID) store.setStatus(sessionID, { type: "idle" });
+			if (sessionID) store.setStatus(sessionID, { type: "idle" }, syntheticEventOrigin(event));
 			// Streaming finished for THIS session — clear only its own delta
 			// tracking so future message.part.updated snapshots for it are
 			// accepted normally. Never the whole map: another session may
@@ -2427,7 +2470,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const sid = props.sessionID;
 			const error = props.error;
 			// Mark session idle — errors terminate the response.
-			store.setStatus(sid, { type: "idle" });
+			store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event));
 			// Clear only this session's delta tracking — see the idle handler
 			// above and the comment above deltaActiveParts.
 			deltaActiveParts.delete(sid);

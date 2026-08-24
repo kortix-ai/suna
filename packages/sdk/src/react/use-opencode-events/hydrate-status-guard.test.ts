@@ -23,17 +23,31 @@ function hydrateStatusBlock(): string {
 }
 
 describe('hydrateCore session-status snapshot', () => {
-  test('skips any session the live stream has already answered for', () => {
+  test('skips any session a WIRE frame has already answered for', () => {
+    // Only the runtime's own frame owns the slot. A `'local'` value is the
+    // tab's fabrication (the missing-busy sweep, a synthetic abort), and
+    // letting it block this fill made a wrong fabrication self-sustaining: a
+    // sweep that idled a running session could never be corrected by the very
+    // snapshot that now says `busy`.
     const block = hydrateStatusBlock();
-    expect(block).toContain('if (useSyncStore.getState().sessionStatus[sessionID]) continue;');
+    expect(block).toContain('slotState.sessionStatus[sessionID] &&');
+    expect(block).toContain("slotState.sessionStatusOrigin[sessionID] !== 'local'");
   });
 
   test('the skip precedes the write, so a stale reading cannot land first', () => {
     const block = hydrateStatusBlock();
-    const guard = block.indexOf('sessionStatus[sessionID]) continue');
+    const guard = block.indexOf("sessionStatusOrigin[sessionID] !== 'local'");
     const write = block.indexOf('applySyncEvent(');
     expect(guard).toBeGreaterThan(-1);
     expect(write).toBeGreaterThan(guard);
+  });
+
+  test('the snapshot write is marked synthetic, so it lands with local origin', () => {
+    // A snapshot is a reading ABOUT the runtime taken at issue time, not the
+    // runtime speaking on the wire. Unmarked, its write would mint a
+    // wire-origin frame that `projectWorking` lets contradict an open turn.
+    const block = hydrateStatusBlock();
+    expect(block).toContain('synthetic: true');
   });
 
   test('the enumeration repair still runs — absence is not a per-session reading', () => {

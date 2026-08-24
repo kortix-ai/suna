@@ -202,6 +202,25 @@ export interface WorkingServerInput {
 /** One observed runtime status frame, stamped when this tab observed it. */
 export interface WorkingStreamInput {
   type: 'busy' | 'retry' | 'idle';
+  /**
+   * WHO minted the frame. `'wire'` (or absent — the field is additive) means
+   * the runtime's own SSE frame reached this tab. `'local'` means the tab
+   * synthesized it: `reconcileMissingBusySessions` reading absence out of a
+   * status snapshot, `markSessionAbortedLocally` on `server.instance.disposed`,
+   * `clearSession` on a cache-ownership handoff.
+   *
+   * The distinction exists for exactly one rule: only the runtime's own idle
+   * frame may CONTRADICT the lifecycle authority (`endedByRuntime`, and the
+   * "fresher frame knows more" ordering over an open row). A local frame is an
+   * inference, and the veto it inherited is unbounded on purpose — so one
+   * fabricated idle discarded every fresh `/turn` read for the rest of a quiet
+   * turn: the busy indicator left, the composer swapped Stop for Send, and
+   * both came back only when the reply finally streamed (dev, 2026-08-24). A
+   * local frame may still ANSWER when nothing fresher exists — the repair for
+   * a missed terminal frame stays a repair — it just cannot overrule a source
+   * that can actually know.
+   */
+  origin?: 'wire' | 'local';
   atMs: number;
 }
 
@@ -351,7 +370,13 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   // and permanently — at `stream.atMs + STREAM_OBSERVATION_MAX_MS` the veto
   // vanished with no new input, and a row the relay never closed put the
   // composer back on Stop until its deadline (240 MINUTES for an accepted turn).
-  const idleFrame = stream && stream.type === 'idle' ? stream : null;
+  // WIRE frames only. A fabricated local idle (`origin: 'local'`) is the tab
+  // inferring, not the runtime speaking, and this veto is unbounded — one wrong
+  // local frame silenced every fresh `/turn` read for the rest of a quiet turn
+  // (dev, 2026-08-24: busy indicator gone, composer on Send, transcript poll
+  // switched off, all mid-run). See `WorkingStreamInput.origin`.
+  const idleFrame =
+    stream && stream.type === 'idle' && stream.origin !== 'local' ? stream : null;
 
   // CONTENT FIRST. Bounded by the stream's own freshness rule, because it
   // arrives on the same transport and goes stale for the same reasons — but
@@ -446,7 +471,15 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   // session went idle. The stream frame is newer BY OBSERVATION, and the daemon
   // relays `turn_end` to the control plane at the same moment the frame is
   // emitted — so a fresher idle frame means this read is simply out of date.
-  if (openTurn && server!.atMs >= abortFloor && (!stream || server!.atMs >= stream.atMs)) {
+  //
+  // A LOCAL idle frame is exempt from that ordering: it is not the runtime
+  // speaking, so "newer" buys it nothing against the lifecycle authority. It
+  // lands between polls by construction (the sweep runs on connect), and
+  // waiting one poll interval for the row to outrank it again is exactly the
+  // flicker being fixed.
+  const streamContradicts =
+    !!stream && !(stream.type === 'idle' && stream.origin === 'local');
+  if (openTurn && server!.atMs >= abortFloor && (!streamContradicts || server!.atMs >= stream!.atMs)) {
     return {
       state: 'working',
       source: 'server',

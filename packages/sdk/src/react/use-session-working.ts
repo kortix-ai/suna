@@ -80,6 +80,13 @@ export function buildWorkingInputs(input: {
   inbox: WorkingInboxInput | undefined;
   status: SessionStatus | undefined;
   statusAtMs: number;
+  /**
+   * Who minted the status frame (`useSyncStore.sessionStatusOrigin`). `'local'`
+   * marks a tab fabrication — the missing-busy sweep, a synthetic abort, a
+   * cache handoff — which may answer for a silent session but may never veto
+   * the server's open turn. Absent means `'wire'`.
+   */
+  statusOrigin?: 'wire' | 'local';
   /** When the runtime's own output last reached this tab for this session
    *  (`useSyncStore.sessionActivityAt`). 0/undefined when it never has. */
   activityAtMs?: number;
@@ -109,6 +116,7 @@ export function buildWorkingInputs(input: {
             input.status.type === 'busy' || input.status.type === 'retry'
               ? input.status.type
               : 'idle',
+          origin: input.statusOrigin ?? 'wire',
           atMs: input.statusAtMs,
         }
       : null,
@@ -142,6 +150,11 @@ export function useSessionWorking(
   const streamKey = runtimeSessionId ?? '';
   const status = useSyncStore((state) =>
     streamKey ? (state.sessionStatus[streamKey] as SessionStatus | undefined) : undefined,
+  );
+  // Who minted that frame — `'local'` for a tab fabrication, which the
+  // projection lets answer but never lets contradict the server's open turn.
+  const statusOrigin = useSyncStore((state) =>
+    streamKey ? state.sessionStatusOrigin[streamKey] : undefined,
   );
   // Both LOCAL inputs come from one per-session store rather than from props.
   // More than one place mounts this hook for the same session and they share
@@ -177,6 +190,7 @@ export function useSessionWorking(
   const [observed, setObserved] = useState<{
     key: string;
     status: SessionStatus;
+    origin: 'wire' | 'local';
     atMs: number;
   } | null>(null);
   useEffect(() => {
@@ -184,8 +198,11 @@ export function useSessionWorking(
       setObserved((previous) => (previous && previous.key === streamKey ? previous : null));
       return;
     }
-    setObserved({ key: streamKey, status, atMs: Date.now() });
-  }, [status, streamKey]);
+    // An origin flip over an unchanged value re-stamps too: the store kept the
+    // object's identity on purpose (`setStatus`), but a wire frame landing
+    // over a fabricated one — or the reverse — is a new observation.
+    setObserved({ key: streamKey, status, origin: statusOrigin ?? 'wire', atMs: Date.now() });
+  }, [status, statusOrigin, streamKey]);
   const stream = observed && observed.key === streamKey ? observed : null;
 
   // The runtime's own output for THIS session's wire id. Quantized to a second
@@ -202,6 +219,7 @@ export function useSessionWorking(
       inbox,
       status: stream?.status,
       statusAtMs: stream?.atMs ?? 0,
+      statusOrigin: stream?.origin,
       activityAtMs,
       optimistic,
       abort,

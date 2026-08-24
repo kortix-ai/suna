@@ -246,12 +246,26 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
             // value; the correction for a session that went idle unseen is
             // `reconcileMissingBusySessions` below, which reads ABSENCE from the
             // complete list rather than a per-session reading.
-            if (useSyncStore.getState().sessionStatus[sessionID]) continue;
+            //
+            // Only a WIRE frame owns the slot. A `'local'` value is the tab's
+            // own fabrication (the missing-busy sweep, a synthetic abort), and
+            // letting it block this fill made the fabrication self-sustaining:
+            // a sweep that wrongly idled a running session could never be
+            // corrected by the very snapshot that now says `busy`.
+            const slotState = useSyncStore.getState();
+            if (
+              slotState.sessionStatus[sessionID] &&
+              slotState.sessionStatusOrigin[sessionID] !== 'local'
+            )
+              continue;
             // Locally-synthesized event (this is a REST poll, not an SSE
             // frame) — omits the `id` field every real `Event` union member
-            // carries, hence the assertion.
+            // carries, hence the assertion. `synthetic: true` marks its write
+            // `'local'`: a snapshot is a reading ABOUT the runtime taken at
+            // issue time, not the runtime speaking on the wire.
             applySyncEvent({
               type: 'session.status',
+              synthetic: true,
               properties: { sessionID, status },
             } as unknown as OpenCodeSdkEvent);
           }
