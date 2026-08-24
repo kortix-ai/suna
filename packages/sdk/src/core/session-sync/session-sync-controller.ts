@@ -376,22 +376,33 @@ export class SessionSyncController {
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
     try {
-      const firstPage = await this.loadPage('tail', reason);
+      // ONE PAGE. Render it. This is what OpenCode's own client does, and the
+      // reason we now do it too is measured:
+      //
+      //   message?limit=50            200   8,228 kB   30.39 s
+      //   message?limit=50            200  24,460 kB   48.76 s
+      //   message?limit=50&before=..  200  20,284 kB   35.74 s
+      //   message?limit=50&before=..  200  25,125 kB   29.23 s
+      //   -> 78,097 kB transferred, finish 3.8 min, NOTHING on screen
+      //
+      // (essentia, 2026-08-24, a run with hundreds of image reads: fifty
+      // messages weigh 8-25 MB because the parts carry the image bytes.)
+      //
+      // There used to be a backward WALK here that kept fetching pages until
+      // every assistant message had its parent user message in hand, so an
+      // assistant reply could never render above its own prompt — and `hydrate`
+      // ran only after the walk finished. On a long turn that walk is the whole
+      // session, serially, through the sandbox proxy, with an empty thread the
+      // entire time. A cosmetic guarantee at the top edge of the window is not
+      // worth minutes of blank screen.
+      //
+      // The window may therefore start on an assistant message whose prompt is
+      // one page up. That is exactly what OpenCode shows, and `loadOlder` —
+      // which the user drives — still completes the turn when they scroll.
+      const page = await this.loadPage('tail', reason);
       if (this.destroyed) return;
-      // PAINT WHAT ARRIVED, then keep filling. Hydration used to wait for the
-      // whole backward walk below, so a long turn showed an empty thread for as
-      // many round trips as the turn was long.
-      this.rememberUserMessages(firstPage.messages);
-      this.options.hydrate(firstPage.messages);
-      // Each backfill page repaints as it lands, so the final set is already on
-      // screen when the walk ends — no closing hydrate, and a single-page tail
-      // hydrates exactly once.
-      const page = await this.loadCompleteTurn(firstPage, 'tail', reason, undefined, (partial) => {
-        if (this.destroyed) return;
-        this.rememberUserMessages(partial);
-        this.options.hydrate(partial);
-      });
-      if (this.destroyed) return;
+      this.rememberUserMessages(page.messages);
+      this.options.hydrate(page.messages);
       if (!this.olderHistoryStarted) {
         this.setCursor(page.nextCursor);
       }

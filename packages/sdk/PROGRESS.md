@@ -54,16 +54,27 @@ empty thread — over a long history. It now takes `transcriptLoaded` (the sync
 hook's `isLoading`, which flips only when an authoritative read lands) and waits
 for the read rather than for the metadata.
 
-**And the blank thread whose read returned 200.** `loadCompleteTurn` walks
-BACKWARDS 50 messages at a time until every assistant message has its parent
-user message, and `hydrate` ran only after that walk finished. A session whose
-last turn is thousands of messages — an agent run with hundreds of tool calls,
-463K tokens — therefore paged the WHOLE session serially through the sandbox
-proxy before painting one pixel. The read succeeds the entire time, which is
-exactly why it read as a rendering bug. Now the first page paints immediately,
-each backfill page repaints on top of it, and the walk is bounded to
-`MAX_TURN_BACKFILL_PAGES` (10 = 500 messages) with the cursor preserved so
-"load older" still reaches the rest.
+**And the blank thread whose reads ALL returned 200.** Measured from the
+network panel (essentia, a run with hundreds of image reads):
+
+```
+message?limit=50            200   8,228 kB   30.39 s
+message?limit=50            200  24,460 kB   48.76 s
+message?limit=50&before=..  200  20,284 kB   35.74 s
+message?limit=50&before=..  200  25,125 kB   29.23 s
+-> 78,097 kB transferred, finish 3.8 min, NOTHING on screen
+```
+
+Fifty messages weigh 8-25 MB because the parts carry image bytes. The tail read
+kept walking backwards until every assistant message had its parent prompt in
+hand — so an assistant reply could never render above its own prompt — and
+`hydrate` ran only when that walk ENDED. On a long turn the walk is the whole
+session, serially, through the sandbox proxy.
+
+The tail is now ONE page, rendered — what OpenCode's own client does. The window
+may start on an assistant whose prompt is a page up; that is what OpenCode shows
+too, and `loadOlder` (user-driven) still completes the turn, bounded by
+`MAX_TURN_BACKFILL_PAGES`.
 
 **Gates:** `typecheck` clean (both projects) · `pnpm test` 2467 pass / 0 fail ·
 apps/web tsc clean, session suite 2523 pass / 0 fail.

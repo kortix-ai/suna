@@ -259,25 +259,31 @@ describe('SessionSyncController', () => {
       markLoaded: () => {},
     });
 
+    // The TAIL is one page — see `loadTail`. Completing the turn is what the
+    // user drives by scrolling up, and that is where the walk lives now.
     await controller.start();
+    expect(requests).toEqual([{ limit: SESSION_SYNC_PAGE_SIZE }]);
+
+    await controller.loadOlder();
 
     expect(requests).toEqual([
       { limit: SESSION_SYNC_PAGE_SIZE },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
     ]);
-    // The first page paints IMMEDIATELY and each backfill page repaints on top
-    // of it — a long turn fills in front of the user instead of withholding
-    // everything until the walk ends. What matters is where it lands.
+    // The tail paints first, then the older walk hydrates what it completed —
+    // the store merges the two, so the union is the whole turn.
     expect(hydrated[0]).toEqual(['assistant-new-3', 'assistant-new-4']);
-    expect(hydrated.at(-1)).toEqual([
-      'user-only',
-      'assistant-new-0',
-      'assistant-new-1',
-      'assistant-new-2',
-      'assistant-new-3',
-      'assistant-new-4',
-    ]);
+    expect(new Set(hydrated.flat())).toEqual(
+      new Set([
+        'user-only',
+        'assistant-new-0',
+        'assistant-new-1',
+        'assistant-new-2',
+        'assistant-new-3',
+        'assistant-new-4',
+      ]),
+    );
     expect(controller.getSnapshot()).toMatchObject({
       freshness: 'fresh',
       hasOlder: false,
@@ -857,27 +863,31 @@ describe('SessionSyncController', () => {
     expect(attempts).toBe(1);
   });
   /**
-   * The blank thread on a HUGE session, and the read returned 200 the whole
-   * time.
+   * The blank thread on a HUGE session, and every read returned 200.
    *
-   * `loadCompleteTurn` walks BACKWARDS 50 messages at a time until every
-   * assistant message has its parent user message, and `hydrate` used to run
-   * only after that walk finished. A session whose last turn is thousands of
-   * messages — the ArcGIS run: hundreds of image reads, 463K tokens — therefore
-   * painted NOTHING for as many sequential round trips as the turn was long,
-   * each one proxied through the sandbox. Minutes of empty thread over a
-   * successful read.
+   * Measured on essentia (2026-08-24), a run with hundreds of image reads:
    *
-   * Paint what arrived, then keep filling.
+   *   message?limit=50            200   8,228 kB   30.39 s
+   *   message?limit=50            200  24,460 kB   48.76 s
+   *   message?limit=50&before=..  200  20,284 kB   35.74 s
+   *   message?limit=50&before=..  200  25,125 kB   29.23 s
+   *   -> 78,097 kB transferred, finish 3.8 min, nothing on screen
+   *
+   * Fifty messages weigh megabytes because the parts carry image bytes, and the
+   * tail read used to keep walking backwards until every assistant message had
+   * its parent prompt — hydrating only when that walk ENDED.
+   *
+   * One page. Render it. However long the turn is.
    */
-  test('the first page paints before the turn is complete', async () => {
+  test('the tail is exactly one request, however long the turn', async () => {
     const hydrated: string[][] = [];
     let pages = 0;
     const controller = new SessionSyncController({
       sessionId: 'session-1',
       loadPage: async () => {
         pages += 1;
-        // Every page is an orphan assistant, so the walk never satisfies itself.
+        // An orphan assistant: the old walk would have chased its prompt
+        // through the whole session before painting anything.
         return {
           messages: [
             {
@@ -894,12 +904,14 @@ describe('SessionSyncController', () => {
 
     await controller.reconcile('initial');
 
-    expect(hydrated.length).toBeGreaterThan(1);
-    expect(hydrated[0]).toEqual(['assistant-1']);
+    expect(pages).toBe(1);
+    expect(hydrated).toEqual([['assistant-1']]);
+    // The rest stays reachable — the cursor survives for "load older".
+    expect(controller.getSnapshot().hasOlder).toBe(true);
     controller.destroy();
   });
 
-  test('the backward walk is bounded — a pathological turn cannot page forever', async () => {
+  test('the walk the user drives is still bounded', async () => {
     let pages = 0;
     const controller = new SessionSyncController({
       sessionId: 'session-1',
@@ -919,10 +931,11 @@ describe('SessionSyncController', () => {
       markLoaded: () => {},
     });
 
-    await controller.reconcile('initial');
+    await controller.start();
+    await controller.loadOlder();
 
-    expect(pages).toBeLessThanOrEqual(MAX_TURN_BACKFILL_PAGES + 1);
-    // The rest stays reachable: the cursor survives for "load older".
+    // 1 tail page + at most MAX_TURN_BACKFILL_PAGES of turn completion.
+    expect(pages).toBeLessThanOrEqual(MAX_TURN_BACKFILL_PAGES + 2);
     expect(controller.getSnapshot().hasOlder).toBe(true);
     controller.destroy();
   });
@@ -949,7 +962,8 @@ describe('SessionSyncController', () => {
       markLoaded: () => {},
     });
 
-    await controller.reconcile('initial');
+    await controller.start();
+    await controller.loadOlder();
 
     expect(pages).toBe(2);
     controller.destroy();
