@@ -21,6 +21,17 @@ linked, not inlined.
 
 ## Register
 
+### A successful surface deploy must not inherit skipped unrelated ancestors (2026-08-24)
+
+**When:** chaining Dev deployment, canonical verification, and self-host channel
+promotion jobs. Add `always()` and assert the direct prerequisite result for
+each post-deploy job. A normal `if:` can inherit a skipped transitive ancestor,
+skip verification, and leave the mutable self-host tag on an older image even
+after the immutable image deployed successfully.
+*Incident:* a Dev frontend deployed a transcript fix, but its DNS verification
+and `:dev` promotion skipped. Self-host frontends kept a stale blank transcript.
+*Enforcer:* `tests/unit/web-ecs-workflow.test.ts` pins the post-deploy conditions.
+
 ### Submit an initial session prompt exactly once (2026-08-23)
 
 **When:** creating a session with `initial_prompt`. Do not submit the same
