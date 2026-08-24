@@ -227,7 +227,7 @@ export function openAiSseFromFullStream(
               roleSent = true;
             }
             const text = part.text as string;
-            if (text) emit(delta({ reasoning: text }));
+            if (text) emit(delta({ reasoning: text, reasoning_content: text }));
             break;
           }
           case 'tool-input-start': {

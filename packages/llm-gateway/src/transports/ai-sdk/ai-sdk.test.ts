@@ -187,7 +187,7 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
     });
   });
 
-  it('maps reasoning deltas to delta.reasoning (counts as content)', async () => {
+  it('maps reasoning text to both OpenCode-compatible reasoning fields', async () => {
     const sse = await readAll(
       openAiSseFromFullStream(
         parts(
@@ -203,6 +203,11 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
       .map((c: any) => c.choices?.[0]?.delta?.reasoning ?? '')
       .join('');
     expect(reasoning).toBe('thinking...');
+    const reasoningContent = frames(sse)
+      .map((c: any) => c.choices?.[0]?.delta?.reasoning_content ?? '')
+      .join('');
+    expect(reasoningContent).toBe('thinking...');
+    expect(frames(sse).some((c: any) => c.choices?.[0]?.delta?.reasoning_details)).toBe(false);
   });
 });
 
@@ -585,7 +590,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
   it('anthropic: reasoning_effort maps to adaptive thinking + effort (never enabled/budgetTokens) and bumps maxOutputTokens', () => {
     const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic');
     expect(args.providerOptions).toMatchObject({
-      anthropic: { thinking: { type: 'adaptive' }, effort: 'high' },
+      anthropic: { thinking: { type: 'adaptive', display: 'summarized' }, effort: 'high' },
     });
     // The legacy enabled/budgetTokens shape must NEVER be sent — current-gen
     // Claude (Opus 4.5+/4.8) 400s on `thinking.type:"enabled"`.
@@ -610,7 +615,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     for (const [effort, expected] of Object.entries(table)) {
       const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'anthropic');
       expect((args.providerOptions as any)?.anthropic).toMatchObject({
-        thinking: { type: 'adaptive' },
+        thinking: { type: 'adaptive', display: 'summarized' },
         effort: expected,
       });
     }
@@ -623,7 +628,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     );
     expect(args.maxOutputTokens).toBe(2000);
     expect((args.providerOptions as any)?.anthropic).toMatchObject({
-      thinking: { type: 'adaptive' },
+      thinking: { type: 'adaptive', display: 'summarized' },
       effort: 'max',
     });
     // No budgetTokens to clamp — adaptive lets the model manage its own budget.
@@ -638,7 +643,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     // 5000 tokens → the 'medium' tier (<= 8192), emitted as adaptive + effort —
     // never the raw enabled/budgetTokens shape current-gen Claude rejects.
     expect(args.providerOptions).toMatchObject({
-      anthropic: { thinking: { type: 'adaptive' }, effort: 'medium' },
+      anthropic: { thinking: { type: 'adaptive', display: 'summarized' }, effort: 'medium' },
     });
     expect((args.providerOptions as any)?.anthropic?.thinking?.type).not.toBe('enabled');
     expect(args.maxOutputTokens).toBe(32000);
@@ -659,7 +664,13 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
       resolvedModel: BEDROCK_CLAUDE,
     });
     expect(args.providerOptions).toMatchObject({
-      bedrock: { reasoningConfig: { type: 'adaptive', maxReasoningEffort: 'medium' } },
+      bedrock: {
+        reasoningConfig: {
+          type: 'adaptive',
+          maxReasoningEffort: 'medium',
+          display: 'summarized',
+        },
+      },
     });
     // Current-gen Bedrock Claude (Sonnet 5, Opus 4.5+) 400s on the legacy
     // enabled/budgetTokens shape — it must NEVER be sent (verified against real
@@ -682,6 +693,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
       type: 'adaptive',
       maxReasoningEffort: 'max',
+      display: 'summarized',
     });
   });
 
@@ -701,6 +713,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
       expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
         type: 'adaptive',
         maxReasoningEffort: tier,
+        display: 'summarized',
       });
     }
   });
@@ -990,6 +1003,7 @@ describe('bedrock Converse primitives are gated on the resolved Claude model id 
     expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
       type: 'adaptive',
       maxReasoningEffort: 'high',
+      display: 'summarized',
     });
     expect(args.system).toEqual({
       role: 'system',

@@ -692,7 +692,10 @@ function resolveThinkingRequest(
 function applyAnthropicThinking(
   resolved: ResolvedThinking,
 ): Pick<AnthropicProviderOptions, 'thinking' | 'effort'> {
-  return { thinking: { type: 'adaptive' }, effort: resolved.effort };
+  return {
+    thinking: { type: 'adaptive', display: 'summarized' },
+    effort: resolved.effort,
+  };
 }
 
 // @ai-sdk/amazon-bedrock — current-gen Bedrock Claude (Sonnet 5, Opus 4.5+/4.8)
@@ -712,7 +715,13 @@ function applyAnthropicThinking(
 function applyBedrockThinking(
   resolved: ResolvedThinking,
 ): Pick<BedrockProviderOptions, 'reasoningConfig'> {
-  return { reasoningConfig: { type: 'adaptive', maxReasoningEffort: resolved.effort } };
+  return {
+    reasoningConfig: {
+      type: 'adaptive',
+      maxReasoningEffort: resolved.effort,
+      display: 'summarized',
+    },
+  };
 }
 
 // A Bedrock-family model resolves to one of two DIFFERENT wire contracts.
