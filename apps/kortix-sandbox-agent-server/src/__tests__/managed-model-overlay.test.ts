@@ -90,7 +90,7 @@ describe('managed listing fetch', () => {
 
     const models = await fetchManagedModels('https://gw.kortix.test/v1', 'k')
 
-    expect(urls).toEqual(['https://gw.kortix.test/v1/models?scope=managed'])
+    expect(urls).toEqual(['https://gw.kortix.test/v1/models?scope=picker'])
     expect(Object.keys(models ?? {}).sort()).toEqual([
       'deepseek-v4-flash',
       'grok-4.6',
@@ -124,7 +124,7 @@ describe('managed listing fetch', () => {
 describe('boot config composition', () => {
   test('a stale baked catalog is overlaid with the LIVE managed set once it is known', async () => {
     globalThis.fetch = (async (input: string) => {
-      expect(String(input)).toContain('scope=managed')
+      expect(String(input)).toContain('scope=picker')
       return new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })
     }) as unknown as typeof fetch
 
@@ -220,7 +220,7 @@ describe('warm-fork adoption refresh', () => {
     const targetFile = join(dir, 'session.json')
     await writeFile(currentFile, JSON.stringify(current))
     globalThis.fetch = (async (input: string) =>
-      new Response(JSON.stringify(String(input).includes('scope=managed') ? managed : full), {
+      new Response(JSON.stringify(String(input).includes('scope=picker') ? managed : full), {
         status: 200,
       })) as unknown as typeof fetch
 
@@ -265,7 +265,7 @@ describe('warm-fork adoption refresh', () => {
     const targetFile = join(dir, 'session.json')
     await writeFile(currentFile, JSON.stringify(STALE_BAKED))
     globalThis.fetch = (async (input: string) =>
-      String(input).includes('scope=managed')
+      String(input).includes('scope=picker')
         ? new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })
         : new Response('boom', { status: 500 })) as unknown as typeof fetch
 

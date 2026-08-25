@@ -407,14 +407,16 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   app.post('/v1/llm/messages', messages);
   app.post('/v1/openai/messages', messages);
 
-  // `?scope=managed` → managed lineup only (~3KB). Sandboxes call it on every
-  // boot to learn the live managed set; see wire.ts for the full rationale.
+  // `?scope=managed` → managed lineup only (~3KB); `?scope=picker` → the
+  // project's servable set (~80KB), which sandboxes fetch on every boot so
+  // their `kortix` provider matches the web picker. See wire.ts.
   const models = (c: {
     req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined };
   }) =>
     gateway
       .listModels(c.req.header('authorization'), {
         managedOnly: c.req.query('scope') === 'managed',
+        scope: c.req.query('scope') === 'picker' ? 'picker' : undefined,
       })
       .then(cloudflareSafe);
 

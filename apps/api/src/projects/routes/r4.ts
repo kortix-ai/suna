@@ -81,9 +81,8 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
+import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import {
@@ -98,10 +97,7 @@ import {
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
-import {
-  getProjectRoutingPolicy,
-  setProjectModelOverrides,
-} from '../../repositories/project-routing-policies';
+import { setProjectModelOverrides } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { continueSession, drainSessionLifecycleQueue } from '../session-lifecycle';
@@ -153,7 +149,6 @@ import {
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
-import { listProjectSecretNamesForConsumer } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
@@ -3023,61 +3018,14 @@ projectsApp.openapi(
     }
 
     const accountId = loaded.row.accountId as string;
-    const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
-    const [secrets, defaults, routing] = await Promise.all([
-      listProjectSecretNamesForConsumer({
-        projectId,
-        principalUserId: loaded.userId,
-        consumer: 'llm_gateway',
-      }).catch(() => [] as string[]),
-      getAccountModelDefaults(accountId, projectId),
-      getProjectRoutingPolicy(projectId),
-    ]);
-    // What `auto` resolves to for this project. Served below so the client can
-    // LOCK its switch instead of offering a toggle that always 409s.
-    const effectiveDefault = toWireModel(
-      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
-    );
-    const requiredModels = [
-      defaults.projects[projectId],
-      defaults.account,
-      platformDefaultModelId(),
-      routing?.visionModel,
-      ...(routing?.defaultFallback?.models ?? []),
-      ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
-    ].filter((model): model is string => !!model);
-    const models = projectPickerCatalog(
-      gatewayModelCatalog(projectId, { freeManagedOnly }),
-      new Set(secrets),
-      requiredModels,
-    );
-    // Server-owned per-project enablement, resolved HERE and stamped onto each
-    // model so every client renders the same answer. The session picker shows
-    // the enabled ones; "Manage models" shows them all and switches on this
-    // flag. Neither re-derives it. Display-only: the gateway never refuses a
-    // request over enablement (that 400'd in-use models — the #5932 revert).
-    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
-    return c.json({
-      models: Object.fromEntries(
-        Object.entries(models).map(([id, model]) => [
-          id,
-          { ...model, enabled: enabled.get(id) ?? true },
-        ]),
-      ),
-      // The stored EXCEPTIONS, so a client toggling one model can PUT the
-      // merged map back without having to reconstruct it by diffing the
-      // resolved flags against a default it would have to recompute.
-      modelOverrides: routing?.modelOverrides ?? {},
-      // The model `auto` resolves to. It cannot be turned off (that would break
-      // every default request — the PUT refuses it with 409), so the client
-      // renders its switch as locked rather than letting the user click into an
-      // error.
-      defaultModel: effectiveDefault || undefined,
-      // True while the project has made no exceptions at all — the only thing
-      // "reset to defaults" has left to act on, and not derivable from the
-      // `enabled` flags alone (they look identical either way).
-      usingDefaults: Object.keys(routing?.modelOverrides ?? {}).length === 0,
+    // One composition, shared with the sandbox's boot fetch
+    // (`/v1/llm/models?scope=picker`) — see servableProjectCatalog.
+    const catalog = await servableProjectCatalog({
+      projectId,
+      accountId,
+      principalUserId: loaded.userId,
     });
+    return c.json(catalog);
   },
 );
 

@@ -910,17 +910,22 @@ export function withManagedOverlay(
 }
 
 /**
- * Fetch ONLY the managed lineup: `GET ${base}/models?scope=managed` (~3KB,
- * versus ~3.3MB for the full project catalog — which is why the full fetch
- * gets no place on the boot path). Returns null on failure or an empty set
- * (a free-tier account legitimately has no managed models; callers then keep
- * whatever the disk catalog holds).
+ * Fetch the project's SERVABLE set: `GET ${base}/models?scope=picker` (~80KB
+ * — managed models the account may use + the providers its secrets connect +
+ * routing-named ids, i.e. exactly the list the web picker shows; versus
+ * ~3.3MB for the full org catalog, which is why the full fetch gets no place
+ * on the boot path). Overlaid on the baked catalog, so a BYOK model added to
+ * models.dev after the image was built registers on the `kortix` provider
+ * instead of answering `ModelNotFound` (the same failure the managed-only
+ * fetch fixed for managed models on 2026-08-19). Returns null on failure or
+ * an empty set (a free-tier account with no connected provider legitimately
+ * has nothing; callers then keep whatever the disk catalog holds).
  */
 export async function fetchManagedModels(
   baseUrl: string,
   apiKey: string,
 ): Promise<Record<string, KortixGatewayModel> | null> {
-  const url = `${baseUrl.replace(/\/+$/, '')}/models?scope=managed`
+  const url = `${baseUrl.replace(/\/+$/, '')}/models?scope=picker`
   const deadline = Date.now() + MANAGED_MODELS_TOTAL_BUDGET_MS
   for (let attempt = 0; attempt < MANAGED_MODELS_ATTEMPTS; attempt++) {
     if (Date.now() >= deadline) break
@@ -935,14 +940,14 @@ export async function fetchManagedModels(
       const body = (await res.json()) as { models?: Record<string, KortixGatewayModel> }
       const models = body.models ?? {}
       if (Object.keys(models).length === 0) {
-        logger.info(`[opencode] managed listing is empty at ${url}; keeping the on-disk catalog`)
+        logger.info(`[opencode] servable listing is empty at ${url}; keeping the on-disk catalog`)
         return null
       }
       // Remote JSON becomes OpenCode's provider config — rebuild it to a known
       // shape before it can get anywhere near the config or the disk.
       const clean = sanitizeCatalogForDisk(models)
       if (!clean) return null
-      logger.info(`[opencode] fetched ${Object.keys(clean).length} managed models from ${url}`)
+      logger.info(`[opencode] fetched ${Object.keys(clean).length} servable models from ${url}`)
       return clean
     } catch (err) {
       logger.warn(
@@ -953,7 +958,7 @@ export async function fetchManagedModels(
       await new Promise((resolve) => setTimeout(resolve, 200))
     }
   }
-  logger.warn(`[opencode] managed models unavailable (${url}); using the bundled managed set`)
+  logger.warn(`[opencode] servable models unavailable (${url}); using the baked catalog + bundled managed set`)
   return null
 }
 

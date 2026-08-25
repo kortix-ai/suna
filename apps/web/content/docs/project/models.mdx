@@ -62,6 +62,9 @@ control. `Auto` clears the variant.
   Amazon Bedrock → Bedrock's `reasoning_effort` field). For an upstream it
   cannot map (Nova, Grok on Bedrock today) it returns `400 unsupported_param`
   instead of dropping the value silently.
+- The sandbox learns the project's servable model set from the API at every
+  boot (`GET /v1/llm/models?scope=picker`, the same composition as the web
+  picker), so a model the picker offers always resolves in the runtime.
 - A project default per model lives in Customize → Gateway → Routing →
   **Generation defaults** (`model_generation_config`). It fills only a field
   the request left unset, so a session's variant always wins.

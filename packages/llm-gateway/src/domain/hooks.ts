@@ -54,4 +54,13 @@ export interface GatewayHooks {
  * account with no managed access still gets an empty managed set. */
 export interface ListModelsOptions {
   managedOnly?: boolean;
+  /**
+   * `picker` serves the caller's project SERVABLE set (~80KB): managed models
+   * the account may use + the providers its secrets connect + routing-named
+   * ids, stamped with enablement — the same list the web model picker shows.
+   * A sandbox fetches it at boot so the `kortix` provider it registers is
+   * exactly what the composer offers (a BYOK model newer than the image used
+   * to answer `ModelNotFound`). `managed` is the legacy managed-only subset.
+   */
+  scope?: 'managed' | 'picker';
 }
