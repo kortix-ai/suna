@@ -100,7 +100,14 @@ jobs:
         if: always() && (inputs.mode == 'full' || inputs.mode == matrix.mode)
         run: |
           set -euo pipefail
-          if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
+          # grep, never rg: GitHub's ubuntu images ship no ripgrep, and with the
+          # tool missing under `2>/dev/null` this guard passed on nothing from
+          # its first run until 2026-08-25, when Blacksmith images (which ship
+          # rg) ran it for real. Pattern = GUARD_PATTERN_SOURCE in
+          # tests/src/core/scrub.ts; the runner scrubs the same shapes before
+          # writing results.json / report.html.
+          pattern='kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.'
+          if [ -d tests/test-results ] && grep -rEIl "$pattern" tests/test-results; then
             echo "::error::A test artifact contains a secret-shaped value."
             exit 1
           fi
