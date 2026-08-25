@@ -28,7 +28,7 @@ export const PROXY_ATTEMPT_TIMEOUT_MS = 15_000;
 export function isLongTurnCompletionRequest(request: { method: string; path: string }): boolean {
   return (
     request.method.toUpperCase() === 'POST' &&
-    /^\/session\/[^/]+\/(?:message|command)(?:$|[/?#])/.test(request.path)
+    /^\/session\/[^/]+\/(?:message|command|summarize)(?:$|[/?#])/.test(request.path)
   );
 }
 

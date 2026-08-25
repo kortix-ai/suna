@@ -34,6 +34,26 @@ describe('filterSlashActions', () => {
   test('a non-matching query returns none', () => {
     expect(filterSlashActions(SLASH_ACTIONS, 'zzzzz')).toHaveLength(0);
   });
+
+  test('"compact" finds the compact-session action', () => {
+    expect(filterSlashActions(SLASH_ACTIONS, 'compact').map((a) => a.id)).toContain(
+      'compact-session',
+    );
+  });
+
+  test('"summarize" matches compact-session through its description', () => {
+    expect(filterSlashActions(SLASH_ACTIONS, 'summarize').map((a) => a.id)).toContain(
+      'compact-session',
+    );
+  });
+
+  test('"context" finds the show-context action', () => {
+    expect(filterSlashActions(SLASH_ACTIONS, 'context').map((a) => a.id)).toContain('show-context');
+  });
+
+  test('"token" matches show-context through its description', () => {
+    expect(filterSlashActions(SLASH_ACTIONS, 'token').map((a) => a.id)).toContain('show-context');
+  });
 });
 
 /**
@@ -59,7 +79,10 @@ describe('controlToOpenFor', () => {
   });
 
   test('every other action opens nothing', () => {
-    for (const id of ['switch-agent', 'attach-file'] as const) {
+    // `compact-session` and `show-context` open HOST-owned modals through
+    // their own callbacks (`onCompactClick` / `onContextClick`), not composer
+    // toolbar controls — so they must stay null here.
+    for (const id of ['switch-agent', 'attach-file', 'compact-session', 'show-context'] as const) {
       expect(controlToOpenFor(id)).toBeNull();
     }
   });
