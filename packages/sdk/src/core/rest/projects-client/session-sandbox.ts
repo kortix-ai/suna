@@ -15,6 +15,37 @@ import type { ProjectSession } from "./sessions";
 export type ProjectSessionSandboxStatus =
   "provisioning" | "active" | "stopped" | "error" | "archived";
 
+/**
+ * WHY a sandbox parked — the closed catalogue the server serializes on
+ * `ProjectSessionSandbox.stop_reason`.
+ *
+ * Mirrored by hand from `@kortix/api-contract`, which owns it. The SDK cannot
+ * depend on that package (it ships to browsers and has exactly one Kortix
+ * dependency), so parity is held by a test rather than by the type system —
+ * see `apps/api/src/projects/stop-reason-parity.test.ts`, which reads both
+ * files and fails if a member is added to one and not the other.
+ *
+ * Closed on purpose: a consumer mapping reasons to copy gets a compile error
+ * for a member it forgot, instead of silently rendering nothing.
+ */
+export const STOP_REASONS = [
+  "deadline_expired",
+  "run_cap",
+  "idle_grace",
+  "boot_floor_expired",
+  "provider_reconcile",
+  "provider_removed",
+  "runtime_wake_failed",
+  "runtime_boot_failed",
+  "restart_failed",
+  "provisioning_stalled",
+  "unusable_runtime_state",
+  "manual",
+  "wedged_backlog_remediation",
+] as const;
+
+export type StopReason = (typeof STOP_REASONS)[number];
+
 export interface ProjectSessionSandbox {
   sandbox_id: string;
   session_id: string;
@@ -26,6 +57,9 @@ export interface ProjectSessionSandbox {
   status: ProjectSessionSandboxStatus;
   config: Record<string, unknown>;
   metadata: Record<string, unknown>;
+  /** WHY this row stopped. Null while the box is live, and also for a row
+   *  parked before the field existed — treat null as "no reason recorded". */
+  stop_reason: StopReason | null;
   last_used_at: string | null;
   created_at: string;
   updated_at: string;
@@ -95,6 +129,9 @@ export function projectSessionStartSeed(
       external_id: externalId,
       base_url: session.sandbox_url,
       status: "active",
+      // Synthesized from a live session — the box is running, so there is no
+      // stop to explain.
+      stop_reason: null,
       config: {},
       metadata: session.metadata,
       last_used_at: session.updated_at,

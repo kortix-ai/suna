@@ -30,6 +30,7 @@
     "SANDBOX_PORTS",
     "SERVER_COMPACTION_REVALIDATE_MS",
     "SERVER_OBSERVATION_MAX_MS",
+    "STOP_REASONS",
     "STREAM_OBSERVATION_MAX_MS",
     "SessionNotReadyError",
     "SessionStartError",
@@ -1436,6 +1437,7 @@
   "./projects-client": [
     "FEATURE_FLAG_KEYS",
     "PublicSessionShareError",
+    "STOP_REASONS",
     "SessionStartError",
     "acceptAccountInvite",
     "actReviewItem",

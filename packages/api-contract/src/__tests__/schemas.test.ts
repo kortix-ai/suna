@@ -171,6 +171,7 @@ function sandboxFixture(overrides: Record<string, unknown> = {}) {
     status: 'active',
     config: {},
     metadata: {},
+    stop_reason: null,
     last_used_at: NOW,
     created_at: NOW,
     updated_at: NOW,

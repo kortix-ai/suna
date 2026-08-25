@@ -55,6 +55,7 @@ import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/s
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
+import { stopReasonCopy } from '@/features/session/stop-reason-copy';
 import {
   billingDialogArgs,
   billingGateCopy,
@@ -749,12 +750,21 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       }
       // Auto-resume exhausted (or genuinely un-resumable): give an in-place
       // Restart instead of forcing a manual browser refresh.
+      // The server records WHY every box parked. When it told us, say so —
+      // "Computer could not finish starting" is a different thing to act on
+      // than "Session timed out", and both used to render as the same
+      // unexplained card. Falls back to the generic copy whenever there is no
+      // recorded reason (a row parked before the field reached the wire).
+      const stoppedCopy = stopReasonCopy(sandbox?.stop_reason);
       return (
         <InlineSessionError
-          title={`${sandboxLabel ?? 'session'} is stopped`}
-          message={tI18nHardcoded.raw(
-            'appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen',
-          )}
+          title={stoppedCopy?.title ?? `${sandboxLabel ?? 'session'} is stopped`}
+          message={
+            stoppedCopy?.message ??
+            tI18nHardcoded.raw(
+              'appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen',
+            )
+          }
           detail={restart.errorMessage ?? undefined}
           action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
         />

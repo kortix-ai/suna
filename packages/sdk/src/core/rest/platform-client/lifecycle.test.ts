@@ -125,6 +125,7 @@ const newSession: ProjectSession = {
 };
 
 const runtimeSandbox: ProjectSessionSandbox = {
+  stop_reason: null,
   sandbox_id: 'sbx-2',
   session_id: 'sess-2',
   project_id: 'proj-1',
