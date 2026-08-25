@@ -163,6 +163,65 @@ function activeConnectedAccountId(
   return state.connection?.isActive === true ? state.connection.connectedAccount?.id : undefined;
 }
 
+/**
+ * Description + categories for every toolkit, keyed by slug.
+ *
+ * The paged browse endpoint (`session.toolkits()`) returns only
+ * `{slug, name, logo, isNoAuth, connection}` — no description and no
+ * categories. The catalogue page grouped those items into sections by category,
+ * so every toolkit fell into the client's synthetic "Other" bucket, and opening
+ * it asked this route for `category=Other`, which is not a Composio category and
+ * answered zero. The page then said "Catalogue unavailable" over a catalogue
+ * that had just rendered.
+ *
+ * `toolkits.get()` carries both fields, so the page is enriched from it rather
+ * than served by it: that endpoint caps at 1000 toolkits while the catalogue is
+ * ~1400, and it publishes no cursor, so it cannot page.
+ *
+ * Cached per runtime because it is one 800ms request for data that changes when
+ * Composio adds an app, not per user. A failure resolves to an empty map and
+ * leaves the page unenriched — a card with no description beats no card.
+ */
+const TOOLKIT_META_TTL_MS = 6 * 60 * 60_000;
+
+interface ToolkitMeta {
+  description: string | null;
+  categories: string[];
+}
+
+const toolkitMetaCache = new WeakMap<
+  ComposioRuntime,
+  { at: number; bySlug: Promise<Map<string, ToolkitMeta>> }
+>();
+
+async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, ToolkitMeta>> {
+  const cached = toolkitMetaCache.get(runtime);
+  if (cached && Date.now() - cached.at < TOOLKIT_META_TTL_MS) return cached.bySlug;
+  if (!runtime.toolkits) return new Map();
+
+  const bySlug = (async () => {
+    const page = await runtime.toolkits!.get({ limit: 1000 });
+    const map = new Map<string, ToolkitMeta>();
+    for (const toolkit of page) {
+      map.set(toolkit.slug.toLowerCase(), {
+        description: toolkit.meta?.description ?? null,
+        categories: (toolkit.meta?.categories ?? []).map((category) => category.slug),
+      });
+    }
+    return map;
+  })();
+  toolkitMetaCache.set(runtime, { at: Date.now(), bySlug });
+  try {
+    return await bySlug;
+  } catch (err) {
+    // Drop the poisoned entry so the next request retries instead of serving the
+    // rejection for the whole TTL.
+    toolkitMetaCache.delete(runtime);
+    console.warn('[composio] toolkit metadata unavailable, serving catalogue unenriched:', err);
+    return new Map();
+  }
+}
+
 export async function composioCatalogPage(input: {
   projectId: string;
   q?: string;
@@ -224,11 +283,28 @@ export async function composioCatalogPage(input: {
     manageConnections: false,
     sandbox: { enable: false },
   });
-  return session.toolkits({
-    ...(input.q?.trim() ? { search: input.q.trim() } : {}),
-    ...(input.cursor ? { cursor: input.cursor } : {}),
-    ...(input.limit != null ? { limit: input.limit } : {}),
-  });
+  const [page, meta] = await Promise.all([
+    session.toolkits({
+      ...(input.q?.trim() ? { search: input.q.trim() } : {}),
+      ...(input.cursor ? { cursor: input.cursor } : {}),
+      ...(input.limit != null ? { limit: input.limit } : {}),
+    }),
+    toolkitMetaBySlug(runtime),
+  ]);
+  // Enriched in place so the paged shape (`items` + `cursor`) is unchanged and
+  // the SDK's existing normalization still applies. A toolkit past the 1000-item
+  // metadata cap keeps the empty values it already had.
+  return {
+    ...page,
+    items: page.items.map((item) => {
+      const enrichment = meta.get(item.slug.toLowerCase());
+      return {
+        ...item,
+        description: enrichment?.description ?? null,
+        categories: enrichment?.categories ?? [],
+      };
+    }),
+  };
 }
 
 /** Fetch public tool schemas without creating a connection-scoped auth identity. */

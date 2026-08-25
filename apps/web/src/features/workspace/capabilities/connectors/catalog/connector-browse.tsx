@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import { isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
 import { catalogFootSummary } from './catalog-foot';
 import { CategoryIcon } from './category-icon';
-import { ALL_CATEGORIES } from './connector-categories';
+import { ALL_CATEGORIES, OTHER } from './connector-categories';
 import type { CatalogSection, CatalogState } from './use-catalog';
 import { useCatalogAutoload } from './use-catalog-autoload';
 
@@ -167,7 +167,11 @@ function CategorySection({
             {section.total.toLocaleString()}
           </span>
         </h2>
-        {section.total > section.items.length ? (
+        {/* `Other` is synthesised for entries the catalogue gave no category, so
+            no provider can serve it as a filter — opening it fetched zero and
+            painted "Catalogue unavailable" over a populated page. It stays a
+            readable section, without the control that would empty the grid. */}
+        {section.key !== OTHER && section.total > section.items.length ? (
           <Button
             variant="ghost"
             size="sm"
