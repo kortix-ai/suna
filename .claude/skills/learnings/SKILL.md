@@ -63,6 +63,12 @@ assertions (`ubuntu-24.04-arm` pinned) and three amd64 matrix legs left on
 `queued` for a Blacksmith runner while ≤3 ran. No prod impact.
 *Enforcer:* `image-build-speed-workflow.test.ts` "every Linux job keeps the
 Blacksmith runner kill switch" rejects any bare label in any workflow.
+*Addendum (same day):* a vendor's cache claim is not a measurement. Five
+consecutive builds of one `cache-key` on Blacksmith's sticky-disk builder
+reused 0 layers (`WORKDIR /app` re-executed) while the registry cache reused
+34–45 on the same Dockerfile; `grep -c ' CACHED'` on the build log is the only
+proof of a warm build. Keep `cache-from`/`cache-to: type=registry` until a
+re-measurement shows the sticky disk hitting (PR #6905).
 
 ### Size sandbox memory from measured peak RSS, not nominal workload size (2026-08-24)
 
