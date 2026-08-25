@@ -2528,3 +2528,39 @@ install had already landed.
 *Automation:* `unit-session-restart-url-contract.test.ts` ("progress-aware
 OpenCode boot budget"), `boot-phase.test.ts`, `proxy-auth.test.ts` ("names the
 boot phase").
+
+## A runtime started from `stopped` owns no turn; settle and redeliver on the wake
+
+*Incident (2026-08-25, Essentia):* the provider paused two boxes mid-turn. One
+was woken by the UI through the proxy before the reaper confirmed the stop:
+the fresh runtime answered `idle`, the open turn closed `completed`, and the
+user saw the agent "just stop" with nothing to resume. The other closed
+`runtime_gone` but its accepted prompt was never redelivered (only
+never-accepted deliveries were), so the user typed "go on".
+
+**Rules.**
+1. Every path that starts a provider-`stopped` box (`wakeSandbox` in the
+   preview proxy, the `/start` wake finalize) calls
+   `recoverTurnsAfterRuntimeRestart`: open ledger rows → `runtime_gone`,
+   turn authority dropped, each prompt redelivered DUE (`hold:false`).
+2. A stop the PROVIDER originated (`stopReason: provider_reconcile`) requeues
+   accepted prompts too (held); a stop Kortix chose keeps the old rule.
+3. A turn's verdict is never derived from a runtime that did not run it.
+
+*Automation:* `runtime-restart-recovery.test.ts`.
+
+## A refresh never converges a booting runtime; a stub launcher is never spawned
+
+*Incident (2026-08-25, Essentia):* the session-open refresh (env-sync) ran the
+runtime-assets pass during a resume, installing OpenCode 1.18.23 and
+restarting it under the boot; and the PATH launcher on two boxes was the
+479-byte pnpm postinstall stub, one restart away from a dead session.
+
+**Rules.**
+1. `refreshMayConvergeRuntime`: the refresh route schedules a reconcile only
+   when OpenCode is serving (`ok`); main.ts owns the post-boot pass.
+2. `isStubOpencodeLauncher`: the PATH launcher is skipped when it is (or shims
+   to) the postinstall stub; resolution falls through to the managed links.
+   Conservative: anything unreadable is not a stub.
+
+*Automation:* `refresh-converge-guard.test.ts`, `opencode-binary.test.ts`.

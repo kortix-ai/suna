@@ -40,6 +40,7 @@ import {
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import type { StopReason } from '../stop-reason';
+import { recoverTurnsAfterRuntimeRestart } from '../session-lifecycle/runtime-restart-recovery';
 import {
   RUNTIME_READINESS_CLOCK_KEYS,
   STALE_OPENCODE_BOOT_HARD_MS,
@@ -203,6 +204,18 @@ export async function resumeStoppedSandbox(
         return true;
       });
       if (!finalized) return false;
+      // The provider had this box STOPPED: whatever turn was still open on it
+      // is over. Normally applyStoppedState settled those rows already and
+      // this finds nothing; it is the guard for a row that reached `stopped`
+      // without that path (see runtime-restart-recovery.ts).
+      await recoverTurnsAfterRuntimeRestart({
+        sandboxId: row.sandboxId,
+        sessionId: row.sessionId,
+        externalId,
+        hold: false,
+      }).catch((err) =>
+        console.warn(`[projects] turn recovery after wake failed for ${row.sandboxId}:`, err),
+      );
       await reopenComputeForSandbox(
         row.sandboxId,
         row.accountId,
