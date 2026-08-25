@@ -4871,7 +4871,15 @@ export function SessionChat({
                       finalizing tells the agent directly. */}
                   <SessionConnectCard
                     projectId={projectId}
-                    sessionId={sessionId}
+                    // `projectSessionId`, NOT `sessionId`. This component carries
+                    // both: `sessionId` is the runtime/sandbox session, and
+                    // `projectSessionId` is the durable Kortix project session
+                    // every project-session API is keyed on — including the
+                    // connect route, which stores whichever id the agent's
+                    // scoped token carried. Passing the runtime id asked for a
+                    // session the API has no rows for, so the answer was always
+                    // an empty list and the card never rendered.
+                    sessionId={projectSessionId}
                     className="mb-2"
                   />
                   <ConnectorRequiredNotice
