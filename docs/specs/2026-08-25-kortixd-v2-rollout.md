@@ -7,6 +7,149 @@ and replaces its §11 phase order.
 
 ---
 
+## The core, in one sentence
+
+Yes — these two lines are the core, and everything else in the thread is either
+a consequence of them or must not be built:
+
+> *Single binary that makes any compute be kortix-compute. Aka be able to use it
+> for its agent runtime/shell/fs/cua.*
+>
+> *It's like the computer agent tunnel we have today. It connects to the
+> kortix-api as a relay server & opens it up entirely for 2 way comms.*
+
+Line 1 is the **goal**. Line 2 is the **mechanism**. The mechanism already
+exists in production, and comparing the two lines shows exactly how much of the
+goal is left:
+
+| Line 1 asks for | `@kortix/agent-tunnel` today |
+| --- | --- |
+| `shell` | `TunnelCapability = 'shell'` — shipped |
+| `fs` | `TunnelCapability = 'filesystem'` — shipped |
+| `cua` | `TunnelCapability = 'desktop'` — shipped, 42 methods (click, drag, hotkey, accessibility tree, recording, trajectory replay) |
+| **`agent runtime`** | **missing** |
+
+So, stated as work rather than as vision:
+
+> **kortixd = agent-tunnel + one more capability (`runtime`), then the sandbox
+> moved onto it last.**
+
+That is the whole project. `packages/agent-tunnel/src/shared/types.ts:49` is
+the line that has to change.
+
+### Why the rest of the recap is not separate work
+
+| Recap item | Status |
+| --- | --- |
+| Runtime manager (install/version opencode, codex, claude, pi) | **A consequence of line 1.** "Use it for its agent runtime" on a machine we do not image means something must install and pin that runtime. |
+| Always up-to-date, self-update, safe rollback | **Forced by line 1.** On a sandbox we can rebuild the image. On a laptop or a customer VPS we cannot, so the binary must update itself. |
+| Single API / websocket | **This is line 2.** WS + JSON-RPC 2.0 + Ed25519, already shipped. |
+| Full observability (ram/cpu/storage, debugging) | **A consequence of line 2.** Once a 2-way channel exists, telemetry is a stream instead of the one-shot `fetch` POSTs the guest uses today. |
+| Lifecycle: shut the node down when nothing is active | **Not a consequence, and must not be built as written — §6.1.** |
+
+---
+
+## The plan, step by step
+
+Ordered by blast radius on the existing fleet, ascending. Steps 0–4 cannot
+break a single customer session, and step 4 is where "spawn it anywhere" becomes
+true. The fleet is not touched until step 5, and then only read-only.
+
+| # | Step | Done when | Fleet risk |
+| --- | --- | --- | --- |
+| 0 | Two measurements, no code | Both numbers written down | none |
+| 1 | `runtime` becomes a 4th tunnel capability | A laptop installs a pinned OpenCode and reports it healthy through the API | none |
+| 2 | Carry a runtime port over the relay | A browser chat turn is served by OpenCode **on that laptop** | none |
+| 3 | Self-update and rollback | A node updates itself; a deliberately unhealthy build rolls itself back | none |
+| 4 | `kortixd` — name, `enroll`, `connect`, OS service | `kortixd enroll` on a fresh VPS → full session → survives reboot | none |
+| 5 | Fleet channel: deliver the daemon as an artifact | A pre-existing sandbox downloads, verifies and **runs none of it** | read-only |
+| 6 | Sandbox profile: channel present, never started | Golden `/kortix/health` diff is identical | none |
+| 7 | Per-box promotion `shadow → prefer → required` | The revert PR's own gate passes on a pre-change box | one box at a time |
+| 8 | Harness expansion, then collapse the provider | Spec §11 P3/P4 exits | — |
+
+### Step 0 — Measure (no code)
+
+1. Set `KORTIX_LLM_HOTSWAP=1` on dev. Measure session adoption against the
+   6,034 ms OpenCode baseline (§3.1).
+2. Query audit rows: what fraction of sessions ever invoke a shell, filesystem
+   or PTY tool?
+
+**Why this is first:** number 1 may delete an entire workstream — if the warm
+fork already adopts without a restart, "instant boot" is a flag, not a project.
+Number 2 is the only input that makes the Durable Object question answerable
+(§6.2). Both are queries, not designs.
+
+### Step 1 — Add `runtime` as a fourth capability
+
+`TunnelCapability` becomes `'filesystem' | 'shell' | 'desktop' | 'runtime'`.
+Methods: `runtime.install`, `runtime.start`, `runtime.health`, `runtime.stop`,
+`runtime.logs`, each gated by the per-method authorization hook that already
+exists on the relay.
+
+No new protocol, no new binary, no new transport. One capability on a shipping
+system.
+
+*Done when:* a developer laptop running today's agent-tunnel installs a pinned
+OpenCode version and reports it healthy through the API.
+
+### Step 2 — Carry a runtime port over the relay
+
+A harness speaks REST on a port (OpenCode) or ACP on stdio (Claude Code,
+Codex). The relay has to carry that traffic, which is the one genuinely new
+transport requirement in the project.
+
+*Done when:* a chat turn in the browser is served by OpenCode running on a
+laptop. **This is the moment "any compute is Kortix compute" is first true.**
+
+### Step 3 — Self-update and rollback
+
+Required by step 4, not optional: on a machine we do not image, the binary is
+the only thing that can update the binary. Reuse `entrypoint.sh`'s staged swap
+(exit code 75) and `rollback_agent`, plus #6871's `RuntimeSupervisor` for
+health-gated promote and drain.
+
+*Done when:* a node updates itself to a new daemon build, and a deliberately
+unhealthy build rolls back without human action.
+
+### Step 4 — `kortixd`
+
+Name it, add `enroll` and `connect` as real commands, ship the OS service
+install agent-tunnel already has (LaunchAgent, user systemd, Task Scheduler).
+Workstation profile only.
+
+*Done when:* `kortixd enroll` on a fresh EC2 or VPS box registers it, runs a
+full session through `dev.kortix.com`, survives a reboot, and the
+network-partition case is exercised live.
+
+**Attempt 1 never reached this step** — its CLI had no `enroll` and no
+`connect`, so no machine outside a provider was ever a node.
+
+### Step 5 — The fleet channel
+
+The first step that touches the sandbox, and only to **deliver**, never to
+**run**. A third artifact kind on #6871's channel (§3.2) with its own size cap,
+plus shared object storage.
+
+*Done when:* a sandbox created **before** this step downloads and verifies the
+kortixd artifact, runs none of it, and behaves identically to a box that did
+not — proven by a guest-side probe, never from the API's `/health`.
+
+*Worth shipping alone:* it removes the 2.1 GB image rebuild from the loop for a
+96 MB daemon change.
+
+### Steps 6–8
+
+Node core with profiles (§C3), then per-box promotion under the rule in §4,
+then harness expansion under §C4. Detail in §5.
+
+### What this ordering changes
+
+Attempt 1 performed steps 4, 5, 6 and 7 in one release and skipped 1, 2 and 3
+entirely — so the first machine that ever exercised the node channel was the
+production fleet, and there was no proving ground where a failure was survivable.
+
+---
+
 ## 0. What attempt 1 actually was
 
 kortixd is specified, built, merged, and reverted.
