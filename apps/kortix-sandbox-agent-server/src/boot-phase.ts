@@ -22,8 +22,7 @@ export interface BootPhaseInput {
 }
 
 export function bootPhaseLabel(input: BootPhaseInput): string {
-  const lastMark =
-    input.timeline.length > 0 ? input.timeline[input.timeline.length - 1]!.label : 'boot';
+  const lastMark = input.timeline.at(-1)?.label ?? 'boot';
   const parts = [lastMark, `opencode=${input.opencodeState}`];
   if (input.runtimeAssetsActivity) parts.push(input.runtimeAssetsActivity);
   if (input.notReadyReason) parts.push(input.notReadyReason);

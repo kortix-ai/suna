@@ -1053,7 +1053,8 @@ describe('daemon proxy auth gate', () => {
         headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
       })
       expect(first.status).toBe(503)
-      const firstPhase = first.headers.get('x-kortix-boot-phase')
+      const firstPhase = first.headers.get('x-kortix-boot-phase') ?? ''
+      expect(firstPhase).not.toBe('')
       expect(firstPhase).toContain('config-deps')
       expect(firstPhase).toContain('opencode=starting')
       expect(((await first.json()) as { phase: string }).phase).toBe(firstPhase)
