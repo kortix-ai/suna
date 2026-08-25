@@ -13,7 +13,7 @@
  * verified user context for a principal who can see this session.
  */
 import { Hono } from 'hono'
-import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../kortix-user-context'
@@ -32,12 +32,19 @@ export function opencodeLogFilePath(home: string): string {
 
 /** The last `lines` lines of a file, reading only its tail. Null when absent. */
 export function tailFile(path: string, lines: number): string | null {
-  if (!existsSync(path)) return null
-  const size = statSync(path).size
-  const span = Math.min(size, TAIL_READ_CAP)
-  if (span === 0) return ''
-  const fd = openSync(path, 'r')
+  // Open first, then fstat the descriptor: no exists/stat-then-open window
+  // (the file can rotate underneath a reader at any time).
+  let fd: number
   try {
+    fd = openSync(path, 'r')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw err
+  }
+  try {
+    const size = fstatSync(fd).size
+    const span = Math.min(size, TAIL_READ_CAP)
+    if (span === 0) return ''
     const buf = Buffer.alloc(span)
     readSync(fd, buf, 0, span, size - span)
     let text = buf.toString('utf8')
