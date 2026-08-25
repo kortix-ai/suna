@@ -3,6 +3,7 @@ import {
   type ProviderAuthRequirement,
   isProviderAuthSatisfied,
   providerAuthRequirement,
+  generationControlCapabilities,
 } from '@kortix/llm-catalog';
 import type { ProviderListResponse as SdkProviderListResponse } from '@opencode-ai/sdk/v2/client';
 
@@ -483,9 +484,27 @@ export function projectLlmCatalogToProviderList(
   catalog: ProjectLlmCatalogResponse,
 ): ProviderListResponse {
   const models = Object.fromEntries(
-    Object.entries(catalog.models ?? {}).filter(
-      ([modelId]) => modelId !== 'auto' && modelId !== 'kortix/auto',
-    ),
+    Object.entries(catalog.models ?? {})
+      .filter(([modelId]) => modelId !== 'auto' && modelId !== 'kortix/auto')
+      .map(([modelId, model]) => {
+        // The gateway picker never carried `variants`, so the composer's
+        // Thinking control (which lists `Object.keys(model.variants)`) had
+        // nothing to offer on-gateway — the ONLY effort path there was a
+        // project-level routing-policy write. Derive the ids from the same
+        // `reasoning_options` the API already serves, through the same
+        // `generationControlCapabilities` the gateway's own clamp uses, so
+        // the picker offers exactly the tiers a request may carry. An
+        // explicit `variants` map from the API (runtime truth) is kept as-is.
+        if (model.variants && Object.keys(model.variants).length > 0) return [modelId, model];
+        const ids = generationControlCapabilities({
+          id: modelId,
+          name: model.name,
+          reasoning: model.reasoning,
+          reasoning_options: model.reasoning_options,
+        }).reasoningEffort?.values;
+        if (!ids?.length) return [modelId, model];
+        return [modelId, { ...model, variants: Object.fromEntries(ids.map((id) => [id, {}])) }];
+      }),
   );
   const firstModelId = Object.keys(models)[0];
   return {

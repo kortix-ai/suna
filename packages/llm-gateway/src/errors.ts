@@ -197,3 +197,29 @@ export function indicatesUpstreamDown(err: unknown): boolean {
   if (err instanceof UpstreamHttpError) return err.status >= 500 && err.status <= 599;
   return false;
 }
+
+// A generation parameter the client (or the project's routing defaults) asked
+// for that the resolved upstream has NO wire mapping for. Thrown by a transport
+// adapter BEFORE any upstream call is made, and mapped to a 400 by the pipeline.
+// The alternative — silently stripping the field — is what hid the missing
+// Bedrock `reasoning_effort` mapping for GPT-5.6 for weeks: the request went
+// out, the model answered, and nothing anywhere said the effort never left the
+// gateway. Loud beats quiet here: the composer's Thinking control only offers
+// tiers the catalog publishes, so hitting this means an upstream family the
+// adapter does not map yet (Nova / Grok / DeepSeek on Bedrock today), which is
+// a gateway gap to fix, not a user error to absorb.
+export class UnsupportedRequestParamError extends Error {
+  readonly kind = 'unsupported_param' as const;
+  constructor(
+    readonly param: string,
+    readonly resolvedModel: string,
+    readonly provider: string,
+    message?: string,
+  ) {
+    super(
+      message ??
+        `${provider} has no wire mapping for \`${param}\` on ${resolvedModel}; the value would be dropped`,
+    );
+    this.name = 'UnsupportedRequestParamError';
+  }
+}

@@ -3,7 +3,7 @@ import type { CatalogModel } from '@kortix/llm-catalog';
 import { generateText, jsonSchema, streamText, tool } from 'ai';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
 import type { UpstreamDescriptor } from '../../domain';
-import { NetworkError, UpstreamHttpError, defaultIsRetryable } from '../../errors';
+import { NetworkError, UpstreamHttpError, defaultIsRetryable, UnsupportedRequestParamError } from '../../errors';
 import { calculateCost, extractUsageFromSseBuffer } from '../../usage';
 import { sseErrorFrame, sseHasContent } from '../../usage/completion-guard';
 import { guardAgainstUnhandledResultRejections, mapToolCalls, toTransportError } from './index';
@@ -779,12 +779,42 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
       });
     }
     for (const id of ['us.amazon.nova-micro-v1:0', 'xai.grok-4.6']) {
-      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
-        resolvedModel: id,
-      });
+      // No mapping for these families yet: an explicit effort is REFUSED
+      // (400 at the pipeline), never silently stripped and sent anyway.
+      expect(() =>
+        buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+          resolvedModel: id,
+        }),
+      ).toThrow(UnsupportedRequestParamError);
+      // Without an effort they are untouched — plain Converse request.
+      const args = buildAiSdkArgs({ messages: [] }, 'bedrock', { resolvedModel: id });
       expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
       expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
     }
+  });
+
+  it('bedrock: the refusal names the field and the model, and a catalog-gated (dropped) effort never triggers it', () => {
+    let caught: unknown;
+    try {
+      buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: 'xai.grok-4.6',
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(UnsupportedRequestParamError);
+    expect((caught as UnsupportedRequestParamError).param).toBe('reasoning_effort');
+    expect((caught as UnsupportedRequestParamError).resolvedModel).toBe('xai.grok-4.6');
+    expect((caught as Error).message).toContain('xai.grok-4.6');
+    // The model publishes no effort ladder → clampGenerationConfig drops the
+    // client value before the adapter runs → nothing to refuse.
+    const noLadder = { id: 'us.amazon.nova-micro-v1:0', name: 'Nova Micro', reasoning: false };
+    expect(() =>
+      buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: 'us.amazon.nova-micro-v1:0',
+        model: noLadder,
+      }),
+    ).not.toThrow();
   });
 
   it('bedrock: a raw body.thinking:{type:"enabled",budget_tokens} is normalized to adaptive (never forwarded verbatim)', () => {
