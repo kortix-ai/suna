@@ -180,6 +180,19 @@ describe('daemon-delivered initial turn lifecycle', () => {
     const server = Bun.serve({
       port: 0,
       async fetch(request) {
+        const path = new URL(request.url).pathname;
+        // The routes the probe reads on OpenCode 1.18.23: `msg_new` was never
+        // written to this root, so the by-id read is a 404 `NotFoundError`,
+        // and an idle root is absent from `/session/status`.
+        if (request.method === 'GET' && /\/message\/[^/]+$/.test(path)) {
+          return Response.json(
+            { name: 'NotFoundError', data: { message: 'Message not found: msg_new' } },
+            { status: 404 },
+          );
+        }
+        if (request.method === 'GET' && path.endsWith('/session/status')) {
+          return Response.json({});
+        }
         if (request.method === 'GET') {
           return Response.json([
             { info: { id: 'msg_older', role: 'user' } },

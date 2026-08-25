@@ -2691,3 +2691,35 @@ side.
 
 *Incident:* no prod outage — caught on local dev, but the identical code
 paths ship to prod, where every /compact would have 503'd the same way.
+
+## A turn probe never lists the whole root — the list is unbounded, the budget is not
+
+*Incident (2026-08-25, Essentia sessions 9c8749ac and 9df2a873):* the reaper
+asks the daemon `GET /kortix/health?turn=1&turn_session_id&turn_message_id`
+and acts on `turn_in_flight`. The daemon answered it by fetching the root's
+ENTIRE OpenCode message list inside a 5 s budget. On 9c8749ac that list was
+276.7 MB (inline base64 image parts; `?limit=20` alone was 26 MB). The read
+never fit, the daemon answered `turn_in_flight: null` ("could not tell") on
+every visit, the reaper drip-extended the box on that non-answer for 2.5 h
+after OpenCode had finished the turn (`exiting loop` 21:00:18Z, probe still
+null at 22:10Z), and the session rendered "working" until the ledger row was
+settled by hand.
+
+**Rules.**
+1. `observeOpencodeDelivery` / `inspectOpencodeRoot` read the newest
+   `TURN_PROBE_WINDOW` (12) messages via `?limit=` — the newest N in
+   chronological order (verified on OpenCode 1.18.23) — with a 20 s budget.
+   A prompt older than the window is proved by `GET /session/:id/message/:id`
+   (~400 bytes; 404 `NotFoundError` when absent). Only a proven absence is
+   `abandoned`; a failed by-id read stays `null`.
+2. Any new daemon read of a session transcript states its bound in the
+   request. Roots grow for hours; "the list" is never small.
+3. The daemon's `activePort` must answer. The readiness probe adopts the
+   other half of the port pair when OUR live child answers only there
+   (`adoptStrayActivePort`, logged at error level with both ports and the
+   pid). Same box, same day: daemon `starting` on 4096 for 2 h while pid 2423
+   served on 4097 — every prompt 503'd and no turn end was ever observed.
+
+*Automation:* `orphaned-turn-finalize.test.ts` ("turn probes read a bounded
+window, never the whole root"); the stub fetch there serves `?limit=` and
+`/message/:id` the way 1.18.23 does.

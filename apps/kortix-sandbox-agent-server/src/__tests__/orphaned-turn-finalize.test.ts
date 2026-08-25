@@ -16,7 +16,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 
 
 import { finalizeOrphanedTurn } from '../main'
-import { inspectOpencodeRoot,
+import { TURN_PROBE_WINDOW, inspectOpencodeRoot,
   observeOpencodeDelivery,
   opencodeDeliveryInFlight,
   opencodeTurnInFlight,
@@ -37,6 +37,7 @@ function stubFetch(
     abortThrows?: boolean;
     sessionStatus?: unknown;
     sessionStatusOk?: boolean;
+    messageByIdOk?: boolean;
   } = {},
 ) {
   calls = []
@@ -52,7 +53,30 @@ function stubFetch(
       return new Response(JSON.stringify(opts.sessionStatus ?? {}), { status: 200 });
     }
     if (opts.messagesOk === false) return new Response('nope', { status: 503 });
-    return new Response(JSON.stringify(messages), { status: 200 });
+    // `GET /session/:id/message/:messageId` — one message by id, 404
+    // `NotFoundError` when the root has no such message (OpenCode 1.18.23).
+    const byId = (url.split('?')[0] ?? '').match(/\/message\/([^/]+)$/);
+    if (byId) {
+      if (opts.messageByIdOk === false) return new Response('nope', { status: 503 });
+      const id = decodeURIComponent(byId[1] ?? '');
+      const hit = Array.isArray(messages)
+        ? (messages as Array<{ info?: { id?: string } }>).find((m) => m.info?.id === id)
+        : undefined;
+      if (!hit) {
+        return new Response(
+          JSON.stringify({ name: 'NotFoundError', data: { message: `Message not found: ${id}` } }),
+          { status: 404 },
+        );
+      }
+      return new Response(JSON.stringify(hit), { status: 200 });
+    }
+    // `GET /session/:id/message?limit=N` — the newest N, chronological.
+    const limit = Number(new URL(url).searchParams.get('limit') ?? '');
+    const page =
+      Array.isArray(messages) && Number.isFinite(limit) && limit > 0
+        ? (messages as unknown[]).slice(-limit)
+        : messages;
+    return new Response(JSON.stringify(page), { status: 200 });
   };
 }
 
@@ -807,5 +831,92 @@ describe('Essentia d1b74954 replay — a streaming turn under a pty wake-up', ()
   test('an unreadable status is unknown — never a licence to end it', async () => {
     stubFetch(incidentTranscript, { sessionStatusOk: false });
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, ROOT_2, LIVE_TURN)).toBeNull();
+  });
+});
+
+describe('turn probes read a bounded window, never the whole root', () => {
+  // 2026-08-25, Essentia: one root's full message list was 276.7 MB (inline
+  // base64 image parts). Parsing it never fit the probe budget, the daemon
+  // answered `turn_in_flight: null` on every reaper visit for 2.5 hours after
+  // the turn had finished, and the session showed "working" until the ledger
+  // was settled by hand. `?limit=` keeps the read proportional to the
+  // question; a prompt older than the window is proved by fetching it by id.
+  const stepsAfter = (prompt: string, n: number, last: Record<string, unknown>) => [
+    { info: { id: prompt, role: 'user' } },
+    ...Array.from({ length: n - 1 }, (_, i) => ({
+      info: { id: `msg_step_${i}`, role: 'assistant', parentID: prompt, time: { completed: 1 + i } },
+    })),
+    { info: { id: 'msg_step_last', role: 'assistant', parentID: prompt, ...last } },
+  ];
+
+  test('the list request carries limit=TURN_PROBE_WINDOW', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }]);
+    const raw: string[] = [];
+    const stubbed = globalThis.fetch;
+    (globalThis as { fetch: unknown }).fetch = async (input: unknown, init?: unknown) => {
+      raw.push(String(input));
+      return (stubbed as (i: unknown, n?: unknown) => Promise<Response>)(input, init);
+    };
+    await observeOpencodeDelivery(BASE, WORKSPACE, SESSION, 'msg_turn_1');
+    await inspectOpencodeRoot(BASE, WORKSPACE, SESSION);
+    const lists = raw.filter((u) => /\/message\?/.test(u));
+    expect(lists.length).toBe(2);
+    for (const u of lists) {
+      expect(new URL(u).searchParams.get('limit')).toBe(String(TURN_PROBE_WINDOW));
+    }
+  });
+
+  test("a prompt older than the window is proved by id and its newest step names 'completed'", async () => {
+    // 20 step messages after the prompt: the prompt is outside a 12-message
+    // window. Every message IN the window is after it, so the window alone
+    // answers the "how did it end" question; the by-id read only proves the
+    // prompt reached this root.
+    stubFetch(stepsAfter('msg_turn_1', 20, { time: { completed: 99 } }), {
+      sessionStatus: { [SESSION]: { type: 'idle' } },
+    });
+    expect(await observeOpencodeDelivery(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toEqual({
+      inFlight: false,
+      end: 'completed',
+    });
+    expect(calls).toContain(`GET ${BASE}/session/${SESSION}/message/msg_turn_1`);
+  });
+
+  test('a prompt older than the window whose newest step is still open is in flight while busy', async () => {
+    stubFetch(stepsAfter('msg_turn_1', 20, { time: {} }), {
+      sessionStatus: { [SESSION]: { type: 'busy' } },
+    });
+    expect(await observeOpencodeDelivery(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toEqual({
+      inFlight: true,
+      end: null,
+    });
+  });
+
+  test('a prompt missing from the window AND from the root is abandoned, nothing else is', async () => {
+    stubFetch(stepsAfter('msg_other', 20, { time: { completed: 99 } }), {
+      sessionStatus: { [SESSION]: { type: 'idle' } },
+    });
+    expect(await observeOpencodeDelivery(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toEqual({
+      inFlight: false,
+      end: 'abandoned',
+    });
+  });
+
+  test('a prompt missing from the window stays unreadable when the by-id read fails', async () => {
+    // A 503 on the by-id read is "could not tell", not "never arrived":
+    // calling it abandoned would redeliver a prompt that may be mid-turn.
+    stubFetch(stepsAfter('msg_turn_1', 20, { time: {} }), { messageByIdOk: false });
+    expect(await observeOpencodeDelivery(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toEqual({
+      inFlight: null,
+      end: null,
+    });
+  });
+
+  test('inspectOpencodeRoot: a window of step messages after an older prompt is answered, not orphaned', async () => {
+    stubFetch(stepsAfter('msg_turn_1', 20, { time: {} }));
+    const inspection = await inspectOpencodeRoot(BASE, WORKSPACE, SESSION);
+    expect(inspection.known).toBe(true);
+    expect(inspection.hasMessages).toBe(true);
+    expect(inspection.orphanedPrompt).toBe(false);
+    expect(inspection.lastTurnIncomplete).toBe(true);
   });
 });

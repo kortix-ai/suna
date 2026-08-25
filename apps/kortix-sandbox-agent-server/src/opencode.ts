@@ -2265,11 +2265,51 @@ export function createOpencodeSupervisor(
       if (ready) {
         if (probedChild) reportReadyResponse(probedChild)
         markReady()
+      } else if (probedChild && (await adoptStrayActivePort(probedPort, probedChild))) {
+        reportReadyResponse(probedChild)
+        markReady()
       } else if (state !== 'starting') {
         state = 'starting'
       }
       scheduleReadinessProbe()
     }, interval)
+  }
+
+  /**
+   * The supervised opencode is alive but not on `activePort`: is it on the
+   * other half of the port pair? Adopt that half when it answers.
+   *
+   * Seen on an Essentia box on 2026-08-25: the daemon reported `starting`,
+   * `opencode_port: 4096`, pid 2423 — and pid 2423 was healthy on 4097
+   * (`/global/health` ok, 2.8 GB RSS, a turn had run to completion on it).
+   * Nothing listened on 4096. The readiness probe asked 4096 every 100 ms for
+   * two hours, the proxy gate 503'd every request, and the control plane
+   * never saw the turn end. The daemon log that would name the transition
+   * was not recoverable from the box, so this is a tripwire as much as a
+   * repair: it logs at error level with both ports and the pid.
+   *
+   * Safe against the verified reload: while a candidate boots on the idle
+   * half, the incumbent still answers on `activePort`, so this branch is
+   * never reached; after promotion `activePort` is the candidate's port and
+   * answers. It only fires when OUR live child answers nowhere but the other
+   * half — a state the supervisor never intends.
+   */
+  async function adoptStrayActivePort(probedPort: number, probedChild: ChildProcess): Promise<boolean> {
+    if (stopping || child !== probedChild) return false
+    if (probedChild.exitCode !== null || probedChild.signalCode !== null) return false
+    const otherPort =
+      probedPort === currentCfg.opencodeInternalPort
+        ? currentCfg.opencodeStandbyPort
+        : currentCfg.opencodeInternalPort
+    if (otherPort === probedPort || !(await checkReady(otherPort))) return false
+    if (stopping || child !== probedChild || activePort !== probedPort) return false
+    activePort = otherPort
+    logger.error('[opencode] active port desynced from the live opencode; adopted the answering half', {
+      staleActivePort: probedPort,
+      adoptedPort: otherPort,
+      pid: probedChild.pid ?? null,
+    })
+    return true
   }
 
   return {
