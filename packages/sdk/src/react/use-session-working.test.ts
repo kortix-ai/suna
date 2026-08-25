@@ -12,6 +12,7 @@ import {
   WORKING_POLL_IDLE_MS,
   buildWorkingInputs,
   workingPollMs,
+  streamObservationStamp,
   streamTurnPhase,
 } from './use-session-working';
 
@@ -309,6 +310,33 @@ describe('an equal-valued status rewrite is not a new observation', () => {
  *
  * What IS news is the turn boundary, and that is a change of PHASE.
  */
+/**
+ * Where a status frame's freshness stamp comes from.
+ *
+ * The hook used to stamp `Date.now()` at the moment ITS effect observed the
+ * slot. On a remount — navigate away and back, a route-level remount — the
+ * observation state resets and the effect re-stamps whatever the store still
+ * holds, so a dead stream's last idle frame came back looking brand new and
+ * vetoed the open `/turn` row for another full freshness window. The store now
+ * records when the frame actually LANDED (`sessionStatusAt`), and that stamp —
+ * never the observation instant — is the frame's age. The fallback exists only
+ * for a slot written before the stamp slice existed (test fixtures, mixed
+ * versions); it preserves the old behavior there.
+ */
+describe('streamObservationStamp', () => {
+  test('the store stamp is the observation instant when it exists', () => {
+    expect(streamObservationStamp(12_345, 99_999)).toBe(12_345);
+  });
+
+  test('without a store stamp, the observer clock fills in (old behavior)', () => {
+    expect(streamObservationStamp(undefined, 99_999)).toBe(99_999);
+  });
+
+  test('a zero store stamp is not "missing"', () => {
+    expect(streamObservationStamp(0, 99_999)).toBe(0);
+  });
+});
+
 describe('streamTurnPhase', () => {
   test('busy and retry are one phase — the turn is running either way', () => {
     expect(streamTurnPhase({ type: 'busy' } as SessionStatus)).toBe('active');

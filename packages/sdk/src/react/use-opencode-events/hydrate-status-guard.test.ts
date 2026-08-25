@@ -23,20 +23,20 @@ function hydrateStatusBlock(): string {
 }
 
 describe('hydrateCore session-status snapshot', () => {
-  test('skips any session a WIRE frame has already answered for', () => {
-    // Only the runtime's own frame owns the slot. A `'local'` value is the
-    // tab's fabrication (the missing-busy sweep, a synthetic abort), and
-    // letting it block this fill made a wrong fabrication self-sustaining: a
-    // sweep that idled a running session could never be corrected by the very
-    // snapshot that now says `busy`.
+  test('the fill decision routes through shouldSkipStatusFill with the slot stamp', () => {
+    // The WHICH-slots rule (fresh wire owns; stale wire and local do not) is
+    // unit-tested on the pure `shouldSkipStatusFill` in `helpers.test.ts` —
+    // this pin only asserts hydrateCore actually consults it, with the
+    // store's own arrival stamp rather than a component-minted one.
     const block = hydrateStatusBlock();
-    expect(block).toContain('slotState.sessionStatus[sessionID] &&');
-    expect(block).toContain("slotState.sessionStatusOrigin[sessionID] !== 'local'");
+    expect(block).toContain('shouldSkipStatusFill({');
+    expect(block).toContain('origin: slotState.sessionStatusOrigin[sessionID]');
+    expect(block).toContain('stampedAtMs: slotState.sessionStatusAt[sessionID]');
   });
 
   test('the skip precedes the write, so a stale reading cannot land first', () => {
     const block = hydrateStatusBlock();
-    const guard = block.indexOf("sessionStatusOrigin[sessionID] !== 'local'");
+    const guard = block.indexOf('shouldSkipStatusFill({');
     const write = block.indexOf('applySyncEvent(');
     expect(guard).toBeGreaterThan(-1);
     expect(write).toBeGreaterThan(guard);

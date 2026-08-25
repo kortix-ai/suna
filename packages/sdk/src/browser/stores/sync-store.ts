@@ -175,6 +175,21 @@ interface SyncState {
 	 */
 	sessionStatusOrigin: Record<string, "wire" | "local">;
 	/**
+	 * When each session's current `sessionStatus` value LANDED in this store —
+	 * stamped by `setStatus` on any state change (a new value, or an origin
+	 * flip over an unchanged value, which is a new observation), and preserved
+	 * across same-value rewrites exactly like the status object's identity.
+	 *
+	 * The store used to keep no arrival time, and freshness was stamped by
+	 * whichever component observed the slot. Two failures grew out of that: a
+	 * remount re-stamped a dead stream's last idle frame as brand new, and the
+	 * reconnect status fill could not tell a frame the live stream just
+	 * delivered from one a dead stream left behind — so it protected both
+	 * (`shouldSkipStatusFill`). Absent means the slot predates this slice; the
+	 * readers fall back to their old stamping.
+	 */
+	sessionStatusAt: Record<string, number>;
+	/**
 	 * When the RUNTIME'S OWN OUTPUT last reached this tab, per session.
 	 *
 	 * Not a status, not a poll — the instant a streamed part or message landed.
@@ -1081,6 +1096,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	parts: {},
 	sessionStatus: {},
 	sessionStatusOrigin: {},
+	sessionStatusAt: {},
 	sessionActivityAt: {},
 	diffs: {},
 	todos: {},
@@ -1304,12 +1320,18 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// landing over a fabricated one (or the reverse) changes what the
 				// frame is allowed to decide. Update only the origin — the status
 				// object keeps its identity so nothing re-stamps a stale value.
+				// The arrival stamp DOES move: an origin flip is a new observation
+				// (`use-session-working` re-stamps on it for the same reason).
 				if ((s.sessionStatusOrigin[sessionID] ?? "wire") === origin) return s;
-				return { sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin } };
+				return {
+					sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
+					sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
+				};
 			}
 			return {
 				sessionStatus: { ...s.sessionStatus, [sessionID]: status },
 				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
+				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
 			};
 		}),
 
@@ -1575,6 +1597,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// whether the runtime is running. Marked local so it can never
 				// veto the control plane's open turn (`WorkingStreamInput.origin`).
 				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: "local" as const },
+				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
 				diffs: { ...s.diffs, [sessionID]: [] },
 				todos: { ...s.todos, [sessionID]: [] },
 				sessionRevert: { ...s.sessionRevert, [sessionID]: null },
@@ -2143,6 +2166,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			parts: {},
 			sessionStatus: {},
 			sessionStatusOrigin: {},
+			sessionStatusAt: {},
+			sessionActivityAt: {},
 			diffs: {},
 			todos: {},
 			sessionRevert: {},

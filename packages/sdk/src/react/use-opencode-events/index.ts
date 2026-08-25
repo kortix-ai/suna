@@ -28,6 +28,7 @@ import {
   releaseMessageRehydrate,
   reserveMessageRehydrate,
   resolveClientEvictionUrl,
+  shouldSkipStatusFill,
 } from './helpers';
 import { sessionsNeedingRehydrate } from './rehydrate-targets';
 import { createStreamRevival } from './stream-revival';
@@ -247,15 +248,23 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
             // `reconcileMissingBusySessions` below, which reads ABSENCE from the
             // complete list rather than a per-session reading.
             //
-            // Only a WIRE frame owns the slot. A `'local'` value is the tab's
-            // own fabrication (the missing-busy sweep, a synthetic abort), and
-            // letting it block this fill made the fabrication self-sustaining:
-            // a sweep that wrongly idled a running session could never be
-            // corrected by the very snapshot that now says `busy`.
+            // Only a FRESH wire frame owns the slot (`shouldSkipStatusFill`).
+            // A `'local'` value is the tab's own fabrication (the missing-busy
+            // sweep, a synthetic abort) and never blocks — letting it block
+            // made a fabrication self-sustaining. A STALE wire frame no longer
+            // blocks either: this fill runs on reconnect, a reconnect happens
+            // because a stream died, and a dead stream's last frame — a wire
+            // idle vetoing the open `/turn` row while a long tool call moves
+            // no transcript — is exactly what this read exists to correct
+            // (prod, 2026-08-26).
             const slotState = useSyncStore.getState();
             if (
-              slotState.sessionStatus[sessionID] &&
-              slotState.sessionStatusOrigin[sessionID] !== 'local'
+              shouldSkipStatusFill({
+                hasSlot: !!slotState.sessionStatus[sessionID],
+                origin: slotState.sessionStatusOrigin[sessionID],
+                stampedAtMs: slotState.sessionStatusAt[sessionID],
+                nowMs: Date.now(),
+              })
             )
               continue;
             // Locally-synthesized event (this is a REST poll, not an SSE

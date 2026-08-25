@@ -60,6 +60,63 @@ beforeEach(() => {
 });
 
 /**
+ * When each session's status frame LANDED — `sessionStatusAt`.
+ *
+ * The store used to keep no arrival time, so freshness was stamped by whichever
+ * component happened to observe the slot: a remount re-stamped a dead stream's
+ * last idle frame as brand new (`Date.now()` in the observing effect), and the
+ * reconnect status fill had no way to tell a frame the live stream just
+ * delivered from one a stream that died a minute ago left behind. Both readers
+ * now use this stamp.
+ */
+describe("sessionStatusAt", () => {
+	test("a status write stamps its arrival; a same-value rewrite keeps the stamp", () => {
+		const sid = "ses_stamp_1";
+		const store = useSyncStore.getState();
+		const before = Date.now();
+		store.setStatus(sid, { type: "busy" } as SessionStatus);
+		const first = useSyncStore.getState().sessionStatusAt[sid];
+		expect(first).toBeGreaterThanOrEqual(before);
+
+		// Same value, same origin: neither the object identity nor the stamp
+		// may move — a dead stream's frame must not look fresher over time.
+		store.setStatus(sid, { type: "busy" } as SessionStatus);
+		expect(useSyncStore.getState().sessionStatusAt[sid]).toBe(first);
+	});
+
+	test("a value change re-stamps", async () => {
+		const sid = "ses_stamp_2";
+		const store = useSyncStore.getState();
+		store.setStatus(sid, { type: "busy" } as SessionStatus);
+		const first = useSyncStore.getState().sessionStatusAt[sid];
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		store.setStatus(sid, { type: "idle" } as SessionStatus);
+		expect(useSyncStore.getState().sessionStatusAt[sid]).toBeGreaterThan(first);
+	});
+
+	test("an origin flip over an unchanged value re-stamps — it is a new observation", async () => {
+		const sid = "ses_stamp_3";
+		const store = useSyncStore.getState();
+		store.setStatus(sid, { type: "busy" } as SessionStatus, "local");
+		const first = useSyncStore.getState().sessionStatusAt[sid];
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		store.setStatus(sid, { type: "busy" } as SessionStatus, "wire");
+		expect(useSyncStore.getState().sessionStatusAt[sid]).toBeGreaterThan(first);
+	});
+
+	test("clearSession stamps its fabricated idle", () => {
+		const sid = "ses_stamp_4";
+		const store = useSyncStore.getState();
+		store.setStatus(sid, { type: "busy" } as SessionStatus);
+		store.clearSession(sid);
+		const state = useSyncStore.getState();
+		expect(state.sessionStatus[sid]).toEqual({ type: "idle" } as SessionStatus);
+		expect(state.sessionStatusOrigin[sid]).toBe("local");
+		expect(state.sessionStatusAt[sid]).toBeGreaterThan(0);
+	});
+});
+
+/**
  * Runtime-read evidence for `projectWorking` (prod, 2026-08-26): with the SSE
  * stream dead, a stale wire idle frame vetoed the server's open turn row and
  * the projection answered idle over a running session. The only remaining

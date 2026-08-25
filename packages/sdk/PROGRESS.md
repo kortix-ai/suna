@@ -44,11 +44,40 @@ the verify cadence bounds divergence to 30s.
 @kortix/sdk test` 2550 pass 0 fail across 155 files (baseline 2541 + 9 new) ·
 `smoke:install` pass.
 
-**Follow-ups (apps/api, not claimed):** inject SSE keepalive comment frames at
-the proxy so dead streams are detectable below 60s; invalidate the 5-min
-ingress cache on a 200-then-silent stream; link browser-disconnect aborts to
-the upstream fetch; `preview-retry-budget.ts` comments still say "60s ALB idle
-timeout" while terraform sets 300s.
+**Round 2 (same session, same branch, UNCOMMITTED per Jay):** two remaining
+holes closed in the SDK, and the server-side follow-ups implemented.
+SDK: `browser/stores/sync-store.ts` gains `sessionStatusAt` (arrival stamp per
+status frame; stamped on value change and origin flip, kept across same-value
+rewrites); `use-opencode-events/helpers.ts` gains pure `shouldSkipStatusFill`
+(+`WIRE_STATUS_FILL_FRESHNESS_MS` = `STREAM_OBSERVATION_MAX_MS`) — the
+reconnect status fill now OVERWRITES a wire frame older than 45s, so a dead
+stream's idle frame stops vetoing `/turn` even when a long tool call moves no
+transcript; `use-session-working.ts` gains `streamObservationStamp` — the
+observation stamp comes from the store, so a remount cannot resurrect a stale
+frame as fresh. Server: `apps/kortix-sandbox-agent-server/src/sse-keepalive.ts`
+injects a typed `kortix.keepalive` event (NOT an SSE comment — parsers swallow
+comments without feeding any client heartbeat) every 20s of upstream silence,
+event-boundary-guarded, backpressure-preserving, wired in `proxy.ts` for
+`text/event-stream` responses; `apps/api/src/sandbox-proxy/sse-stall.ts`
+counts `/global/event` bytes and a zero-byte stream (the stale-cached-ingress
+200-then-silence signature) makes the NEXT connect bypass the ingress cache
+(consume-once), wired in `routes/preview.ts`. Consumers verified tolerant of
+`kortix.keepalive`: SDK event machine (resets heartbeat, drops unknown type),
+`narrowChatEvent` (default null), apps/mobile (`resetHeartbeat()` on any
+message, unmatched switch case).
+
+**Gates (round 2):** sdk typecheck clean · sdk suite 2565 pass / 0 fail / 155
+files · `smoke:install` pass · daemon `bun test` 864 pass / 0 fail / 71 files +
+`tsc --noEmit` clean · api `tsc --noEmit` clean + `bun test --isolate
+src/sandbox-proxy/` 311 pass / 0 fail (non-isolated shows the known
+process-wide mock.module fails — not new).
+
+**Still open (not claimed):** link browser-disconnect aborts to the api's
+upstream fetch; `preview-retry-budget.ts` comments still say "60s ALB idle
+timeout" while terraform sets 300s; daemon keepalives reach only sandboxes
+built from a NEW snapshot (agent-server changes are baked, not hot-deployed)
+and only providers routed through the daemon (Platinum; Daytona dials opencode
+directly).
 
 ### 2026-08-25 — session `opencode-bump-11823` — OpenCode 1.18.19 → 1.18.23 lockstep — DONE
 

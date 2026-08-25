@@ -6,6 +6,7 @@ import type { Config } from './config'
 import { logger } from './logger'
 import { createPartRouter } from './routes/part'
 import { stripInlineAttachmentBytes } from './inline-attachments'
+import { withSseKeepalive } from './sse-keepalive'
 import type { Opencode } from './opencode'
 import { isRepoMaterialized } from './git'
 import { createHealthRouter, type SandboxBootState } from './routes/health'
@@ -411,6 +412,22 @@ export function buildOpencodeApp(
         respHeaders.delete('content-encoding')
         respHeaders.set('content-type', 'application/json; charset=utf-8')
         return new Response(body, { status: upstream.status, statusText: upstream.statusText, headers: respHeaders })
+      }
+
+      // SSE gets a keepalive-injecting passthrough. This proxy is one
+      // localhost hop from opencode, so a keepalive it emits proves the whole
+      // daemon → edge → api → browser path — the path that used to die
+      // silently (stale ingress answering 200 and never writing, edge stalls,
+      // the ALB's idle timeout) with the SDK's 60s heartbeat as the only
+      // detector. See `sse-keepalive.ts` for the wire-format rules.
+      const upstreamContentType = upstream.headers.get('content-type') ?? ''
+      if (upstream.ok && upstream.body && upstreamContentType.includes('text/event-stream')) {
+        respHeaders.delete('content-length')
+        return new Response(withSseKeepalive(upstream.body), {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: respHeaders,
+        })
       }
 
       return new Response(upstream.body, {
