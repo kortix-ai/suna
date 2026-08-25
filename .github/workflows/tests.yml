@@ -1,5 +1,17 @@
 name: Tests
 
+# The four local-profile lanes run NATIVELY on Blacksmith runners since
+# 2026-08-26. Before that each lane ran inside a Platinum/Daytona cloud sandbox
+# (a cloud-sandbox worker script) with the runner as a thin orchestrator; the
+# provider path failed on its own (Platinum restore timeouts → Daytona fallback
+# whose kernel could not mount overlay2) on roughly every third lane on
+# 2026-08-25. A Blacksmith runner already has Docker, 8 vCPU / 32 GB, a
+# transparent pnpm/actions cache, and org-wide Docker image caching (the
+# Supabase images stay pulled), so the lane is the unchanged root command:
+# `pnpm test -- <lane args>`. Pull-request previews (deploy-preview.yml) still
+# use a sandbox — they need a long-lived public HTTPS origin, which a runner
+# cannot provide.
+
 on:
   workflow_call:
     inputs:
@@ -7,11 +19,6 @@ on:
         description: Root test mode.
         required: false
         default: full
-        type: string
-      provider:
-        description: Sandbox provider. Auto falls back from Platinum to Daytona only on infrastructure errors.
-        required: false
-        default: auto
         type: string
       artifact-name:
         description: Uploaded artifact name.
@@ -22,45 +29,38 @@ on:
         required: false
         default: 14
         type: number
-    secrets:
-      PLATINUM_API_KEY:
-        required: false
-      DAYTONA_API_KEY:
-        required: false
 
 permissions:
   contents: read
 
 jobs:
-  sandbox:
-    name: warm ${{ matrix.lane }} worker
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
-    timeout-minutes: 90
+  lane:
+    name: ${{ matrix.lane }} lane
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
           - lane: core
             mode: core
+            args: ""
           - lane: browser-1
             mode: browser
+            args: --browser-only --browser-shard=1/2
           - lane: browser-2
             mode: browser
+            args: --browser-only --browser-shard=2/2
           - lane: packages
             mode: packages
+            args: --packages-only
     env:
-      PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL || 'https://api.platinum.dev' }}
-      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
-      DAYTONA_API_URL: ${{ vars.DAYTONA_API_URL || 'https://app.daytona.io/api' }}
-      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
-      DAYTONA_TARGET: ${{ vars.DAYTONA_TARGET || 'us' }}
-      DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET || vars.DAYTONA_TARGET || 'us' }}
-      SANDBOX_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      SANDBOX_TEST_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
-      SANDBOX_TEST_RUN_ID: ${{ github.run_id }}-${{ matrix.lane }}
-      TEST_SANDBOX_PROVIDER: ${{ inputs.provider }}
+      CI: "1"
+      TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       TEST_MODE: ${{ inputs.mode }}
       TEST_LANE: ${{ matrix.lane }}
+      TEST_ARGS: ${{ matrix.args }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
     steps:
       - name: Validate the requested test mode
         run: |
@@ -71,31 +71,52 @@ jobs:
       - uses: actions/checkout@v7
         if: inputs.mode == 'full' || inputs.mode == matrix.mode
         with:
-          ref: ${{ env.SANDBOX_TEST_SHA }}
+          ref: ${{ env.TEST_SHA }}
           fetch-depth: 1
+      - uses: actions/setup-node@v7
+        if: inputs.mode == 'full' || inputs.mode == matrix.mode
+        with:
+          node-version: 22
       - uses: oven-sh/setup-bun@v2
         if: inputs.mode == 'full' || inputs.mode == matrix.mode
         with:
           bun-version: 1.3.14
-      - name: Run the root test lane in a sandbox
+      - name: Install workspace dependencies
+        if: inputs.mode == 'full' || inputs.mode == matrix.mode
+        run: |
+          corepack enable pnpm
+          echo "pnpm: $(pnpm -v)  node: $(node -v)  bun: $(bun -v)  docker: $(docker -v)"
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+      - name: Restore Chromium
+        if: matrix.mode == 'browser' && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Chromium
+        if: matrix.mode == 'browser' && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        run: pnpm --dir tests exec playwright install --with-deps chromium
+      - name: Prestart Supabase for the browser lane
+        # The root runner reuses a running local Supabase. Starting it before the
+        # lane keeps Next.js cold-route compilation and the Supabase image
+        # extraction from overlapping inside the runner's memory budget.
+        if: matrix.mode == 'browser' && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        run: pnpm exec supabase start --ignore-health-check
+      - name: Run the root test lane
         if: inputs.mode == 'full' || inputs.mode == matrix.mode
         run: |
           set -euo pipefail
-          case "$TEST_LANE" in
-            core) bun tests/bin/sandbox-ci.ts ;;
-            browser-1) bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=1/2 ;;
-            browser-2) bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=2/2 ;;
-            packages)
-              if [[ "$TEST_MODE" == "full" ]]; then
-                export KORTIX_PACKAGE_SKIP_SDK_TESTS=1
-              fi
-              bun tests/bin/sandbox-ci.ts --packages-only
-              ;;
-            *) echo "::error::Invalid test lane: $TEST_LANE"; exit 2 ;;
-          esac
-      - name: Delete the sandbox worker
-        if: always() && (inputs.mode == 'full' || inputs.mode == matrix.mode)
-        run: bun tests/bin/sandbox-ci-cleanup.ts
+          if [[ "$TEST_LANE" == "packages" && "$TEST_MODE" == "full" ]]; then
+            export KORTIX_PACKAGE_SKIP_SDK_TESTS=1
+          fi
+          echo "[ci] lane=$TEST_LANE sha=$TEST_SHA command=pnpm test -- $TEST_ARGS"
+          # shellcheck disable=SC2086 # TEST_ARGS is a matrix literal, split on purpose
+          if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi
+      - name: Stop the local Supabase stack
+        if: always() && matrix.mode == 'browser' && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        run: pnpm exec supabase stop --no-backup || true
       - name: Guard test artifacts against secrets
         if: always() && (inputs.mode == 'full' || inputs.mode == matrix.mode)
         run: |

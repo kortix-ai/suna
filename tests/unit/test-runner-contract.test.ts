@@ -27,6 +27,11 @@ describe('local test runner contract', () => {
       '.github/workflows/qa-nightly.yml',
       'Makefile',
       'tests/bin/kortix.ts',
+      // Cloud-sandbox CI workers (Platinum/Daytona) — lanes run natively on
+      // Blacksmith since 2026-08-26.
+      'tests/bin/sandbox-ci.ts',
+      'tests/bin/sandbox-ci-cleanup.ts',
+      'tests/src/core/sandbox-ci.ts',
     ]) {
       expect(existsSync(resolve(root, path)), path).toBe(false);
     }

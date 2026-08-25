@@ -373,18 +373,13 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   || '<label>' }}`. Tiers, the kill switch back to GitHub-hosted runners, and
   the Docker layer cache: `docs/runbooks/ci-runners.md`.
 - GitHub Actions runs four lanes — `core`, `browser-1`, `browser-2`, `packages` —
-  in four disposable warm sandboxes through `.github/workflows/tests.yml`. The
-  two browser lanes are halves of one sharded run (`--browser-shard=1/2` and
-  `2/2`). The slowest lane defines the gate duration. Set `provider` to
-  `platinum`, `daytona`, or `auto`. Auto tries Platinum first. It uses Daytona
-  only when Platinum infrastructure throws. A non-zero test exit does not trigger
-  fallback.
-- Platinum warm restore readiness is capped at 2 minutes. A missing marker or
-  unreachable guest after that cap triggers Daytona in `auto` mode. Cold
-  template creation retains its separate 45-minute budget.
-- Both providers fetch and verify the exact SHA, upload `tests/test-results`,
-  and delete the sandbox. The sandbox worker is infrastructure only. Do not add
-  CI-only test logic.
+  natively, one Blacksmith runner each (`CI_RUNNER_L`), through
+  `.github/workflows/tests.yml`. The two browser lanes are halves of one sharded
+  run (`--browser-shard=1/2` and `2/2`). The slowest lane defines the gate
+  duration. Each lane is the unchanged root command at the exact PR head SHA;
+  browser lanes install Chromium and prestart Supabase first. Do not add
+  CI-only test logic. (The Platinum/Daytona sandbox-worker path was removed on
+  2026-08-26; only `deploy-preview.yml` still uses a cloud sandbox.)
 - Release tests run `pnpm test -- --target-full` against deployed staging. They block
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured

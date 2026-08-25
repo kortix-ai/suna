@@ -34,6 +34,19 @@ Rule of thumb for a new job: no dependency install → S; installs → M; builds
 image or a Next bundle → L. `tests/unit/image-build-speed-workflow.test.ts`
 fails on any bare label, so a new job cannot skip the expression.
 
+## Test lanes run natively
+
+`tests.yml` runs the four local-profile lanes (`core`, `browser-1`, `browser-2`,
+`packages`) directly on L-tier runners: checkout at the PR head SHA →
+`pnpm install --frozen-lockfile` → (browser lanes) Chromium + `supabase start`
+→ `pnpm test -- <lane args>`. Blacksmith's transparent caches make a lane warm
+after its first run on a new lockfile: the pnpm store (`actions/cache`
+redirect), `PLAYWRIGHT_BROWSERS_PATH` (`actions/cache`), and every pulled
+Docker image (org-wide container cache — the Supabase images). Until
+2026-08-26 each lane ran inside a Platinum/Daytona cloud sandbox; that path is
+gone (`tests/bin/sandbox-ci.ts` removed). `deploy-preview.yml` still uses a
+sandbox for its public HTTPS origin.
+
 ## Kill switch: move a tier back to GitHub-hosted
 
 Use this when Blacksmith is down or jobs sit in `queued` for more than ~10 min.
