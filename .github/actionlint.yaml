@@ -1,0 +1,7 @@
+# actionlint config — https://github.com/rhysd/actionlint/blob/main/docs/config.md
+# Blacksmith runner labels (docs/runbooks/ci-runners.md). Workflows reference
+# them through `${{ vars.CI_RUNNER_* || '<label>' }}`; listing them here keeps
+# `actionlint` clean for anyone who writes a bare label in a scratch branch.
+self-hosted-runner:
+  labels:
+    - blacksmith-*

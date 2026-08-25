@@ -29,7 +29,7 @@ concurrency:
 jobs:
   mark-stable:
     name: Promote v${{ inputs.version }} → :stable
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

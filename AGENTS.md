@@ -369,6 +369,9 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
+- Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
+  || '<label>' }}`. Tiers, the kill switch back to GitHub-hosted runners, and
+  the Docker layer cache: `docs/runbooks/ci-runners.md`.
 - GitHub Actions runs four lanes — `core`, `browser-1`, `browser-2`, `packages` —
   in four disposable warm sandboxes through `.github/workflows/tests.yml`. The
   two browser lanes are halves of one sharded run (`--browser-shard=1/2` and

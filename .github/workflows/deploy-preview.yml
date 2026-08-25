@@ -38,7 +38,7 @@ jobs:
       github.event.label.name == 'preview' &&
       github.event.pull_request.head.repo.full_name == github.repository) ||
       github.event_name == 'workflow_dispatch'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     permissions:
       contents: read
       pull-requests: read
@@ -121,7 +121,7 @@ jobs:
   build-api:
     name: Build preview API image
     needs: authorize
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     permissions:
       contents: read
     steps:
@@ -130,8 +130,15 @@ jobs:
           ref: ${{ needs.authorize.outputs.sha }}
           submodules: false
           persist-credentials: false
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
+        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
+        # shared by every workflow in this repo that builds the same image.
+        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
+        # local buildx builder, so the build still works, only cold.
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/api/Dockerfile:linux/amd64
+      - uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: apps/api/Dockerfile
@@ -154,7 +161,7 @@ jobs:
   build-gateway:
     name: Build preview gateway image
     needs: authorize
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     permissions:
       contents: read
     steps:
@@ -163,8 +170,15 @@ jobs:
           ref: ${{ needs.authorize.outputs.sha }}
           submodules: false
           persist-credentials: false
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
+        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
+        # shared by every workflow in this repo that builds the same image.
+        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
+        # local buildx builder, so the build still works, only cold.
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/llm-gateway/Dockerfile:linux/amd64
+      - uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: apps/llm-gateway/Dockerfile
@@ -186,7 +200,7 @@ jobs:
   build-web:
     name: Build preview frontend image
     needs: authorize
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     permissions:
       contents: read
     steps:
@@ -214,8 +228,15 @@ jobs:
           NEXT_PUBLIC_KORTIX_VERSION: pr-${{ needs.authorize.outputs.pr_number }}
           NEXT_PUBLIC_KORTIX_COMMIT: ${{ needs.authorize.outputs.sha }}
           NEXT_OUTPUT: standalone
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
+        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
+        # shared by every workflow in this repo that builds the same image.
+        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
+        # local buildx builder, so the build still works, only cold.
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/web/Dockerfile:linux/amd64
+      - uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: apps/web/Dockerfile
@@ -234,7 +255,7 @@ jobs:
   deploy:
     name: Deploy full self-host preview and run end-to-end tests
     needs: [authorize, build-api, build-gateway, build-web]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 100
     permissions:
       contents: read
@@ -420,7 +441,7 @@ jobs:
       (github.event.action == 'unlabeled' && github.event.label.name == 'preview') ||
       (github.event.action == 'synchronize' &&
       contains(github.event.pull_request.labels.*.name, 'preview')))
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -468,7 +489,7 @@ jobs:
   reconcile:
     name: Reconcile stale preview sandboxes
     if: github.event_name == 'schedule'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 20
     permissions:
       contents: read

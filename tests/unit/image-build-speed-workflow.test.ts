@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -13,6 +13,19 @@ const read = (name: string) =>
   readFileSync(resolve(import.meta.dirname, `../../.github/workflows/${name}`), 'utf8');
 
 const IMAGES = ['api', 'gateway', 'frontend'] as const;
+const DOCKERFILE: Record<(typeof IMAGES)[number], string> = {
+  api: 'apps/api/Dockerfile',
+  gateway: 'apps/llm-gateway/Dockerfile',
+  frontend: 'apps/web/Dockerfile',
+};
+
+// Every Linux job runs on Blacksmith through a repo-variable kill switch:
+// `${{ vars.CI_RUNNER_<tier> || '<blacksmith label>' }}`. Setting the variable
+// (e.g. to `ubuntu-latest`) moves that tier back to GitHub-hosted runners with
+// no code change — the only rollback that still works when Blacksmith itself
+// is what is broken, since a PR needs runners to merge. docs/runbooks/ci-runners.md
+const RUNNER_L = "${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}";
+const RUNNER_L_ARM = "${{ vars.CI_RUNNER_L_ARM || 'blacksmith-8vcpu-ubuntu-2404-arm' }}";
 
 // The block of a workflow belonging to one top-level job id.
 const jobBlock = (workflow: string, jobId: string): string => {
@@ -37,24 +50,25 @@ describe('staging image builds are native per-arch, cached, and merged', () => {
     const job = jobBlock(source, `build-${image}`);
 
     expect(job).toContain('runs-on: ${{ matrix.runner }}');
-    // Each leg's runner architecture must match the platform it produces.
-    // ubuntu-24.04-arm is verified available to this repo (aarch64, 4 vCPU).
-    expect(job).toContain('platform: linux/amd64\n            runner: ubuntu-latest');
-    expect(job).toContain('platform: linux/arm64\n            runner: ubuntu-24.04-arm');
+    // Each leg's runner architecture must match the platform it produces, and
+    // both legs keep the kill-switch fallback (see RUNNER_* above).
+    expect(job).toContain(`platform: linux/amd64\n            runner: ${RUNNER_L}`);
+    expect(job).toContain(`platform: linux/arm64\n            runner: ${RUNNER_L_ARM}`);
     // Emulating both arches in one job is exactly what this replaced.
     expect(job).not.toContain('platforms: linux/amd64,linux/arm64');
   });
 
-  it.each(IMAGES)('gives %s a registry layer cache scoped per arch', (image) => {
+  it.each(IMAGES)('gives %s a Blacksmith layer cache keyed per image and platform', (image) => {
     const job = jobBlock(source, `build-${image}`);
 
-    expect(job).toContain(
-      `cache-from: type=registry,ref=kortix/kortix-${image}:staging-buildcache-\${{ matrix.arch }}`,
-    );
-    // mode=max caches intermediate stages too, not just the final layers.
-    expect(job).toContain(
-      `cache-to: type=registry,ref=kortix/kortix-${image}:staging-buildcache-\${{ matrix.arch }},mode=max`,
-    );
+    // The sticky-disk builder is what makes an unchanged-dependency build warm.
+    // Keyed by Dockerfile + platform so an arm64 leg never reads amd64 layers,
+    // and so dev/preview builds of the same Dockerfile share the cache.
+    expect(job).toContain('uses: useblacksmith/setup-docker-builder@v2');
+    expect(job).toContain(`cache-key: ${DOCKERFILE[image]}:\${{ matrix.platform }}`);
+    expect(job).toContain('uses: useblacksmith/build-push-action@v2');
+    // A registry cache export on top of the sticky disk is pure push time.
+    expect(job).not.toContain('cache-to: type=registry');
   });
 
   it.each(IMAGES)('publishes %s by digest, never by tag, from the arch legs', (image) => {
@@ -99,11 +113,38 @@ describe('dev image builds stay single-arch and cached', () => {
     expect(source).not.toContain('platforms: linux/amd64,linux/arm64');
   });
 
-  it.each(IMAGES)('keeps the %s dev build cache wired', (image) => {
-    expect(source).toContain(`cache-from: type=registry,ref=kortix/kortix-${image}:dev-buildcache`);
-    expect(source).toContain(
-      `cache-to: type=registry,ref=kortix/kortix-${image}:dev-buildcache,mode=max`,
-    );
+  it.each(IMAGES)('keeps the %s dev build on the Blacksmith layer cache', (image) => {
+    const job = jobBlock(source, `build-${image}`);
+
+    expect(job).toContain('uses: useblacksmith/setup-docker-builder@v2');
+    expect(job).toContain(`cache-key: ${DOCKERFILE[image]}:linux/amd64`);
+    expect(job).toContain('uses: useblacksmith/build-push-action@v2');
+    expect(job).not.toContain('cache-to: type=registry');
+  });
+});
+
+describe('every Linux job keeps the Blacksmith runner kill switch', () => {
+  // A bare label — GitHub-hosted or Blacksmith — has no rollback lever. The
+  // wizard PR (#6901) shipped bare `blacksmith-4vcpu-*` labels and left three
+  // amd64 legs on `ubuntu-latest`; this pins the convention instead.
+  const workflows = readdirSync(resolve(import.meta.dirname, '../../.github/workflows')).filter(
+    (name) => name.endsWith('.yml'),
+  );
+  const tiered =
+    /^\$\{\{ vars\.CI_RUNNER_(S|M|L|L_ARM|M_2204) \|\| 'blacksmith-(2|4|8)vcpu-ubuntu-2(2|4)04(-arm)?' \}\}$/;
+
+  it.each(workflows)('%s', (name) => {
+    const source = read(name);
+    for (const [, value] of source.matchAll(/^ {4}runs-on: (.+)$/gm)) {
+      if (value === '${{ matrix.runner }}') continue;
+      expect(value, `runs-on in ${name}`).toMatch(tiered);
+    }
+    for (const [, value] of source.matchAll(/^ {12}runner: (.+)$/gm)) {
+      // macOS and Windows stay GitHub-hosted: free on this public repo, and
+      // Blacksmith's Windows pool is still in beta.
+      if (/^(macos|windows)-/.test(value)) continue;
+      expect(value, `matrix runner in ${name}`).toMatch(tiered);
+    }
   });
 });
 

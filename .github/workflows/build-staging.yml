@@ -19,12 +19,12 @@ name: Build Staging Artifacts
 # the arch nothing in Kortix cloud runs, at 4.4-9.4x per CPU-bound step. The API
 # job alone was 22-26 min and 97-98% of this workflow's wallclock.
 #
-# `ubuntu-24.04-arm` is a standard GitHub-hosted runner, free for public repos
-# (verified on this repo: aarch64, 4 vCPU, 15 GB, buildx `Platforms:
-# linux/arm64` with no QEMU). So each arch now builds NATIVELY on its own
-# runner, in parallel, and a merge job stitches the two digests into the same
-# multi-arch manifest under the same three tags as before. Tag semantics are
-# unchanged: `staging-<full-sha>`, `staging-latest`, `staging-<sha8>`.
+# Each arch now builds NATIVELY on its own runner (Blacksmith x64 for amd64,
+# Blacksmith arm64 for arm64 — see docs/runbooks/ci-runners.md; buildx
+# `Platforms: linux/arm64` with no QEMU), in parallel, and a merge job stitches
+# the two digests into the same multi-arch manifest under the same three tags
+# as before. Tag semantics are unchanged: `staging-<full-sha>`,
+# `staging-latest`, `staging-<sha8>`.
 #
 # Building the frontend per-arch also FIXES a real defect. `apps/web/Dockerfile`
 # copies a Next standalone bundle produced by `pnpm install` on the runner. With
@@ -35,9 +35,11 @@ name: Build Staging Artifacts
 #   @img+sharp-libvips-linux-x64@1.3.0 / @img+sharp-linux-x64@0.35.3 (no arm64)
 # Each arch now runs its own install+build, so the arm64 image gets arm64 sharp.
 #
-# Registry-backed BuildKit cache (`type=registry,mode=max`, one ref per image
-# per arch) makes an unchanged-dependency build reuse layers instead of
-# rebuilding from scratch — previously `CACHED` was 0 of 222 buildx nodes.
+# BuildKit layer cache lives on a Blacksmith sticky disk (setup-docker-builder,
+# one `cache-key` per image per platform, shared with deploy-dev/deploy-preview
+# builds of the same Dockerfile) so an unchanged-dependency build reuses layers
+# instead of rebuilding from scratch — before 2026-08-19 `CACHED` was 0 of 222
+# buildx nodes.
 
 on:
   push:
@@ -60,7 +62,7 @@ permissions:
 jobs:
   version:
     name: Compute staging version
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     outputs:
       sha: ${{ steps.v.outputs.sha }}
       sha8: ${{ steps.v.outputs.sha8 }}
@@ -105,24 +107,31 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
           - arch: arm64
             platform: linux/arm64
-            runner: blacksmith-4vcpu-ubuntu-2404-arm
+            runner: ${{ vars.CI_RUNNER_L_ARM || 'blacksmith-8vcpu-ubuntu-2404-arm' }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.sha }}
           submodules: false
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: docker/setup-buildx-action@v4
+      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
+        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
+        # shared by every workflow in this repo that builds the same image.
+        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
+        # local buildx builder, so the build still works, only cold.
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/api/Dockerfile:${{ matrix.platform }}
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push staging API by digest
         id: build
-        uses: docker/build-push-action@v7
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: apps/api/Dockerfile
@@ -131,8 +140,6 @@ jobs:
             SERVICE=apps/api
             KORTIX_VERSION=${{ needs.version.outputs.version }}
             KORTIX_COMMIT=${{ needs.version.outputs.sha }}
-          cache-from: type=registry,ref=kortix/kortix-api:staging-buildcache-${{ matrix.arch }}
-          cache-to: type=registry,ref=kortix/kortix-api:staging-buildcache-${{ matrix.arch }},mode=max
           outputs: type=image,name=kortix/kortix-api,push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         env:
@@ -151,7 +158,7 @@ jobs:
   merge-api:
     name: Publish API manifest (staging)
     needs: [version, build-api]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -194,23 +201,30 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
           - arch: arm64
             platform: linux/arm64
-            runner: blacksmith-4vcpu-ubuntu-2404-arm
+            runner: ${{ vars.CI_RUNNER_L_ARM || 'blacksmith-8vcpu-ubuntu-2404-arm' }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.sha }}
           submodules: false
-      - uses: docker/setup-buildx-action@v4
+      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
+        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
+        # shared by every workflow in this repo that builds the same image.
+        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
+        # local buildx builder, so the build still works, only cold.
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/llm-gateway/Dockerfile:${{ matrix.platform }}
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push staging gateway by digest
         id: build
-        uses: docker/build-push-action@v7
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: apps/llm-gateway/Dockerfile
@@ -218,8 +232,6 @@ jobs:
           build-args: |
             KORTIX_VERSION=${{ needs.version.outputs.version }}
             KORTIX_COMMIT=${{ needs.version.outputs.sha }}
-          cache-from: type=registry,ref=kortix/kortix-gateway:staging-buildcache-${{ matrix.arch }}
-          cache-to: type=registry,ref=kortix/kortix-gateway:staging-buildcache-${{ matrix.arch }},mode=max
           outputs: type=image,name=kortix/kortix-gateway,push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         env:
@@ -238,7 +250,7 @@ jobs:
   merge-gateway:
     name: Publish gateway manifest (staging)
     needs: [version, build-gateway]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -284,10 +296,10 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
           - arch: arm64
             platform: linux/arm64
-            runner: blacksmith-4vcpu-ubuntu-2404-arm
+            runner: ${{ vars.CI_RUNNER_L_ARM || 'blacksmith-8vcpu-ubuntu-2404-arm' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -313,20 +325,25 @@ jobs:
           NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.version.outputs.version }}
           NEXT_PUBLIC_KORTIX_COMMIT: ${{ needs.version.outputs.sha }}
           NEXT_OUTPUT: standalone
-      - uses: docker/setup-buildx-action@v4
+      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
+        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
+        # shared by every workflow in this repo that builds the same image.
+        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
+        # local buildx builder, so the build still works, only cold.
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/web/Dockerfile:${{ matrix.platform }}
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push staging frontend by digest
         id: build
-        uses: docker/build-push-action@v7
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: apps/web/Dockerfile
           platforms: ${{ matrix.platform }}
-          cache-from: type=registry,ref=kortix/kortix-frontend:staging-buildcache-${{ matrix.arch }}
-          cache-to: type=registry,ref=kortix/kortix-frontend:staging-buildcache-${{ matrix.arch }},mode=max
           outputs: type=image,name=kortix/kortix-frontend,push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         env:
@@ -345,7 +362,7 @@ jobs:
   merge-frontend:
     name: Publish frontend manifest (staging)
     needs: [version, build-frontend]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -381,7 +398,7 @@ jobs:
     name: Dispatch staging deploy
     needs: [version, merge-api, merge-gateway, merge-frontend]
     if: github.event_name == 'workflow_dispatch'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Start Deploy Staging for completed manual build
         env:

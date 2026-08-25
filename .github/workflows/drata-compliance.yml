@@ -35,7 +35,7 @@ jobs:
   drata-iac-results:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.results_run_id != '' }}
     name: sanitized-finding-details
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Print finding details
         if: ${{ inputs.results_run_id != '' }}
@@ -73,7 +73,7 @@ jobs:
 
   drata-iac-scan:
     name: compliance-as-code-action
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7

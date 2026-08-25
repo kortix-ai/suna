@@ -14,7 +14,7 @@ permissions:
 jobs:
   reconcile:
     name: Remove target-only shadow verification state
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     # The repair steps run with statement_timeout=0, so bound the job instead.
     timeout-minutes: 120
     environment: prod-use2-shadow
