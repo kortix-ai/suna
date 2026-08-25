@@ -224,6 +224,7 @@ interface NativeCatalogModel {
   id: string;
   name: string;
   released?: string | null;
+  status?: string;
   description?: string;
   family?: string;
   reasoning?: boolean;
@@ -301,11 +302,16 @@ export function nativeProviderListFromCatalog(
   const connectedIds = connectedGatewayProviderIdsFromSecretNames(secretNames);
   const defaults: Record<string, string> = {};
   const all = (catalog.providers ?? [])
-    .map((provider) =>
-      provider.id === ZEN_PROVIDER_ID && !connectedIds.has(ZEN_PROVIDER_ID)
-        ? { ...provider, models: (provider.models ?? []).filter(isFreeModel), keyless: true }
-        : { ...provider, keyless: false },
-    )
+    .map((provider) => {
+      // opencode hides every model models.dev marks `status: "deprecated"`
+      // (core/src/plugin/provider/opencode.ts: `enabled = status !==
+      // "deprecated"`), so the runtime never lists them. Dev 2026-08-25:
+      // 29 free Zen models in the box's models.json, 7 served.
+      const live = (provider.models ?? []).filter((model) => model.status !== 'deprecated');
+      return provider.id === ZEN_PROVIDER_ID && !connectedIds.has(ZEN_PROVIDER_ID)
+        ? { ...provider, models: live.filter(isFreeModel), keyless: true }
+        : { ...provider, models: live, keyless: false };
+    })
     .filter(
       (provider) =>
         (provider.keyless || connectedIds.has(provider.id)) &&

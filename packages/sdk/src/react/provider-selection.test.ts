@@ -259,6 +259,44 @@ describe('nativeProviderListFromCatalog (pre-runtime native picker source)', () 
     });
   });
 
+  // opencode drops every catalog model whose models.dev `status` is
+  // "deprecated" (core/src/plugin/provider/opencode.ts: `enabled = status !==
+  // "deprecated"`). Seen live on dev 2026-08-25: 29 free Zen models in the
+  // box's models.json, 7 served by the runtime — the other 22 were deprecated.
+  // The pre-boot source must apply the same rule for EVERY provider.
+  test('deprecated models are omitted, like the runtime does', () => {
+    const withDeprecated = {
+      ...catalog,
+      providers: [
+        {
+          id: 'anthropic',
+          name: 'Anthropic',
+          env: ['ANTHROPIC_API_KEY'],
+          models: [
+            { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', released: '2026-02-01', status: 'active' },
+            { id: 'claude-3-opus', name: 'Claude 3 Opus', released: '2024-02-29', status: 'deprecated' },
+            { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', released: '2025-10-01' },
+          ],
+        },
+        {
+          id: 'opencode',
+          name: 'OpenCode Zen',
+          env: ['OPENCODE_API_KEY'],
+          models: [
+            { id: 'hy3-free', name: 'Hy3 Free', released: '2026-07-06', cost: { input: 0, output: 0 } },
+            { id: 'glm-5-free', name: 'GLM 5 Free', released: '2026-02-11', cost: { input: 0, output: 0 }, status: 'deprecated' },
+          ],
+        },
+      ],
+    };
+    const list = nativeProviderListFromCatalog(withDeprecated as never, new Set(['ANTHROPIC_API_KEY']));
+    const ids = (list.all ?? []).map((p) => [p.id, Object.keys((p as { models: Record<string, unknown> }).models)]);
+    expect(ids).toEqual([
+      ['anthropic', ['claude-sonnet-4-6', 'claude-haiku-4-5']],
+      ['opencode', ['hy3-free']],
+    ]);
+  });
+
   test('never synthesizes the synthetic kortix provider', () => {
     const withKortix = {
       ...catalog,

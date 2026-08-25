@@ -12,6 +12,25 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-25 — session `native-catalog-status` — pre-boot picker hides deprecated models like the runtime — DONE
+
+**Files:** `react/provider-selection.ts` (`nativeProviderListFromCatalog` drops
+`status === 'deprecated'` for every provider) + test. Cross-package:
+`packages/llm-catalog` `CatalogModel.status?`, `apps/api`
+`runtime-catalog.ts` passthrough + test, `apps/web/scripts/enrich-llm-catalog-capabilities.ts`
+(baked path keeps the same field set). **Public surface: `CatalogModel` gains
+an optional field** (additive; type-surface snapshot unchanged).
+
+**What.** Dev verification of the merged picker (#6872) on a native project:
+pre-boot listed 16 OpenCode Zen free models, the running box served 7. The
+box's own `~/.cache/opencode/models.json` had all 29 — opencode hides the 22
+marked `status: "deprecated"` (core plugin: `enabled = status !== "deprecated"`).
+Our `/llm-catalog/providers` route whitelists model fields and dropped
+`status`, so the pre-boot source could not apply the rule. Now it can, for
+every provider, not only Zen.
+
+**Gates:** `pnpm typecheck` clean · `pnpm test` (see run) · type-surface pass.
+
 ### 2026-08-25 — session `native-picker-unify` — ONE native picker across sandbox states + no dead effort chip — DONE
 
 **Files:** `react/provider-selection.ts` (NEW pure `mergeNativeProviderLists`;

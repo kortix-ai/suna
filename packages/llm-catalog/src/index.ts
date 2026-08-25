@@ -223,6 +223,11 @@ export interface CatalogModel {
   id: string;
   name: string;
   released?: string | null;
+  // models.dev lifecycle marker, mirrored verbatim ("active" | "deprecated"
+  // | ... — models.dev adds values; absent means active). opencode hides
+  // `deprecated` entries in the sandbox; every Kortix picker source that
+  // stands in for the runtime must apply the same rule.
+  status?: string;
   // Capabilities mirrored from models.dev by
   // apps/web/scripts/enrich-llm-catalog-capabilities.ts.
   // Single source of truth — consumers derive flags from these, never hardcode.
