@@ -67,6 +67,7 @@ import { ComposerUnderbar } from './composer-underbar';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
+import { type ContextUsage, getContextUsage } from './context-ring';
 import { controlToOpenFor, SLASH_ACTIONS, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
 import { createSubmitLatch } from './submit-latch';
@@ -233,6 +234,14 @@ export interface SessionChatInputProps {
   };
 
   onContextClick?: () => void;
+  /**
+   * Open the host's Compact-session modal. Also gates the `/` palette's
+   * "Compact session" row — absent handler, absent row, so the palette never
+   * offers an action that would do nothing (see the `set-scope` note in
+   * `menus/slash-actions.ts`). Same contract for `onContextClick` and the
+   * "Show context" row.
+   */
+  onCompactClick?: () => void;
   inputSlot?: React.ReactNode;
 
   toolbarSlot?: React.ReactNode;
@@ -422,6 +431,7 @@ function ComposerImpl({
   providers,
   threadContext,
   onContextClick,
+  onCompactClick,
   inputSlot,
   toolbarSlot,
   underbarPlacement = 'below',
@@ -916,15 +926,66 @@ function ComposerImpl({
    * its props, and a fresh array every render would defeat that on every
    * keystroke.
    */
-  const slashActions = useMemo(
-    () =>
-      selectedAgent
-        ? SLASH_ACTIONS.map((action) =>
-            action.id === 'switch-agent' ? { ...action, value: selectedAgent } : action,
-          )
-        : SLASH_ACTIONS,
-    [selectedAgent],
+  /**
+   * The live context-window snapshot behind the "Show context" row — the ring
+   * icon reads percent + tone, the palette's detail pane renders the full
+   * `ContextUsageCard` from the rest. Two memos on purpose: `messages`
+   * changes identity on every streamed token, so the derivation re-runs
+   * cheaply — but the OBJECT is pinned to its scalar fields, which change
+   * only when a turn completes and reports usage. Without the pin, every
+   * token would ripple through `slashActions` into the memoized editor.
+   */
+  const rawContextUsage = useMemo(
+    () => getContextUsage(messages, models, availableSelectedModel),
+    [messages, models, availableSelectedModel],
   );
+  const contextUsage = useMemo<ContextUsage>(
+    () => ({
+      percent: rawContextUsage.percent,
+      tone: rawContextUsage.tone,
+      ratio: rawContextUsage.ratio,
+      limit: rawContextUsage.limit,
+      modelName: rawContextUsage.modelName,
+      breakdown: rawContextUsage.breakdown,
+    }),
+    // Deliberately keyed on the leaf scalars, not the objects: `breakdown` is
+    // rebuilt every derivation, so its identity would defeat the pin.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      rawContextUsage.percent,
+      rawContextUsage.tone,
+      rawContextUsage.ratio,
+      rawContextUsage.limit,
+      rawContextUsage.modelName,
+      rawContextUsage.breakdown.input,
+      rawContextUsage.breakdown.output,
+      rawContextUsage.breakdown.reasoning,
+      rawContextUsage.breakdown.cache,
+      rawContextUsage.breakdown.total,
+    ],
+  );
+
+  const slashActions = useMemo(() => {
+    // Rows whose handler this host did not provide are dropped, not shown
+    // dead — the `set-scope` lesson in `slash-actions.ts`: a row that
+    // highlights, offers "Use", and does nothing is worse than no row.
+    const available = SLASH_ACTIONS.filter((action) => {
+      if (action.id === 'compact-session') return Boolean(onCompactClick);
+      if (action.id === 'show-context') return Boolean(onContextClick);
+      return true;
+    });
+    return available.map((action) => {
+      if (action.id === 'switch-agent' && selectedAgent) {
+        return { ...action, value: selectedAgent };
+      }
+      // The ring icon (via `context`) plus the reading as the row's
+      // "current setting" text — same grammar as the agent row's value.
+      if (action.id === 'show-context') {
+        return { ...action, value: `${contextUsage.percent}%`, context: contextUsage };
+      }
+      return action;
+    });
+  }, [selectedAgent, onCompactClick, onContextClick, contextUsage]);
 
   const handleSelectAction = useCallback(
     (action: SlashAction) => {
@@ -947,9 +1008,15 @@ function ComposerImpl({
         case 'attach-file':
           fileInputRef.current?.click();
           return;
+        case 'compact-session':
+          onCompactClick?.();
+          return;
+        case 'show-context':
+          onContextClick?.();
+          return;
       }
     },
-    [cycleAgent],
+    [cycleAgent, onCompactClick, onContextClick],
   );
 
   const dispatchSubmission = useCallback(

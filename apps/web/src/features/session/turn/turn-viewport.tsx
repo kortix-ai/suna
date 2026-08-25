@@ -1,82 +1,101 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
- * Containment for a turn wrapper — and the one rule that makes it safe.
+ * Containment for a turn wrapper — and the two rules that make it safe.
  *
  * `content-visibility: auto` lets the browser skip layout and paint for a turn
  * that is off screen. That is a real saving here: the transcript grows by a
  * page of 50 messages (~25 turns) on every `loadOlder` pull and never sheds
  * them, so a long session can hold hundreds of turns in the DOM.
  *
- * The hazard is what a skipped turn claims to be tall. `contain-intrinsic-size:
- * auto <length>` uses the turn's LAST-REMEMBERED rendered size — but a turn only
- * earns one by being laid out at least once while it is NOT skipping. A session
- * opens scrolled to the end (`session-chat.tsx` sets `scrollTop` to the bottom
- * on mount), so on a fresh load every turn above the reader has never been laid
- * out, and every one of them is standing in at the flat 600px guess.
+ * RULE 1 — no skipping before a real layout. `contain-intrinsic-size:
+ * auto <length>` uses the turn's LAST-REMEMBERED rendered size — but a turn
+ * only earns one by being laid out at least once while it is NOT skipping. A
+ * session opens scrolled to the end, so on a fresh load every turn above the
+ * reader has never been laid out, and every one of them would stand in at the
+ * flat 600px guess; scrolling up, each correction lands ABOVE the viewport and
+ * throws the reader to a random place. So a turn gets no containment until it
+ * has been through one real layout.
  *
- * Scrolling UP, each turn crossing into the render zone snaps from 600px to its
- * real height — a turn with a long command output or a big tool block is
- * thousands of pixels, a short one is ~150. That correction lands ABOVE the
- * viewport, so it drags everything below it, including the reader. The error is
- * signed differently per turn, which is why it reads as being thrown to a random
- * place rather than as a consistent drift.
- *
- * Scroll anchoring is what normally absorbs a size change above the viewport,
- * and it structurally cannot help here: an anchor node has to have a box, and a
- * skipped subtree has none.
- *
- * Hence the rule below — a turn does not get to skip until it has been laid out
- * once:
- *
- * - `false` → no containment at all. The turn lays out normally and the browser
- *   records its real size.
- * - `true`, one frame later → containment, with an intrinsic size that is now
- *   EXACT. Every later skip/unskip cycle is a no-op for layout, and the reader
- *   never moves.
- *
- * The flip itself cannot jump, because the remembered size a turn skips to is
- * the size it already occupies. The cost is one ordinary layout per turn at
- * mount — bounded by the page size, paid once, and the same layout the browser
- * would have done anyway the first time the reader scrolled that far.
- *
- * Pure and DOM-free so this decision has a test that can fail: the flag comes
- * from a mount effect, and effects never commit under `renderToStaticMarkup` —
- * the only render this app can test.
+ * RULE 2 — no containment for an EMPTY turn, ever. A zero-height element can
+ * never intersect the viewport, so `content-visibility: auto` classifies it as
+ * "not relevant" and SKIPS it — permanently — and a skipped element with no
+ * last-remembered size stands in at the 600px guess. Worse than a static
+ * blank block, it oscillates: at 600px it intersects the viewport → becomes
+ * relevant → un-skips → lays out at its real 0px → stops intersecting → skips
+ * → 600px again. Every flip pumps `scrollHeight` by 600px, and the transcript's
+ * scroll physics (`use-auto-scroll.ts`) re-settle on each one — which the
+ * reader experienced as "I scroll down and get teleported back". (Observed
+ * with the empty turns a failed compaction leaves behind; the fix is generic
+ * because ANY empty turn reproduces it.) An empty turn also drops the spacing
+ * its caller gave it, so a run of invisible turns contributes 0px, not a
+ * stack of 48px margins.
  */
-export function turnContainmentClass(laidOutOnce: boolean): string {
-  return laidOutOnce ? '[contain-intrinsic-size:auto_600px] [content-visibility:auto]' : '';
+export type TurnMeasureState = 'unmeasured' | 'empty' | 'measured';
+
+/**
+ * The wrapper's full class list for a given measure state. Pure and DOM-free
+ * so both rules above have tests that can fail:
+ *
+ * - `unmeasured` → caller classes only (no containment yet — RULE 1).
+ * - `empty`      → no containment (RULE 2), and `mt-0` AFTER the caller's
+ *                  classes so tailwind-merge drops the caller's `mt-*`.
+ * - `measured`   → containment, with an intrinsic size it can now honour.
+ */
+export function turnViewportClassName(state: TurnMeasureState, className?: string): string {
+  return cn(
+    state === 'measured' && '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
+    className,
+    state === 'empty' && 'mt-0',
+  );
 }
 
 /**
- * False until the turn has been through one real layout, then true forever.
+ * `unmeasured` until the turn has been through one real layout, then
+ * `measured`/`empty` by whether it actually has a box — tracked for LIFE, not
+ * just once: a turn that later collapses to nothing (its messages render no
+ * visible content) must give containment back, or RULE 2's oscillation starts
+ * right where it stopped.
  *
- * Two nested frames, not one. A `requestAnimationFrame` scheduled from a passive
- * effect can still run before the browser has laid out and painted the commit
- * that effect belongs to; the second frame is the point where the layout is
- * guaranteed to have happened. Flipping early would hand the turn to
- * `content-visibility` with no remembered size — which is the exact bug this
- * exists to prevent, and it would fail silently, since a 600px guess looks like
- * a working page right up until the reader scrolls into it.
+ * Two nested frames before the first reading, same as always: a
+ * `requestAnimationFrame` scheduled from a passive effect can still run before
+ * the browser has laid out the commit that effect belongs to; the second frame
+ * is the point where the layout is guaranteed to have happened. The
+ * ResizeObserver then keeps the answer current — it fires only on real size
+ * changes, and `setState` to the same value is a React no-op, so steady state
+ * costs nothing.
+ *
+ * (While `measured` and skipped, the element reports its stand-in size — its
+ * remembered size, never 0 — so a skip alone can never flip the state back to
+ * `empty`. Only a real re-layout at zero height can.)
  */
-export function useLaidOutOnce(): boolean {
-  const [laidOutOnce, setLaidOutOnce] = useState(false);
+export function useTurnMeasureState(ref: React.RefObject<HTMLDivElement | null>): TurnMeasureState {
+  const [state, setState] = useState<TurnMeasureState>('unmeasured');
 
   useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
     let inner = 0;
+    let ro: ResizeObserver | null = null;
+    const measure = () => setState(el.offsetHeight > 0 ? 'measured' : 'empty');
     const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => setLaidOutOnce(true));
+      inner = requestAnimationFrame(() => {
+        measure();
+        ro = new ResizeObserver(measure);
+        ro.observe(el);
+      });
     });
     return () => {
       cancelAnimationFrame(outer);
       cancelAnimationFrame(inner);
+      ro?.disconnect();
     };
-  }, []);
+  }, [ref]);
 
-  return laidOutOnce;
+  return state;
 }
 
 /**
@@ -92,10 +111,11 @@ export function TurnViewport({
   className?: string;
   children?: React.ReactNode;
 }) {
-  const laidOutOnce = useLaidOutOnce();
+  const ref = useRef<HTMLDivElement>(null);
+  const measureState = useTurnMeasureState(ref);
 
   return (
-    <div data-turn-id={turnId} className={cn(turnContainmentClass(laidOutOnce), className)}>
+    <div ref={ref} data-turn-id={turnId} className={turnViewportClassName(measureState, className)}>
       {children}
     </div>
   );

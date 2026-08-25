@@ -201,7 +201,7 @@ function SessionRowImpl({
       <label
         className={cn(
           'hover:bg-muted/40 flex h-11 w-full cursor-pointer items-center gap-3 rounded-md px-3 text-left',
-          'transition-colors duration-150',
+          'transition-none',
           'has-disabled:pointer-events-none has-disabled:opacity-50',
           selected && 'bg-primary/[0.06]',
         )}
@@ -242,7 +242,7 @@ function SessionRowImpl({
             produce button-in-button. */}
         <div
           aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`}
-          className="hover:bg-muted/40 group/row flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors duration-150"
+          className="hover:bg-muted/40 group/row flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-none"
         >
           {identity}
 

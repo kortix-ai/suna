@@ -23,7 +23,6 @@ import {
   CheckIcon,
   CaretDownIcon as ChevronDown,
   ArrowSquareOutIcon as ExternalLink,
-  StackIcon as Layers,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
@@ -43,6 +42,8 @@ import {
 import { projectQueueRows } from './queue-projection';
 import { createQueueUndoAction } from './queued-message-restore';
 import { ActivityBurst } from './turn/activity-burst';
+import { CompactionFailedRow, CompactionMarker } from './turn/compaction-card';
+import { compactionTurnInfo } from './turn/compaction-state';
 import { ExpandableOutput } from './turn/expandable-output';
 import { chatPlanAnchorId, isPlanWriteTool } from './turn/plan-anchor';
 import {
@@ -64,7 +65,7 @@ import { Composer as SessionChatInput } from '@/features/session/composer/compos
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
-import { SessionConnectCard } from '@/features/session/session-connect-card';
+import { CompactModal } from '@/features/session/header/compact-modal';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import {
   ConnectProviderDialog,
@@ -79,6 +80,7 @@ import {
 } from '@/features/session/question-prompt';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
+import { SessionConnectCard } from '@/features/session/session-connect-card';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -168,6 +170,7 @@ import {
   isTextPart,
   isToolPart,
   shouldShowToolPart,
+  unwrapError,
 } from '@/ui';
 import { abortErrorReason, isAbortError } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
@@ -835,6 +838,15 @@ function SessionTurnImpl({
   // and it is what removes the "last turn shimmers for ever" symptom the raw
   // slot's dropped end-of-turn frames caused here.
   const working = isWorkingTurn && sessionWorking;
+  // A compaction turn's message-state — `inFlight` (summary open: not
+  // completed, not errored) is the half of "is this compaction running" the
+  // working projection cannot see, because it deliberately knows nothing
+  // about compaction.
+  const compactionInfo = useMemo(
+    () => (isCompaction ? compactionTurnInfo(turn) : null),
+    [isCompaction, turn],
+  );
+  const compactionInFlight = compactionInfo?.inFlight ?? false;
   // The bubble is the queue entry: while its inbox row is live, the row's
   // state decides the controls in the bubble's meta row.
   const rowState: QueuedPromptState | null = !queueRow
@@ -1451,20 +1463,51 @@ function SessionTurnImpl({
   // Compaction mode — render as a distinct card, no user bubble / logo / steps
   // ============================================================================
 
-  if (isCompaction && !working && response) {
+  // While `working`, the summary is still streaming: render the SAME card with
+  // the streaming markdown inside it, instead of falling through to the normal
+  // turn renderer (which streamed the summary as bare prose and then swapped
+  // shape into this card at the end). A finished compaction with an empty
+  // response (e.g. aborted before any token) still falls through, as before.
+  // `working` (the projection) OR the summary message's own open state: the
+  // projection treats compaction as "not a turn", so around stream start/end
+  // the two disagree for a few frames — and classifying by projection alone
+  // flapped this turn between renders, a height oscillation at the end of the
+  // transcript that yanked the reader's scroll position around. See
+  // `compactionTurnInfo.inFlight`.
+  //
+  // The marker is the WHOLE render for a compaction turn — divider pill while
+  // running, pill-with-disclosure once landed. `hasContent` keeps a landed
+  // compaction that carries only a `compaction` part (no summary text) on the
+  // marker instead of misfiling it as a failed attempt.
+  if (isCompaction) {
+    const compactionRunning = working || compactionInFlight;
+    if (compactionRunning || response || compactionInfo?.hasContent) {
+      return (
+        <div className="group/turn">
+          <CompactionMarker running={compactionRunning} summary={response} />
+        </div>
+      );
+    }
+    // An attempt that produced nothing (errored, or stopped before the first
+    // token) collapses to one slim row. Falling through to the normal turn
+    // renderer drew a full-height turn scaffold per attempt — a retry loop
+    // left a stack of near-empty screens with one error line each.
+    //
+    // `getTurnError`/`deriveTurnErrorAbortState` read only assistantMessages,
+    // which a SYNTHETIC compaction turn (summary message as `userMessage`,
+    // empty assistantMessages) has none of — the helper's own `error` is the
+    // fallback that keeps the row's error text for those.
+    const compactionRawError = compactionInfo?.error;
+    const compactionErrorText =
+      turnError ?? (compactionRawError != null ? unwrapError(compactionRawError) : undefined);
+    const compactionIsAbort =
+      turnErrorIsAbort ||
+      (typeof compactionRawError === 'object' &&
+        compactionRawError !== null &&
+        isAbortError(compactionRawError));
     return (
       <div className="group/turn">
-        <div className="border-border/60 bg-card/50 overflow-hidden rounded-md border">
-          <div className="border-border/40 bg-muted/40 flex items-center gap-2 border-b px-4 py-2.5">
-            <Layers className="text-muted-foreground/70 size-3.5" />
-            <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
-              Compaction
-            </span>
-          </div>
-          <div className="text-muted-foreground/90 [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_strong]:text-foreground/90 px-4 py-3 text-sm">
-            <SandboxUrlDetector content={response} isStreaming={false} />
-          </div>
-        </div>
+        <CompactionFailedRow error={compactionErrorText} isAbort={compactionIsAbort} />
       </div>
     );
   }
@@ -1897,26 +1940,6 @@ interface SessionChatProps {
   deferComposerFocus?: boolean;
 }
 
-/**
- * The "Compaction" rule that marks where history was summarised. Rendered in two
- * places (the optimistic pass and the first turn after a landed compaction);
- * they were byte-identical copies, so they live here to stay that way.
- */
-function CompactionDivider(): React.ReactElement {
-  return (
-    <div className="my-3 flex items-center gap-3 py-4">
-      <div className="bg-border h-px flex-1" />
-      <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-full border px-3 py-1.5">
-        <Layers className="text-muted-foreground size-3.5" />
-        <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-          Compaction
-        </span>
-      </div>
-      <div className="bg-border h-px flex-1" />
-    </div>
-  );
-}
-
 export function SessionChat({
   sessionId,
   projectSessionId,
@@ -1973,6 +1996,9 @@ export function SessionChat({
 
   // ---- Context modal ----
   const [contextModalOpen, setContextModalOpen] = useState(false);
+  // The composer's `/compact` row opens this instance; the header keeps its
+  // own independently-stated one (two mounted Modals, at most one ever open).
+  const [compactModalOpen, setCompactModalOpen] = useState(false);
 
   // ---- Question prompt ref + action state (for unified send button) ----
   const questionPromptRef = useRef<QuestionPromptHandle>(null);
@@ -3308,13 +3334,12 @@ export function SessionChat({
     },
     [sessionState, removeQuestion, abortSession, suppressQuestionFor, issueSessionCancel],
   );
+  // The single classifier (`compactionTurnInfo`) rather than an inline scan:
+  // it also sees SYNTHETIC compaction turns (summary message as userMessage),
+  // so a failed attempt's turn suppresses the optimistic "Compacting…" marker
+  // instead of leaving it shimmering beside the failure row.
   const hasCompactionTurn = useMemo(
-    () =>
-      turns.some(
-        (turn) =>
-          turn.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
-          turn.assistantMessages.some((msg) => msg.parts.some((p) => p.type === 'compaction')),
-      ),
+    () => turns.some((turn) => compactionTurnInfo(turn).isCompaction),
     [turns],
   );
 
@@ -4328,6 +4353,7 @@ export function SessionChat({
   );
 
   const handleContextClick = useCallback(() => setContextModalOpen(true), []);
+  const handleCompactClick = useCallback(() => setCompactModalOpen(true), []);
 
   const handleCustomAnswer = useCallback((text: string) => {
     questionPromptRef.current?.submitCustomAnswer(text);
@@ -4670,6 +4696,13 @@ export function SessionChat({
         allSessions={allSessions}
       />
 
+      {/* Compact modal — opened from the composer's `/` palette */}
+      <CompactModal
+        sessionId={sessionId}
+        open={compactModalOpen}
+        onOpenChange={setCompactModalOpen}
+      />
+
       {/* Chat and the action panel share one row — see `session-body.tsx`. The
           instant shell renders the SAME row, so nothing moves at the crossfade.
           Self-gates to null on mobile and outside a SessionPanelProvider (the
@@ -4737,25 +4770,6 @@ export function SessionChat({
                 className={SESSION_TRANSCRIPT_CLASS}
               >
                 <div className="flex min-w-0 flex-col">
-                  {isOptimisticCompacting && !hasCompactionTurn && (
-                    <div className="mt-12 space-y-3">
-                      <CompactionDivider />
-                      <div className="flex items-center gap-3">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src="/kortix-logomark-white.svg"
-                          alt="Kortix"
-                          className="h-[14px] w-auto shrink-0 invert dark:invert-0"
-                        />
-                        <div className="text-muted-foreground text-sm">
-                          {tHardcodedUi.raw(
-                            'componentsSessionSessionChat.line5954JsxTextCompactingSession',
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Turn-based message rendering.
                     ToolActivateContext makes inline tool rows open the side
                     panel (Actions) focused on that tool, instead of expanding. */}
@@ -4826,11 +4840,53 @@ export function SessionChat({
                         />
                       )}
                     {turns.map((turn, turnIndex) => {
-                      // Check if this turn is a compaction summary
-                      const hasCompaction =
-                        turn.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
-                        turn.assistantMessages.some((msg) =>
-                          msg.parts.some((p) => p.type === 'compaction'),
+                      // Check if this turn is a compaction summary — and
+                      // whether it actually PRODUCED one. A failed/aborted
+                      // attempt (compaction-flagged, no content, not the
+                      // working turn) renders as one slim row, draws no
+                      // divider, and stacks tight against a neighbouring
+                      // failed attempt.
+                      const compaction = compactionTurnInfo(turn);
+                      const hasCompaction = compaction.isCompaction;
+                      const isTurnWorking =
+                        lastTurnWorking &&
+                        turn.userMessage.info.id === workingTurn.workingTurnId;
+                      // `inFlight` (message state) alongside the projection:
+                      // classifying by projection alone flipped a streaming
+                      // compaction to "failed" for the frames where the two
+                      // disagree, popping the divider in and out — a layout
+                      // bounce right where the reader is looking.
+                      const isFailedCompaction =
+                        hasCompaction &&
+                        !compaction.hasContent &&
+                        !compaction.inFlight &&
+                        !isTurnWorking;
+                      const failedCompactionAt = (other: Turn | null): boolean => {
+                        if (!other) return false;
+                        const info = compactionTurnInfo(other);
+                        return (
+                          info.isCompaction &&
+                          !info.hasContent &&
+                          !info.inFlight &&
+                          !(
+                            lastTurnWorking &&
+                            other.userMessage.info.id === workingTurn.workingTurnId
+                          )
+                        );
+                      };
+                      const prevIsFailedCompaction = failedCompactionAt(
+                        turnIndex > 0 ? turns[turnIndex - 1] : null,
+                      );
+                      // A retry burst collapses to ONE visible row: only the
+                      // LAST failed attempt of a consecutive run renders its
+                      // failure line. The earlier attempts keep their
+                      // TurnViewport (stable keys, scroll anchors) but render
+                      // no content — and an empty TurnViewport now costs 0px
+                      // (see turn-viewport.tsx RULE 2).
+                      const suppressedFailedCompaction =
+                        isFailedCompaction &&
+                        failedCompactionAt(
+                          turnIndex < turns.length - 1 ? turns[turnIndex + 1] : null,
                         );
 
                       // Notification-only early-return removed: it rendered the
@@ -4851,18 +4907,26 @@ export function SessionChat({
                           // another pending turn sits close to it, like a
                           // list of what is waiting — not a turn's width
                           // apart as if each had been answered in between.
+                          // Failed compaction rows stack the same way: a
+                          // retry loop reads as a tight list of one-liners,
+                          // not attempts a full turn's height apart.
                           className={
                             turnIndex === 0
                               ? ''
-                              : lastTurnWorking &&
-                                  pendingTurnIds.has(turn.userMessage.info.id) &&
-                                  pendingTurnIds.has(turns[turnIndex - 1].userMessage.info.id)
+                              : (lastTurnWorking &&
+                                    pendingTurnIds.has(turn.userMessage.info.id) &&
+                                    pendingTurnIds.has(
+                                      turns[turnIndex - 1].userMessage.info.id,
+                                    )) ||
+                                  (isFailedCompaction && prevIsFailedCompaction)
                                 ? 'mt-3'
                                 : 'mt-12'
                           }
                         >
-                          {/* Compaction divider — shown before the first turn after compaction */}
-                          {hasCompaction && <CompactionDivider />}
+                          {/* No separate divider for compaction turns — the
+                              CompactionMarker rendered by SessionTurn IS the
+                              divider (rule–pill–rule), through every phase. */}
+                          {suppressedFailedCompaction ? null : (
                           <SessionTurn
                             turn={turn}
                             isLast={turn.userMessage.info.id === lastUserMessageId}
@@ -4911,10 +4975,22 @@ export function SessionChat({
                               promptInbox.prompts.length > 0
                             }
                           />
+                          )}
                         </TurnViewport>
                       );
                     })}
                   </ToolActivateContext.Provider>
+
+                  {/* Optimistic compaction — the SAME marker the compaction
+                      turn renders, in the SAME place the real turn will mount
+                      (the end of the transcript, where the newest message
+                      lands), so the swap to the real turn is an in-place
+                      replacement rather than a cross-screen teleport. */}
+                  {isOptimisticCompacting && !hasCompactionTurn && (
+                    <div className={turns.length > 0 ? 'mt-12' : 'mt-2'}>
+                      <CompactionMarker running />
+                    </div>
+                  )}
 
                   {/* Busy indicator when no turns yet but session is busy */}
                   {commandError && (
@@ -5129,6 +5205,7 @@ export function SessionChat({
               modelsLoading={providersLoading}
               threadContext={threadContext}
               onContextClick={handleContextClick}
+              onCompactClick={handleCompactClick}
               replyTo={replyTo}
               onClearReply={handleClearReply}
               // Only lock the input into question-answer mode while the session is
