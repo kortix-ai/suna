@@ -58,10 +58,35 @@ function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
 }
 
 /** The newest member of a group; ties and undated models resolve by catalog order. */
+/**
+ * Amazon Bedrock lists most current models three ways: the bare in-region id
+ * (`openai.gpt-5.6-luna`), regional cross-region inference profiles
+ * (`us.` / `eu.` / `jp.` / `apac.` / `au.`), and a `global.` profile — same
+ * family, same release date. For these models Bedrock REFUSES the bare id
+ * ("Invocation of model ID … with on-demand throughput isn't supported. Retry
+ * your request with the ID or ARN of an inference profile"), verified live
+ * 2026-08-25 on gpt-5.6-luna/terra and grok-4.6. Rank: global 2 > regional 1
+ * > bare 0. A provider prefix (`amazon-bedrock/…`) is tolerated.
+ */
+export function bedrockInferenceProfileRank(id: string): 0 | 1 | 2 {
+  const bare = id.includes('/') ? id.slice(id.indexOf('/') + 1) : id;
+  if (bare.startsWith('global.')) return 2;
+  if (/^(us|eu|jp|apac|au|ca|sa|us-gov)\./.test(bare)) return 1;
+  return 0;
+}
+
+// Newest first; on a release-date tie the Bedrock inference profile wins over
+// the bare id (see bedrockInferenceProfileRank) — otherwise the FIRST listed
+// id won, and models.dev lists the bare id first.
 function newest(models: EnablementCandidate[]): EnablementCandidate {
-  return models.reduce((best, model) =>
-    (releasedAt(model) ?? 0) > (releasedAt(best) ?? 0) ? model : best,
-  );
+  return models.reduce((best, model) => {
+    const a = releasedAt(model) ?? 0;
+    const b = releasedAt(best) ?? 0;
+    if (a !== b) return a > b ? model : best;
+    return bedrockInferenceProfileRank(model.id) > bedrockInferenceProfileRank(best.id)
+      ? model
+      : best;
+  });
 }
 
 /**

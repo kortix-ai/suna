@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { type EnablementCandidate, defaultEnabledModelIds } from './enablement';
+import {
+  type EnablementCandidate,
+  bedrockInferenceProfileRank,
+  defaultEnabledModelIds,
+} from './enablement';
 
 const NOW = new Date('2026-07-29T00:00:00Z');
 
@@ -65,5 +69,49 @@ describe('defaultEnabledModelIds', () => {
 
   test('is empty for an empty catalog', () => {
     expect(ids([])).toEqual([]);
+  });
+});
+
+describe('Bedrock inference profiles win a family tie', () => {
+  // models.dev lists the bare in-region id AND its cross-region inference
+  // profile(s) with the same family and release date. Bedrock refuses the bare
+  // id for these models ("Invocation of model ID openai.gpt-5.6-luna with
+  // on-demand throughput isn't supported") — so a tie must never surface it.
+  test('global. beats the bare in-region id; us./eu. beat bare too', () => {
+    expect(
+      ids([
+        { id: 'amazon-bedrock/openai.gpt-5.6-luna', family: 'gpt-luna', released: '2026-07-09', provider: 'amazon-bedrock' },
+        { id: 'amazon-bedrock/global.openai.gpt-5.6-luna', family: 'gpt-luna', released: '2026-07-09', provider: 'amazon-bedrock' },
+        { id: 'amazon-bedrock/anthropic.claude-fable-5', family: 'claude-fable', released: '2026-06-09', provider: 'amazon-bedrock' },
+        { id: 'amazon-bedrock/us.anthropic.claude-fable-5', family: 'claude-fable', released: '2026-06-09', provider: 'amazon-bedrock' },
+      ]),
+    ).toEqual(['amazon-bedrock/global.openai.gpt-5.6-luna', 'amazon-bedrock/us.anthropic.claude-fable-5']);
+  });
+
+  test('global. beats a regional profile on a tie', () => {
+    expect(
+      ids([
+        { id: 'amazon-bedrock/us.anthropic.claude-fable-5', family: 'claude-fable', released: '2026-06-09', provider: 'amazon-bedrock' },
+        { id: 'amazon-bedrock/global.anthropic.claude-fable-5', family: 'claude-fable', released: '2026-06-09', provider: 'amazon-bedrock' },
+      ]),
+    ).toEqual(['amazon-bedrock/global.anthropic.claude-fable-5']);
+  });
+
+  test('a newer release still wins over an older profile — the rank only breaks ties', () => {
+    expect(
+      ids([
+        { id: 'amazon-bedrock/global.openai.gpt-5.5', family: 'gpt', released: '2026-04-23', provider: 'amazon-bedrock' },
+        { id: 'amazon-bedrock/openai.gpt-5.6-sol', family: 'gpt', released: '2026-07-09', provider: 'amazon-bedrock' },
+      ]),
+    ).toEqual(['amazon-bedrock/openai.gpt-5.6-sol']);
+  });
+
+  test('bedrockInferenceProfileRank: global > regional > bare, provider prefix tolerated', () => {
+    expect(bedrockInferenceProfileRank('global.openai.gpt-5.6-sol')).toBe(2);
+    expect(bedrockInferenceProfileRank('amazon-bedrock/global.openai.gpt-5.6-sol')).toBe(2);
+    expect(bedrockInferenceProfileRank('us.anthropic.claude-fable-5')).toBe(1);
+    expect(bedrockInferenceProfileRank('apac.anthropic.claude-sonnet-5')).toBe(1);
+    expect(bedrockInferenceProfileRank('openai.gpt-5.6-sol')).toBe(0);
+    expect(bedrockInferenceProfileRank('zai.glm-5')).toBe(0);
   });
 });

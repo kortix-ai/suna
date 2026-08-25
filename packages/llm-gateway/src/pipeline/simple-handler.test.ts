@@ -138,6 +138,104 @@ describe('simple gateway pipeline', () => {
     expect(traces[0]?.response).toBeUndefined();
   });
 
+  test('retries a bare Bedrock id with its inference profile when Bedrock refuses on-demand invocation', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const bedrockGrok: UpstreamDescriptor = {
+      ...primary,
+      provider: 'amazon-bedrock',
+      kind: 'bedrock',
+      resolvedModel: 'xai.grok-4.6',
+    };
+    const urls: string[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: { ...hooks(usage, traces), resolveUpstream: async () => [bedrockGrok] },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async (input) => {
+          const url = typeof input === 'string' ? input : ((input as { url?: string }).url ?? String(input));
+          urls.push(url);
+          if (url.includes('/model/xai.grok-4.6/')) {
+            return new Response(
+              JSON.stringify({
+                message:
+                  'Invocation of model ID xai.grok-4.6 with on-demand throughput isn’t supported. Retry your request with the ID or ARN of an inference profile that contains this model.',
+              }),
+              { status: 400, headers: { 'content-type': 'application/json' } },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              output: { message: { role: 'assistant', content: [{ text: 'pong' }] } },
+              stopReason: 'end_turn',
+              usage: { inputTokens: 12, outputTokens: 1, totalTokens: 13 },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        },
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({
+          model: 'amazon-bedrock/xai.grok-4.6',
+          messages: [{ role: 'user', content: 'Reply with the single word pong.' }],
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { choices: Array<{ message: { content: string } }> };
+    expect(body.choices[0]?.message.content).toBe('pong');
+    expect(urls.map((u) => new URL(u).pathname.replace(/^.*\/model\//, '/model/'))).toEqual([
+      '/model/xai.grok-4.6/converse',
+      '/model/global.xai.grok-4.6/converse',
+    ]);
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({
+      status: 200,
+      ok: true,
+      resolvedModel: 'global.xai.grok-4.6',
+      attempts: 2,
+      candidatesTried: ['amazon-bedrock', 'amazon-bedrock:global.xai.grok-4.6'],
+    });
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ model: 'global.xai.grok-4.6' });
+  });
+
+  test('a Bedrock 400 that is NOT the on-demand refusal is passed through with no retry', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    let calls = 0;
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks(usage, traces),
+          resolveUpstream: async () => [
+            { ...primary, provider: 'amazon-bedrock', kind: 'bedrock', resolvedModel: 'openai.gpt-5.5' },
+          ],
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => {
+          calls += 1;
+          return new Response(JSON.stringify({ message: 'The provided model identifier is invalid.' }), {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          });
+        },
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({
+          model: 'amazon-bedrock/openai.gpt-5.5',
+          messages: [{ role: 'user', content: 'pong?' }],
+        }),
+      },
+    );
+    expect(calls).toBe(1);
+    expect(response.status).toBe(400);
+    expect(traces[0]).toMatchObject({ attempts: 1, candidatesTried: ['amazon-bedrock'] });
+  });
+
   test('settles one successful response exactly once', async () => {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
