@@ -453,6 +453,12 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        # Pins a buildx that honours `imagetools inspect --format`. The runner
+        # image's bundled buildx returned the human-readable listing instead
+        # (Blacksmith ubuntu-2404, 2026-08-25, run 32905182332), which broke
+        # the digest resolve and skipped SBOM + signing for that dev image.
+        uses: docker/setup-buildx-action@v4
       - name: Resolve image digest
         id: digest
         run: |

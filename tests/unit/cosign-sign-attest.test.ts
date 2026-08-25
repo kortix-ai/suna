@@ -113,4 +113,21 @@ describe("keyless image signing", () => {
       supplyChain.indexOf("bash scripts/ci/cosign-sign-attest.sh"),
     );
   });
+
+  it("pins buildx before resolving the digest the signer attests", () => {
+    // The runner image's bundled buildx is not a contract: on Blacksmith's
+    // ubuntu-2404 image `imagetools inspect --format` returned the human
+    // listing (run 32905182332), the digest step failed, and SBOM + signing
+    // were skipped for that dev image.
+    const yaml = readFileSync(workflow, "utf8");
+    const supplyChain = yaml.slice(
+      yaml.indexOf("  supply-chain:"),
+      yaml.indexOf("  migrate-db:"),
+    );
+    const buildx = supplyChain.indexOf("uses: docker/setup-buildx-action@v4");
+    const resolve = supplyChain.indexOf("imagetools inspect \"$IMAGE\" --format '{{.Manifest.Digest}}'");
+    expect(buildx).toBeGreaterThan(-1);
+    expect(resolve).toBeGreaterThan(-1);
+    expect(buildx).toBeLessThan(resolve);
+  });
 });
