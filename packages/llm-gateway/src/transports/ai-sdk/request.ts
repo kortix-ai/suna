@@ -738,14 +738,19 @@ function isBedrockClaudeModel(resolvedModel: string | undefined): boolean {
 }
 
 // OpenAI models on Bedrock (`global.openai.gpt-5.6-*`, `openai.gpt-5.5`,
-// `openai.gpt-oss-*`) are served by Bedrock core (Converse), where the OpenAI
-// reasoning knob travels as `additionalModelRequestFields.reasoning_effort` —
-// the exact field @ai-sdk/amazon-bedrock 5.0.59 itself emits for
-// `reasoningConfig.maxReasoningEffort` once it recognises an OpenAI model id
-// (its `isOpenAIModel` branch), and what opencode sends natively for the same
-// models. Written as the raw field rather than through `maxReasoningEffort`:
-// the package's enum is `low|medium|high|xhigh|max` and rejects `none`, which
-// GPT-5.6 publishes as a real tier (models.dev `reasoning_options`). Before
+// `openai.gpt-oss-*`) are served by Bedrock core (Converse). The reasoning
+// knob travels as `additionalModelRequestFields.reasoning: { effort }` — the
+// OpenAI Responses shape. VERIFIED against real Bedrock (us-west-2,
+// 2026-08-25, global.openai.gpt-5.6-sol): `reasoning.effort` returns 200 for
+// every published tier (none/low/medium/high/xhigh/max) and 400
+// `unsupported_value` for an unpublished one (`minimal`); the flat
+// `reasoning_effort` that @ai-sdk/amazon-bedrock 5.0.59 emits for its
+// `isOpenAIModel` branch is REJECTED by GPT-5.6 with 400 `unknown_parameter`
+// (gpt-oss-120b accepts both shapes, so the nested one is the universal
+// OpenAI-on-Bedrock wire). `reasoningEffort`, `reasoningConfig` and
+// `thinking` are all `unknown_parameter` too. `summary: 'auto'` makes the
+// model return its reasoning as a content block (the thinking the composer
+// shows), matching opencode's `reasoningSummary: 'auto'` for OpenAI. Before
 // this branch existed the bedrock adapter returned `{}` for every non-Claude
 // model, so a client's `reasoning_effort` (or the project's configured
 // default) was silently dropped for GPT-5.6 on Bedrock.
@@ -1081,7 +1086,9 @@ const bedrockAdapter: ProviderAdapter = {
     // `reasoningConfig` are Claude-Converse-only and 403 here.
     if (isBedrockOpenAiModel(req.resolvedModel)) {
       if (typeof req.reasoningEffort === 'string') {
-        options.additionalModelRequestFields = { reasoning_effort: req.reasoningEffort };
+        options.additionalModelRequestFields = {
+          reasoning: { effort: req.reasoningEffort, summary: 'auto' },
+        };
       }
       return options;
     }

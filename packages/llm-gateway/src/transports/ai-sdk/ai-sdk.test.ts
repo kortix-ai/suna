@@ -720,14 +720,15 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
 
   const BEDROCK_OPENAI = 'global.openai.gpt-5.6-sol';
 
-  it('bedrock: OpenAI-on-Bedrock forwards every published effort tier as additionalModelRequestFields.reasoning_effort — never the Claude reasoningConfig/cachePoint', () => {
+  it('bedrock: OpenAI-on-Bedrock forwards every published effort tier as additionalModelRequestFields.reasoning.effort (the shape real Bedrock accepts; flat reasoning_effort is 400 unknown_parameter) — never the Claude reasoningConfig/cachePoint', () => {
     for (const effort of ['none', 'low', 'medium', 'high', 'xhigh', 'max']) {
       const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'bedrock', {
         resolvedModel: BEDROCK_OPENAI,
       });
       expect((args.providerOptions as any)?.bedrock).toEqual({
-        additionalModelRequestFields: { reasoning_effort: effort },
+        additionalModelRequestFields: { reasoning: { effort, summary: 'auto' } },
       });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields?.reasoning_effort).toBeUndefined();
       expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
       expect(args.providerOptions).not.toHaveProperty('anthropic');
     }
@@ -738,7 +739,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
       resolvedModel: BEDROCK_OPENAI,
     });
     expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
-      reasoning_effort: 'xhigh',
+      reasoning: { effort: 'xhigh', summary: 'auto' },
     });
   });
 
@@ -754,7 +755,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
       model,
     });
     expect((ok.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
-      reasoning_effort: 'xhigh',
+      reasoning: { effort: 'xhigh', summary: 'auto' },
     });
     const dropped = buildAiSdkArgs({ messages: [], reasoning_effort: 'minimal' }, 'bedrock', {
       resolvedModel: BEDROCK_OPENAI,
@@ -775,7 +776,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
         resolvedModel: id,
       });
       expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
-        reasoning_effort: 'high',
+        reasoning: { effort: 'high', summary: 'auto' },
       });
     }
     for (const id of ['us.amazon.nova-micro-v1:0', 'xai.grok-4.6']) {
