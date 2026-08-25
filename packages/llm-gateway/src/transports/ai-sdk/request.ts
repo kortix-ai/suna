@@ -11,7 +11,6 @@ import {
   tool,
 } from 'ai';
 import type { UpstreamDescriptor } from '../../domain';
-import { UnsupportedRequestParamError } from '../../errors';
 import { reasoningEffort as reasoningEffortFromBody } from '../route-kind';
 import {
   type AiSdkFamily,
@@ -1097,20 +1096,13 @@ const bedrockAdapter: ProviderAdapter = {
     // never attach it for them. Their own effort wires are not mapped yet
     // (Nova 2 / Grok 4.6 publish reasoning_options on models.dev; the Converse
     // field shape for them is unverified), so an effort that reaches here is
-    // refused loudly instead of silently stripped — see
-    // UnsupportedRequestParamError.
-    if (!isBedrockClaudeModel(req.resolvedModel)) {
-      // Only a KNOWN id is refused — an unresolved model (no id at all) keeps
-      // the historical permissive path, exactly like the capability clamp.
-      if (req.resolvedModel && typeof req.reasoningEffort === 'string') {
-        throw new UnsupportedRequestParamError(
-          'reasoning_effort',
-          req.resolvedModel ?? 'unknown',
-          'amazon-bedrock',
-        );
-      }
-      return options;
-    }
+    // DROPPED. Not refused: #6887 briefly answered 400 `unsupported_param`
+    // here, and the first turn of a fresh project on dev proved that opencode
+    // sends a default effort for every reasoning-capable model (the user never
+    // picked a tier) — refusing the parameter refused the model, including
+    // the managed Grok default. Map the wire when it is verified; until then
+    // the model runs at its own default.
+    if (!isBedrockClaudeModel(req.resolvedModel)) return options;
     const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
     // Adaptive thinking carries no token budget to clamp — the model manages
     // its own. `defaultMaxTokens` below still bumps maxOutputTokens so thinking

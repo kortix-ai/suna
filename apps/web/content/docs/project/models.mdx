@@ -60,8 +60,8 @@ control. `Auto` clears the variant.
 - Gateway on: the request carries `reasoning_effort`; the gateway maps it per
   upstream (OpenAI → `reasoning_effort`, Claude → adaptive thinking, OpenAI on
   Amazon Bedrock → Bedrock's `reasoning.effort` request field). For an upstream it
-  cannot map (Nova, Grok on Bedrock today) it returns `400 unsupported_param`
-  instead of dropping the value silently.
+  cannot map yet (Nova, Grok on Bedrock today) the value is dropped and the
+  model runs at its own default.
 - The sandbox learns the project's servable model set from the API at every
   boot (`GET /v1/llm/models?scope=picker`, the same composition as the web
   picker), so a model the picker offers always resolves in the runtime.

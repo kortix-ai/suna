@@ -41,46 +41,6 @@ function hooks(usage: UsageEvent[], traces: GatewayTrace[]): GatewayHooks {
 }
 
 describe('simple gateway pipeline', () => {
-  test('refuses a reasoning_effort the resolved upstream cannot carry with a 400 naming field + model — never a 502, never silently stripped', async () => {
-    const usage: UsageEvent[] = [];
-    const traces: GatewayTrace[] = [];
-    const bedrockGrok: UpstreamDescriptor = {
-      ...primary,
-      provider: 'amazon-bedrock',
-      kind: 'bedrock',
-      resolvedModel: 'xai.grok-4.6',
-    };
-    let upstreamCalled = false;
-    const response = await handleChatCompletions(
-      {
-        hooks: { ...hooks(usage, traces), resolveUpstream: async () => [bedrockGrok] },
-        logger: { info() {}, warn() {}, error() {} },
-        fetchImpl: async () => {
-          upstreamCalled = true;
-          return new Response('{}', { headers: { 'content-type': 'application/json' } });
-        },
-      },
-      {
-        authorization: 'Bearer token',
-        rawBody: JSON.stringify({
-          model: 'amazon-bedrock/xai.grok-4.6',
-          messages: [{ role: 'user', content: 'hi' }],
-          reasoning_effort: 'high',
-        }),
-      },
-    );
-    expect(response.status).toBe(400);
-    const body = (await response.json()) as { error: { code: string; message: string; suggestion: string } };
-    expect(body.error.code).toBe('unsupported_param');
-    expect(body.error.message).toContain('reasoning_effort');
-    expect(body.error.message).toContain('xai.grok-4.6');
-    expect(body.error.suggestion).toContain('Auto');
-    expect(upstreamCalled).toBe(false);
-    expect(usage).toHaveLength(0);
-    expect(traces).toHaveLength(1);
-    expect(traces[0]).toMatchObject({ status: 400, ok: false, errorCode: 'unsupported_param' });
-  });
-
   test('aborts a provider fetch that does not return response headers before the deadline', async () => {
     const fetchWithTimeout = withUpstreamHeadersTimeout(
       async (_input, init) =>

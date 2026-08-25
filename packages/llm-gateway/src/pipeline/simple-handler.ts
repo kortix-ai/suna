@@ -7,7 +7,7 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
-import { GatewayResolutionError, UnsupportedRequestParamError, UpstreamHttpError } from '../errors';
+import { GatewayResolutionError, UpstreamHttpError } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import { resolveTransportKind } from '../transports/route-kind';
 import { type ExtractedUsage, type SseErrorFrame, extractUsageFromJson } from '../usage';
@@ -384,10 +384,6 @@ export async function handleChatCompletions(
     upstream = await dispatch;
   } catch (error) {
     refundHold(hooks, principal);
-    // A parameter the resolved upstream cannot carry is the CLIENT's request
-    // to fix (drop the effort, pick another model) — a 400 with the field and
-    // model named, never a 502 blaming the provider that was never called.
-    const unsupported = error instanceof UnsupportedRequestParamError ? error : null;
     emit({
       ...identity(principal),
       requestedModel,
@@ -395,23 +391,13 @@ export async function handleChatCompletions(
       provider: descriptor.provider,
       billingMode: descriptor.billingMode,
       streaming,
-      status: unsupported ? 400 : error instanceof UpstreamHttpError ? error.status : 502,
+      status: error instanceof UpstreamHttpError ? error.status : 502,
       ok: false,
-      errorCode: unsupported ? 'unsupported_param' : 'upstream_error',
+      errorCode: 'upstream_error',
       errorMessage: error instanceof Error ? error.message : String(error),
-      attempts: unsupported ? 0 : 1,
+      attempts: 1,
       candidatesTried: [descriptor.provider],
     });
-    if (unsupported)
-      return gatewayErrorResponse(400, {
-        message: unsupported.message,
-        code: 'unsupported_param',
-        provider: descriptor.provider,
-        requestedModel,
-        resolvedModel: descriptor.resolvedModel ?? routedModel,
-        requestId: id,
-        suggestion: `Set thinking to Auto (remove \`${unsupported.param}\`) for this model, or choose a model that supports it.`,
-      });
     if (error instanceof UpstreamHttpError) return rawProviderError(error);
     // A headers timeout is "try again", not "this request is malformed".
     const timedOut = (error as { name?: unknown })?.name === 'TimeoutError' && !req.signal?.aborted;
