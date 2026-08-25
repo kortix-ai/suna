@@ -2779,6 +2779,14 @@ settled by hand.
    crossed, and `GET /kortix/diag` returns state + resources + runtime
    report + both log tails in one document. Ask the box before guessing.
 
+*Cost of the old probe, measured (2026-08-25 23:12Z, session 9df2a873):* the
+reaper visited that box 345 times in one hour; every visit made OpenCode
+JSON-serialise its 140 MB root (~48 GB of serialisation per hour) for an
+answer that never fit the budget. OpenCode reached 6.48 GB RSS on an 8 GB
+box and the kernel OOM-killed it mid-turn (`dmesg`: `Killed process 1506
+(opencode.exe) anon-rss:6484532kB`). An unbounded probe is not only blind,
+it is a memory attack on the process it probes.
+
 *Automation:* `orphaned-turn-finalize.test.ts` ("turn probes read a bounded
 window, never the whole root"); the stub fetch there serves `?limit=` and
 `/message/:id` the way 1.18.23 does.
