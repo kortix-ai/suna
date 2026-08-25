@@ -336,7 +336,10 @@ export async function wakeSandbox(externalId: string): Promise<void> {
     // comes back with no runtime, and every turn open on it is over. Without
     // this the fresh runtime's first idle read closed such turns `completed`
     // and the interrupted prompt was never redelivered (Essentia 2026-08-25).
-    const before = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+    const before =
+      typeof provider.getStatus === 'function'
+        ? await provider.getStatus(externalId).catch(() => 'unknown' as const)
+        : ('unknown' as const);
     await provider.ensureRunning(externalId);
     console.log(`[PREVIEW] Wake-up triggered for sandbox ${externalId}`);
     if (before === 'stopped') {

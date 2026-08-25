@@ -30,9 +30,20 @@ mock.module('../shared/kortix-user-context', () => ({
   KORTIX_USER_CONTEXT_HEADER: 'x-kortix-user-context',
   encodeKortixUserContext: () => '',
 }));
+let providerStatusBeforeWake: 'running' | 'stopped' | 'unknown' = 'running';
+const recoveryCalls: Array<Record<string, unknown>> = [];
+mock.module('../projects/session-lifecycle/runtime-restart-recovery', () => ({
+  recoverTurnsAfterRuntimeRestart: async (input: Record<string, unknown>) => {
+    recoveryCalls.push(input);
+    return { lost: [], redeliveries: [] };
+  },
+}));
 mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
+    async getStatus() {
+      return providerStatusBeforeWake;
+    },
     async ensureRunning(externalId: string) {
       ensureRunningCalls.push(externalId);
     },
@@ -79,6 +90,8 @@ const { wakeSandbox } = await import('./backend');
 
 function reset(nextDeadline: Date | null) {
   ensureRunningCalls = [];
+  recoveryCalls.length = 0;
+  providerStatusBeforeWake = 'running';
   deadlineAt = nextDeadline;
 }
 
@@ -89,6 +102,30 @@ describe('wakeSandbox — a provider start obeys the deadline', () => {
     await wakeSandbox('ext-1');
 
     expect(ensureRunningCalls).toEqual(['ext-1']);
+  });
+
+  test('a box that was STOPPED at the provider has its open turns recovered after the start', async () => {
+    // Essentia 2026-08-25 15:56: the UI woke a provider-paused box through
+    // this path; the fresh runtime's first idle read then closed the killed
+    // turn `completed` and its prompt was never redelivered.
+    reset(new Date(Date.now() + 60 * 60_000));
+    providerStatusBeforeWake = 'stopped';
+
+    await wakeSandbox('ext-1');
+
+    expect(ensureRunningCalls).toEqual(['ext-1']);
+    expect(recoveryCalls).toEqual([
+      { sandboxId: 'sb-1', sessionId: 'sess-1', externalId: 'ext-1', hold: false },
+    ]);
+  });
+
+  test('a box that was already running is not treated as a restart', async () => {
+    reset(new Date(Date.now() + 60 * 60_000));
+    providerStatusBeforeWake = 'running';
+
+    await wakeSandbox('ext-1');
+
+    expect(recoveryCalls).toEqual([]);
   });
 
   test('REFUSES to wake a box whose deadline has passed', async () => {
