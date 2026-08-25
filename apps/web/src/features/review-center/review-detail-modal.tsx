@@ -460,6 +460,7 @@ function ApprovalBody({
           requestedAt: item.createdAt,
           argsPreview: adaptedAction.rawArgsPreview ?? null,
           reviewComplete: adaptedAction.reviewComplete === true,
+          previewAuthorized: adaptedAction.previewAuthorized !== false,
           pending: item.status === 'needs_you',
           resolution:
             item.status === 'approved' ? 'approve' : item.status === 'rejected' ? 'deny' : null,

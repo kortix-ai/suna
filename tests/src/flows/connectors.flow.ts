@@ -926,6 +926,7 @@ flow(
       'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
       'POST /v1/connectors/projects/:projectId/connectors/:slug/connect',
       'POST /v1/connectors/projects/:projectId/connectors/:slug/connect/finalize',
+      'GET /v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests',
       'GET /v1/connectors/projects/:projectId/catalog',
       'POST /v1/connectors/projects/:projectId/call',
       'POST /v1/accounts/:accountId/audit/reconcile',
@@ -1187,6 +1188,33 @@ flow(
         requestId = body.requestId;
       },
     );
+
+    // Deliberately ABOVE the provider branch. This route reads connection rows,
+    // not the provider, so it must hold on a deployment with no Composio key —
+    // and placing it after the early return below is how a step silently never
+    // runs while the flow still reports PASS.
+    //
+    // The in-session Connect button reads this to know the agent is blocked. A
+    // connect started by a dashboard JWT carries no requesting session, so it
+    // must NOT appear here — otherwise every project would show a permanent
+    // Connect card for work nobody is waiting on.
+    await ctx.step('a connect with no requesting session reports nothing pending', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests', {
+          params: { projectId: p.id, sessionId: '00000000-0000-4000-a000-000000000000' },
+        });
+      r.status(200).body().has('$.connectors', []);
+    });
+
+    await ctx.step('wrong tenant cannot read what another project is waiting on', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get('/v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests', {
+          params: { projectId: p.id, sessionId: '00000000-0000-4000-a000-000000000000' },
+        });
+      r.status(403);
+    });
 
     if (!composioConfigured) {
       await ctx.step('finalize also fails closed when the server has no Composio key', async () => {
@@ -1507,6 +1535,7 @@ flow(
         }
       },
     );
+
   },
 );
 

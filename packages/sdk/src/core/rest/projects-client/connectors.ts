@@ -765,6 +765,17 @@ export interface ConnectorConnectResult {
   requestId?: string;
   sessionId?: string;
   connectionId?: string;
+  /**
+   * The account is already usable, so there is no hosted page to show.
+   *
+   * True for a no-auth toolkit, and for a connector whose account is still
+   * active from an earlier authorization. Callers branch on this before opening
+   * a popup — see `runConnectLinkFlow` in the web host.
+   */
+  connected?: boolean;
+  /** The toolkit needs no authorization at all, so `connected` is true on the
+   *  first call and no link is ever minted. */
+  isNoAuth?: boolean;
 }
 
 /** Poll result for a hosted connector authorization request. */
@@ -984,13 +995,51 @@ export async function setConnectorName(projectId: string, slug: string, name: st
   );
 }
 
-export async function pipedreamConnect(projectId: string, slug: string) {
+/**
+ * Start a hosted authorization for a project connector.
+ *
+ * Provider-neutral: the API picks Composio or Pipedream. `pipedreamConnect` is
+ * the original name for this exact route and stays exported — renaming it would
+ * be a breaking change for published consumers.
+ */
+export async function connectorConnect(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<ConnectorConnectResult>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
       {},
     ),
   );
+}
+
+/** @deprecated Prefer {@link connectorConnect} — the route was never Pipedream-only. */
+export const pipedreamConnect = connectorConnect;
+
+/** A connector this session's agent asked a human to authorize. */
+export interface SessionConnectRequest {
+  slug: string;
+  /** Provider app/toolkit behind the connector, e.g. `gmail`. */
+  app: string;
+  provider: string;
+  connected: boolean;
+}
+
+/**
+ * The connectors a session is blocked on.
+ *
+ * The agent mints a connect link mid-turn and stops. A host reads this to render
+ * a real Connect button for that session instead of leaving the raw URL in the
+ * transcript for someone to paste into a tab.
+ */
+export async function listSessionConnectRequests(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionConnectRequest[]> {
+  const result = unwrap(
+    await backendApi.get<{ connectors?: SessionConnectRequest[] }>(
+      `/connectors/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/connect-requests`,
+    ),
+  );
+  return result.connectors ?? [];
 }
 
 export interface ConnectorDraftInput {
@@ -1377,7 +1426,13 @@ export async function setConnectorSecretBinding(
   );
 }
 
-export async function pipedreamFinalize(projectId: string, slug: string) {
+/**
+ * Poll a hosted authorization until the provider reports an active account.
+ *
+ * On success the API tells the session that requested the connector, so the
+ * agent resumes without anyone typing "done".
+ */
+export async function connectorFinalize(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<ConnectorFinalizeResult>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
@@ -1385,3 +1440,6 @@ export async function pipedreamFinalize(projectId: string, slug: string) {
     ),
   );
 }
+
+/** @deprecated Prefer {@link connectorFinalize} — the route was never Pipedream-only. */
+export const pipedreamFinalize = connectorFinalize;

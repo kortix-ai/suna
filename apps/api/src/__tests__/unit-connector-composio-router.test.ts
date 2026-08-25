@@ -24,6 +24,69 @@ function request(app: ReturnType<typeof createConnectorRouter>, path: string, in
 }
 
 describe('connector router provider-neutral connect routes', () => {
+  test('connect forwards the requesting session id so finalize can resume that agent', async () => {
+    const seen: Array<string | null | undefined> = [];
+    const app = createConnectorRouter(
+      deps({
+        // The auth middleware sets `sessionId` from a scoped session token, which
+        // is exactly the in-sandbox agent case. A human clicking Connect in
+        // project settings carries no session and must forward null.
+        resolveAdmin: async (c) => {
+          if (!c.req.header('x-test-admin')) return null;
+          const sid = c.req.header('x-test-session');
+          if (sid) c.set('sessionId', sid);
+          return { accountId: 'acct-1', userId: 'user-1' };
+        },
+        connectorConnect: async (_projectId, _slug, _userId, _redirects, requestingSessionId) => {
+          seen.push(requestingSessionId);
+          return { provider: 'composio', connectUrl: 'https://connect.example/link' };
+        },
+      }),
+    );
+
+    const agent = await request(app, `/projects/${PROJECT}/connectors/gmail/connect`, {
+      method: 'POST',
+      headers: { ...ADMIN, 'x-test-session': 'session-abc' },
+    });
+    expect(agent.status).toBe(200);
+
+    const human = await request(app, `/projects/${PROJECT}/connectors/gmail/connect`, {
+      method: 'POST',
+      headers: ADMIN,
+    });
+    expect(human.status).toBe(200);
+
+    expect(seen).toEqual(['session-abc', null]);
+  });
+
+  test('connect-requests lists what this session asked a human to authorize', async () => {
+    const app = createConnectorRouter(
+      deps({
+        listSessionConnectRequests: async (projectId, sessionId) => [
+          { slug: 'gmail', app: 'gmail', provider: 'composio', connected: false },
+          { slug: `${projectId}:${sessionId}`, app: 'slack', provider: 'pipedream', connected: true },
+        ],
+      }),
+    );
+
+    const res = await request(app, `/projects/${PROJECT}/sessions/session-abc/connect-requests`, {
+      headers: ADMIN,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      connectors: [
+        { slug: 'gmail', app: 'gmail', provider: 'composio', connected: false },
+        { slug: `${PROJECT}:session-abc`, app: 'slack', provider: 'pipedream', connected: true },
+      ],
+    });
+  });
+
+  test('connect-requests is forbidden without project admin', async () => {
+    const app = createConnectorRouter(deps({ listSessionConnectRequests: async () => [] }));
+    const res = await request(app, `/projects/${PROJECT}/sessions/session-abc/connect-requests`);
+    expect(res.status).toBe(403);
+  });
+
   test('connect-status returns Composio as the configured provider when wired', async () => {
     const app = createConnectorRouter(
       deps({

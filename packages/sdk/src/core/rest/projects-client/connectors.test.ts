@@ -22,6 +22,10 @@ import {
   listDiscoverConnectors,
   listPipedreamApps,
   listPipedreamSections,
+  listSessionConnectRequests,
+  type ConnectorConnectResult,
+  connectorConnect,
+  connectorFinalize,
   pipedreamConnect,
   pipedreamConnectConnection,
   pipedreamFinalize,
@@ -937,4 +941,51 @@ test('connection-specific Pipedream connect and finalize bind the OAuth identity
   expect(last().url).toContain('/projects/P1/connections/connection-member/connect/finalize');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
+});
+
+test('listSessionConnectRequests reads the connectors this session is waiting on', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        { slug: 'gmail', app: 'gmail', provider: 'composio', connected: false },
+      ],
+    },
+  };
+  const result = await listSessionConnectRequests('P1', 'S1');
+  expect(last().url).toContain('/connectors/projects/P1/sessions/S1/connect-requests');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual([{ slug: 'gmail', app: 'gmail', provider: 'composio', connected: false }]);
+});
+
+test('listSessionConnectRequests returns an empty list when the API omits the field', async () => {
+  nextResponse = { status: 200, body: {} };
+  expect(await listSessionConnectRequests('P1', 'S1')).toEqual([]);
+});
+
+test('connectorConnect and connectorFinalize are the provider-neutral names for the same routes', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/x' } };
+  const connect = await connectorConnect('P1', 'gmail');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect');
+  expect(connect.connectUrl).toContain('connect.composio.dev');
+
+  nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
+  const finalized = await connectorFinalize('P1', 'gmail');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect/finalize');
+  expect(finalized.connected).toBe(true);
+});
+
+test('connect surfaces the already-connected verdict the popup flow branches on', () => {
+  // `runConnectLinkFlow` reads `response.connected` to skip the hosted page for a
+  // no-auth toolkit and for an account that is already live. The field was
+  // returned by every connect route but missing from this interface, so the two
+  // reads of it in the web host were type errors on main.
+  const noAuth: ConnectorConnectResult = { provider: 'composio', connected: true, isNoAuth: true };
+  const needsAuth: ConnectorConnectResult = {
+    provider: 'composio',
+    connected: false,
+    connectUrl: 'https://connect.composio.dev/link/x',
+  };
+  expect(noAuth.connected).toBe(true);
+  expect(needsAuth.connected).toBe(false);
 });

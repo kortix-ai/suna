@@ -331,6 +331,20 @@ export interface SessionChatInputProps {
  */
 export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
 
+/**
+ * The inset strip above the card that hosts `inputSlot` — the approval notice,
+ * the permission notice, and `QuestionPrompt`.
+ *
+ * `items-center` is load-bearing and it BITES: a flex column sizes each child
+ * to its content unless the child says otherwise, so anything mounted here that
+ * omits `w-full` renders as a narrow box floating in the middle of the strip,
+ * with a width that tracks whatever text happens to be inside it. Exported so
+ * the invariant is pinned by a test (composer-input-slot.test.tsx) rather than
+ * rediscovered by the next notice that gets added.
+ */
+export const COMPOSER_INPUT_SLOT_CLASS =
+  'bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-1 empty:hidden';
+
 /** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
 const EMPTY_AGENTS: Agent[] = [];
 const EMPTY_COMMANDS: Command[] = [];
@@ -1270,7 +1284,7 @@ function ComposerImpl({
             shell around it kept painting as an empty sliver.
           */}
           {showQueueStrip && (
-            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-1 empty:hidden">
+            <div className={COMPOSER_INPUT_SLOT_CLASS}>
               {threadContext && (
                 <button
                   onClick={threadContext.onBackToParent}

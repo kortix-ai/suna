@@ -58,6 +58,7 @@ import { computerProfileSpec } from './computer-materialize';
 import { COMPUTER_SLUG, computerLabel } from './computers';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
+import { notifyConnectorSession } from './notify-session';
 import { validateConnectorSecretBinding } from './connector-secret-binding';
 import {
   connectorIdsWithSharedCredentials,
@@ -336,6 +337,9 @@ export function composioConnectionMetadata(input: {
   authRequestId?: string;
   connectedAccountId?: string;
   isNoAuth: boolean;
+  /** Kortix session whose agent asked for this connector. Deliberately NOT
+   *  `session_id` — that key is Composio's Tool Router session (`trs_…`). */
+  requestingSessionId?: string | null;
 }): Record<string, unknown> {
   return {
     provider: 'composio',
@@ -345,7 +349,43 @@ export function composioConnectionMetadata(input: {
     auth_request_id: input.authRequestId ?? null,
     connected_account_id: input.connectedAccountId ?? null,
     is_no_auth: input.isNoAuth,
+    requesting_session_id: input.requestingSessionId ?? null,
   };
+}
+
+/**
+ * The Kortix session whose agent asked for this connector, as stored on the
+ * connection row. Provider-neutral on purpose: Composio writes it inside
+ * `composioConnectionMetadata`, Pipedream through `mergeRequestingSession`,
+ * and finalize reads both through this one accessor.
+ */
+export function readRequestingSessionId(metadata: unknown): string | null {
+  const value = (metadata as Record<string, unknown> | null)?.requesting_session_id;
+  return typeof value === 'string' && value ? value : null;
+}
+
+/** Stamp the requesting session onto a connection row without disturbing the
+ *  rest of its metadata (Pipedream keeps provider state there). */
+async function mergeRequestingSession(
+  connectionId: string,
+  requestingSessionId: string | null | undefined,
+): Promise<void> {
+  if (!requestingSessionId) return;
+  const [row] = await db
+    .select({ metadata: connectorConnections.metadata })
+    .from(connectorConnections)
+    .where(eq(connectorConnections.connectionId, connectionId))
+    .limit(1);
+  await db
+    .update(connectorConnections)
+    .set({
+      metadata: {
+        ...((row?.metadata ?? {}) as Record<string, unknown>),
+        requesting_session_id: requestingSessionId,
+      },
+      updatedAt: sql`now()`,
+    })
+    .where(eq(connectorConnections.connectionId, connectionId));
 }
 
 /**
@@ -1846,7 +1886,44 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     // rollback use.
     return null;
   },
-  connectorConnect: async (projectId, slug, _userId, redirects) => {
+  listSessionConnectRequests: async (projectId, sessionId) => {
+    const rows = await db
+      .select({
+        connector: connectors,
+        connectionId: connectorConnections.connectionId,
+        isDefault: connectorConnections.isDefault,
+        metadata: connectorConnections.metadata,
+      })
+      .from(connectorConnections)
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
+      .where(
+        and(
+          eq(connectorConnections.projectId, projectId),
+          sql`${connectorConnections.metadata}->>'requesting_session_id' = ${sessionId}`,
+        ),
+      );
+    const out: Array<{ slug: string; app: string; provider: string; connected: boolean }> = [];
+    for (const row of rows) {
+      const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+      const connected = await connectorConnected(row.connector, null, {
+        connectionId: row.connectionId,
+        isDefault: row.isDefault,
+        metadata,
+      });
+      out.push({
+        slug: row.connector.slug,
+        app:
+          typeof metadata.toolkit === 'string'
+            ? metadata.toolkit
+            : ((row.connector.config as Record<string, unknown> | null)?.app as string) ??
+              row.connector.slug,
+        provider: row.connector.providerType,
+        connected,
+      });
+    }
+    return out;
+  },
+  connectorConnect: async (projectId, slug, _userId, redirects, requestingSessionId) => {
     const conn = await loadComposioConnector(projectId, slug);
     if (conn) {
       if (conn.authorizationStrategy !== 'project') return null;
@@ -1867,7 +1944,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
           // Clear any previous account binding before authorization starts.
           // Pending rows stay active because the DB enum has no needs_auth
           // value. The gateway still fails closed on missing auth metadata.
-          metadata: { provider: 'composio', toolkit: conn.app },
+          metadata: {
+            provider: 'composio',
+            toolkit: conn.app,
+            requesting_session_id: requestingSessionId ?? null,
+          },
           updatedAt: sql`now()`,
         })
         .where(
@@ -1898,6 +1979,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             authRequestId: result.authRequestId,
             connectedAccountId: result.connectedAccountId,
             isNoAuth: result.isNoAuth,
+            requestingSessionId,
           }),
           updatedAt: sql`now()`,
         })
@@ -1922,6 +2004,10 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     const pipedream = await loadPipedreamConnector(projectId, slug);
     if (!pipedream || pipedream.authorizationStrategy !== 'project') return null;
     const { connectUrl, token } = await pipedreamConnectUrl(projectId, slug, pipedream.app, null, redirects);
+    await mergeRequestingSession(
+      await ensureDefaultConnection({ projectId, connectorId: pipedream.connectorId }),
+      requestingSessionId,
+    );
     return { provider: 'pipedream', token, app: pipedream.app, connectUrl };
   },
   connectorFinalize: async (projectId, slug, _userId, selector) => {
@@ -1952,6 +2038,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       const sessionId = typeof metadata.session_id === 'string' ? metadata.session_id : '';
       const authRequestId = typeof metadata.auth_request_id === 'string' ? metadata.auth_request_id : undefined;
       const expectedConnectedAccountId = typeof metadata.connected_account_id === 'string' ? metadata.connected_account_id : undefined;
+      const requestingSessionId = readRequestingSessionId(metadata);
       if (selector?.requestId && selector.requestId !== authRequestId) {
         throw new HTTPException(409, { message: 'authorization request does not match connection' });
       }
@@ -1981,6 +2068,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             authRequestId: result.authRequestId ?? authRequestId,
             connectedAccountId: result.connectedAccountId ?? expectedConnectedAccountId,
             isNoAuth: result.isNoAuth,
+            requestingSessionId,
           }),
           updatedAt: sql`now()`,
         })
@@ -1990,6 +2078,13 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
           eq(connectorConnections.connectorId, conn.connectorId),
           eq(connectorConnections.connectionId, connection.connectionId),
         ));
+      // The agent that minted the link is blocked waiting on this. Tell it the
+      // account landed so it resumes instead of posting a second link next run.
+      // Fire-and-forget: the credential is already saved, and a notification
+      // failure must never turn a successful connect into an error.
+      if (result.connected && requestingSessionId) {
+        void notifyConnectorSession(requestingSessionId, projectId, _userId ?? null, slug, conn.app);
+      }
       return {
         provider: 'composio',
         connected: result.connected,
@@ -2008,6 +2103,21 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       connectorId: pipedream.connectorId,
       userId: null,
     });
+    if (r.connected) {
+      const [row] = await db
+        .select({ metadata: connectorConnections.metadata })
+        .from(connectorConnections)
+        .where(
+          and(
+            eq(connectorConnections.connectorId, pipedream.connectorId),
+            eq(connectorConnections.isDefault, true),
+            eq(connectorConnections.ownerType, 'project'),
+          ),
+        )
+        .limit(1);
+      const waiting = readRequestingSessionId(row?.metadata);
+      if (waiting) void notifyConnectorSession(waiting, projectId, _userId ?? null, slug, pipedream.app);
+    }
     return { provider: 'pipedream', connected: r.connected, accountId: r.accountId };
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
