@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 598,
+  "count": 599,
   "routes": [
     {
       "method": "GET",
@@ -933,6 +933,10 @@
     {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/policies"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests"
     },
     {
       "method": "POST",

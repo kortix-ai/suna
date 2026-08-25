@@ -23,6 +23,12 @@ import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets
 import { db } from '../shared/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
 import { resolveSetupLink } from './token';
+import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
+
+// The connector half of the notification moved to connectors/notify-session.ts so the
+// in-session Connect button's finalize can reuse it. Re-exported: this module is where
+// the prompt text has always been asserted from.
+export { connectorConnectedPrompt };
 
 const setupLinksPublicApp = new Hono();
 
@@ -300,61 +306,6 @@ export function secretSubmittedPrompt(saved: string[]): string {
     '`kortix secrets sync` if a variable is not visible in your environment yet, then continue ' +
     'the task that was blocked on it. Do not mint a new intake link for these names.'
   );
-}
-
-/** Exported for tests. The text delivered to the session that minted the link. */
-export function connectorConnectedPrompt(slug: string, app: string): string {
-  const appLabel = app && app !== slug ? `${app} (connector \`${slug}\`)` : `\`${slug}\``;
-  return (
-    `The ${appLabel} connector was just connected through the setup link and its ` +
-    'credential is saved on this project. Verify it with `kortix connectors ls`, then ' +
-    'continue the task that was blocked on it. Do not mint a new connect link for this ' +
-    'connector.'
-  );
-}
-
-/**
- * Same contract as notifyRequestingSession below, for the connector half: the
- * finalize route is the only place that knows BOTH that the credential landed
- * and which session asked for it, so it owns the notification. The webhook
- * deliberately does not notify.
- */
-async function notifyConnectorSession(
-  sessionId: string,
-  projectId: string,
-  actorUserId: string | null,
-  slug: string,
-  app: string,
-): Promise<void> {
-  try {
-    const [session] = await db
-      .select({
-        status: projectSessions.status,
-        accountId: projectSessions.accountId,
-        metadata: projectSessions.metadata,
-      })
-      .from(projectSessions)
-      .where(eq(projectSessions.sessionId, sessionId))
-      .limit(1);
-    if (session?.status !== 'running') return;
-    const meta = (session.metadata ?? {}) as Record<string, unknown>;
-    if (typeof meta.deletedAt === 'string') return;
-    const { enqueueContinueSessionCommand, drainSessionLifecycleQueue } = await import(
-      '../projects/session-lifecycle'
-    );
-    await enqueueContinueSessionCommand({
-      source: 'system:connector-connected',
-      projectId,
-      accountId: session.accountId,
-      sessionId,
-      actorUserId,
-      text: connectorConnectedPrompt(slug, app),
-    });
-    drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
-    console.info('[setup-links] connector connected, session notified', { sessionId, slug });
-  } catch (err) {
-    console.warn('[setup-links] failed to notify session of connector connect:', err);
-  }
 }
 
 /**
