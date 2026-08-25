@@ -24,9 +24,27 @@ describe('Composio connector connection metadata', () => {
       auth_request_id: 'request_1',
       connected_account_id: 'account_1',
       is_no_auth: false,
+      requesting_session_id: null,
     });
     expect(Object.keys(metadata)).not.toContain('api_key');
     expect(Object.keys(metadata)).not.toContain('credential');
+  });
+
+  test('records the Kortix session that asked, distinctly from the provider session', () => {
+    // `session_id` is Composio's Tool Router session (`trs_…`). The Kortix
+    // session that minted the link is a different id under a different key, and
+    // finalize reads it to tell that agent the account landed. Collapsing the
+    // two would make finalize try to resume a Composio session id.
+    const metadata = composioConnectionMetadata({
+      toolkit: 'gmail',
+      stableUserId: 'kortix-connection:33333333-3333-4333-8333-333333333333',
+      sessionId: 'trs_provider_session',
+      isNoAuth: false,
+      requestingSessionId: '44444444-4444-4444-8444-444444444444',
+    });
+
+    expect(metadata.session_id).toBe('trs_provider_session');
+    expect(metadata.requesting_session_id).toBe('44444444-4444-4444-8444-444444444444');
   });
 
   test('accepts no-auth toolkits without a connected account', () => {
