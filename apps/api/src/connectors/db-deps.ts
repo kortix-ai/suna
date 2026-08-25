@@ -865,12 +865,14 @@ export type ConnectLinkEligibility =
       connectorId: string;
       app: string;
       authorizationStrategy: string;
+      /** Which provider mints the hosted page behind the link. */
+      providerType: 'pipedream' | 'composio';
     }
   /** No connector with this slug on the project. The manifest really is missing it. */
   | { ok: false; reason: 'no_such_connector' }
-  /** It exists, but a setup link is a Pipedream Quick Connect and this is not one. */
-  | { ok: false; reason: 'not_pipedream'; providerType: string }
-  /** Pipedream-backed but its config names no app — a broken connector, not a missing one. */
+  /** It exists, but no hosted-authorization provider backs it (channel, computer, custom). */
+  | { ok: false; reason: 'unsupported_provider'; providerType: string }
+  /** Provider-backed but its config names no app — a broken connector, not a missing one. */
   | { ok: false; reason: 'no_app' };
 
 /**
@@ -898,10 +900,16 @@ export async function connectLinkEligibility(
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
   if (!row) return { ok: false, reason: 'no_such_connector' };
-  if (row.providerType !== 'pipedream') {
+  // Composio counts. A setup link is "a hosted page that authorizes this
+  // connector", and both providers offer one — the Pipedream-only check here is
+  // what forced a Composio connector down the fallback path where the agent
+  // pastes a raw provider URL into the transcript. The web renderer only turns
+  // OUR `/connect/<token>` link into a button, so that fallback lost the button,
+  // the modal, and the resume, and left three renderings of one action on screen.
+  if (row.providerType !== 'pipedream' && row.providerType !== 'composio') {
     return {
       ok: false,
-      reason: 'not_pipedream',
+      reason: 'unsupported_provider',
       providerType: row.providerType,
     };
   }
@@ -912,6 +920,7 @@ export async function connectLinkEligibility(
     connectorId: row.connectorId,
     app,
     authorizationStrategy: row.authorizationStrategy,
+    providerType: row.providerType,
   };
 }
 
