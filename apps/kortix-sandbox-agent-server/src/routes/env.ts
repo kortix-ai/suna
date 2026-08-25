@@ -4,6 +4,7 @@ import { writeAgentEnvFile } from '../agent-env-file'
 import type { Config } from '../config'
 import { syncEgressShim } from '../egress-shim'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import { llmProxyBaseUrl, setLlmProxyToken } from '../llm-proxy'
 import { logger } from '../logger'
 import { requiresRespawn, type Opencode } from '../opencode'
 import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
@@ -107,6 +108,17 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
   const token = process.env.KORTIX_TOKEN
   if (!token) {
     throw new Error('KORTIX_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
+  }
+  // A running localhost LLM proxy (every gateway session since the in-sandbox
+  // image window) learns the new upstream + token and stays the provider
+  // base URL; a box that never started one keeps the direct config.
+  const proxyUrl = llmProxyBaseUrl()
+  if (proxyUrl && process.env.KORTIX_LLM_PROXY_DISABLE !== '1') {
+    setLlmProxyToken(token, baseUrl)
+    return setOpencodeRuntimeEnv({
+      KORTIX_LLM_BASE_URL: baseUrl,
+      KORTIX_LLM_PROXY_URL: proxyUrl,
+    })
   }
   return setOpencodeRuntimeEnv({
     KORTIX_LLM_BASE_URL: baseUrl,

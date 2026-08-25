@@ -25,6 +25,7 @@ let timeoutRenewals: Array<{
 let staticPauses: Array<{ sandboxId: string; opts: Record<string, unknown> }> = [];
 let killed: string[] = [];
 let infoState: 'running' | 'paused' | 'missing' = 'running';
+let infoEndAt: Date | null = null;
 let infoReads = 0;
 let infoFactory: () => void | Promise<void> = () => {};
 let listed: Array<{ sandboxId: string; startedAt: Date | null }> = [];
@@ -121,7 +122,7 @@ class FakeSandboxApi {
     infoReads += 1;
     await infoFactory();
     if (infoState === 'missing') throw new FakeSandboxNotFoundError('sandbox not found');
-    return { state: infoState };
+    return { state: infoState, ...(infoEndAt ? { endAt: infoEndAt } : {}) };
   }
 
   static list(opts: Record<string, unknown>) {
@@ -161,6 +162,7 @@ beforeEach(() => {
   staticPauses = [];
   killed = [];
   infoState = 'running';
+  infoEndAt = null;
   infoReads = 0;
   infoFactory = () => {};
   listed = [];
@@ -204,6 +206,32 @@ describe('E2B provider lifecycle', () => {
         }),
       },
     ]);
+    expect(connected).toEqual([]);
+  });
+
+  test('accepts a renewal the provider actually applied (endAt moved to now + backstop)', async () => {
+    infoEndAt = new Date(Date.now() + 3_600_000 - 5_000);
+    const provider = new E2BProvider();
+
+    await provider.renewLifecycle('sb-honored');
+
+    expect(timeoutRenewals.map((r) => r.sandboxId)).toEqual(['sb-honored']);
+    expect(infoReads).toBe(1);
+    expect(connected).toEqual([]);
+  });
+
+  test('refuses to report a renewal the provider clamped (endAt pinned by max_length_hours)', async () => {
+    // Essentia 2026-08-25: tier base_v1 max_length_hours=1 → every 204 left
+    // endAt at startedAt+1h; here the sandbox has 20 minutes left.
+    infoEndAt = new Date(Date.now() + 20 * 60_000);
+    const provider = new E2BProvider();
+
+    await expect(provider.renewLifecycle('sb-capped')).rejects.toMatchObject({
+      name: 'E2BLifecycleRenewalIgnoredError',
+      code: 'e2b_lifecycle_renewal_ignored',
+      message: expect.stringContaining('max_length_hours'),
+    });
+    expect(timeoutRenewals.map((r) => r.sandboxId)).toEqual(['sb-capped']);
     expect(connected).toEqual([]);
   });
 

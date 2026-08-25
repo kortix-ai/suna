@@ -28,6 +28,21 @@ import { opencodeTurnInFlight } from './opencode-turn-state'
 const execFileAsync = promisify(execFile)
 
 /**
+ * What the convergence pass is doing RIGHT NOW, for the proxy's not-ready
+ * answers (X-Kortix-Boot-Phase). A pass that installs a new OpenCode pin can
+ * hold a box in "not ready" for a minute or more (Essentia 2026-08-25:
+ * 1.18.19 → 1.18.23 on resume, 53 s first init on top); the API's boot budget
+ * must be able to tell "still working" from "stuck", and this is the signal.
+ */
+let runtimeAssetsActivityLabel: string | null = null
+export function runtimeAssetsActivity(): string | null {
+  return runtimeAssetsActivityLabel
+}
+function setRuntimeAssetsActivity(label: string | null): void {
+  runtimeAssetsActivityLabel = label
+}
+
+/**
  * Converge this sandbox's runtime assets on the API it talks to.
  *
  * THE BUG THIS FIXES. `/usr/local/bin/kortix` and `/opt/kortix/managed-skills`
@@ -1078,7 +1093,14 @@ export async function reconcileRuntimeAssets(
             })
           } else {
             const install = options.installOpencode ?? installOpencodeVersion
-            if (binaryStale || binaryMissing) await install(expected)
+            if (binaryStale || binaryMissing) {
+              setRuntimeAssetsActivity(`installing-opencode@${expected}`)
+              try {
+                await install(expected)
+              } finally {
+                setRuntimeAssetsActivity(null)
+              }
+            }
             // SAME STEP as the binary, always. A binary and a plugin that
             // disagree is the state this whole block exists to avoid.
             const pinResult = await refreshOpencodePluginPin(depsDir, expected)

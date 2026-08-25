@@ -1,45 +1,37 @@
 'use client';
 
 /**
- * Reasoning-effort control for the session chat composer — shown only for a
- * model that actually exposes a tunable effort knob, driven off the SAME
- * live models.dev capability data (`@kortix/llm-catalog`'s
- * `generationControlCapabilities`) that gates the gateway settings'
- * Generation Controls panel (`generation-controls.tsx`, #4995). Never a
- * hardcoded per-model list — a reasoning model with no `reasoning_options`
- * entry still gets the generic low/medium/high fallback, a model that isn't
- * `reasoning: true` at all gets nothing.
+ * Thinking-effort control for the session chat composer — the ONE effort knob,
+ * in both runtime modes.
  *
- * *** WHY THIS WRITES A PROJECT-LEVEL SETTING, NOT A PER-MESSAGE ONE ***
- * OpenCode's own message-send payload (`SendMessageOptions` in
- * `@kortix/sdk`'s `use-opencode-sessions/keys.ts`, consumed by
- * `promptRuntimeMessage`) only ever carries `model` / `agent` / `variant` /
- * `directory` — there is no per-message reasoning-effort field to set on a
- * chat send today. Separately, models.dev-sourced models don't populate
- * OpenCode's legacy per-model `variant` map, so a model like
- * `openai/gpt-5.6-sol` has no per-model variant to cycle even though it's
- * very much a reasoning model.
+ * It sets the session's model **variant** (`local.model.variant`, sent as
+ * `variant` on every prompt), never a project setting:
  *
- * The one path that reliably reaches the wire today is the per-project
- * **model_generation_config** the gateway injects at resolution time —
- * `packages/llm-gateway/src/pipeline/generation-defaults.ts` merges it into
- * the outbound OpenAI-shaped body (`reasoning_effort`) for any field the
- * client didn't already set, and `apps/api/src/llm-gateway/routing/
- * resolve-route.ts` re-clamps + supplies it per request from
- * `project_llm_routing_policies.model_generation_config` (same table/API the
- * Gateway → Routing settings page's "Generation defaults" panel writes).
- * This component reads/writes that same config, scoped to
- * (this project, this exact wire model) — every session in the project
- * sending to this model picks up the change immediately, and an explicit
- * per-request value (should OpenCode ever grow one) would still win, since
- * injection only ever fills a field the client left unset.
+ *  - Native (llm_gateway off): OpenCode derives the variants from models.dev's
+ *    `reasoning_options` and applies the provider-specific request overlay
+ *    itself (`reasoningEffort`, `reasoningConfig.maxReasoningEffort`, …).
+ *  - Gateway (llm_gateway on): the sandbox publishes the same variant ids on
+ *    the `kortix` provider and OpenCode sends `reasoning_effort` in the body;
+ *    the gateway forwards it per upstream family and REFUSES it (400) for a
+ *    family it cannot map, instead of stripping it.
  *
- * Writing requires the `gateway.routing-policy` PUT's capability gate
- * (`PROJECT_CUSTOMIZE_WRITE`, editor+) — a plain project member gets no
- * control at all. A locked dropdown that cannot change the value is noise.
+ * The list is `Object.keys(model.variants)` from the picker source the
+ * composer already holds — the runtime's own list once the sandbox is up, the
+ * ids derived from the API's live `reasoning_options` before that (see
+ * `nativeProviderListFromCatalog` / `projectLlmCatalogToProviderList` in the
+ * SDK). Never a hardcoded ladder, never the web's baked catalog seed.
+ *
+ * "Auto" clears the variant: the model's own default applies, and on-gateway
+ * the project's Generation defaults (Customize → Gateway → Routing) fill the
+ * field the request left unset.
+ *
+ * History: this used to write the project-level routing policy
+ * (`model_generation_config`) from the composer, was hidden off-gateway
+ * (#6872), and read its values from a hand-regenerated catalog seed that sat
+ * 38 days stale (#6879). Two knobs by mode, three catalog copies. Now one.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -49,12 +41,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { catalogModelForGateway } from '@/features/workspace/customize/sections/view/gateway/generation-controls';
-import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
 import { cn } from '@/lib/utils';
-import { type CatalogReasoningOption, generationControlCapabilities } from '@kortix/llm-catalog';
-import type { GatewayProjectRoutingPolicy } from '@kortix/sdk';
-import { modelKeyToWire, useGatewayRoutingPolicy } from '@kortix/sdk/react';
 import {
   CaretDownIcon,
   CellSignalFullIcon,
@@ -65,149 +52,26 @@ import {
   GaugeIcon,
 } from '@phosphor-icons/react';
 
-export interface ReasoningEffortModelKey {
-  providerID: string;
-  modelID: string;
-}
-
-export interface ReasoningEffortControl {
-  /** False when the model has no reasoning-effort knob, there's no project
-   *  to scope the setting to, or the user cannot write the routing policy —
-   *  render nothing. */
-  visible: boolean;
-  /** The model's own effort labels (e.g. ['none','low','medium','high','xhigh','max']). */
-  values: string[];
-  /** Currently configured effort for this (project, model), or null = model default. */
-  current: string | null;
-  /** Whether the current user can change it (editor+ on the project). */
-  canWrite: boolean;
-  /** Initial load or a write in flight. */
-  pending: boolean;
-  wireModel: string | undefined;
-  setEffort: (next: string | null) => void;
-}
-
 /**
- * The model's own effort labels for the composer to offer — the show/hide
- * source of truth. Pure wrapper around `@kortix/llm-catalog`'s
- * `generationControlCapabilities` so it's testable without mounting React or
- * a query client; a model with no reasoning-effort knob returns `[]`, which
- * is exactly what makes the control render nothing.
- *
- * *** DATA SOURCE PRIORITY ***
- * 1. `reasoningOptions` — the selected model's OWN `reasoning_options`, as
- *    served by the picker source the composer already holds (`/model-picker`
- *    → `FlatModel.reasoningOptions`). That list comes from the API's
- *    hourly-refreshed live models.dev catalog, so a model added to models.dev
- *    yesterday carries its knob today.
- * 2. The web-side catalog (`catalogModelForGateway`) — the baked
- *    `catalog.generated.json` seed until a live fetch replaces it. Fallback
- *    only: the seed is regenerated by hand and WILL lag (it sat 38 days stale
- *    while `global.openai.gpt-5.6-sol` shipped with an effort ladder, which
- *    hid this control for every GPT-5.6 global profile on Bedrock).
- */
-export function reasoningEffortValuesFor(
-  wireModel: string | undefined,
-  reasoningOptions?: CatalogReasoningOption[] | null,
-): string[] {
-  if (!wireModel) return [];
-  if (reasoningOptions?.length) {
-    return (
-      generationControlCapabilities({
-        id: wireModel,
-        name: wireModel,
-        reasoning: true,
-        reasoning_options: reasoningOptions,
-      }).reasoningEffort?.values ?? []
-    );
-  }
-  const catalogModel = catalogModelForGateway(wireModel);
-  return generationControlCapabilities(catalogModel).reasoningEffort?.values ?? [];
-}
-
-/**
- * Merge a new (or cleared) reasoning-effort choice for `wireModel` into a
- * project's `modelGenerationConfig`, preserving any other generation-config
- * fields already set for that model (temperature, topP, maxOutputTokens) and
- * every OTHER model's entry untouched. `next: null` clears the override back
- * to "model default"; if that empties the model's entry entirely, the key is
- * dropped rather than left as `{}`. Pure — no network, no React — so the
- * exact object the PUT would send is directly assertable in a test.
- */
-export function applyReasoningEffort(
-  modelGenerationConfig: GatewayProjectRoutingPolicy['modelGenerationConfig'],
-  wireModel: string,
-  next: string | null,
-): GatewayProjectRoutingPolicy['modelGenerationConfig'] {
-  const current = modelGenerationConfig ?? {};
-  const { reasoningEffort: _currentEffort, ...restForModel } = current[wireModel] ?? {};
-  const entry = next ? { ...restForModel, reasoningEffort: next } : restForModel;
-  const otherEntries = Object.entries(current).filter(([key]) => key !== wireModel);
-  return Object.fromEntries(
-    Object.keys(entry).length > 0 ? [...otherEntries, [wireModel, entry]] : otherEntries,
-  );
-}
-
-/**
- * Derive show/hide + values + current value + write mechanics for the
- * reasoning-effort control on a given (model, project). Thin React/query
- * wiring over the two pure functions above.
- */
-export function useReasoningEffortControl(
-  model: ReasoningEffortModelKey | null | undefined,
-  projectId: string | undefined,
-  reasoningOptions?: CatalogReasoningOption[] | null,
-): ReasoningEffortControl {
-  const wireModel = model ? modelKeyToWire(model) : undefined;
-  // Re-derive when a live catalog fetch lands (the fallback path reads the
-  // module-level `LLM_PROVIDERS`, which that fetch reassigns in place).
-  const catalogRevision = useLlmProviderCatalogRevision();
-  const values = useMemo(
-    () => reasoningEffortValuesFor(wireModel, reasoningOptions),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision is the fallback's invalidation signal
-    [wireModel, reasoningOptions, catalogRevision],
-  );
-  const routing = useGatewayRoutingPolicy(projectId);
-
-  const current =
-    wireModel && routing.data
-      ? (routing.data.project.modelGenerationConfig?.[wireModel]?.reasoningEffort ?? null)
-      : null;
-  // Gateway-only control. Off-gateway (native OpenCode) the box never reads
-  // the routing policy — the model's own THINKING MODE variants in the picker
-  // are the one real effort control there. `routing.data` alone is not
-  // enough: a disabled query still serves cache residue from before the flag
-  // flipped, which rendered a second, dead effort chip beside the variants.
-  const canWrite = routing.llmGatewayEnabled && (routing.data?.capabilities?.write ?? false);
-
-  const setEffort = (next: string | null) => {
-    if (!wireModel || !projectId || !routing.data) return;
-    const policy: GatewayProjectRoutingPolicy = routing.data.project;
-    routing.set.mutate({
-      ...policy,
-      modelGenerationConfig: applyReasoningEffort(policy.modelGenerationConfig, wireModel, next),
-    });
-  };
-
-  return {
-    // Viewers (no `gateway.routing-policy` write) never see the control —
-    // a disabled effort picker is not useful discovery, it is dead chrome.
-    visible: !!projectId && values.length > 0 && canWrite,
-    values,
-    current,
-    canWrite,
-    pending: !!projectId && (routing.isLoading || routing.set.isPending),
-    wireModel,
-    setEffort,
-  };
-}
-
-/**
- * The value `setEffort(null)` means: no project override, let the model decide.
+ * The value `onVariantChange(null)` means: no variant, let the model decide.
  * A sentinel is needed because Radix's radio group addresses items by string
  * and cannot carry `null`.
  */
 const AUTO = '__auto__';
+
+/**
+ * Show/hide + the choices, as a pure function so the rule is testable without
+ * React: the control renders only when the selected model publishes at least
+ * one variant AND the composer can apply one. Order and ids are the model's
+ * own; duplicates (a runtime + catalog merge slip) collapse to one entry.
+ */
+export function reasoningEffortChoices(
+  variants: readonly string[] | undefined,
+  canApply: boolean,
+): string[] {
+  if (!canApply || !variants?.length) return [];
+  return Array.from(new Set(variants.filter((v) => typeof v === 'string' && v.length > 0)));
+}
 
 /** `medium` → `Medium`. The catalog ships lowercase ids; the trigger and the
  *  menu should not. */
@@ -216,21 +80,13 @@ function label(value: string): string {
 }
 
 /**
- * Same stop list as `KORTIX_BULLET_GRADIENT` — expressed as a Tailwind
- * arbitrary `bg-[linear-gradient(...)]` so max/full stay utility-class-only
- * (no `style={{ backgroundImage }}`).
- */
-/**
  * Cell-signal bars for effort — none → full ladder. Extra ladder steps
  * (`xhigh`, `max`) share Full; unknown ids fall back to Medium so a future
  * catalog value never renders without an icon.
  *
- * `null`/`'auto'` (model decides, no project override) gets a Gauge icon
- * instead of a cell-signal step — it isn't a fixed point on the none→full
- * ladder, it's the dial that finds its own reading per turn. Reusing the
- * Kortix brand mark here read as an unrelated "Kortix" button rather than a
- * value on this control, and a generic sparkle is the same AI-chrome glyph
- * used everywhere else in the product for unrelated things.
+ * `null` (model decides, no variant) gets a Gauge icon instead of a
+ * cell-signal step — it isn't a fixed point on the none→full ladder, it's the
+ * dial that finds its own reading per turn.
  *
  * A switch that returns JSX (not a component reference) — assigning
  * `const Icon = map[value]` and then `<Icon />` trips the React Compiler's
@@ -243,6 +99,7 @@ function EffortIcon({ value, className }: { value: string | null; className?: st
       return <GaugeIcon className={className} />;
     case 'none':
       return <CellSignalNoneIcon className={className} weight="fill" />;
+    case 'minimal':
     case 'low':
       return <CellSignalLowIcon className={className} weight="fill" />;
     case 'medium':
@@ -250,21 +107,22 @@ function EffortIcon({ value, className }: { value: string | null; className?: st
     case 'high':
       return <CellSignalHighIcon className={className} weight="fill" />;
     case 'xhigh':
-      return <CellSignalFullIcon className={className} weight="fill" />;
     case 'max':
     case 'full':
-      return <CellSignalFullIcon weight="fill" className={className} />;
+      return <CellSignalFullIcon className={className} weight="fill" />;
     default:
       return <CellSignalMediumIcon className={className} weight="fill" />;
   }
 }
 
 export interface ReasoningEffortSelectorProps {
-  model: ReasoningEffortModelKey | null | undefined;
-  projectId: string | undefined;
-  /** The selected model's own `reasoning_options` from the picker source
-   *  (`FlatModel.reasoningOptions`) — see `reasoningEffortValuesFor`. */
-  reasoningOptions?: CatalogReasoningOption[] | null;
+  /** The selected model's variant ids (`Object.keys(model.variants)`). */
+  variants: readonly string[] | undefined;
+  /** The session's current variant, or null = model default. */
+  selectedVariant: string | null | undefined;
+  /** Applies a variant to the session; absent = the composer cannot apply one
+   *  (no runtime model store), which hides the control entirely. */
+  onVariantChange?: (variant: string | null) => void;
   /**
    * Controlled open state — omit and the trigger owns it. Supplied by
    * `composer.tsx` so the `/` palette's "Set reasoning effort" row can open
@@ -275,37 +133,25 @@ export interface ReasoningEffortSelectorProps {
 }
 
 /**
- * Reasoning effort as its own composer-toolbar control.
- *
- * It previously lived as a chip row folded into the bottom of the model
- * popover. That put a per-project setting two clicks deep behind a per-message
- * one, and — because the popover only renders that footer once a model is
- * selected and the section is non-empty — made it invisible at rest, so
- * nothing in the composer showed the effort a turn would actually run at. As a
- * peer of the model pill it states its own value without being opened.
- *
- * Renders NOTHING when `visible` is false — no effort knob, no project, or
- * the user cannot write the routing policy. A model without reasoning, or a
- * viewer without `PROJECT_CUSTOMIZE_WRITE`, never grows a dead control.
+ * Thinking effort as its own composer-toolbar control, a peer of the model
+ * pill, stating its value at rest. Renders NOTHING when the model publishes no
+ * variants or the composer cannot apply one — a model without a knob never
+ * grows dead chrome.
  *
  * A `DropdownMenu` rather than the `CommandPopover` the model and agent
- * pickers use: this is a fixed list of four to six values with no search, no
+ * pickers use: this is a fixed list of a handful of values with no search, no
  * grouping and no empty state, and `DropdownMenuRadioGroup` gives the
  * single-select semantics — roving focus, typeahead, `aria-checked` — for
  * free, where the command palette would need them re-implemented.
  */
 export function ReasoningEffortSelector({
-  model,
-  projectId,
-  reasoningOptions,
+  variants,
+  selectedVariant,
+  onVariantChange,
   open: openProp,
   onOpenChange,
 }: ReasoningEffortSelectorProps) {
-  const { visible, values, current, pending, setEffort } = useReasoningEffortControl(
-    model,
-    projectId,
-    reasoningOptions,
-  );
+  const choices = reasoningEffortChoices(variants, !!onVariantChange);
 
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const isControlled = openProp !== undefined;
@@ -319,11 +165,16 @@ export function ReasoningEffortSelector({
   );
 
   const onValueChange = useCallback(
-    (next: string) => setEffort(next === AUTO ? null : next),
-    [setEffort],
+    (next: string) => onVariantChange?.(next === AUTO ? null : next),
+    [onVariantChange],
   );
 
-  if (!visible) return null;
+  if (choices.length === 0) return null;
+
+  // A stale per-model pick (a variant the current list no longer carries)
+  // reads as Auto rather than an unlabeled value; the next explicit choice
+  // replaces it.
+  const current = selectedVariant && choices.includes(selectedVariant) ? selectedVariant : null;
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -332,14 +183,8 @@ export function ReasoningEffortSelector({
           type="button"
           variant="ghost"
           size="sm"
-          aria-disabled={pending || undefined}
-          onClick={(e) => {
-            if (pending) e.preventDefault();
-          }}
-          className={cn(
-            'text-foreground/70 gap-1.5 rounded-lg',
-            pending && 'cursor-not-allowed opacity-60',
-          )}
+          aria-label="Thinking effort"
+          className="text-foreground/70 gap-1.5 rounded-lg"
         >
           <EffortIcon value={current} className="size-4 shrink-0" />
           <span className="max-w-[7rem] truncate">{current ? label(current) : 'Auto'}</span>
@@ -355,14 +200,14 @@ export function ReasoningEffortSelector({
       <DropdownMenuContent side="top" align="start" className="min-w-[10rem]">
         <DropdownMenuRadioGroup value={current ?? AUTO} onValueChange={onValueChange}>
           {/* Auto is first and always present: it is the only way BACK to the
-              model's own default once an override is set, and without it the
+              model's own default once a variant is set, and without it the
               control would be a one-way door. */}
-          <DropdownMenuRadioItem value={AUTO} disabled={pending}>
+          <DropdownMenuRadioItem value={AUTO}>
             <EffortIcon value={null} className="size-4 shrink-0" />
             Auto
           </DropdownMenuRadioItem>
-          {values.map((value) => (
-            <DropdownMenuRadioItem key={value} value={value} disabled={pending}>
+          {choices.map((value) => (
+            <DropdownMenuRadioItem key={value} value={value}>
               <EffortIcon value={value} className="size-4 shrink-0" />
               {label(value)}
             </DropdownMenuRadioItem>

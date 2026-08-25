@@ -152,6 +152,17 @@ describe('full self-host Docker distribution', () => {
     ).toBe('2');
   });
 
+  test('passes the gateway request-body cap override through to llm-gateway', () => {
+    // Essentia 2026-08-25: image-heavy turns (>128 MiB) 413'd at the gateway
+    // default with no way to raise it from the box .env.
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+    expect(document.services['llm-gateway']?.environment?.GATEWAY_MAX_REQUEST_BYTES).toBe(
+      '${KORTIX_GATEWAY_MAX_REQUEST_BYTES:-}',
+    );
+  });
+
   test('omits the cloudflared tunnel service when tunnel mode is not selected', () => {
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, unknown>;

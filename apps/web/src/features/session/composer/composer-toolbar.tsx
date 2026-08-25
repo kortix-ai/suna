@@ -16,11 +16,12 @@ import { SendStopControl } from './send-stop-control';
  * The composer's bottom toolbar — the familiar one, now scoped to the two
  * controls that describe WHAT will answer.
  *
- *  - LEFT: model, reasoning effort — inline, showing their current value at
- *    rest. Variant (thinking mode) stays folded inside the model popover: it
- *    is a setting on top of the selected model, not a peer of it. Reasoning
- *    effort is NOT — it is a per-project setting, so it sits beside the model
- *    rather than two clicks inside it.
+ *  - LEFT: model, thinking effort — inline, showing their current value at
+ *    rest. Thinking effort IS the model variant (`local.model.variant`): one
+ *    knob, per session, in both runtime modes. It used to be split — a
+ *    "Thinking mode" row folded inside the model popover off-gateway and a
+ *    project-level routing-policy chip on-gateway (#6872) — which put the
+ *    same setting in two places with two scopes. The popover row is gone.
  *  - RIGHT: send/stop.
  *
  * Attach, agent, and token progress used to sit here. They now live in the
@@ -30,14 +31,9 @@ import { SendStopControl } from './send-stop-control';
  * (context ring, hard right). Do not re-add them here — they would render
  * twice.
  *
- * Reasoning effort's placement is contested and was resolved deliberately.
- * `main` removed it from this bar (PR #6381: "it lives inside the
- * session-overrides panel — the bar keeps only agent + model") and its
- * overrides panel does carry a working control. This branch keeps it here as
- * well, by explicit decision, which means it is reachable from both places.
- * If that duplication is unwanted, the fix is to delete the
- * `ReasoningEffortSelector` render below plus the `reasoningMenuOpen` pair —
- * not to assume a merge dropped it by accident.
+ * The effort control's placement was resolved deliberately: it sits here,
+ * glanceable at rest, and the `/` palette's "Set reasoning effort" row opens
+ * it (`reasoningMenuOpen`). Do not fold it back into the model popover.
  *
  * Two earlier passes are recorded here so they are not re-attempted:
  *
@@ -117,21 +113,6 @@ export interface ComposerToolbarProps {
   onSubmit: () => void;
 }
 
-/**
- * The picker's own record for the selected key — its `reasoningOptions` feed
- * the effort control, so a model the web's baked catalog seed has never heard
- * of (see reasoning-effort-selector.tsx's data-source note) still gets its knob.
- */
-function selectedFlatModel(
-  models: FlatModel[],
-  selected: { providerID: string; modelID: string } | null,
-): FlatModel | undefined {
-  if (!selected) return undefined;
-  return models.find(
-    (m) => m.providerID === selected.providerID && m.modelID === selected.modelID,
-  );
-}
-
 export function ComposerToolbar({
   models,
   modelsLoading,
@@ -183,9 +164,6 @@ export function ComposerToolbar({
             providers={providers}
             defaultControls={modelDefaultControls}
             triggerLabelClassName="max-w-[7rem]"
-            variants={variants}
-            selectedVariant={selectedVariant}
-            onVariantChange={onVariantChange}
             projectId={projectId}
             open={modelMenuOpen}
             onOpenChange={onModelMenuOpenChange}
@@ -193,9 +171,9 @@ export function ComposerToolbar({
         )}
 
         <ReasoningEffortSelector
-          model={selectedModel}
-          projectId={projectId}
-          reasoningOptions={selectedFlatModel(models, selectedModel)?.reasoningOptions}
+          variants={variants}
+          selectedVariant={selectedVariant}
+          onVariantChange={onVariantChange}
           open={reasoningMenuOpen}
           onOpenChange={onReasoningMenuOpenChange}
         />

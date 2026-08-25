@@ -17,6 +17,7 @@ import {
 } from './hooks';
 import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth';
 import { gatewayModelCatalog } from './models/catalog-models';
+import { servableProjectCatalog } from './models/servable-catalog';
 import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveGatewayRoute } from './routing';
 
@@ -107,8 +108,21 @@ export function createInternalGatewayRoutes() {
   });
 
   app.post('/models', async (c) => {
-    const { principal, managedOnly } = await c.req.json();
+    const { principal, managedOnly, scope } = await c.req.json();
     const p = principal as AuthedPrincipal;
+    // `scope:'picker'` backs the standalone gateway's `GET /models?scope=picker`:
+    // the project's SERVABLE set (managed the account may use + connected BYOK
+    // + routing-named ids, ~80KB) — what the web picker shows and what a
+    // sandbox registers on its `kortix` provider at boot. Same composition as
+    // `GET /projects/:id/model-picker` (servableProjectCatalog).
+    if (scope === 'picker' && p.projectId) {
+      const catalog = await servableProjectCatalog({
+        projectId: p.projectId,
+        accountId: p.accountId,
+        principalUserId: p.userId,
+      });
+      return c.json({ models: catalog.models });
+    }
     // `managedOnly` backs the standalone gateway's `GET /models?scope=managed`
     // — the compact managed lineup a sandbox fetches on boot. Dropping the
     // projectId is what selects MANAGED_ONLY; free-tier accounts still get an

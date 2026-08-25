@@ -737,19 +737,40 @@ function isBedrockClaudeModel(resolvedModel: string | undefined): boolean {
 }
 
 // OpenAI models on Bedrock (`global.openai.gpt-5.6-*`, `openai.gpt-5.5`,
-// `openai.gpt-oss-*`) are served by Bedrock core (Converse), where the OpenAI
-// reasoning knob travels as `additionalModelRequestFields.reasoning_effort` —
-// the exact field @ai-sdk/amazon-bedrock 5.0.59 itself emits for
-// `reasoningConfig.maxReasoningEffort` once it recognises an OpenAI model id
-// (its `isOpenAIModel` branch), and what opencode sends natively for the same
-// models. Written as the raw field rather than through `maxReasoningEffort`:
-// the package's enum is `low|medium|high|xhigh|max` and rejects `none`, which
-// GPT-5.6 publishes as a real tier (models.dev `reasoning_options`). Before
+// `openai.gpt-oss-*`) are served by Bedrock core (Converse). The reasoning
+// knob travels as `additionalModelRequestFields.reasoning: { effort }` — the
+// OpenAI Responses shape. VERIFIED against real Bedrock (us-west-2,
+// 2026-08-25, global.openai.gpt-5.6-sol): `reasoning.effort` returns 200 for
+// every published tier (none/low/medium/high/xhigh/max) and 400
+// `unsupported_value` for an unpublished one (`minimal`); the flat
+// `reasoning_effort` that @ai-sdk/amazon-bedrock 5.0.59 emits for its
+// `isOpenAIModel` branch is REJECTED by GPT-5.6 with 400 `unknown_parameter`
+// (gpt-oss-120b accepts both shapes, so the nested one is the universal
+// OpenAI-on-Bedrock wire). `reasoningEffort`, `reasoningConfig` and
+// `thinking` are all `unknown_parameter` too. `summary: 'auto'` makes the
+// model return its reasoning as a content block (the thinking the composer
+// shows), matching opencode's `reasoningSummary: 'auto'` for OpenAI. Before
 // this branch existed the bedrock adapter returned `{}` for every non-Claude
 // model, so a client's `reasoning_effort` (or the project's configured
 // default) was silently dropped for GPT-5.6 on Bedrock.
 function isBedrockOpenAiModel(resolvedModel: string | undefined): boolean {
   return /(^|\.)openai\./i.test(resolvedModel ?? '');
+}
+
+// Models that answered `unknown_parameter` for the reasoning field once. The
+// wire shape below is verified (#6893), but the next provider surface that
+// publishes an OpenAI ladder and rejects the field must cost one retry, never
+// the turn: the pipeline notes a rejection here and re-dispatches once without
+// it; every later request to that model skips the field.
+const bedrockOpenAiReasoningEffortRejected = new Set<string>();
+export function noteBedrockOpenAiRejectsReasoningEffort(resolvedModel: string): void {
+  bedrockOpenAiReasoningEffortRejected.add(resolvedModel);
+}
+export function bedrockOpenAiRejectsReasoningEffort(resolvedModel: string | undefined): boolean {
+  return !!resolvedModel && bedrockOpenAiReasoningEffortRejected.has(resolvedModel);
+}
+export function resetBedrockOpenAiReasoningEffortRejectionsForTests(): void {
+  bedrockOpenAiReasoningEffortRejected.clear();
 }
 
 const ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
@@ -1079,16 +1100,27 @@ const bedrockAdapter: ProviderAdapter = {
     // effort as the OpenAI-native field. Nothing else — `cachePoint` and
     // `reasoningConfig` are Claude-Converse-only and 403 here.
     if (isBedrockOpenAiModel(req.resolvedModel)) {
-      if (typeof req.reasoningEffort === 'string') {
-        options.additionalModelRequestFields = { reasoning_effort: req.reasoningEffort };
+      if (
+        typeof req.reasoningEffort === 'string' &&
+        !bedrockOpenAiRejectsReasoningEffort(req.resolvedModel)
+      ) {
+        options.additionalModelRequestFields = {
+          reasoning: { effort: req.reasoningEffort, summary: 'auto' },
+        };
       }
       return options;
     }
     // `reasoningConfig:{type:'adaptive'}` is a Claude-Converse-only primitive.
     // Other non-Claude Bedrock models (Nova, Grok, DeepSeek, …) 403 on it —
-    // never attach it for them. Their own effort wires are not mapped yet, so
-    // a client effort is still dropped for them (Nova 2 / Grok 4.6 publish
-    // reasoning_options on models.dev; Converse shape unverified).
+    // never attach it for them. Their own effort wires are not mapped yet
+    // (Nova 2 / Grok 4.6 publish reasoning_options on models.dev; the Converse
+    // field shape for them is unverified), so an effort that reaches here is
+    // DROPPED. Not refused: #6887 briefly answered 400 `unsupported_param`
+    // here, and the first turn of a fresh project on dev proved that opencode
+    // sends a default effort for every reasoning-capable model (the user never
+    // picked a tier) — refusing the parameter refused the model, including
+    // the managed Grok default. Map the wire when it is verified; until then
+    // the model runs at its own default.
     if (!isBedrockClaudeModel(req.resolvedModel)) return options;
     const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
     // Adaptive thinking carries no token budget to clamp — the model manages

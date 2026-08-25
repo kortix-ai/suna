@@ -2427,3 +2427,226 @@ guards the lockstep pins; the shared sandbox goldens fail on a pin drift.
 *Incident:* no outage. Essentia's Bedrock model was unusable in native mode
 until PR #6873 (1.18.23) deployed and the box updated with
 `kortix self-host update --version dev`.
+
+## A provider's 204 is not a renewal; read the deadline back
+
+*Incident (2026-08-25, Essentia self-host):* four agent turns died mid-work,
+each exactly one hour after the sandbox was created or resumed. The last
+assistant message of each was `tokens 0/0/0, parts: []` — an LLM call that was
+in flight when the VM froze. Kortix had renewed every box every 20 s
+(`[active-turn-renewal]`, `errors:0`; E2B API log: 375 × `POST
+/sandboxes/<id>/timeout → 204`). E2B's `KeepAliveFor` clamps every renewal to
+the team's `max_length_hours`; the Essentia team sat on tier `base_v1`
+(`max_length_hours = 1`, the upstream migration default) with a matching
+`project_limits` row, so `endAt` never moved past `startedAt + 1h` and E2B
+paused the box (`sandbox_pause_initiated pause_reason=timeout`).
+
+**Rules.**
+1. `renewLifecycle` (`apps/api/src/platform/providers/e2b.ts`) reads `endAt`
+   back after `setTimeout` and throws `E2BLifecycleRenewalIgnoredError` when the
+   deadline did not advance to within `KORTIX_E2B_RENEWAL_TOLERANCE_MS` of the
+   backstop. The reaper and the active-turn renewal loop count it as an error
+   and the log names `max_length_hours`.
+2. A self-hosted E2B cluster must run its Kortix team at
+   `max_length_hours ≥ 24` (`tiers` and `project_limits`; the `team_limits`
+   view prefers `project_limits`). The cap is a ceiling on continuous running
+   time, not a lifetime: Kortix's own `deadline_at` still stops idle boxes.
+3. Existing sandboxes keep the cap they were created with. After raising it,
+   pause+resume (or restart) the live boxes; a fresh `POST /timeout` must move
+   `endAt`.
+4. The fingerprint of this class of failure: an assistant message with
+   `tokens 0/0/0` and no parts, created seconds before a provider pause; the
+   OpenCode log ends at `llm runtime selected` with no stream line after it.
+
+*Automation:* `apps/api/src/platform/providers/e2b.test.ts` — "refuses to
+report a renewal the provider clamped".
+
+## The runtime's body limit is the one that logs, never the one that is silent
+
+*Incident (2026-08-25, Essentia):* three empty assistant messages in two
+sessions were `413 Request Entity Too Large` on image-heavy turns (381k input
+tokens, 118 inline screenshots). Nothing in the gateway log explained them:
+Bun's own `maxRequestBodySize` default (128 MiB) equals
+`DEFAULT_MAX_REQUEST_BYTES`, so Bun refused the body before `fetch()` ran —
+plain-text 413, no `request_too_large` step, and a mid-upload socket close on
+the first attempt (`Cannot connect to API: The socket…`).
+
+**Rules.**
+1. `Bun.serve` in `apps/llm-gateway/src/main.ts` sets `maxRequestBodySize`
+   strictly above the pipeline's per-request cap
+   (`bunRequestBodyCeilingBytes`), so an over-limit body is refused by the
+   pipeline with its logged, digit-free 413.
+2. Any host runtime that enforces a body limit of its own (Bun, Caddy, an
+   ALB) must be configured above the application's cap, or the application's
+   limit is decoration.
+3. Raise a self-host gateway's cap through `GATEWAY_MAX_REQUEST_BYTES`; the
+   in-flight memory budget clamps it to what the process can hold.
+
+*Automation:* `apps/llm-gateway/src/request-body-ceiling.test.ts`.
+
+## The daemon owns the OpenCode binary; OpenCode must never upgrade itself
+
+*Incident (2026-08-22 and again 2026-08-25, Essentia):* a human ran `opencode`
+in the Session terminal. OpenCode's autoupdate (`autoupdate` unset = on)
+installed the newer version with plain `pnpm add -g` — no postinstall — leaving
+a 479-byte launcher stub, deleting the old global dir and dangling
+`/opt/kortix/opencode.current`. The running server survived on a deleted
+inode; the next restart booted the stub ("Still waking this session up").
+
+**Rules.**
+1. `buildOpencodeConfigContent` always emits `autoupdate: false`; a base
+   config cannot turn it back on. The composed Kortix config is never
+   `undefined` any more.
+2. Version changes reach a box only through the runtime-assets manifest and
+   `installOpencodeVersion` (`pnpm add -g --allow-build=opencode-ai`).
+
+*Automation:* `connector-mcp-config.test.ts` — "always disables OpenCode
+autoupdate".
+
+## A boot budget measures lack of progress, not wall-clock
+
+*Incident (2026-08-25 17:23–17:25, Essentia):* both reopened sessions failed
+to wake. The resume converged OpenCode 1.18.19 → 1.18.23 (manifest bump live
+since the updater restarted the API) and then sat through the new version's
+53 s first init. `/start` polled `starting` for 83 s and the fixed
+`STALE_OPENCODE_NOT_READY_MS = 90 s` budget parked both boxes as
+`runtime_boot_failed`; the automatic restart then booted in 20 s because the
+install had already landed.
+
+**Rules.**
+1. Every not-ready 503 from the daemon carries `X-Kortix-Boot-Phase`
+   (`boot-phase.ts`: last boot mark, OpenCode state, runtime-assets activity
+   such as `installing-opencode@<v>`, and the not-ready reason).
+2. The API restarts the per-reason clock whenever that phase changes
+   (`opencodeReadyWaitPatch`); `STALE_OPENCODE_NOT_READY_MS` now bounds time
+   without progress. `STALE_OPENCODE_BOOT_HARD_MS` (10 min from first
+   observation) bounds a boot that changes phase forever. A stub launcher
+   respawning in a loop never changes phase and is still caught at 90 s.
+3. Do not "fix" a slow legitimate boot by raising the fixed budget; expose the
+   progress and budget that.
+
+*Automation:* `unit-session-restart-url-contract.test.ts` ("progress-aware
+OpenCode boot budget"), `boot-phase.test.ts`, `proxy-auth.test.ts` ("names the
+boot phase").
+
+## A runtime started from `stopped` owns no turn; settle and redeliver on the wake
+
+*Incident (2026-08-25, Essentia):* the provider paused two boxes mid-turn. One
+was woken by the UI through the proxy before the reaper confirmed the stop:
+the fresh runtime answered `idle`, the open turn closed `completed`, and the
+user saw the agent "just stop" with nothing to resume. The other closed
+`runtime_gone` but its accepted prompt was never redelivered (only
+never-accepted deliveries were), so the user typed "go on".
+
+**Rules.**
+1. Every path that starts a provider-`stopped` box (`wakeSandbox` in the
+   preview proxy, the `/start` wake finalize) calls
+   `recoverTurnsAfterRuntimeRestart`: open ledger rows → `runtime_gone`,
+   turn authority dropped, each prompt redelivered DUE (`hold:false`).
+2. A stop the PROVIDER originated (`stopReason: provider_reconcile`) requeues
+   accepted prompts too (held); a stop Kortix chose keeps the old rule.
+3. A turn's verdict is never derived from a runtime that did not run it.
+
+*Automation:* `runtime-restart-recovery.test.ts`.
+
+## A refresh never converges a booting runtime; a stub launcher is never spawned
+
+*Incident (2026-08-25, Essentia):* the session-open refresh (env-sync) ran the
+runtime-assets pass during a resume, installing OpenCode 1.18.23 and
+restarting it under the boot; and the PATH launcher on two boxes was the
+479-byte pnpm postinstall stub, one restart away from a dead session.
+
+**Rules.**
+1. `refreshMayConvergeRuntime`: the refresh route schedules a reconcile only
+   when OpenCode is serving (`ok`); main.ts owns the post-boot pass.
+2. `isStubOpencodeLauncher`: the PATH launcher is skipped when it is (or shims
+   to) the postinstall stub; resolution falls through to the managed links.
+   Conservative: anything unreadable is not a stub.
+
+*Automation:* `refresh-converge-guard.test.ts`, `opencode-binary.test.ts`.
+
+## Window inline images inside the sandbox; the edge is too late
+
+*Incident (2026-08-25, Essentia):* vision-heavy turns accumulated 118 inline
+screenshots (>128 MiB per request). The gateway's image window keeps 12, but
+only after the body has crossed the wire; the runtime's body ceiling refused it
+first and the turn died with an empty assistant message.
+
+**Rules.**
+1. Every gateway session routes OpenCode through the daemon's localhost LLM
+   proxy (`main.ts`, not only warm hot-swap forks). The proxy applies the same
+   window (`llm-image-window.ts`, default keep 12 of ≤20) to `chat/completions`,
+   `messages` and `responses` bodies BEFORE they leave the box, and lifts its
+   own body ceiling so a large body can be shrunk rather than refused.
+2. Kill switch `KORTIX_LLM_PROXY_DISABLE=1` (direct provider config);
+   `KORTIX_LLM_MAX_INLINE_IMAGES=0` disables the window only.
+3. A live gateway enable/disable (`/kortix/env`) keeps the proxy's upstream +
+   token in step (`applyLlmGatewayMode`).
+
+*Automation:* `llm-image-window.test.ts`, `llm-proxy.test.ts` ("in-sandbox
+inline image window").
+
+## A gateway may not refuse a request parameter the client sends by default
+
+Found 2026-08-25 on dev, one hour after #6887 deployed. The bedrock adapter
+answered `400 unsupported_param` for a `reasoning_effort` it could not map
+(Nova, Grok, DeepSeek on Bedrock). The first turn of a fresh project — the
+auto-seeded `amazon-bedrock/xai.grok-4.6`, no tier picked — failed with that
+400. opencode attaches a default reasoning effort to every reasoning-capable
+model, so refusing the parameter refused the model, managed Grok included.
+Reverted in #6893 to a documented drop.
+
+**Rules.**
+1. Before a gateway refuses a request field, capture what opencode sends for a
+   turn where the user set nothing. A field present by default is part of the
+   model contract, not a user choice.
+2. Verify a provider wire shape against the real provider before mapping it.
+   The AI SDK's mapping is a hint: `@ai-sdk/amazon-bedrock` 5.0.59 emits
+   `reasoning_effort` for OpenAI ids; Bedrock GPT-5.6 rejects it with
+   `unknown_parameter` and accepts `reasoning: { effort }` (verified with the
+   Essentia account, us-west-2, every published tier).
+3. Prefer "drop and document" over "refuse" for a field with no verified
+   mapping; log the drop so the gap is visible.
+4. A dev verification with a fake provider key proves routing only. Use a real
+   key (a short-lived Bedrock bearer token from `aws-bedrock-token-generator`
+   on the provider account's profile) before calling a wire mapping verified.
+
+*Automation:* `packages/llm-gateway/src/transports/ai-sdk/ai-sdk.test.ts`
+pins the drop for Nova/Grok and the `reasoning.effort` shape for OpenAI ids.
+
+*Incident:* dev only; every Grok-on-Bedrock turn 400'd between the #6887
+deploy (`2635791cf1`) and the #6893 deploy (`77ec6b2307`), about 70 minutes.
+Prod was not promoted in that window. No data loss.
+
+## A 400 that names one parameter is never the turn's final answer
+
+*Incident (2026-08-25 19:40Z, Essentia session 58da74d4):* the gateway
+forwarded a reasoning field in a shape Bedrock's GPT-5.6 profile rejects
+(`400 unknown_parameter: reasoning_effort`); every turn on the model died with
+an empty assistant message until the wire shape was verified and corrected
+(#6893). The project's configured default was the trigger; the live mitigation
+was stripping it from `project_llm_routing_policies.model_generation_config`.
+
+**Rules.**
+1. `isUnknownParameterRejection(err, param)` (errors.ts) recognises an
+   upstream refusing ONE field. The chat handler re-dispatches a Bedrock
+   candidate once without `reasoning_effort` and remembers the model
+   (`noteBedrockOpenAiRejectsReasoningEffort`); the adapter never attaches the
+   field for a remembered model again. One retry, never the turn.
+2. The verified wire (#6893) stays the primary path; this is the backstop for
+   the next unverified claim, not a substitute for verifying.
+
+*Automation:* `errors.test.ts`, `simple-handler.test.ts`, `ai-sdk.test.ts`
+("never receives it again").
+
+## Regenerating a CA on every listener restart breaks trust and the CI clock
+
+*Incident (2026-08-25):* the daemon egress shim minted a fresh RSA CA on every
+rule change (`syncEgressShim` restart). Shells that had sourced the previous
+trust bundle would fail TLS until re-sourced, and node-forge's keygen (1-4 s)
+made the packages CI lane time out on the restart tests.
+
+**Rules.** One CA per daemon process (`sessionCa` in `egress-shim/index.ts`),
+reused across restarts; tests reset it via `__resetEgressShimForTests`.
+Timing tests keep at least a 5× margin between the paced event and the budget
+they assert (relay-transport "measures SILENCE").

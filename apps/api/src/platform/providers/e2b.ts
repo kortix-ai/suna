@@ -53,6 +53,35 @@ const ENV_METADATA = 'kortix_env';
 // after that budget. This outer timer bounds all permanent-removal call sites.
 const E2B_REMOVE_TIMEOUT_MS = configuredTimeoutMs('KORTIX_E2B_REMOVE_TIMEOUT_MS', 25_000, 1_000);
 const E2B_RENEW_TIMEOUT_MS = configuredTimeoutMs('KORTIX_E2B_RENEW_TIMEOUT_MS', 25_000, 1_000);
+// How far the provider deadline may lag `now + backstop` before a renewal is
+// treated as ignored. Renewals run every ~20 s; a 1h team cap shows up as a
+// deadline pinned at `startedAt + 1h`, i.e. minutes short within minutes.
+const E2B_RENEWAL_TOLERANCE_MS = configuredTimeoutMs(
+  'KORTIX_E2B_RENEWAL_TOLERANCE_MS',
+  2 * 60 * 1000,
+  1_000,
+);
+
+/** The provider acknowledged a renewal (204) but its deadline did not move. */
+export class E2BLifecycleRenewalIgnoredError extends Error {
+  readonly code = 'e2b_lifecycle_renewal_ignored';
+  constructor(
+    message: string,
+    readonly providerEndAtMs: number,
+  ) {
+    super(message);
+    this.name = 'E2BLifecycleRenewalIgnoredError';
+  }
+}
+
+function parseProviderInstant(value: unknown): number | null {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const ms = new Date(value).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  return null;
+}
 const E2B_STOP_TIMEOUT_MS = configuredTimeoutMs('KORTIX_E2B_STOP_TIMEOUT_MS', 25_000, 1_000);
 
 /**
@@ -91,10 +120,7 @@ function isMissingSandboxError(error: unknown): boolean {
 const connectedSandboxes = new Map<string, E2BSandbox>();
 export const E2B_INGRESS_HANDLE_TTL_MS = 5_000;
 const connectedSandboxCachedAt = new Map<string, number>();
-const connectOperations = new Map<
-  string,
-  { generation: object; promise: Promise<E2BSandbox> }
->();
+const connectOperations = new Map<string, { generation: object; promise: Promise<E2BSandbox> }>();
 export const E2B_RUNNING_STATUS_CACHE_TTL_MS = 3_000;
 const runningStatusCache = new Map<string, number>();
 const statusCacheGeneration = new Map<string, object>();
@@ -482,11 +508,33 @@ export class E2BProvider implements SandboxProvider {
     // E2B's timeout is an ABSOLUTE provider deadline. Guest activity does not
     // move it. Reset it through the static control-plane API so this operation
     // cannot connect to, resume, or otherwise wake a stopped sandbox.
+    const requestedAtMs = Date.now();
     await withTimeout(
       Sandbox.setTimeout(externalId, E2B_RUNTIME_BACKSTOP_MS, apiOpts()),
       this.renewTimeoutMs,
       `E2B lifecycle renewal(${externalId})`,
     );
+    // A 204 is not proof. E2B's KeepAliveFor clamps every renewal to the
+    // team's `max_length_hours` (tier + project_limits), so on a team capped
+    // at 1h the deadline never moves past `startedAt + 1h` and the sandbox is
+    // paused mid-turn exactly one hour after create/resume — while Kortix
+    // logged a successful renewal every 20 s (Essentia 2026-08-25: 375 blind
+    // 204s, 4 turns killed). Read the deadline back and refuse to call a
+    // renewal that did not land a renewal.
+    const info = await withTimeout(
+      Sandbox.getInfo(externalId, apiOpts()),
+      this.renewTimeoutMs,
+      `E2B lifecycle renewal read-back(${externalId})`,
+    );
+    const endAtMs = parseProviderInstant(info.endAt);
+    if (endAtMs === null) return;
+    const expectedMinMs = requestedAtMs + E2B_RUNTIME_BACKSTOP_MS - E2B_RENEWAL_TOLERANCE_MS;
+    if (endAtMs >= expectedMinMs) return;
+    const shortfallS = Math.round((requestedAtMs + E2B_RUNTIME_BACKSTOP_MS - endAtMs) / 1000);
+    const backstopS = Math.round(E2B_RUNTIME_BACKSTOP_MS / 1000);
+    const message = `E2B ignored the lifecycle renewal for ${externalId}: provider endAt ${new Date(endAtMs).toISOString()} is ${shortfallS}s short of the requested ${backstopS}s backstop. The E2B team's max_length_hours caps every renewal; raise it (tiers.max_length_hours / project_limits) or this sandbox is paused mid-turn at endAt.`;
+    console.error(`[e2b] ${message}`);
+    throw new E2BLifecycleRenewalIgnoredError(message, endAtMs);
   }
 
   async stop(externalId: string): Promise<void> {
@@ -522,10 +570,7 @@ export class E2BProvider implements SandboxProvider {
 
   async getStatus(externalId: string): Promise<SandboxStatus> {
     const cachedAt = runningStatusCache.get(externalId);
-    if (
-      cachedAt !== undefined &&
-      Date.now() - cachedAt < E2B_RUNNING_STATUS_CACHE_TTL_MS
-    )
+    if (cachedAt !== undefined && Date.now() - cachedAt < E2B_RUNNING_STATUS_CACHE_TTL_MS)
       return 'running';
     const generation = currentStatusGeneration(externalId);
     try {
@@ -552,11 +597,7 @@ export class E2BProvider implements SandboxProvider {
   private async connected(externalId: string): Promise<E2BSandbox> {
     const cached = connectedSandboxes.get(externalId);
     const cachedAt = connectedSandboxCachedAt.get(externalId);
-    if (
-      cached &&
-      cachedAt !== undefined &&
-      this.now() - cachedAt < E2B_INGRESS_HANDLE_TTL_MS
-    )
+    if (cached && cachedAt !== undefined && this.now() - cachedAt < E2B_INGRESS_HANDLE_TTL_MS)
       return cached;
 
     const providerStatus = await this.getStatus(externalId);
