@@ -12,6 +12,24 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-25 — session `opencode-bump-11823` — OpenCode 1.18.19 → 1.18.23 lockstep — DONE
+
+**Files:** `package.json` (`@opencode-ai/sdk` 1.18.23) · `packages/shared/src/runtime-versions.json`
+(`opencode` + `opencodeSdk`) · shared Dockerfile goldens. **Public surface: no
+changes** — `@opencode-ai/sdk` 1.18.19→1.18.23 changes one line each in
+`v2/gen/types.gen.ts` / `sdk.gen.ts` (the `global.upgrade` payload); the
+type-surface snapshot is byte-identical.
+
+**Why.** Essentia (native mode) ran `amazon-bedrock/global.openai.gpt-5.6-sol`
+and every reasoning stream died on `contentBlockDelta.delta.reasoningContent.redactedContent`
+failing schema validation. Upstream anomalyco/opencode#43686 → #43909 bumped
+`@ai-sdk/amazon-bedrock` 4.0.112→4.0.158 (adds `redactedContent`); first
+release carrying it is v1.18.22. We pinned 1.18.19.
+
+**Gates:** `pnpm typecheck` clean · `pnpm test` 172 files 0 fail ·
+`public-type-surface.test.ts` pass · api `config-deps-version.test.ts` pass ·
+shared sandbox suite 72 pass (goldens regenerated).
+
 ### 2026-08-25 — session `native-catalog-status` — pre-boot picker hides deprecated models like the runtime — DONE
 
 **Files:** `react/provider-selection.ts` (`nativeProviderListFromCatalog` drops
