@@ -141,7 +141,7 @@ permissions:
 jobs:
   infrastructure:
     name: Apply US East 2 shadow Terraform
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # A healthy apply finishes in under a minute (v0.12.7: 40s, job
     # 93576314738). Anything past 20 minutes is a stuck Terraform lock.
     timeout-minutes: 20
@@ -261,7 +261,7 @@ jobs:
 
   deploy:
     name: Deploy API and gateway to US shadow
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: infrastructure
     # Hard ceiling so a wedged shadow can never sit `in_progress` and block
     # "re-run failed jobs" on the calling release run — the v0.12.7 failure

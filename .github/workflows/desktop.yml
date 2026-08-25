@@ -173,7 +173,7 @@ jobs:
     # Publish whatever installers built — a single OS's signing failure shouldn't
     # discard the others.
     if: always() && needs.build.result != 'cancelled'
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     permissions:
       contents: write
     steps:

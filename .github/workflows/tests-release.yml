@@ -73,7 +73,7 @@ jobs:
   # release: the shards still run, and the next run sweeps again.
   sweep-before:
     name: sweep stale test accounts
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     continue-on-error: true
     steps:
@@ -112,7 +112,7 @@ jobs:
     # failed, or was cancelled by its own cap — its result must never gate the
     # release (see the note on sweep-before).
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # A ceiling that turns a hang into a readable failure — never a throttle.
     #
     # Run 32240074477 killed all four API shards on the 40-minute cap at once
@@ -254,7 +254,7 @@ jobs:
     name: deployed browser shard
     needs: sweep-before
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -343,7 +343,7 @@ jobs:
     name: sweep this run's test accounts
     needs: [api, browser]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     continue-on-error: true
     steps:
@@ -371,7 +371,7 @@ jobs:
     name: full suite + quality gates
     needs: [api, browser]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
       - name: Require every deployed shard to pass

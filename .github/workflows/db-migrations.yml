@@ -40,7 +40,7 @@ permissions:
 jobs:
   lint:
     name: Migration files are well-formed
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -51,7 +51,7 @@ jobs:
 
   squawk:
     name: Squawk (zero-downtime lint) on new migrations
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -67,7 +67,7 @@ jobs:
 
   immutability:
     name: Migrations are immutable
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v7
         with:
@@ -89,7 +89,7 @@ jobs:
 
   sequence:
     name: Migrations are sequential
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v7
         with:
@@ -121,7 +121,7 @@ jobs:
 
   shadow-db:
     name: Applies cleanly to a fresh DB
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     services:
       postgres:
         image: postgres:16-alpine
@@ -170,7 +170,7 @@ jobs:
 
   schema-sync:
     name: Schema matches migrations
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       DATABASE_URL: postgres://ci:ci@localhost:1/ci
     steps:

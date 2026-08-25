@@ -21,7 +21,7 @@ permissions:
 jobs:
   drift:
     name: Schema drift (${{ matrix.env }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:
       fail-fast: false
       matrix:
@@ -99,7 +99,7 @@ jobs:
   # catches drift introduced out-of-band BETWEEN deploys.
   prod-presence:
     name: Prod has every table+column the migrations define
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     services:
       postgres:
         image: postgres:16-alpine

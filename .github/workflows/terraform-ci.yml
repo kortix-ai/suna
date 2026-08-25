@@ -48,7 +48,7 @@ jobs:
   validate:
     name: fmt + validate
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -85,7 +85,7 @@ jobs:
   tflint:
     name: tflint
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -102,7 +102,7 @@ jobs:
   checkov:
     name: checkov
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
       contents: read
@@ -133,7 +133,7 @@ jobs:
     # read-only EC2 describes, while drift detection needs broad read plus
     # state access. See security-baseline/iam-gha-nacl-audit.tf.
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
       id-token: write
@@ -158,7 +158,7 @@ jobs:
   drift:
     name: drift detection
     if: github.event_name != 'pull_request' && vars.TF_PLAN_ROLE_ARN != ''
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     permissions:
       id-token: write
@@ -235,7 +235,7 @@ jobs:
     # This job fails loudly on both. It runs on the same schedule as drift, one
     # cycle behind it.
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     permissions:
       contents: read

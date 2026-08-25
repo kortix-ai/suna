@@ -38,7 +38,7 @@ jobs:
       github.event.label.name == 'preview' &&
       github.event.pull_request.head.repo.full_name == github.repository) ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       pull-requests: read
@@ -121,7 +121,7 @@ jobs:
   build-api:
     name: Build preview API image
     needs: authorize
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
@@ -154,7 +154,7 @@ jobs:
   build-gateway:
     name: Build preview gateway image
     needs: authorize
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
@@ -186,7 +186,7 @@ jobs:
   build-web:
     name: Build preview frontend image
     needs: authorize
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     steps:
@@ -234,7 +234,7 @@ jobs:
   deploy:
     name: Deploy full self-host preview and run end-to-end tests
     needs: [authorize, build-api, build-gateway, build-web]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 100
     permissions:
       contents: read
@@ -420,7 +420,7 @@ jobs:
       (github.event.action == 'unlabeled' && github.event.label.name == 'preview') ||
       (github.event.action == 'synchronize' &&
       contains(github.event.pull_request.labels.*.name, 'preview')))
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
       contents: read
@@ -468,7 +468,7 @@ jobs:
   reconcile:
     name: Reconcile stale preview sandboxes
     if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     permissions:
       contents: read

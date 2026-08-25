@@ -60,7 +60,7 @@ permissions:
 jobs:
   version:
     name: Compute staging version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       sha: ${{ steps.v.outputs.sha }}
       sha8: ${{ steps.v.outputs.sha8 }}
@@ -108,7 +108,7 @@ jobs:
             runner: ubuntu-latest
           - arch: arm64
             platform: linux/arm64
-            runner: ubuntu-24.04-arm
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
     steps:
       - uses: actions/checkout@v7
         with:
@@ -151,7 +151,7 @@ jobs:
   merge-api:
     name: Publish API manifest (staging)
     needs: [version, build-api]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -197,7 +197,7 @@ jobs:
             runner: ubuntu-latest
           - arch: arm64
             platform: linux/arm64
-            runner: ubuntu-24.04-arm
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
     steps:
       - uses: actions/checkout@v7
         with:
@@ -238,7 +238,7 @@ jobs:
   merge-gateway:
     name: Publish gateway manifest (staging)
     needs: [version, build-gateway]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -287,7 +287,7 @@ jobs:
             runner: ubuntu-latest
           - arch: arm64
             platform: linux/arm64
-            runner: ubuntu-24.04-arm
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
     steps:
       - uses: actions/checkout@v7
         with:
@@ -345,7 +345,7 @@ jobs:
   merge-frontend:
     name: Publish frontend manifest (staging)
     needs: [version, build-frontend]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -381,7 +381,7 @@ jobs:
     name: Dispatch staging deploy
     needs: [version, merge-api, merge-gateway, merge-frontend]
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Start Deploy Staging for completed manual build
         env:

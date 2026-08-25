@@ -62,7 +62,7 @@ permissions:
 jobs:
   open-release-pr:
     name: Open review-gated release PR
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Checkout ${{ inputs.ref }} (full history)
         uses: actions/checkout@v7

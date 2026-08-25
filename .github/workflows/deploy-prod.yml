@@ -57,7 +57,7 @@ jobs:
   # ── Resolve the version from VERSION ────────────────────────────────────────
   version:
     name: Resolve version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Runs on every push to `prod` (i.e. a merged, reviewed release PR) and on
     # manual dispatch.
     outputs:
@@ -181,7 +181,7 @@ jobs:
   maintenance-banner-on:
     name: Rollout banner (raise)
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v7
       - name: Detect maintenance token
@@ -206,7 +206,7 @@ jobs:
   retag-images:
     name: Re-tag staged → v${{ needs.version.outputs.version }}
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -294,7 +294,7 @@ jobs:
   verify-image-commits:
     name: Verify deployed image CODE matches the release commit
     needs: [version, retag-images]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: docker/login-action@v3
         with:
@@ -329,7 +329,7 @@ jobs:
   build-cli:
     name: Build prod CLI (all targets)
     needs: version
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v7
 
@@ -418,7 +418,7 @@ jobs:
   publish-llm-catalog:
     name: Publish @kortix/llm-catalog to npm
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       id-token: write
@@ -454,7 +454,7 @@ jobs:
   publish-sdk:
     name: Publish @kortix/sdk to npm
     needs: [version, publish-llm-catalog]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       id-token: write
@@ -490,7 +490,7 @@ jobs:
   publish-agent-tunnel:
     name: Publish @kortix/agent-tunnel to npm
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       id-token: write
@@ -525,7 +525,7 @@ jobs:
     name: Publish and deprecate final @kortix/executor-sdk
     needs: [version, publish-sdk]
     if: ${{ needs.version.outputs.version == '0.12.5' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       id-token: write
@@ -697,7 +697,7 @@ jobs:
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
     needs: [version, retag-images, build-cli, publish-sdk, publish-agent-tunnel, deploy-ecs, verify-live-version, frontend-auth-proof]
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     permissions:
       contents: write
     steps:
@@ -741,7 +741,7 @@ jobs:
     name: Attach desktop installers
     needs: [version, github-release, build-desktop]
     if: always() && needs.github-release.result == 'success'
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     permissions:
       contents: write
     steps:
@@ -778,7 +778,7 @@ jobs:
   migrate-db:
     name: Apply DB migrations to prod
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -821,7 +821,7 @@ jobs:
     # `verify-schema` in deploy-ecs.needs.
     if: vars.ENABLE_PROD_SCHEMA_GATE == 'true'
     needs: migrate-db
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     services:
       postgres:
         image: postgres:16-alpine
@@ -894,7 +894,7 @@ jobs:
         && needs.migrate-db.result == 'success'
         && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped')
         && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -1006,7 +1006,7 @@ jobs:
   verify-live-version:
     name: Verify live version == v${{ needs.version.outputs.version }}
     needs: [version, deploy-ecs]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       VERSION: ${{ needs.version.outputs.version }}
       SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
@@ -1121,7 +1121,7 @@ jobs:
   announce:
     name: Announce release to Slack
     needs: [version, github-release, verify-live-version]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Read live /v1/health (public router — the serving backend)
         id: health
@@ -1217,7 +1217,7 @@ jobs:
   deploy-web-ecs:
     name: Deploy prod web to ECS Fargate
     needs: [version, retag-images, deploy-ecs]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       id-token: write
       contents: read
@@ -1257,7 +1257,7 @@ jobs:
   publish-web-ecs-dns:
     name: Publish prod FE-ECS DNS
     needs: [deploy-web-ecs]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       id-token: write
       contents: read
@@ -1284,7 +1284,7 @@ jobs:
   verify-web-ecs:
     name: Verify prod FE-ECS
     needs: [version, publish-web-ecs-dns]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       EXPECTED_COMMIT: ${{ needs.version.outputs.source_sha }}
       EXPECTED_VERSION: ${{ needs.version.outputs.version }}
@@ -1325,7 +1325,7 @@ jobs:
   deploy-web-vercel:
     name: Deploy prod web to Vercel (after API is live)
     needs: [version, verify-live-version]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -1359,7 +1359,7 @@ jobs:
   frontend-note:
     name: Prod frontend paths active
     needs: [version, publish-web-ecs-dns]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Note
         run: |
@@ -1372,7 +1372,7 @@ jobs:
   frontend-auth-proof:
     name: Prod frontend auth configuration
     needs: [version, frontend-note, verify-web-ecs, deploy-web-vercel]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v7
@@ -1393,7 +1393,7 @@ jobs:
   sync-main-version:
     name: Sync main VERSION → next dev target
     needs: [version, github-release]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
       pull-requests: write
@@ -1450,7 +1450,7 @@ jobs:
   sync-staging-version:
     name: Sync staging VERSION → next dev target
     needs: [version, github-release]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
       pull-requests: write
@@ -1498,7 +1498,7 @@ jobs:
   maintenance-banner-off:
     name: Rollout banner (lower)
     needs: [verify-live-version, frontend-auth-proof]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v7
       - name: Detect maintenance token
@@ -1539,7 +1539,7 @@ jobs:
   promote-prod-channel:
     name: Move :prod → v${{ needs.version.outputs.version }}
     needs: [version, retag-images, verify-live-version]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3

@@ -34,7 +34,7 @@ permissions:
 jobs:
   sandbox:
     name: warm ${{ matrix.lane }} worker
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 90
     strategy:
       fail-fast: false

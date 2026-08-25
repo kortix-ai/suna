@@ -27,7 +27,7 @@ permissions:
 jobs:
   database:
     name: ${{ inputs.action }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 360
     environment: prod-use2-shadow
     env:
