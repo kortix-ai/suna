@@ -9,8 +9,10 @@ and replaces its §11 phase order.
 
 ## The core, in one sentence
 
-Yes — these two lines are the core, and everything else in the thread is either
-a consequence of them or must not be built:
+> **A Kortix session must be able to run on any machine. kortixd is what makes a
+> session's home a variable instead of a three-value enum.**
+
+The two lines from the thread are the goal and its mechanism:
 
 > *Single binary that makes any compute be kortix-compute. Aka be able to use it
 > for its agent runtime/shell/fs/cua.*
@@ -18,24 +20,70 @@ a consequence of them or must not be built:
 > *It's like the computer agent tunnel we have today. It connects to the
 > kortix-api as a relay server & opens it up entirely for 2 way comms.*
 
-Line 1 is the **goal**. Line 2 is the **mechanism**. The mechanism already
-exists in production, and comparing the two lines shows exactly how much of the
-goal is left:
+"Like the computer agent tunnel" describes the **transport**, and that is the
+only part of agent-tunnel that carries over. The distinction matters, because it
+is the one this document previously got wrong:
 
-| Line 1 asks for | `@kortix/agent-tunnel` today |
-| --- | --- |
-| `shell` | `TunnelCapability = 'shell'` — shipped |
-| `fs` | `TunnelCapability = 'filesystem'` — shipped |
-| `cua` | `TunnelCapability = 'desktop'` — shipped, 42 methods (click, drag, hotkey, accessibility tree, recording, trajectory replay) |
-| **`agent runtime`** | **missing** |
+| | Agent Tunnel today | kortixd |
+| --- | --- | --- |
+| Where the session lives | in a Kortix sandbox | **on the machine** |
+| What the machine is | a **peripheral** the agent reaches into for shell / fs / desktop | the **compute** the agent runs on |
+| If the machine is gone | the session continues without that tool | the session must be re-placed |
 
-So, stated as work rather than as vision:
+Adding a `runtime` capability beside `shell | filesystem | desktop` would still
+make the machine a peripheral that can also start a process. It is not enough.
+The session itself — agent runtime, workspace, turn loop — has to be hosted
+there.
 
-> **kortixd = agent-tunnel + one more capability (`runtime`), then the sandbox
-> moved onto it last.**
+### What "hosted there" actually requires
 
-That is the whole project. `packages/agent-tunnel/src/shared/types.ts:49` is
-the line that has to change.
+The spec's §1 already states it exactly, and it is three facts, not one:
+
+> 1. **It cannot be installed.** A box exists because the API called
+>    `provider.create()`. There is no registration endpoint in the codebase.
+> 2. **It cannot be reached except through a provider.** `resolveIngress()` is
+>    mandatory on `SandboxProvider`. `sandbox_provider` is a closed Postgres enum
+>    of `daytona | platinum | e2b`. A machine outside those three is not
+>    expressible.
+> 3. **It supervises exactly one harness.**
+
+Mapped to work:
+
+**(a) Placement can name a machine.** A session's home stops being
+`provider.create()` against a closed enum and becomes an assignment to a
+registered node. Attempt 1 built this (`compute_nodes`,
+`node/assignment-manager.ts`).
+
+**(b) The session's whole data path runs over one outbound socket.** An
+arbitrary machine has no ingress — it is behind NAT and we do not own its
+network. So chat SSE, file reads, PTY, preview ports and static web all have to
+multiplex over the single outbound WebSocket. **This is the expensive part, and
+it is where attempt 1 bled**: #6773 (Bun's handshake omits `User-Agent`), #6778
+(`permessage-deflate` → `ZlibError`), and most of #6776 (preview ports, PTY
+preservation across convergence, reconnect generations, rewriting durable
+session URLs) are not incidental bugs. They are the actual work of (b),
+discovered in production.
+
+**(c) The session is reproducible, so it can be placed, re-placed and moved.**
+Without this, "spawn anywhere" has no recovery story: if the machine dies, the
+workspace dies with it.
+
+### (c) is what #6871 just built — the two threads are one thread
+
+Before #6871, hosting a session on a customer's VPS meant shipping Git
+credentials to a machine Kortix does not own. The register forbids exactly that:
+*a credential boundary cannot depend on a feature flag* (08-22), and *a sandbox
+environment carries one credential, not a boot protocol* (08-22).
+
+#6871 replaces the clone with a **content-addressed artifact, verified by
+SHA-256 and a manifest marker read without executing it**, fetched with the
+session's own token, plus a compiled runtime identity that refuses to boot under
+a mismatch (exit 78). That is precisely what makes a workspace materializable on
+foreign compute — and re-materializable somewhere else after a failure.
+
+**So the compiler work is not a parallel track. It is a prerequisite for
+kortixd,** and the piece that turns "spawn anywhere" into "spawn anywhere and
+recover anywhere".
 
 ### Why the rest of the recap is not separate work
 
@@ -51,21 +99,24 @@ the line that has to change.
 
 ## The plan, step by step
 
-Ordered by blast radius on the existing fleet, ascending. Steps 0–4 cannot
-break a single customer session, and step 4 is where "spawn it anywhere" becomes
-true. The fleet is not touched until step 5, and then only read-only.
+Every step adds one thing a session running **on a laptop** can do. Ordered by
+blast radius: steps 0–6 cannot break a customer session, and step 4 is the
+milestone — a real session, hosted on a machine Kortix does not own. The
+existing fleet is not touched until step 7, and then only read-only.
 
 | # | Step | Done when | Fleet risk |
 | --- | --- | --- | --- |
 | 0 | Two measurements, no code | Both numbers written down | none |
-| 1 | `runtime` becomes a 4th tunnel capability | A laptop installs a pinned OpenCode and reports it healthy through the API | none |
-| 2 | Carry a runtime port over the relay | A browser chat turn is served by OpenCode **on that laptop** | none |
-| 3 | Self-update and rollback | A node updates itself; a deliberately unhealthy build rolls itself back | none |
-| 4 | `kortixd` — name, `enroll`, `connect`, OS service | `kortixd enroll` on a fresh VPS → full session → survives reboot | none |
-| 5 | Fleet channel: deliver the daemon as an artifact | A pre-existing sandbox downloads, verifies and **runs none of it** | read-only |
-| 6 | Sandbox profile: channel present, never started | Golden `/kortix/health` diff is identical | none |
-| 7 | Per-box promotion `shadow → prefer → required` | The revert PR's own gate passes on a pre-change box | one box at a time |
-| 8 | Harness expansion, then collapse the provider | Spec §11 P3/P4 exits | — |
+| 1 | A machine can exist and be named | A laptop appears in `compute_nodes` and holds an outbound channel | none |
+| 2 | The workspace materializes there | `checkout.tar.gz` verified and unpacked on the laptop, no Git credential present | none |
+| 3 | The runtime starts there | A pinned OpenCode runs on the laptop and reports healthy through the channel | none |
+| 4 | **Chat over the channel** | **A browser turn is answered by the laptop's OpenCode** | none |
+| 5 | The rest of the data path | Files, PTY, preview ports and static web all work on that session | none |
+| 6 | Self-update, rollback, re-placement | A node updates itself; an unhealthy build rolls back; a killed session resumes on a *different* node | none |
+| 7 | Fleet channel: deliver the daemon as an artifact | A pre-existing sandbox downloads, verifies and **runs none of it** | read-only |
+| 8 | Sandbox profile: channel present, never started | Golden `/kortix/health` diff is identical | none |
+| 9 | Per-box promotion `shadow → prefer → required` | The revert PR's own gate passes on a pre-change box | one box at a time |
+| 10 | Harness expansion, then collapse the provider | Spec §11 P3/P4 exits | — |
 
 ### Step 0 — Measure (no code)
 
@@ -74,57 +125,80 @@ true. The fleet is not touched until step 5, and then only read-only.
 2. Query audit rows: what fraction of sessions ever invoke a shell, filesystem
    or PTY tool?
 
-**Why this is first:** number 1 may delete an entire workstream — if the warm
-fork already adopts without a restart, "instant boot" is a flag, not a project.
+**Why first:** number 1 may delete an entire workstream — if the warm fork
+already adopts without a restart, "instant boot" is a flag, not a project.
 Number 2 is the only input that makes the Durable Object question answerable
 (§6.2). Both are queries, not designs.
 
-### Step 1 — Add `runtime` as a fourth capability
+### Step 1 — A machine can exist and be named
 
-`TunnelCapability` becomes `'filesystem' | 'shell' | 'desktop' | 'runtime'`.
-Methods: `runtime.install`, `runtime.start`, `runtime.health`, `runtime.stop`,
-`runtime.logs`, each gated by the per-method authorization hook that already
-exists on the relay.
+The registry and the channel, and nothing else. `compute_nodes` with a backfill
+so existing provider boxes get rows too — one registry from day one. Enrollment
+by device code, reusing agent-tunnel's credential rules (`0600`, owner-checked,
+rotatable, node-scoped never account-scoped).
 
-No new protocol, no new binary, no new transport. One capability on a shipping
-system.
+Transport constraints are fixed here, permanently, because they are facts about
+Cloudflare rather than about this attempt: explicit `User-Agent` (#6773),
+`permessage-deflate` disabled (#6778), close code 4004 retriable and reconnect
+generation-safe (#6776).
 
-*Done when:* a developer laptop running today's agent-tunnel installs a pinned
-OpenCode version and reports it healthy through the API.
+*Done when:* a laptop appears in the fleet, holds the channel across a network
+partition, and reconnects. It hosts nothing yet.
 
-### Step 2 — Carry a runtime port over the relay
+### Step 2 — The workspace materializes there
 
-A harness speaks REST on a port (OpenCode) or ACP on stdio (Claude Code,
-Codex). The relay has to carry that traffic, which is the one genuinely new
-transport requirement in the project.
+This is where the compiler work carries kortixd. The node fetches the
+content-addressed `checkout.tar.gz` with the session's own token, verifies
+SHA-256 and the manifest, and unpacks it. No `git clone`. **No upstream Git
+credential ever reaches the machine.**
 
-*Done when:* a chat turn in the browser is served by OpenCode running on a
-laptop. **This is the moment "any compute is Kortix compute" is first true.**
+*Done when:* the laptop holds an exact working tree at a known SHA, and an
+`env` dump on that machine contains no credential other than its node token.
 
-### Step 3 — Self-update and rollback
+### Step 3 — The runtime starts there
 
-Required by step 4, not optional: on a machine we do not image, the binary is
-the only thing that can update the binary. Reuse `entrypoint.sh`'s staged swap
-(exit code 75) and `rollback_agent`, plus #6871's `RuntimeSupervisor` for
-health-gated promote and drain.
+The runtime manager: install a pinned harness version, start it, health-check
+it, restart it, report its version. `server.mjs` (#6871) already carries the
+compiled agent config and refuses to boot under a mismatched identity.
 
-*Done when:* a node updates itself to a new daemon build, and a deliberately
-unhealthy build rolls back without human action.
+*Done when:* a pinned OpenCode runs on the laptop against the materialized
+workspace and reports healthy through the channel.
 
-### Step 4 — `kortixd`
+### Step 4 — Chat over the channel *(the milestone)*
 
-Name it, add `enroll` and `connect` as real commands, ship the OS service
-install agent-tunnel already has (LaunchAgent, user systemd, Task Scheduler).
-Workstation profile only.
+The first surface of the session data path (b). The browser's turn reaches the
+laptop's OpenCode and the SSE stream comes back over the same socket.
 
-*Done when:* `kortixd enroll` on a fresh EC2 or VPS box registers it, runs a
-full session through `dev.kortix.com`, survives a reboot, and the
-network-partition case is exercised live.
+*Done when:* a chat turn in the browser is answered by OpenCode **running on a
+laptop**. At this point a Kortix session is genuinely hosted on a machine
+Kortix does not own, and the core claim of the thread is true for the first
+time.
 
-**Attempt 1 never reached this step** — its CLI had no `enroll` and no
-`connect`, so no machine outside a provider was ever a node.
+### Step 5 — The rest of the data path
 
-### Step 5 — The fleet channel
+Files, find, PTY, port-proxy, web-proxy, static-web — the host services the spec
+already calls "shipped, already deployment-agnostic" — all multiplexed over the
+one socket. Preview ports must be relayed while credential-helper ports stay
+denied; PTYs must survive convergence (both learned the hard way in #6776).
+
+*Done when:* the same laptop session opens a terminal, edits a file, and serves
+a preview port in the browser.
+
+### Step 6 — Self-update, rollback, and re-placement
+
+Required, not optional: on a machine we do not image, the binary is the only
+thing that can update the binary. Reuse `entrypoint.sh`'s staged swap (exit code
+75) and `rollback_agent`, plus #6871's `RuntimeSupervisor` for health-gated
+promote and drain.
+
+Then the recovery story (c): kill the node mid-session and let the control plane
+re-place that session on a different node, re-materializing the workspace from
+the same artifact.
+
+*Done when:* a node self-updates; a deliberately unhealthy build rolls itself
+back; and a session survives the loss of the machine it was running on.
+
+### Step 7 — The fleet channel
 
 The first step that touches the sandbox, and only to **deliver**, never to
 **run**. A third artifact kind on #6871's channel (§3.2) with its own size cap,
@@ -137,16 +211,18 @@ not — proven by a guest-side probe, never from the API's `/health`.
 *Worth shipping alone:* it removes the 2.1 GB image rebuild from the loop for a
 96 MB daemon change.
 
-### Steps 6–8
+### Steps 8–10
 
-Node core with profiles (§C3), then per-box promotion under the rule in §4,
-then harness expansion under §C4. Detail in §5.
+Node core with profiles (§C3), then per-box promotion under the rule in §4, then
+harness expansion under §C4. Detail in §5.
 
 ### What this ordering changes
 
-Attempt 1 performed steps 4, 5, 6 and 7 in one release and skipped 1, 2 and 3
-entirely — so the first machine that ever exercised the node channel was the
-production fleet, and there was no proving ground where a failure was survivable.
+Attempt 1 performed steps 7, 8 and 9 in one release and never reached step 4 —
+its CLI had no `enroll` and no `connect`, so no machine outside a provider ever
+hosted a session. The first machine that exercised the node channel in anger was
+the production fleet, and there was no proving ground where a failure cost
+nothing.
 
 ---
 
