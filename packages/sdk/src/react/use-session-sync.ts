@@ -67,6 +67,23 @@ interface UseSessionSyncOptions {
    * slot decides, as before.
    */
   working?: boolean;
+  /**
+   * The control plane is holding a turn open for this session
+   * (`useSessionWorking().serverOpenTurnToken !== null`), even when the
+   * projection's ANSWER is idle.
+   *
+   * This is the poll's escape from a chicken-and-egg the projection alone
+   * cannot break: a stale wire idle frame (a dead SSE stream's last word)
+   * vetoes the server's open turn row, the projection answers idle, and
+   * `working: false` switches off the very tail read whose evidence — the
+   * runtime still producing output — would prove the veto wrong. Keeping the
+   * poll on while the server holds a turn open lets that evidence arrive
+   * (`hydrate` stamps `sessionActivityAt` when a runtime read shows the
+   * transcript moved mid-turn), and the projection's content-first rule does
+   * the rest. Costs one bounded tail read per interval, only while the
+   * disagreement lasts; never touches the public `isBusy`.
+   */
+  serverHoldsTurn?: boolean;
 }
 
 /**
@@ -105,13 +122,17 @@ export function livenessBusy(input: {
   runtimeHealthy?: boolean;
   working: boolean | undefined;
   streamBusy: boolean;
+  /** See {@link UseSessionSyncOptions.serverHoldsTurn}: the control plane still
+   *  holds a turn open, which keeps the verification poll on even when the
+   *  projection answers idle (a stale wire idle frame can veto the row). */
+  serverHoldsTurn?: boolean;
 }): boolean {
   if (!input.networkEnabled) return false;
-  return sessionSyncBusy(input);
+  return sessionSyncBusy(input) || input.serverHoldsTurn === true;
 }
 
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
-  const { kortixSessionScope, networkEnabled = true, working } = options;
+  const { kortixSessionScope, networkEnabled = true, working, serverHoldsTurn } = options;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
   const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
   const cacheOwnerScope = resolveSessionCacheOwnerScope(runtimeScope, kortixSessionScope);
@@ -279,8 +300,10 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
 
   useEffect(() => {
-    controller.setBusy(livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy }));
-  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working]);
+    controller.setBusy(
+      livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
+    );
+  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn]);
 
   return {
     messages,

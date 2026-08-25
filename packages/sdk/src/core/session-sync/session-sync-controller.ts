@@ -152,6 +152,21 @@ export interface SessionSyncControllerOptions {
   onTelemetry?: (event: SessionSyncTelemetryEvent) => void;
   scheduler?: SessionSyncScheduler;
   livenessIntervalMs?: number;
+  /**
+   * Max age of the last tail read while the session is busy, whatever the
+   * stream delivers. Default 30s.
+   *
+   * The quiet-based poll trusts `noteActivity`: any transcript frame renews it.
+   * A DEGRADED stream — events lost at the source or the edge, connection
+   * alive, a trickle still arriving — therefore postponed the tail read
+   * indefinitely while the transcript diverged arbitrarily far from the
+   * runtime (prod, 2026-08-26: content minutes behind mid-run, repaired only
+   * by reload). Frames arriving proves the wire is up; it proves nothing about
+   * the frames that never arrived. This is the bound on how long that
+   * difference can go unchecked: one tail page per interval, and against a
+   * healthy stream the hydrate is a no-op.
+   */
+  verifyIntervalMs?: number;
 }
 
 export interface HttpSessionSyncControllerOptions extends Pick<
@@ -163,6 +178,7 @@ export interface HttpSessionSyncControllerOptions extends Pick<
   | 'onTelemetry'
   | 'scheduler'
   | 'livenessIntervalMs'
+  | 'verifyIntervalMs'
 > {
   baseUrl: string;
   getToken?: () => string | null | Promise<string | null>;
@@ -282,6 +298,9 @@ export class SessionSyncController {
   private readonly options: SessionSyncControllerOptions;
   private readonly scheduler: SessionSyncScheduler;
   private readonly livenessIntervalMs: number;
+  private readonly verifyIntervalMs: number;
+  /** When the last tail read was ISSUED — see `verifyIntervalMs`. */
+  private lastTailReadAt: number;
   /** Consecutive failed tail reads, for the retry backoff. Reset by success. */
   private retryAttempt = 0;
   private tailRetryTimer: unknown;
@@ -304,7 +323,9 @@ export class SessionSyncController {
     this.options = options;
     this.scheduler = options.scheduler ?? defaultScheduler;
     this.livenessIntervalMs = options.livenessIntervalMs ?? 10_000;
+    this.verifyIntervalMs = options.verifyIntervalMs ?? 30_000;
     this.lastActivityAt = this.scheduler.now();
+    this.lastTailReadAt = this.scheduler.now();
   }
 
   getSnapshot = (): SessionSyncSnapshot => this.snapshot;
@@ -406,6 +427,10 @@ export class SessionSyncController {
   }
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
+    // Stamped at ISSUE: any tail read — initial, poll, gap, visible — is a
+    // verification, so the busy-verification cadence counts from the last
+    // attempt rather than piling on top of reads other reasons already ran.
+    this.lastTailReadAt = this.scheduler.now();
     try {
       // ONE PAGE. Render it. This is what OpenCode's own client does, and the
       // reason we now do it too is measured:
@@ -584,9 +609,15 @@ export class SessionSyncController {
   }
 
   private async checkLiveness(): Promise<void> {
-    if (this.destroyed || this.scheduler.now() - this.lastActivityAt <= this.livenessIntervalMs) {
-      return;
-    }
+    if (this.destroyed) return;
+    const nowMs = this.scheduler.now();
+    const quiet = nowMs - this.lastActivityAt > this.livenessIntervalMs;
+    // `noteActivity` proves frames are ARRIVING, not that none were lost. A
+    // degraded stream that still delivers a trickle renewed the quiet timer
+    // forever while the transcript diverged — so a busy session re-reads the
+    // tail at `verifyIntervalMs` no matter how live the stream looks.
+    const verifyDue = nowMs - this.lastTailReadAt >= this.verifyIntervalMs;
+    if (!quiet && !verifyDue) return;
     // Reconcile the TAIL, and nothing else. This is the repair for a dropped
     // SSE stream: the transcript catches up on messages the stream never
     // delivered.

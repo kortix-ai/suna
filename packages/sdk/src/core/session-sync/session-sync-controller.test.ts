@@ -558,6 +558,59 @@ describe('SessionSyncController', () => {
     expect(statusReads).toBe(0);
   });
 
+  /**
+   * The postponement hole (prod, 2026-08-26): `noteActivity` renews the poll's
+   * quiet timer on EVERY transcript frame, so a degraded stream that still
+   * delivers a trickle — events lost at the source or the edge, connection
+   * alive — postponed the tail read indefinitely while the transcript diverged
+   * arbitrarily far from the runtime. The repair built for a lossy stream was
+   * switched off by the surviving frames of that same lossy stream.
+   *
+   * While the session is busy, a bounded verification read runs at
+   * `verifyIntervalMs` no matter how much activity arrives. A healthy stream
+   * pays one tail page per interval and the hydrate is a no-op.
+   */
+  test('continuous stream activity cannot postpone tail verification forever', async () => {
+    const clock = createScheduler();
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return page([]);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+      verifyIntervalMs: 30_000,
+    });
+
+    controller.setBusy(true);
+    // A busy runtime: activity lands between every poll tick, forever.
+    for (let tick = 0; tick < 5; tick++) {
+      clock.advance(5_000);
+      controller.noteActivity();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    // 25s of constant activity: the quiet-based poll never fired.
+    expect(requests).toHaveLength(0);
+
+    clock.advance(5_000);
+    controller.noteActivity();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // 30s since the last tail read (there has never been one): verification
+    // runs even though activity is fresh.
+    expect(requests).toHaveLength(1);
+
+    // And the NEXT verification waits a full interval again — one read per
+    // `verifyIntervalMs`, not one per tick.
+    clock.advance(5_000);
+    controller.noteActivity();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(1);
+  });
+
   test('the snapshot holds transcript state only — never a busy opinion', async () => {
     const controller = new SessionSyncController({
       sessionId: 'session-1',

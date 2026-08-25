@@ -1660,7 +1660,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		return result;
 	},
 
-	hydrate: (sessionID, msgs, opts) =>
+	hydrate: (sessionID, msgs, opts) => {
+		// Set inside the updater below when a RUNTIME read shows the transcript
+		// moved while its tail is still open — the runtime's own output reaching
+		// this tab by pull instead of push. Stamped after the set() commits.
+		let stampRuntimeActivity = false;
 		set((s) => {
 			// An authoritative load — the disk repaint itself, or a reconcile —
 			// re-establishes the session, so its entry is no longer a fragment.
@@ -1759,6 +1763,46 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			//
 			// The rule is now identity-based, in two passes.
 			const existingIds = new Set(existing.map((m) => m.id));
+
+			// ---- Runtime-read activity evidence. ----
+			// Movement on a transcript this tab ALREADY held, with the tail still
+			// open, observed by a runtime read: the runtime is producing output
+			// right now, whatever the stream's last status frame claimed. Guards,
+			// each load-bearing (asserted in the test file): an initial fill is
+			// history, not movement; a completed tail is a finished turn and must
+			// not paint busy on a returning tab; a cache repaint is this tab's own
+			// disk, not the runtime speaking.
+			if (!fromCache && existingAll.length > 0) {
+				const tail = incoming[incoming.length - 1];
+				const tailOpen =
+					!!tail &&
+					tail.role === "assistant" &&
+					!(tail as { time?: { completed?: number } }).time?.completed &&
+					!(tail as { error?: unknown }).error;
+				if (tailOpen) {
+					stampRuntimeActivity =
+						incoming.some((m) => !existingIds.has(m.id)) ||
+						msgs.some((entry) => {
+							const mid = entry?.info?.id;
+							if (!mid || isOptimistic(sessionID, mid) || !existingIds.has(mid)) {
+								return false;
+							}
+							const prev = s.parts[mid];
+							if (!prev || prev.length === 0) return (entry.parts?.length ?? 0) > 0;
+							const prevById = new Map(prev.map((p) => [p.id, p]));
+							return (entry.parts ?? []).some((p) => {
+								if (!p?.id) return false;
+								const prevPart = prevById.get(p.id);
+								if (!prevPart) return true;
+								return (
+									isTextLikePart(p) &&
+									isTextLikePart(prevPart) &&
+									(p.text?.length ?? 0) > (prevPart.text?.length ?? 0)
+								);
+							});
+						});
+				}
+			}
 
 			// The echo may arrive under the optimistic message's OWN id: the host
 			// minted the wire id and painted the bubble with it. That is a
@@ -2069,7 +2113,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				messages: { ...s.messages, [sessionID]: merged },
 				parts: newParts,
 			};
-		}),
+		});
+		// Outside the updater: `noteSessionActivity` runs its own set(), and the
+		// stamp is quantized there. This is the evidence `projectWorking`'s
+		// content-first rule needs to outrank a stale wire idle frame whose veto
+		// would otherwise silence every fresh `/turn` read for the rest of a turn
+		// the SSE stream stopped reporting (prod, 2026-08-26).
+		if (stampRuntimeActivity) get().noteSessionActivity(sessionID);
+	},
 
 	reset: () => {
 		optimisticIds.clear();

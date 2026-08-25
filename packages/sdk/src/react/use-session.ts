@@ -1030,6 +1030,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     kortixSessionScope: `${projectId}/${sessionId}`,
     networkEnabled: switched,
     working: working.state === 'working',
+    // The control plane holding a turn open keeps the transcript verification
+    // poll on even when the projection's answer is idle — the repair for a
+    // stale wire idle frame vetoing the open row while the SSE stream is dead
+    // (see UseSessionSyncOptions.serverHoldsTurn). Without it, that one wrong
+    // answer switched off the only read that could disprove it, and the
+    // transcript froze mid-turn until a reload.
+    serverHoldsTurn: working.serverOpenTurnToken !== null,
   });
   const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
   const runtimePhase = useRuntimePhase();

@@ -59,6 +59,117 @@ beforeEach(() => {
 	useSyncStore.getState().reset();
 });
 
+/**
+ * Runtime-read evidence for `projectWorking` (prod, 2026-08-26): with the SSE
+ * stream dead, a stale wire idle frame vetoed the server's open turn row and
+ * the projection answered idle over a running session. The only remaining
+ * observer is the liveness poll's tail read — and its hydrate proved the
+ * runtime was still producing output without telling anyone. Stamping
+ * `sessionActivityAt` when a RUNTIME read shows the transcript moved mid-turn
+ * hands that proof to the projection's content-first rule.
+ *
+ * Guards, each load-bearing:
+ *  - an initial fill (no prior transcript) is not movement — it is history;
+ *  - a completed tail is a finished turn — its history must not paint busy
+ *    when a backgrounded tab returns hours later;
+ *  - a cache repaint is this tab's own disk, not the runtime speaking.
+ */
+describe("hydrate stamps runtime activity for a moved, still-open transcript", () => {
+	function openAssistant(id: string, sessionID: string): AssistantMessage {
+		return { ...assistantMessage(id, sessionID) };
+	}
+	function completedAssistant(id: string, sessionID: string): AssistantMessage {
+		const message = assistantMessage(id, sessionID);
+		return { ...message, time: { ...message.time, completed: 2 } };
+	}
+
+	test("a new incomplete assistant tail on a held transcript stamps activity", () => {
+		const sid = "ses_act_moved";
+		const store = useSyncStore.getState();
+		store.hydrate(sid, [{ info: userMessage("msg_u1", sid), parts: [] }]);
+		// The initial fill is history, not movement.
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "stream…", sid)],
+			},
+		]);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThan(0);
+	});
+
+	test("grown text on a known part is movement too", () => {
+		const sid = "ses_act_grown";
+		const store = useSyncStore.getState();
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "hel", sid)],
+			},
+		]);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "hello world", sid)],
+			},
+		]);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThan(0);
+	});
+
+	test("an unchanged transcript never stamps", () => {
+		const sid = "ses_act_same";
+		const page = [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "same", sid)],
+			},
+		];
+		const store = useSyncStore.getState();
+		store.hydrate(sid, page);
+		store.hydrate(sid, page);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+
+	test("a completed tail never stamps — finished history is not activity", () => {
+		const sid = "ses_act_done";
+		const store = useSyncStore.getState();
+		store.hydrate(sid, [{ info: userMessage("msg_u1", sid), parts: [] }]);
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: completedAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "done answer", sid)],
+			},
+		]);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+
+	test("a cache-sourced repaint never stamps — disk is not the runtime", () => {
+		const sid = "ses_act_cache";
+		const store = useSyncStore.getState();
+		store.hydrate(sid, [{ info: userMessage("msg_u1", sid), parts: [] }]);
+		store.hydrate(
+			sid,
+			[
+				{ info: userMessage("msg_u1", sid), parts: [] },
+				{
+					info: openAssistant("msg_a1", sid),
+					parts: [textPart("prt_a1", "msg_a1", "from disk", sid)],
+				},
+			],
+			{ source: "cache" },
+		);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+});
+
 describe("Binary.search", () => {
 	test("finds an existing id and reports its index", () => {
 		const items = [{ id: "a" }, { id: "b" }, { id: "c" }];

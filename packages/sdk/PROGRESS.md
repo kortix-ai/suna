@@ -12,6 +12,44 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-26 — session `session-random-pause` — transcript freeze mid-turn: unbreakable repair loop — DONE
+
+**Files:** `react/use-session-sync.ts` (`livenessBusy` + `UseSessionSyncOptions`
+gain optional `serverHoldsTurn`) · `react/use-session.ts` (passes
+`working.serverOpenTurnToken !== null`) ·
+`core/session-sync/session-sync-controller.ts` (optional `verifyIntervalMs`,
+default 30s: a busy session re-reads the tail on that cadence even while
+`noteActivity` keeps firing) · `browser/stores/sync-store.ts` (`hydrate` stamps
+`sessionActivityAt` when a RUNTIME read shows the transcript moved with an
+open tail) · comment corrections in `core/session/working.ts`. Tests beside
+each. **Public surface: additive only** (three optional fields on published
+option types).
+
+**Why.** Prod report (essentia, 2026-08-26, after #6864): randomly mid-run the
+transcript freezes minutes behind the runtime and the session renders stopped;
+only a reload repairs. Root cause is a self-sustaining chain: the SSE stream
+black-holes (server audit: a stale cached ingress can answer 200 and never
+write; no keepalives exist; suppressed from api logs), the stale wire idle
+frame then vetoes the server's open `/turn` row (`endedByRuntime` — the veto is
+deliberately unbounded, and `started_at` (server clock) vs `atMs` (tab clock)
+skew can veto even new turns), the projection answers idle, and `working:
+false` switches off the liveness poll — the ONE read whose evidence could
+disprove the veto. Fix is evidence, not time: the poll stays on while the
+server holds a turn open, its hydrate stamps activity when the transcript
+moved mid-turn, and `activityAfterIdle` outranks the stale frame. Separately,
+`noteActivity` let a degraded-but-alive stream postpone the tail read forever;
+the verify cadence bounds divergence to 30s.
+
+**Gates:** `pnpm --filter @kortix/sdk typecheck` clean · `pnpm --filter
+@kortix/sdk test` 2550 pass 0 fail across 155 files (baseline 2541 + 9 new) ·
+`smoke:install` pass.
+
+**Follow-ups (apps/api, not claimed):** inject SSE keepalive comment frames at
+the proxy so dead streams are detectable below 60s; invalidate the 5-min
+ingress cache on a 200-then-silent stream; link browser-disconnect aborts to
+the upstream fetch; `preview-retry-budget.ts` comments still say "60s ALB idle
+timeout" while terraform sets 300s.
+
 ### 2026-08-25 — session `opencode-bump-11823` — OpenCode 1.18.19 → 1.18.23 lockstep — DONE
 
 **Files:** `package.json` (`@opencode-ai/sdk` 1.18.23) · `packages/shared/src/runtime-versions.json`
