@@ -110,6 +110,14 @@ The daemon sends `KORTIX_TOKEN` only to the Kortix Git proxy. The proxy resolves
 
 The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
 
+## Transcript attachments and memory
+
+OpenCode stores tool screenshots as base64 `data:` URLs inside its SQLite transcript. The daemon keeps that store small and the box alive:
+
+- **Attachment offload.** While no turn runs (every 5 minutes, at boot, and after a memory-guard event), attachment bytes older than the newest 12 per session — and every tool result OpenCode's compaction already cleared — move to `~/.local/share/kortix/attachments/<id>`. The row keeps a 1×1 PNG placeholder plus a `kortix.offloaded` marker; `/kortix/part` serves the real bytes to the UI. Models never receive those old images anyway (the LLM proxy keeps the newest 12 per request). Set `KORTIX_ATTACHMENT_OFFLOAD=0` to disable.
+- **Resource telemetry.** `[resources]` in the daemon log every 60 s and on every OpenCode state change: box memory, cgroup limit, load, disk, daemon and OpenCode RSS.
+- **Memory guard.** Above 80 % memory the daemon samples every 10 s; at 92 % (`KORTIX_MEMORY_GUARD_PCT`) with a turn in flight it aborts the turn cleanly and reports `SandboxMemoryGuard` with the numbers as the turn's error, instead of letting the kernel kill OpenCode mid-turn.
+
 ## The daemon control surface
 
 The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Every route outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header, validated against `KORTIX_TOKEN`.
@@ -122,6 +130,7 @@ The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_S
 | `POST /kortix/env` | Update the runtime environment. |
 | `/kortix/pty` | Backs the in-dashboard terminal. |
 | `GET /kortix/logs` | Tails the daemon's own log file (`/opt/kortix/logs/daemon.log`, rotated at 32 MiB) or OpenCode's. `?source=daemon\|opencode\|all`, `?tail=N` (default 500, max 5000). Plain text. Same auth as `/kortix/refresh`. |
+| `GET /kortix/part/:sessionID/:messageID/:partID` | Attachment bytes on demand — a top-level file part or a tool result's `state.attachments[]` entry. Bytes the daemon offloaded to a sidecar file are served from there. |
 | `GET /kortix/diag` | One JSON error report: OpenCode state/pid/port/port pair, boot timeline, a fresh resource snapshot (memory, cgroup limit, load, disk, RSS, duplicate opencode processes), the runtime-assets report, and the tail of both logs (`?tail=N`, default 200). Same auth as `/kortix/logs`. |
 | `/proxy/{port}/*` | Reverse-proxy to another port inside the sandbox. The daemon's own port is blocked. |
 | `*` | Catch-all reverse-proxy to OpenCode on `127.0.0.1:4096`. Returns `503` while OpenCode boots. |
