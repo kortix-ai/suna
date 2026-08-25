@@ -182,12 +182,21 @@ function activeConnectedAccountId(
  * Composio adds an app, not per user. A failure resolves to an empty map and
  * leaves the page unenriched — a card with no description beats no card.
  */
-const TOOLKIT_META_TTL_MS = 6 * 60 * 60_000;
-
 interface ToolkitMeta {
   description: string | null;
   categories: string[];
 }
+
+/**
+ * The paged browse response, plus the two fields the provider's paged endpoint
+ * omits. Declared rather than inferred so a caller that groups by `categories`
+ * cannot compile against a page that never carries them.
+ */
+export type EnrichedToolkitConnectionsPage = Omit<ToolkitConnectionsDetails, 'items'> & {
+  items: Array<ToolkitConnectionsDetails['items'][number] & ToolkitMeta>;
+};
+
+const TOOLKIT_META_TTL_MS = 6 * 60 * 60_000;
 
 const toolkitMetaCache = new WeakMap<
   ComposioRuntime,
@@ -230,7 +239,7 @@ export async function composioCatalogPage(input: {
   limit?: number;
   runtime?: ComposioRuntime;
 }): Promise<
-  | ToolkitConnectionsDetails
+  | EnrichedToolkitConnectionsPage
   | {
       provider: 'composio';
       toolkits: Array<{

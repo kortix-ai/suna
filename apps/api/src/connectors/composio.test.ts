@@ -688,7 +688,6 @@ test('composioCatalogPage enriches the paged catalogue with the metadata that pa
         { slug: 'gmail', name: 'Gmail', isNoAuth: false },
         { slug: 'beyond_the_metadata_cap', name: 'Uncatalogued', isNoAuth: true },
       ],
-      cursor: null,
       totalPages: 1,
     };
   };
@@ -715,7 +714,8 @@ test('composioCatalogPage enriches the paged catalogue with the metadata that pa
     }),
   });
 
-  const items = (result as { items: Array<Record<string, unknown>> }).items;
+  if (!('items' in result)) throw new Error('expected the paged browse shape');
+  const items = result.items;
   expect(items[0]).toMatchObject({
     slug: 'gmail',
     description: 'Google email',
