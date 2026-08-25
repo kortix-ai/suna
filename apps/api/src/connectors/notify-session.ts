@@ -73,6 +73,12 @@ export async function notifyConnectorSession(
     const { enqueueContinueSessionCommand, drainSessionLifecycleQueue } = await import(
       '../projects/session-lifecycle'
     );
+    // Idempotent by construction. Several callers legitimately observe the same
+    // connect landing — the browser poll, the server-side completion watch, a
+    // second tab on the same link — and the agent must be told exactly once.
+    // `enqueueContinueSessionCommand` de-dupes on this key with
+    // onConflictDoNothing, so the race is settled in the database rather than by
+    // hoping only one caller wins.
     await enqueueContinueSessionCommand({
       source: 'system:connector-connected',
       projectId,
@@ -80,6 +86,7 @@ export async function notifyConnectorSession(
       sessionId,
       actorUserId,
       text: connectorConnectedPrompt(slug, app),
+      idempotencyKey: `connector-connected:${sessionId}:${slug}`,
     });
     drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
     console.info('[connectors] connector connected, session notified', { sessionId, slug });

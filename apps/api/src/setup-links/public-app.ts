@@ -21,6 +21,7 @@ import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets
 import { db } from '../shared/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
 import { resolveSetupLink } from './token';
+import { watchConnectorCompletion } from './connector-completion-watch';
 import { composioConfigured } from '../connectors/composio';
 import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
 
@@ -285,6 +286,16 @@ setupLinksPublicApp.post('/connectors/:token/start', async (c) => {
         ? c.json({ connect_url: null, connected: true })
         : c.json({ error: 'The provider did not return a connect URL' }, 502);
     }
+    // Start the server-side half now the human has a page to complete. Closing
+    // the modal kills the browser poll, and without this that is the end of it:
+    // the account lands at the provider and the agent is never told.
+    watchConnectorCompletion({
+      projectId: link.projectId,
+      slug: link.slug,
+      app: link.app,
+      sid: link.sid,
+      uid: link.uid,
+    });
     return c.json({ connect_url: started.connectUrl });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'Failed to start connect' }, 502);

@@ -47,6 +47,9 @@ test('a STOPPED session is still told its connector landed', async () => {
     accountId: 'acct-1',
   });
   expect(enqueued[0].text).toBe(connectorConnectedPrompt('gmail', 'gmail'));
+  // De-duped in the database, not by hoping one caller wins: the browser poll
+  // and the server-side completion watch both legitimately see the same connect.
+  expect(enqueued[0].idempotencyKey).toBe('connector-connected:session-1:gmail');
 });
 
 test('a running session is told too', async () => {
