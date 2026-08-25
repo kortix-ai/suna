@@ -12,6 +12,35 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-25 — session `native-picker-unify` — ONE native picker across sandbox states + no dead effort chip — DONE
+
+**Files:** `react/provider-selection.ts` (NEW pure `mergeNativeProviderLists`;
+`nativeProviderListFromCatalog` now lists OpenCode Zen's free models keyless,
+ranked last) + tests · `react/use-opencode-sessions/providers.ts` (the
+`native-catalog` query stays enabled after boot; native mode returns the
+catalog ∪ runtime merge, never a source swap) ·
+`react/use-gateway-routing-policy.ts` (`llmGatewayEnabled` beside `data`) +
+test. **Public surface: no barrel changes** (additive field on the routing
+hook result; type-surface snapshot unchanged).
+
+**What.** Two field reports on the native path. (1) "the model pickers are
+different when the sandbox isn't started and when it is" — pre-boot the picker
+read the catalog synthesis, post-boot the runtime list; the two disagreed on
+provider order, on Zen (runtime auto-connects `opencode` free models keyless),
+and on the auto-picked default (runtime `default` is catalog-file-order). Now
+the catalog list is the skeleton (order + curated flagship default), the
+runtime provider object replaces each shared id (real variant settings, the
+box's exact models), runtime-only providers append, and a catalog default
+survives only while the runtime serves that model. (2) "2 thinking mode
+selections" — the composer's reasoning-effort chip is a gateway routing-policy
+control; the hook's query is disabled off-gateway, but a disabled query still
+serves cache residue, so `data.capabilities.write` kept the chip alive beside
+the model's real THINKING MODE variants. The hook now states the flag; the
+web chip requires it.
+
+**Gates:** `pnpm typecheck` clean · `pnpm test` 172 files 0 fail ·
+`public-type-surface.test.ts` pass · `pnpm smoke:install` pass.
+
 ### 2026-08-24 — session `fabricated-idle-veto` — a fabricated idle frame can no longer contradict the ledger — DONE (PR open, not merged)
 
 **Files:** `core/session/working.ts` (`WorkingStreamInput.origin?: 'wire' | 'local'`;

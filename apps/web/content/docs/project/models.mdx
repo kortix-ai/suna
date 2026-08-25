@@ -25,6 +25,11 @@ Turning the flag off is a fully supported path. The project then runs
 - Model ids are OpenCode's native `provider/model` refs, like
   `anthropic/claude-opus-4-8`. Managed bare ids and `kortix/…` refs do not
   exist off-gateway.
+- The model picker shows one list before and after the sandbox boots: the
+  providers your keys connect, plus OpenCode Zen's free models (OpenCode
+  connects those without a key). Thinking effort is the model's **Thinking
+  mode** row in the picker; the gateway's reasoning-effort control does not
+  apply.
 - The gateway surfaces on this page — managed models, the model-defaults
   chain, budgets, logs — do not apply; OpenCode resolves the default model in
   the sandbox.

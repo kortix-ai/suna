@@ -139,7 +139,12 @@ export function useReasoningEffortControl(
     wireModel && routing.data
       ? (routing.data.project.modelGenerationConfig?.[wireModel]?.reasoningEffort ?? null)
       : null;
-  const canWrite = routing.data?.capabilities?.write ?? false;
+  // Gateway-only control. Off-gateway (native OpenCode) the box never reads
+  // the routing policy — the model's own THINKING MODE variants in the picker
+  // are the one real effort control there. `routing.data` alone is not
+  // enough: a disabled query still serves cache residue from before the flag
+  // flipped, which rendered a second, dead effort chip beside the variants.
+  const canWrite = routing.llmGatewayEnabled && (routing.data?.capabilities?.write ?? false);
 
   const setEffort = (next: string | null) => {
     if (!wireModel || !projectId || !routing.data) return;

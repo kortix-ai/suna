@@ -7,6 +7,7 @@ import {
   connectedGatewayProviderIdsFromSecretNames,
   mergeProviderLists,
   mergeProjectSecretConnectedProviders,
+  mergeNativeProviderLists,
   nativeProviderListFromCatalog,
   projectLlmCatalogToProviderList,
 } from './provider-selection';
@@ -217,10 +218,45 @@ describe('nativeProviderListFromCatalog (pre-runtime native picker source)', () 
     ]);
   });
 
-  test('no connected key ⇒ an EMPTY list (the connect-provider call to action stays)', () => {
+  test('no connected key and no Zen entry ⇒ an EMPTY list (the connect-provider call to action stays)', () => {
     const list = nativeProviderListFromCatalog(catalog as never, new Set());
     expect(list.all).toEqual([]);
     expect(list.connected).toEqual([]);
+  });
+
+  // opencode auto-connects the OpenCode Zen provider (`opencode`) with its
+  // FREE models even when no key is present — the running sandbox always
+  // lists them. The pre-runtime source must too, or the picker's contents
+  // change the moment the box boots.
+  test('OpenCode Zen free models are always listed (keyless), paid Zen models are not', () => {
+    const withZen = {
+      ...catalog,
+      providers: [
+        ...catalog.providers,
+        {
+          id: 'opencode',
+          name: 'OpenCode Zen',
+          env: ['OPENCODE_API_KEY'],
+          models: [
+            { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', released: '2026-07-09', cost: { input: 2.5, output: 15 } },
+            { id: 'hy3-free', name: 'Hy3 Free', released: '2026-05-01', cost: { input: 0, output: 0 } },
+            { id: 'big-pickle', name: 'Big Pickle', released: '2026-06-01', cost: { input: 0, output: 0 } },
+          ],
+        },
+      ],
+    };
+    const list = nativeProviderListFromCatalog(withZen as never, new Set());
+    expect(list.connected).toEqual(['opencode']);
+    const zen = (list.all ?? []).find((p) => p.id === 'opencode') as { models: Record<string, unknown> };
+    expect(Object.keys(zen.models)).toEqual(['big-pickle', 'hy3-free']);
+    // Zen ranks after every keyed provider, and never becomes the default pick
+    // when a keyed provider exists.
+    const keyed = nativeProviderListFromCatalog(withZen as never, new Set(['ANTHROPIC_API_KEY']));
+    expect((keyed.all ?? []).map((p) => p.id)).toEqual(['anthropic', 'opencode']);
+    expect((keyed as { default?: Record<string, string> }).default).toEqual({
+      anthropic: 'claude-sonnet-4-6',
+      opencode: 'big-pickle',
+    });
   });
 
   test('never synthesizes the synthetic kortix provider', () => {
@@ -391,5 +427,98 @@ describe('nativeProviderListFromCatalog — metadata parity with the runtime pic
     const flat = flattenModels(list, { providerMode: 'native' });
     const haiku = flat.find((m) => m.modelID === 'claude-3-haiku')!;
     expect(haiku.variants ?? {}).toEqual({});
+  });
+});
+
+// One picker across sandbox states: pre-boot the catalog synthesizes the
+// list, post-boot the runtime reports it. Swapping sources changed the
+// picker's contents on boot (different provider order, Zen appearing, the
+// auto-picked default flipping). The merge keeps ONE list: runtime truth per
+// provider, catalog order + curated defaults, runtime-only extras appended.
+describe('mergeNativeProviderLists (catalog ∪ runtime, one picker across boot)', () => {
+  const catalog = {
+    all: [
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        source: 'env',
+        models: {
+          'claude-opus-4-8': { id: 'claude-opus-4-8', name: 'Opus', variants: { high: {}, max: {} } },
+          'claude-sonnet-4-6': { id: 'claude-sonnet-4-6', name: 'Sonnet' },
+        },
+      },
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        source: 'env',
+        models: { 'z-ai/glm-4.7-flash': { id: 'z-ai/glm-4.7-flash', name: 'GLM' } },
+      },
+    ],
+    connected: ['anthropic', 'openrouter'],
+    default: { anthropic: 'claude-opus-4-8', openrouter: 'z-ai/glm-4.7-flash' },
+  } as never;
+  const runtime = {
+    all: [
+      {
+        id: 'opencode',
+        name: 'OpenCode Zen',
+        source: 'api',
+        models: { 'big-pickle': { id: 'big-pickle', name: 'Big Pickle' } },
+      },
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        source: 'env',
+        models: {
+          'claude-opus-4-8': {
+            id: 'claude-opus-4-8',
+            name: 'Opus',
+            variants: { high: { thinking: { budgetTokens: 16000 } }, max: { thinking: { budgetTokens: 31999 } } },
+          },
+          'claude-sonnet-4-6': { id: 'claude-sonnet-4-6', name: 'Sonnet' },
+          'claude-haiku-4-5': { id: 'claude-haiku-4-5', name: 'Haiku' },
+        },
+      },
+    ],
+    connected: ['opencode', 'anthropic'],
+    default: { anthropic: 'claude-haiku-4-5', opencode: 'big-pickle' },
+  } as never;
+
+  test('runtime provider objects win for shared ids (real variant settings), catalog order is kept, extras append', () => {
+    const merged = mergeNativeProviderLists(catalog, runtime)!;
+    expect((merged.all ?? []).map((p) => p.id)).toEqual(['anthropic', 'openrouter', 'opencode']);
+    const anthropic = (merged.all ?? []).find((p) => p.id === 'anthropic') as {
+      models: Record<string, { variants?: Record<string, unknown> }>;
+    };
+    expect(Object.keys(anthropic.models)).toEqual(['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5']);
+    expect(anthropic.models['claude-opus-4-8']!.variants).toEqual({
+      high: { thinking: { budgetTokens: 16000 } },
+      max: { thinking: { budgetTokens: 31999 } },
+    });
+    expect(merged.connected).toEqual(['anthropic', 'openrouter', 'opencode']);
+  });
+
+  test('the curated catalog default wins over the runtime default when the runtime serves that model', () => {
+    const merged = mergeNativeProviderLists(catalog, runtime)!;
+    expect((merged as { default?: Record<string, string> }).default).toEqual({
+      anthropic: 'claude-opus-4-8',
+      openrouter: 'z-ai/glm-4.7-flash',
+      opencode: 'big-pickle',
+    });
+  });
+
+  test('a catalog default the runtime does not serve falls back to the runtime default', () => {
+    const skewed = {
+      ...(catalog as { default: Record<string, string> }),
+      default: { anthropic: 'claude-opus-5', openrouter: 'z-ai/glm-4.7-flash' },
+    } as never;
+    const merged = mergeNativeProviderLists(skewed, runtime)!;
+    expect((merged as { default?: Record<string, string> }).default?.anthropic).toBe('claude-haiku-4-5');
+  });
+
+  test('either side missing returns the other unchanged', () => {
+    expect(mergeNativeProviderLists(catalog, undefined)).toBe(catalog);
+    expect(mergeNativeProviderLists(undefined, runtime)).toBe(runtime);
+    expect(mergeNativeProviderLists(undefined, undefined)).toBeUndefined();
   });
 });
