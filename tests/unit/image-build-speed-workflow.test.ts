@@ -67,8 +67,15 @@ describe('staging image builds are native per-arch, cached, and merged', () => {
     expect(job).toContain('uses: useblacksmith/setup-docker-builder@v2');
     expect(job).toContain(`cache-key: ${DOCKERFILE[image]}:\${{ matrix.platform }}`);
     expect(job).toContain('uses: useblacksmith/build-push-action@v2');
-    // A registry cache export on top of the sticky disk is pure push time.
-    expect(job).not.toContain('cache-to: type=registry');
+    // The registry cache stays alongside the sticky disk: measured 2026-08-25,
+    // five consecutive sticky-disk builds of one key reused 0 layers while the
+    // registry cache reused 34-45. mode=max caches intermediate stages too.
+    expect(job).toContain(
+      `cache-from: type=registry,ref=kortix/kortix-${image}:staging-buildcache-\${{ matrix.arch }}`,
+    );
+    expect(job).toContain(
+      `cache-to: type=registry,ref=kortix/kortix-${image}:staging-buildcache-\${{ matrix.arch }},mode=max`,
+    );
   });
 
   it.each(IMAGES)('publishes %s by digest, never by tag, from the arch legs', (image) => {
@@ -119,7 +126,10 @@ describe('dev image builds stay single-arch and cached', () => {
     expect(job).toContain('uses: useblacksmith/setup-docker-builder@v2');
     expect(job).toContain(`cache-key: ${DOCKERFILE[image]}:linux/amd64`);
     expect(job).toContain('uses: useblacksmith/build-push-action@v2');
-    expect(job).not.toContain('cache-to: type=registry');
+    expect(job).toContain(`cache-from: type=registry,ref=kortix/kortix-${image}:dev-buildcache`);
+    expect(job).toContain(
+      `cache-to: type=registry,ref=kortix/kortix-${image}:dev-buildcache,mode=max`,
+    );
   });
 });
 

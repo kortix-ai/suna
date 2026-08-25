@@ -84,9 +84,15 @@ Image builds (`deploy-dev.yml`, `build-staging.yml`, `deploy-preview.yml`, the
   by `cache-key`, shared by every workflow in the repo. Dev, staging (amd64 leg),
   preview and the CI smoke build of `apps/api/Dockerfile` therefore warm each
   other. The arm64 leg has its own key (`:linux/arm64`).
-- The old `cache-from`/`cache-to: type=registry,…-buildcache` refs are gone. The
-  `kortix/kortix-*:*-buildcache` tags on Docker Hub are now unused and can be
-  deleted.
+- The registry cache (`cache-from`/`cache-to: type=registry,ref=kortix/kortix-*:…-buildcache,mode=max`)
+  stays on every build, on purpose. Measured 2026-08-25: five consecutive
+  sticky-disk builds of `apps/api/Dockerfile:linux/amd64` (runs 32906337717,
+  32907212034, 32908668613, …) reused **0** layers — even `WORKDIR /app`
+  re-executed — although the disk was obtained from the previous commit and
+  `/var/lib/buildkit/cache.db` changed between mounts; the registry cache on
+  the same Dockerfile reused 34–45 steps (`pnpm install`, `apt-get` skipped).
+  Raise with Blacksmith support before removing the registry cache again; the
+  proof is `grep -c ' CACHED'` on the build job log.
 - The Blacksmith builder is a separate buildkitd: a raw `docker build` that the
   job then runs locally needs `--load` (see `ci.yml` `self-host-schema`).
 - Sticky disks are billed at $0.50/GB/month and evicted after 7 idle days.

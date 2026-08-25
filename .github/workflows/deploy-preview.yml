@@ -134,7 +134,10 @@ jobs:
         # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
         # shared by every workflow in this repo that builds the same image.
         # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder, so the build still works, only cold.
+        # local buildx builder. The registry cache-from/cache-to below stays:
+        # measured 2026-08-25, five consecutive sticky-disk builds of this key
+        # reused 0 layers while the registry cache reused 34-45 (see
+        # docs/runbooks/ci-runners.md, "Docker layer cache").
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/api/Dockerfile:linux/amd64
@@ -174,7 +177,10 @@ jobs:
         # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
         # shared by every workflow in this repo that builds the same image.
         # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder, so the build still works, only cold.
+        # local buildx builder. The registry cache-from/cache-to below stays:
+        # measured 2026-08-25, five consecutive sticky-disk builds of this key
+        # reused 0 layers while the registry cache reused 34-45 (see
+        # docs/runbooks/ci-runners.md, "Docker layer cache").
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/llm-gateway/Dockerfile:linux/amd64
@@ -232,7 +238,10 @@ jobs:
         # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
         # shared by every workflow in this repo that builds the same image.
         # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder, so the build still works, only cold.
+        # local buildx builder. The registry cache-from/cache-to below stays:
+        # measured 2026-08-25, five consecutive sticky-disk builds of this key
+        # reused 0 layers while the registry cache reused 34-45 (see
+        # docs/runbooks/ci-runners.md, "Docker layer cache").
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/web/Dockerfile:linux/amd64
