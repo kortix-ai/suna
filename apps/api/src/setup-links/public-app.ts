@@ -218,7 +218,11 @@ async function resolveConnectorLink(c: Context): Promise<
       ),
     )
     .limit(1);
-  if (!connector || connector.providerType !== 'pipedream') {
+  // Provider-neutral, same as the mint route and the /start + /finalize
+  // handlers. This check was missed when those were opened up, so a Composio
+  // connector produced a link whose own intake page then answered
+  // "Connector not found" — the button worked and the modal behind it 404'd.
+  if (!connector || (connector.providerType !== 'pipedream' && connector.providerType !== 'composio')) {
     return { error: c.json({ error: 'Connector not found' }, 404) };
   }
   if (connector.authorizationStrategy !== 'project') {
@@ -244,8 +248,8 @@ async function resolveConnectorLink(c: Context): Promise<
   };
 }
 
-// POST /v1/setup-links/connectors/:token/start — mint a FRESH Pipedream Quick
-// Connect URL. Completing on Pipedream's hosted page also fires the connect
+// POST /v1/setup-links/connectors/:token/start — mint a FRESH hosted
+// authorization URL from whichever provider backs this connector. Completing on Pipedream's hosted page also fires the connect
 // webhook (connectors/pipedream.ts createConnectToken webhook_uri + db-deps
 // pipedreamWebhook), but that path is AUXILIARY redundancy only: the client
 // polls .../finalize below, which is the authoritative persist + notify path.
