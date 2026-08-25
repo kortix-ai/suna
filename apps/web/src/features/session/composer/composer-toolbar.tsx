@@ -117,6 +117,21 @@ export interface ComposerToolbarProps {
   onSubmit: () => void;
 }
 
+/**
+ * The picker's own record for the selected key — its `reasoningOptions` feed
+ * the effort control, so a model the web's baked catalog seed has never heard
+ * of (see reasoning-effort-selector.tsx's data-source note) still gets its knob.
+ */
+function selectedFlatModel(
+  models: FlatModel[],
+  selected: { providerID: string; modelID: string } | null,
+): FlatModel | undefined {
+  if (!selected) return undefined;
+  return models.find(
+    (m) => m.providerID === selected.providerID && m.modelID === selected.modelID,
+  );
+}
+
 export function ComposerToolbar({
   models,
   modelsLoading,
@@ -180,6 +195,7 @@ export function ComposerToolbar({
         <ReasoningEffortSelector
           model={selectedModel}
           projectId={projectId}
+          reasoningOptions={selectedFlatModel(models, selectedModel)?.reasoningOptions}
           open={reasoningMenuOpen}
           onOpenChange={onReasoningMenuOpenChange}
         />

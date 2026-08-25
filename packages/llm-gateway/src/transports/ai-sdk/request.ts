@@ -736,6 +736,22 @@ function isBedrockClaudeModel(resolvedModel: string | undefined): boolean {
   return /anthropic\.claude/i.test(resolvedModel ?? '');
 }
 
+// OpenAI models on Bedrock (`global.openai.gpt-5.6-*`, `openai.gpt-5.5`,
+// `openai.gpt-oss-*`) are served by Bedrock core (Converse), where the OpenAI
+// reasoning knob travels as `additionalModelRequestFields.reasoning_effort` —
+// the exact field @ai-sdk/amazon-bedrock 5.0.59 itself emits for
+// `reasoningConfig.maxReasoningEffort` once it recognises an OpenAI model id
+// (its `isOpenAIModel` branch), and what opencode sends natively for the same
+// models. Written as the raw field rather than through `maxReasoningEffort`:
+// the package's enum is `low|medium|high|xhigh|max` and rejects `none`, which
+// GPT-5.6 publishes as a real tier (models.dev `reasoning_options`). Before
+// this branch existed the bedrock adapter returned `{}` for every non-Claude
+// model, so a client's `reasoning_effort` (or the project's configured
+// default) was silently dropped for GPT-5.6 on Bedrock.
+function isBedrockOpenAiModel(resolvedModel: string | undefined): boolean {
+  return /(^|\.)openai\./i.test(resolvedModel ?? '');
+}
+
 const ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
 const BEDROCK_CACHE_POINT = { type: 'default' } as const;
 
@@ -1059,9 +1075,20 @@ const bedrockAdapter: ProviderAdapter = {
   optionsKey: () => 'bedrock',
   buildProviderOptions(req) {
     const options: BedrockProviderOptions = {};
+    // OpenAI-on-Bedrock: forward the (capability-gated, see normalizeRequest)
+    // effort as the OpenAI-native field. Nothing else — `cachePoint` and
+    // `reasoningConfig` are Claude-Converse-only and 403 here.
+    if (isBedrockOpenAiModel(req.resolvedModel)) {
+      if (typeof req.reasoningEffort === 'string') {
+        options.additionalModelRequestFields = { reasoning_effort: req.reasoningEffort };
+      }
+      return options;
+    }
     // `reasoningConfig:{type:'adaptive'}` is a Claude-Converse-only primitive.
-    // Non-Claude Bedrock models (`global.openai.*`, Nova, …) 403 on it — never
-    // attach it for them.
+    // Other non-Claude Bedrock models (Nova, Grok, DeepSeek, …) 403 on it —
+    // never attach it for them. Their own effort wires are not mapped yet, so
+    // a client effort is still dropped for them (Nova 2 / Grok 4.6 publish
+    // reasoning_options on models.dev; Converse shape unverified).
     if (!isBedrockClaudeModel(req.resolvedModel)) return options;
     const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
     // Adaptive thinking carries no token budget to clamp — the model manages

@@ -30,7 +30,12 @@ describe('catalogModelForGateway — client-side capability lookup', () => {
     expect(model?.id).toBe('deepseek/deepseek-v4-flash');
     expect(model?.reasoning).toBe(true);
     expect(model?.temperature).toBe(true);
-    expect(model?.reasoning_options?.[0]?.values).toEqual(['high', 'xhigh']);
+    // models.dev publishes a `toggle` entry alongside the effort ladder for
+    // this model, so find the effort knob rather than assuming index 0. The
+    // synthetic fallback carries no reasoning_options at all.
+    const effort = model?.reasoning_options?.find((option) => option.type === 'effort');
+    expect(effort?.values?.length).toBeGreaterThan(1);
+    expect(effort?.values).toContain('high');
   });
 
   test('a deactivated managed id (claude-opus-4.8) no longer resolves', () => {

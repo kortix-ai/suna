@@ -48,6 +48,18 @@ A model id has one of three shapes:
 Connect a BYOK key on the project's Model settings page, or set the
 provider's env var directly as a [secret](/docs/project/secrets).
 
+## Reasoning effort
+
+With the gateway on, the composer's reasoning-effort control sets the
+project default for the selected model (`model_generation_config` on the
+routing policy). The gateway injects it as `reasoning_effort` on every
+request that does not carry its own, for any model that publishes an effort
+ladder. The knob comes from the picker's live model record, so a model
+models.dev added yesterday carries it today. OpenAI models on Amazon Bedrock
+(`amazon-bedrock/global.openai.gpt-5.6-sol`) receive it as Bedrock's
+`reasoning_effort` request field; Claude models receive it as adaptive
+thinking. Nova and Grok on Bedrock do not receive it yet.
+
 ## How auto picks a model
 
 Set no model, and Kortix resolves one through five layers, in order. (The

@@ -718,6 +718,75 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     }
   });
 
+  const BEDROCK_OPENAI = 'global.openai.gpt-5.6-sol';
+
+  it('bedrock: OpenAI-on-Bedrock forwards every published effort tier as additionalModelRequestFields.reasoning_effort — never the Claude reasoningConfig/cachePoint', () => {
+    for (const effort of ['none', 'low', 'medium', 'high', 'xhigh', 'max']) {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'bedrock', {
+        resolvedModel: BEDROCK_OPENAI,
+      });
+      expect((args.providerOptions as any)?.bedrock).toEqual({
+        additionalModelRequestFields: { reasoning_effort: effort },
+      });
+      expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
+      expect(args.providerOptions).not.toHaveProperty('anthropic');
+    }
+  });
+
+  it('bedrock: OpenAI-on-Bedrock accepts the Responses-style nested reasoning.effort too', () => {
+    const args = buildAiSdkArgs({ messages: [], reasoning: { effort: 'xhigh' } }, 'bedrock', {
+      resolvedModel: BEDROCK_OPENAI,
+    });
+    expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+      reasoning_effort: 'xhigh',
+    });
+  });
+
+  it('bedrock: OpenAI-on-Bedrock effort is gated by the resolved model — a tier the model does not publish is dropped, not forwarded', () => {
+    const model = {
+      id: BEDROCK_OPENAI,
+      name: 'GPT-5.6 Sol (Global)',
+      reasoning: true,
+      reasoning_options: [{ type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }],
+    };
+    const ok = buildAiSdkArgs({ messages: [], reasoning_effort: 'xhigh' }, 'bedrock', {
+      resolvedModel: BEDROCK_OPENAI,
+      model,
+    });
+    expect((ok.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+      reasoning_effort: 'xhigh',
+    });
+    const dropped = buildAiSdkArgs({ messages: [], reasoning_effort: 'minimal' }, 'bedrock', {
+      resolvedModel: BEDROCK_OPENAI,
+      model,
+    });
+    expect((dropped.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+  });
+
+  it('bedrock: OpenAI-on-Bedrock without any effort sends no bedrock provider options at all', () => {
+    const args = buildAiSdkArgs({ messages: [] }, 'bedrock', { resolvedModel: BEDROCK_OPENAI });
+    expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
+  });
+
+  it('bedrock: the in-region OpenAI ids (openai.gpt-5.6-terra, openai.gpt-oss-120b-1:0) take the same path; Nova and Grok still get nothing', () => {
+    for (const id of ['openai.gpt-5.6-terra', 'openai.gpt-oss-120b-1:0', 'us.openai.gpt-5.5']) {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: id,
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+        reasoning_effort: 'high',
+      });
+    }
+    for (const id of ['us.amazon.nova-micro-v1:0', 'xai.grok-4.6']) {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: id,
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+      expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
+    }
+  });
+
   it('bedrock: a raw body.thinking:{type:"enabled",budget_tokens} is normalized to adaptive (never forwarded verbatim)', () => {
     const args = buildAiSdkArgs(
       { messages: [], thinking: { type: 'enabled', budget_tokens: 5000 } },

@@ -24,6 +24,37 @@ describe('reasoningEffortValuesFor — composer show/hide source of truth', () =
     expect(reasoningEffortValuesFor('auto')).toEqual([]);
   });
 
+  test('the picker model\'s OWN reasoning_options win over the web catalog — a model the baked seed has never heard of still gets its ladder', () => {
+    const values = reasoningEffortValuesFor('amazon-bedrock/global.openai.gpt-9-brand-new', [
+      { type: 'effort', values: ['none', 'low', 'high', 'max'] },
+    ]);
+    expect(values).toEqual(['none', 'low', 'high', 'max']);
+  });
+
+  test('picker reasoning_options with only a budget_tokens knob synthesize the standard tiers', () => {
+    const values = reasoningEffortValuesFor('amazon-bedrock/some.claude', [
+      { type: 'budget_tokens', min: 1024 },
+    ]);
+    expect(values.length).toBeGreaterThan(0);
+    expect(values).toContain('high');
+  });
+
+  test('empty picker reasoning_options fall back to the web catalog (no fabricated ladder for an unknown model)', () => {
+    expect(reasoningEffortValuesFor('nonexistent/model', [])).toEqual([]);
+    expect(reasoningEffortValuesFor('openai/gpt-5.6-sol', null)).toContain('xhigh');
+  });
+
+  test('a Bedrock global inference profile resolves from the refreshed baked seed too', () => {
+    expect(reasoningEffortValuesFor('amazon-bedrock/global.openai.gpt-5.6-sol')).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+  });
+
   test('a managed model resolves through its pricingRef to real reasoning_options', () => {
     const values = reasoningEffortValuesFor('deepseek-v4-flash');
     expect(values).toEqual(['high', 'xhigh']);
