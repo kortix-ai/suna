@@ -13,7 +13,7 @@ import {
   runGitCredentialHelper,
   scheduleHistoryBackfill,
 } from './git'
-import { logger } from './logger'
+import { enableDaemonLogFile, logger } from './logger'
 import { MonitorRunner, parseMonitorSpecs } from './monitor-runner'
 import {
   catalogIsDegraded,
@@ -104,11 +104,19 @@ async function main() {
   const bootMark = (label: string) => {
     bootState.timeline.push({ label, atMs: Date.now() - bootTime })
   }
+  // The daemon's own log lands on the box from the first line (logger.ts):
+  // under E2B stdout goes to envd and is not on disk, which is why the
+  // 2026-08-25 port desync could be fenced but never proven.
+  const daemonLog = enableDaemonLogFile()
   logger.info('[boot] kortix-sandbox-agent-server starting', {
     servicePort: cfg.servicePort,
     opencodeInternalPort: cfg.opencodeInternalPort,
+    opencodeStandbyPort: cfg.opencodeStandbyPort,
     staticPort: cfg.staticPort,
     autoClone: cfg.autoClone,
+    pid: process.pid,
+    bun: typeof Bun !== 'undefined' ? Bun.version : null,
+    daemonLogFile: daemonLog.path,
   })
 
   // Bring the static web server up first. It only serves files off disk, so it

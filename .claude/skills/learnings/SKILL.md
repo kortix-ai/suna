@@ -2714,11 +2714,27 @@ settled by hand.
    `abandoned`; a failed by-id read stays `null`.
 2. Any new daemon read of a session transcript states its bound in the
    request. Roots grow for hours; "the list" is never small.
-3. The daemon's `activePort` must answer. The readiness probe adopts the
-   other half of the port pair when OUR live child answers only there
-   (`adoptStrayActivePort`, logged at error level with both ports and the
-   pid). Same box, same day: daemon `starting` on 4096 for 2 h while pid 2423
-   served on 4097 — every prompt 503'd and no turn end was ever observed.
+3. The live opencode port is a property of the PROCESS (`childPorts`,
+   `livePort()` in opencode.ts), never a variable beside it. Same box, same
+   day: the daemon reported `starting` on 4096 for 2 h while its own child
+   (pid 2423) served on 4097 — every prompt 503'd and no turn end was ever
+   observed. The verified reload (two opencodes, promote the proven one) is
+   by design; a bookkeeping variable that can drift from the process is not.
+   The verifier also declines when the candidate half already answers: the
+   incumbent would otherwise "prove" a candidate that died on EADDRINUSE and
+   promotion would kill the only opencode the box has.
+4. The daemon log is on the box: every logger line also lands in
+   `KORTIX_DAEMON_LOG_FILE` (default `/opt/kortix/logs/daemon.log`, rotated at
+   32 MiB to `.1`), readable with `GET /kortix/logs?source=daemon|opencode|all&tail=N`
+   through the sandbox proxy (`/v1/p/<external_id>/8000/kortix/logs`). A
+   daemon whose only log is a stream nobody keeps cannot be debugged after
+   the fact — that is why this entry says "unproven".
+5. Box telemetry is on record: `[resources]` every 60 s and on every OpenCode
+   state change (memory, cgroup limit + oom_kill counter, load, disk on
+   /workspace + /opt/kortix + /tmp, daemon + opencode RSS, duplicate
+   `opencode serve` pids), `[resources] pressure` when a threshold is
+   crossed, and `GET /kortix/diag` returns state + resources + runtime
+   report + both log tails in one document. Ask the box before guessing.
 
 *Automation:* `orphaned-turn-finalize.test.ts` ("turn probes read a bounded
 window, never the whole root"); the stub fetch there serves `?limit=` and

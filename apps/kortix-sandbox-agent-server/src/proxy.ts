@@ -12,6 +12,10 @@ import type { Opencode } from './opencode'
 import { isRepoMaterialized } from './git'
 import { createHealthRouter, type SandboxBootState } from './routes/health'
 import { createRefreshRouter } from './routes/refresh'
+import { createLogsRouter } from './routes/logs'
+import { createDiagRouter } from './routes/diag'
+import { type ResourceMonitor, startResourceMonitor } from './resources'
+import { OPENCODE_HOME } from './opencode'
 import { createAbortRouter } from './routes/abort'
 import { createEnvRouter } from './routes/env'
 import { createGitRouter } from './routes/git'
@@ -43,6 +47,10 @@ const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
 // create handling in the `open` websocket handler below.
 const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty(?:\/([^/]+))?\/connect\/?$/
 const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
+
+// One per process: the periodic box telemetry (resources.ts). Started by
+// startProxy, read by /kortix/diag. Null in unit tests that build the app only.
+let resourceMonitor: ResourceMonitor | null = null
 
 // Bound on waiting for opencode to respond to a proxied request. Applied only
 // to the wait for the response to arrive (headers), never to a streaming body
@@ -190,6 +198,20 @@ export function buildOpencodeApp(
   const partRouter = createPartRouter(opencode)
   kortixRouter.route('/part', partRouter)
   kortixRouter.route('/part/', partRouter)
+  // /kortix/logs — the daemon's own log file + OpenCode's; see routes/logs.ts.
+  const logsRouter = createLogsRouter(cfg, { opencodeHome: OPENCODE_HOME })
+  kortixRouter.route('/logs', logsRouter)
+  kortixRouter.route('/logs/', logsRouter)
+  // /kortix/diag — the whole error report in one JSON document; see routes/diag.ts.
+  const diagRouter = createDiagRouter(cfg, {
+    opencode,
+    bootTime,
+    bootState,
+    opencodeHome: OPENCODE_HOME,
+    resources: () => resourceMonitor,
+  })
+  kortixRouter.route('/diag', diagRouter)
+  kortixRouter.route('/diag/', diagRouter)
   if (envRouter) {
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)
@@ -475,6 +497,14 @@ export function startProxy(
   // Constructed once, outside reload() — pty state must survive a config
   // hot-swap (warm-snapshot restore) exactly like `opencode`/`bootState` do.
   const ptyRegistry = createPtyRegistry(cfg)
+  // Box telemetry: a `[resources]` log line every minute and on every
+  // opencode state change, `[resources] pressure` when a threshold is crossed.
+  resourceMonitor?.stop()
+  resourceMonitor = startResourceMonitor({
+    opencodePid: () => opencode.getPid(),
+    opencodeState: () => opencode.getState(),
+    diskPaths: [cfg.workspace, '/opt/kortix', '/tmp'],
+  })
   // A staged daemon update must not exit this process while somebody has a
   // terminal open — the PTY dies with the daemon that spawned it. The registry
   // is the only thing that knows, so it answers the question rather than the
