@@ -203,17 +203,13 @@ export function ReasoningEffortSelector({
               model's own default once a variant is set, and without it the
               control would be a one-way door. */}
           <DropdownMenuRadioItem value={AUTO}>
-            <span className="flex items-center gap-2">
-              <EffortIcon value={null} className="size-4 shrink-0" />
-              Auto
-            </span>
+            <EffortIcon value={null} className="size-4 shrink-0" />
+            Auto
           </DropdownMenuRadioItem>
           {choices.map((value) => (
             <DropdownMenuRadioItem key={value} value={value}>
-              <span className="flex items-center gap-2">
-                <EffortIcon value={value} className="size-4 shrink-0" />
-                {label(value)}
-              </span>
+              <EffortIcon value={value} className="size-4 shrink-0" />
+              {label(value)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
