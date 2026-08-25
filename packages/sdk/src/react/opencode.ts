@@ -153,7 +153,7 @@ export {
   providerListHasGateway,
   providerListHasModels,
 } from './provider-selection';
-export { useProjectModels } from './use-project-models';
+export { useProjectModelPickerCatalog, useProjectModels } from './use-project-models';
 export { useProjectConfig } from './use-project-config';
 export type { ProjectConfigSummary } from '../core/rest/projects-client';
 

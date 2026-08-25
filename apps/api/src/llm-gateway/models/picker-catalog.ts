@@ -1,4 +1,4 @@
-import { type Catalog, type CatalogModel } from '@kortix/llm-catalog';
+import { type Catalog, type CatalogModel, bedrockInferenceProfileRank } from '@kortix/llm-catalog';
 import { toWireModel } from '../resolution/effective';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
@@ -77,8 +77,14 @@ export function providerFlagship(providerId: string): string | null {
   // provider (deterministic, real). Released dates sort lexically (YYYY-MM-DD).
   const provider = state.catalog.providers.find((p) => p.id === providerId);
   if (!provider || provider.models.length === 0) return null;
-  const sorted = [...provider.models].sort((a, b) =>
-    (b.released ?? '').localeCompare(a.released ?? ''),
+  // Newest first; on a release-date tie prefer the Bedrock inference profile
+  // (`global.` > regional > bare) — the bare id is what Bedrock refuses with
+  // "on-demand throughput isn't supported", and it used to be what a fresh
+  // BYOK Bedrock project was seeded with (`amazon-bedrock/xai.grok-4.6`).
+  const sorted = [...provider.models].sort(
+    (a, b) =>
+      (b.released ?? '').localeCompare(a.released ?? '') ||
+      bedrockInferenceProfileRank(b.id) - bedrockInferenceProfileRank(a.id),
   );
   return sorted[0]?.id ?? null;
 }

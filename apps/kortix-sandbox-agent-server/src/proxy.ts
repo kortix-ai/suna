@@ -1,4 +1,6 @@
 import { Hono } from 'hono'
+import { BOOT_PHASE_HEADER, bootPhaseLabel } from './boot-phase'
+import { runtimeAssetsActivity } from './runtime-assets'
 import { egressShimPort } from './egress-shim'
 import type { ServerWebSocket } from 'bun'
 
@@ -281,55 +283,69 @@ export function buildOpencodeApp(
   // attempting a fetch — surfaces the situation clearly to the client and
   // prevents noisy ECONNREFUSED loops.
   app.all('*', async (c) => {
+    // Every not-ready answer names the boot phase (X-Kortix-Boot-Phase) so the
+    // API's start budget measures lack of PROGRESS, not wall-clock. See
+    // boot-phase.ts.
+    const notReady = (body: Record<string, unknown>, reason: string) => {
+      const phase = bootPhaseLabel({
+        timeline: bootState.timeline,
+        opencodeState: opencode.getState(),
+        runtimeAssetsActivity: runtimeAssetsActivity(),
+        notReadyReason: reason,
+      })
+      c.header(BOOT_PHASE_HEADER, phase)
+      return c.json({ ...body, phase }, 503)
+    }
+
     if (bootState.repoMaterializationError) {
-      return c.json(
+      return notReady(
         {
           error: 'sandbox runtime not ready',
           reason: 'repo_materialization_failed',
           message: bootState.repoMaterializationError,
         },
-        503,
+        'repo_materialization_failed',
       )
     }
 
     if (cfg.autoClone && !(await isRepoMaterialized(cfg.projectTarget))) {
-      return c.json(
+      return notReady(
         {
           error: 'sandbox runtime not ready',
           reason: 'repo_not_materialized',
         },
-        503,
+        'repo_not_materialized',
       )
     }
 
     if (bootState.initialOpenCodeSessionError) {
-      return c.json(
+      return notReady(
         {
           error: 'sandbox runtime not ready',
           reason: 'initial_opencode_session_failed',
           message: bootState.initialOpenCodeSessionError,
         },
-        503,
+        'initial_opencode_session_failed',
       )
     }
 
     if (bootState.initialOpenCodeSessionRequired && !bootState.initialOpenCodeSessionId) {
-      return c.json(
+      return notReady(
         {
           error: 'sandbox runtime not ready',
           reason: 'initial_opencode_session_pending',
         },
-        503,
+        'initial_opencode_session_pending',
       )
     }
 
     if (opencode.getState() !== 'ok') {
-      return c.json(
+      return notReady(
         {
           error: 'opencode not ready',
           opencode: opencode.getState(),
         },
-        503,
+        'opencode_not_ready',
       )
     }
 

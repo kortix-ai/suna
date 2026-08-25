@@ -64,7 +64,6 @@ import { Composer as SessionChatInput } from '@/features/session/composer/compos
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import { sessionSlashFiles } from '@/features/session/composer/menus/slash-files';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
-import { SessionConnectCard } from '@/features/session/session-connect-card';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import {
   ConnectProviderDialog,
@@ -4937,23 +4936,6 @@ export function SessionChat({
                     'connector'` to leave the remedy to this card, a refused turn
                     rendered NOTHING — no card, no pill. `commandError` is the same
                     typed error, classified through the same `classifySendError`. */}
-                  {/* The other half of "something needs connecting": here the
-                      turn is still in flight and the AGENT asked, rather than the
-                      platform refusing the prompt. Same card shape, no resend —
-                      finalizing tells the agent directly. */}
-                  <SessionConnectCard
-                    projectId={projectId}
-                    // `projectSessionId`, NOT `sessionId`. This component carries
-                    // both: `sessionId` is the runtime/sandbox session, and
-                    // `projectSessionId` is the durable Kortix project session
-                    // every project-session API is keyed on — including the
-                    // connect route, which stores whichever id the agent's
-                    // scoped token carried. Passing the runtime id asked for a
-                    // session the API has no rows for, so the answer was always
-                    // an empty list and the card never rendered.
-                    sessionId={projectSessionId}
-                    className="mb-2"
-                  />
                   <ConnectorRequiredNotice
                     error={commandError}
                     projectId={projectId}

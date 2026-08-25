@@ -35,9 +35,20 @@ export function connectorConnectedPrompt(slug: string, app: string): string {
  * Hand the requesting agent a durable follow-up prompt through the
  * session-lifecycle queue — the same path approval-resume uses.
  *
- * Gated on `running`: a stopped or hibernated session reads the credential from
- * the store on its next run anyway, and finalizing a connect must never boot a
- * sandbox on its own.
+ * NOT gated on `running`, and that gate is why this never fired in practice.
+ * The ordinary sequence is: the agent mints a link, posts it, and its turn
+ * ends — so the session is `stopped` before the human has even opened Google.
+ * Measured on dev: the connect completed at 18:15:32 against a session that
+ * went `stopped` at 18:15:12, twenty seconds earlier, and the notification was
+ * skipped. The whole feature exists to spare someone typing "done", and a
+ * `running` check hands them that job back in its own common case. Dev carries
+ * 3455 stopped sessions against 1 running.
+ *
+ * Enqueuing is safe for a stopped session: this writes a durable
+ * `continue_session` row and the lifecycle engine owns waking the session to
+ * deliver it, exactly as approval-resume already relies on.
+ *
+ * A DELETED session is still skipped — there is no agent left to tell.
  */
 export async function notifyConnectorSession(
   sessionId: string,
@@ -56,12 +67,18 @@ export async function notifyConnectorSession(
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
-    if (session?.status !== 'running') return;
+    if (!session) return;
     const meta = (session.metadata ?? {}) as Record<string, unknown>;
     if (typeof meta.deletedAt === 'string') return;
     const { enqueueContinueSessionCommand, drainSessionLifecycleQueue } = await import(
       '../projects/session-lifecycle'
     );
+    // Idempotent by construction. Several callers legitimately observe the same
+    // connect landing — the browser poll, the server-side completion watch, a
+    // second tab on the same link — and the agent must be told exactly once.
+    // `enqueueContinueSessionCommand` de-dupes on this key with
+    // onConflictDoNothing, so the race is settled in the database rather than by
+    // hoping only one caller wins.
     await enqueueContinueSessionCommand({
       source: 'system:connector-connected',
       projectId,
@@ -69,6 +86,7 @@ export async function notifyConnectorSession(
       sessionId,
       actorUserId,
       text: connectorConnectedPrompt(slug, app),
+      idempotencyKey: `connector-connected:${sessionId}:${slug}`,
     });
     drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
     console.info('[connectors] connector connected, session notified', { sessionId, slug });

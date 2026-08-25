@@ -73,6 +73,20 @@ mock.module('../connectors/credentials', () => ({
   credentialExists: async () => credentialAlreadySet,
 }));
 
+// The connector half of these routes delegates to the provider-neutral deps, so
+// Composio and Pipedream reach their hosted page through one path. Mocked here
+// for the same reason the pipedream module is: this suite asserts the ROUTE's
+// behaviour — what it persists and who it tells — not a provider client.
+mock.module('../connectors/db-deps', () => ({
+  dbConnectorRouterDeps: {
+    connectorConnect: async () => ({ provider: 'pipedream', connectUrl: null, connected: false }),
+    connectorFinalize: async (projectId: string, slug: string) => {
+      finalizeCalls.push({ projectId, slug });
+      return { provider: 'pipedream', ...finalizeResult };
+    },
+  },
+}));
+
 const { mintSetupLink } = await import('./token');
 const { setupLinksPublicApp, secretSubmittedPrompt, connectorConnectedPrompt } = await import(
   './public-app'
@@ -312,13 +326,10 @@ describe('POST /connectors/:token/finalize', () => {
     const res = await finalize(mintConnectorToken());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ connected: true });
-    expect(finalizeCalls[0]).toMatchObject({
-      projectId: PROJECT_ID,
-      slug: 'smartlead',
-      app: 'smartlead',
-      connectorId: CONNECTOR_ID,
-      userId: null,
-    });
+    // The provider-neutral contract: the route names the project and the
+    // connector, and the dep resolves the provider behind it. `app` /
+    // `connectorId` were arguments of the old Pipedream-only call.
+    expect(finalizeCalls[0]).toMatchObject({ projectId: PROJECT_ID, slug: 'smartlead' });
     await flushNotification();
     expect(enqueued).toHaveLength(1);
     expect(enqueued[0]).toMatchObject({
@@ -331,13 +342,17 @@ describe('POST /connectors/:token/finalize', () => {
     expect(String(enqueued[0].text)).toContain('smartlead');
   });
 
-  test('does not notify a stopped session — a public poll must never boot a sandbox', async () => {
+  test('a STOPPED session is told too — the agent posted the link and its turn ended before the human finished (#6885)', async () => {
+    // The enqueue writes a durable continue-session command; nothing here
+    // boots a sandbox. Dev measured 3455 stopped sessions to 1 running at the
+    // moment a connect lands, so `running` was the wrong gate.
     pipedreamOn = true;
     finalizeResult = { connected: true };
     sessionRows = [{ status: 'stopped', accountId: 'acct-1', metadata: {} }];
     expect((await finalize(mintConnectorToken())).status).toBe(200);
     await flushNotification();
-    expect(enqueued).toHaveLength(0);
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({ source: 'system:connector-connected', sessionId: SESSION_ID });
   });
 
   test('does not notify a deleted session', async () => {

@@ -97,6 +97,26 @@ describe('OpenCode launch binary detection', () => {
     expect(events).toEqual(['path:opencode'])
   })
 
+  test('never launches a postinstall-less pnpm stub from PATH; falls through to the managed link', async () => {
+    // OpenCode's own autoupdate (plain `pnpm add -g`) leaves a 479-byte stub as
+    // the PATH launcher (Essentia 2026-08-22 and 2026-08-25). Spawning it exits
+    // at once and the daemon respawns forever with "binary not found".
+    const events: string[] = []
+    const resolved = await detectOpencodeBinary({
+      nativeBinaryFastPathEnabled: false,
+      currentLink: '/test/opencode.current',
+      systemLink: '/test/opencode-kortix',
+      isExecutable: async (path) => {
+        events.push(`executable:${path}`)
+        return path === '/test/opencode.current'
+      },
+      findOnPath: async () => '/test/pnpm-bin/opencode',
+      isStubLauncher: async (path) => path === '/test/pnpm-bin/opencode',
+    })
+    expect(resolved).toBe('/test/opencode.current')
+    expect(events).toEqual(['executable:/test/opencode.current'])
+  })
+
   test('uses an existing stable link when the experiment is enabled', async () => {
     const events: string[] = []
 
@@ -293,5 +313,43 @@ describe('OpenCode runtime installation', () => {
     ).rejects.toThrow('expected 1.18.19, got 1.18.18')
 
     expect(await readlink(current)).toBe(oldNative)
+  })
+})
+
+describe('isStubOpencodeLauncher', () => {
+  test('recognises the pnpm postinstall stub behind a real cmd-shim and accepts a real launcher', async () => {
+    const { isStubOpencodeLauncher } = await import('../opencode')
+    const dir = await mkdtemp(join(tmpdir(), 'kortix-stub-'))
+    try {
+      // Exactly what pnpm's shim looks like on a box (Essentia 2026-08-25).
+      const shim = (exe: string) =>
+        `#!/bin/sh\nbasedir=$(dirname "$(echo "$0" | sed -e 's,\\\\,/,g')")\nexe=""\n` +
+        `exec "$basedir/../global/v11/229-hash/node_modules/opencode-ai/bin/opencode.exe"   "$@"\nexit $?\n` +
+        `# cmd-shim-target=${exe}\n`
+      const stubPkg = join(dir, 'global/v11/229-hash/node_modules/opencode-ai/bin')
+      await mkdir(stubPkg, { recursive: true })
+      const stub = join(stubPkg, 'opencode.exe')
+      await writeFile(
+        stub,
+        "#!/bin/sh\necho \"Error: opencode-ai's postinstall script was not run.\"\nexit 1\n",
+        { mode: 0o755 },
+      )
+      const bin = join(dir, 'bin')
+      await mkdir(bin, { recursive: true })
+      await writeFile(join(bin, 'opencode'), shim(stub), { mode: 0o755 })
+      expect(await isStubOpencodeLauncher(stub)).toBe(true)
+      expect(await isStubOpencodeLauncher(join(bin, 'opencode'))).toBe(true)
+
+      const real = join(stubPkg, 'real.exe')
+      await writeFile(real, Buffer.alloc(70 * 1024, 1), { mode: 0o755 })
+      await writeFile(join(bin, 'opencode-real'), shim(real), { mode: 0o755 })
+      expect(await isStubOpencodeLauncher(real)).toBe(false)
+      expect(await isStubOpencodeLauncher(join(bin, 'opencode-real'))).toBe(false)
+      // Unresolvable target: not a stub (never take a launcher away on a guess).
+      await writeFile(join(bin, 'opencode-gone'), shim(join(dir, 'missing.exe')), { mode: 0o755 })
+      expect(await isStubOpencodeLauncher(join(bin, 'opencode-gone'))).toBe(false)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

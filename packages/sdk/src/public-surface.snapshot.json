@@ -1161,6 +1161,7 @@
     "useProjectAgents",
     "useProjectApps",
     "useProjectConfig",
+    "useProjectModelPickerCatalog",
     "useProjectModels",
     "useProjectName",
     "useProjectSecrets",

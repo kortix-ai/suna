@@ -560,3 +560,76 @@ describe('mergeNativeProviderLists (catalog ∪ runtime, one picker across boot)
     expect(mergeNativeProviderLists(undefined, undefined)).toBeUndefined();
   });
 });
+
+describe('projectLlmCatalogToProviderList — variants for the gateway picker', () => {
+  test('a gateway model with an effort ladder gets one variant id per published tier, in order', () => {
+    const list = projectLlmCatalogToProviderList({
+      models: {
+        'amazon-bedrock/global.openai.gpt-5.6-sol': {
+          name: 'GPT-5.6 Sol (Global)',
+          reasoning: true,
+          reasoning_options: [
+            { type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] },
+          ],
+        },
+      },
+    });
+    const kortix = (list.all ?? []).find((p) => p.id === 'kortix')!;
+    const model = kortix.models['amazon-bedrock/global.openai.gpt-5.6-sol'] as {
+      variants?: Record<string, unknown>;
+    };
+    expect(Object.keys(model.variants ?? {})).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+  });
+
+  test('a budget_tokens-only knob (mainline Claude) synthesizes the gateway tiers the routing clamp accepts', () => {
+    const list = projectLlmCatalogToProviderList({
+      models: {
+        'anthropic/claude-sonnet-4-5': {
+          name: 'Claude Sonnet 4.5',
+          reasoning: true,
+          reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
+        },
+      },
+    });
+    const model = (list.all ?? [])[0].models['anthropic/claude-sonnet-4-5'] as {
+      variants?: Record<string, unknown>;
+    };
+    expect(Object.keys(model.variants ?? {})).toEqual(['low', 'medium', 'high']);
+  });
+
+  test('a model with no reasoning knob gets NO variants key — never a fabricated ladder', () => {
+    const list = projectLlmCatalogToProviderList({
+      models: {
+        'openai/gpt-4.1': { name: 'GPT-4.1', reasoning: false },
+        'zai/glm-5': { name: 'GLM-5', reasoning: true, reasoning_options: [] },
+      },
+    });
+    const models = (list.all ?? [])[0].models as Record<string, { variants?: unknown }>;
+    expect(models['openai/gpt-4.1'].variants).toBeUndefined();
+    expect(models['zai/glm-5'].variants).toBeUndefined();
+  });
+
+  test('a variants map the API already sends is kept verbatim (runtime truth wins over derivation)', () => {
+    const list = projectLlmCatalogToProviderList({
+      models: {
+        'openai/gpt-5.6-sol': {
+          name: 'GPT-5.6 Sol',
+          reasoning: true,
+          reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
+          variants: { deep: { reasoningEffort: 'high' } },
+        },
+      },
+    });
+    const model = (list.all ?? [])[0].models['openai/gpt-5.6-sol'] as {
+      variants?: Record<string, unknown>;
+    };
+    expect(model.variants).toEqual({ deep: { reasoningEffort: 'high' } });
+  });
+});

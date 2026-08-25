@@ -1,4 +1,3 @@
-import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import type { GatewayCatalogModel } from '@kortix/sdk';
 import { normalizeProviderList } from '@kortix/sdk/react';
 import type { ProviderListResponse } from '@kortix/sdk/react';
@@ -110,20 +109,6 @@ function hasCapabilities(
   return model.capabilities != null;
 }
 
-function catalogModelFor(providerID: string, modelID: string) {
-  let lookupProviderID = providerID;
-  let lookupModelID = modelID;
-  if (providerID === 'kortix') {
-    const slash = modelID.indexOf('/');
-    if (slash !== -1) {
-      lookupProviderID = modelID.slice(0, slash);
-      lookupModelID = modelID.slice(slash + 1);
-    }
-  }
-  return LLM_PROVIDER_BY_ID.get(lookupProviderID)?.models.find(
-    (model) => model.id === lookupModelID,
-  );
-}
 
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
   if (!providers) return [];
@@ -135,7 +120,6 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
   for (const p of all) {
     if (!connectedSet.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
-      const catalogModel = catalogModelFor(p.id, modelID);
       let capabilities: FlatModel['capabilities'];
       if (hasCapabilities(model)) {
         const caps = model.capabilities;
@@ -155,11 +139,11 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
         providerID: p.id,
         providerName: p.name,
         modelID,
-        modelName: (model.name || catalogModel?.name || modelID).replace('(latest)', '').trim(),
+        modelName: (model.name || modelID).replace('(latest)', '').trim(),
         variants: model.variants,
         capabilities,
         contextWindow: model.limit?.context,
-        releaseDate: model.release_date ?? model.released ?? catalogModel?.released ?? undefined,
+        releaseDate: model.release_date ?? model.released ?? undefined,
         family: model.family,
         cost: model.cost
           ? {

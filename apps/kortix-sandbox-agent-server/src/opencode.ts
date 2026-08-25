@@ -38,7 +38,7 @@ export type VerifiedReloadResult =
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
-import { access, constants, open, stat } from 'node:fs/promises'
+import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_ENV_SH } from './agent-env-file'
@@ -294,17 +294,16 @@ export async function buildOpencodeConfigContent(
     typeof env.OPENCODE_CONFIG_CONTENT === 'string' &&
     env.OPENCODE_CONFIG_CONTENT.includes('"kortix/')
 
-  if (
-    !hasConnectorMcp &&
-    !hasLlmGateway &&
-    !nativeSessionModel &&
-    !nativeScrubNeeded &&
-    !isSlackSession &&
-    !hasCompiledAgentConfig &&
-    !injectedSkillsDir &&
-    !secretCapabilitiesInstructionPath
-  )
-    return undefined
+  // (0) Kortix owns the OpenCode binary: the daemon converges it to the
+  // manifest pin (runtime-assets.ts) with `pnpm add -g --allow-build`. OpenCode's
+  // own autoupdate (`autoupdate` unset = on) runs whenever a human launches the
+  // CLI/TUI in the Session terminal and installs via plain `pnpm add -g`, which
+  // skips the postinstall: the launcher becomes a 479-byte stub, the old global
+  // dir is deleted and `/opt/kortix/opencode.current` dangles. Essentia
+  // 2026-08-22 (session dead, "Still waking this session up") and again
+  // 2026-08-25 on two boxes. This contributor ALWAYS applies, so the composed
+  // config is never `undefined` any more.
+  const KORTIX_MANAGED_OPENCODE_OVERLAY: Record<string, unknown> = { autoupdate: false }
 
   let base: Record<string, unknown> = {}
   if (hasCompiledAgentConfig) {
@@ -477,6 +476,7 @@ export async function buildOpencodeConfigContent(
     out.permission = { ...permission, question: 'deny' }
   }
 
+  Object.assign(out, KORTIX_MANAGED_OPENCODE_OVERLAY)
   return JSON.stringify(out)
 }
 
@@ -491,6 +491,36 @@ type KortixProviderOpts = {
   /** Live managed lineup fetched from `${gateway}/models?scope=managed`, or
    *  null when it was unavailable (then the BUNDLED managed set fills gaps). */
   managedOverlay?: Record<string, KortixGatewayModel> | null
+}
+
+// The composer's Thinking control lists `Object.keys(model.variants)` and sends
+// the pick as `variant` on the prompt; OpenCode resolves that id against THIS
+// provider map. On-gateway the web derives the ids from the API's
+// `reasoning_options` (packages/sdk provider-selection.ts, via
+// @kortix/llm-catalog's generationControlCapabilities), so the provider must
+// publish the SAME ids or a picked tier silently does nothing. Mirror of that
+// derivation (this package cannot import @kortix/llm-catalog): an `effort`
+// knob → its values verbatim; a `budget_tokens` knob → the low/medium/high
+// tiers the gateway's Claude mapping accepts; anything else → no variants.
+// Each variant carries `reasoningEffort`, which `@ai-sdk/openai-compatible`
+// serializes as the `reasoning_effort` the gateway reads. OpenCode keeps an
+// explicit config `variants` map verbatim (its own derivation for an
+// openai-compatible package would keep only low/medium/high — verified on
+// 1.18.21 via /config/providers).
+const BUDGET_TOKENS_EFFORT_TIERS = ['low', 'medium', 'high'] as const
+
+export function variantsFromReasoningOptions(
+  model: Pick<KortixGatewayModel, 'reasoning_options'>,
+): Record<string, Record<string, unknown>> | undefined {
+  const options = Array.isArray(model.reasoning_options) ? model.reasoning_options : []
+  const effort = options.find((o) => o && o.type === 'effort')
+  const ids: string[] = effort?.values?.length
+    ? effort.values.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : options.some((o) => o && o.type === 'budget_tokens')
+      ? [...BUDGET_TOKENS_EFFORT_TIERS]
+      : []
+  if (ids.length === 0) return undefined
+  return Object.fromEntries(ids.map((id) => [id, { reasoningEffort: id }]))
 }
 
 function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> {
@@ -509,7 +539,8 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
       // value through makes the entire config invalid and prevents startup.
       // Preserve every runtime capability while dropping only that UI field.
       const { provider: _catalogProvider, ...opencodeModel } = model
-      return [id, opencodeModel]
+      const variants = opencodeModel.variants ?? variantsFromReasoningOptions(model)
+      return [id, variants ? { ...opencodeModel, variants } : opencodeModel]
     }),
   )
   // opencode talks to the Kortix gateway over the OpenAI-compatible wire:
@@ -879,17 +910,22 @@ export function withManagedOverlay(
 }
 
 /**
- * Fetch ONLY the managed lineup: `GET ${base}/models?scope=managed` (~3KB,
- * versus ~3.3MB for the full project catalog — which is why the full fetch
- * gets no place on the boot path). Returns null on failure or an empty set
- * (a free-tier account legitimately has no managed models; callers then keep
- * whatever the disk catalog holds).
+ * Fetch the project's SERVABLE set: `GET ${base}/models?scope=picker` (~80KB
+ * — managed models the account may use + the providers its secrets connect +
+ * routing-named ids, i.e. exactly the list the web picker shows; versus
+ * ~3.3MB for the full org catalog, which is why the full fetch gets no place
+ * on the boot path). Overlaid on the baked catalog, so a BYOK model added to
+ * models.dev after the image was built registers on the `kortix` provider
+ * instead of answering `ModelNotFound` (the same failure the managed-only
+ * fetch fixed for managed models on 2026-08-19). Returns null on failure or
+ * an empty set (a free-tier account with no connected provider legitimately
+ * has nothing; callers then keep whatever the disk catalog holds).
  */
 export async function fetchManagedModels(
   baseUrl: string,
   apiKey: string,
 ): Promise<Record<string, KortixGatewayModel> | null> {
-  const url = `${baseUrl.replace(/\/+$/, '')}/models?scope=managed`
+  const url = `${baseUrl.replace(/\/+$/, '')}/models?scope=picker`
   const deadline = Date.now() + MANAGED_MODELS_TOTAL_BUDGET_MS
   for (let attempt = 0; attempt < MANAGED_MODELS_ATTEMPTS; attempt++) {
     if (Date.now() >= deadline) break
@@ -904,14 +940,14 @@ export async function fetchManagedModels(
       const body = (await res.json()) as { models?: Record<string, KortixGatewayModel> }
       const models = body.models ?? {}
       if (Object.keys(models).length === 0) {
-        logger.info(`[opencode] managed listing is empty at ${url}; keeping the on-disk catalog`)
+        logger.info(`[opencode] servable listing is empty at ${url}; keeping the on-disk catalog`)
         return null
       }
       // Remote JSON becomes OpenCode's provider config — rebuild it to a known
       // shape before it can get anywhere near the config or the disk.
       const clean = sanitizeCatalogForDisk(models)
       if (!clean) return null
-      logger.info(`[opencode] fetched ${Object.keys(clean).length} managed models from ${url}`)
+      logger.info(`[opencode] fetched ${Object.keys(clean).length} servable models from ${url}`)
       return clean
     } catch (err) {
       logger.warn(
@@ -922,7 +958,7 @@ export async function fetchManagedModels(
       await new Promise((resolve) => setTimeout(resolve, 200))
     }
   }
-  logger.warn(`[opencode] managed models unavailable (${url}); using the bundled managed set`)
+  logger.warn(`[opencode] servable models unavailable (${url}); using the baked catalog + bundled managed set`)
   return null
 }
 
@@ -1127,6 +1163,10 @@ type KortixGatewayModel = {
   provider?: string
   reasoning?: boolean
   reasoning_options?: KortixReasoningOption[]
+  // Explicit OpenCode variant map (id → request overlay). Present when the
+  // catalog ships one; otherwise derived from `reasoning_options` at config
+  // build (see variantsFromReasoningOptions).
+  variants?: Record<string, Record<string, unknown>>
   tool_call?: boolean
   attachment?: boolean
   temperature?: boolean
@@ -1462,6 +1502,36 @@ export interface OpencodeBinaryDetectionOptions {
   resolveInstalledNative?: () => Promise<string>
   publishNativeLink?: (nativePath: string, linkPath: string) => Promise<void>
   findOnPath?: (bin: string) => Promise<string | null>
+  isStubLauncher?: (path: string) => Promise<boolean>
+}
+
+/**
+ * True when `launcherPath` is — or is a pnpm shim for — the tiny shell stub pnpm
+ * leaves in place of a native OpenCode when the package's postinstall did not
+ * run. The real launcher is a >100 MB executable; pnpm's shim is a short shell
+ * script that `exec`s it and names it in a trailing `# cmd-shim-target=` line.
+ * Conservative by construction: anything this cannot read or resolve is NOT a
+ * stub, so a false positive can never take a working launcher away.
+ */
+export async function isStubOpencodeLauncher(launcherPath: string): Promise<boolean> {
+  try {
+    const target = await realpath(launcherPath)
+    const info = await stat(target)
+    if (info.size > 64 * 1024) return false
+    const text = await readFile(target, 'utf8')
+    if (/postinstall script was not run/i.test(text)) return true
+    // pnpm's cmd-shim: follow one hop to the package's own launcher.
+    const shimTarget =
+      text.match(/^#\s*cmd-shim-target=(.+)$/m)?.[1]?.trim() ??
+      text.match(/"?([^"\s]+opencode-ai\/bin\/opencode(?:\.exe)?)"?/)?.[1]
+    if (!shimTarget) return false
+    const resolved = shimTarget.replace(/^\$basedir/, dirname(target))
+    const binInfo = await stat(resolved).catch(() => null)
+    if (!binInfo || binInfo.size > 64 * 1024) return false
+    return /postinstall script was not run/i.test(await readFile(resolved, 'utf8'))
+  } catch {
+    return false
+  }
 }
 
 export async function detectOpencodeBinary(
@@ -1478,7 +1548,15 @@ export async function detectOpencodeBinary(
   // an availability fallback only when that verified launcher disappeared.
   if (!options.nativeBinaryFastPathEnabled) {
     const pathLauncher = await findOnPath('opencode')
-    if (pathLauncher) return pathLauncher
+    // A pnpm launcher that resolves to the postinstall-less stub OpenCode's own
+    // autoupdate leaves behind (479 bytes: "opencode-ai's postinstall script was
+    // not run") exits at once; spawning it puts the daemon in a respawn loop
+    // with "binary not found" and the session never wakes (Essentia
+    // 2026-08-22, re-armed 2026-08-25). Never launch it; fall through to the
+    // managed links, which the convergence pass repairs.
+    if (pathLauncher && !(await (options.isStubLauncher ?? isStubOpencodeLauncher)(pathLauncher))) {
+      return pathLauncher
+    }
     if (await checkExecutable(currentLink)) return currentLink
     if (await checkExecutable(systemLink)) return systemLink
     return null

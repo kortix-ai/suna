@@ -4,6 +4,7 @@ export {
   DEFAULT_ENABLEMENT_WINDOW_MONTHS,
   defaultEnabledModelIds,
   type EnablementCandidate,
+  bedrockInferenceProfileRank,
 } from './enablement';
 
 // ─── Kortix-owned provider auth requirements ────────────────────────────────

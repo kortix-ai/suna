@@ -14,15 +14,15 @@ import { and, eq } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
 import { credentialExists } from '../connectors/credentials';
 import {
-  finalizePipedreamConnection,
   pipedreamConfigured,
-  pipedreamConnectUrl,
 } from '../connectors/pipedream';
 import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
 import { resolveSetupLink } from './token';
+import { watchConnectorCompletion } from './connector-completion-watch';
+import { composioConfigured } from '../connectors/composio';
 import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
 
 // The connector half of the notification moved to connectors/notify-session.ts so the
@@ -194,11 +194,16 @@ async function resolveConnectorLink(c: Context): Promise<
   if (resolved.payload.kind !== 'connector') {
     return { error: c.json({ error: 'Wrong link type' }, 400) };
   }
-  if (!pipedreamConfigured()) {
-    return { error: c.json({ error: 'Pipedream is not configured on this deployment' }, 501) };
+  if (!composioConfigured() && !pipedreamConfigured()) {
+    return {
+      error: c.json(
+        { error: 'No hosted connector authorization provider is configured on this deployment' },
+        501,
+      ),
+    };
   }
   if (!resolved.payload.app) {
-    return { error: c.json({ error: 'This connector has no Pipedream app bound' }, 400) };
+    return { error: c.json({ error: 'This connector has no provider app bound' }, 400) };
   }
   const [connector] = await db
     .select({
@@ -214,7 +219,11 @@ async function resolveConnectorLink(c: Context): Promise<
       ),
     )
     .limit(1);
-  if (!connector || connector.providerType !== 'pipedream') {
+  // Provider-neutral, same as the mint route and the /start + /finalize
+  // handlers. This check was missed when those were opened up, so a Composio
+  // connector produced a link whose own intake page then answered
+  // "Connector not found" — the button worked and the modal behind it 404'd.
+  if (!connector || (connector.providerType !== 'pipedream' && connector.providerType !== 'composio')) {
     return { error: c.json({ error: 'Connector not found' }, 404) };
   }
   if (connector.authorizationStrategy !== 'project') {
@@ -240,8 +249,8 @@ async function resolveConnectorLink(c: Context): Promise<
   };
 }
 
-// POST /v1/setup-links/connectors/:token/start — mint a FRESH Pipedream Quick
-// Connect URL. Completing on Pipedream's hosted page also fires the connect
+// POST /v1/setup-links/connectors/:token/start — mint a FRESH hosted
+// authorization URL from whichever provider backs this connector. Completing on Pipedream's hosted page also fires the connect
 // webhook (connectors/pipedream.ts createConnectToken webhook_uri + db-deps
 // pipedreamWebhook), but that path is AUXILIARY redundancy only: the client
 // polls .../finalize below, which is the authoritative persist + notify path.
@@ -250,9 +259,44 @@ setupLinksPublicApp.post('/connectors/:token/start', async (c) => {
   if ('error' in link) return link.error;
 
   try {
-    const { connectUrl } = await pipedreamConnectUrl(link.projectId, link.slug, link.app, null);
-    if (!connectUrl) return c.json({ error: 'Pipedream did not return a connect URL' }, 502);
-    return c.json({ connect_url: connectUrl });
+    // The same provider-neutral dep the connector router uses, so Composio and
+    // Pipedream reach their hosted page through one path. It also records which
+    // session asked, which is what lets finalize below resume that agent.
+    // `requestingSessionId` is deliberately NOT passed. The token already carries
+    // the session that asked (`link.sid`), and /finalize below notifies from it.
+    // Stamping it on the connection too would make `connectorFinalize` notify a
+    // second time and hand the agent the same follow-up twice.
+    // Imported lazily: this module is the PUBLIC, unauthenticated app, and
+    // db-deps pulls in the whole connector + sandbox graph. Loading it at module
+    // scope made an unrelated import (`SANDBOX_VERSION`) a hard requirement of
+    // every test that mounts these routes.
+    const { dbConnectorRouterDeps } = await import('../connectors/db-deps');
+    const started = await dbConnectorRouterDeps.connectorConnect?.(
+      link.projectId,
+      link.slug,
+      link.uid ?? '',
+      undefined,
+      null,
+    );
+    if (!started) return c.json({ error: 'This connector has no hosted authorization' }, 404);
+    // A no-auth toolkit is authorized the moment it is asked for. Say so instead
+    // of handing back an empty url the intake page would spin on forever.
+    if (!started.connectUrl) {
+      return started.connected
+        ? c.json({ connect_url: null, connected: true })
+        : c.json({ error: 'The provider did not return a connect URL' }, 502);
+    }
+    // Start the server-side half now the human has a page to complete. Closing
+    // the modal kills the browser poll, and without this that is the end of it:
+    // the account lands at the provider and the agent is never told.
+    watchConnectorCompletion({
+      projectId: link.projectId,
+      slug: link.slug,
+      app: link.app,
+      sid: link.sid,
+      uid: link.uid,
+    });
+    return c.json({ connect_url: started.connectUrl });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'Failed to start connect' }, 502);
   }
@@ -274,15 +318,14 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
 
   let connected = false;
   try {
-    const result = await finalizePipedreamConnection({
-      projectId: link.projectId,
-      slug: link.slug,
-      app: link.app,
-      connectorId: link.connectorId,
-      userId: null,
-      // This route is polled; the poll loop is the retry. One read per poll.
-      lookupAttempts: 1,
-    });
+    const { dbConnectorRouterDeps } = await import('../connectors/db-deps');
+    const result = await dbConnectorRouterDeps.connectorFinalize?.(
+      link.projectId,
+      link.slug,
+      link.uid ?? '',
+      undefined,
+    );
+    if (!result) return c.json({ error: 'This connector has no hosted authorization' }, 404);
     connected = result.connected;
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'Failed to finalize connect' }, 502);
@@ -291,6 +334,9 @@ setupLinksPublicApp.post('/connectors/:token/finalize', async (c) => {
   // Pipedream's page — the client keeps polling, so this is 200, not an error.
   if (!connected) return c.json({ connected: false });
 
+  // This route owns the notification for the token flow: the token is the only
+  // thing that knows which session minted the link, and /start deliberately
+  // leaves `requesting_session_id` unset so this is the single sender.
   if (link.sid) {
     void notifyConnectorSession(link.sid, link.projectId, link.uid, link.slug, link.app);
   }

@@ -44,8 +44,9 @@ the verify cadence bounds divergence to 30s.
 @kortix/sdk test` 2550 pass 0 fail across 155 files (baseline 2541 + 9 new) ·
 `smoke:install` pass.
 
-**Round 2 (same session, same branch, UNCOMMITTED per Jay):** two remaining
-holes closed in the SDK, and the server-side follow-ups implemented.
+**Round 2 (same session, same branch; committed `4fe9531e28` on Jay's "make
+the pr" — PR #6899):** two remaining holes closed in the SDK, and the
+server-side follow-ups implemented.
 SDK: `browser/stores/sync-store.ts` gains `sessionStatusAt` (arrival stamp per
 status frame; stamped on value change and origin flip, kept across same-value
 rewrites); `use-opencode-events/helpers.ts` gains pure `shouldSkipStatusFill`
@@ -78,6 +79,26 @@ timeout" while terraform sets 300s; daemon keepalives reach only sandboxes
 built from a NEW snapshot (agent-server changes are baked, not hot-deployed)
 and only providers routed through the daemon (Platinum; Daytona dials opencode
 directly).
+
+### 2026-08-25 — session `effort-unify` — gateway picker carries variants + raw picker hook — DONE
+
+**Files:** `src/react/provider-selection.ts` (`projectLlmCatalogToProviderList`
+derives `variants` from `reasoning_options` via `@kortix/llm-catalog`'s
+`generationControlCapabilities`; an API-sent `variants` map wins) ·
+`src/react/use-project-models.ts` (+ `useProjectModelPickerCatalog`, the raw
+`/model-picker` record, same query key as `useProjectModels`) · tests.
+**Public surface: additive** — one new hook export from `@kortix/sdk/react`; no
+renames, no removals, no subpath change.
+
+**Why.** On-gateway the picker list never carried `variants`, so the composer's
+Thinking control (`Object.keys(model.variants)`) had nothing to offer and the
+only effort path was a project-level routing-policy write from the composer
+(#6872 split the knob by mode). Now both modes expose the model's own tiers as
+the session variant; the sandbox publishes the same ids on the `kortix`
+provider (apps/kortix-sandbox-agent-server, follow-up PR) and the gateway
+forwards / refuses (400 `unsupported_param`) per upstream family.
+
+---
 
 ### 2026-08-25 — session `opencode-bump-11823` — OpenCode 1.18.19 → 1.18.23 lockstep — DONE
 

@@ -308,6 +308,25 @@ async function main() {
         err: err instanceof Error ? err.message : String(err),
       })
     })
+    // Every gateway session routes OpenCode through the localhost LLM proxy,
+    // not only warm hot-swap forks: the proxy is where inline images are
+    // windowed BEFORE a request leaves the sandbox (llm-image-window.ts).
+    // Essentia 2026-08-25: >128 MiB vision bodies were refused at the gateway
+    // edge with a silent 413 and the turn died. Kill switch:
+    // KORTIX_LLM_PROXY_DISABLE=1 restores the direct provider config.
+    if (
+      hasKortixLlmGateway(process.env) &&
+      !process.env.KORTIX_LLM_PROXY_URL &&
+      process.env.KORTIX_LLM_PROXY_DISABLE !== '1'
+    ) {
+      const llmPort = Number(process.env.KORTIX_LLM_PROXY_PORT) || 4319
+      const llmUrl = startLlmProxy(llmPort, process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_TOKEN)
+      if (llmUrl) {
+        process.env.KORTIX_LLM_PROXY_URL = llmUrl
+        bootMark('llm-proxy-started')
+        logger.info('[boot] llm proxy up; opencode provider routes through it', { llmUrl })
+      }
+    }
     opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)
     await opencode.start().catch((err) => {
       logger.warn('[boot] opencode.start() rejected', {

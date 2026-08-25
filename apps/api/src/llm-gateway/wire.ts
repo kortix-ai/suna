@@ -343,9 +343,9 @@ function modelsRoute(path: string) {
     description: `Servable model catalog for the caller\'s account/project — a keyed object (NOT the OpenAI \`{object:"list",data:[...]}\` array shape) mapping model id → capabilities.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} -H "Authorization: Bearer $KORTIX_GATEWAY_KEY"\n\`\`\``,
     request: {
       query: z.object({
-        scope: z.enum(['managed']).optional().openapi({
+        scope: z.enum(['managed', 'picker']).optional().openapi({
           description:
-            "Set to `managed` for the platform-managed lineup only (~3KB instead of ~3.3MB). Sandboxes call this on every boot to learn the current managed set. Omit for the caller's full catalog.",
+            "Set to `picker` for the caller's project SERVABLE set (~80KB: managed models the account may use, connected BYOK providers, routing-named ids — the same list the web model picker shows; sandboxes fetch it on every boot). `managed` is the platform-managed lineup only (~3KB). Omit for the caller's full catalog (~3.3MB).",
           example: 'managed',
         }),
       }),
