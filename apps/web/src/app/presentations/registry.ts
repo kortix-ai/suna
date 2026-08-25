@@ -16,6 +16,7 @@
  * the whole route tree is `noindex`, internal, and behind no hot path.
  */
 
+import { useSlides as useMicrosoftEstateSlides } from './decks/microsoft-estate';
 import { useSlides as usePlatformSlides } from './decks/platform';
 import { useSlides as useSalesSlides } from './decks/sales';
 import { useSlides as useSecuritySlides } from './decks/security';
@@ -59,6 +60,15 @@ export const DECKS: readonly DeckDef[] = [
       'The company narrative: where Kortix came from, what it is, and why a company runs on a repo and a workforce of agents.',
     kind: 'Sales',
     useSlides: useSalesSlides,
+  },
+  {
+    slug: 'microsoft-estate',
+    title: 'Kortix on a Microsoft estate',
+    description:
+      'Three slides for a company whose group approved Copilot: who Kortix is, how it runs alongside Copilot on the Microsoft estate they already have, and what it adds. Append ?for=<name>&logo=<url> to put the prospect on the slides.',
+    kind: 'Sales',
+    tags: ['Prospect-ready', 'Microsoft', '3 slides'],
+    useSlides: useMicrosoftEstateSlides,
   },
 ] as const;
 
