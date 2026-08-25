@@ -7,8 +7,9 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
-import { GatewayResolutionError, UpstreamHttpError } from '../errors';
+import { GatewayResolutionError, UpstreamHttpError, isUnknownParameterRejection } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
+import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/request';
 import { resolveTransportKind } from '../transports/route-kind';
 import { type ExtractedUsage, type SseErrorFrame, extractUsageFromJson } from '../usage';
 import { calculateCost } from '../usage/pricing';
@@ -371,6 +372,16 @@ export async function handleChatCompletions(
     upstreamHeadersTimeoutMs(body, descriptor, streaming),
   );
   let upstream: Response;
+  // The one retry this handler performs itself: an upstream that refuses the
+  // `reasoning_effort` PARAMETER (not the request) gets the same request once
+  // more without it. Kept only while such a retry is possible — the parsed
+  // graph is otherwise dropped before the provider wait, see below.
+  let retryWithoutEffort: Record<string, unknown> | null = retryWithoutReasoningEffortPossible(
+    body,
+    descriptor,
+  )
+    ? body
+    : null;
   try {
     const dispatch = callUpstream(body, descriptor, {
       fetchImpl: dispatchFetch,
@@ -381,7 +392,25 @@ export async function handleChatCompletions(
     // body synchronously up to its first await; this frame no longer needs
     // the parsed graph. Drop it before waiting on the provider.
     body = null;
-    upstream = await dispatch;
+    try {
+      upstream = await dispatch;
+    } catch (error) {
+      if (!retryWithoutEffort || !isUnknownParameterRejection(error, 'reasoning_effort'))
+        throw error;
+      const model = descriptor.resolvedModel ?? routedModel;
+      noteBedrockOpenAiRejectsReasoningEffort(model);
+      logger.warn(
+        `[gateway] ${id}: ${descriptor.provider} rejected reasoning_effort for ${model}; retrying once without it (the model is remembered)`,
+      );
+      const { reasoning_effort: _dropped, ...stripped } = retryWithoutEffort;
+      retryWithoutEffort = null;
+      upstream = await callUpstream(stripped, descriptor, {
+        fetchImpl: dispatchFetch,
+        signal: req.signal,
+        requestId: id,
+      });
+    }
+    retryWithoutEffort = null;
   } catch (error) {
     refundHold(hooks, principal);
     emit({
@@ -504,4 +533,20 @@ export async function handleChatCompletions(
     statusText: upstream.statusText,
     headers: passthroughHeaders(upstream.headers),
   });
+}
+
+/**
+ * Only a Bedrock-family candidate carrying a `reasoning_effort` can hit the
+ * `unknown_parameter` rejection this handler retries around; on every other
+ * wire the field is native.
+ */
+export function retryWithoutReasoningEffortPossible(
+  body: Record<string, unknown> | null,
+  descriptor: UpstreamDescriptor,
+): boolean {
+  return (
+    !!body &&
+    typeof body.reasoning_effort === 'string' &&
+    (descriptor.kind === 'bedrock' || descriptor.provider === 'amazon-bedrock')
+  );
 }

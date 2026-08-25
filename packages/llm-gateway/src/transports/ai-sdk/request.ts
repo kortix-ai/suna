@@ -757,6 +757,22 @@ function isBedrockOpenAiModel(resolvedModel: string | undefined): boolean {
   return /(^|\.)openai\./i.test(resolvedModel ?? '');
 }
 
+// Models that answered `unknown_parameter` for the reasoning field once. The
+// wire shape below is verified (#6893), but the next provider surface that
+// publishes an OpenAI ladder and rejects the field must cost one retry, never
+// the turn: the pipeline notes a rejection here and re-dispatches once without
+// it; every later request to that model skips the field.
+const bedrockOpenAiReasoningEffortRejected = new Set<string>();
+export function noteBedrockOpenAiRejectsReasoningEffort(resolvedModel: string): void {
+  bedrockOpenAiReasoningEffortRejected.add(resolvedModel);
+}
+export function bedrockOpenAiRejectsReasoningEffort(resolvedModel: string | undefined): boolean {
+  return !!resolvedModel && bedrockOpenAiReasoningEffortRejected.has(resolvedModel);
+}
+export function resetBedrockOpenAiReasoningEffortRejectionsForTests(): void {
+  bedrockOpenAiReasoningEffortRejected.clear();
+}
+
 const ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
 const BEDROCK_CACHE_POINT = { type: 'default' } as const;
 
@@ -1084,7 +1100,10 @@ const bedrockAdapter: ProviderAdapter = {
     // effort as the OpenAI-native field. Nothing else — `cachePoint` and
     // `reasoningConfig` are Claude-Converse-only and 403 here.
     if (isBedrockOpenAiModel(req.resolvedModel)) {
-      if (typeof req.reasoningEffort === 'string') {
+      if (
+        typeof req.reasoningEffort === 'string' &&
+        !bedrockOpenAiRejectsReasoningEffort(req.resolvedModel)
+      ) {
         options.additionalModelRequestFields = {
           reasoning: { effort: req.reasoningEffort, summary: 'auto' },
         };

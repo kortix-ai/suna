@@ -5,6 +5,7 @@ import {
   streamErrorTraceStatus,
   upstreamHeadersTimeoutMs,
   withUpstreamHeadersTimeout,
+  retryWithoutReasoningEffortPossible,
 } from './simple-handler';
 
 const principal = { userId: 'user', accountId: 'account', projectId: 'project' };
@@ -252,5 +253,15 @@ describe('simple gateway pipeline', () => {
     expect(sse.headers.get('content-length')).toBeNull();
     expect(sse.headers.get('content-type')).toBe('text/event-stream');
     expect(await sse.text()).toContain('[DONE]');
+  });
+});
+
+describe('retryWithoutReasoningEffortPossible', () => {
+  const bedrock: UpstreamDescriptor = { ...primary, provider: 'amazon-bedrock', kind: 'bedrock', resolvedModel: 'global.openai.gpt-5.6-sol' };
+  test('only a Bedrock candidate carrying reasoning_effort qualifies', () => {
+    expect(retryWithoutReasoningEffortPossible({ reasoning_effort: 'max' }, bedrock)).toBe(true);
+    expect(retryWithoutReasoningEffortPossible({}, bedrock)).toBe(false);
+    expect(retryWithoutReasoningEffortPossible({ reasoning_effort: 'max' }, primary)).toBe(false);
+    expect(retryWithoutReasoningEffortPossible(null, bedrock)).toBe(false);
   });
 });

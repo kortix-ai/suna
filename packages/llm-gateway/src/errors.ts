@@ -1,9 +1,4 @@
-export type UpstreamErrorKind =
-  | 'http'
-  | 'network'
-  | 'timeout'
-  | 'client_abort'
-  | 'misconfigured';
+export type UpstreamErrorKind = 'http' | 'network' | 'timeout' | 'client_abort' | 'misconfigured';
 
 export class TimeoutError extends Error {
   readonly kind: UpstreamErrorKind = 'timeout';
@@ -196,4 +191,25 @@ export function indicatesUpstreamDown(err: unknown): boolean {
   if (err instanceof NetworkError) return true;
   if (err instanceof UpstreamHttpError) return err.status >= 500 && err.status <= 599;
   return false;
+}
+
+/**
+ * Did the upstream refuse this exact request PARAMETER (an OpenAI-shaped
+ * `invalid_request_error` / `unknown_parameter` naming it)? Distinct from every
+ * other 400: the request is fine without that one field, so the caller can
+ * strip it and try once more instead of failing the turn.
+ *
+ * Essentia 2026-08-25: Bedrock's `global.openai.gpt-5.6-sol` profile answered
+ * `{"code":"unknown_parameter","param":"reasoning_effort"}` to a wire shape the
+ * gateway believed was right (#6879; corrected to the nested `reasoning.effort`
+ * by #6893). Whatever the next wrong claim is, it must cost one retry, never
+ * the turn.
+ */
+export function isUnknownParameterRejection(err: unknown, param: string): boolean {
+  if (!(err instanceof UpstreamHttpError) || err.status !== 400) return false;
+  const text = `${err.message} ${err.body}`;
+  if (!text.includes(param)) return false;
+  return /unknown_parameter|unknown parameter|unrecognized request argument|unsupported parameter/i.test(
+    text,
+  );
 }

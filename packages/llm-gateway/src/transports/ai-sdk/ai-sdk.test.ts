@@ -734,6 +734,28 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     }
   });
 
+  it('bedrock: a model that once answered unknown_parameter for the reasoning field never receives it again', async () => {
+    const {
+      noteBedrockOpenAiRejectsReasoningEffort,
+      resetBedrockOpenAiReasoningEffortRejectionsForTests,
+    } = await import('./request');
+    try {
+      noteBedrockOpenAiRejectsReasoningEffort(BEDROCK_OPENAI);
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'max' }, 'bedrock', {
+        resolvedModel: BEDROCK_OPENAI,
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+      const other = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: 'openai.gpt-oss-120b',
+      });
+      expect((other.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+        reasoning: { effort: 'high', summary: 'auto' },
+      });
+    } finally {
+      resetBedrockOpenAiReasoningEffortRejectionsForTests();
+    }
+  });
+
   it('bedrock: OpenAI-on-Bedrock accepts the Responses-style nested reasoning.effort too', () => {
     const args = buildAiSdkArgs({ messages: [], reasoning: { effort: 'xhigh' } }, 'bedrock', {
       resolvedModel: BEDROCK_OPENAI,

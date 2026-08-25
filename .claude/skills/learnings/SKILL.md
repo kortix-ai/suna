@@ -2617,3 +2617,36 @@ pins the drop for Nova/Grok and the `reasoning.effort` shape for OpenAI ids.
 *Incident:* dev only; every Grok-on-Bedrock turn 400'd between the #6887
 deploy (`2635791cf1`) and the #6893 deploy (`77ec6b2307`), about 70 minutes.
 Prod was not promoted in that window. No data loss.
+
+## A 400 that names one parameter is never the turn's final answer
+
+*Incident (2026-08-25 19:40Z, Essentia session 58da74d4):* the gateway
+forwarded a reasoning field in a shape Bedrock's GPT-5.6 profile rejects
+(`400 unknown_parameter: reasoning_effort`); every turn on the model died with
+an empty assistant message until the wire shape was verified and corrected
+(#6893). The project's configured default was the trigger; the live mitigation
+was stripping it from `project_llm_routing_policies.model_generation_config`.
+
+**Rules.**
+1. `isUnknownParameterRejection(err, param)` (errors.ts) recognises an
+   upstream refusing ONE field. The chat handler re-dispatches a Bedrock
+   candidate once without `reasoning_effort` and remembers the model
+   (`noteBedrockOpenAiRejectsReasoningEffort`); the adapter never attaches the
+   field for a remembered model again. One retry, never the turn.
+2. The verified wire (#6893) stays the primary path; this is the backstop for
+   the next unverified claim, not a substitute for verifying.
+
+*Automation:* `errors.test.ts`, `simple-handler.test.ts`, `ai-sdk.test.ts`
+("never receives it again").
+
+## Regenerating a CA on every listener restart breaks trust and the CI clock
+
+*Incident (2026-08-25):* the daemon egress shim minted a fresh RSA CA on every
+rule change (`syncEgressShim` restart). Shells that had sourced the previous
+trust bundle would fail TLS until re-sourced, and node-forge's keygen (1-4 s)
+made the packages CI lane time out on the restart tests.
+
+**Rules.** One CA per daemon process (`sessionCa` in `egress-shim/index.ts`),
+reused across restarts; tests reset it via `__resetEgressShimForTests`.
+Timing tests keep at least a 5× margin between the paced event and the budget
+they assert (relay-transport "measures SILENCE").
