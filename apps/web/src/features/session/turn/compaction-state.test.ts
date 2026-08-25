@@ -126,6 +126,45 @@ describe('compactionTurnInfo', () => {
     ).toEqual({ isCompaction: false, hasContent: false, inFlight: false, error: null });
   });
 
+  // ── The request marker: a `compaction` part on the USER message ────────
+  // opencode's SessionCompaction.create mints a user message whose only part
+  // is `type: "compaction"` — present from attempt start, success or failure.
+
+  test('request marker + errored PLAIN assistant (loop died before the summary message) → failed compaction', () => {
+    // These rendered as bare "Cannot connect to API" error turns interleaved
+    // between "Compaction failed" rows — same attempts, unclassified.
+    expect(
+      compactionTurnInfo(
+        turn([{ info: { error: { name: 'UnknownError' }, time: { completed: 2 } } }], {
+          info: { role: 'user' },
+          parts: [{ type: 'compaction' }],
+        }),
+      ),
+    ).toEqual({ isCompaction: true, hasContent: false, inFlight: false, error: null });
+  });
+
+  test('request marker with no assistant reply yet → in flight, not failed', () => {
+    expect(
+      compactionTurnInfo(turn([], { info: { role: 'user' }, parts: [{ type: 'compaction' }] })),
+    ).toEqual({ isCompaction: true, hasContent: false, inFlight: true, error: null });
+  });
+
+  test('the user-message request marker is NOT content — only the summary text is', () => {
+    expect(
+      compactionTurnInfo(
+        turn(
+          [
+            {
+              info: { summary: true, time: { completed: 3 } },
+              parts: [{ type: 'text', text: 'the summary' }],
+            },
+          ],
+          { info: { role: 'user' }, parts: [{ type: 'compaction' }] },
+        ),
+      ),
+    ).toEqual({ isCompaction: true, hasContent: true, inFlight: false, error: null });
+  });
+
   test('no assistant messages and no user message at all', () => {
     expect(compactionTurnInfo(turn([]))).toEqual({
       isCompaction: false,

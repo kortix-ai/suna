@@ -23,6 +23,7 @@ import {
   CheckIcon,
   CaretDownIcon as ChevronDown,
   ArrowSquareOutIcon as ExternalLink,
+  StackIcon as Layers,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
@@ -42,7 +43,11 @@ import {
 import { projectQueueRows } from './queue-projection';
 import { createQueueUndoAction } from './queued-message-restore';
 import { ActivityBurst } from './turn/activity-burst';
-import { CompactionFailedRow, CompactionMarker } from './turn/compaction-card';
+import {
+  CompactionFailedRow,
+  CompactionMarker,
+  CompactionSummaryBody,
+} from './turn/compaction-card';
 import { compactionTurnInfo } from './turn/compaction-state';
 import { ExpandableOutput } from './turn/expandable-output';
 import { chatPlanAnchorId, isPlanWriteTool } from './turn/plan-anchor';
@@ -676,6 +681,13 @@ interface SessionTurnProps {
   interruptedBeforeRun?: boolean;
   /** Whether this turn contains a compaction */
   isCompaction?: boolean;
+  /**
+   * Open a landed compaction summary in the panel's DETAIL view. Provided by
+   * the parent (which already subscribes to the panel context) so this
+   * memoized component doesn't have to — the context value churns with
+   * messages. Absent → the marker keeps its inline-disclosure fallback.
+   */
+  onOpenCompactionSummary?: (turnId: string, summary: string) => void;
   /** Providers data for the Connect Provider dialog */
   providers?: ProviderListResponse;
   /** Map of user message IDs to command info for rendering command pills */
@@ -784,6 +796,7 @@ function SessionTurnImpl({
   onQueueRetry,
   interruptedBeforeRun,
   isCompaction,
+  onOpenCompactionSummary,
   providers,
   commandMessages,
   commands,
@@ -932,6 +945,15 @@ function SessionTurnImpl({
     : !hasSteps && completedTextParts.length > 0
       ? completedTextParts.join('\n\n')
       : responseRaw.trim() || abortedTextFallback;
+  // The landed summary opens in the panel's DETAIL view — the same surface a
+  // file opens into — instead of expanding inline in the transcript. The
+  // parent owns the panel handle (deliberately NOT `useOptionalSessionPanel`
+  // here: the panel context value carries files/apps/detail and churns with
+  // messages, so a per-turn context read would defeat this component's memo
+  // for the whole transcript). Absent prop → the marker's inline fallback.
+  const openCompactionSummary = useCallback(() => {
+    onOpenCompactionSummary?.(turn.userMessage.info.id, response);
+  }, [onOpenCompactionSummary, turn.userMessage.info.id, response]);
   // Retry info (only on last turn). These KEEP reading the raw `sessionStatus`
   // frame on purpose: they render the retry *reason* carried on the frame
   // (attempt count, provider message, next-retry time), which the working
@@ -1483,7 +1505,11 @@ function SessionTurnImpl({
     if (compactionRunning || response || compactionInfo?.hasContent) {
       return (
         <div className="group/turn">
-          <CompactionMarker running={compactionRunning} summary={response} />
+          <CompactionMarker
+            running={compactionRunning}
+            summary={response}
+            onOpenSummary={onOpenCompactionSummary ? openCompactionSummary : undefined}
+          />
         </div>
       );
     }
@@ -3341,6 +3367,15 @@ export function SessionChat({
     () => turns.some((turn) => compactionTurnInfo(turn).isCompaction),
     [turns],
   );
+  // Index of the LAST compaction turn (any state). Every FAILED attempt
+  // before it is history the reader retried past — a run of retries renders
+  // as ONE failure row (the latest), not a stack of near-identical lines.
+  const lastCompactionTurnIndex = useMemo(() => {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (compactionTurnInfo(turns[i]).isCompaction) return i;
+    }
+    return -1;
+  }, [turns]);
 
   // ---- Jump-to-message (from CMD+K or minimap) ----
   const targetMessageId = useMessageJumpStore((s) => s.targetMessageId);
@@ -4388,6 +4423,24 @@ export function SessionChat({
   // consumer does (see `easy-panel.tsx`).
   const panel = useOptionalSessionPanel();
 
+  // A landed compaction summary opens HERE, in the panel's detail view — the
+  // same surface a file opens into. Read through a ref so the callback stays
+  // identity-stable while the panel context value churns with messages
+  // (SessionTurn is memoized on its props; see `onOpenCompactionSummary`).
+  const panelRef = useRef(panel);
+  useEffect(() => {
+    panelRef.current = panel;
+  }, [panel]);
+  const handleOpenCompactionSummary = useCallback((turnId: string, summary: string) => {
+    panelRef.current?.openDetail({
+      key: `compaction:${turnId}`,
+      title: 'Compaction summary',
+      icon: <Layers weight="duotone" className="size-4" />,
+      padded: true,
+      body: <CompactionSummaryBody summary={summary} />,
+    });
+  }, []);
+
   /**
    * The session's files, handed to the composer so the `/` palette can offer
    * them — the Outputs card's deliverables and the Context card's reads, as
@@ -4860,33 +4913,17 @@ export function SessionChat({
                         !compaction.hasContent &&
                         !compaction.inFlight &&
                         !isTurnWorking;
-                      const failedCompactionAt = (other: Turn | null): boolean => {
-                        if (!other) return false;
-                        const info = compactionTurnInfo(other);
-                        return (
-                          info.isCompaction &&
-                          !info.hasContent &&
-                          !info.inFlight &&
-                          !(
-                            lastTurnWorking &&
-                            other.userMessage.info.id === workingTurn.workingTurnId
-                          )
-                        );
-                      };
-                      const prevIsFailedCompaction = failedCompactionAt(
-                        turnIndex > 0 ? turns[turnIndex - 1] : null,
-                      );
-                      // A retry burst collapses to ONE visible row: only the
-                      // LAST failed attempt of a consecutive run renders its
-                      // failure line. The earlier attempts keep their
-                      // TurnViewport (stable keys, scroll anchors) but render
-                      // no content — and an empty TurnViewport now costs 0px
-                      // (see turn-viewport.tsx RULE 2).
+                      // Retries collapse to ONE visible row, GLOBALLY: a
+                      // failed attempt with ANY later compaction turn (a
+                      // retry, or the one that finally landed) is history —
+                      // it keeps its TurnViewport (stable keys, scroll
+                      // anchors) but renders no content, and an empty
+                      // TurnViewport costs 0px (turn-viewport.tsx RULE 2).
+                      // Adjacency was not enough: attempts whose error landed
+                      // on a plain assistant message used to interleave as
+                      // unclassified turns, breaking every consecutive run.
                       const suppressedFailedCompaction =
-                        isFailedCompaction &&
-                        failedCompactionAt(
-                          turnIndex < turns.length - 1 ? turns[turnIndex + 1] : null,
-                        );
+                        isFailedCompaction && turnIndex < lastCompactionTurnIndex;
 
                       // Notification-only early-return removed: it rendered the
                       // user's pty_* card but skipped turn.assistantMessages,
@@ -4906,18 +4943,16 @@ export function SessionChat({
                           // another pending turn sits close to it, like a
                           // list of what is waiting — not a turn's width
                           // apart as if each had been answered in between.
-                          // Failed compaction rows stack the same way: a
-                          // retry loop reads as a tight list of one-liners,
-                          // not attempts a full turn's height apart.
+                          // (Failed compaction rows need no stacking rule any
+                          // more — at most one is visible at a time.)
                           className={
                             turnIndex === 0
                               ? ''
-                              : (lastTurnWorking &&
-                                    pendingTurnIds.has(turn.userMessage.info.id) &&
-                                    pendingTurnIds.has(
-                                      turns[turnIndex - 1].userMessage.info.id,
-                                    )) ||
-                                  (isFailedCompaction && prevIsFailedCompaction)
+                              : lastTurnWorking &&
+                                  pendingTurnIds.has(turn.userMessage.info.id) &&
+                                  pendingTurnIds.has(
+                                    turns[turnIndex - 1].userMessage.info.id,
+                                  )
                                 ? 'mt-3'
                                 : 'mt-12'
                           }
@@ -4948,6 +4983,9 @@ export function SessionChat({
                             onQueueRetry={handleRetryQueuedMessage}
                             interruptedBeforeRun={interruptedTurnIds.has(turn.userMessage.info.id)}
                             isCompaction={hasCompaction}
+                            onOpenCompactionSummary={
+                              panel ? handleOpenCompactionSummary : undefined
+                            }
                             providers={providers}
                             commandMessages={commandMessagesRef.current}
                             commands={commands}

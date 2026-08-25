@@ -71,9 +71,20 @@ export function compactionTurnInfo(turn: CompactionTurnLike): CompactionTurnInfo
     }
   };
 
-  // The synthetic-turn case: everything on the userMessage is gated on the
-  // summary flag, so a REAL user prompt's text can never count as summary
-  // content or flip an ordinary turn into a compaction.
+  // The REQUEST marker: opencode's `SessionCompaction.create` mints a user
+  // message whose only part is `type: "compaction"` — present from the moment
+  // an attempt starts, success or failure. It marks the turn as a compaction
+  // but is NOT content (it exists for attempts that summarised nothing) —
+  // that is what lets a failed attempt whose error landed on a PLAIN
+  // assistant message (the loop died before minting the summary-flagged one)
+  // still classify as a failed compaction instead of a bare error turn.
+  const userParts = turn.userMessage?.parts ?? [];
+  const hasRequestMarker = userParts.some((p) => p.type === 'compaction');
+  if (hasRequestMarker) isCompaction = true;
+
+  // The synthetic-turn case: a summary message with no user prompt to attach
+  // to becomes the turn's userMessage. Its TEXT only counts under the summary
+  // flag, so a real user prompt's text can never count as summary content.
   if (turn.userMessage && scanSummaryInfo(turn.userMessage.info)) {
     scanParts(turn.userMessage.parts);
   }
@@ -82,5 +93,12 @@ export function compactionTurnInfo(turn: CompactionTurnLike): CompactionTurnInfo
     scanSummaryInfo(msg.info);
     scanParts(msg.parts);
   }
+
+  // Request accepted, reply not minted yet: the marker exists but no
+  // assistant message does — the gap between the compaction user message
+  // arriving and the summary message starting. Without this the turn reads
+  // "failed" for those frames and the failed row flickers in at stream start.
+  if (hasRequestMarker && turn.assistantMessages.length === 0) inFlight = true;
+
   return { isCompaction, hasContent, inFlight, error };
 }

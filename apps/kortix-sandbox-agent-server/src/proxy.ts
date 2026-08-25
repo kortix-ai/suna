@@ -93,7 +93,7 @@ const LONG_TURN_RESPONSE_TIMEOUT_MS = 10 * 60_000
 export function isBlockingTurnRequest(method: string, path: string): boolean {
   return (
     method.toUpperCase() === 'POST' &&
-    /^\/session\/[^/]+\/(?:message|command)(?:$|[/?#])/.test(path)
+    /^\/session\/[^/]+\/(?:message|command|summarize)(?:$|[/?#])/.test(path)
   )
 }
 
