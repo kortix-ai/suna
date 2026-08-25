@@ -331,13 +331,17 @@ describe('POST /connectors/:token/finalize', () => {
     expect(String(enqueued[0].text)).toContain('smartlead');
   });
 
-  test('does not notify a stopped session — a public poll must never boot a sandbox', async () => {
+  test('a STOPPED session is told too — the agent posted the link and its turn ended before the human finished (#6885)', async () => {
+    // The enqueue writes a durable continue-session command; nothing here
+    // boots a sandbox. Dev measured 3455 stopped sessions to 1 running at the
+    // moment a connect lands, so `running` was the wrong gate.
     pipedreamOn = true;
     finalizeResult = { connected: true };
     sessionRows = [{ status: 'stopped', accountId: 'acct-1', metadata: {} }];
     expect((await finalize(mintConnectorToken())).status).toBe(200);
     await flushNotification();
-    expect(enqueued).toHaveLength(0);
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({ source: 'system:connector-connected', sessionId: SESSION_ID });
   });
 
   test('does not notify a deleted session', async () => {
