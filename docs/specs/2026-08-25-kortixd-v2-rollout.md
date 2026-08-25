@@ -1,351 +1,409 @@
-# kortixd v2 — the rollout, not the design
+# kortixd v2 — what to change, and in what order
 
 Status: **PROPOSED**. Date: 2026-08-25.
 Amends `docs/specs/2026-08-21-kortixd.md`. That spec stays authoritative for
-**what** kortixd is. This document replaces its §11 phases and §14 fleet risk
-with **how it reaches a live fleet without taking one down again.**
+**what** kortixd is. This document changes four things about **how it is built**
+and replaces its §11 phase order.
 
 ---
 
-## 0. Read this first
+## 0. What attempt 1 actually was
 
-kortixd is not a new idea in this repository. It is specified, built, merged,
-and reverted.
+kortixd is specified, built, merged, and reverted.
 
 | Event | Reference | Date |
 | --- | --- | --- |
-| Spec written | `docs/specs/2026-08-21-kortixd.md`, 981 lines | 2026-08-21 |
-| Built and merged | PR #6686, +93,917 / −15,893 across 379 files | 2026-08-23 00:52 UTC |
+| Spec | `docs/specs/2026-08-21-kortixd.md`, 981 lines | 08-21 |
+| Built and merged | PR #6686, +93,917 / −15,893 across 379 files | 08-23 00:52 UTC |
 | Nine forward repairs | #6773, #6776, #6778, #6780–#6783, #6786 | same day |
-| Emergency revert | PR #6787, then #6788 | 2026-08-23 14:14 UTC |
-| Schema removed forward-only | `20260823204922383_drop_compute_node_tables` | 2026-08-23 |
+| Emergency revert | #6787, then #6788 | 08-23 14:14 UTC |
 
-The code survives on `origin/kortixd` (`e391f4e76d`) and
-`origin/compute-node-repair-clean` (`7f6b2ee4a9`, carrying all nine repairs).
-Nothing needs to be rewritten from scratch.
+It built more of the vision than a glance suggests: `src/node/` carried the
+channel client, RPC/socket/stream agents, capabilities (including a CUA driver),
+convergence, supervisor, service, policy store and assignment manager; the API
+side carried `compute-nodes/` with enroll, device-auth, relay server/socket and
+a cluster forwarder. Code survives on `origin/kortixd` and
+`origin/compute-node-repair-clean`.
 
-**The design was not the failure. The cutover was.** Do not start by editing
-the spec.
+**It diverged from the vision in exactly two ways, and both matter.**
+
+1. **"Spawn it anywhere" was never reachable.** The `kortixd` CLI shipped
+   `run | status | update | doctor | version | help`. There is no `enroll` and no
+   `connect`. Enrollment existed on the API but only provider bootstrap ever
+   called it. No laptop, VPS or EC2 box was ever a node.
+2. **The first machine it was pointed at was the production fleet.** The one
+   compute Kortix already had working.
+
+So attempt 1 built the hard part and shipped it through the only door that could
+hurt. That is the thing to change — not the design.
 
 ---
 
-## 1. Post-mortem: one failure class, not nine bugs
+## 1. Post-mortem: one failure class
 
-Every repair PR merged on 2026-08-23 addressed the same thing — **a box that
-already existed could not become a kortixd node.**
+Every repair addressed the same thing: **a box that already existed could not
+become a kortixd node.**
 
 | PR | What broke | Class |
 | --- | --- | --- |
-| #6773 | Cloudflare refused the WS upgrade; Bun's native handshake omits `User-Agent` | edge |
-| #6778 | Cloudflare negotiated `permessage-deflate`; daemon looped `Decompression error: ZlibError`, relay 503 | edge |
-| #6780 | Daytona implemented the App hook but not the session hook; legacy boxes resumed with no supervisor | legacy fleet |
-| #6781 | The baked entrypoint predates self-update, so wake timed out after enrollment | legacy fleet |
+| #6773 | Cloudflare refused the WS upgrade; Bun's handshake omits `User-Agent` | edge |
+| #6778 | Cloudflare negotiated `permessage-deflate`; daemon looped `ZlibError`, relay 503 | edge |
+| #6780 | Daytona had the App hook, not the session hook; legacy boxes woke with no supervisor | legacy fleet |
+| #6781 | The baked entrypoint predates self-update; wake timed out after enrollment | legacy fleet |
 | #6782 | `setpriv` kept `HOME=/root`; OpenCode could not write its config | legacy fleet |
 | #6783 | Concurrent repairs killed the same supervisor and shared one download path | legacy fleet |
 | #6786 | Killing the legacy child exited PID 1 and **stopped the VM** | legacy fleet |
-| #6776 | Reconnect generation, preview ports, PTY loss on convergence, dead callback URLs, orphan reconciliation stopping local worktree sandboxes | mixed |
+| #6776 | Reconnect generation, preview ports, PTY loss, dead callback URLs, orphan reconciliation stopping local worktree sandboxes | mixed |
 | — | An empty `/opt/kortix/bootstrap.lock` blocked **every later wake** for that node | legacy fleet |
 
-Two edge defects. Six fleet-migration defects. One lock that turned a transient
-failure into a permanent one.
+The cutover was **fail-closed**: the lifecycle waited for a live node channel
+before reporting a session active, so a box that could not run the new daemon
+stopped being reachable at all — chat, files, PTY and wake together.
 
-### 1.1 The mechanism
-
-The cutover was **fail-closed**. The lifecycle began waiting for a live node
-channel before it would report a session active (#6776). A box that could not
-run the new daemon therefore stopped being reachable at all — chat, files, PTY,
-and wake together.
-
-The register had already written the rule, nine days earlier:
+The register had the rule nine days earlier:
 
 > **A control split across API and daemon is only live when BOTH halves are**
-> (2026-08-14). The API half goes live when Deploy Dev finishes. The daemon half
-> is baked into the sandbox image and reaches a guest only through a new
-> snapshot build. *"A control that fails OPEN is the right default while it
-> propagates. A fail-closed control shipped this way is an outage."*
+> (08-14). *"A control that fails OPEN is the right default while it propagates.
+> A fail-closed control shipped this way is an outage."*
 
-And the sibling rule names the verification that was skipped:
-
-> **A deployed API is not a deployed daemon** (2026-08-12). Prove it in the
-> guest, not from the API.
-
-### 1.2 Why the spec did not prevent it
-
-§14 of the spec lists the risk and mis-sizes the mitigation:
-
-> *The fleet drain — the supervisor only reaches a box on re-provision* →
-> *"Land the rename in the same image bump as P0. Pay it once, as already
-> budgeted."*
-
-That treats a live-fleet migration as a one-time cost. It is the hardest
-engineering problem in the project, and it is the only one that can take
-production down. This document exists to correct that single line.
+§14 of the spec named the fleet drain and sized it as *"Land the rename in the
+same image bump as P0. Pay it once, as already budgeted."* That is the one line
+this document corrects.
 
 ---
 
-## 2. What changed since: #6871 supplies the missing primitive
+## 2. Four changes to the design
 
-PR #6871 (`codex/compiled-boot`, draft) was written to remove `git clone` from
-session boot. It also, incidentally, built **the exact delivery mechanism a
-fleet migration needs**:
+### C1 — Start where there is no fleet to break
 
-1. **Content-addressed artifacts** keyed by `(format, project, ref, source_sha)`,
-   verified in the guest by SHA-256 **plus** a manifest marker that is read
-   without executing the artifact.
-2. **A four-state rollout ladder** — `off | shadow | prefer | required` —
-   applied per boot through `KORTIX_COMPILED_BOOT_MODE`.
-3. **A verified download-and-adopt path in the guest** that needs no image
-   rebuild: `kortix-agent install-compiled-runtime` returns a path the
-   entrypoint executes, and falls back to the baked binary on exit code 78/127.
-4. **Immutable runtime identity**, compiled into `server.mjs`, which exits 78
-   rather than boot under a mismatched identity.
+The vision's value is the compute Kortix **cannot** use today: a customer's GPU
+box, an EC2 instance, on-prem hardware, a developer laptop, a CI runner. Every
+one of those is revenue or moat. The sandbox is compute that already works;
+migrating it is cost with no new capability.
 
-`shadow` is the state kortixd needed and did not have: *download it, verify it,
-prove it, and use none of it.*
+Attempt 1 began with the sandbox. Ship a `vps` node first and a total failure
+means *"the new thing does not work yet."* Ship the sandbox first and a total
+failure means *"every session is down."* Same code, same effort, different first
+customer.
 
-Measured in that PR: repository materialization fell from 2,916 ms to 845 ms
-warm, and OpenCode spawn is now 84% of a 7,143 ms in-guest boot.
+**The sandbox is the LAST machine migrated, not the first.**
 
-### 2.1 Two honest gaps before this channel can carry a daemon
+### C2 — kortixd is agent-tunnel that grew a runtime, not the sandbox daemon that grew a tunnel
 
-- **Size.** The compiled-runtime cap is 16 MiB. `dist/kortixd` is 95,692,928
+`@kortix/agent-tunnel` already ships, in production, on machines Kortix does not
+own:
+
+- device-code enrollment, credentials at `0600`, owner-checked, rotatable
+- OS service install: LaunchAgent, user systemd, Task Scheduler — starts at
+  login, restarts after failure
+- WS transport, JSON-RPC 2.0 framing, Ed25519-signed messages, nonce replay
+  protection, a per-method authorization hook
+- a capability model (`filesystem | shell | desktop`) and a relay in the API
+
+That is most of "kortixd runs anywhere", already built and already surviving
+hostile networks. Attempt 1 grew a node channel onto the sandbox daemon
+instead. Growing the runtime manager onto the tunnel reaches the same end state
+with a failure mode the product already tolerates: **a laptop being offline is
+normal; a sandbox daemon failing is an outage.**
+
+### C3 — One binary, two profiles; a sandbox must run with the channel absent
+
+A sandbox and a laptop have opposite constraints:
+
+| | Sandbox | Workstation |
+| --- | --- | --- |
+| Identity | injected, no enrollment | explicit consent, device code |
+| Persistence | wiped between sessions | durable, user-owned |
+| Convergence | aggressive, we own the box | conservative, we are a guest |
+| Being offline | an incident | the normal case |
+
+Attempt 1 compiled both into one always-on runtime, which is why a defect in the
+node channel — a subsystem sandboxes did not need — broke sandboxes.
+
+**A profile decides which subsystems initialize at all.** The sandbox profile
+must be able to boot, serve chat, files, PTY and wake with the node channel
+compiled in but **never started**. That makes fail-open structural rather than a
+flag someone can flip.
+
+### C4 — A harness is a process contract, not a code abstraction
+
+Two reverts share one root cause. 2026-07-30 removed the ACP work (PR #4510,
+four harnesses, live matrix 12/12) because *"the refactor did not add a parallel
+ACP path, it rewrote shared REST code."* 2026-08-23 removed kortixd after the
+daemon extraction met the live fleet. Both tried to make existing code
+polymorphic.
+
+The alternative: **kortixd does not abstract harnesses at all.** It installs a
+pinned binary, starts it, health-checks it, and exposes its port or stdio over
+the node channel. OpenCode speaks REST on a port. Claude Code and Codex speak
+ACP on stdio. Adding a harness is a manifest row plus one adapter file, with
+**zero edits to any existing harness path**.
+
+This satisfies the spec's §12 July rule — *no PR may modify a line inside
+`opencode*.ts`* — by construction instead of by review discipline. And it places
+ACP correctly: ACP is **one adapter**, not the node's contract. The node's
+contract is "supervise a process, expose its socket".
+
+---
+
+## 3. Two things already built that answer the thread's goals
+
+### 3.1 The boot-speed goal is a flag, not a project — measure it first
+
+#6871 removed `git clone` from boot and measured what remained:
+
+| Stage | Time |
+| --- | ---: |
+| Compiled checkout materialization | 700 ms |
+| Remaining daemon setup | 376 ms |
+| **OpenCode spawn to ready** | **6,034 ms** |
+
+OpenCode is **84%** of a 7,143 ms in-guest boot. Compiling `kortix.yaml` into a
+bundle cannot touch that — compile the config to zero bytes and the number
+barely moves. The only thing that removes a per-session cost is not paying it
+per session.
+
+**That mechanism already exists and is switched off.**
+`apps/kortix-sandbox-agent-server/src/main.ts:942` carries the *"Warm-fork
+NO-RESTART path"* — a stateful warm fork that adopts a session **without an
+OpenCode restart** — behind `KORTIX_LLM_HOTSWAP=1`. That variable is set in
+zero environments: not `.env`, not `.env.dev`, not `infra/`, not
+`apps/sandbox/`.
+
+**Do this before designing anything.** Enable it on dev, measure adoption
+latency against the 6,034 ms baseline, and report the number. If it holds, the
+headline boot goal is a flag flip. If it does not, we learn why before building
+kortixd around residency.
+
+### 3.2 #6871 built the cutover primitive kortixd needed
+
+While removing `git clone`, #6871 built content-addressed artifacts verified in
+the guest by SHA-256 plus a manifest marker read **without executing** the
+artifact, a download-and-adopt path that needs **no image rebuild**
+(`install-compiled-runtime`, with entrypoint fallback on exit 78/127), and the
+ladder `off | shadow | prefer | required`.
+
+`shadow` is exactly the state kortixd needed and did not have: *download it,
+verify it, prove it, use none of it.*
+
+Two gaps before that channel can carry a daemon:
+
+- **Size.** The compiled-runtime cap is 16 MiB; `dist/kortixd` is 95,692,928
   bytes. The checkout cap is 512 MiB, so the shape works and the constant does
-  not. A daemon channel needs its own artifact kind and its own cap.
-- **Storage.** The artifact cache is local ephemeral storage on one API
-  replica (`/tmp/kortix/compiled-boot`). For a fleet-wide daemon channel,
-  shared object storage is a **prerequisite**, not a follow-up.
+  not.
+- **Storage.** The artifact cache is per-API-replica `/tmp`. Shared object
+  storage is a prerequisite for a fleet-wide daemon channel.
 
 ---
 
-## 3. The one structural change
+## 4. The rule that replaces "pay it once"
 
 > **A box does not become a kortixd node until kortixd has run on that exact box,
-> in `shadow`, beside the incumbent runtime, and reported a matching golden
-> health for one complete session.**
->
-> **`required` is a per-box state in the database. It is never a global flag.**
+> in `shadow`, beside the incumbent runtime, for one complete session.
+> `required` is a per-box row in the database, never a global flag.**
 
-Everything below follows from that sentence.
+Consequences that may not be traded away:
 
-Consequences, stated so they cannot be traded away later:
-
-- The incumbent runtime keeps serving chat, files, PTY, and wake for the whole
+- The incumbent runtime serves chat, files, PTY and wake for the whole
   migration. kortixd earns each box; it is never granted the fleet.
-- A box that cannot run kortixd stays on the incumbent path **forever**, with no
+- A box that cannot run kortixd stays on the incumbent path forever, with no
   user-visible effect. It is a telemetry row, not an incident.
-- Nothing in the API may require a node channel to consider a session active
-  until that box's own row says `required`.
+- No API path may require a node channel to consider a session active until that
+  box's own row says `required`.
 - No lock may make a failure permanent. Every bootstrap lock records boot id and
   owner PID and self-heals when empty or stale — the specific defect that turned
-  #6686 from a bad day into an outage.
+  #6686 into an outage.
 
 ---
 
-## 4. Revised phases
+## 5. Phases, ordered by risk to the existing fleet
 
-The spec's P0–P4 keep their numbering and content. Two changes: a new phase in
-front, and a different exit criterion on each.
+The spec's P0–P4 content stands. The order changes.
 
-### P-1 — The fleet channel *(new; blocks everything else)*
+### P-1 — Measure (days, no code)
 
-Ship daemon delivery as a verified artifact, so a daemon change reaches a
-running box without an image rebuild.
+1. Enable `KORTIX_LLM_HOTSWAP=1` on dev; measure session adoption against the
+   6,034 ms baseline.
+2. Query audit rows for the fraction of sessions that ever invoke shell,
+   filesystem or PTY tools. **This is the only input that makes the Durable
+   Object question answerable** (§6.2), and it is a query, not a design.
 
-- A third artifact kind beside `checkout.tar.gz` and `server.mjs`, with its own
-  size cap, served through the same authenticated route and verified the same
-  way.
-- Shared object storage for the artifact cache (§2.1).
-- `shadow` semantics for the daemon: download, verify, report, run nothing.
+*Exit:* both numbers written down.
 
-*Exit:* a sandbox created **before** this phase downloads, verifies, and reports
-a kortixd artifact, and its behavior is byte-identical to a box that did not.
-Proven by a guest-side probe on a real pre-existing dev box, per
-*"A deployed API is not a deployed daemon"* — not from the API's `/health`.
+### P0 — A VPS is a node (no sandbox involved)
 
-*Worth on its own, even if kortixd never lands:* it removes the 2.1 GB image
-rebuild from the loop for a 96 MB daemon change.
+`kortixd enroll` and `kortixd connect` as real commands. Workstation profile
+only. Node channel, capabilities, convergence — all against a machine no
+customer session depends on.
 
-### P0 — Node core + standalone daemon
+*Exit:* an EC2 instance or a laptop runs one full session through
+`dev.kortix.com`, with the network-partition case exercised live. **Nothing in
+the sandbox path changed.**
 
-Unchanged from the spec, plus: the rename lands as a `shadow` artifact, not as
-an image bump.
+### P1 — The fleet channel
 
-*Exit:* as specified (golden characterization diff, swap-handshake 9/9), **and**
-one pre-existing box reports the new artifact while still running the old
-runtime.
+Daemon delivery as a verified artifact (§3.2): a third artifact kind with its
+own cap, plus shared object storage. `shadow` semantics for the daemon.
 
-### P1 — Session manager
+*Exit:* a sandbox created **before** this phase downloads, verifies and reports
+a kortixd artifact while running none of it, and behaves identically to a box
+that did not. Proven by a guest-side probe on a real pre-existing dev box — per
+*"A deployed API is not a deployed daemon"* — never from the API's `/health`.
 
-Unchanged.
+*Worth shipping alone:* it removes the 2.1 GB image rebuild from the loop for a
+96 MB daemon change.
 
-*Exit:* as specified, plus the adversarial isolation probe.
+### P2 — Node core and profiles
 
-### P2 — Sandbox channel *(the phase that failed)*
+The spec's P0, plus C3: the sandbox profile boots with the channel never
+started.
 
-The outbound channel, per box, gated on that box's own `shadow` result.
+*Exit:* golden characterization diff identical; swap-handshake 9/9; one
+pre-existing box reports the new artifact while still running the old runtime.
 
-Permanent transport constraints, paid for on 2026-08-23:
+### P3 — Session manager
 
-- Send an explicit `User-Agent` on the node channel. Bun's native WebSocket
-  handshake omits it and Cloudflare refuses the upgrade (#6773).
-- Disable `permessage-deflate` on the node channel (#6778).
-- Treat replacement close code 4004 as retriable; make reconnect
-  generation-safe (#6776).
+The spec's P1, unchanged. `compute_nodes`, claim/release/clean.
 
-*Exit:* the follow-up gate the revert PR already wrote — **one pre-change
-session passes browser chat, files, PTY, idle survival, and stop/start
-recovery** — run on a box that was created before the phase, with the incumbent
-path still installed and reachable.
+*Exit:* one node runs session A, releases, cleans, runs session B, with the
+adversarial isolation probe passing.
 
-### P3 / P4
+### P4 — The sandbox becomes a node *(the phase that failed)*
 
-Unchanged from the spec.
+Per box, gated on that box's own `shadow` result.
+
+Permanent transport constraints, paid for on 08-23:
+
+- Send an explicit `User-Agent`; Bun's native WS handshake omits it and
+  Cloudflare refuses the upgrade (#6773).
+- Disable `permessage-deflate` (#6778).
+- Treat close code 4004 as retriable; make reconnect generation-safe (#6776).
+
+*Exit:* the gate the revert PR already wrote — **one pre-change session passes
+browser chat, files, PTY, idle survival, and stop/start recovery** — on a box
+created before the phase, with the incumbent path still installed and reachable.
+
+### P5 — Harness expansion, then collapse the provider
+
+The spec's P3 and P4, with C4: adapters are added beside, never inside.
 
 ---
 
-## 5. Marko's recap, answered item by item
-
-Seven of nine are already built or straightforward. Two must be refused as
-written.
+## 6. The recap, answered
 
 | # | Ask | Answer |
 | --- | --- | --- |
-| 1 | Single binary, any compute | **Built.** `dist/kortixd`, 95,692,928-byte Linux ELF, on `origin/kortixd`. |
-| 2 | Connects to kortix-api as relay, 2-way | **Built, in the wrong place.** `@kortix/agent-tunnel` is WS + JSON-RPC 2.0 + Ed25519-signed + nonce replay guard + a capability model. It points at laptops, not sandboxes. Reuse it; do not design a second protocol. |
-| 3 | Runtime manager, standard versions | **Built.** Convergence + staged swap + immutable floor, dev-verified 2026-08-20 (#6673, #6676). |
-| 4 | Self-update, safe rollback | **Highest-value item.** `entrypoint.sh` has the restart loop, swap code 75, and `rollback_agent`. #6871's `RuntimeSupervisor` prototype adds health-gated promote, atomic route swap, drain, and rollback. This is the direct answer to *"A deployed API is not a deployed daemon"*. |
-| 5 | Single API / websocket | Yes — §5.4 of the spec. |
-| 6 | **Lifecycle: shut the node down when nothing is active** | **Refuse as written. See §6.** |
-| 7 | Full observability: ram/cpu/storage/debugging | Yes, and the clearest genuine win. Today the guest talks out through one-shot `fetch` POSTs (boot timeline, audit relay); there is **no persistent bidirectional socket from a sandbox**. A node channel makes this a stream instead of an inference. |
-| 8 | Orchestrate durable object vs native compute | **Partially refuse. See §7.** |
-| 9 | "If the sandbox crashed, put it online again" | **Split it or it double-provisions. See §8.** |
+| 1 | Single binary, any compute | Right, and mostly built. Change the first target (C1) and add profiles (C3). |
+| 2 | Relay to kortix-api, 2-way | Right. Build it **from** agent-tunnel (C2), not beside it. |
+| 3 | Runtime manager, standard versions | Right. Convergence shipped 08-20 (#6673, #6676). |
+| 4 | Self-update, safe rollback | **Highest value.** Answers *"a deployed API is not a deployed daemon"*. `entrypoint.sh` has restart + swap code 75 + rollback; #6871's `RuntimeSupervisor` adds health-gated promote, atomic swap and drain. |
+| 5 | Single API / websocket | Right. Spec §5.4. |
+| 6 | Shut the node down when nothing is active | **Refuse as written — §6.1.** |
+| 7 | Full observability | Right, and genuinely new: today the guest talks out only through one-shot `fetch` POSTs. There is no persistent bidirectional socket from a sandbox. |
+| 8 | Orchestrate durable object vs native compute | **Partially refuse — §6.2.** |
+| 9 | "If the sandbox crashed, put it online again" | **Split it — §6.3.** |
+| 10 | kortix.yaml → compiled bundle, instant boot | Right, and already 71% delivered by #6871 — but it cannot touch the remaining 84%. See §3.1. |
 
----
+### 6.1 kortixd must never decide its own box should stop
 
-## 6. Why kortixd must not decide its own box should stop
+This mechanism existed and was deleted on 2026-07-29. From `box-reaper.ts`: an
+in-guest lease renewed every 60 s, a busy probe, and an activity clock —
+*"three mechanisms, all fed by the subject of the judgement."*
 
-This is the one item that must not be built the way it is written.
+> Measured live: 187 genuinely running prod boxes, 156 of which had never
+> emitted a single LLM usage event, the oldest 264 hours old;
+> `metadata.idleObservedAt` was null on 100% of active rows, meaning the
+> idle-stop path had never fired in production, not once.
 
-**It already existed and was deleted.** Until 2026-07-29 a running box was
-judged by asking the box: an execution lease the in-sandbox agent renewed every
-60 s while its local OpenCode believed any session was `busy` or `retry`, then a
-busy probe against that same daemon, plus an activity clock the lease renewal
-stamped. From `box-reaper.ts`:
+An externally-owned deadline replaced all three.
 
-> Three mechanisms, all fed by **the subject of the judgement**. Measured live:
-> 187 genuinely running prod boxes, 156 of which had never emitted a single LLM
-> usage event, the oldest 264 hours old; `metadata.idleObservedAt` was null on
-> 100% of active rows, meaning the idle-stop path had never fired in production,
-> not once.
+**Safe restatement:** kortixd **reports** evidence — process state, RSS, CPU,
+disk, port bindings, exact active-turn observations. The control plane
+**decides** the deadline. A node never stops itself and never renews its own
+life.
 
-Deleting all three was the fix. An externally-owned deadline replaced them.
+Binding rules: *A sandbox lifecycle grant requires exact active-turn evidence*
+(08-17); *Active-turn renewal cadence must stay below the shortest provider
+backstop* (08-17); *Every sandbox stop must revoke all persisted turn authority*
+(08-17); *Transcript shape alone may never end a turn* (08-20); *Every
+runtime-initiated turn must be announced to the control plane* (08-20).
 
-**The restatement that is safe to build:**
+### 6.2 Durable Objects cannot host an agent's machine
 
-> kortixd **reports** evidence — process state, RSS, CPU, disk, port bindings,
-> exact active-turn observations. The control plane **decides** the deadline.
-> A node never stops itself and never renews its own life.
-
-Related rules that bind this surface:
-
-- *A sandbox lifecycle grant requires exact active-turn evidence* (2026-08-17).
-- *Active-turn renewal cadence must stay below the shortest provider backstop*
-  (2026-08-17) — 30 s cap, leader-owned loop.
-- *Every sandbox stop must revoke all persisted turn authority* (2026-08-17).
-- *Transcript shape alone may never end a turn* (2026-08-20).
-- *Every runtime-initiated turn must be announced to the control plane*
-  (2026-08-20) — OpenCode starts turns nobody delivered.
-
----
-
-## 7. Durable Objects cannot host an agent's machine
-
-A Durable Object is a stateful V8 isolate. It has no `fork`/`exec`, no PTY, no
-full filesystem, and no CUA surface. kortixd's declared capability set —
-`shell`, `filesystem`, `desktop` — is **not satisfiable there**.
+A Durable Object is a stateful V8 isolate: no `fork`/`exec`, no PTY, no full
+filesystem, no CUA. kortixd's capability set — `shell`, `filesystem`, `desktop`
+— is not satisfiable there.
 
 What is true: a DO can host the session and orchestration layer, where boot
 latency and cost matter and no process is spawned.
 
-So the orchestration question is not "DO or microVM per session". It is:
+So the question is not "DO or microVM per session". It is **"which capability
+set does this session need?"** — and P-1 answers it with a query. If most
+sessions never touch shell, a cheap lane is a real cost lever; if most do, it is
+noise. The ≈$2,500-for-32-concurrent figure from the thread is recorded as a
+claim from that thread, unverified here.
 
-> **Which capability set does this session need?** A session that only calls
-> models and connectors needs no machine. A session that runs a shell needs one.
-
-Answer that first, then place it. The cost figure quoted in the thread
-(≈$2,500 for 32 concurrent sandboxes) is recorded here as a claim from that
-thread; it is not verified in this document.
-
----
-
-## 8. "Restart the crashed sandbox" — three layers, two owners
-
-Conflating these is the fastest route to double-provisioning and double-billing.
+### 6.3 "Restart the crashed sandbox" is three layers and two owners
 
 | Layer | Failure | Owner | Status |
 | --- | --- | --- | --- |
 | 0 | The runtime process died | **kortixd**, in-guest | Exists in bash: restart loop, early-exit counter, rollback |
-| 1 | The box or VM died | **Control plane only** | Exists: reaper sweep, `runtime-wake-fence`, `stuck-sessions`, prompt requeue |
-| 2 | Where should the replacement go | Control plane scheduler | Spec §7.6 |
+| 1 | The box or VM died | **Control plane only** | Exists: reaper, `runtime-wake-fence`, `stuck-sessions`, prompt requeue |
+| 2 | Where the replacement goes | Control plane scheduler | Spec §7.6 |
 
-**kortixd cannot perform Layer 1.** If the VM dies, the daemon dies with it.
-What kortixd changes is **detection latency**: a dropped socket is an immediate
-signal; the reaper is a sweep.
+**kortixd cannot perform Layer 1.** If the VM dies the daemon dies with it. What
+kortixd changes is **detection latency**: a dropped socket is immediate; the
+reaper is a sweep.
 
-Two constraints on any Layer 1 work:
+Two constraints on Layer 1 work:
 
 - **Fence it.** *Fence every detached lifecycle mutation with a durable
-  operation id* (2026-08-22) — one DB claim per `session_id`, every provider
-  step predicated on that claim. One session already accepted three restarts in
-  27 seconds and oscillated `running → provisioning → stopped → running →
-  stopped`.
+  operation id* (08-22) — one DB claim per `session_id`. One session already
+  accepted three restarts in 27 s and oscillated `running → provisioning →
+  stopped → running → stopped`.
 - **Carry identity forward.** #6871 compiles runtime identity into `server.mjs`
-  and exits 78 on mismatch. A resurrected box must receive the same artifact or
-  it refuses to boot. That is a feature — resurrection becomes verifiable — but
-  the resurrection path must carry artifact identity, not just session id.
+  and exits 78 on mismatch, so a resurrected box must receive the same artifact
+  or refuse to boot. That makes resurrection verifiable, and means the
+  resurrection path must carry artifact identity, not only a session id.
 
 ---
 
-## 9. Constraints inherited from the register
+## 7. Constraints inherited from the register
 
-Every phase is bound by these. They are not advisory.
-
-| Rule | Date | Bearing on kortixd |
+| Rule | Date | Bearing |
 | --- | --- | --- |
 | A deployed API is not a deployed daemon | 08-12 | Prove every daemon change in the guest, by artifact content |
 | A control split across API and daemon is only live when both are | 08-14 | Fail **open** for the whole migration |
-| A sandbox environment carries one credential, not a boot protocol | 08-22 | Inject only `KORTIX_TOKEN`; the node claims everything else |
-| A credential boundary cannot depend on a feature flag | 08-22 | No enrollment mode may restore upstream credentials to a guest |
-| A relay that authenticates with the wrong credential fails silently, forever | 08-20 | Sandbox-identity relays resolve `KORTIX_SANDBOX_TOKEN \|\| KORTIX_TOKEN`; test the wire, assert the header |
-| Two dev stacks on one shared DB share one work queue | 08-22 | `KORTIX_INSTANCE_ID` scoping already exists; node enrollment must respect it |
-| Keep the legacy relay until old sessions pass a real cutover gate | 08-23 | §3, and the P2 exit criterion |
-| Give reviewed infrastructure rollbacks an explicit delete path | 08-23 | Written *by* the kortixd rollback |
+| A sandbox environment carries one credential, not a boot protocol | 08-22 | Inject only `KORTIX_TOKEN`; the node claims the rest |
+| A credential boundary cannot depend on a feature flag | 08-22 | No enrollment mode may return upstream credentials to a guest |
+| A relay that authenticates with the wrong credential fails silently, forever | 08-20 | Sandbox-identity relays use `KORTIX_SANDBOX_TOKEN \|\| KORTIX_TOKEN`; assert the header, not the call count |
+| Two dev stacks on one shared DB share one work queue | 08-22 | `KORTIX_INSTANCE_ID` scoping already exists; enrollment must respect it |
+| Keep the legacy relay until old sessions pass a real cutover gate | 08-23 | §4 and the P4 exit criterion |
 
 ---
 
-## 10. Decisions needed from a human
+## 8. Decisions needed from a human
 
-1. **Resume or re-land?** `compute-node-repair-clean` already carries all nine
-   repairs. Resuming keeps the fixes and the fleet-migration debt; re-landing P0
-   clean from `kortixd` behind P-1 discards both. Recommend: re-land behind
-   P-1, and cherry-pick the two transport fixes (#6773, #6778) as permanent
-   contract, since they are facts about Cloudflare and not about this attempt.
-2. **Does P-1 block on shared object storage?** The artifact cache is
-   per-replica `/tmp` today. A fleet-wide daemon channel without it means one
-   replica's cache decides whether a box can converge.
-3. **What actually kills the 6.0 s OpenCode spawn?** #6871 removed Git from the
-   critical path; OpenCode is now 84% of in-guest boot. Neither compiled boot
-   nor kortixd makes that faster. Only a **resident** runtime does — which is
-   the strongest latency argument for a daemon, and needs its own measurement
-   before it is promised.
-4. **Metering for self-registered nodes** — spec §10.3, still open.
+1. **Does C1 stand?** Shipping a VPS node before touching the sandbox is the
+   single largest change here. It delays the sandbox migration and delivers new
+   capability first. Recommend yes.
+2. **Resume or re-land?** `compute-node-repair-clean` carries all nine repairs
+   plus the fleet-migration debt. Recommend re-landing behind P1 and
+   cherry-picking only #6773 and #6778 — those are facts about Cloudflare, not
+   about this attempt.
+3. **Does P1 block on shared object storage?** The cache is per-replica `/tmp`
+   today; without shared storage one replica's cache decides whether a box can
+   converge.
+4. **Who owns the harness question?** C4 makes adapters additive, but whether a
+   first-party `kortix` harness exists at all is a product decision (spec §15.3)
+   and is where the Flu / Eve / Pi discussion belongs.
+5. **Metering for self-registered nodes** — spec §10.3, still open.
 
 ---
 
-## 11. What this document does not change
+## 9. What this document does not change
 
-The spec's §1–§10 and §12–§15 stand. In particular §12's July rule — *no pull
-request in P0–P2 may modify a line inside `opencode*.ts`* — remains the review
-gate. The 2026-07-30 rollback and the 2026-08-23 rollback have different causes:
-the first was a seam that leaked into shared code, the second was a cutover that
-required a fleet it could not reach. Both guards are needed.
+The spec's §1–§10 and §12–§15 stand. §12's July rule remains the review gate;
+C4 makes it structural rather than procedural. The 07-30 and 08-23 rollbacks had
+different causes — a seam that leaked into shared code, and a cutover that
+needed a fleet it could not reach. Both guards are required.
