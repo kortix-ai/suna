@@ -2427,3 +2427,104 @@ guards the lockstep pins; the shared sandbox goldens fail on a pin drift.
 *Incident:* no outage. Essentia's Bedrock model was unusable in native mode
 until PR #6873 (1.18.23) deployed and the box updated with
 `kortix self-host update --version dev`.
+
+## A provider's 204 is not a renewal; read the deadline back
+
+*Incident (2026-08-25, Essentia self-host):* four agent turns died mid-work,
+each exactly one hour after the sandbox was created or resumed. The last
+assistant message of each was `tokens 0/0/0, parts: []` — an LLM call that was
+in flight when the VM froze. Kortix had renewed every box every 20 s
+(`[active-turn-renewal]`, `errors:0`; E2B API log: 375 × `POST
+/sandboxes/<id>/timeout → 204`). E2B's `KeepAliveFor` clamps every renewal to
+the team's `max_length_hours`; the Essentia team sat on tier `base_v1`
+(`max_length_hours = 1`, the upstream migration default) with a matching
+`project_limits` row, so `endAt` never moved past `startedAt + 1h` and E2B
+paused the box (`sandbox_pause_initiated pause_reason=timeout`).
+
+**Rules.**
+1. `renewLifecycle` (`apps/api/src/platform/providers/e2b.ts`) reads `endAt`
+   back after `setTimeout` and throws `E2BLifecycleRenewalIgnoredError` when the
+   deadline did not advance to within `KORTIX_E2B_RENEWAL_TOLERANCE_MS` of the
+   backstop. The reaper and the active-turn renewal loop count it as an error
+   and the log names `max_length_hours`.
+2. A self-hosted E2B cluster must run its Kortix team at
+   `max_length_hours ≥ 24` (`tiers` and `project_limits`; the `team_limits`
+   view prefers `project_limits`). The cap is a ceiling on continuous running
+   time, not a lifetime: Kortix's own `deadline_at` still stops idle boxes.
+3. Existing sandboxes keep the cap they were created with. After raising it,
+   pause+resume (or restart) the live boxes; a fresh `POST /timeout` must move
+   `endAt`.
+4. The fingerprint of this class of failure: an assistant message with
+   `tokens 0/0/0` and no parts, created seconds before a provider pause; the
+   OpenCode log ends at `llm runtime selected` with no stream line after it.
+
+*Automation:* `apps/api/src/platform/providers/e2b.test.ts` — "refuses to
+report a renewal the provider clamped".
+
+## The runtime's body limit is the one that logs, never the one that is silent
+
+*Incident (2026-08-25, Essentia):* three empty assistant messages in two
+sessions were `413 Request Entity Too Large` on image-heavy turns (381k input
+tokens, 118 inline screenshots). Nothing in the gateway log explained them:
+Bun's own `maxRequestBodySize` default (128 MiB) equals
+`DEFAULT_MAX_REQUEST_BYTES`, so Bun refused the body before `fetch()` ran —
+plain-text 413, no `request_too_large` step, and a mid-upload socket close on
+the first attempt (`Cannot connect to API: The socket…`).
+
+**Rules.**
+1. `Bun.serve` in `apps/llm-gateway/src/main.ts` sets `maxRequestBodySize`
+   strictly above the pipeline's per-request cap
+   (`bunRequestBodyCeilingBytes`), so an over-limit body is refused by the
+   pipeline with its logged, digit-free 413.
+2. Any host runtime that enforces a body limit of its own (Bun, Caddy, an
+   ALB) must be configured above the application's cap, or the application's
+   limit is decoration.
+3. Raise a self-host gateway's cap through `GATEWAY_MAX_REQUEST_BYTES`; the
+   in-flight memory budget clamps it to what the process can hold.
+
+*Automation:* `apps/llm-gateway/src/request-body-ceiling.test.ts`.
+
+## The daemon owns the OpenCode binary; OpenCode must never upgrade itself
+
+*Incident (2026-08-22 and again 2026-08-25, Essentia):* a human ran `opencode`
+in the Session terminal. OpenCode's autoupdate (`autoupdate` unset = on)
+installed the newer version with plain `pnpm add -g` — no postinstall — leaving
+a 479-byte launcher stub, deleting the old global dir and dangling
+`/opt/kortix/opencode.current`. The running server survived on a deleted
+inode; the next restart booted the stub ("Still waking this session up").
+
+**Rules.**
+1. `buildOpencodeConfigContent` always emits `autoupdate: false`; a base
+   config cannot turn it back on. The composed Kortix config is never
+   `undefined` any more.
+2. Version changes reach a box only through the runtime-assets manifest and
+   `installOpencodeVersion` (`pnpm add -g --allow-build=opencode-ai`).
+
+*Automation:* `connector-mcp-config.test.ts` — "always disables OpenCode
+autoupdate".
+
+## A boot budget measures lack of progress, not wall-clock
+
+*Incident (2026-08-25 17:23–17:25, Essentia):* both reopened sessions failed
+to wake. The resume converged OpenCode 1.18.19 → 1.18.23 (manifest bump live
+since the updater restarted the API) and then sat through the new version's
+53 s first init. `/start` polled `starting` for 83 s and the fixed
+`STALE_OPENCODE_NOT_READY_MS = 90 s` budget parked both boxes as
+`runtime_boot_failed`; the automatic restart then booted in 20 s because the
+install had already landed.
+
+**Rules.**
+1. Every not-ready 503 from the daemon carries `X-Kortix-Boot-Phase`
+   (`boot-phase.ts`: last boot mark, OpenCode state, runtime-assets activity
+   such as `installing-opencode@<v>`, and the not-ready reason).
+2. The API restarts the per-reason clock whenever that phase changes
+   (`opencodeReadyWaitPatch`); `STALE_OPENCODE_NOT_READY_MS` now bounds time
+   without progress. `STALE_OPENCODE_BOOT_HARD_MS` (10 min from first
+   observation) bounds a boot that changes phase forever. A stub launcher
+   respawning in a loop never changes phase and is still caught at 90 s.
+3. Do not "fix" a slow legitimate boot by raising the fixed budget; expose the
+   progress and budget that.
+
+*Automation:* `unit-session-restart-url-contract.test.ts` ("progress-aware
+OpenCode boot budget"), `boot-phase.test.ts`, `proxy-auth.test.ts` ("names the
+boot phase").

@@ -18,7 +18,7 @@ const inflightCapacityBytes =
 // A per-request cap larger than the budget can ever admit is a lie: such a
 // request is refused 413 `too_large` ("never retry") when the honest answer is
 // that this process is too small for it. Clamp to what the budget can hold.
-const perRequestCapBytes = Math.min(
+export const perRequestCapBytes = Math.min(
   Number(process.env.GATEWAY_MAX_REQUEST_BYTES) || DEFAULT_MAX_REQUEST_BYTES,
   Math.floor(
     inflightCapacityBytes /

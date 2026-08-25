@@ -20,9 +20,11 @@ describe('buildOpencodeConfigContent — native mode (no gateway env)', () => {
     expect(parsed.model).toBe('anthropic/claude-sonnet-4-6')
   })
 
-  test('returns undefined when there is nothing to inject at all', async () => {
+  test('with nothing session-specific to inject, only the Kortix-managed overlay remains', async () => {
     const content = await buildOpencodeConfigContent({})
-    expect(content).toBeUndefined()
+    // autoupdate:false is unconditional (Essentia 2026-08-22/25: OpenCode's
+    // self-upgrade via plain `pnpm add -g` left a postinstall-less stub).
+    expect(JSON.parse(content!)).toEqual({ autoupdate: false })
   })
 
   test('the session pin does not clobber an explicit base-config model', async () => {
@@ -50,7 +52,10 @@ describe('buildOpencodeConfigContent — native mode (no gateway env)', () => {
       KORTIX_OPENCODE_MODEL: 'kortix/glm-5.2',
       OPENCODE_CONFIG_CONTENT: JSON.stringify({ small_model: 'anthropic/claude-haiku-4-5' }),
     })
-    expect(content).toBeUndefined()
+    const parsed = JSON.parse(content!)
+    expect(parsed.model).toBeUndefined()
+    expect(parsed.small_model).toBe('anthropic/claude-haiku-4-5')
+    expect(parsed.autoupdate).toBe(false)
   })
 
   test('a base config carrying kortix refs IS rebuilt and scrubbed even with nothing else to inject', async () => {

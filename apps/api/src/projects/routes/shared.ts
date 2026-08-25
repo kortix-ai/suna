@@ -42,7 +42,9 @@ import { inspectSandboxRuntime } from '../runtime-inspection';
 import type { StopReason } from '../stop-reason';
 import {
   RUNTIME_READINESS_CLOCK_KEYS,
+  STALE_OPENCODE_BOOT_HARD_MS,
   hasRuntimeReadinessClock,
+  opencodeReadyWaitPatch,
   staleOpencodeReadyReason,
 } from '../session-lifecycle/readiness-clocks';
 import {
@@ -537,27 +539,19 @@ async function markRuntimeWakeStarted(
 
 async function markOpencodeReadyWaitStarted(
   row: typeof sessionSandboxes.$inferSelect,
-  reason: string,
+  reason: 'not_ready' | 'unreachable',
+  bootPhase: string | undefined,
 ): Promise<void> {
   const metadata = sandboxMetadata(row);
-  const reasonClockKey =
-    reason === 'unreachable'
-      ? 'opencodeUnreachableWaitStartedAt'
-      : 'opencodeNotReadyWaitStartedAt';
-  if (typeof metadata[reasonClockKey] === 'string') return;
+  // The reason clock restarts on every daemon-reported phase change, so the
+  // budget below is "no progress for N seconds", not "not ready N seconds
+  // after the first poll" (see opencodeReadyWaitPatch).
+  const patch = opencodeReadyWaitPatch(metadata, reason, bootPhase);
+  if (!patch) return;
   try {
-    const startedAt = new Date().toISOString();
     await db
       .update(sessionSandboxes)
-      .set({
-        metadata: {
-          ...metadata,
-          opencodeReadyWaitStartedAt: startedAt,
-          opencodeReadyWaitReason: reason,
-          [reasonClockKey]: startedAt,
-        },
-        updatedAt: new Date(),
-      })
+      .set({ metadata: patch, updatedAt: new Date() })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   } catch (err) {
     console.warn(`[start] failed to mark OpenCode wait for ${row.sandboxId}:`, err);
@@ -1224,13 +1218,23 @@ export async function openSession(args: {
   });
   const booting = ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
   if (booting) {
+    // A daemon that reports a NEW boot phase since the last poll has made
+    // progress: its reason clock is restarted below before the next poll
+    // judges it, so only a box that stalls in one phase for the budget — or
+    // one that never becomes ready within the hard cap — is parked.
+    const metadataForBudget =
+      ensured.reason === 'not_ready' || ensured.reason === 'unreachable'
+        ? (opencodeReadyWaitPatch(sandboxMetadata(row), ensured.reason, ensured.bootPhase) ??
+          sandboxMetadata(row))
+        : sandboxMetadata(row);
     const staleBoot = staleOpencodeReadyReason(
-      sandboxMetadata(row),
+      metadataForBudget,
       ensured.reason,
       Date.now(),
       ensured.reason === 'unreachable'
         ? STALE_RUNTIME_UNREACHABLE_MS
         : STALE_OPENCODE_NOT_READY_MS,
+      STALE_OPENCODE_BOOT_HARD_MS,
     );
     if (staleBoot) {
       return preserveEstablishedRuntimeOnOpen(
@@ -1243,7 +1247,11 @@ export async function openSession(args: {
         'runtime_boot_failed',
       );
     }
-    await markOpencodeReadyWaitStarted(row, ensured.reason);
+    await markOpencodeReadyWaitStarted(
+      row,
+      ensured.reason === 'unreachable' ? 'unreachable' : 'not_ready',
+      ensured.bootPhase,
+    );
   } else {
     await clearRuntimeReadinessClocks(row);
   }

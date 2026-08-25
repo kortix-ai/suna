@@ -294,17 +294,16 @@ export async function buildOpencodeConfigContent(
     typeof env.OPENCODE_CONFIG_CONTENT === 'string' &&
     env.OPENCODE_CONFIG_CONTENT.includes('"kortix/')
 
-  if (
-    !hasConnectorMcp &&
-    !hasLlmGateway &&
-    !nativeSessionModel &&
-    !nativeScrubNeeded &&
-    !isSlackSession &&
-    !hasCompiledAgentConfig &&
-    !injectedSkillsDir &&
-    !secretCapabilitiesInstructionPath
-  )
-    return undefined
+  // (0) Kortix owns the OpenCode binary: the daemon converges it to the
+  // manifest pin (runtime-assets.ts) with `pnpm add -g --allow-build`. OpenCode's
+  // own autoupdate (`autoupdate` unset = on) runs whenever a human launches the
+  // CLI/TUI in the Session terminal and installs via plain `pnpm add -g`, which
+  // skips the postinstall: the launcher becomes a 479-byte stub, the old global
+  // dir is deleted and `/opt/kortix/opencode.current` dangles. Essentia
+  // 2026-08-22 (session dead, "Still waking this session up") and again
+  // 2026-08-25 on two boxes. This contributor ALWAYS applies, so the composed
+  // config is never `undefined` any more.
+  const KORTIX_MANAGED_OPENCODE_OVERLAY: Record<string, unknown> = { autoupdate: false }
 
   let base: Record<string, unknown> = {}
   if (hasCompiledAgentConfig) {
@@ -477,6 +476,7 @@ export async function buildOpencodeConfigContent(
     out.permission = { ...permission, question: 'deny' }
   }
 
+  Object.assign(out, KORTIX_MANAGED_OPENCODE_OVERLAY)
   return JSON.stringify(out)
 }
 
