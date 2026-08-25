@@ -35,7 +35,7 @@ permissions:
 jobs:
   scale:
     name: scale ${{ inputs.service }} to ${{ inputs.desired_count }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Guard — only kortix-* clusters/services
         run: |

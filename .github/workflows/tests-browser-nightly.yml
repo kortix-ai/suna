@@ -59,7 +59,7 @@ env:
 jobs:
   quarantine:
     name: quarantined browser journeys
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 45
     env:
       # `playwright.config.ts` turns this into `grep`, so the run loads ONLY the

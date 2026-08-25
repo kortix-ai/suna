@@ -105,7 +105,7 @@ env:
 jobs:
   apply:
     name: apply ${{ inputs.tf_root }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 45
     environment: ${{ inputs.github_environment }}
     env:

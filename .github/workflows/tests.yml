@@ -34,7 +34,7 @@ permissions:
 jobs:
   sandbox:
     name: warm ${{ matrix.lane }} worker
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
