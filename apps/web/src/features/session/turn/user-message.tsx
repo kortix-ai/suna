@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
+import Loading from '@/components/ui/loading';
 import {
   PreviewImage,
   PreviewImageContent,
@@ -908,39 +909,138 @@ export function UserMessageActions({
               'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100 max-md:opacity-100',
         )}
       >
-      {leading}
-      {/* `InlineMeta` owns the `·` separator and drops absent children, so a
+        {leading}
+        {/* `InlineMeta` owns the `·` separator and drops absent children, so a
           message with no stamp never renders a leading bullet. Skipped
           entirely when there is no meta at all — the optimistic turn would
           otherwise carry an empty node the real turn does not. */}
-      {hasMeta && (
-        <InlineMeta>
-          {timestamp !== null && <MessageTimeLabel timestamp={timestamp} />}
-          {edited && 'edited'}
-        </InlineMeta>
-      )}
-      {copyText && (
-        <div className="flex shrink-0 items-center gap-0.5">
-          {canRewind && (
-            <Hint label="Edit from here" side="top" align="center">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                // 24px visible, 40px target — grown with a pseudo-element so the
-                // dense action row keeps its rhythm.
-                className="hit-area-2"
-                aria-label="Edit message and rewind session"
-                onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
-              >
-                <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
-              </Button>
-            </Hint>
-          )}
+        {hasMeta && (
+          <InlineMeta>
+            {timestamp !== null && <MessageTimeLabel timestamp={timestamp} />}
+            {edited && 'edited'}
+          </InlineMeta>
+        )}
+        {copyText && (
+          <div className="flex shrink-0 items-center gap-0.5">
+            {canRewind && (
+              <Hint label="Edit from here" side="top" align="center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  // 24px visible, 40px target — grown with a pseudo-element so the
+                  // dense action row keeps its rhythm.
+                  className="hit-area-2"
+                  aria-label="Edit message and rewind session"
+                  onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
+                >
+                  <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
+                </Button>
+              </Hint>
+            )}
 
-          <CopyButton code={copyText} size="sm" hintSide="top" />
-        </div>
-      )}
+            <CopyButton code={copyText} size="sm" hintSide="top" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Inline edit-from-here editor
+// ============================================================================
+
+/**
+ * The full-width editor that REPLACES the bubble while an edit-from-here is
+ * being composed — the ChatGPT pattern. It replaced a `ConfirmDialog`: the
+ * dialog made the user confirm an abstract "rewind" before they had typed
+ * anything, when the real decision point is Send. Cancel restores the bubble
+ * untouched; nothing has happened yet, so there is nothing to confirm.
+ *
+ * Send is the commit: the parent stages the session rewind and delivers the
+ * edited text as the replacement prompt, which is what truncates every turn
+ * below this message.
+ *
+ * The surface is `BUBBLE_SURFACE` stretched to the full column width, so the
+ * bubble reads as "opening up" into its editable form rather than being
+ * swapped for foreign chrome. `select-text` overrides the surface's
+ * `select-none` — this is now an input, not a transcript artifact.
+ */
+export function UserMessageEditor({
+  initialText,
+  pending,
+  onCancel,
+  onSend,
+}: {
+  initialText: string;
+  /** The staged rewind is on the wire — hold both buttons. */
+  pending?: boolean;
+  onCancel: () => void;
+  onSend: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState(initialText);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const canSend = Boolean(draft.trim()) && !pending;
+
+  // Focus with the caret at the END on mount — autofocus alone puts it at the
+  // start, and an edit almost always continues the sentence.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+
+  // Grow with the content. `height = auto` first so the textarea can also
+  // SHRINK when lines are deleted — scrollHeight never reports smaller than
+  // the current box. The class caps it at 50vh and scrolls from there.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft]);
+
+  return (
+    <div className={cn(BUBBLE_SURFACE, 'w-full gap-2 py-3 select-text')}>
+      <textarea
+        ref={editorRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && !pending) {
+            e.preventDefault();
+            onCancel();
+            return;
+          }
+          // Same contract as the composer: Enter sends, Shift+Enter breaks the
+          // line. The IME guard keeps a Japanese/Chinese conversion commit
+          // from firing the send.
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            if (canSend) onSend(draft);
+          }
+        }}
+        aria-label="Edit message"
+        className={cn(
+          BUBBLE_TEXT,
+          'max-h-[50vh] w-full resize-none overflow-y-auto bg-transparent outline-none',
+        )}
+      />
+      <div className="flex items-center justify-end gap-2">
+        <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={!canSend}
+          onClick={() => canSend && onSend(draft)}
+        >
+          {pending && <Loading variant="spokes" className="size-3.5 shrink-0" />}
+          Send
+        </Button>
       </div>
     </div>
   );
@@ -959,6 +1059,10 @@ export function UserMessage({
   ownsPlan,
   onRewind,
   rewindDisabled = false,
+  editingText,
+  editPending,
+  onEditCancel,
+  onEditSend,
   leadingActions,
   leadingStatus,
   actionsAlwaysVisible = false,
@@ -980,6 +1084,18 @@ export function UserMessage({
   ownsPlan: boolean;
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
+  /**
+   * Non-null while THIS message is being edited from here: the bubble is
+   * replaced by `UserMessageEditor` prefilled with this text. The value is the
+   * cleaned prompt text the pencil captured (`rewindPromptText`), not the raw
+   * message — same text the old flow prefilled into the composer.
+   */
+  editingText?: string | null;
+  /** See `UserMessageEditor.pending`. */
+  editPending?: boolean;
+  onEditCancel?: () => void;
+  /** Send the edit: stage the rewind at this message and deliver `text`. */
+  onEditSend?: (messageId: string, text: string) => void;
   /** See `UserMessageActions.leading` — a queued prompt's status + controls. */
   leadingActions?: React.ReactNode;
   /** See `UserMessageActions.leadingStatus`. */
@@ -1285,6 +1401,20 @@ export function UserMessage({
       href: `/sessions/${ref.id}`,
     });
   };
+
+  // Editing replaces the WHOLE message column — bubble, attachments, meta row —
+  // with the full-width editor, ChatGPT-style. Placed after every hook above so
+  // the hook count never changes when editing starts or ends.
+  if (editingText != null && onEditSend && onEditCancel) {
+    return (
+      <UserMessageEditor
+        initialText={editingText}
+        pending={editPending}
+        onCancel={onEditCancel}
+        onSend={(text) => onEditSend(message.info.id, text)}
+      />
+    );
+  }
 
   // If the message is purely notifications (no real user content), render only the cards
   const hasUserContent = !!(

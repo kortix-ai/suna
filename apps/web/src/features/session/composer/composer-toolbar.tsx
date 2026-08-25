@@ -95,7 +95,7 @@ export interface ComposerToolbarProps {
    * beside send/stop because send is the action that commits the path — the
    * warning lives at the moment it matters, not in a banner above the card.
    */
-  rewind?: { pending?: boolean; onRestore: () => void };
+  rewind?: { pending?: boolean; disabled?: boolean; onRestore: () => void };
   /** Rendered FIRST in the left cluster, before the model selector. */
   leading?: React.ReactNode;
 
@@ -205,25 +205,31 @@ export function ComposerToolbar({
         {rewind && (
           <HoverCard openDelay={0} closeDelay={0}>
             <HoverCardTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={rewind.pending}
-                onClick={rewind.onRestore}
-                className="text-muted-foreground hover:text-foreground gap-1.5"
-              >
-                {rewind.pending ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : (
-                  <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
-                )}
-                Restore
-              </Button>
+              {/* The span, not the button, carries the hover: the Button base
+                  sets `disabled:pointer-events-none`, so a disabled trigger
+                  would never open the card that explains WHY it is disabled. */}
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={rewind.pending || rewind.disabled}
+                  onClick={rewind.onRestore}
+                  className="text-muted-foreground hover:text-foreground gap-1.5"
+                >
+                  {rewind.pending ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
+                  )}
+                  Restore
+                </Button>
+              </span>
             </HoverCardTrigger>
             <HoverCardContent className="px-3 py-2 text-sm text-balance">
-              Session rewound — sending a new prompt commits this path. Restore keeps the removed
-              messages and file changes.
+              {rewind.disabled && !rewind.pending
+                ? 'The agent is still working — restore is available once it finishes or you stop it.'
+                : 'Session rewound — sending a new prompt commits this path. Restore keeps the removed messages and file changes.'}
             </HoverCardContent>
           </HoverCard>
         )}

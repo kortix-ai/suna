@@ -120,7 +120,7 @@ export interface SessionChatInputProps {
    * beside send/stop — the moment of commitment — instead of a banner above
    * the card.
    */
-  rewind?: { pending?: boolean; onRestore: () => void };
+  rewind?: { pending?: boolean; disabled?: boolean; onRestore: () => void };
   agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;

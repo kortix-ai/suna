@@ -24,7 +24,6 @@ import {
   CaretDownIcon as ChevronDown,
   ArrowSquareOutIcon as ExternalLink,
   StackIcon as Layers,
-  ArrowCounterClockwiseIcon as RotateCcw,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
@@ -92,7 +91,6 @@ import {
 } from './session-turn-meta-rows';
 
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
 import { dismissToast, errorToast, infoToast } from '@/components/ui/toast';
@@ -685,10 +683,20 @@ interface SessionTurnProps {
   disableToolNavigation?: boolean;
   /** Permission reply handler */
   onPermissionReply: (requestId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
-  /** Stage an in-place session rewind and restore this prompt in the composer. */
+  /** Open the inline edit-from-here editor on this turn's user message. */
   onRewind: (messageId: string, text: string) => void;
   /** Disable history changes while the session is busy or read-only. */
   rewindDisabled: boolean;
+  /**
+   * Non-null when THIS turn's user message is being edited from here — the
+   * bubble renders as the full-width inline editor prefilled with this text.
+   */
+  editingText?: string | null;
+  /** The staged rewind + replacement send is in flight. */
+  editPending?: boolean;
+  onEditCancel?: () => void;
+  /** Commit the edit: rewind the session at `messageId` and send `text`. */
+  onEditSend?: (messageId: string, text: string) => void;
 }
 
 /**
@@ -780,6 +788,10 @@ function SessionTurnImpl({
   onPermissionReply,
   onRewind,
   rewindDisabled,
+  editingText,
+  editPending,
+  onEditCancel,
+  onEditSend,
 }: SessionTurnProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
@@ -1519,6 +1531,10 @@ function SessionTurnImpl({
             ownsPlan={ownsPlan}
             onRewind={onRewind}
             rewindDisabled={rewindDisabled}
+            editingText={editingText}
+            editPending={editPending}
+            onEditCancel={onEditCancel}
+            onEditSend={onEditSend}
             leadingStatus={
               statusState ? (
                 <QueuedPromptStatus
@@ -2205,15 +2221,14 @@ export function SessionChat({
   const lastSubmittedRef = useRef<{ parts: unknown[]; options: Record<string, unknown> } | null>(
     null,
   );
+  // The message currently open in the inline edit-from-here editor. Setting
+  // this swaps that bubble for the full-width editor; nothing is staged
+  // against the session until the editor's Send.
   const [rewindTarget, setRewindTarget] = useState<{
     messageId: string;
     text: string;
   } | null>(null);
-  const [rewindDraft, setRewindDraft] = useState<{
-    text: string;
-    id: number;
-  } | null>(null);
-  const rewindPrefillId = useRef(0);
+  const [editSendPending, setEditSendPending] = useState(false);
   // "Ask for changes" (W12) — a deliverable's toolbar can hand the composer a
   // starter line. Held (not one-shot) in the store; the composer's own
   // `prefill.id` effect below is what makes application happen exactly once.
@@ -2231,14 +2246,6 @@ export function SessionChat({
   // so `prefill.id` alone cannot say which one the composer just applied — and
   // the carried draft's handshake below has to know exactly that.
   const composerPrefill = useMemo(() => {
-    if (rewindDraft) {
-      return {
-        source: 'rewind' as const,
-        text: rewindDraft.text,
-        id: rewindDraft.id,
-        mode: 'replace' as const,
-      };
-    }
     if (sessionPrefill) {
       return {
         source: 'session' as const,
@@ -2248,7 +2255,7 @@ export function SessionChat({
       };
     }
     return null;
-  }, [rewindDraft, sessionPrefill]);
+  }, [sessionPrefill]);
   // "Add context" (Task 5) — the empty Context card's button asks the
   // composer to open its attach flow. Same held/id-keyed handoff as the
   // prefill above, cleared the same way once the composer's own id-keyed
@@ -3154,7 +3161,8 @@ export function SessionChat({
     if (!last || !isAbortError((last.info as { error?: unknown }).error)) return new Set<string>();
     return new Set(turns.slice(newestWithContent + 1).map((t) => t.userMessage.info.id));
   }, [turns, lastTurnWorking]);
-  /** Hoisted out of the JSX: an inline arrow prop defeats `React.memo` by itself. */
+  /** Hoisted out of the JSX: an inline arrow prop defeats `React.memo` by itself.
+   *  Opens the inline editor on that message — nothing is staged until its Send. */
   const handleRewind = useCallback(
     (messageId: string, text: string) => setRewindTarget({ messageId, text }),
     [],
@@ -3335,7 +3343,6 @@ export function SessionChat({
   useEffect(() => {
     clearSendReceipt();
     setRewindTarget(null);
-    setRewindDraft(null);
   }, [sessionId, clearSendReceipt]);
 
   // ============================================================================
@@ -3345,55 +3352,14 @@ export function SessionChat({
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================
 
-  const handleConfirmRewind = useCallback(async () => {
-    if (!sessionState || !rewindTarget) return;
-    try {
-      const { messageId, text } = rewindTarget;
-      await sessionState.rewind(messageId);
-      // THE QUEUED ROWS GO, and this is not a preference.
-      //
-      // A rewind stages `session.revert`; the NEXT prompt delivered is what
-      // commits the truncation. The inbox admits by `created_at`, so a row
-      // queued before the rewind is admitted BEFORE the replacement prompt
-      // this flow prefills — it would commit the user's rewind and then run
-      // against the trajectory that rewind just deleted.
-      //
-      // Holding them instead does not hold: `POST .../prompts` releases the
-      // session's hold, and the send that releases it is precisely the one the
-      // rewind prefills. So the rows are removed, exactly as the browser
-      // queue's `clearSession` removed them — but visibly, and once, for every
-      // tab, rather than per tab.
-      const doomed = promptInbox.prompts.filter((prompt) => prompt.state !== 'delivering');
-      let removed = 0;
-      for (const prompt of doomed) {
-        // Sequential: a row that turns out to be on the wire answers 409, and
-        // that is not a reason to stop removing the rest.
-        const gone = await promptInbox.remove(prompt.prompt_id).catch((error) => {
-          console.warn('[session-chat] failed to remove a queued prompt on rewind', error);
-          return null;
-        });
-        if (gone) removed += 1;
-      }
-      if (removed > 0) {
-        infoToast(removed === 1 ? 'Queued message removed' : `${removed} queued messages removed`, {
-          description: 'They were written for the messages this rewind discards.',
-        });
-      }
-      setRewindDraft({ text, id: ++rewindPrefillId.current });
-      setRewindTarget(null);
-    } catch (error) {
-      errorToast('Session rewind failed', {
-        description: formatCommandError(error),
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rewindTarget, sessionState, promptInbox.prompts, promptInbox.remove]);
-
+  // No composer-draft side effect any more: the old flow prefilled the
+  // composer with the rewound prompt and Restore had to wipe that prefill.
+  // The inline editor never touches the composer, so wiping it here would
+  // only destroy an unrelated draft the user had typed.
   const handleRestoreRewind = useCallback(async () => {
     if (!sessionState?.rewindMessageId) return;
     try {
       await sessionState.restoreRewind();
-      setRewindDraft({ text: '', id: ++rewindPrefillId.current });
     } catch (error) {
       errorToast('Session restore failed', {
         description: formatCommandError(error),
@@ -3848,6 +3814,93 @@ export function SessionChat({
   // agent when nobody was holding the gated call is the RESOLVE ENDPOINT's job
   // (server-side continueSession delivery in r7.ts), so it works with zero
   // browsers open. A web-side nudge would just double-send.
+
+  const handleEditCancel = useCallback(() => setRewindTarget(null), []);
+
+  /**
+   * The inline editor's Send: stage the rewind at the edited message, then
+   * deliver the edited text through the ONE send path. The delivery is what
+   * commits the truncation, so the turns below the message clear only on Send
+   * — Cancel leaves the session untouched.
+   *
+   * This replaced `handleConfirmRewind` + `ConfirmDialog` + a composer
+   * prefill: the dialog asked for a decision before the user had typed
+   * anything, and the prefill left a second decision (press send again) in a
+   * different control. Now the editor IS the confirmation.
+   */
+  const handleEditSend = useCallback(
+    async (messageId: string, text: string) => {
+      if (!sessionState) return;
+      setEditSendPending(true);
+      try {
+        await sessionState.rewind(messageId);
+        // THE QUEUED ROWS GO, and this is not a preference.
+        //
+        // A rewind stages `session.revert`; the NEXT prompt delivered is what
+        // commits the truncation. The inbox admits by `created_at`, so a row
+        // queued before the rewind is admitted BEFORE the replacement prompt
+        // this send delivers — it would commit the user's rewind and then run
+        // against the trajectory that rewind just deleted.
+        //
+        // Holding them instead does not hold: `POST .../prompts` releases the
+        // session's hold, and the send that releases it is precisely this
+        // edit's replacement prompt. So the rows are removed, exactly as the
+        // browser queue's `clearSession` removed them — but visibly, and once,
+        // for every tab, rather than per tab.
+        const doomed = promptInbox.prompts.filter((prompt) => prompt.state !== 'delivering');
+        let removed = 0;
+        for (const prompt of doomed) {
+          // Sequential: a row that turns out to be on the wire answers 409, and
+          // that is not a reason to stop removing the rest.
+          const gone = await promptInbox.remove(prompt.prompt_id).catch((error) => {
+            console.warn('[session-chat] failed to remove a queued prompt on rewind', error);
+            return null;
+          });
+          if (gone) removed += 1;
+        }
+        if (removed > 0) {
+          infoToast(
+            removed === 1 ? 'Queued message removed' : `${removed} queued messages removed`,
+            {
+              description: 'They were written for the messages this rewind discards.',
+            },
+          );
+        }
+        setRewindTarget(null);
+        // handleSend surfaces its own failures (commandError card + receipt
+        // clear), so a refused send must not wear the rewind toast below —
+        // its rejection is swallowed here, not ignored.
+        let sendOk = true;
+        await handleSend(text).catch(() => {
+          sendOk = false;
+        });
+        // Mirror the SDK's own send path (`use-session.ts` `sendParts`, which
+        // ends in `commitSessionRevert`): delivering ANY prompt makes OpenCode
+        // commit the staged revert — it deletes the reverted messages and
+        // clears the pointer (`SessionRevert.cleanup`, run first thing in
+        // `SessionPrompt.prompt`). But the classic server NEVER emits a
+        // `session.next.revert.*` wire event (`setRevert`/`clearRevert` are
+        // bare session patches, and `syncSessionRevertFromInfo` deliberately
+        // ignores an absent `revert` field), and this send goes through the
+        // prompt inbox, not `sendParts` — so nothing else ever flips the local
+        // record. Without this line the composer's Restore button outlives the
+        // path it claims to restore, and every click is a guaranteed no-op:
+        // `unrevert` finds nothing staged (or throws BusyError mid-run).
+        // A FAILED send leaves the record staged on purpose — the revert is
+        // still real server-side and Restore genuinely works there.
+        if (sendOk && sessionState.opencodeSessionId) {
+          useSessionStateStore.getState().commitSessionRevert(sessionState.opencodeSessionId);
+        }
+      } catch (error) {
+        errorToast('Session rewind failed', {
+          description: formatCommandError(error),
+        });
+      } finally {
+        setEditSendPending(false);
+      }
+    },
+    [sessionState, promptInbox.prompts, promptInbox.remove, handleSend],
+  );
 
   const handleStop = useCallback(async () => {
     // Guard against rapid clicks — ignore if an abort is already in flight
@@ -4405,12 +4458,23 @@ export function SessionChat({
   // commitment instead of in a banner above the card. No manual useMemo: the
   // React Compiler memoizes this component, and a hand-written dependency list
   // narrower than `sessionState` makes it skip the whole component.
-  const composerRewind = sessionState?.rewindMessageId
-    ? {
-        pending: sessionState.rewindPending,
-        onRestore: () => void handleRestoreRewind(),
-      }
-    : undefined;
+  // `!editSendPending` — during an inline edit's Send the revert is staged
+  // FIRST and committed only after `handleSend` resolves, so without the gate
+  // the Restore button paints for the milliseconds in between: a control that
+  // flashes in and vanishes. While the edit-send is in flight the staged
+  // revert is already spoken for; only a FAILED send (editSendPending back to
+  // false, record still staged) should surface it.
+  const composerRewind =
+    sessionState?.rewindMessageId && !editSendPending
+      ? {
+          pending: sessionState.rewindPending,
+          // OpenCode's `unrevert` asserts the session is idle (`assertNotBusy`
+          // → BusyError) — offering the button mid-run offers a guaranteed
+          // failure, so it waits, visibly, instead.
+          disabled: isBusy,
+          onRestore: () => void handleRestoreRewind(),
+        }
+      : undefined;
 
   // ============================================================================
   // Loading / Not-found states
@@ -4826,6 +4890,14 @@ export function SessionChat({
                             disableToolNavigation={disableToolNavigation}
                             onPermissionReply={handlePermissionReply}
                             onRewind={handleRewind}
+                            editingText={
+                              rewindTarget?.messageId === turn.userMessage.info.id
+                                ? rewindTarget.text
+                                : null
+                            }
+                            editPending={editSendPending || !!sessionState?.rewindPending}
+                            onEditCancel={handleEditCancel}
+                            onEditSend={handleEditSend}
                             rewindDisabled={
                               !!readOnly ||
                               !sessionState ||
@@ -5067,24 +5139,6 @@ export function SessionChat({
                   ? requestRuntimeReconnect
                   : undefined
               }
-            />
-            <ConfirmDialog
-              open={!!rewindTarget}
-              onOpenChange={(open) => !open && setRewindTarget(null)}
-              title="Edit from this message?"
-              description={
-                <>
-                  <p>This rewinds the same session and restores its files to this message.</p>
-                  <p className="mt-2">
-                    You can restore the removed path until you send a replacement prompt.
-                  </p>
-                </>
-              }
-              confirmLabel="Rewind session"
-              confirmVariant="destructive"
-              confirmIcon={<RotateCcw className="size-3.5" />}
-              isPending={sessionState?.rewindPending}
-              onConfirm={() => void handleConfirmRewind()}
             />
           </>
         )}
