@@ -75,15 +75,16 @@ export function stripInlineAttachmentBytes(
           ? obj.messageID
           : messageId;
 
-    if (
+    // An attachment the offload moved to a sidecar (attachment-offload.ts)
+    // carries only a 1×1 placeholder inline; it is ALWAYS handed out as a
+    // ref, size notwithstanding, so the UI fetches the real bytes on demand.
+    const offloaded =
       obj.type === 'file' &&
-      isDataUrl(obj.url) &&
-      obj.url.length > maxBytes &&
-      typeof obj.id === 'string' &&
-      nextMessageId
-    ) {
+      Boolean((obj.kortix as { offloaded?: unknown } | undefined)?.offloaded)
+    const inlineTooBig = isDataUrl(obj.url) && obj.url.length > maxBytes
+    if (obj.type === 'file' && typeof obj.id === 'string' && nextMessageId && (offloaded || inlineTooBig)) {
       stripped += 1;
-      savedBytes += obj.url.length;
+      savedBytes += typeof obj.url === 'string' ? obj.url.length : 0;
       return { ...obj, url: makeRef(nextMessageId, obj.id) };
     }
 

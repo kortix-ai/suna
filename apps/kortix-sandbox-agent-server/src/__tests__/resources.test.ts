@@ -154,3 +154,89 @@ describe('startResourceMonitor', () => {
     expect(reasons).toEqual(['diag'])
   })
 })
+
+describe('memory guard', () => {
+  let stop: (() => void) | null = null
+  afterEach(() => {
+    stop?.()
+    stop = null
+  })
+
+  test('aborts the in-flight turn once at the guard line, relays why, re-arms only after memory drops', async () => {
+    let usedPct = 50
+    const aborts: string[] = []
+    const relays: Array<{ aborted: boolean }> = []
+    const monitor = startResourceMonitor({
+      intervalMs: 60_000,
+      opencodePid: () => 2423,
+      snapshot: async () =>
+        snapshot({
+          memory: { totalMb: 8000, availableMb: Math.round(8000 * (100 - usedPct) / 100), usedPct, swapTotalMb: 0, swapFreeMb: 0 },
+          cgroup: { currentMb: null, maxMb: null, usedPct: null, oomKills: null },
+          opencode: { pid: 2423, rssMb: Math.round(8000 * usedPct / 100), threads: 8, state: 'R' },
+        }),
+      guard: {
+        guardPct: 92,
+        elevatedPct: 80,
+        fastIntervalMs: 60_000,
+        turnInFlight: async () => true,
+        abortTurn: async (reason) => {
+          aborts.push(reason)
+          return true
+        },
+        onGuard: ({ aborted }) => {
+          relays.push({ aborted })
+        },
+      },
+    })
+    stop = monitor.stop
+    await Bun.sleep(20)
+    expect(aborts).toHaveLength(0)
+
+    usedPct = 85
+    await monitor.tick('t')
+    expect(aborts).toHaveLength(0) // elevated: fast sampling, no action
+
+    usedPct = 93
+    await monitor.tick('t')
+    expect(aborts).toHaveLength(1)
+    expect(aborts[0]).toContain('sandbox memory at 93%')
+    expect(aborts[0]).toContain('7440 MB RSS')
+    expect(relays).toEqual([{ aborted: true }])
+
+    usedPct = 95
+    await monitor.tick('t')
+    expect(aborts).toHaveLength(1) // fired once per crossing
+
+    usedPct = 60
+    await monitor.tick('t')
+    usedPct = 94
+    await monitor.tick('t')
+    expect(aborts).toHaveLength(2) // re-armed after dropping under the elevated line
+  })
+
+  test('with no turn in flight the guard relays but does not abort', async () => {
+    const aborts: string[] = []
+    const relays: Array<{ aborted: boolean }> = []
+    const monitor = startResourceMonitor({
+      intervalMs: 60_000,
+      opencodePid: () => 2423,
+      snapshot: async () =>
+        snapshot({ memory: { totalMb: 8000, availableMb: 400, usedPct: 95, swapTotalMb: 0, swapFreeMb: 0 } }),
+      guard: {
+        turnInFlight: async () => false,
+        abortTurn: async (r) => {
+          aborts.push(r)
+          return true
+        },
+        onGuard: ({ aborted }) => {
+          relays.push({ aborted })
+        },
+      },
+    })
+    stop = monitor.stop
+    await monitor.tick('t')
+    expect(aborts).toHaveLength(0)
+    expect(relays).toEqual([{ aborted: false }])
+  })
+})

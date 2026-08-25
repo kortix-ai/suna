@@ -285,12 +285,48 @@ export function evaluatePressure(s: ResourceSnapshot, previous?: ResourceSnapsho
   return out
 }
 
+/**
+ * The memory guard: act BEFORE the kernel does.
+ *
+ * Essentia 2026-08-25 23:12Z: OpenCode reached 6.48 GB RSS on an 8 GB box and
+ * the kernel OOM-killed it mid-turn (`dmesg`: `Killed process 1506
+ * (opencode.exe) anon-rss:6484532kB`). The assistant message in flight was
+ * left as an empty husk, the ledger had to infer an ending, and nothing had
+ * said "memory" anywhere the operator could see.
+ *
+ * Above `elevatedPct` (80) the monitor samples every `fastIntervalMs` (10 s)
+ * instead of every minute. At `guardPct` (92) with a turn in flight it calls
+ * `abortTurn`: OpenCode ends the turn cleanly (transcript consistent,
+ * process alive, a real `session.error`), the box gets its memory back, and
+ * `onGuard` tells the control plane why. One guard action per crossing; the
+ * next one needs the box to drop below `elevatedPct` first.
+ */
+export interface MemoryGuardOptions {
+  /** 0..100 of box memory (or cgroup, whichever is higher). Default 92. */
+  guardPct?: number
+  /** Sample fast above this. Default 80. */
+  elevatedPct?: number
+  fastIntervalMs?: number
+  turnInFlight: () => Promise<boolean | null>
+  abortTurn: (reason: string) => Promise<boolean>
+  onGuard?: (info: { reason: string; snapshot: ResourceSnapshot; aborted: boolean }) => void | Promise<void>
+}
+
 export interface ResourceMonitorOptions {
   intervalMs?: number
   diskPaths?: string[]
   opencodePid: () => number | null
   opencodeState?: () => string
   snapshot?: (inputs: SnapshotInputs) => Promise<ResourceSnapshot>
+  guard?: MemoryGuardOptions
+}
+
+/** The memory figure the guard judges: box used% or cgroup used%, whichever is worse. */
+export function memoryPressurePct(s: ResourceSnapshot): number | null {
+  const a = s.memory.usedPct
+  const b = s.cgroup.usedPct
+  if (a === null && b === null) return null
+  return Math.max(a ?? 0, b ?? 0)
 }
 
 export interface ResourceMonitor {
@@ -314,11 +350,54 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
   const intervalMs = opts.intervalMs ?? DEFAULT_RESOURCE_INTERVAL_MS
   const diskPaths = opts.diskPaths ?? DEFAULT_DISK_PATHS
   const snapshot = opts.snapshot ?? readResourceSnapshot
+  const guard = opts.guard
+  const guardPct = guard?.guardPct ?? 92
+  const elevatedPct = guard?.elevatedPct ?? 80
+  const fastIntervalMs = guard?.fastIntervalMs ?? 10_000
   let latest: ResourceSnapshot | null = null
   let lastPressureKinds = ''
   let lastState = opts.opencodeState?.() ?? ''
   let ticking = false
   let stopped = false
+  let fastTimer: ReturnType<typeof setInterval> | null = null
+  /** Armed again only once memory drops below `elevatedPct`. */
+  let guardFired = false
+
+  async function runGuard(s: ResourceSnapshot): Promise<void> {
+    if (!guard) return
+    const pct = memoryPressurePct(s)
+    if (pct === null) return
+    if (pct < elevatedPct) {
+      guardFired = false
+      if (fastTimer) {
+        clearInterval(fastTimer)
+        fastTimer = null
+        logger.info('[resources] memory back under the elevated line; slow sampling', { pct })
+      }
+      return
+    }
+    if (!fastTimer) {
+      logger.warn('[resources] memory elevated; sampling every 10 s', { pct, elevatedPct })
+      fastTimer = setInterval(() => void guardedTick('elevated'), fastIntervalMs)
+      fastTimer.unref?.()
+    }
+    if (pct < guardPct || guardFired) return
+    guardFired = true
+    const inFlight = await guard.turnInFlight().catch(() => null)
+    const reason =
+      `sandbox memory at ${pct}% (opencode ${s.opencode?.rssMb ?? '?'} MB RSS of ` +
+      `${s.cgroup.maxMb ?? s.memory.totalMb ?? '?'} MB): turn stopped before the kernel would kill opencode`
+    let aborted = false
+    if (inFlight !== false) {
+      aborted = await guard.abortTurn(reason).catch(() => false)
+    }
+    logger.error('[resources] memory guard', { pct, guardPct, inFlight, aborted, reason, ...s })
+    try {
+      await guard.onGuard?.({ reason, snapshot: s, aborted })
+    } catch (err) {
+      logger.warn('[resources] memory guard relay failed', { err: (err as Error).message })
+    }
+  }
 
   async function tick(reason: string): Promise<ResourceSnapshot> {
     const s = await snapshot({ daemonPid: process.pid, opencodePid: opts.opencodePid(), diskPaths })
@@ -338,6 +417,11 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
       // telemetry must never throw
     }
     latest = s
+    try {
+      await runGuard(s)
+    } catch {
+      // the guard is best-effort; never let it break sampling
+    }
     return s
   }
 
@@ -374,6 +458,7 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
       stopped = true
       clearInterval(timer)
       if (stateTimer) clearInterval(stateTimer)
+      if (fastTimer) clearInterval(fastTimer)
     },
     latest: () => latest,
     tick,
