@@ -14,7 +14,7 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import {
   agentMailProvisioningClientIds,
@@ -66,6 +66,7 @@ import {
 } from '../../connectors/credentials';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
+import { composioConfigured } from '../../connectors/composio';
 import {
   finalizePipedreamConnectionAuthorization,
   pipedreamConfigured,
@@ -1001,11 +1002,104 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
           409,
         );
       }
+      // Provider-neutral, like the connector-scoped route and the connect-link
+      // intake. This was Pipedream-only, so a Composio connector's labelled
+      // (non-default) connection answered "not a pipedream connector" — the
+      // multi-account path silently had no Composio support at all.
+      if (!composioConfigured() && !pipedreamConfigured()) {
+        return c.json({ error: 'no hosted connector authorization provider is configured' }, 501);
+      }
+      const app = (connection.connectorConfig as Record<string, unknown> | null)?.app;
+      if (typeof app !== 'string' || !app) {
+        return c.json({ error: 'connector names no provider app' }, 404);
+      }
+      if (connection.providerType === 'composio') {
+        if (!composioConfigured()) return c.json({ error: 'composio not configured' }, 501);
+        const { composioConnectUrl, finalizeComposioConnection, composioUserId } = await import(
+          '../../connectors/composio'
+        );
+        const { composioConnectionMetadata } = await import('../../connectors/db-deps');
+        const stableUserId = composioUserId(connectionId);
+        const metadata = (connection.metadata ?? {}) as Record<string, unknown>;
+        if (operation === 'connect') {
+          const body = await readBody(c);
+          const redirects =
+            body.success_redirect_uri || body.error_redirect_uri
+              ? {
+                  success:
+                    typeof body.success_redirect_uri === 'string'
+                      ? body.success_redirect_uri
+                      : undefined,
+                  error:
+                    typeof body.error_redirect_uri === 'string'
+                      ? body.error_redirect_uri
+                      : undefined,
+                }
+              : undefined;
+          const result = await composioConnectUrl({
+            projectId,
+            slug: connection.connectorAlias,
+            app,
+            connectionId,
+            stableUserId,
+            redirects,
+          });
+          await db
+            .update(connectorConnections)
+            .set({
+              status: 'active',
+              metadata: composioConnectionMetadata({
+                toolkit: app,
+                stableUserId,
+                sessionId: result.sessionId,
+                authRequestId: result.authRequestId,
+                connectedAccountId: result.connectedAccountId,
+                isNoAuth: result.isNoAuth,
+              }),
+              updatedAt: sql`now()`,
+            })
+            .where(eq(connectorConnections.connectionId, connectionId));
+          return c.json({
+            app,
+            connectUrl: result.connectUrl,
+            connected: result.connected,
+            isNoAuth: result.isNoAuth,
+          });
+        }
+        const sessionId = typeof metadata.session_id === 'string' ? metadata.session_id : '';
+        if (!sessionId) return c.json({ connected: false });
+        const result = await finalizeComposioConnection({
+          projectId,
+          slug: connection.connectorAlias,
+          app,
+          connectionId,
+          stableUserId,
+          sessionId,
+          ...(typeof metadata.auth_request_id === 'string'
+            ? { authRequestId: metadata.auth_request_id }
+            : {}),
+        });
+        await db
+          .update(connectorConnections)
+          .set({
+            status: 'active',
+            metadata: composioConnectionMetadata({
+              toolkit: app,
+              stableUserId,
+              sessionId: result.sessionId,
+              authRequestId: result.authRequestId,
+              connectedAccountId: result.connectedAccountId,
+              isNoAuth: result.isNoAuth,
+            }),
+            updatedAt: sql`now()`,
+          })
+          .where(eq(connectorConnections.connectionId, connectionId));
+        return c.json({ connected: result.connected, accountId: result.connectedAccountId });
+      }
       if (!pipedreamConfigured()) {
         return c.json({ error: 'pipedream not configured' }, 501);
       }
-      const app = (connection.connectorConfig as Record<string, unknown> | null)?.app;
-      if (connection.providerType !== 'pipedream' || typeof app !== 'string' || !app) {
+      if (connection.providerType !== 'pipedream') {
         return c.json({ error: 'not a pipedream connector' }, 404);
       }
       if (operation === 'connect') {
