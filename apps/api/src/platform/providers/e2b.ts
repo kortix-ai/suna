@@ -120,10 +120,7 @@ function isMissingSandboxError(error: unknown): boolean {
 const connectedSandboxes = new Map<string, E2BSandbox>();
 export const E2B_INGRESS_HANDLE_TTL_MS = 5_000;
 const connectedSandboxCachedAt = new Map<string, number>();
-const connectOperations = new Map<
-  string,
-  { generation: object; promise: Promise<E2BSandbox> }
->();
+const connectOperations = new Map<string, { generation: object; promise: Promise<E2BSandbox> }>();
 export const E2B_RUNNING_STATUS_CACHE_TTL_MS = 3_000;
 const runningStatusCache = new Map<string, number>();
 const statusCacheGeneration = new Map<string, object>();
@@ -534,12 +531,8 @@ export class E2BProvider implements SandboxProvider {
     const expectedMinMs = requestedAtMs + E2B_RUNTIME_BACKSTOP_MS - E2B_RENEWAL_TOLERANCE_MS;
     if (endAtMs >= expectedMinMs) return;
     const shortfallS = Math.round((requestedAtMs + E2B_RUNTIME_BACKSTOP_MS - endAtMs) / 1000);
-    const message =
-      `E2B ignored the lifecycle renewal for ${externalId}: provider endAt ` +
-      `${new Date(endAtMs).toISOString()} is ${shortfallS}s short of the requested ` +
-      `${Math.round(E2B_RUNTIME_BACKSTOP_MS / 1000)}s backstop. The E2B team's max_length_hours ` +
-      `caps every renewal; raise it (tiers.max_length_hours / project_limits) or this sandbox is ` +
-      `paused mid-turn at endAt.`;
+    const backstopS = Math.round(E2B_RUNTIME_BACKSTOP_MS / 1000);
+    const message = `E2B ignored the lifecycle renewal for ${externalId}: provider endAt ${new Date(endAtMs).toISOString()} is ${shortfallS}s short of the requested ${backstopS}s backstop. The E2B team's max_length_hours caps every renewal; raise it (tiers.max_length_hours / project_limits) or this sandbox is paused mid-turn at endAt.`;
     console.error(`[e2b] ${message}`);
     throw new E2BLifecycleRenewalIgnoredError(message, endAtMs);
   }
@@ -577,10 +570,7 @@ export class E2BProvider implements SandboxProvider {
 
   async getStatus(externalId: string): Promise<SandboxStatus> {
     const cachedAt = runningStatusCache.get(externalId);
-    if (
-      cachedAt !== undefined &&
-      Date.now() - cachedAt < E2B_RUNNING_STATUS_CACHE_TTL_MS
-    )
+    if (cachedAt !== undefined && Date.now() - cachedAt < E2B_RUNNING_STATUS_CACHE_TTL_MS)
       return 'running';
     const generation = currentStatusGeneration(externalId);
     try {
@@ -607,11 +597,7 @@ export class E2BProvider implements SandboxProvider {
   private async connected(externalId: string): Promise<E2BSandbox> {
     const cached = connectedSandboxes.get(externalId);
     const cachedAt = connectedSandboxCachedAt.get(externalId);
-    if (
-      cached &&
-      cachedAt !== undefined &&
-      this.now() - cachedAt < E2B_INGRESS_HANDLE_TTL_MS
-    )
+    if (cached && cachedAt !== undefined && this.now() - cachedAt < E2B_INGRESS_HANDLE_TTL_MS)
       return cached;
 
     const providerStatus = await this.getStatus(externalId);

@@ -15,18 +15,19 @@
  * The label is opaque to the API: equality is the only operation on it.
  */
 export interface BootPhaseInput {
-  timeline: ReadonlyArray<{ label: string }>
-  opencodeState: string
-  runtimeAssetsActivity?: string | null
-  notReadyReason?: string
+  timeline: ReadonlyArray<{ label: string }>;
+  opencodeState: string;
+  runtimeAssetsActivity?: string | null;
+  notReadyReason?: string;
 }
 
 export function bootPhaseLabel(input: BootPhaseInput): string {
-  const lastMark = input.timeline.length > 0 ? input.timeline[input.timeline.length - 1]!.label : 'boot'
-  const parts = [lastMark, `opencode=${input.opencodeState}`]
-  if (input.runtimeAssetsActivity) parts.push(input.runtimeAssetsActivity)
-  if (input.notReadyReason) parts.push(input.notReadyReason)
-  return parts.join('|')
+  const lastMark =
+    input.timeline.length > 0 ? input.timeline[input.timeline.length - 1]!.label : 'boot';
+  const parts = [lastMark, `opencode=${input.opencodeState}`];
+  if (input.runtimeAssetsActivity) parts.push(input.runtimeAssetsActivity);
+  if (input.notReadyReason) parts.push(input.notReadyReason);
+  return parts.join('|');
 }
 
-export const BOOT_PHASE_HEADER = 'X-Kortix-Boot-Phase'
+export const BOOT_PHASE_HEADER = 'X-Kortix-Boot-Phase';
