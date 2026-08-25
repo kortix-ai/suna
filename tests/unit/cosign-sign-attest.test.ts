@@ -114,20 +114,24 @@ describe("keyless image signing", () => {
     );
   });
 
-  it("pins buildx before resolving the digest the signer attests", () => {
-    // The runner image's bundled buildx is not a contract: on Blacksmith's
-    // ubuntu-2404 image `imagetools inspect --format` returned the human
-    // listing (run 32905182332), the digest step failed, and SBOM + signing
-    // were skipped for that dev image.
+  it("resolves the digest the signer attests with a portable imagetools format", () => {
+    // The runner image's buildx is not a contract: on Blacksmith's ubuntu-2404
+    // image `--format '{{.Manifest.Digest}}'` returned the human listing
+    // (runs 32905182332, 32907212034), the digest step failed, and SBOM +
+    // signing were skipped for that dev image.
     const yaml = readFileSync(workflow, "utf8");
     const supplyChain = yaml.slice(
       yaml.indexOf("  supply-chain:"),
       yaml.indexOf("  migrate-db:"),
     );
     const buildx = supplyChain.indexOf("uses: docker/setup-buildx-action@v4");
-    const resolve = supplyChain.indexOf("imagetools inspect \"$IMAGE\" --format '{{.Manifest.Digest}}'");
+    const resolve = supplyChain.indexOf("imagetools inspect \"$IMAGE\" --format '{{json .Manifest}}' | jq -r '.digest // empty'");
     expect(buildx).toBeGreaterThan(-1);
     expect(resolve).toBeGreaterThan(-1);
     expect(buildx).toBeLessThan(resolve);
+    // `{{.Manifest.Digest}}` prints the default listing on buildx v0.23/v0.25
+    // (Blacksmith's image); the json form is honoured on every version.
+    expect(yaml).not.toContain("{{.Manifest.Digest}}");
+    expect(supplyChain).toContain('case "$DIGEST" in sha256:*) ;; *)');
   });
 });

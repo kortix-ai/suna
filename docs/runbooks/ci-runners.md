@@ -90,6 +90,10 @@ Image builds (`deploy-dev.yml`, `build-staging.yml`, `deploy-preview.yml`, the
 - The Blacksmith builder is a separate buildkitd: a raw `docker build` that the
   job then runs locally needs `--load` (see `ci.yml` `self-host-schema`).
 - Sticky disks are billed at $0.50/GB/month and evicted after 7 idle days.
+- Do not script against `docker buildx imagetools inspect --format '{{.Manifest.Digest}}'`:
+  buildx v0.23/v0.25 (Blacksmith image, and `setup-buildx-action`'s pin) print
+  the default listing for it. Use `--format '{{json .Manifest}}' | jq -r .digest`
+  (deploy-prod, deploy-dev `supply-chain`, promote-self-host-stable).
   Retag/`imagetools` jobs keep `docker/setup-buildx-action`; they build nothing.
 
 ## Checking queue time

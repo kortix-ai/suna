@@ -453,17 +453,19 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Set up Docker Buildx
-        # Pins a buildx that honours `imagetools inspect --format`. The runner
-        # image's bundled buildx returned the human-readable listing instead
-        # (Blacksmith ubuntu-2404, 2026-08-25, run 32905182332), which broke
-        # the digest resolve and skipped SBOM + signing for that dev image.
-        uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@v4
       - name: Resolve image digest
         id: digest
         run: |
           set -euo pipefail
-          DIGEST="$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')"
+          # `--format` with the `.Manifest.Digest` template is not portable: buildx v0.23/v0.25
+          # print the default listing instead of the digest (Blacksmith
+          # ubuntu-2404 image, runs 32905182332 + 32907212034), which turned
+          # this into a multi-line $GITHUB_OUTPUT write and skipped SBOM +
+          # signing. `{{json .Manifest}}` is honoured everywhere and is what
+          # deploy-prod.yml already uses.
+          DIGEST="$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest // empty')"
+          case "$DIGEST" in sha256:*) ;; *) echo "::error::could not resolve digest for $IMAGE (got: ${DIGEST:-<empty>})"; exit 1 ;; esac
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "ref=kortix/kortix-api@${DIGEST}" >> "$GITHUB_OUTPUT"
       - name: Generate SBOM
