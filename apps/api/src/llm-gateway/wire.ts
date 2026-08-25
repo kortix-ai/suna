@@ -391,12 +391,18 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     headers.delete('host');
     headers.delete('connection');
     const query = new URL(c.req.url).search;
-    const init: RequestInit & { duplex?: 'half' } = {
+    const init: RequestInit & { duplex?: 'half'; timeout?: false } = {
       method: c.req.method,
       headers,
       // Without this a client disconnect never reached the gateway, so the
       // provider kept generating — and billing — a turn nobody would read.
       signal: c.req.raw.signal,
+      // Bun's fetch has a default 300 s IDLE timeout that a `signal` does not
+      // disable (measured on 1.3.14: `TimeoutError: The operation timed out.`
+      // at 300.0 s). A non-streaming model call, or a streaming one before
+      // the gateway's first synthetic byte, can be silent longer than that.
+      // The gateway owns the model-hop timeouts; this relay must not add one.
+      timeout: false,
     };
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
       init.body = c.req.raw.body;
