@@ -30,6 +30,7 @@ import {
   type Opencode,
 } from './opencode'
 import { relayBootTimelineToApi } from './boot-timeline-relay'
+import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { ensureInjectedManagedSkills } from './injected-skills'
@@ -722,6 +723,16 @@ async function startSessionRuntime(
     try {
       kortixEventBus().publishOpencode(event)
       runtimeStateStore()?.noteEvent(event)
+      // A catalog-moving frame re-pushes the projection (debounced, etag-gated).
+      // Same set noteEvent invalidates its catalog on.
+      if (
+        event.type === 'server.instance.disposed' ||
+        event.type === 'mcp.tools.changed' ||
+        event.type === 'plugin.added' ||
+        event.type === 'global.disposed'
+      ) {
+        scheduleRuntimeProjectionPush(event.type)
+      }
     } catch (error) {
       logger.warn('[opencode-events] runtime fan-out failed', {
         err: error instanceof Error ? error.message : String(error),
@@ -838,6 +849,9 @@ async function startSessionRuntime(
       // Persist the in-guest timeline now that this boot is complete — see
       // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
       relayBootTimelineToApi(bootState.timeline)
+      // The boot push: the projection exists server-side from the moment the
+      // box is usable, so a cold session answers its roster from Postgres.
+      scheduleRuntimeProjectionPush('boot')
       scheduleRuntimeAssetsReconcile(cfg)
     }
     await maybeCreateInitialOpencodeSession(
@@ -882,6 +896,7 @@ async function startSessionRuntime(
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
     relayBootTimelineToApi(bootState.timeline)
+    scheduleRuntimeProjectionPush('boot')
     scheduleRuntimeAssetsReconcile(cfg)
     // Only start the loop if the initial-session branch didn't already (avoids a
     // duplicate subscription when the initial session was requested but failed).
