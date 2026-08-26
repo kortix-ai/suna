@@ -591,12 +591,13 @@ export class SessionSyncController {
 
   private async loadCompleteOlderTurn(before: string): Promise<SessionSyncPage> {
     const firstPage = await this.loadPage('older', 'manual', before);
-    // Commit each page as it lands. The walk is up to 11 sequential reads
-    // (MAX_TURN_BACKFILL_PAGES + 1) and used to commit all of them in one
-    // `.then`, so a rejection on the last page discarded every successful read
-    // and left `nextCursor` unmoved — nothing to resume from, so the retry
-    // replayed the identical walk. `onPage` existed for exactly this and was
-    // never passed.
+    // Commit each page as it lands, including the page that fails. The walk
+    // is up to 11 sequential reads (MAX_TURN_BACKFILL_PAGES + 1) and used to
+    // commit all of them in one `.then`, so a rejection on ANY page —
+    // including the loop's very first, right after `firstPage` — discarded
+    // every successful read and left `nextCursor` unmoved: nothing to resume
+    // from, so the retry replayed the identical walk. `onPage` existed for
+    // exactly this and was never passed.
     return this.loadCompleteTurn(firstPage, 'older', 'manual', before, (messagesSoFar) => {
       this.rememberUserMessages(messagesSoFar);
       this.options.hydrate(messagesSoFar);
@@ -638,7 +639,17 @@ export class SessionSyncController {
         throw new Error(`Session history cursor repeated: ${cursor}`);
       }
       seenCursors.add(cursor);
-      const page = await this.loadPage(operation, reason, cursor);
+      let page: SessionSyncPage;
+      try {
+        page = await this.loadPage(operation, reason, cursor);
+      } catch (error) {
+        // `messages` already holds every page read so far — firstPage
+        // (seeded before the loop) plus every completed iteration. Commit it
+        // before rethrowing so a rejection on THIS read (including the
+        // loop's very first) cannot drop what was already read.
+        onPage?.([...messages]);
+        throw error;
+      }
       if (this.destroyed) return { messages, nextCursor: cursor };
       pagesRead += 1;
       messages.unshift(...page.messages);

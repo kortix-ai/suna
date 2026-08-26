@@ -1253,14 +1253,11 @@ describe('SessionSyncController — partial commit of a failed history walk', ()
    * Every older page carries an assistant message whose parent is never
    * resolved, so the turn-completion walk keeps going instead of stopping
    * after one page — mirrors the "bounded turn walk" setup above. The Nth
-   * older-history read (1-indexed; the first page counts) rejects when it
-   * matches `rejectAtPage`.
+   * older-history read (1-indexed; the first page — `firstPage` itself —
+   * counts as read 1) rejects when it matches `rejectAtPage`.
    */
-  async function makeControllerWithPagedHistory(options: {
-    pages: number;
-    rejectAtPage?: number;
-  }) {
-    const { pages, rejectAtPage } = options;
+  async function makeControllerWithPagedHistory(options: { rejectAtPage?: number }) {
+    const { rejectAtPage } = options;
     const hydrated: MessageWithParts[] = [];
     let olderReads = 0;
     const servePage = mock(async (request: { limit: number; before?: string }) => {
@@ -1272,10 +1269,9 @@ describe('SessionSyncController — partial commit of a failed history walk', ()
       if (rejectAtPage && olderReads === rejectAtPage) {
         throw new Error(`page ${olderReads} failed`);
       }
-      const isLastPage = olderReads >= pages;
       return messagePage(
         [{ id: `assistant-${olderReads}`, role: 'assistant', parentID: 'user-never' }],
-        isLastPage ? undefined : `cursor-${olderReads}`,
+        `cursor-${olderReads}`,
       );
     });
     const controller = new SessionSyncController({
@@ -1290,21 +1286,52 @@ describe('SessionSyncController — partial commit of a failed history walk', ()
 
   // S2: an older-history pull walks up to 11 pages. Committing them in one
   // atomic `.then` meant a rejection on page 6 discarded five successful reads
-  // AND left the cursor unmoved, so the only recovery was to replay the
-  // identical walk — the "continously tries to fetch more & more" report.
+  // — including `firstPage`, read 1, whose content only ever reached the
+  // store as part of that atomic commit — AND left the cursor unmoved, so the
+  // only recovery was to replay the identical walk — the "continously tries
+  // to fetch more & more" report.
   test('a history walk that fails midway keeps the pages it already read', async () => {
-    const { controller, hydrated, servePage } = await makeControllerWithPagedHistory({
-      pages: 11,
+    const { controller, hydrated } = await makeControllerWithPagedHistory({
       rejectAtPage: 6,
     });
 
     await controller.loadOlder().catch(() => undefined);
 
-    // Pages from the older-history walk (not the initial tail read) reached
-    // the store before page 6 rejected.
-    const olderHydrated = hydrated.filter((message) => message.info.id.startsWith('assistant-'));
-    expect(olderHydrated.length).toBeGreaterThan(0);
-    // And the walk read multiple distinct pages before it failed.
-    expect(servePage.mock.calls.at(-1)?.[0]).not.toEqual(servePage.mock.calls[0]?.[0]);
+    // The distinct hydrated ids from the older-history walk pin two things at
+    // once: five pages were committed (not zero, not fewer), AND `firstPage`
+    // itself (assistant-1) reached the store even though ITS read never
+    // failed — only the 6th read did.
+    const olderIds = new Set(
+      hydrated.map((message) => message.info.id).filter((id) => id.startsWith('assistant-')),
+    );
+    expect([...olderIds].sort()).toEqual([
+      'assistant-1',
+      'assistant-2',
+      'assistant-3',
+      'assistant-4',
+      'assistant-5',
+    ]);
+  });
+
+  // Important 1 (fix round 1): a rejection on ANY page must commit what is
+  // already accumulated, including the loop's very FIRST read — the one case
+  // where `firstPage`'s content had never yet been carried along by a prior
+  // successful `onPage` call. `rejectAtPage: 6` above does not exercise this:
+  // by page 6, four earlier successful reads had already swept `firstPage`
+  // into the store incidentally. This test isolates the loop's first read.
+  test('a rejection on the loop\'s very first read still commits firstPage', async () => {
+    const { controller, hydrated } = await makeControllerWithPagedHistory({
+      rejectAtPage: 2,
+    });
+
+    await controller.loadOlder().catch(() => undefined);
+
+    const olderIds = new Set(
+      hydrated.map((message) => message.info.id).filter((id) => id.startsWith('assistant-')),
+    );
+    // firstPage (assistant-1) reached the store even though its own read
+    // never failed — only the very next read did, before any onPage call
+    // had ever fired.
+    expect([...olderIds]).toEqual(['assistant-1']);
   });
 });
