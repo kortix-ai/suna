@@ -1465,6 +1465,68 @@ describe('project session API contract', () => {
     expect(body.reason).not.toBe('runtime_wake_failed');
   });
 
+  test('the automatic rung re-baselines the boot clocks but KEEPS the failure accounting', async () => {
+    // Essentia 2026-08-26, session 29861dfa / box inqwpv4a. Attempt 1's
+    // `opencodeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
+    // boot was judged against a 10-minute cap that had already run ~7 minutes.
+    // It was parked at 13:34:49.202 — 14 ms before its daemon claimed its first
+    // turn at 13:34:49.216.
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    const attempt1 = new Date(Date.now() - 11 * 60_000).toISOString();
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rung-rebaseline',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          stopReason: 'runtime_boot_failed',
+          runtimeParkReason: 'runtime_not_ready_timeout',
+          runtimeStartFailureCount: 2,
+          runtimeStartFailedAt: attempt1,
+          runtimeStartRetryAfterAt: new Date(Date.now() - 1_000).toISOString(),
+          // Attempt 1's clocks, which nothing used to clear.
+          opencodeBootWaitFirstSeenAt: attempt1,
+          opencodeNotReadyWaitStartedAt: attempt1,
+          opencodeReadyWaitReason: 'not_ready',
+          opencodeBootPhase: 'config-deps|opencode=starting',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rung-rebaseline',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+
+    const claimed = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    // Every readiness clock is gone: attempt 2 boots against a clean budget.
+    expect(claimed.opencodeBootWaitFirstSeenAt).toBeUndefined();
+    expect(claimed.opencodeBootPhase).toBeUndefined();
+    expect(claimed.opencodeNotReadyWaitStartedAt).toBeUndefined();
+    expect(claimed.opencodeReadyWaitReason).toBeUndefined();
+    // …and the escalation accounting survives, unlike a human Restart.
+    expect(claimed.runtimeStartFailureCount).toBe(2);
+    expect(claimed.runtimeStartFailedAt).toBe(attempt1);
+    // The claim is live, so /start reports a wake rather than a stamp.
+    expect(typeof claimed.runtimeWakeId).toBe('string');
+  });
+
   test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
     sessionRow = { ...sessionRow!, status: 'stopped', error: null };
     sessionSandboxRows = [
