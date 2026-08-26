@@ -12,6 +12,32 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-26 — session `session-ux-ws-k` — a fresh Bedrock workspace never auto-seeds a bare in-region id — DONE
+
+**Files:** `react/provider-selection.ts` (`nativeProviderListFromCatalog`: the
+per-provider `default` fallback is now `autoSeedDefaultModel(models)?.id`
+instead of `models[0]?.id`, and the newest-first model sort gained
+`bedrockInferenceProfileRank` as a tie-break so the profile precedes its bare
+twin in insertion order). Shared rule added in `@kortix/llm-catalog`
+(`autoSeedableModels` + `autoSeedDefaultModel`), reused by the API's
+`providerFlagship` so the gateway and native default paths cannot drift.
+
+**Why.** Proven live on the Essentia self-host 2026-08-26: a brand-new
+workspace with Bedrock BYOK creds (`AWS_BEARER_TOKEN_BEDROCK` + `AWS_REGION`,
+llm_gateway OFF) auto-selected `xai.grok-4.6`. Bedrock refused it
+("Invocation of model ID xai.grok-4.6 with on-demand throughput isn't
+supported. Retry your request with the ID or ARN of an inference profile") and
+the session looped "Retrying in Ns" forever — every fresh workspace wedged out
+of the box. `xai.grok-4.6` is the NEWEST Bedrock model in the 2026-08-25
+catalog AND the one family with no `global.`/`us.` twin, so PR #6897's
+release-date tie-break could not save it. New rule: when a provider's set
+carries ANY inference-profile id, its bare ids are not AUTO-selectable. They
+stay listed and pickable; nothing picks them for the user. Inert for every
+non-Bedrock provider (no id has rank > 0).
+
+**Public surface: unchanged** — `nativeProviderListFromCatalog`'s signature and
+shape are identical; only which id lands in `default[providerId]` changed.
+
 ### 2026-08-26 — session `session-ux-ws-b` — a 503 is never an empty transcript + read cancellation — DONE
 
 **Files:** `core/http/opencode-errors.ts` (NEW `SandboxNotReadyError` class; its
