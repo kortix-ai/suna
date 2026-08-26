@@ -4965,12 +4965,18 @@ export function SessionChat({
                   {/* Turn-based message rendering.
                     ToolActivateContext makes inline tool rows open the side
                     panel (Actions) focused on that tool, instead of expanding. */}
-                  {hasOlder && (
+                  {/* `showOlderLoading` and not just `hasOlder`: the LAST page
+                      clears the cursor in the same update that delivers it, so
+                      a block gated on `hasOlder` alone tears the loading row
+                      down at the exact moment the page lands — the reader
+                      watches the transcript grow with no explanation, which is
+                      the one pull where the explanation matters most. */}
+                  {(hasOlder || showOlderLoading) && (
                     <div className="mb-6 flex flex-col items-center gap-2">
                       {/* Sentinel: crossing into view pulls the previous page.
                         Sits above the spinner so it clears the viewport as
                         soon as the prepended turns render. */}
-                      <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
+                      {hasOlder && <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />}
                       {/* A named state, not a bare spinner: the transcript is
                           about to grow upward and the reader is owed the
                           reason. Held for OLDER_LOADING_MIN_MS so a fast pull
