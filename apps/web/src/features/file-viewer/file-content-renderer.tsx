@@ -12,19 +12,11 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { StatusDot } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
-import {
-  appendPreviewToken,
-  isSubdomainPreviewUrl,
-  useAuthenticatedPreviewUrl,
-} from '@/hooks/use-authenticated-preview-url';
 import { useHeicBlob } from '@/hooks/use-heic-url';
-import { getAuthToken } from '@/lib/auth-token';
-import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
 import { isSandboxNotReadyError, toSandboxAbsolutePath } from '@kortix/sdk';
-import { getActiveStaticFileHealthUrl, getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import {
   WarningIcon as AlertTriangle,
   BracketsCurlyIcon as Braces,
@@ -42,6 +34,8 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
+// Direct module import, not the feature barrel: the barrel re-exports THIS file.
+import { HtmlPreview } from './html-preview';
 import { usePreviewFit } from './preview-fit';
 
 // ---------------------------------------------------------------------------
@@ -397,29 +391,6 @@ export function FileContentRenderer({
   // HTML files default to rendered preview mode
   const [isHtmlPreview, setIsHtmlPreview] = useState(true);
 
-  // Build proxied static-file-server URLs for HTML preview
-  const htmlPreviewUrl = useMemo(() => {
-    if (!isHtmlFile) return '';
-    return getActiveStaticFilePreviewUrl(toSandboxAbsolutePath(filePath));
-  }, [isHtmlFile, filePath]);
-
-  // Health URL: hit /health on the static file server through the proxy
-  const htmlHealthUrl = useMemo(() => {
-    if (!isHtmlFile) return '';
-    return getActiveStaticFileHealthUrl();
-  }, [isHtmlFile]);
-
-  // Authenticate the preview session before rendering the iframe
-  const authenticatedPreviewUrl = useAuthenticatedPreviewUrl(
-    isHtmlFile && isHtmlPreview ? htmlPreviewUrl : '',
-  );
-
-  // Poll the health endpoint until the static server responds
-  const [serverHealth, setServerHealth] = useState<'checking' | 'ready' | 'unavailable'>(
-    'checking',
-  );
-  const [healthRetryNonce, setHealthRetryNonce] = useState(0);
-  const healthRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear the transient "saved" flash timer if we unmount before it fires.
@@ -429,63 +400,6 @@ export function FileContentRenderer({
     },
     [],
   );
-
-  useEffect(() => {
-    if (!isHtmlFile || !isHtmlPreview || !htmlHealthUrl) return;
-
-    let cancelled = false;
-    // Bound the retries so this surface can never spin "Starting preview
-    // server…" forever — after ~30s of failures we surface a recoverable
-    // 'unavailable' state instead of looping silently.
-    let attempts = 0;
-    const MAX_HEALTH_ATTEMPTS = 20; // 20 × 1.5s ≈ 30s
-    setServerHealth('checking');
-
-    async function check() {
-      attempts += 1;
-      try {
-        // Subdomain previews (p{port}-{sandbox}.host, used in local dev) can't
-        // rely on the host-only /v1/p session cookie — it never reaches the
-        // preview subdomain. They authenticate via a one-shot ?token on the
-        // request itself, which the proxy then trusts in-memory for the whole
-        // subdomain. Without it this probe 401s forever and the iframe — gated
-        // on serverHealth==='ready' — never renders, so nothing ever carries a
-        // token and the "Starting preview server…" state deadlocks.
-        let url = htmlHealthUrl;
-        if (isSubdomainPreviewUrl(htmlHealthUrl)) {
-          const token = await getAuthToken();
-          if (cancelled) return;
-          if (token) url = appendPreviewToken(htmlHealthUrl, token);
-        }
-        const res = await fetch(url, { method: 'GET', credentials: 'include' });
-        if (cancelled) return;
-        if (res.ok) {
-          setServerHealth('ready');
-        } else {
-          retry();
-        }
-      } catch {
-        if (!cancelled) retry();
-      }
-    }
-
-    function retry() {
-      if (cancelled) return;
-      if (attempts >= MAX_HEALTH_ATTEMPTS) {
-        setServerHealth('unavailable');
-        return;
-      }
-      setServerHealth('checking');
-      healthRetryRef.current = setTimeout(check, 1500);
-    }
-
-    check();
-
-    return () => {
-      cancelled = true;
-      if (healthRetryRef.current) clearTimeout(healthRetryRef.current);
-    };
-  }, [isHtmlFile, isHtmlPreview, htmlHealthUrl, healthRetryNonce]);
 
   // LSP diagnostics for this file from the global diagnostics store
   // Uses suffix-matching because LSP stores absolute paths but we use relative paths
@@ -1087,51 +1001,18 @@ export function FileContentRenderer({
             </Suspense>
           )}
 
-          {/* HTML preview via static file server */}
+          {/* HTML preview — served by the sandbox's static file server, so the
+              page's own relative assets resolve. `HtmlPreview` owns the wait,
+              the retry and the frame; the session panel renders the same one. */}
           {isHtmlFile && isHtmlPreview && (
-            <>
-              {/* Server still starting — spinner + polling message */}
-              {serverHealth !== 'unavailable' &&
-                (serverHealth === 'checking' || !authenticatedPreviewUrl) && (
-                  <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3">
-                    <Loading className="h-5 w-5 opacity-40" />
-                    <p className="text-xs opacity-50">
-                      {tHardcodedUi.raw(
-                        'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',
-                      )}
-                    </p>
-                  </div>
-                )}
-
-              {/* Preview server never responded — recoverable, offer a retry */}
-              {serverHealth === 'unavailable' && (
-                <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                  <FileWarning className="h-5 w-5 opacity-40" />
-                  <p className="max-w-xs text-xs opacity-60">
-                    {"Couldn't reach the preview server. The sandbox may still be starting up."}
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setHealthRetryNonce((n) => n + 1)}
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Retry
-                  </Button>
-                </div>
+            <HtmlPreview
+              key={`html-preview-${filePath}`}
+              path={toSandboxAbsolutePath(filePath)}
+              fileName={fileName}
+              pendingLabel={tHardcodedUi.raw(
+                'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',
               )}
-
-              {/* Server ready — render iframe */}
-              {serverHealth === 'ready' && authenticatedPreviewUrl && (
-                <iframe
-                  key={`html-preview-${filePath}`}
-                  src={authenticatedPreviewUrl}
-                  title={fileName}
-                  className="h-full w-full border-0"
-                  sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
-                />
-              )}
-            </>
+            />
           )}
 
           {/* HTML source — shown when preview toggle is off */}

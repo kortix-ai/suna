@@ -779,15 +779,18 @@ flow(
 // PROJ-31 — per-project sandbox-provider pin. `null`/`''` clears the pin
 // (follow the platform default/distribution); a concrete value must be an
 // ENABLED provider (in ALLOWED_SANDBOX_PROVIDERS with its API key configured)
-// or 400. `daytona` is the provider every other session-touching flow in this
-// suite boots on, so it is guaranteed enabled here — pin-then-clear on a
-// project with no sessions is side-effect-free (resolveSessionProvider only
-// consults the pin at session-create time).
+// or 400. A concrete pin can be immediate when it matches the fleet default,
+// or start a durable preparation when it differs. Use a real managed-git
+// project so either provider-agnostic branch can exercise the repository.
 flow(
   'PROJ-31',
-  { domain: 'projects', routes: ['PATCH /v1/projects/:projectId/sandbox-provider'] },
+  {
+    domain: 'projects',
+    requires: ['managedGit'],
+    routes: ['PATCH /v1/projects/:projectId/sandbox-provider'],
+  },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    const p = await ctx.fixtures.project({ managedGit: true, seed: true });
     await ctx.step('unknown/disabled provider → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -800,7 +803,7 @@ flow(
     });
     if (ctx.env.target !== 'local') {
       await ctx.step(
-        "pin to the enabled 'daytona' provider → 200 (immediate, kind:project)",
+        "pin to the enabled 'daytona' provider → 200 project or preparation",
         async () => {
           const r = await ctx.client
             .as(ctx.P.OWNER)
@@ -809,8 +812,15 @@ flow(
               { provider: 'daytona' },
               { params: { projectId: p.id } },
             );
-          // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
-          r.status(200).body().has('$.kind', 'project').has('$.default_sandbox_provider', 'daytona');
+          r.status(200).body().exists('$.kind');
+          const body = r.json<any>();
+          if (body?.kind === 'project') {
+            r.body().has('$.default_sandbox_provider', 'daytona');
+          } else if (body?.kind === 'preparation') {
+            r.body().has('$.target_provider', 'daytona');
+          } else {
+            throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
+          }
         },
       );
     }

@@ -4,17 +4,12 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import Hint from '@/components/ui/hint';
-import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import {
-  sidebarOpenerLabel,
-  useShowPageSidebarOpener,
-} from '@/features/workspace/project-layout/sidebar-opener';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -46,13 +41,7 @@ import {
   type ProjectSession,
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
-import {
-  CaretRightIcon,
-  ChatIcon,
-  MagnifyingGlassIcon,
-  SidebarSimpleIcon as PanelLeft,
-  PlusIcon,
-} from '@phosphor-icons/react';
+import { CaretRightIcon, ChatIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -183,38 +172,6 @@ function SessionsSection({
       </DisclosureTrigger>
       <DisclosureContent contentClassName="space-y-2">{children}</DisclosureContent>
     </Disclosure>
-  );
-}
-
-/**
- * Absolute top-left opener — same rules as project-home / session header.
- * Inlined here (not via CustomizeSectionWrapper) so this page can own spacing
- * and layout without the shared shell's constraints.
- */
-function SessionsSidebarToggle() {
-  const sidebar = useOptionalSidebar();
-  // Shared gate — see sidebar-opener.ts. Must be called before the early
-  // return, and it already covers the `!sidebar` case.
-  const show = useShowPageSidebarOpener();
-  if (!sidebar || !show) return null;
-
-  const label = sidebarOpenerLabel(sidebar);
-
-  return (
-    <Hint label={label} side="bottom">
-      <Button
-        type="button"
-        aria-label={label}
-        variant="ghost"
-        size="icon"
-        onClick={sidebar.toggleSidebar}
-        onPointerEnter={sidebar.state === 'collapsed' ? sidebar.peekEnter : undefined}
-        onPointerLeave={sidebar.state === 'collapsed' ? sidebar.peekLeave : undefined}
-        className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
-      >
-        <PanelLeft className="cn-rtl-flip size-4" />
-      </Button>
-    </Hint>
   );
 }
 
@@ -498,7 +455,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           owns the only scroll container on the page. `overflow-hidden` here
           stops the app shell from scrolling when the list grows. */}
       <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
-        <SessionsSidebarToggle />
+        <SidebarToggle placement="floating" />
         <header
           className={cn(
             'mx-auto w-full max-w-4xl shrink-0 px-4 pt-10 pb-5 lg:pt-20',

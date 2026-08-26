@@ -80,6 +80,13 @@ export function buildWorkingInputs(input: {
   inbox: WorkingInboxInput | undefined;
   status: SessionStatus | undefined;
   statusAtMs: number;
+  /**
+   * Who minted the status frame (`useSyncStore.sessionStatusOrigin`). `'local'`
+   * marks a tab fabrication — the missing-busy sweep, a synthetic abort, a
+   * cache handoff — which may answer for a silent session but may never veto
+   * the server's open turn. Absent means `'wire'`.
+   */
+  statusOrigin?: 'wire' | 'local';
   /** When the runtime's own output last reached this tab for this session
    *  (`useSyncStore.sessionActivityAt`). 0/undefined when it never has. */
   activityAtMs?: number;
@@ -109,6 +116,7 @@ export function buildWorkingInputs(input: {
             input.status.type === 'busy' || input.status.type === 'retry'
               ? input.status.type
               : 'idle',
+          origin: input.statusOrigin ?? 'wire',
           atMs: input.statusAtMs,
         }
       : null,
@@ -133,6 +141,25 @@ export interface UseSessionWorkingOptions {
  *  that makes the unmount pruning below safe under multiple observers. */
 const workingObserverCounts = new Map<string, number>();
 
+/**
+ * The instant a status frame counts from: the store's own arrival stamp
+ * (`sessionStatusAt`, written by `setStatus` when the frame landed), falling
+ * back to the observer's clock only for a slot that predates the stamp slice.
+ *
+ * Stamping at OBSERVATION was the old rule, and it had a resurrection hole: a
+ * remount resets the observation state, the effect re-stamps whatever the
+ * store still holds, and a dead stream's last idle frame came back looking
+ * brand new — fresh enough to veto the open `/turn` row for another full
+ * `STREAM_OBSERVATION_MAX_MS` window. The frame's age is a fact about the
+ * frame, so it lives with the frame.
+ */
+export function streamObservationStamp(
+  storeStampMs: number | undefined,
+  nowMs: number,
+): number {
+  return storeStampMs ?? nowMs;
+}
+
 export function useSessionWorking(
   projectId: string,
   sessionId: string,
@@ -142,6 +169,16 @@ export function useSessionWorking(
   const streamKey = runtimeSessionId ?? '';
   const status = useSyncStore((state) =>
     streamKey ? (state.sessionStatus[streamKey] as SessionStatus | undefined) : undefined,
+  );
+  // Who minted that frame — `'local'` for a tab fabrication, which the
+  // projection lets answer but never lets contradict the server's open turn.
+  const statusOrigin = useSyncStore((state) =>
+    streamKey ? state.sessionStatusOrigin[streamKey] : undefined,
+  );
+  // When the frame LANDED in the store — the stamp `observed` below counts
+  // from, so a remount cannot resurrect a dead stream's frame as fresh.
+  const statusAtMs = useSyncStore((state) =>
+    streamKey ? state.sessionStatusAt[streamKey] : undefined,
   );
   // Both LOCAL inputs come from one per-session store rather than from props.
   // More than one place mounts this hook for the same session and they share
@@ -177,6 +214,7 @@ export function useSessionWorking(
   const [observed, setObserved] = useState<{
     key: string;
     status: SessionStatus;
+    origin: 'wire' | 'local';
     atMs: number;
   } | null>(null);
   useEffect(() => {
@@ -184,8 +222,18 @@ export function useSessionWorking(
       setObserved((previous) => (previous && previous.key === streamKey ? previous : null));
       return;
     }
-    setObserved({ key: streamKey, status, atMs: Date.now() });
-  }, [status, streamKey]);
+    // An origin flip over an unchanged value re-stamps too: the store kept the
+    // object's identity on purpose (`setStatus`), but a wire frame landing
+    // over a fabricated one — or the reverse — is a new observation. The stamp
+    // itself is the store's arrival time (`streamObservationStamp`), so a
+    // remount observing an OLD frame does not mint it a new age.
+    setObserved({
+      key: streamKey,
+      status,
+      origin: statusOrigin ?? 'wire',
+      atMs: streamObservationStamp(statusAtMs, Date.now()),
+    });
+  }, [status, statusOrigin, statusAtMs, streamKey]);
   const stream = observed && observed.key === streamKey ? observed : null;
 
   // The runtime's own output for THIS session's wire id. Quantized to a second
@@ -202,6 +250,7 @@ export function useSessionWorking(
       inbox,
       status: stream?.status,
       statusAtMs: stream?.atMs ?? 0,
+      statusOrigin: stream?.origin,
       activityAtMs,
       optimistic,
       abort,

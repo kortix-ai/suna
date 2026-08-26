@@ -214,6 +214,14 @@ describe('web ECS migration', () => {
     );
   });
 
+  it('refuses to publish a release through a tag that points at another commit', () => {
+    const workflow = read('.github/workflows/deploy-prod.yml');
+    expect(workflow).toContain('refs/tags/v$V^{commit}');
+    expect(workflow).toContain('[ "$EXISTING" != "$GITHUB_SHA" ]');
+    expect(workflow).toContain('Refusing to reuse or move an immutable release tag.');
+    expect(workflow).toContain('target_commitish: ${{ github.sha }}');
+  });
+
   it('carries both Basic auth credentials and the Vercel SSO bypass in QA', () => {
     const config = read('tests/playwright.config.ts');
     expect(config).toContain('WEB_PROTECTION_PASSWORD');
@@ -227,6 +235,33 @@ describe('web ECS migration', () => {
     expect(existsSync(resolve(root, 'tests/visual/playwright.config.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'tests/accessibility/playwright.config.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'tests/e2e/examples/playwright.config.ts'))).toBe(false);
+  });
+
+  it('the deployment-bypass storage state is never written under an uploaded artifact path', () => {
+    // tests/test-results/** is uploaded verbatim on a public repo; the state
+    // file holds the live _vercel_jwt cookie. Both guards must hold: the file
+    // lives outside test-results, AND every upload of test-results excludes
+    // it by name (belt and braces — see deployment-bypass.ts).
+    const helper = read('tests/e2e/helpers/deployment-bypass.ts');
+    expect(helper).not.toMatch(/'test-results',\s*\n\s*'deployment-bypass-state\.json'/);
+    expect(helper).toContain("'.state',");
+    expect(read('tests/.gitignore')).toContain('.state/');
+    for (const wf of [
+      '.github/workflows/tests-release.yml',
+      '.github/workflows/tests-browser-nightly.yml',
+      '.github/workflows/tests.yml',
+      '.github/workflows/deploy-preview.yml',
+    ]) {
+      const uploads = read(wf).split('upload-artifact@').slice(1);
+      let seen = 0;
+      for (const block of uploads) {
+        const head = block.slice(0, 600);
+        if (!head.includes('tests/test-results/**')) continue;
+        seen += 1;
+        expect(head, wf).toContain('!tests/test-results/deployment-bypass-state.json');
+      }
+      expect(seen, wf).toBeGreaterThan(0);
+    }
   });
 
   /**

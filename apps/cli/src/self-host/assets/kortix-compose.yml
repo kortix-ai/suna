@@ -118,6 +118,12 @@ services:
       PORT: "8090"
       KORTIX_API_URL: http://kortix-api:8008
       GATEWAY_INTERNAL_TOKEN: ${GATEWAY_INTERNAL_TOKEN}
+      # Per-request body cap override (bytes). Unset = the gateway default,
+      # clamped to what its memory budget can hold. Image-heavy agent turns can
+      # exceed the default (Essentia 2026-08-25: >128 MiB, 118 inline
+      # screenshots); a box with KORTIX_GATEWAY_MEMORY_LIMIT raised can raise
+      # this too.
+      GATEWAY_MAX_REQUEST_BYTES: ${KORTIX_GATEWAY_MAX_REQUEST_BYTES:-}
     depends_on:
       kortix-api:
         condition: service_started

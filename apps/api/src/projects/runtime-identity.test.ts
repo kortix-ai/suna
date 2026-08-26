@@ -51,5 +51,6 @@ describe('parkMetadataPatch', () => {
     expect(patch.stopReason).toBe('runtime_boot_failed');
     expect(patch.stoppedAt).toBe('2026-08-14T18:24:51.624Z');
     expect(patch.runtimeParkReason).toBe('opencode_ready_wait_stale');
+    expect(patch.providerStopPendingAt).toBe('2026-08-14T18:24:51.624Z');
   });
 });

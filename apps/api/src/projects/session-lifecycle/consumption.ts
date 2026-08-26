@@ -44,6 +44,31 @@ export const INBOX_FORWARD_CONFIRM_GRACE_MS = 30_000;
  */
 export const INBOX_FORWARD_CONFIRM_MAX_MS = DEDUPE_TTL_MS;
 
+/**
+ * How long a row whose ledger turn ENDED with a never-ran reason waits for the
+ * redelivery that owns it.
+ *
+ * Its own bound, far below `INBOX_FORWARD_CONFIRM_MAX_MS`, because an ENDING is
+ * evidence and a missing ledger row is not. `abandoned` / `runtime_gone` are
+ * the reasons `requeueAbandonedPrompt` acts on, and it acts on them in the same
+ * reaping cycle that produced the terminal evidence — flipping the row to
+ * `queued`, which takes it out of this scan. A row still forwarded well past
+ * that cycle is one the redelivery declined, not one it is still considering.
+ *
+ * The cost of the old shared ceiling, MEASURED on the local stack 2026-08-26
+ * (session 65216cc6): prompt row 75e8c15f forwarded 04:49:46, ledger turn
+ * d91e225c ended `abandoned` 04:50:06 — `GET .../prompts` still answered
+ * `state: delivering` at 04:53:31 with `turns: []`. A `delivering` row counts as
+ * live work (`countLiveInboxPrompts`), so for the whole window the composer
+ * holds Stop with nothing running and the bubble keeps its "Queued" badge,
+ * both surviving a hard refresh — the reported issue #8.
+ *
+ * Comfortably longer than a reaping cycle's own turnaround, and short enough
+ * that the badge is gone by the maintenance sweep after it rather than ten
+ * minutes later.
+ */
+export const INBOX_FORWARD_ORPHAN_MAX_MS = 90_000;
+
 const FORWARDED_SCAN_BATCH = 25;
 
 /** One `succeeded` + forwarded row, as the sweep needs to read it. */
@@ -279,6 +304,22 @@ export async function reconcileForwardedPrompts(
       continue;
     }
 
+    // A turn that ENDED `unknown` is the SUPERSEDED case, and it is CONSUMED —
+    // not an orphan waiting for a redelivery. Box-reaper's terminal branch
+    // writes `unknown` when the daemon answered "no turn in flight" but could
+    // not classify it because a NEWER user message now owns the root; that
+    // prompt's answer is already on screen. The redelivery paths
+    // (`redeliverAbandonedPrompt`/`requeueAbandonedPrompt`) only ever run with
+    // `abandoned`/`runtime_gone`, and a genuinely orphaned row is flipped to
+    // `queued` — out of this scan — before it could reach here. So an `unknown`
+    // row STILL in the forwarded scan is proof the orphan branch declined it.
+    // Confirm it on the FIRST pass instead of stranding the badge as "Queued"
+    // until the max-age ceiling force-closes it ~10 min later.
+    if (turn?.state === 'ended' && turn.endReason === 'unknown') {
+      if (await deps.confirm(row.sessionId, ids[0])) out.confirmed += 1;
+      continue;
+    }
+
     // A ledger row still `delivering` is OpenCode HOLDING this message behind
     // the turn in front of it — the flagship mid-turn case, and the p99 turn
     // (~78 min, `sandbox-deadline-policy.ts`) is eight times this ceiling.
@@ -292,19 +333,43 @@ export async function reconcileForwardedPrompts(
     // one on the next pass.
     if (turn?.state === 'delivering') continue;
 
-    if (!expired) continue;
+    // AN ENDING IS PROOF. A ledger row that ENDED with a never-ran reason
+    // (`abandoned` / `runtime_gone`) is a settled turn: nothing is running, and
+    // nothing will run for this row unless a redelivery claims it — and a
+    // redelivery claims it by flipping the row to `queued`, which takes it out
+    // of this scan entirely. A row still forwarded 30s after that ending is
+    // therefore proof the redelivery DECLINED it (the daemon's orphan proof
+    // never landed), not proof that a decision is still pending.
+    //
+    // It used to wait for the 10-minute ceiling below, which is what the user
+    // sees as the reported queue bug. MEASURED, local stack 2026-08-26,
+    // session 65216cc6: prompt row 75e8c15f forwarded at 04:49:46, its ledger
+    // turn d91e225c ended `abandoned` at 04:50:06 — and `GET .../prompts` still
+    // reported it `state: delivering` at 04:53:31 with `turns: []`. For those
+    // ~10 minutes the row counts as live work (`countLiveInboxPrompts` counts
+    // `delivering`), so the composer holds Stop with nothing running, the
+    // bubble keeps its "Queued" badge, and both survive a hard refresh —
+    // "shows a message as queued when it was actually already sent", issue #8.
+    //
+    // Closing here is CLOSE-ONLY, like every other branch in this sweep: it
+    // retires the inbox row, it never re-runs the prompt. A redelivery that
+    // arrives afterwards finds no row and does nothing (`no_prompt`).
+    const orphanExpired =
+      turn?.state === 'ended' &&
+      !!turn.endReason &&
+      PROMPT_NEVER_RAN_END_REASONS.has(turn.endReason as never) &&
+      now.getTime() - row.updatedAt.getTime() >= INBOX_FORWARD_ORPHAN_MAX_MS;
 
-    // Past the ceiling, and still no proof. Two shapes reach here and both are
-    // force-closed rather than left to hang:
-    //  - NO LEDGER ROW: the ledger write is best-effort, so its absence is not
-    //    evidence of anything;
-    //  - a NEVER-RAN ending nobody came back for. `requeueAbandonedPrompt`
-    //    owns those rows and flips them to `queued` — which takes them out of
-    //    this scan — but it only fires when the daemon proves the prompt was
-    //    ORPHANED. A turn closed `unknown` because a newer prompt took the
-    //    root (the measured mid-turn case: the daemon's message-scoped probe
-    //    reads "a newer user message owns the root" as terminal) is never
-    //    redelivered, so waiting for that redelivery would wait for ever.
+    if (!expired && !orphanExpired) continue;
+
+    // Two shapes reach here and both are force-closed rather than left to hang:
+    //  - an `abandoned`/`runtime_gone` ending nobody came back for, on the
+    //    first pass past the grace window (`endedNeverRan` above);
+    //  - NO LEDGER ROW at all, past the ceiling: the ledger write is
+    //    best-effort, so its absence is not evidence of anything — but it is
+    //    not evidence the turn ENDED either, which is why that one still waits.
+    //    (`unknown` is handled above, on the first pass — it is the superseded
+    //    case, never an orphan.)
     if (await deps.confirm(row.sessionId, ids[0])) {
       out.forceClosed += 1;
       deps.logForceClosed(

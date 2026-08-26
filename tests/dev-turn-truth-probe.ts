@@ -15,6 +15,8 @@
  * Run: cd tests && dotenvx run -f .env.dev -- bun dev-turn-truth-probe.ts
  */
 
+import { supabaseAdminHeaders } from './src/core/supabase-admin';
+
 const API = process.env.KE2E_API_URL!;
 const SUPABASE = process.env.KE2E_SUPABASE_URL!;
 const SERVICE_ROLE = process.env.KE2E_SUPABASE_SERVICE_ROLE_KEY!;
@@ -37,11 +39,7 @@ async function mintUser() {
   const password = 'Probe-passw0rd!';
   const created = await fetch(`${SUPABASE}/auth/v1/admin/users`, {
     method: 'POST',
-    headers: {
-      apikey: SERVICE_ROLE,
-      Authorization: `Bearer ${SERVICE_ROLE}`,
-      'Content-Type': 'application/json',
-    },
+    headers: supabaseAdminHeaders(SERVICE_ROLE, { json: true }),
     body: JSON.stringify({ email, password, email_confirm: true }),
   });
   if (!created.ok) throw new Error(`admin create failed: ${await created.text()}`);

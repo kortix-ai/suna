@@ -99,9 +99,12 @@ interface UseSessionAuditOptions {
   /** Suppress the global error toast (for the always-mounted header nudge). */
   silent?: boolean;
   /**
-   * Rows to ask for. The panel reads the timeline and wants the full 1000; the
-   * badge only counts pending approvals, which the server returns most-recent
-   * first, so 100 is plenty and ten times less to serialise every 15 s.
+   * Rows to ask for. Every consumer of THIS hook reads pending approvals, which
+   * the server returns most-recent first, so 100 is plenty — the deep timeline
+   * moved to `useSessionAuditTimeline`. The query key ignores the limit (all
+   * consumers share one cache entry), so the first fetch's limit is the one
+   * that runs: a 1000 default here re-imposed the heavy read on every session
+   * open even after callers asked for 100.
    */
   limit?: number;
 }
@@ -120,7 +123,7 @@ export function useSessionAudit(
     queryKey: sessionAuditKey(projectId, sessionId),
     // `enabled` guards presence, so the `?? ''` fallbacks are never exercised.
     queryFn: () =>
-      getSessionAudit(projectId ?? '', sessionId ?? '', options?.limit ?? 1000, {
+      getSessionAudit(projectId ?? '', sessionId ?? '', options?.limit ?? 100, {
         showErrors: !options?.silent,
         includeEvents: false,
       }),

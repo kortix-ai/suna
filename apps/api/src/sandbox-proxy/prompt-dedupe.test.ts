@@ -330,6 +330,17 @@ describe('isNonIdempotentSessionWrite', () => {
     expect(isNonIdempotentSessionWrite(8000, 'POST', '/session/abc123/shell')).toBe(false);
   });
 
+  test('/summarize matches — a retried summarize starts ANOTHER summary turn', () => {
+    // 2026-08-26: every /compact died at the proxies' short timeouts as
+    // `503 upstream unreachable`, and because summarize was absent here the
+    // retry loop re-POSTed it — each retry stacking one more failed summary
+    // attempt into the transcript.
+    expect(isNonIdempotentSessionWrite(8000, 'POST', '/session/abc123/summarize')).toBe(true);
+    expect(isNonIdempotentSessionWrite(8000, 'post', '/session/abc-123/summarize?x=1')).toBe(true);
+    expect(isNonIdempotentSessionWrite(8000, 'GET', '/session/abc123/summarize')).toBe(false);
+    expect(isNonIdempotentSessionWrite(8000, 'POST', '/session/abc123/summarizes')).toBe(false);
+  });
+
   test('a command body with no Idempotency-Key still gets a stable content key', () => {
     // The proxy's own retry is now blocked, but a CLIENT resend must still
     // collide. Commands send no Idempotency-Key, so the content hash is the
@@ -365,6 +376,16 @@ describe('shouldClaimPromptDelivery', () => {
 
   test('a lookalike path is treated as a prompt, not a command', () => {
     expect(shouldClaimPromptDelivery('/session/abc/commands', false)).toBe(true);
+  });
+
+  test('a summarize with no Idempotency-Key does NOT claim — its body is byte-identical between deliberate retries', () => {
+    // `{providerID,modelID}` is the whole summarize body: a user re-running
+    // /compact after a failure sends identical bytes. A blanket claim would
+    // answer the retry `200 {"deduplicated":true}` and never run it — the
+    // same silent-loss trap as commands.
+    expect(shouldClaimPromptDelivery('/session/abc/summarize', false)).toBe(false);
+    expect(shouldClaimPromptDelivery('/session/abc/summarize?x=1', false)).toBe(false);
+    expect(shouldClaimPromptDelivery('/session/abc/summarize', true)).toBe(true);
   });
 });
 

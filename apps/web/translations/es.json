@@ -7725,7 +7725,7 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextSignInIn5b6c05ee": "inicie sesión en la ventana que se abrió. Una vez que esté conectado, puede cerrarlo y decirle al agente \"listo\".",
     "autoComponentsSetupLinksConnectorIntakeJsxTextReopenConnectWindowb7f822cd": "Reabrir la ventana de conexión",
     "autoComponentsSetupLinksConnectorIntakeJsxText1ClickConnect9e029325": "Conexión con 1 clic",
-    "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "a través de Pipedream: no se pegan claves en el chat ni se almacenan en el repositorio.",
+    "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— no se pegan claves en el chat ni se almacenan en el repositorio.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Guardado de forma segura",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "Puedes cerrar esto. El agente lo recogerá y le dirá \"listo\" para continuar.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Cifrado en reposo. Sólo este proyecto puede leerlo. El agente nunca ve el valor.",

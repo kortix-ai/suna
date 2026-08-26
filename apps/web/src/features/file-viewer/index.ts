@@ -11,6 +11,7 @@ export {
   getLanguageFromExt,
 } from './file-content-renderer';
 export type { FileContentRendererProps, FileCategory } from './file-content-renderer';
+export { HtmlPreview } from './html-preview';
 export { FilePreviewModal } from './file-preview-modal';
 export type { FilePreviewModalProps, FilePreviewState } from './file-preview-modal';
 export { FileSourceProvider, useFileSource } from './file-source';

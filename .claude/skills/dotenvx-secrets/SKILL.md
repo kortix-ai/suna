@@ -13,9 +13,30 @@ All API and web profiles belong to the single Armor organization **`kortix`**.
 Always pass `--team kortix` when pushing or pulling. Never rely on the CLI's
 personal-team default.
 
-Production uses the same organization and access token as non-production.
-Keep production pulls as a separate, explicit command. This is an operational
-guardrail, not an authorization boundary.
+Access is scoped **per member, per armored key** (Dotenvx Armor FGAC, Business
+plan; one armored key == one `.env*` file). Since 2026-08-26 the two PROD keys
+(`apps/api/.env.prod`, `apps/web/.env.prod`) are granted to the **owner only**.
+Every other member (admin or member role) has all `.env`, `.env.dev`, and
+`.env.staging` keys. Armor refuses a non-owner `dotenvx run -f .env.prod`
+(`PERMISSION_DENIED` on CLI 2.x); that is the intended boundary, not a broken login.
+
+Manage access with `dotenvx curl` (CLI >= 2.18):
+
+```sh
+dotenvx curl "https://armor.dotenvx.com/api/teams/kortix/members"          # member ids + roles
+dotenvx curl "https://armor.dotenvx.com/api/armor/keypairs?per=100"        # keys, named per file
+dotenvx curl "https://armor.dotenvx.com/api/teams/kortix/members/<id>/keypairs/<public_key>/grant"  --request POST
+dotenvx curl "https://armor.dotenvx.com/api/teams/kortix/members/<id>/keypairs/<public_key>/revoke" --request POST
+dotenvx curl "https://armor.dotenvx.com/api/logs?team=kortix&events=keypair/access&keypair=<public_key>"  # who decrypted it
+```
+
+Use the `/api/teams/kortix/...` routes: the PROD public keys also exist in the
+leftover `kortix-ai-prod` team, so the bare `/api/armor/keypairs/...` routes
+return `DOTENVX_TEAM_REQUIRED`. There is no read endpoint for the access
+matrix; read it in the web UI (`Keypair › Team` tab) or infer it from
+`/api/logs`. A grant/revoke takes effect on the next `dotenvx run`; it cannot
+retract a private key already pulled into a local `.env.keys` — rotate the
+keypair for that.
 
 ## The four environments (local-run secrets)
 
@@ -27,6 +48,32 @@ There are **four environments**, each a separate encrypted file with its **own k
 | `pnpm dev:dev-env`     | **dev**     | `apps/api/.env.dev`     | the **dev** stack — dev Supabase DB, **test** Stripe, dev keys (`dev-api.kortix.com`)             | `DOTENV_PRIVATE_KEY_DEV`     |
 | `pnpm dev:staging-env` | **staging** | `apps/api/.env.staging` | the **staging** stack — staging Supabase DB, test Stripe, staging keys (`staging-api.kortix.com`) | `DOTENV_PRIVATE_KEY_STAGING` |
 | `pnpm dev:prod-env`    | **prod**    | `apps/api/.env.prod`    | the **prod** stack — prod Supabase DB, **LIVE** Stripe, prod keys (`api.kortix.com`)              | `DOTENV_PRIVATE_KEY_PROD`    |
+
+### What each profile may contain (enforced by `pnpm test:envs`)
+
+- **`.env` (local)** is the only profile safe to hand to someone without
+  production clearance (trial hires, contractors before a background check).
+  Its DB is local Docker. It must not contain a credential that reaches
+  customer data. `scripts/secrets-envs-separation.py` fails `pnpm test:envs`
+  when any secret-classed key in `.env`, `.env.dev`, or `.env.staging` equals
+  its `.env.prod` value; `scripts/secrets-shared-with-prod.allowlist` lists the
+  remaining shared vendor keys with the reason and the rotation that removes
+  each line. Do not add to that file to make the test pass — split the
+  credential.
+- **`.env.dev`**: the `Kortix DEV` Supabase project holds signups from
+  dev.kortix.com (2,793 users on 2026-08-26). The owner classifies them as
+  synthetic test accounts, so dev is not customer data. It is still not safe
+  for people without production clearance until every prod-shared vendor key
+  in `scripts/secrets-shared-with-prod.allowlist` is split (dev/staging carry
+  the prod AWS IAM user, Daytona key, and Pipedream client today).
+- **`.env.prod`** is the owner-only record of every production credential;
+  AWS Secrets Manager mirrors it for the deployed stack. Dead-in-code keys
+  (Betterstack ClickHouse, JustAVPS) stay only in `.env.prod`.
+- Each profile owns its internal secrets (`INTERNAL_SERVICE_KEY`,
+  `API_KEY_SECRET`, `GATEWAY_INTERNAL_TOKEN`, `TUNNEL_SIGNING_SECRET`).
+  `INTERNAL_SERVICE_KEY` is injected into sandboxes at creation
+  (`apps/api/src/platform/sandbox-env.ts`), so the `.env.dev`/`.env.staging`
+  value must equal the deployed env's AWS SM value; rotate both together.
 
 - `pnpm dev` runs the **full local stack** (web + API + local Supabase + tunnel) via `scripts/dev-local.sh`.
 - `pnpm dev:dev-env` / `pnpm dev:staging-env` / `pnpm dev:prod-env` run the **API only**, locally, against the selected remote backend (`dotenvx run -f apps/api/.env.<environment> -- bun run --hot src/index.ts`). They do not start local Supabase.
@@ -64,11 +111,11 @@ This re-encrypts the file in place (value becomes `KEY=encrypted:…`). Then com
 | Task                                         | Command                                                                                                                                       |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Run local / dev / staging / prod             | `pnpm dev` · `pnpm dev:dev-env` · `pnpm dev:staging-env` · `pnpm dev:prod-env`                                                                |
-| Verify all 4 envs decrypt + are separated    | `pnpm test:envs`                                                                                                                              |
+| Verify all 4 envs decrypt + no non-prod secret equals prod | `pnpm test:envs` (allowlist: `scripts/secrets-shared-with-prod.allowlist`)                                                        |
 | Read a secret                                | `dotenvx get KEY -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`)                                                             |
 | Add / change a secret                        | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`), then commit                                          |
 | First time / new machine (non-prod profiles) | `dotenvx armor login` then, from each app directory, `for f in .env .env.dev .env.staging; do dotenvx armor pull --team kortix -f "$f"; done` |
-| Pull prod (explicitly)                       | From each app directory: `dotenvx armor pull --team kortix -f .env.prod`                                                                      |
+| Run against prod (owner only)                | `pnpm dev:prod-env` — decrypts through Armor at run time; do **not** `armor pull -f .env.prod` into `.env.keys`                             |
 | Share a NEW profile / rotated key            | Push every profile with `--team kortix`                                                                                                       |
 | Remove a key from the cloud                  | `dotenvx armor down --team kortix -f <file>`                                                                                                  |
 

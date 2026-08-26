@@ -153,7 +153,7 @@ export {
   providerListHasGateway,
   providerListHasModels,
 } from './provider-selection';
-export { useProjectModels } from './use-project-models';
+export { useProjectModelPickerCatalog, useProjectModels } from './use-project-models';
 export { useProjectConfig } from './use-project-config';
 export type { ProjectConfigSummary } from '../core/rest/projects-client';
 
@@ -198,6 +198,11 @@ export {
 } from './use-session-working';
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
 export { useRuntimeBootStalled, RUNTIME_BOOT_STALL_MS } from './use-runtime-boot-stalled';
+export {
+  useWakeEscalation,
+  type UseWakeEscalationInput,
+  type WakeEscalationView,
+} from './use-wake-escalation';
 export {
   useQuestionSelfHeal,
   hasRunningQuestionTool,

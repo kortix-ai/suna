@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { supabaseAdminHeaders } from "../../src/core/supabase-admin";
 
 import { clearCookiesPreservingBypass } from "./deployment-bypass";
 import { optionalEnvValue, requireEnvValue } from "./env";
@@ -67,11 +68,7 @@ export async function createAuthUser(
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     const response = await fetch(`${options.supabaseUrl}/auth/v1/admin/users`, {
       method: "POST",
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: supabaseAdminHeaders(serviceRoleKey, { json: true }),
       body: JSON.stringify({
         email,
         password: options.password,
@@ -104,10 +101,7 @@ export async function deleteAuthUser(
   );
   await fetch(`${options.supabaseUrl}/auth/v1/admin/users/${userId}`, {
     method: "DELETE",
-    headers: {
-      apikey: trustedServiceRoleKey,
-      Authorization: `Bearer ${trustedServiceRoleKey}`,
-    },
+    headers: supabaseAdminHeaders(trustedServiceRoleKey),
   }).catch(() => {});
 }
 
@@ -123,11 +117,7 @@ export async function confirmAuthUser(
   await json(
     await fetch(`${options.supabaseUrl}/auth/v1/admin/users/${userId}`, {
       method: "PUT",
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: supabaseAdminHeaders(serviceRoleKey, { json: true }),
       body: JSON.stringify({ email_confirm: true }),
     }),
     200,

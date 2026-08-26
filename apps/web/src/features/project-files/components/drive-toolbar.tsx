@@ -72,7 +72,7 @@ import {
  * every other project surface.
  */
 export const DRIVE_ACTION_ROW_CLASS =
-  'border-border/60 flex h-11 shrink-0 items-center gap-1 border-b px-2';
+  'border-border/60 flex h-11 shrink-0 items-center gap-1 border-b px-4';
 
 /* ------------------------------------------------------------------ *
  * Path bar

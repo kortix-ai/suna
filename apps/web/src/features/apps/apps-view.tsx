@@ -32,10 +32,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
-import {
-  sidebarOpenerLabel,
-  useShowPageSidebarOpener,
-} from '@/features/workspace/project-layout/sidebar-opener';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { ShareOption, SubjectPicker } from '@/features/workspace/shared/sharing-picker';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
@@ -62,7 +59,6 @@ import {
   GridNineIcon,
   type Icon as PhosphorIcon,
   LockKeyIcon,
-  SidebarSimpleIcon as PanelLeft,
   PauseIcon,
   PlayIcon,
   SquareIcon,
@@ -628,41 +624,6 @@ export function AppPreview({
 }
 
 /**
- * Sidebar opener — same rule as the capability tab bar, session header and
- * project home: always on mobile (the sheet has no docked affordance), on
- * desktop only while the panel is undocked. `useShowPageSidebarOpener` is the
- * single source of that rule and already covers the "no sidebar" case.
- *
- * In flow, never absolutely positioned. The settings-section shell this page
- * used to sit in put its opener over the content at the top-left corner, which
- * on the desktop shell lands on the macOS traffic lights.
- */
-function AppsSidebarToggle() {
-  const sidebar = useOptionalSidebar();
-  const show = useShowPageSidebarOpener();
-  if (!sidebar || !show) return null;
-
-  const label = sidebarOpenerLabel(sidebar);
-
-  return (
-    <Hint label={label} side="bottom">
-      <Button
-        type="button"
-        aria-label={label}
-        variant="ghost"
-        size="icon"
-        onClick={sidebar.toggleSidebar}
-        onPointerEnter={sidebar.state === 'collapsed' ? sidebar.peekEnter : undefined}
-        onPointerLeave={sidebar.state === 'collapsed' ? sidebar.peekLeave : undefined}
-        className="hover:bg-sidebar-accent hover:text-sidebar-foreground shrink-0 cursor-pointer active:scale-[0.96]"
-      >
-        <PanelLeft className="cn-rtl-flip size-4" />
-      </Button>
-    </Hint>
-  );
-}
-
-/**
  * Tile size, as three states of one control rather than a menu.
  *
  * A segmented `ButtonGroup` of icon buttons is the pattern this product already
@@ -724,7 +685,7 @@ function AppsHeader({
       className="kx-titlebar-row relative flex shrink-0 items-center gap-1 border-b px-2"
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
-      <AppsSidebarToggle />
+      <SidebarToggle />
       <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3">
         <h1 className="text-foreground shrink-0 text-sm font-medium">Apps</h1>
       </div>

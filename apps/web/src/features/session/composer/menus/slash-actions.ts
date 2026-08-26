@@ -1,8 +1,12 @@
+import type { ContextUsage } from '../context-ring';
+
 export type SlashActionId =
   | 'switch-model'
   | 'switch-agent'
   | 'set-reasoning-effort'
-  | 'attach-file';
+  | 'attach-file'
+  | 'compact-session'
+  | 'show-context';
 
 export interface SlashAction {
   id: SlashActionId;
@@ -22,6 +26,16 @@ export interface SlashAction {
    * above the agent-mention results.
    */
   value?: string;
+  /**
+   * Live context-window snapshot, filled by the host like `value`. The
+   * "Show context" row's icon draws its percent + tone as the SAME
+   * `ContextRing` the underbar meter uses, and the detail pane renders the
+   * rest (breakdown, limit, model) as the SAME `ContextUsageCard` the ring's
+   * hover card shows — so the palette row and the toolbar ring are one
+   * control, not a lookalike pair. Absent (a host with no transcript), the
+   * row falls back to a static muted ring and a plain text description.
+   */
+  context?: ContextUsage;
 }
 
 /**
@@ -47,6 +61,16 @@ export const SLASH_ACTIONS: SlashAction[] = [
     description: 'How much thinking the model does before answering',
   },
   { id: 'attach-file', label: 'Attach file', description: 'Add an image or document' },
+  {
+    id: 'compact-session',
+    label: 'Compact session',
+    description: 'Summarize older messages to free up context',
+  },
+  {
+    id: 'show-context',
+    label: 'Show context',
+    description: 'Token usage, cost, and what fills the context window',
+  },
 ];
 
 /*

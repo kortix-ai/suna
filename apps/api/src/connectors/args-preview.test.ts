@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   REDACTED,
+  approvalPreviewReviewable,
   buildArgsPreview,
   buildArgsPreviewDetails,
   isSecretKey,
@@ -167,5 +168,54 @@ describe('summarizeArgsPreview', () => {
     expect(summarizeArgsPreview({ to: REDACTED })).toBeNull();
     expect(summarizeArgsPreview(null)).toBeNull();
     expect(summarizeArgsPreview({})).toBeNull();
+  });
+});
+
+describe('approvalPreviewReviewable', () => {
+  test('a truncated preview is still reviewable — the elision is shown in place', () => {
+    // The exact shape the builder writes for an email carrying an attachment:
+    // recipient and subject are legible, the blob is described, `complete` is
+    // false. This used to be un-approvable, so the run could only be killed.
+    const details = buildArgsPreviewDetails({
+      to: 'customer@example.com',
+      subject: 'Signed contract',
+      attachment: 'A'.repeat(400),
+    });
+
+    expect(details.complete).toBe(false);
+    expect(
+      approvalPreviewReviewable({
+        args_preview: details.preview,
+        args_preview_complete: details.complete,
+      }),
+    ).toBe(true);
+  });
+
+  test('an argument-less call is reviewable — there is nothing to withhold', () => {
+    const details = buildArgsPreviewDetails(undefined);
+
+    expect(details).toEqual({ preview: null, complete: true });
+    expect(approvalPreviewReviewable({ args_preview: null, args_preview_complete: true })).toBe(
+      true,
+    );
+  });
+
+  test('an empty argument object is reviewable', () => {
+    const details = buildArgsPreviewDetails({});
+
+    expect(details).toEqual({ preview: null, complete: true });
+  });
+
+  test('a row with no preview at all is NOT reviewable', () => {
+    // Legacy rows written before previews existed, and callers not authorised
+    // to see connector arguments. Approving those is approving blind.
+    expect(approvalPreviewReviewable({ reason: 'policy_require_approval' })).toBe(false);
+    expect(approvalPreviewReviewable({ args_preview: null, args_preview_complete: false })).toBe(
+      false,
+    );
+    expect(approvalPreviewReviewable({ args_preview: {}, args_preview_complete: false })).toBe(
+      false,
+    );
+    expect(approvalPreviewReviewable(null)).toBe(false);
   });
 });

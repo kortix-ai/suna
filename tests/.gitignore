@@ -1,5 +1,6 @@
 node_modules/
 test-results/
+.state/
 contract/pacts/*.json
 *.log
 .env

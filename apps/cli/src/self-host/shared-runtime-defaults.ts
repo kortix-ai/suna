@@ -53,13 +53,13 @@ export const SHARED_FEATURE_FLAG_DEFAULTS: Record<string, string> = {
   ENTERPRISE_LICENSE_AVAILABLE: 'false',
   KORTIX_BILLING_INTERNAL_ENABLED: 'false',
   KORTIX_PUBLIC_BILLING_ENABLED: 'false',
-  // Pipedream-backed connector UI (the "Connect your tools" onboarding step,
+  // Connector UI (the "Connect your tools" onboarding step,
   // the "Easy connect" app catalogue) off by default — a fresh self-host has
-  // no PIPEDREAM_CLIENT_ID/SECRET/PROJECT_ID configured, and those surfaces
+  // no COMPOSIO_API_KEY configured, and those surfaces
   // would otherwise dead-end in a 501. `kortix self-host configure` flips
-  // this to 'true' once Pipedream credentials are set (see selfHostConfigure
+  // this to 'true' once connector credentials are set (see selfHostConfigure
   // in commands/self-host.ts). Custom connectors (OpenAPI/GraphQL/MCP/HTTP)
-  // and Slack/email channels are unaffected — they don't depend on Pipedream.
+  // and Slack/email channels are unaffected.
   KORTIX_PUBLIC_CONNECTORS_ENABLED: 'false',
   // Account-creation restriction: DEFAULT ON for self-host — a VPS operator
   // usually wants to be the only one who can spin up new organizations on

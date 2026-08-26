@@ -20,12 +20,12 @@ There are exactly two kinds of credential you'll ever need, and one link each:
 | You need… | Mint… | The human gets… |
 | --- | --- | --- |
 | an **API key / token / secret value** (e.g. `APOLLO_API_KEY`) | a **secret link** | a fill-in form |
-| an **app connected** via Pipedream (e.g. `smartlead`, `apollo`) | a **connect link** (Pipedream Quick Connect) | a 1-click authorize |
+| an **app connected** via Composio (e.g. Gmail, GitHub) | a **connect link** | a 1-click authorize |
 
 > **Slack is neither of these.** Connecting Slack is a built-in channel flow:
 > run `kortix channels connect` — it prints a one-click "Add to Slack" install
 > link. Do NOT mint a secret link for `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET`
-> and do NOT add a Pipedream `slack` connector (the slug is reserved).
+> and do NOT add a managed `slack` connector (the slug is reserved).
 
 Both links render the same way everywhere:
 
@@ -81,14 +81,18 @@ at dead links.
 One link can request several keys at once — ask for everything you need in a
 single message.
 
-## Minting a connect link (Pipedream Quick Connect)
+## Minting a Composio connect link
 
-For an app you connect via Pipedream, mint a 1-click connect link. If the
+For an app you connect via Composio, mint a 1-click connect link. If the
 connector isn't on the project yet, **add it instantly first — no change
 request**: the `add_connector` tool / `kortix connectors add <slug> --provider
-pipedream --app <app> --apply`. That commits it to
+composio --app <toolkit> --apply`. That commits it to
 `kortix.yaml` on main and syncs the catalog server-side, exactly like the
 dashboard's "Add app" — it's live this session. Then mint the connect link.
+
+Pipedream is legacy rollback only. Never select it automatically. If Composio
+cannot satisfy the request, stop and ask the human before any explicit
+`allow_legacy_pipedream` / `--allow-legacy-pipedream` retry.
 
 **Preferred — the `connect` tool on the `kortix-connectors` MCP:**
 
@@ -103,13 +107,14 @@ connect({ slug: "smartlead" })
 kortix connectors connect smartlead  # matches the MCP `connect` tool
 ```
 
-Then **surface the `url`**. The human clicks → authorizes the app (1-click, or
-enters the app's key on Pipedream's hosted page) → the connection is persisted
-automatically by a webhook. The link is durable for its lifetime: each time it's opened it mints
-a fresh Pipedream token, so it never goes stale.
+Then **surface the `url`**. The human clicks and authorizes the app on Composio's
+hosted flow. Finalize the connection when the human returns so the account
+binding is persisted server-side. Mint a fresh link when a previous request has
+expired or was abandoned.
 
 `kortix connectors connect` returns the durable, modal-friendly connection URL.
-The webhook finalizes the connection automatically.
+Use `kortix connectors connect-finalize <slug>` when the flow requires an
+explicit completion check.
 
 ---
 
@@ -142,7 +147,8 @@ If it isn't there yet, the human may not have finished — say so and wait.
   project. It can't read any existing secret and can't target another key — so a
   leaked link is low-blast-radius and expires on schedule.
 - **You never handle the raw value.** The human enters it directly into an
-  encrypted store; for a connector, the key only ever lives at Pipedream.
+  encrypted store; for a connector, the provider authorization remains
+  server-side.
 
 This beats the alternatives you might be tempted by:
 
@@ -159,7 +165,7 @@ This beats the alternatives you might be tempted by:
 | Goal | MCP tool | `kortix` CLI |
 | --- | --- | --- |
 | Ask the human for a secret value | `request_secret` | `kortix secrets request <NAME…>` |
-| Get an app connected (Pipedream) | `connect` | `kortix connectors connect <slug>` |
+| Get an app connected (Composio) | `connect` | `kortix connectors connect <slug>` |
 | Verify a secret arrived | — | `kortix secrets ls` |
 | Verify a connector connected | `connectors` | `kortix connectors ls` |
 

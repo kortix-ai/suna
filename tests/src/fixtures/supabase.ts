@@ -9,6 +9,7 @@
  * (before any flow logs), so a hang must surface as a fast, clear failure instead.
  */
 import type { Env } from "../core/env";
+import { supabaseAdminHeaders } from "../core/supabase-admin";
 
 const SUPABASE_TIMEOUT_MS = Number(process.env.KE2E_SUPABASE_TIMEOUT_MS ?? 15_000);
 
@@ -48,11 +49,10 @@ export async function adminCreateUser(env: Env, email: string, password: string)
   }
   const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users`, {
     method: "POST",
-    headers: {
-      apikey: env.supabaseAnonKey,
-      authorization: `Bearer ${env.supabaseServiceRoleKey}`,
-      "content-type": "application/json",
-    },
+    headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, {
+      anonKey: env.supabaseAnonKey,
+      json: true,
+    }),
     body: JSON.stringify({ email, password, email_confirm: true }),
   });
   if (!res.ok) throw new Error(`admin create user ${email} failed: ${res.status} ${await res.text()}`);
@@ -64,10 +64,9 @@ export async function adminDeleteUser(env: Env, userId: string): Promise<void> {
   if (!env.supabaseServiceRoleKey || !env.supabaseAnonKey) return;
   const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
     method: "DELETE",
-    headers: {
-      apikey: env.supabaseAnonKey,
-      authorization: `Bearer ${env.supabaseServiceRoleKey}`,
-    },
+    headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, {
+      anonKey: env.supabaseAnonKey,
+    }),
   });
   if (!res.ok && res.status !== 404) {
     throw new Error(`admin delete user ${userId} failed: ${res.status} ${(await res.text()).slice(0, 160)}`);

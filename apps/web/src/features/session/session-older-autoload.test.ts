@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   OLDER_AUTOLOAD_MAX_PAGES,
+  nextOlderAutoloadArm,
   olderAutoloadExhausted,
   shouldLoadOlderHistory,
 } from './session-older-autoload';
@@ -75,5 +76,36 @@ describe('older-history autoload', () => {
   // failure mode the manual button structurally could not have.
   test('stops auto-pulling after a failed pull, until an explicit retry', () => {
     expect(shouldLoadOlderHistory({ ...IN_VIEW, lastPullFailed: true })).toBe(false);
+  });
+});
+
+/**
+ * The re-arm debounce (FINDINGS-B fix #6). After a pull, the sentinel must
+ * leave the rootMargin zone before it can pull again — otherwise a prepend that
+ * lands 50 short turns without pushing the sentinel out of the 400px margin
+ * re-fires the observer immediately and chains pulls in one paint.
+ */
+describe('older-history re-arm debounce', () => {
+  test('a disarmed sentinel does not pull even while intersecting and eligible', () => {
+    expect(shouldLoadOlderHistory({ ...IN_VIEW, armed: false })).toBe(false);
+    expect(shouldLoadOlderHistory({ ...IN_VIEW, armed: true })).toBe(true);
+    // Absent latch behaves like the old, always-armed path.
+    expect(shouldLoadOlderHistory(IN_VIEW)).toBe(true);
+  });
+
+  test('a pull disarms the sentinel', () => {
+    expect(nextOlderAutoloadArm({ armed: true, isIntersecting: true, didPull: true })).toBe(false);
+  });
+
+  test('staying in the zone after a pull keeps it disarmed — no chained pull', () => {
+    expect(nextOlderAutoloadArm({ armed: false, isIntersecting: true, didPull: false })).toBe(false);
+  });
+
+  test('leaving the zone re-arms it', () => {
+    expect(nextOlderAutoloadArm({ armed: false, isIntersecting: false, didPull: false })).toBe(true);
+  });
+
+  test('re-entering the zone while armed keeps it armed', () => {
+    expect(nextOlderAutoloadArm({ armed: true, isIntersecting: true, didPull: false })).toBe(true);
   });
 });

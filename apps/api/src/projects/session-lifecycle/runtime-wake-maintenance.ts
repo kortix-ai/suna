@@ -7,7 +7,7 @@ import { preserveEstablishedRuntime } from '../runtime-identity';
 import {
   RUNTIME_WAKE_CLEANUP_LEASE_MS,
   RUNTIME_WAKE_LATE_START_GUARD_MS,
-  RUNTIME_WAKE_RETRY_COOLDOWN_MS,
+  runtimeStartFailurePatch,
 } from './runtime-wake-fence';
 
 const WAKE_RECONCILE_BATCH = 100;
@@ -127,9 +127,10 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
               runtimeWakeFailedAt: claimedAt.toISOString(),
               stopReason: 'runtime_wake_failed',
               stoppedAt: claimedAt.toISOString(),
-              runtimeWakeRetryAfterAt: new Date(
-                claimedAt.getTime() + RUNTIME_WAKE_RETRY_COOLDOWN_MS,
-              ).toISOString(),
+              // The cooldown escalates with consecutive failures and expires on
+              // its own: this stamp used to be a permanent gravestone that only
+              // `POST /restart` could clear (see runtime-wake-fence.ts).
+              ...runtimeStartFailurePatch(metadata, claimedAt),
               runtimeWakeCleanupUntilAt: new Date(
                 claimedAt.getTime() + RUNTIME_WAKE_LATE_START_GUARD_MS,
               ).toISOString(),

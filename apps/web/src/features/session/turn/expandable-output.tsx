@@ -162,7 +162,7 @@ export function ExpandableRegion({
           <div
             aria-hidden
             className={cn(
-              'pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t to-transparent',
+              'pointer-events-none absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-inherit to-transparent',
               'transition-opacity duration-300 ease-[cubic-bezier(0.2,0,0,1)]',
               'motion-reduce:transition-none',
               fadeClassName,
@@ -172,18 +172,18 @@ export function ExpandableRegion({
 
           <Button
             type="button"
-            variant="transparent"
+            variant="secondary"
             size="sm"
             aria-expanded={open}
             aria-controls={regionId}
             onClick={onToggle}
             className={cn(
-              'absolute bottom-4 left-1/2 z-10 -translate-x-1/2 px-4',
+              'absolute bottom-4 left-1/2 z-10 -translate-x-1/2',
               'text-muted-foreground hover:text-foreground',
               // Explicit properties, never `transition-all` — and `scale` is its
               // own CSS property in Tailwind v4, so the press does not cancel
               // the `-translate-x-1/2` that centres the button.
-              'transition-[color,scale] active:scale-[0.96]',
+              'transition-[color,scale] active:scale-[0.96] border',
             )}
           >
             {open ? collapseLabel : expandLabel}

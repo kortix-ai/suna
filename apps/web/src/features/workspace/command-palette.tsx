@@ -115,6 +115,8 @@ import {
   invalidateProject,
   qk,
   refreshProjectProviderState,
+  agentScopedModelSelectionKey,
+  modelProviderMode,
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
@@ -1914,13 +1916,20 @@ export function CommandPalette() {
   const handleSelectModel = useCallback(
     (providerID: string, modelID: string) => {
       if (!currentAgent) return;
-      modelStore.setSelectedModel(currentAgent.name, { providerID, modelID });
+      // The SAME slot the composer reads/writes (use-opencode-local.ts):
+      // scoped by provider mode + agent. The bare-agent-name slot is the
+      // legacy shared fallback — writing there lets a pick made in gateway
+      // mode resurface as a candidate after the project flips to native.
+      modelStore.setSelectedModel(
+        agentScopedModelSelectionKey(modelProviderMode(providers), currentAgent.name),
+        { providerID, modelID },
+      );
       modelStore.pushRecent({ providerID, modelID });
       const model = allModels.find((m) => m.providerID === providerID && m.modelID === modelID);
       successToast(`Model switched to ${model?.modelName || modelID}`);
       close();
     },
-    [currentAgent, modelStore, allModels, close],
+    [currentAgent, modelStore, providers, allModels, close],
   );
 
   const totalSearchResults = useMemo(() => {

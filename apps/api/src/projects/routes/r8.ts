@@ -30,6 +30,7 @@ import {
   assertProjectCapability,
   loadProjectForUser,
   loadVisibleSession,
+  sessionIsTombstoned,
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { assertAgentScope } from '../../iam/agent-scope';
@@ -107,6 +108,10 @@ projectsApp.openapi(
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     stl.mark('session-loaded');
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    // A deleted session must not answer `stage: "stopped"` — that reads as
+    // restartable and the UI offers a Restart that can never work. 404, the
+    // same answer the read-by-id gives (see sessionIsTombstoned).
+    if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
     // resumes a hibernated box days later. The session's stored `agent_name`
@@ -207,6 +212,9 @@ projectsApp.openapi(
     // Restart is reserved for the session owner or an account owner/admin.
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    // Same tombstone rule as /start: a deleted session's restart used to 202
+    // and silently do nothing the UI could see.
+    if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageLifecycle) {
       return c.json(
         {
@@ -591,6 +599,14 @@ function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   if (row.status === 'running') return { state: 'delivering', reason: null };
   const admission = result.admission_reason;
   if (typeof admission === 'string') return { state: 'waiting', reason: admission };
+  // Parked on a DOWN runtime. Still `queued` — the row IS in line and the server
+  // re-attempts it (on a wake, or on its backoff ladder), so anything else would
+  // be a lie in the direction that lost the message before: `failed` invited a
+  // manual retry for work the server was already doing. The reason names WHAT it
+  // is waiting for, and `runtime_retries` says how much patience is left.
+  if (result.delivery_blocked === 'runtime_unreachable') {
+    return { state: 'queued', reason: 'runtime_unreachable' };
+  }
   return { state: 'queued', reason: null };
 }
 
@@ -628,6 +644,9 @@ function serializePrompt(row: PromptRow) {
       PROMPT_TEXT_PREVIEW_CHARS,
     ),
     attempts: row.attempts,
+    // How many automatic re-attempts a runtime-unreachable park has spent, out
+    // of MAX_RUNTIME_UNREACHABLE_RETRIES. 0 for every other row.
+    runtime_retries: typeof result.runtime_retries === 'number' ? result.runtime_retries : 0,
     last_error: row.lastError ?? null,
     created_at: row.createdAt.toISOString(),
     available_at: row.availableAt.toISOString(),

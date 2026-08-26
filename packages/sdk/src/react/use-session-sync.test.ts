@@ -95,3 +95,54 @@ describe('sessionSyncBusy', () => {
     }
   });
 });
+
+/**
+ * The chicken-and-egg this input breaks (prod, 2026-08-26): a stale wire idle
+ * frame can veto the server's open turn row in `projectWorking`, so the
+ * projection answers `idle` over a session the control plane says is running.
+ * `working: false` switched THIS poll off — and the poll's tail read is the
+ * only evidence source that could have proven the runtime was still producing
+ * output. One wrong answer froze the transcript for the rest of the turn.
+ *
+ * The control plane holding a turn open (`serverOpenTurnToken !== null`) is
+ * server-owned evidence that work MAY be running, so it keeps the transcript
+ * verification poll on even when the projection answers idle. It does NOT
+ * touch the public `isBusy` — the UI's answer stays the projection's.
+ */
+describe('livenessBusy: an open server turn keeps the repair running', () => {
+  test('idle projection + open server turn still polls', () => {
+    expect(
+      livenessBusy({
+        networkEnabled: true,
+        runtimeHealthy: true,
+        working: false,
+        streamBusy: false,
+        serverHoldsTurn: true,
+      }),
+    ).toBe(true);
+  });
+
+  test('idle projection + no open turn stays off (unchanged)', () => {
+    expect(
+      livenessBusy({
+        networkEnabled: true,
+        runtimeHealthy: true,
+        working: false,
+        streamBusy: false,
+        serverHoldsTurn: false,
+      }),
+    ).toBe(false);
+  });
+
+  test('an offline tab never polls, open turn or not', () => {
+    expect(
+      livenessBusy({
+        networkEnabled: false,
+        runtimeHealthy: true,
+        working: false,
+        streamBusy: false,
+        serverHoldsTurn: true,
+      }),
+    ).toBe(false);
+  });
+});

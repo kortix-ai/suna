@@ -4,15 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
-import {
-  sidebarOpenerLabel,
-  useShowPageSidebarOpener,
-} from '@/features/workspace/project-layout/sidebar-opener';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { cn } from '@/lib/utils';
 import {
   GitDiffIcon as FileDiff,
   ClockCounterClockwiseIcon as History,
-  SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
 
 import { DrivePathBar, DriveViewMenu } from './drive-toolbar';
@@ -58,35 +54,6 @@ export function driveHeaderClass(offsetForSidebarToggle: boolean) {
 }
 
 /**
- * Same rules as capability tabs / project-home / session header. In flow
- * with the path bar — do not absolute-position it over the header.
- */
-function FilesSidebarToggle() {
-  const sidebar = useOptionalSidebar();
-  const show = useShowPageSidebarOpener();
-  if (!sidebar || !show) return null;
-
-  const label = sidebarOpenerLabel(sidebar);
-
-  return (
-    <Hint label={label} side="bottom">
-      <Button
-        type="button"
-        aria-label={label}
-        variant="ghost"
-        size="icon"
-        onClick={sidebar.toggleSidebar}
-        onPointerEnter={sidebar.state === 'collapsed' ? sidebar.peekEnter : undefined}
-        onPointerLeave={sidebar.state === 'collapsed' ? sidebar.peekLeave : undefined}
-        className="hover:bg-sidebar-accent hover:text-sidebar-foreground shrink-0 cursor-pointer active:scale-[0.96]"
-      >
-        <PanelLeft className="cn-rtl-flip size-4" />
-      </Button>
-    </Hint>
-  );
-}
-
-/**
  * Header for the standalone project Files page. One row:
  *
  *   [☰]  Files › src › ui        [main ▾]  [⏱]  [Proposed changes ②]  [⋯]
@@ -120,7 +87,7 @@ export function DriveHeader({
       // the sidebar is collapsed, since an expanded sidebar covers the lights.
       data-sidebar-collapsed={sidebarCollapsed || undefined}
     >
-      {offsetForSidebarToggle ? <FilesSidebarToggle /> : null}
+      {offsetForSidebarToggle ? <SidebarToggle /> : null}
 
       <DrivePathBar rootLabel="Files" />
 

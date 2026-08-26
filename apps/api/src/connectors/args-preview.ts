@@ -243,6 +243,10 @@ export interface ArgsPreviewDetails {
 }
 
 export function buildArgsPreviewDetails(args: unknown): ArgsPreviewDetails {
+  // A call with NO arguments hides nothing, so it is complete by definition.
+  // Reporting it as incomplete used to mark every no-arg gated call as
+  // "parameters withheld", which is the one thing that blocks approval.
+  if (args === null || args === undefined) return { preview: null, complete: true };
   if (!isPlainRecord(args)) return { preview: null, complete: false };
   const state: PreviewState = { complete: true };
   let preview = previewRecord(args, 1, state);
@@ -269,6 +273,31 @@ export function buildArgsPreviewDetails(args: unknown): ArgsPreviewDetails {
 
 export function buildArgsPreview(args: unknown): Record<string, unknown> | null {
   return buildArgsPreviewDetails(args).preview;
+}
+
+/**
+ * Can a human actually judge this gated call from what the row recorded?
+ *
+ * NOT the same question as `args_preview_complete`. TRUNCATION IS NOT
+ * BLINDNESS: that flag goes false whenever the builder elided ANYTHING — an
+ * 11th array item, a 96-char URL, a fourth nesting level, an attachment body —
+ * and every elision is written into the preview the human reads (`[+3 more]`,
+ * `[204800 chars omitted]`). Gating approval on it made an ordinary "email this
+ * PDF" call permanently un-approvable: the prompt showed a disabled button and
+ * a warning, and the only move left was Deny, which kills the agent's run.
+ *
+ * The gate asks the question it was always meant to ask — is there anything to
+ * review? A row carrying parameters is decidable, elisions and all. A row
+ * carrying none is not: a pre-preview legacy row, or a caller not authorised to
+ * see the arguments. No approve path is offered for those.
+ */
+export function approvalPreviewReviewable(summary: unknown): boolean {
+  if (!isPlainRecord(summary)) return false;
+  const preview = summary.args_preview;
+  if (isPlainRecord(preview) && Object.keys(preview).length > 0) return true;
+  // No preview is still reviewable when the builder confirmed there was
+  // nothing to show — an argument-less call withholds nothing.
+  return summary.args_preview_complete === true;
 }
 
 function safeStringify(value: unknown): string {

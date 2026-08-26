@@ -49,6 +49,23 @@ describe('ECS task environment overrides', () => {
     ]);
   });
 
+  it('keeps Composio in dev and prod secret maps while retaining Pipedream for rollback', () => {
+    for (const environment of ['dev', 'prod']) {
+      const variables = readFileSync(
+        resolve(root, `infra/terraform/environments/${environment}/variables.tf`),
+        'utf8',
+      );
+
+      expect(variables).toContain('COMPOSIO_API_KEY');
+      expect(variables).toContain('PIPEDREAM_CLIENT_ID');
+      expect(variables).toContain('PIPEDREAM_CLIENT_SECRET');
+      expect(variables).toContain('PIPEDREAM_PROJECT_ID');
+    }
+
+    const module = readFileSync(resolve(root, 'infra/terraform/modules/ecs-api/main.tf'), 'utf8');
+    expect(module).toContain('{ name = "KORTIX_ENV_JSON", valueFrom = var.secrets_blob_arn }');
+  });
+
   it('rejects non-string override values', () => {
     expect(() =>
       mergeEnvironment([], { INVALID: 1 } as unknown as Record<string, string>),

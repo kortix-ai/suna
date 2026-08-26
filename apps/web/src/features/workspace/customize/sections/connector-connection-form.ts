@@ -11,6 +11,8 @@ const MAX_CONNECTOR_SLUG_LENGTH = 128;
 export interface EasyConnectApp {
   slug: string;
   name: string;
+  /** Hosted connector provider. Omitted only by legacy Pipedream callers. */
+  provider?: 'composio' | 'pipedream';
   /** Catalogue metadata, when the source publishes it (Pipedream apps do).
    *  Optional so a hand-typed `{ slug, name }` stays valid; the connection
    *  modal simply renders less without them. */
@@ -159,7 +161,7 @@ export function buildEasyConnectConnectorDraft(
   return createOnlyConnectorDraft({
     slug: connection.slug,
     name: connection.name.trim(),
-    provider: 'pipedream',
+    provider: app.provider ?? 'pipedream',
     app: app.slug,
     account: 'default',
     authorization_strategy: connection.authorizationStrategy,

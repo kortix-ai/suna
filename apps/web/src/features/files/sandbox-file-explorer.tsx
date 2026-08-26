@@ -15,7 +15,7 @@ import {
   CloudSlashIcon as ServerOff,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useState, type ReactNode } from 'react';
+import { useState, type ElementType, type ReactNode } from 'react';
 import { useServerHealth } from './hooks';
 import { sandboxExplorerSource } from './sandbox-explorer-source';
 
@@ -29,14 +29,14 @@ export function SandboxFileExplorer({
   embedded = false,
   shareContext,
   leading,
-  contentPanel,
+  listingAs,
 }: {
   embedded?: boolean;
   shareContext?: { projectId: string; sessionId: string };
   /** Host chrome for the start of the explorer's action row — see {@link DriveExplorer}. */
   leading?: ReactNode;
-  /** ARIA wiring when `leading` is a tab strip — see {@link DriveExplorer}. */
-  contentPanel?: { id: string; labelledBy: string };
+  /** Element type for the listing region — see {@link DriveExplorer}. */
+  listingAs?: ElementType<{ className?: string; children?: ReactNode }>;
 } = {}) {
   return (
     <FileExplorerSourceProvider value={sandboxExplorerSource}>
@@ -45,7 +45,7 @@ export function SandboxFileExplorer({
           embedded={embedded}
           shareContext={shareContext}
           leading={leading}
-          contentPanel={contentPanel}
+          listingAs={listingAs}
         />
       </SandboxServerGate>
     </FileExplorerSourceProvider>
@@ -55,9 +55,9 @@ export function SandboxFileExplorer({
 /**
  * Renders children only while the sandbox OpenCode server is reachable.
  *
- * `leading` (the host's tab strip) is repeated over the closed-gate states on
- * purpose: it is how the user switches away from a workspace that is still
- * booting or unreachable, so it must not vanish with the explorer.
+ * The session panel's tabs now sit ABOVE this gate rather than being threaded
+ * through it, so a booting or unreachable workspace can no longer take the
+ * user's way out of it down with the explorer.
  */
 function SandboxServerGate({
   children,

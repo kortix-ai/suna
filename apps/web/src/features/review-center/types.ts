@@ -101,6 +101,8 @@ export interface ApprovalAction {
   actionPath?: string;
   rawArgsPreview?: Record<string, unknown>;
   reviewComplete?: boolean;
+  /** False when this viewer may not see connector arguments at all. */
+  previewAuthorized?: boolean;
   connectorRisk?: string | null;
   policySource: string;
   decided?: 'approved' | 'denied'; // prototype-local decision state

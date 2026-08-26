@@ -14,6 +14,11 @@ import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
+import {
+  parseRuntimeAgentNames,
+  resolveDeliverableAgent,
+  runtimeAgentRoster,
+} from './agent-availability';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
@@ -43,11 +48,13 @@ import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
 import { type DeliveryTarget, deliverWithRetry } from './deliver';
 import {
+  MAX_RUNTIME_UNREACHABLE_RETRIES,
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
   enqueueContinueSessionCommand,
   markCommandFailed,
+  parkPromptForUnreachableRuntime,
   markCommandForwarded,
   promoteNextInboxRow,
   markCommandQueued,
@@ -55,6 +62,7 @@ import {
   requeueForAdmission,
   resultFromExistingCommand,
   withNextDeliveryAttempt,
+  withRemintedWireId,
 } from './store';
 import type {
   PromptOverridesWire,
@@ -400,7 +408,11 @@ export async function continueSession(
     .limit(1);
 
   if (!session) return 'no-session';
-  if (session.status === 'failed') return 'failed';
+  // A parked session is a parked RUNTIME (`runtime_boot_failed` /
+  // `runtime_wake_failed` stamp it), not a bad prompt. It is deliberately not
+  // auto-restarted — see the 2026-08-24 learning — but the prompt waits for the
+  // restart instead of being destroyed by it.
+  if (session.status === 'failed') return 'unreachable';
   // deleteSession() stamps metadata.deletedAt and leaves the row 'stopped' —
   // the same status a normal hibernate uses. Without this check a queued
   // follow-up (Slack reply, scheduled trigger, etc.) would revive a session
@@ -503,7 +515,8 @@ export async function continueSession(
       tl?.mark('open-ready');
       break;
     }
-    if (opened.stage === 'failed' || opened.stage === 'stopped') return 'failed';
+    // Runtime down, prompt fine. See `deliverWithRetry`'s identical branch.
+    if (opened.stage === 'failed' || opened.stage === 'stopped') return 'unreachable';
     if (Date.now() >= deadline) {
       console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
         sessionId,
@@ -1213,7 +1226,7 @@ async function remintWireMessageId(
     await db
       .update(sessionLifecycleCommands)
       .set({
-        payload: sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveredMessageId: minted.id })}::jsonb`,
+        payload: withRemintedWireId(minted.id),
         updatedAt: new Date(),
       })
       .where(eq(sessionLifecycleCommands.commandId, row.commandId));
@@ -1345,9 +1358,7 @@ async function remintForRepair(
     await db
       .update(sessionLifecycleCommands)
       .set({
-        payload: withNextDeliveryAttempt(
-          sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveredMessageId: minted.id })}::jsonb`,
-        ),
+        payload: withNextDeliveryAttempt(withRemintedWireId(minted.id)),
         updatedAt: new Date(),
       })
       .where(eq(sessionLifecycleCommands.commandId, row.commandId));
@@ -1638,9 +1649,14 @@ export async function executeQueuedContinue(
    *  it, and the post-insert strand proof must not "repair" it to the top. */
   let underPlaced = false;
   if (payload.wireMessageId && (remintKnown || turnLive)) {
-    const deliveredIds = [payload.wireMessageId, payload.redeliveredMessageId].filter(
-      (id): id is string => typeof id === 'string' && id.length > 0,
-    );
+    const deliveredIds = [
+      payload.wireMessageId,
+      payload.redeliveredMessageId,
+      // EVERY id a re-mint placed this row under, not just the latest: a reply
+      // parented on an EARLIER re-minted id proves the prompt was answered just
+      // as well, and after two re-mints the scalar no longer holds that id.
+      ...(payload.redeliveredMessageIds ?? []),
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
     const transcriptPromise = readInboxTranscriptState(row, deliveredIds, {
       full: deliveryAttempt > 0 || redeliveries > 0,
     });
@@ -1850,6 +1866,24 @@ export async function executeQueuedContinue(
       return 'succeeded';
     }
     tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
+    // 'unreachable' = the RUNTIME was down. The prompt is fine; it waits for the
+    // box on its own (long) ladder and is re-armed the moment a wake confirms
+    // the runtime is back. Bounded — a spent budget falls through to the
+    // dead-letter below, which is what puts the retry button in front of the user.
+    if (delivery === 'unreachable') {
+      const parked = await parkPromptForUnreachableRuntime(
+        row.commandId,
+        `delivery outcome: ${delivery}`,
+        { sessionId: row.sessionId },
+      );
+      if (parked.parked) return 'queued';
+      await markCommandFailed(
+        row.commandId,
+        `runtime unreachable after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
+        { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
+      );
+      return 'failed';
+    }
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';
@@ -2119,6 +2153,35 @@ function isProviderName(value: string | null): value is ProviderName {
  * every time — see `continueSession`), and is DISTINCT across different
  * commands even when their text matches exactly.
  */
+/**
+ * The agent names THIS session's runtime reports, cached per sandbox.
+ *
+ * Read through the same signed proxy endpoint every drain-side transcript read
+ * uses, so it inherits the session's own authentication and needs no second
+ * credential path. Only called when a prompt actually names an agent — a send
+ * with no pick costs nothing.
+ */
+async function sessionRuntimeAgentRoster(
+  externalId: string,
+  callerSessionId: string,
+  actorUserId: string,
+): Promise<{ names: readonly string[] | null }> {
+  return runtimeAgentRoster(externalId, async () => {
+    const resolved = await resolveSessionOpencodeEndpoint(callerSessionId, actorUserId);
+    if (!resolved) return null;
+    const res = await fetch(
+      `${resolved.endpoint.url}/agent?directory=${encodeURIComponent(WORKSPACE)}`,
+      {
+        method: 'GET',
+        headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    if (!res.ok) return null;
+    return parseRuntimeAgentNames(await res.json().catch(() => null));
+  });
+}
+
 async function postPrompt(
   externalId: string,
   opencodeSessionId: string,
@@ -2140,11 +2203,30 @@ async function postPrompt(
   const parts: PromptPartWire[] =
     prompt?.parts && prompt.parts.length > 0 ? prompt.parts : [{ type: 'text', text }];
   const overrides = prompt?.overrides;
+  // THE AGENT THE RUNTIME CAN ACTUALLY RUN — see `agent-availability.ts`.
+  //
+  // `prompt_async` answers 204 for an agent it does not have and then never
+  // runs the turn, so forwarding an unknown name is the delivery loop reading
+  // "delivered", retiring the inbox row, and the user's message ceasing to
+  // exist. Dropping the name instead runs the prompt under the runtime's own
+  // default, exactly as a send with no pick always has.
+  const deliverableAgent = resolveDeliverableAgent(
+    overrides?.agent ?? null,
+    overrides?.agent
+      ? await sessionRuntimeAgentRoster(externalId, callerSessionId, userId)
+      : { names: null },
+  );
+  if (deliverableAgent.dropped) {
+    logger.warn('[session-lifecycle] dropped an agent the runtime does not have', {
+      session_id: callerSessionId,
+      requested_agent: overrides?.agent,
+    });
+  }
   const body = new TextEncoder().encode(
     JSON.stringify({
       ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),
       parts,
-      ...(overrides?.agent ? { agent: overrides.agent } : {}),
+      ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
       ...(overrides?.model ? { model: overrides.model } : {}),
       ...(overrides?.variant ? { variant: overrides.variant } : {}),
     }),

@@ -29,7 +29,7 @@ import {
   markTriggerExecutionSkipped,
   markTriggerExecutionSucceeded,
 } from '../trigger-execution-store';
-import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
+import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
 import {
   GIT_TRIGGER_SESSION_MODES,
@@ -1374,7 +1374,11 @@ export async function loadTriggersForResponse(
   }
   const { specs, errors } = loaded;
   if (manifest) {
-    await reconcileProjectTriggerRuntime(projectId, specs);
+    // A read from one API task may briefly see an older checkout after another
+    // task commits a manifest update. Reads may ensure declared rows exist, but
+    // must never prune rows from that possibly stale snapshot. Authoritative
+    // mutation/delete paths perform the destructive reconciliation themselves.
+    await ensureProjectTriggerRuntime(projectId, specs);
   }
   const runtimeRows =
     specs.length === 0

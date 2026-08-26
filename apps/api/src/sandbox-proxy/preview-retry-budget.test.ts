@@ -126,3 +126,45 @@ describe('isLongTurnCompletionRequest — slash commands', () => {
     );
   });
 });
+
+// ── Regression: `/summarize` (compaction) is a blocking turn too ───────────
+//
+// Same omission as `/command`, one endpoint over: OpenCode holds the response
+// to `POST /session/:id/summarize` open until the ENTIRE summary turn is done —
+// routinely 30s+ with a large model over a long transcript. Missing from this
+// matcher it got the generic 15s cap here and the daemon's 10s cap inside the
+// sandbox, so EVERY compaction died as
+// `503 {"error":"upstream unreachable","details":"The operation was aborted."}`
+// — and the retry loop then re-POSTed the non-idempotent summarize, stacking
+// failed summary attempts in the transcript. Observed 2026-08-26 on /compact.
+describe('isLongTurnCompletionRequest — summarize (compaction)', () => {
+  test('POST /session/:id/summarize matches (it blocks for the whole summary turn)', () => {
+    expect(isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/summarize' })).toBe(
+      true,
+    );
+    expect(
+      isLongTurnCompletionRequest({ method: 'post', path: '/session/abc-123/summarize' }),
+    ).toBe(true);
+    expect(
+      isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/summarize?x=1' }),
+    ).toBe(true);
+  });
+
+  test('GET does not match, and neither does a lookalike path', () => {
+    expect(isLongTurnCompletionRequest({ method: 'GET', path: '/session/abc123/summarize' })).toBe(
+      false,
+    );
+    expect(
+      isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/summarizes' }),
+    ).toBe(false);
+    expect(
+      isLongTurnCompletionRequest({ method: 'POST', path: '/not-session/abc123/summarize' }),
+    ).toBe(false);
+  });
+
+  test('a summarize POST gets ~the whole remaining budget, not the 15s cap', () => {
+    expect(
+      proxyAttemptTimeoutMs(40_000, { method: 'POST', path: '/session/abc123/summarize' }),
+    ).toBe(39_500);
+  });
+});

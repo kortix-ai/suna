@@ -7,7 +7,6 @@ import {
   ShippingContainerIcon as Container,
   FileCodeIcon as FileCode,
   PackageIcon as Package,
-  SidebarSimpleIcon as PanelLeft,
   SparkleIcon as SparklesSolid,
   UsersThreeIcon as UsersGroupSolid,
 } from '@phosphor-icons/react';
@@ -27,7 +26,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
-import { useSidebar } from '@/components/ui/sidebar';
 import { Kortix } from '@/features/icon/icons/kortix';
 import { Slack } from '@/features/icon/icons/slack';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
@@ -40,10 +38,7 @@ import {
   channelsHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import {
-  sidebarOpenerLabel,
-  useShowPageSidebarOpener,
-} from '@/features/workspace/project-layout/sidebar-opener';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import {
   projectSettingsSectionHref,
   type ProjectSettingsSectionKey,
@@ -81,14 +76,6 @@ export function ProjectHome({
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { state: sidebarState, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
-  const sidebarToggleLabel = sidebarOpenerLabel({ state: sidebarState, peek });
-  // Shared gate — see sidebar-opener.ts. This used to be a local
-  // `isMobileViewport || state !== 'expanded'`, which is true on the desktop
-  // shell too: the button below is `absolute top-2 left-2`, so on macOS it
-  // rendered directly on top of the traffic lights, alongside the shell's own
-  // opener at x=72. The shell owns that corner; this one stands down there.
-  const showSidebarToggle = useShowPageSidebarOpener();
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -200,20 +187,7 @@ export function ProjectHome({
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <SessionWelcome />
       </div>
-      {showSidebarToggle && (
-        <Button
-          type="button"
-          aria-label={sidebarToggleLabel}
-          variant="ghost"
-          size="icon"
-          onClick={toggleSidebar}
-          onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
-          onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
-          className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
-        >
-          <PanelLeft className="cn-rtl-flip size-4" />
-        </Button>
-      )}
+      <SidebarToggle placement="floating" />
       {pendingAccessCount > 0 ? (
         <div className="absolute top-4 right-4 z-20">
           <Hint

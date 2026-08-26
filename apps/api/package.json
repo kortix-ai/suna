@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@aws-sdk/credential-provider-node": "3.972.62",
+    "@composio/core": "0.17.0",
     "@daytonaio/sdk": "^0.184.0",
     "@hono/zod-openapi": "^0.19.10",
     "@kortix/api-contract": "workspace:*",

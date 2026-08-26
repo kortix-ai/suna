@@ -3,6 +3,7 @@
  * the per-session "needs input" summary, and the resolve endpoint.
  */
 
+import { approvalPreviewReviewable } from '../../connectors/args-preview';
 import { approvalResolvedAuditEvent } from '../../connectors/call-audit';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
@@ -346,11 +347,16 @@ projectsApp.openapi(
 
     const existingDetail =
       typeof row.resultSummary === 'object' && row.resultSummary ? row.resultSummary : {};
-    if (decision === 'approve' && existingDetail.args_preview_complete !== true) {
+    // Blind approval stays impossible — but only when the row genuinely shows
+    // NOTHING. This used to test `args_preview_complete`, which the preview
+    // builder turns off for any elision at all (a long URL, an 11th recipient,
+    // an attachment body), so a fully legible call could be denied and never
+    // approved. See `approvalPreviewReviewable`.
+    if (decision === 'approve' && !approvalPreviewReviewable(existingDetail)) {
       return c.json(
         {
-          error: 'The complete connector parameters are not available for review',
-          code: 'APPROVAL_PREVIEW_INCOMPLETE',
+          error: 'This call recorded no parameters to review, so it cannot be approved',
+          code: 'APPROVAL_PREVIEW_UNAVAILABLE',
         },
         409,
       );

@@ -116,9 +116,9 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
               initial={reduceMotion ? false : { y: '-100%' }}
               animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
               exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
-              className="border-border bg-muted mx-3 -mt-3 rounded-b-md border"
+              className="border-border bg-muted my-2 rounded-md border"
             >
-              <div className="flex items-center justify-between gap-3 pt-[18px] pr-2 pb-1.5 pl-4">
+              <div className="flex items-center justify-between gap-3  p-1 px-3">
                 <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
                   <KeyIcon className="size-3.5 shrink-0" />
                   <span className="truncate">
@@ -131,9 +131,8 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
+                      size="xs"
                       onClick={openUpgrade}
-                      className="hit-area-1 gap-1.5 rounded-full text-xs"
                     >
                       <CreditCardIcon className="size-3.5 shrink-0" />
                       Upgrade
@@ -141,9 +140,8 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
                   )}
                   <Button
                     type="button"
-                    size="sm"
+                    size="xs"
                     onClick={() => openConnectProvider('providers')}
-                    className="hit-area-1 rounded-full text-xs"
                   >
                     Connect model
                   </Button>

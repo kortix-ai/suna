@@ -15,7 +15,12 @@ import { decideParkedRuntime } from './parked-runtime-verification';
  * and 16 of them were already dead provider-side without Kortix knowing.
  */
 describe('decideParkedRuntime', () => {
-  const base = { providerStatus: 'stopped', identityState: null, wakeInProgress: false };
+  const base = {
+    providerStatus: 'stopped',
+    identityState: null,
+    wakeInProgress: false,
+    stopPending: false,
+  };
 
   test('a definitive `removed` on a healthy-looking parked row preserves the identity', () => {
     expect(decideParkedRuntime({ ...base, providerStatus: 'removed' })).toBe('preserve-lost');
@@ -68,6 +73,37 @@ describe('decideParkedRuntime', () => {
         wakeInProgress: true,
       }),
     ).toBe('skip');
+  });
+
+  test('a running provider with a durable stop intent is stopped again', () => {
+    expect(
+      decideParkedRuntime({
+        ...base,
+        providerStatus: 'running',
+        stopPending: true,
+      }),
+    ).toBe('stop-pending');
+  });
+
+  test('a stopped provider with durable stop intent still closes compute before cleanup', () => {
+    expect(decideParkedRuntime({ ...base, stopPending: true })).toBe('settle-stop-pending');
+  });
+
+  test('a wake fence outranks a stale stop intent', () => {
+    expect(
+      decideParkedRuntime({
+        ...base,
+        providerStatus: 'running',
+        stopPending: true,
+        wakeInProgress: true,
+      }),
+    ).toBe('skip');
+  });
+
+  test('an inconclusive provider status retains durable stop intent', () => {
+    for (const providerStatus of ['unknown', 'terminal', 'starting']) {
+      expect(decideParkedRuntime({ ...base, providerStatus, stopPending: true })).toBe('skip');
+    }
   });
 
   test('an ordinary healthy parked row is just stamped as verified', () => {

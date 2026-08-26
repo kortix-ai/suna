@@ -24,11 +24,8 @@ import {
 } from '@/features/session/header/session-config-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import {
-  sidebarOpenerLabel,
-  useDesktopShell,
-  useShowPageSidebarOpener,
-} from '@/features/workspace/project-layout/sidebar-opener';
+import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -52,7 +49,6 @@ import {
   FolderSimpleIcon,
   GlobeSimpleIcon,
   StackIcon as Layers,
-  SidebarSimpleIcon as PanelLeft,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
@@ -100,19 +96,9 @@ export function SessionSiteHeader({
   // the shell's one "Open sidebar" toggle both live in that band. The row
   // indents past them and drops onto their centre line; `.kx-titlebar-row`
   // carries both offsets so no window px are hard-coded here.
-  const {
-    state: sidebarState,
-    toggleSidebar,
-    peek,
-    peekEnter,
-    peekLeave,
-    isMobile: isMobileViewport,
-  } = useSidebar();
+  const { state: sidebarState, isMobile: isMobileViewport } = useSidebar();
   const desktopShell = useDesktopShell();
   const sidebarHidden = desktopShell !== null && sidebarState === 'collapsed';
-  const sidebarToggleLabel = sidebarOpenerLabel({ state: sidebarState, peek });
-  // Shared gate — see sidebar-opener.ts.
-  const showSidebarToggle = useShowPageSidebarOpener();
 
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
@@ -313,20 +299,7 @@ export function SessionSiteHeader({
               sidebarHidden && 'h-[var(--kx-titlebar-control-size)]',
             )}
           >
-            {showSidebarToggle && (
-              <Button
-                type="button"
-                aria-label={sidebarToggleLabel}
-                variant="ghost"
-                size="icon"
-                onClick={toggleSidebar}
-                onPointerEnter={sidebarState === 'collapsed' ? peekEnter : undefined}
-                onPointerLeave={sidebarState === 'collapsed' ? peekLeave : undefined}
-                className="hover:bg-sidebar-accent hover:text-sidebar-foreground shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
-              >
-                <PanelLeft className="cn-rtl-flip size-4" />
-              </Button>
-            )}
+            <SidebarToggle />
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

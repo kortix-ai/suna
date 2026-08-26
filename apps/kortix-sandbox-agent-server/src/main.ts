@@ -13,7 +13,7 @@ import {
   runGitCredentialHelper,
   scheduleHistoryBackfill,
 } from './git'
-import { logger } from './logger'
+import { enableDaemonLogFile, logger } from './logger'
 import { MonitorRunner, parseMonitorSpecs } from './monitor-runner'
 import {
   catalogIsDegraded,
@@ -104,11 +104,19 @@ async function main() {
   const bootMark = (label: string) => {
     bootState.timeline.push({ label, atMs: Date.now() - bootTime })
   }
+  // The daemon's own log lands on the box from the first line (logger.ts):
+  // under E2B stdout goes to envd and is not on disk, which is why the
+  // 2026-08-25 port desync could be fenced but never proven.
+  const daemonLog = enableDaemonLogFile()
   logger.info('[boot] kortix-sandbox-agent-server starting', {
     servicePort: cfg.servicePort,
     opencodeInternalPort: cfg.opencodeInternalPort,
+    opencodeStandbyPort: cfg.opencodeStandbyPort,
     staticPort: cfg.staticPort,
     autoClone: cfg.autoClone,
+    pid: process.pid,
+    bun: typeof Bun !== 'undefined' ? Bun.version : null,
+    daemonLogFile: daemonLog.path,
   })
 
   // Bring the static web server up first. It only serves files off disk, so it
@@ -308,6 +316,25 @@ async function main() {
         err: err instanceof Error ? err.message : String(err),
       })
     })
+    // Every gateway session routes OpenCode through the localhost LLM proxy,
+    // not only warm hot-swap forks: the proxy is where inline images are
+    // windowed BEFORE a request leaves the sandbox (llm-image-window.ts).
+    // Essentia 2026-08-25: >128 MiB vision bodies were refused at the gateway
+    // edge with a silent 413 and the turn died. Kill switch:
+    // KORTIX_LLM_PROXY_DISABLE=1 restores the direct provider config.
+    if (
+      hasKortixLlmGateway(process.env) &&
+      !process.env.KORTIX_LLM_PROXY_URL &&
+      process.env.KORTIX_LLM_PROXY_DISABLE !== '1'
+    ) {
+      const llmPort = Number(process.env.KORTIX_LLM_PROXY_PORT) || 4319
+      const llmUrl = startLlmProxy(llmPort, process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_TOKEN)
+      if (llmUrl) {
+        process.env.KORTIX_LLM_PROXY_URL = llmUrl
+        bootMark('llm-proxy-started')
+        logger.info('[boot] llm proxy up; opencode provider routes through it', { llmUrl })
+      }
+    }
     opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)
     await opencode.start().catch((err) => {
       logger.warn('[boot] opencode.start() rejected', {
@@ -606,7 +633,14 @@ async function startSessionRuntime(
       )
       if (!response.ok) {
         const body = await response.text().catch(() => '')
-        throw new Error(`audit batch rejected: ${response.status} ${body.slice(0, 200)}`)
+        const error = new Error(
+          `audit batch rejected: ${response.status} ${body.slice(0, 200)}`,
+        ) as Error & { retryAfterMs?: number }
+        // 503 + Retry-After is the API telling us this session's audit sequence
+        // lock is contended. Honour it instead of hammering the convoy.
+        const retryAfter = Number.parseInt(response.headers.get('retry-after') ?? '', 10)
+        if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = retryAfter * 1_000
+        throw error
       }
     },
     { spoolPath: resolveOpenCodeAuditSpoolPath(process.env) },
@@ -713,19 +747,7 @@ async function startSessionRuntime(
     // backstop for any residual gap.
     const loop = startOpencodeEventLoop(opencode, cfg, eventHandlers)
     loopStarted = true
-    await maybeCreateInitialOpencodeSession(
-      opencode,
-      bootState,
-      bootMark,
-      loop.connected,
-      markOpencodeListening,
-    ).catch(
-      (err) => {
-        bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
-        logger.warn('[boot] initial opencode session setup failed', err)
-      },
-    )
-    if (bootState.initialOpenCodeSessionId) {
+    const finalizeInitialSession = async () => {
       await reconcileInitialTurnAcceptance()
       opencode.markReady()
       bootMark('opencode-ready')
@@ -737,8 +759,45 @@ async function startSessionRuntime(
       // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
       relayBootTimelineToApi(bootState.timeline)
       scheduleRuntimeAssetsReconcile(cfg)
+    }
+    await maybeCreateInitialOpencodeSession(
+      opencode,
+      bootState,
+      bootMark,
+      loop.connected,
+      markOpencodeListening,
+    ).catch((err) => {
+      bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
+      logger.warn('[boot] initial opencode session setup failed', err)
+    })
+    const attemptInitialSession = () =>
+      maybeCreateInitialOpencodeSession(
+        opencode,
+        bootState,
+        bootMark,
+        loop.connected,
+        markOpencodeListening,
+      ).catch((err) => {
+        bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
+        logger.warn('[boot] initial opencode session setup failed', err)
+      })
+    if (bootState.initialOpenCodeSessionId) {
+      await finalizeInitialSession()
       return
     }
+    // NOT established — a `defer` (opencode slow to answer, prior root pinned)
+    // or a claim/setup failure. Until 2026-08-26 this was a dead end: nothing
+    // ever retried, `runtimeReady` stayed false forever, the proxy 503'd every
+    // request `initial_opencode_session_pending`, and the session spun "Waking
+    // the agent" until a human clicked Restart (Essentia ef9f344b, 10+ min).
+    // The runtime is unusable without the root, so retry until established —
+    // bounded interval, detached so the rest of boot (readiness probe, event
+    // loop fallback below) proceeds and the box stays observable meanwhile.
+    void retryUntilInitialSessionEstablished({
+      attempt: attemptInitialSession,
+      established: () => bootState.initialOpenCodeSessionId !== null,
+      finalize: finalizeInitialSession,
+    })
   }
   const ready = await waitForOpencodeReady(opencode, cfg.projectTarget, markOpencodeListening)
   if (ready) {
@@ -1217,6 +1276,42 @@ async function runWarmSeedMode(
 // `maybeCreateInitialOpencodeSession` already ran to a delivery decision on
 // this box before, so an empty transcript behind an existing pin means
 // truncation, not "never delivered". See the `priorPin` check below.
+/** Retry delay for the initial-session claim: 5s, 10s, …, capped at 30s. */
+export function initialSessionRetryDelayMs(attempt: number): number {
+  return Math.min(5_000 * Math.max(attempt, 1), 30_000)
+}
+
+/**
+ * Re-run the initial-session setup until the root is established, then run
+ * `finalize` exactly once. `maybeCreateInitialOpencodeSession` is idempotent
+ * (it re-resolves the pinned root and keeps deferring while opencode has not
+ * answered), so retrying is safe; without the root the runtime can never turn
+ * ready, so the loop has no attempt cap — only a capped interval. Exported for
+ * tests; see initial-session-retry.test.ts.
+ */
+export async function retryUntilInitialSessionEstablished(input: {
+  attempt: () => Promise<unknown>
+  established: () => boolean
+  finalize: () => Promise<void>
+  delayMs?: (attempt: number) => number
+  sleep?: (ms: number) => Promise<void>
+  /** Tests only: stop after this many attempts. */
+  maxAttempts?: number
+}): Promise<boolean> {
+  const delayMs = input.delayMs ?? initialSessionRetryDelayMs
+  const sleep = input.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
+  for (let attempt = 1; input.maxAttempts === undefined || attempt <= input.maxAttempts; attempt++) {
+    await sleep(delayMs(attempt))
+    if (input.established()) break
+    logger.warn('[boot] initial opencode session still pending; retrying', { attempt })
+    await input.attempt()
+    if (input.established()) break
+  }
+  if (!input.established()) return false
+  await input.finalize()
+  return true
+}
+
 async function maybeCreateInitialOpencodeSession(
   opencode: Opencode,
   bootState: SandboxBootState,
@@ -2884,10 +2979,16 @@ export function resolveOpencodeModel(): { providerID: string; modelID: string } 
     return modelID ? { providerID: 'kortix', modelID } : undefined
   }
   if (LEGACY_OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
-  const slash = raw.indexOf('/')
-  if (slash <= 0 || slash === raw.length - 1) return undefined
-  const providerID = raw.slice(0, slash)
-  const modelID = raw.slice(slash + 1)
+  // A pin stored while the gateway was ON can survive a live toggle to native
+  // mode. `kortix/<provider>/<model>` (a nested BYOK/codex wire ref) strips to
+  // the native ref it wraps; a bare `kortix/<managed-id>` has no native
+  // provider to map onto, so it is dropped and OpenCode's default applies —
+  // never a prompt against the nonexistent `kortix` provider.
+  const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
+  const slash = ref.indexOf('/')
+  if (slash <= 0 || slash === ref.length - 1) return undefined
+  const providerID = ref.slice(0, slash)
+  const modelID = ref.slice(slash + 1)
   return { providerID, modelID }
 }
 

@@ -74,7 +74,11 @@ describe('LLM provider modal shell', () => {
    * have, and it cannot relabel one.
    */
   test('its tabs are the page’s first three, by reference not by copy', () => {
-    expect(modalSource).toContain('tabs={QUICK_LLM_TABS}');
+    // Forked on the project's llm_gateway flag: gateway mode keeps the quick
+    // three; native mode drops the Models tab (its /model-picker catalog 404s
+    // off-gateway) and offers Providers + Custom — both slices ship from the
+    // page's own module.
+    expect(modalSource).toContain('tabs={llmGatewayEnabled ? QUICK_LLM_TABS : NATIVE_LLM_TABS}');
     expect(QUICK_LLM_TABS).toEqual(LLM_TABS.slice(0, 3));
     expect(QUICK_LLM_TABS.map((t) => t.id)).toEqual(['providers', 'models', 'custom']);
     expect(QUICK_LLM_TABS.map((t) => t.label)).toEqual(['Providers', 'Models', 'Custom']);
@@ -118,9 +122,10 @@ describe('LLM provider modal shell', () => {
       modalSource.indexOf('</ModalHeader>'),
     );
     expect(header).toContain('<ProjectDefaultPicker projectId={projectId} />');
-    // Write-gated: a read-only member sees the list, not the one control that
-    // POSTs from this bar.
-    expect(header).toContain('canWrite ? <ProjectDefaultPicker');
+    // Write-gated AND gateway-gated: a read-only member sees the list, not the
+    // one control that POSTs from this bar — and a native project has no
+    // model-defaults chain for the picker to write.
+    expect(header).toContain('canWrite && llmGatewayEnabled ? <ProjectDefaultPicker');
     expect(modalSource).toContain('sm:pr-11');
   });
 

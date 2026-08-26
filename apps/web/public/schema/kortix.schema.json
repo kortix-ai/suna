@@ -475,6 +475,7 @@
                   "type": "string",
                   "enum": [
                     "pipedream",
+                    "composio",
                     "mcp",
                     "openapi",
                     "postman",
@@ -1568,6 +1569,7 @@
                   "type": "string",
                   "enum": [
                     "pipedream",
+                    "composio",
                     "mcp",
                     "openapi",
                     "postman",

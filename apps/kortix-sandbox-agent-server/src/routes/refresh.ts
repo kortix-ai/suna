@@ -16,6 +16,16 @@ function bearerToken(header: string | undefined): string | null {
   return header.slice('Bearer '.length).trim() || null
 }
 
+/**
+ * A refresh may kick a runtime-assets pass only once OpenCode is serving. The
+ * API refreshes on session open, i.e. during a resume's boot; a pass then can
+ * install a new OpenCode pin and restart it under the boot in progress
+ * (Essentia 2026-08-25 17:23). main.ts runs the post-boot pass itself.
+ */
+export function refreshMayConvergeRuntime(opencodeState: string): boolean {
+  return opencodeState === 'ok'
+}
+
 export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
   const router = new Hono()
   let refreshInFlight: Promise<Response> | null = null
@@ -131,7 +141,16 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         // image build. Detached on purpose: the route's callers await its
         // latency, and a ~100 MB download must never enter that budget. The
         // reconcile is single-flighted, so a burst of refreshes runs one pass.
-        scheduleRuntimeAssetsReconcile(cfg)
+        //
+        // NEVER while OpenCode is still booting. The API calls this route from
+        // the session-open path (env-sync) — on a resume that is BEFORE the
+        // runtime is ready — and a pass that finds a stale pin installs the
+        // new OpenCode and restarts it underneath the boot in progress
+        // (Essentia 2026-08-25 17:23: install at +9 s, spawn at +13 s, the
+        // API's start budget expired on both boxes). main.ts schedules the
+        // post-boot pass itself once `opencode-ready` is marked; this call is
+        // for a box that is already up.
+        if (refreshMayConvergeRuntime(opencode.getState())) scheduleRuntimeAssetsReconcile(cfg)
         return c.json({
           // The repo work succeeded either way; `reload.outcome` carries whether
           // the new config actually took. Reporting ok:false here would hide a

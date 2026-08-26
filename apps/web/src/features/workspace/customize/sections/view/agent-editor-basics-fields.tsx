@@ -34,7 +34,8 @@ import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { cn } from '@/lib/utils';
 import type { AgentConfigBlock, RuntimeAgentConfig } from '@kortix/sdk';
-import { modelKeyToWire, useRuntimeProviders, wireToModelKey } from '@kortix/sdk/react';
+import { modelKeyToWire, useFeatureFlag, useKortixRouteProjectId, useRuntimeProviders } from '@kortix/sdk/react';
+import { storedModelRefToKey } from '@/lib/llm-gateway';
 import {
   AGENT_MODE_HELP,
   AGENT_MODE_LABEL,
@@ -245,7 +246,14 @@ function ColorSwatches({
 export function ModelSection({ oc, setOc }: { oc: RuntimeAgentConfig; setOc: SetRuntime }) {
   const { data: providers } = useRuntimeProviders();
   const models = flattenModels(providers);
-  const selectedModelKey = oc.model ? wireToModelKey(oc.model) : null;
+  // Mode-aware read-back: a native (gateway-off) agent model is
+  // `provider/model` — see storedModelRefToKey. This editor renders under
+  // /projects/[id], so the route supplies the project.
+  const projectId = useKortixRouteProjectId();
+  const llmGatewayFlag = useFeatureFlag(projectId, 'llm_gateway');
+  const selectedModelKey = oc.model
+    ? storedModelRefToKey(oc.model, llmGatewayFlag.enabled === true)
+    : null;
 
   return (
     <EditorSection title="Model" description="How this agent thinks.">

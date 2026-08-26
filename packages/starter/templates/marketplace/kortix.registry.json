@@ -97,7 +97,7 @@
           "connectors": [
             {
               "slug": "stripe",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "stripe"
             }
           ],
@@ -752,7 +752,7 @@
           "connectors": [
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             },
             {
@@ -885,7 +885,7 @@
           "connectors": [
             {
               "slug": "github",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "github"
             }
           ],
@@ -1009,17 +1009,17 @@
           "connectors": [
             {
               "slug": "gmail",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "gmail"
             },
             {
               "slug": "linear",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "linear"
             },
             {
               "slug": "notion",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "notion"
             }
           ],
@@ -1153,12 +1153,12 @@
           "connectors": [
             {
               "slug": "github",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "github"
             },
             {
               "slug": "datadog",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "datadog"
             }
           ],
@@ -1281,13 +1281,13 @@
             },
             {
               "slug": "stripe",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "stripe"
             },
             {
               "slug": "google_docs",
-              "provider": "pipedream",
-              "app": "google_docs"
+              "provider": "composio",
+              "app": "googledocs"
             }
           ],
           "triggers": [
@@ -1531,7 +1531,7 @@
           "connectors": [
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             },
             {
@@ -1664,7 +1664,7 @@
           "connectors": [
             {
               "slug": "github",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "github"
             }
           ],
@@ -1794,13 +1794,13 @@
           "connectors": [
             {
               "slug": "greenhouse",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "greenhouse"
             },
             {
               "slug": "google_calendar",
-              "provider": "pipedream",
-              "app": "google_calendar"
+              "provider": "composio",
+              "app": "googlecalendar"
             }
           ],
           "triggers": [
@@ -1927,12 +1927,12 @@
           "connectors": [
             {
               "slug": "linear",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "linear"
             },
             {
               "slug": "stripe",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "stripe"
             }
           ],
@@ -2064,12 +2064,12 @@
           "connectors": [
             {
               "slug": "plain",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "plain"
             },
             {
               "slug": "linear",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "linear"
             }
           ],
@@ -2312,7 +2312,7 @@
             },
             {
               "slug": "github",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "github"
             },
             {
@@ -2440,7 +2440,7 @@
             },
             {
               "slug": "stripe",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "stripe"
             }
           ],
@@ -2564,13 +2564,13 @@
           "connectors": [
             {
               "slug": "google_drive",
-              "provider": "pipedream",
-              "app": "google_drive"
+              "provider": "composio",
+              "app": "googledrive"
             },
             {
               "slug": "google_docs",
-              "provider": "pipedream",
-              "app": "google_docs"
+              "provider": "composio",
+              "app": "googledocs"
             }
           ],
           "channels": [
@@ -2706,12 +2706,12 @@
             },
             {
               "slug": "google_drive",
-              "provider": "pipedream",
-              "app": "google_drive"
+              "provider": "composio",
+              "app": "googledrive"
             },
             {
               "slug": "github",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "github"
             }
           ],
@@ -2847,7 +2847,7 @@
             },
             {
               "slug": "linear",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "linear"
             }
           ],
@@ -2968,7 +2968,7 @@
           "connectors": [
             {
               "slug": "stripe",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "stripe"
             },
             {
@@ -2978,8 +2978,8 @@
             },
             {
               "slug": "google_sheets",
-              "provider": "pipedream",
-              "app": "google_sheets"
+              "provider": "composio",
+              "app": "googlesheets"
             }
           ],
           "triggers": [
@@ -3106,13 +3106,13 @@
           "connectors": [
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             },
             {
               "slug": "google_calendar",
-              "provider": "pipedream",
-              "app": "google_calendar"
+              "provider": "composio",
+              "app": "googlecalendar"
             }
           ],
           "channels": [
@@ -3226,17 +3226,17 @@
           "connectors": [
             {
               "slug": "google_calendar",
-              "provider": "pipedream",
-              "app": "google_calendar"
+              "provider": "composio",
+              "app": "googlecalendar"
             },
             {
               "slug": "google_drive",
-              "provider": "pipedream",
-              "app": "google_drive"
+              "provider": "composio",
+              "app": "googledrive"
             },
             {
               "slug": "linear",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "linear"
             }
           ],
@@ -3377,17 +3377,17 @@
           "connectors": [
             {
               "slug": "sentry",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "sentry"
             },
             {
               "slug": "datadog",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "datadog"
             },
             {
               "slug": "github",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "github"
             }
           ],
@@ -3630,17 +3630,17 @@
           "connectors": [
             {
               "slug": "google_drive",
-              "provider": "pipedream",
-              "app": "google_drive"
+              "provider": "composio",
+              "app": "googledrive"
             },
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             },
             {
               "slug": "linear",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "linear"
             }
           ],
@@ -3763,18 +3763,18 @@
           "connectors": [
             {
               "slug": "gmail",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "gmail"
             },
             {
               "slug": "google_drive",
-              "provider": "pipedream",
-              "app": "google_drive"
+              "provider": "composio",
+              "app": "googledrive"
             },
             {
               "slug": "google_sheets",
-              "provider": "pipedream",
-              "app": "google_sheets"
+              "provider": "composio",
+              "app": "googlesheets"
             }
           ],
           "channels": [
@@ -3901,13 +3901,13 @@
           "connectors": [
             {
               "slug": "gmail",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "gmail"
             },
             {
               "slug": "google_sheets",
-              "provider": "pipedream",
-              "app": "google_sheets"
+              "provider": "composio",
+              "app": "googlesheets"
             }
           ],
           "channels": [
@@ -4046,7 +4046,7 @@
             },
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             }
           ],
@@ -4164,7 +4164,7 @@
           "connectors": [
             {
               "slug": "stripe",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "stripe"
             }
           ],
@@ -4292,7 +4292,7 @@
           "connectors": [
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             }
           ],
@@ -4419,13 +4419,13 @@
           "connectors": [
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             },
             {
               "slug": "google_calendar",
-              "provider": "pipedream",
-              "app": "google_calendar"
+              "provider": "composio",
+              "app": "googlecalendar"
             }
           ],
           "channels": [
@@ -4548,18 +4548,18 @@
           "connectors": [
             {
               "slug": "gmail",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "gmail"
             },
             {
               "slug": "google_drive",
-              "provider": "pipedream",
-              "app": "google_drive"
+              "provider": "composio",
+              "app": "googledrive"
             },
             {
               "slug": "google_docs",
-              "provider": "pipedream",
-              "app": "google_docs"
+              "provider": "composio",
+              "app": "googledocs"
             }
           ],
           "triggers": [
@@ -4683,8 +4683,8 @@
             },
             {
               "slug": "google_sheets",
-              "provider": "pipedream",
-              "app": "google_sheets"
+              "provider": "composio",
+              "app": "googlesheets"
             }
           ],
           "channels": [
@@ -4796,13 +4796,13 @@
           "connectors": [
             {
               "slug": "google_ads",
-              "provider": "pipedream",
-              "app": "google_ads"
+              "provider": "composio",
+              "app": "googleads"
             },
             {
               "slug": "facebook_ads",
-              "provider": "pipedream",
-              "app": "facebook_ads"
+              "provider": "composio",
+              "app": "metaads"
             }
           ],
           "channels": [
@@ -4937,12 +4937,12 @@
           "connectors": [
             {
               "slug": "greenhouse",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "greenhouse"
             },
             {
               "slug": "linkedin",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "linkedin"
             }
           ],
@@ -5078,7 +5078,7 @@
           "connectors": [
             {
               "slug": "google_search_console",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "google_search_console"
             }
           ],
@@ -5360,18 +5360,18 @@
             },
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             },
             {
               "slug": "google_slides",
-              "provider": "pipedream",
-              "app": "google_slides"
+              "provider": "composio",
+              "app": "googleslides"
             },
             {
               "slug": "google_docs",
-              "provider": "pipedream",
-              "app": "google_docs"
+              "provider": "composio",
+              "app": "googledocs"
             }
           ],
           "triggers": [
@@ -5743,7 +5743,7 @@
           "connectors": [
             {
               "slug": "sentry",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "sentry"
             }
           ],
@@ -5886,7 +5886,7 @@
           "connectors": [
             {
               "slug": "linear",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "linear"
             }
           ],
@@ -6139,7 +6139,7 @@
           "connectors": [
             {
               "slug": "github",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "github"
             }
           ],
@@ -6265,7 +6265,7 @@
           "connectors": [
             {
               "slug": "gmail",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "gmail"
             },
             {
@@ -6275,8 +6275,8 @@
             },
             {
               "slug": "google_docs",
-              "provider": "pipedream",
-              "app": "google_docs"
+              "provider": "composio",
+              "app": "googledocs"
             }
           ],
           "channels": [
@@ -6387,12 +6387,12 @@
           "connectors": [
             {
               "slug": "gmail",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "gmail"
             },
             {
               "slug": "notion",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "notion"
             }
           ],
@@ -6520,13 +6520,13 @@
           "connectors": [
             {
               "slug": "greenhouse",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "greenhouse"
             },
             {
               "slug": "google_calendar",
-              "provider": "pipedream",
-              "app": "google_calendar"
+              "provider": "composio",
+              "app": "googlecalendar"
             }
           ],
           "channels": [
@@ -6651,7 +6651,7 @@
           "connectors": [
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             }
           ],
@@ -6771,13 +6771,13 @@
           "connectors": [
             {
               "slug": "stripe",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "stripe"
             },
             {
               "slug": "google_sheets",
-              "provider": "pipedream",
-              "app": "google_sheets"
+              "provider": "composio",
+              "app": "googlesheets"
             }
           ],
           "channels": [
@@ -6899,18 +6899,18 @@
           "connectors": [
             {
               "slug": "gmail",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "gmail"
             },
             {
               "slug": "google_drive",
-              "provider": "pipedream",
-              "app": "google_drive"
+              "provider": "composio",
+              "app": "googledrive"
             },
             {
               "slug": "google_docs",
-              "provider": "pipedream",
-              "app": "google_docs"
+              "provider": "composio",
+              "app": "googledocs"
             }
           ],
           "triggers": [
@@ -7024,8 +7024,8 @@
           "connectors": [
             {
               "slug": "google_sheets",
-              "provider": "pipedream",
-              "app": "google_sheets"
+              "provider": "composio",
+              "app": "googlesheets"
             }
           ],
           "channels": [
@@ -7143,7 +7143,7 @@
           "connectors": [
             {
               "slug": "gmail",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "gmail"
             }
           ],
@@ -7400,7 +7400,7 @@
           "connectors": [
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             }
           ],
@@ -7534,7 +7534,7 @@
           "connectors": [
             {
               "slug": "notion",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "notion"
             }
           ],
@@ -7779,13 +7779,13 @@
           "connectors": [
             {
               "slug": "gmail",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "gmail"
             },
             {
               "slug": "google_sheets",
-              "provider": "pipedream",
-              "app": "google_sheets"
+              "provider": "composio",
+              "app": "googlesheets"
             }
           ],
           "channels": [
@@ -7919,7 +7919,7 @@
           "connectors": [
             {
               "slug": "hubspot",
-              "provider": "pipedream",
+              "provider": "composio",
               "app": "hubspot"
             }
           ],

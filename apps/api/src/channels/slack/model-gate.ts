@@ -3,6 +3,7 @@ import { accountMembers, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { accountRoleMap } from '../../iam/read-models';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { type ChannelCtx, currentChannelSelection } from './selection';
 
 // The account/tier context a channel's model setting resolves against. Kept out
@@ -17,6 +18,10 @@ export interface ChannelModelContext {
   ownerUserId: string;
   /** The account may not use platform-managed Kortix models. */
   freeManagedOnly: boolean;
+  /** The project's `llm_gateway` flag. Off ⇒ native OpenCode mode: the gateway
+   *  picker/servability machinery does not apply — a channel model is a native
+   *  `provider/model` ref stored verbatim. */
+  llmGatewayEnabled: boolean;
 }
 
 /**
@@ -28,7 +33,7 @@ export async function channelModelContext(ctx: ChannelCtx): Promise<ChannelModel
   const selection = await currentChannelSelection(ctx);
   if (!selection?.projectId) return null;
   const [project] = await db
-    .select({ accountId: projects.accountId })
+    .select({ accountId: projects.accountId, metadata: projects.metadata })
     .from(projects)
     .where(eq(projects.projectId, selection.projectId))
     .limit(1);
@@ -51,5 +56,6 @@ export async function channelModelContext(ctx: ChannelCtx): Promise<ChannelModel
     accountId: project.accountId,
     ownerUserId: owner?.userId ?? project.accountId,
     freeManagedOnly,
+    llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
   };
 }

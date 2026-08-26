@@ -1,3 +1,4 @@
+import { upstreamFetch } from '../../upstream-fetch';
 import { CATALOG, catalogModelForWireModel } from '@kortix/llm-catalog';
 import { InvalidPromptError, generateText, streamText } from 'ai';
 import type { UpstreamDescriptor } from '../../domain';
@@ -237,7 +238,7 @@ export async function callUpstreamViaAiSdk(
     // Always wrapped — see guardEmptyChoicesFetch's doc comment — regardless
     // of whether the caller supplied its own fetchImpl (tests) or this falls
     // through to the platform default (production).
-    fetch: guardEmptyChoicesFetch(opts.fetch ?? ((input, init) => globalThis.fetch(input, init))),
+    fetch: guardEmptyChoicesFetch(opts.fetch ?? upstreamFetch),
     // Kortix-internal correlation id, mirrored onto the upstream request as a
     // best-effort header — every provider here tolerates unknown headers.
     // This is the ai-sdk-engine equivalent of what the retired native

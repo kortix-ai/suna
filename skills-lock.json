@@ -7,6 +7,12 @@
       "skillPath": "skills/brand-guidelines/SKILL.md",
       "computedHash": "dc286e42a2b5cbc0036525992945d5f336790116e0e08bf830ca1b24a9fe7495"
     },
+    "composio": {
+      "source": "ComposioHQ/composio",
+      "sourceType": "github",
+      "skillPath": "skills/composio/SKILL.md",
+      "computedHash": "60d7d3cf79e25c061030309af40eaa2a9de6df8f6b87977932996a9909232886"
+    },
     "internal-comms": {
       "source": "kortix-ai/skills",
       "sourceType": "github",

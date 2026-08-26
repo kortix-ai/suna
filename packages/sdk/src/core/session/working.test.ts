@@ -913,6 +913,117 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
 });
 
 /**
+ * Only the RUNTIME'S OWN idle frame may end a turn. The tab also fabricates
+ * idle frames locally — `reconcileMissingBusySessions` when a status snapshot
+ * omits a session, `markSessionAbortedLocally` on `server.instance.disposed`,
+ * `clearSession` on a cache-ownership handoff — and every one of them is an
+ * INFERENCE, not the runtime speaking.
+ *
+ * Reported from dev 2026-08-24: mid-turn — usually a long `run
+ * command` or tool call — the busy indicator disappears and the composer swaps
+ * Stop for the send arrow while the agent is still running; the UI comes back
+ * "for a brief couple seconds" right as the reply streams, then ends. That is
+ * a fabricated idle frame vetoing the ledger's open row: the veto is
+ * deliberately unbounded (a dropped `kind:"end"` relay must stay ended — see
+ * the block above), so one wrong local frame discards every fresh `/turn`
+ * read for the rest of the turn, and a quiet tool call emits no new wire
+ * frame to lift it.
+ *
+ * `origin` is the discriminator: absent or `'wire'` keeps today's full veto;
+ * `'local'` may still ANSWER (rule 4 — a repair for a missed terminal frame is
+ * still the honest fallback when nothing fresher exists) but may never
+ * CONTRADICT the lifecycle authority or the runtime's own output.
+ */
+describe('projectWorking — a fabricated idle frame cannot contradict the ledger', () => {
+  test('a local idle frame never vetoes an open turn the server re-affirms', () => {
+    // The sweep fabricated idle at T0+60s; the poll keeps reporting the turn
+    // open on reads issued after it. The server is the authority here.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 + 65_000 },
+      stream: { type: 'idle', origin: 'local', atMs: T0 + 60_000 },
+      nowMs: T0 + 65_100,
+    });
+
+    expect(projection).toMatchObject({ state: 'working', source: 'server', turnId: 'msg_01' });
+  });
+
+  test('a local idle frame NEWER than the read still loses to the open row', () => {
+    // The fabricated frame lands between polls, so it is the newest
+    // observation in the tab. Newest is not truest: a local frame never
+    // outranks the lifecycle authority, not even for one poll interval.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 + 60_000 },
+      stream: { type: 'idle', origin: 'local', atMs: T0 + 62_000 },
+      nowMs: T0 + 62_100,
+    });
+
+    expect(projection).toMatchObject({ state: 'working', source: 'server' });
+  });
+
+  test('streaming content outranks a NEWER local idle frame', () => {
+    // Content is the runtime working; a fabricated frame is a guess about it.
+    // The wire-idle rule ("content older than the idle frame does not
+    // resurrect the turn") must not apply to a frame the runtime never sent.
+    const projection = projectWorking({
+      optimistic: null,
+      server: null,
+      stream: { type: 'idle', origin: 'local', atMs: T0 + 60_500 },
+      activity: { atMs: T0 + 60_000 },
+      nowMs: T0 + 61_000,
+    });
+
+    expect(projection).toMatchObject({ state: 'working', source: 'stream' });
+  });
+
+  test('a local idle frame still answers when nothing fresher exists', () => {
+    // The repair for a missed terminal frame keeps its value: with no server
+    // read, no content, and no receipt, the fabricated frame is the only
+    // observation there is, and idle is the honest default it feeds.
+    const projection = projectWorking({
+      optimistic: null,
+      server: null,
+      stream: { type: 'idle', origin: 'local', atMs: T0 },
+      nowMs: T0 + 1_000,
+    });
+
+    expect(projection).toMatchObject({ state: 'idle', source: 'stream' });
+  });
+
+  test("an explicit 'wire' origin behaves exactly like an unmarked frame", () => {
+    // `origin` is additive: absent means wire, and wire keeps the full veto.
+    for (const stream of [
+      { type: 'idle' as const, atMs: T0 + 60_000 },
+      { type: 'idle' as const, origin: 'wire' as const, atMs: T0 + 60_000 },
+    ]) {
+      expect(
+        projectWorking({
+          optimistic: null,
+          server: { turns: [turn()], atMs: T0 + 60_044 },
+          stream,
+          nowMs: T0 + 60_200,
+        }).state,
+      ).toBe('idle');
+    }
+  });
+
+  test('a local BUSY frame still reports working off the stream', () => {
+    // The status snapshot fill writes busy/retry values through the same local
+    // path. False-working self-heals through `/turn` and the wire idle; only
+    // the idle direction ever masked a live turn, so busy keeps answering.
+    const projection = projectWorking({
+      optimistic: null,
+      server: null,
+      stream: { type: 'busy', origin: 'local', atMs: T0 },
+      nowMs: T0 + 1_000,
+    });
+
+    expect(projection).toMatchObject({ state: 'working', source: 'stream' });
+  });
+});
+
+/**
  * A prompt queued BEHIND a running turn is not ended by that turn's idle frame.
  *
  * This block exists because the opposite was implemented first and measured

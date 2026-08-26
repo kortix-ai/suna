@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CATALOG } from '@kortix/llm-catalog';
+import { CATALOG, bedrockInferenceProfileRank } from '@kortix/llm-catalog';
 import { RUNTIME_MANAGED_MODELS } from './managed-models';
 import {
   connectedByokPickerModels,
@@ -24,6 +24,29 @@ describe('providerFlagship', () => {
 
   test('returns null for an unknown provider', () => {
     expect(providerFlagship('totally-not-a-provider')).toBeNull();
+  });
+
+  // Bedrock refuses the bare in-region id for its current families
+  // ("Invocation of model ID xai.grok-4.6 with on-demand throughput isn't
+  // supported. Retry your request with the ID or ARN of an inference
+  // profile") — verified live on the Essentia self-host 2026-08-26, where a
+  // fresh workspace auto-selected `xai.grok-4.6` and looped "Retrying in Ns"
+  // forever. `xai.grok-4.6` is the NEWEST Bedrock model in the catalog AND
+  // has no `global.`/`us.` twin, so a release-date tie-break cannot save it:
+  // the flagship must come from the inference-profile ids.
+  test('the Bedrock flagship is an inference profile, never a bare in-region id', () => {
+    const flagship = providerFlagship('amazon-bedrock');
+    expect(flagship).toBeTruthy();
+    expect(catalogHas('amazon-bedrock', flagship!)).toBe(true);
+    expect(bedrockInferenceProfileRank(flagship!)).toBeGreaterThan(0);
+    expect(flagship).not.toBe('xai.grok-4.6');
+  });
+
+  test('flagshipRefForEnvVar(AWS_BEARER_TOKEN_BEDROCK) never seeds a bare id', () => {
+    const ref = flagshipRefForEnvVar('AWS_BEARER_TOKEN_BEDROCK');
+    expect(ref).toBeTruthy();
+    expect(ref!.startsWith('amazon-bedrock/')).toBe(true);
+    expect(bedrockInferenceProfileRank(ref!)).toBeGreaterThan(0);
   });
 });
 

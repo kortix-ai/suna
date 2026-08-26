@@ -160,8 +160,12 @@ export function useEventStreamRefs(deps: {
       // the SDK's `session.error` error union). The sync store's `applyEvent`
       // handles both structurally (see `MessageError`); the assertion just
       // documents that this event is fabricated, not wire data.
+      // `synthetic: true` is what that fabrication COSTS: the idle status this
+      // writes lands with `'local'` origin, so it may fill a gap but can never
+      // veto the control plane's open turn (`WorkingStreamInput.origin`).
       applySyncEvent({
         type: 'session.error',
+        synthetic: true,
         properties: { sessionID, error },
       } as unknown as OpenCodeSdkEvent);
       // A brand-new session whose first prompt has not been echoed yet is the
@@ -187,12 +191,20 @@ export function useEventStreamRefs(deps: {
   const markSessionIdleLocally = useRef((sessionID: string) => {
     if (!sessionID) return;
     stopCompaction(sessionID);
-    // Same locally-synthesized-event caveat as above: no real `id`.
+    // Same locally-synthesized-event caveat as above: no real `id`, and
+    // `synthetic: true` so the idle it writes is `'local'`-origin — an
+    // INFERENCE from a snapshot's absence, which may answer for a session
+    // nothing else speaks for but may never contradict an open `/turn` row.
+    // Unmarked, one sweep un-busied a session mid-turn and the unbounded idle
+    // veto then discarded every fresh `/turn` read for the rest of the turn
+    // (dev, 2026-08-24: no busy indicator, Send instead of Stop, transcript
+    // liveness poll off — all while the agent was running).
     applySyncEvent({
       type: 'session.idle',
+      synthetic: true,
       properties: { sessionID },
     } as unknown as OpenCodeSdkEvent);
-    useSyncStore.getState().setStatus(sessionID, { type: 'idle' });
+    useSyncStore.getState().setStatus(sessionID, { type: 'idle' }, 'local');
     useSyncStore.getState().clearOptimisticMessages(sessionID);
   });
 

@@ -175,7 +175,12 @@ export async function maxProjectsForAccount(accountId: string): Promise<number> 
   if (!(config as any).KORTIX_BILLING_INTERNAL_ENABLED) {
     return Number.MAX_SAFE_INTEGER;
   }
-  const tier = (await resolveAccountTier(accountId)) ?? 'free';
+  // Project creation can land on a different API task than the checkout that
+  // upgraded the account. A per-process cached free-tier answer must not reject
+  // a just-funded account on that other task, so quota enforcement reads the
+  // shared billing source fresh, matching the cross-task consistency contract
+  // already used by session limits above.
+  const tier = (await resolveAccountLimitInfo(accountId, { useCache: false })).tier ?? 'free';
   // Exact plan-KEY equality, matching what this code did before the resolver
   // landed. `PLAN_CATALOG.enterprise` is the only key in the `enterprise`
   // family today, so key- and family-equality agree; widening this to

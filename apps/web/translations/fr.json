@@ -7725,7 +7725,7 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextSignInIn5b6c05ee": "connectez-vous dans la fenêtre qui s’est ouverte. Une fois connecté, vous pouvez le fermer et dire à l'agent « terminé ».",
     "autoComponentsSetupLinksConnectorIntakeJsxTextReopenConnectWindowb7f822cd": "Rouvrir la fenêtre de connexion",
     "autoComponentsSetupLinksConnectorIntakeJsxText1ClickConnect9e029325": "Connexion en 1 clic",
-    "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "via Pipedream — aucune clé n'est collée dans le chat ou stockée dans le dépôt.",
+    "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— aucune clé n’est collée dans le chat ni stockée dans le dépôt.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "Enregistré en toute sécurité",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "Vous pouvez fermer ceci. L’agent le récupérera – dites-lui « terminé » pour continuer.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "Chiffré au repos. Seul ce projet peut le lire. L'agent ne voit jamais la valeur.",

@@ -218,6 +218,7 @@ interface SelfHostEnv {
   MANAGED_GIT_GITHUB_INSTALL_ID: string;
   CONNECTOR_AUTH_PROVIDER: string;
   KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: string;
+  COMPOSIO_API_KEY: string;
   PIPEDREAM_CLIENT_ID: string;
   PIPEDREAM_CLIENT_SECRET: string;
   PIPEDREAM_PROJECT_ID: string;
@@ -387,7 +388,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   // configureConnections()'s own doc comment): 1) reachability — the first
   // real decision, since it decides whether agent sessions can call back to
   // this API at all; 2) admin email; 3) deployment shape (Enterprise
-  // license); 4) sandbox provider + its key; 5) Pipedream (optional); 6) a
+  // license); 4) sandbox provider + its key; 5) Composio (optional); 6) a
   // compact update-policy block. Only walk through it on a genuinely
   // first-time init (no prior .env) — a refresh of an already-configured
   // instance shouldn't re-ask any of this every time `init` happens to run
@@ -1798,9 +1799,10 @@ type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
  * The CLI's guided-connections step: the two things that genuinely cannot
  * be set any other way — the agent sandbox runtime (an env-only credential
  * the API reads at boot, no in-app settings surface exists for it) and
- * Pipedream's OPERATOR-level OAuth app credentials (also env-only — the
+ * Composio's operator-level API key (also env-only — the
  * database only ever holds each user's own per-connector bindings, never the
- * platform's Pipedream app itself). Everything else that used to live here —
+ * platform's Composio credential). Pipedream remains available through `env set`
+ * only as a rollback path. Everything else that used to live here —
  * GitHub/managed-git, the LLM key — is configured in the web dashboard after
  * `start` instead (GitHub at Settings → Git, the LLM key as BYOK via the
  * model picker). "The full flow needs to be perfect, all the other bullshit
@@ -1909,26 +1911,22 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
     }
   }
 
-  // Pipedream (optional, default skip): the ONE other env-only credential
-  // that belongs here — the platform-level OAuth app Pipedream issues per
-  // operator, not a per-user connection (those live in the DB and are
-  // configured per-project in the app). Never gates init/start either way;
+  // Composio (optional, default skip): the env-only connector credential.
+  // Per-user connections live in the DB and are configured per-project.
+  // Never gates init/start either way;
   // KORTIX_PUBLIC_CONNECTORS_ENABLED is re-derived from whatever ends up set
-  // here on every write (see normalizeFullSupabaseEnv), so skipping just
+  // here on every write (see normalizeFullSupabaseEnv), so skipping
   // leaves connectors hidden in the frontend rather than half-configured.
+  // Legacy Pipedream keys remain available through `env set` for rollback.
   if (shouldPrompt(flags)) {
-    const pdMode = await selectFrom(
-      'Pipedream connectors (optional, powers the 3,000+ app catalog): configure/skip',
+    const composioMode = await selectFrom(
+      'Composio connectors (optional, powers the app catalog): configure/skip',
       ['skip', 'configure'] as const,
-      pipedreamConfigured(env) ? 'configure' : 'skip',
+      connectorAuthConfigured(env) ? 'configure' : 'skip',
     );
-    if (pdMode === 'configure') {
-      env.CONNECTOR_AUTH_PROVIDER = 'pipedream';
-      env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
-      env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
-      env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
-      env.PIPEDREAM_ENVIRONMENT = await selectFrom('Pipedream environment', ['development', 'production'] as const, env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production');
-      env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret('Pipedream webhook secret (optional)', env.PIPEDREAM_WEBHOOK_SECRET);
+    if (composioMode === 'configure') {
+      env.CONNECTOR_AUTH_PROVIDER = 'composio';
+      env.COMPOSIO_API_KEY = await promptSecret('Composio API key', env.COMPOSIO_API_KEY);
     }
   }
 
@@ -1951,7 +1949,11 @@ async function promptSecret(label: string, current: string): Promise<string> {
 }
 
 function pipedreamConfigured(env: SelfHostEnv): boolean {
-  return !!(env.PIPEDREAM_CLIENT_ID || env.PIPEDREAM_CLIENT_SECRET || env.PIPEDREAM_PROJECT_ID);
+  return !!(env.PIPEDREAM_CLIENT_ID && env.PIPEDREAM_CLIENT_SECRET && env.PIPEDREAM_PROJECT_ID);
+}
+
+function connectorAuthConfigured(env: SelfHostEnv): boolean {
+  return !!env.COMPOSIO_API_KEY || pipedreamConfigured(env);
 }
 
 /**
@@ -2451,8 +2453,9 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // for a missing edge signature.
     KORTIX_PREVIEW_BASE_DOMAIN: '',
     KORTIX_PREVIEW_ALLOW_DIRECT_EDGE: '',
-    CONNECTOR_AUTH_PROVIDER: 'pipedream',
+    CONNECTOR_AUTH_PROVIDER: 'composio',
     KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: 'false',
+    COMPOSIO_API_KEY: '',
     PIPEDREAM_CLIENT_ID: '',
     PIPEDREAM_CLIENT_SECRET: '',
     PIPEDREAM_PROJECT_ID: '',
@@ -2523,13 +2526,10 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   env.POSTGRES_DB = 'postgres';
   env.SUPABASE_POSTGRES_INTERNAL_PORT = '5432';
 
-  // Frontend "Connect your tools" / connector-catalogue UI mirrors whether
-  // Pipedream is FULLY configured — same three fields
-  // apps/api/src/connectors/pipedream.ts's own pipedreamConfigured() requires.
-  // Recomputed on every write (not just when the now-removed guided-init
-  // Pipedream question used to run) so setting/clearing PIPEDREAM_CLIENT_ID
-  // et al. via `env set` directly keeps this in sync too.
-  env.KORTIX_PUBLIC_CONNECTORS_ENABLED = pipedreamConfigured(env) ? 'true' : 'false';
+  // Frontend connector UI mirrors configured Composio auth. Complete legacy
+  // Pipedream credentials remain accepted for rollback. Recompute on every
+  // write so `env set` changes stay synchronized.
+  env.KORTIX_PUBLIC_CONNECTORS_ENABLED = connectorAuthConfigured(env) ? 'true' : 'false';
 
   // Public domain + TLS (opt-in): when KORTIX_DOMAIN is set, the bundled Caddy
   // service fronts the stack on 80/443 and every public URL becomes the real

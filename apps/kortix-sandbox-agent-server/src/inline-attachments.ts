@@ -1,3 +1,4 @@
+import { isOffloadPlaceholder } from './attachment-offload';
 /**
  * Take the file BYTES out of a session's message list.
  *
@@ -75,15 +76,18 @@ export function stripInlineAttachmentBytes(
           ? obj.messageID
           : messageId;
 
-    if (
+    // An attachment the offload moved to a sidecar (attachment-offload.ts)
+    // carries only a 1×1 placeholder inline; it is ALWAYS handed out as a
+    // ref, size notwithstanding, so the UI fetches the real bytes on demand.
+    // Either signal: the marker (present when the daemon reads the row itself)
+    // or the placeholder URL (all that survives a read through OpenCode's API).
+    const offloaded =
       obj.type === 'file' &&
-      isDataUrl(obj.url) &&
-      obj.url.length > maxBytes &&
-      typeof obj.id === 'string' &&
-      nextMessageId
-    ) {
+      (Boolean((obj.kortix as { offloaded?: unknown } | undefined)?.offloaded) || isOffloadPlaceholder(obj.url))
+    const inlineTooBig = isDataUrl(obj.url) && obj.url.length > maxBytes
+    if (obj.type === 'file' && typeof obj.id === 'string' && nextMessageId && (offloaded || inlineTooBig)) {
       stripped += 1;
-      savedBytes += obj.url.length;
+      savedBytes += typeof obj.url === 'string' ? obj.url.length : 0;
       return { ...obj, url: makeRef(nextMessageId, obj.id) };
     }
 

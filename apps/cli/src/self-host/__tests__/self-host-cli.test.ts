@@ -101,8 +101,13 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(env.KORTIX_UPDATE_TIME).toBe('02:00');
     expect(env.KORTIX_UPDATE_TZ).toBe('America/New_York');
     expect(env.KORTIX_ALLOW_DOWNTIME).toBe('0');
-    expect(env.CONNECTOR_AUTH_PROVIDER).toBe('pipedream');
+    expect(env.CONNECTOR_AUTH_PROVIDER).toBe('composio');
     expect(env.KORTIX_SELF_HOST_CONNECTIONS_REVIEWED).toBe('false');
+    expect(env.COMPOSIO_API_KEY).toBe('');
+    expect(env.PIPEDREAM_CLIENT_ID).toBe('');
+    expect(env.PIPEDREAM_CLIENT_SECRET).toBe('');
+    expect(env.PIPEDREAM_PROJECT_ID).toBe('');
+    expect(env.KORTIX_PUBLIC_CONNECTORS_ENABLED).toBe('false');
     expect(env.INTEGRATION_AUTH_PROVIDER).toBeUndefined();
     expect(env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED).toBeUndefined();
 
@@ -216,6 +221,22 @@ describe('kortix self-host (generic Docker CLI)', () => {
     const reinit = await run(['init', '--yes']);
     expect(reinit.code).toBe(0);
     expect(readEnv().KORTIX_ALLOW_DOWNTIME).toBe('1');
+  });
+
+  test('Composio enables connectors while legacy Pipedream rollback requires all credentials', async () => {
+    await run(['init', '--yes']);
+
+    await run(['env', 'set', 'CONNECTOR_AUTH_PROVIDER=pipedream', 'PIPEDREAM_CLIENT_ID=legacy-client-id']);
+    expect(readEnv().KORTIX_PUBLIC_CONNECTORS_ENABLED).toBe('false');
+
+    await run(['env', 'set', 'PIPEDREAM_CLIENT_SECRET=legacy-client-secret', 'PIPEDREAM_PROJECT_ID=legacy-project-id']);
+    expect(readEnv().KORTIX_PUBLIC_CONNECTORS_ENABLED).toBe('true');
+
+    await run(['env', 'set', 'PIPEDREAM_PROJECT_ID=', 'CONNECTOR_AUTH_PROVIDER=composio', 'COMPOSIO_API_KEY=not-a-real-composio-key']);
+    const configured = readEnv();
+    expect(configured.CONNECTOR_AUTH_PROVIDER).toBe('composio');
+    expect(configured.COMPOSIO_API_KEY).toBe('not-a-real-composio-key');
+    expect(configured.KORTIX_PUBLIC_CONNECTORS_ENABLED).toBe('true');
   });
 
   test('KORTIX_APP_REPLICAS flips to 2 once a domain is configured, back to 1 without one', async () => {

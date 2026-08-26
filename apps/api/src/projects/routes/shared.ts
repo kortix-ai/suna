@@ -39,20 +39,35 @@ import {
   runtimeLossVerdict,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
+import {
+  type StartCallLog,
+  createStartCallLog,
+  withStartEnvelope,
+} from '../session-lifecycle/start-envelope';
+import { runStoppedObservationFollowUp } from '../session-lifecycle/stopped-observation-followup';
 import type { StopReason } from '../stop-reason';
+import { recoverTurnsAfterRuntimeRestart } from '../session-lifecycle/runtime-restart-recovery';
 import {
   RUNTIME_READINESS_CLOCK_KEYS,
+  STALE_OPENCODE_BOOT_HARD_MS,
   hasRuntimeReadinessClock,
+  opencodeReadyWaitPatch,
   staleOpencodeReadyReason,
 } from '../session-lifecycle/readiness-clocks';
 import {
+  RUNTIME_START_FAILURE_KEYS,
+  RUNTIME_START_MAX_FAILURES,
   RUNTIME_WAKE_GRACE_MS,
+  RUNTIME_WAKE_HARD_MS,
   RUNTIME_WAKE_LATE_START_GUARD_MS,
   RUNTIME_WAKE_LEASE_MS,
-  RUNTIME_WAKE_RETRY_COOLDOWN_MS,
   executeClaimedRuntimeWake,
+  runtimeStartFailureCount,
+  runtimeStartFailurePatch,
+  runtimeStartRetryAtMs,
   runtimeWakeInProgress,
-  runtimeWakeRetryCoolingDown,
+  runtimeWakeProgressPatch,
+  stampedRuntimeFailureState,
 } from '../session-lifecycle/runtime-wake-fence';
 
 /**
@@ -85,14 +100,15 @@ export async function resumeStoppedSandbox(
 ): Promise<boolean> {
   if (!row.externalId) return false;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) return false;
-  if (
-    row.metadata?.stopReason === 'runtime_boot_failed' ||
-    row.metadata?.stopReason === 'runtime_wake_failed'
-  )
-    return false;
+  const now = new Date();
+  // A stamped runtime-start failure blocks a re-attempt for its COOLDOWN, and
+  // for nothing longer. Refusing outright — which is what this gate used to do
+  // for both `runtime_boot_failed` and `runtime_wake_failed` — is what made
+  // `POST /restart` the only way back for sessions e06ad0c4 and 9c8749ac.
+  const stampedFailure = stampedRuntimeFailureState(row.metadata, now);
+  if (stampedFailure === 'cooling_down' || stampedFailure === 'terminal') return false;
 
   const externalId = row.externalId;
-  const now = new Date();
   const runtimeWakeId = crypto.randomUUID();
   const leaseExpiresAt = new Date(now.getTime() + RUNTIME_WAKE_LEASE_MS);
   const wakePatch = {
@@ -117,8 +133,10 @@ export async function resumeStoppedSandbox(
           - 'runtimeWakeError'
           - 'runtimeWakeFailedAt'
           - 'runtimeWakeRetryAfterAt'
+          - 'runtimeStartRetryAfterAt'
           - 'runtimeWakeCleanupUntilAt'
           - 'runtimeWakeLateStartStoppedAt'
+          - 'runtimeWakeProgressAt'
           - 'opencodeReadyWaitStartedAt'
           - 'opencodeReadyWaitReason'
           - 'opencodeUnreachableWaitStartedAt'
@@ -156,6 +174,37 @@ export async function resumeStoppedSandbox(
   void executeClaimedRuntimeWake({
     knownStatus: knownProviderStatus ?? null,
     getStatus: () => provider.getStatus(externalId),
+    waitOptions: {
+      // The wake's own budget is now "time without a provider-state change",
+      // capped absolutely at RUNTIME_WAKE_HARD_MS. Each change also refreshes
+      // the DURABLE lease below, so the fence every other component reads stays
+      // in step with the wake actually running.
+      hardCapMs: RUNTIME_WAKE_HARD_MS,
+      onProgress: async (status) => {
+        const [current] = await db
+          .select({ metadata: sessionSandboxes.metadata })
+          .from(sessionSandboxes)
+          .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+          .limit(1);
+        const patch = runtimeWakeProgressPatch(
+          (current?.metadata ?? {}) as Record<string, unknown>,
+          status,
+        );
+        if (!patch) return;
+        await db
+          .update(sessionSandboxes)
+          .set({
+            metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+          })
+          .where(
+            and(
+              eq(sessionSandboxes.sandboxId, row.sandboxId),
+              // Fenced: only the wake that owns this row may extend its lease.
+              sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
+            ),
+          );
+      },
+    },
     start: () => provider.start(externalId),
     stop: () => provider.stop(externalId),
     isMissingError: isMissingRuntimeError,
@@ -182,6 +231,10 @@ export async function resumeStoppedSandbox(
                 - 'runtimeWakeLateStartCheckedAt'
                 - 'runtimeWakeLateStartProviderStatus'
                 - 'runtimeWakeLateStartStoppedAt'
+                - 'runtimeWakeProgressAt'
+                - ${RUNTIME_START_FAILURE_KEYS[0]}
+                - ${RUNTIME_START_FAILURE_KEYS[1]}
+                - ${RUNTIME_START_FAILURE_KEYS[2]}
               ) || ${JSON.stringify({ providerRunningConfirmedAt: confirmedAt.toISOString() })}::jsonb`,
           })
           .where(
@@ -201,6 +254,18 @@ export async function resumeStoppedSandbox(
         return true;
       });
       if (!finalized) return false;
+      // The provider had this box STOPPED: whatever turn was still open on it
+      // is over. Normally applyStoppedState settled those rows already and
+      // this finds nothing; it is the guard for a row that reached `stopped`
+      // without that path (see runtime-restart-recovery.ts).
+      await recoverTurnsAfterRuntimeRestart({
+        sandboxId: row.sandboxId,
+        sessionId: row.sessionId,
+        externalId,
+        hold: false,
+      }).catch((err) =>
+        console.warn(`[projects] turn recovery after wake failed for ${row.sandboxId}:`, err),
+      );
       await reopenComputeForSandbox(
         row.sandboxId,
         row.accountId,
@@ -222,14 +287,23 @@ export async function resumeStoppedSandbox(
     },
     fail: async (reason) => {
       const failedAt = new Date();
+      // Read the row back for the CONSECUTIVE-failure count: the cooldown this
+      // stamp owes escalates with it, and the count is what eventually earns a
+      // terminal card instead of another attempt.
+      const [current] = await db
+        .select({ metadata: sessionSandboxes.metadata })
+        .from(sessionSandboxes)
+        .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+        .limit(1);
       const failurePatch = {
         runtimeWakeError: reason,
         runtimeWakeFailedAt: failedAt.toISOString(),
         stopReason: 'runtime_wake_failed',
         stoppedAt: failedAt.toISOString(),
-        runtimeWakeRetryAfterAt: new Date(
-          failedAt.getTime() + RUNTIME_WAKE_RETRY_COOLDOWN_MS,
-        ).toISOString(),
+        ...runtimeStartFailurePatch(
+          (current?.metadata ?? {}) as Record<string, unknown>,
+          failedAt,
+        ),
         runtimeWakeCleanupUntilAt: new Date(
           failedAt.getTime() + RUNTIME_WAKE_LATE_START_GUARD_MS,
         ).toISOString(),
@@ -537,27 +611,19 @@ async function markRuntimeWakeStarted(
 
 async function markOpencodeReadyWaitStarted(
   row: typeof sessionSandboxes.$inferSelect,
-  reason: string,
+  reason: 'not_ready' | 'unreachable',
+  bootPhase: string | undefined,
 ): Promise<void> {
   const metadata = sandboxMetadata(row);
-  const reasonClockKey =
-    reason === 'unreachable'
-      ? 'opencodeUnreachableWaitStartedAt'
-      : 'opencodeNotReadyWaitStartedAt';
-  if (typeof metadata[reasonClockKey] === 'string') return;
+  // The reason clock restarts on every daemon-reported phase change, so the
+  // budget below is "no progress for N seconds", not "not ready N seconds
+  // after the first poll" (see opencodeReadyWaitPatch).
+  const patch = opencodeReadyWaitPatch(metadata, reason, bootPhase);
+  if (!patch) return;
   try {
-    const startedAt = new Date().toISOString();
     await db
       .update(sessionSandboxes)
-      .set({
-        metadata: {
-          ...metadata,
-          opencodeReadyWaitStartedAt: startedAt,
-          opencodeReadyWaitReason: reason,
-          [reasonClockKey]: startedAt,
-        },
-        updatedAt: new Date(),
-      })
+      .set({ metadata: patch, updatedAt: new Date() })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   } catch (err) {
     console.warn(`[start] failed to mark OpenCode wait for ${row.sandboxId}:`, err);
@@ -637,10 +703,19 @@ export function serializeSandboxRow(
   };
 }
 
-function stoppedWakeResult(
+/**
+ * The answer `/start` owes a STOPPED row before any provider call: a wake in
+ * flight, a cooldown after a failed start, or a terminal verdict. `null` means
+ * "nothing to replay" — the caller goes on to actually try.
+ *
+ * Exported for `stopped-wake-result.test.ts`, which pins the 2026-08-26
+ * dead-end regression directly on this projection.
+ */
+export function stoppedWakeResult(
   row: typeof sessionSandboxes.$inferSelect | undefined,
   agentName: string | null,
   opencodeSessionId: string | null,
+  now: Date = new Date(),
 ): SessionStartResult | null {
   if (row?.status !== 'stopped' || !row.externalId) return null;
   const metadata = sandboxMetadata(row);
@@ -650,7 +725,7 @@ function stoppedWakeResult(
   // provider has disowned that is a dead-end button, not a retry. Fall through
   // to the authoritative removed/recovery path, which either restores the box
   // in place or re-reports `runtime_identity_unavailable`.
-  if (metadata.runtimeIdentityState !== 'unavailable' && runtimeWakeInProgress(metadata)) {
+  if (metadata.runtimeIdentityState !== 'unavailable' && runtimeWakeInProgress(metadata, now)) {
     return {
       stage: 'starting',
       agent_name: agentName ?? 'default',
@@ -662,44 +737,81 @@ function stoppedWakeResult(
     };
   }
   if (metadata.runtimeIdentityState === 'unavailable') return null;
-  const wakeCoolingDown = runtimeWakeRetryCoolingDown(metadata);
-  if (
-    metadata.stopReason === 'runtime_boot_failed' ||
-    (metadata.stopReason === 'runtime_wake_failed' && !wakeCoolingDown)
-  ) {
+
+  // A STAMPED runtime-start failure — `runtime_wake_failed` from a wake that
+  // ran out of budget, `runtime_boot_failed` from a park. It used to short
+  // -circuit every later `/start` to a terminal payload forever, so the session
+  // could only be recovered by a human pressing Restart (Essentia 2026-08-26:
+  // e06ad0c4 answered `failed` in 47ms for a startable box; 9c8749ac replayed a
+  // 03:37Z stamp for 10+ hours). Now it is a cooldown with three outcomes.
+  const failureState = stampedRuntimeFailureState(metadata, now);
+  // `retry`: say nothing here. The caller falls through to the resume path and
+  // RE-ATTEMPTS the wake, which is the whole fix.
+  if (failureState === null || failureState === 'retry') return null;
+
+  const failureCount = runtimeStartFailureCount(metadata);
+  const retryAtMs = runtimeStartRetryAtMs(metadata);
+  const parkReason =
+    typeof metadata.runtimeParkReason === 'string' ? metadata.runtimeParkReason : null;
+  const stampReason =
+    metadata.stopReason === 'runtime_wake_failed'
+      ? 'runtime_wake_failed'
+      : (parkReason ?? 'runtime_boot_failed');
+  const evidence = {
+    check: typeof metadata.runtimeWakeError === 'string' ? metadata.runtimeWakeError : stampReason,
+    observed_at:
+      typeof metadata.runtimeStartFailedAt === 'string'
+        ? metadata.runtimeStartFailedAt
+        : typeof metadata.runtimeWakeFailedAt === 'string'
+          ? metadata.runtimeWakeFailedAt
+          : typeof metadata.stoppedAt === 'string'
+            ? metadata.stoppedAt
+            : null,
+    error: typeof metadata.lastInitError === 'string' ? metadata.lastInitError : null,
+    attempts: failureCount,
+    next_retry_at: retryAtMs !== null ? new Date(retryAtMs).toISOString() : null,
+  };
+
+  if (failureState === 'cooling_down') {
+    // NOT a terminal answer and no longer dressed as one: the server itself
+    // re-attempts once the cooldown lapses, so the honest stage is `starting`
+    // and the honest `retriable` is true. Polling now makes progress.
     return {
-      stage: 'failed',
+      stage: 'starting',
       agent_name: agentName ?? 'default',
-      retriable: false,
+      retriable: true,
       sandbox: serializeSandboxRow(row),
       opencode_session_id: opencodeSessionId,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
-      reason:
-        metadata.stopReason === 'runtime_wake_failed'
-          ? 'runtime_wake_failed'
-          : typeof metadata.runtimeParkReason === 'string'
-            ? metadata.runtimeParkReason
-            : 'runtime_boot_failed',
+      reason: 'runtime_wake_cooldown',
       failure: {
         category: 'sandbox-provider',
-        message: 'The session runtime did not become reachable. Restart the session to try again.',
+        message:
+          failureCount > 1
+            ? `The runtime did not start (attempt ${failureCount}). Retrying automatically.`
+            : 'The runtime did not start. Retrying automatically.',
         retryable: true,
+        evidence,
       },
     };
   }
-  if (!wakeCoolingDown) return null;
+
+  // `terminal`: the attempt budget is spent, or the provider disowned the box.
+  // Restart still clears it, and the verdict itself expires
+  // (RUNTIME_START_FAILURE_TTL_MS) so a session opened later starts clean.
   return {
-    stage: 'stopped',
+    stage: 'failed',
     agent_name: agentName ?? 'default',
     retriable: false,
     sandbox: serializeSandboxRow(row),
     opencode_session_id: opencodeSessionId,
     runtime_url: sessionRuntimeUrlPath(row.externalId),
-    reason: 'runtime_wake_cooldown',
+    reason: stampReason,
     failure: {
       category: 'sandbox-provider',
-      message: 'The sandbox provider did not confirm this wake. Retry after the cooldown.',
+      message: `The session runtime did not become reachable after ${Math.min(failureCount, RUNTIME_START_MAX_FAILURES)} attempts. Restart the session to try again.`,
       retryable: true,
+      evidence,
     },
   };
 }
@@ -846,6 +958,34 @@ export async function openSession(args: {
   projectId: string;
   sessionId: string;
 }): Promise<SessionStartResult> {
+  // ONE log per call. Every branch below records what it DID and what it
+  // OBSERVED; the envelope is assembled once, here, from that record — so a
+  // payload that claims a negative without a live check is not expressible.
+  const log = createStartCallLog();
+  const result = await runOpenSession(args, log);
+  return withStartEnvelope(
+    result,
+    log,
+    (result.sandbox?.metadata ?? {}) as Record<string, unknown>,
+  );
+}
+
+async function runOpenSession(args: {
+  loaded: { row: ProjectRow; userId: string };
+  visible: {
+    row: {
+      status: string;
+      sandboxProvider: string;
+      baseRef: string | null;
+      agentName: string | null;
+      opencodeSessionId: string | null;
+      accountId: string;
+      metadata?: Record<string, unknown> | null;
+    };
+  };
+  projectId: string;
+  sessionId: string;
+}, log: StartCallLog): Promise<SessionStartResult> {
   const { loaded, visible, projectId, sessionId } = args;
   const accountId = visible.row.accountId;
 
@@ -864,8 +1004,16 @@ export async function openSession(args: {
   // Gate browser polling before any provider call. A live wake coalesces behind
   // its durable claim. A failed wake returns one terminal cooldown payload.
   // Reversing this order issues another provider start on every `/start` poll.
-  const existingWake = stoppedWakeResult(row, visible.row.agentName, visible.row.opencodeSessionId);
-  if (existingWake) return existingWake;
+  const existingWake = stoppedWakeResult(
+    row,
+    visible.row.agentName,
+    visible.row.opencodeSessionId,
+    log.observedAt,
+  );
+  if (existingWake) {
+    log.did(existingWake.reason === 'runtime_wake_cooldown' ? 'cooling_down' : 'awaited_wake');
+    return existingWake;
+  }
 
   // Resume a hibernated box in place (keeps its disk/workspace). Check provider
   // truth first: a terminal Platinum VM may need backup restoration, and sending
@@ -881,8 +1029,9 @@ export async function openSession(args: {
     stoppedProviderStatus = await provider
       .getStatus(row.externalId)
       .catch(() => 'unknown' as const);
+    log.sawProvider(stoppedProviderStatus);
     if (stoppedProviderStatus !== 'removed' || !provider.recoverInPlace) {
-      await resumeStoppedSandbox(
+      const resumed = await resumeStoppedSandbox(
         {
           sandboxId: row.sandboxId,
           sessionId: row.sessionId,
@@ -901,17 +1050,26 @@ export async function openSession(args: {
         // extra provider round trip buys nothing worth that.
         stoppedProviderStatus === 'removed' ? null : stoppedProviderStatus,
       );
-      const [resumed] = await db
+      if (resumed) log.did('resumed');
+      const [afterResume] = await db
         .select()
         .from(sessionSandboxes)
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
         .limit(1);
-      if (resumed) row = resumed;
+      if (afterResume) row = afterResume;
     }
   }
 
-  const resumedWake = stoppedWakeResult(row, visible.row.agentName, visible.row.opencodeSessionId);
-  if (resumedWake) return resumedWake;
+  const resumedWake = stoppedWakeResult(
+    row,
+    visible.row.agentName,
+    visible.row.opencodeSessionId,
+    log.observedAt,
+  );
+  if (resumedWake) {
+    if (resumedWake.reason === 'runtime_wake_cooldown') log.did('cooling_down');
+    return resumedWake;
+  }
 
   // No usable box → provision on open (or report a terminal state).
   const usable =
@@ -932,7 +1090,9 @@ export async function openSession(args: {
     }
     if (visible.row.status !== 'provisioning') {
       if (row?.externalId) {
-        return preserveEstablishedRuntimeOnOpen(
+        log.did('reconciled');
+      log.did('reconciled');
+    return preserveEstablishedRuntimeOnOpen(
           loaded,
           visible,
           projectId,
@@ -944,6 +1104,7 @@ export async function openSession(args: {
       }
       if (row) await retireUnmaterializedRuntime(row, 'non_usable_unmaterialized_runtime');
       await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
+      log.did('provisioned');
     }
     return {
       stage: 'provisioning',
@@ -956,6 +1117,7 @@ export async function openSession(args: {
 
   const staleProvisioning = row ? staleProvisioningReason(row) : null;
   if (row && staleProvisioning) {
+    log.did('reconciled');
     return preserveEstablishedRuntimeOnOpen(
       loaded,
       visible,
@@ -1013,10 +1175,17 @@ export async function openSession(args: {
   } catch {
     providerStatus = 'unknown';
   }
+  log.sawProvider(providerStatus);
   let observedRuntimeHealth: Awaited<ReturnType<typeof inspectSandboxRuntime>> = null;
   if (providerStatus === 'unknown') {
     observedRuntimeHealth = await inspectSandboxRuntime(row.externalId, loaded.userId);
-    if (observedRuntimeHealth) providerStatus = 'running';
+    if (observedRuntimeHealth) {
+      providerStatus = 'running';
+      log.sawProvider(providerStatus);
+      log.sawRuntime('ready');
+    } else {
+      log.sawRuntime('unreachable');
+    }
   }
 
   if (providerStatus === 'removed') {
@@ -1049,6 +1218,7 @@ export async function openSession(args: {
       return 'unavailable' as const;
     });
     if (recovery === 'running' || recovery === 'recovering') {
+      log.did('restored');
       const recoveringRow = await markInPlaceRuntimeRecoveryAccepted(claim, recovery);
       if (!recoveringRow) {
         return {
@@ -1071,6 +1241,7 @@ export async function openSession(args: {
           recovery === 'running' ? 'runtime_recovered_in_place' : 'runtime_restoring_in_place',
       };
     }
+    log.did('reconciled');
     return preserveEstablishedRuntimeOnOpen(
       loaded,
       visible,
@@ -1099,7 +1270,9 @@ export async function openSession(args: {
     }
     const staleWake = staleRuntimeWakeReason(row, providerStatus);
     if (staleWake) {
-      return preserveEstablishedRuntimeOnOpen(
+      log.did('reconciled');
+      log.did('reconciled');
+    return preserveEstablishedRuntimeOnOpen(
         loaded,
         visible,
         projectId,
@@ -1128,31 +1301,56 @@ export async function openSession(args: {
       // flow with the turn's work lost. So it takes the same confirmation gate
       // as the reaper's poll: a second `stopped` read, one window later.
       const activeExternalId = row.externalId;
-      await import('../reaping/sandbox-state-sync').then((m) =>
-        m.reconcileSandboxStoppedByExternalId(activeExternalId, new Date(), {
-          confirmMidTurnStop: true,
-        }),
+      const stateSync = await import('../reaping/sandbox-state-sync');
+      const parked = await stateSync.reconcileSandboxStoppedByExternalId(
+        activeExternalId,
+        new Date(),
+        { confirmMidTurnStop: true },
       );
+      if (parked) log.did('reconciled');
       const [stoppedRow] = await db
         .select()
         .from(sessionSandboxes)
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
         .limit(1);
       if (stoppedRow?.status === 'stopped') {
-        await resumeStoppedSandbox({
-          sandboxId: stoppedRow.sandboxId,
-          sessionId: stoppedRow.sessionId,
-          accountId: stoppedRow.accountId,
-          provider: stoppedRow.provider,
-          externalId: stoppedRow.externalId,
-          metadata: stoppedRow.metadata as Record<string, unknown> | null,
-        });
+        if (
+          await resumeStoppedSandbox({
+            sandboxId: stoppedRow.sandboxId,
+            sessionId: stoppedRow.sessionId,
+            accountId: stoppedRow.accountId,
+            provider: stoppedRow.provider,
+            externalId: stoppedRow.externalId,
+            metadata: stoppedRow.metadata as Record<string, unknown> | null,
+          })
+        ) {
+          log.did('resumed');
+        }
       } else if (stoppedRow?.status === 'active') {
         // Nothing was parked and nothing is waking: the box keeps running with
         // its turn intact. Say exactly that instead of claiming a wake — the
         // next poll either reads `running` again, which drops the marker, or
         // earns the confirmation and takes the branch above.
         stopUnconfirmed = true;
+        // OWN the confirmation instead of hoping someone reads again. Without
+        // this the row keeps claiming `running` for as long as nothing polls —
+        // 5+ minutes on Essentia 2026-08-26, with the queued prompt delivered
+        // against a box the provider had already stopped. Detached: the answer
+        // this call returns must not wait a confirmation window for it.
+        void runStoppedObservationFollowUp({
+          externalId: activeExternalId,
+          sandboxId: row.sandboxId,
+          getStatus: () => provider.getStatus(activeExternalId).catch(() => 'unknown'),
+          reconcile: (at) =>
+            stateSync.reconcileSandboxStoppedByExternalId(activeExternalId, at, {
+              confirmMidTurnStop: true,
+            }),
+        }).catch((err) =>
+          console.warn(
+            `[start] stopped-observation follow-up failed for ${activeExternalId}:`,
+            err instanceof Error ? err.message : err,
+          ),
+        );
       }
     } else {
       // Unknown is not permission to issue repeated provider starts. Record one
@@ -1223,17 +1421,33 @@ export async function openSession(args: {
     currentPin: visible.row.opencodeSessionId ?? null,
   });
   const booting = ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
+  log.sawRuntime(
+    ensured.reason === 'unreachable' ? 'unreachable' : booting ? 'booting' : 'ready',
+    ensured.bootPhase ?? null,
+  );
   if (booting) {
+    // A daemon that reports a NEW boot phase since the last poll has made
+    // progress: its reason clock is restarted below before the next poll
+    // judges it, so only a box that stalls in one phase for the budget — or
+    // one that never becomes ready within the hard cap — is parked.
+    const metadataForBudget =
+      ensured.reason === 'not_ready' || ensured.reason === 'unreachable'
+        ? (opencodeReadyWaitPatch(sandboxMetadata(row), ensured.reason, ensured.bootPhase) ??
+          sandboxMetadata(row))
+        : sandboxMetadata(row);
     const staleBoot = staleOpencodeReadyReason(
-      sandboxMetadata(row),
+      metadataForBudget,
       ensured.reason,
       Date.now(),
       ensured.reason === 'unreachable'
         ? STALE_RUNTIME_UNREACHABLE_MS
         : STALE_OPENCODE_NOT_READY_MS,
+      STALE_OPENCODE_BOOT_HARD_MS,
     );
     if (staleBoot) {
-      return preserveEstablishedRuntimeOnOpen(
+      log.did('reconciled');
+      log.did('reconciled');
+    return preserveEstablishedRuntimeOnOpen(
         loaded,
         visible,
         projectId,
@@ -1243,7 +1457,11 @@ export async function openSession(args: {
         'runtime_boot_failed',
       );
     }
-    await markOpencodeReadyWaitStarted(row, ensured.reason);
+    await markOpencodeReadyWaitStarted(
+      row,
+      ensured.reason === 'unreachable' ? 'unreachable' : 'not_ready',
+      ensured.bootPhase,
+    );
   } else {
     await clearRuntimeReadinessClocks(row);
   }

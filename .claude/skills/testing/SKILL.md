@@ -73,44 +73,32 @@ work.
 Each root run writes a benchmark to
 `tests/test-results/local/benchmark-<timestamp>.json`.
 
-## Run CI in a warm sandbox
+## Run CI lanes natively on Blacksmith
 
-Keep the test commands unchanged. GitHub Actions starts four warm workers in
-parallel. Core and package workers run `pnpm test` and
-`pnpm test -- --packages-only`. Two browser workers run shards `1/2` and `2/2`
-through `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
-requested SHA. PR QA selects Daytona to avoid Platinum restore latency. Manual
-runs can select `auto`, `platinum`, or `daytona` with
-`TEST_SANDBOX_PROVIDER`.
+Keep the test commands unchanged. `.github/workflows/tests.yml` runs four lanes
+in parallel, each on one Blacksmith runner (`CI_RUNNER_L`, 8 vCPU / 32 GB).
+Core and package lanes run `pnpm test` and `pnpm test -- --packages-only`. Two
+browser lanes run shards `1/2` and `2/2` through
+`pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
+requested SHA.
 
-Use one Playwright worker for each local-stack browser shard in CI. Two or more
-workers can exhaust the 12 GiB Daytona guest during cold Next.js compilation.
-Prestart Supabase in disposable browser workers so sandbox deletion replaces
-local Supabase teardown. Keep two workers for deployed staging runs, which set
-`E2E_BROWSER_WORKERS` explicitly.
-
-- Use Daytona for the required PR gate. Use `auto` for manual provider fallback.
-- In `auto`, try Platinum first when its key exists.
-- Fall back to Daytona only when the Platinum runner throws an infrastructure
-  error. Return a non-zero test exit without fallback.
-- Cap Platinum warm restore readiness at 2 minutes. Treat a missing marker or
-  unreachable guest after that cap as infrastructure failure. Keep the cold
-  template build budget separate.
-- Keep provider selection in sandbox infrastructure. Keep test behavior in the
-  unchanged root command.
-- Give each provider one content-addressed warm image per lockfile hash.
-- Bake Node, Bun, pnpm, Docker, Chromium, linked `node_modules`, and the warm
-  checkout into the provider image.
-- Pre-pull Supabase images before capturing the warm image.
-- Fetch the public pull-request or branch ref inside the sandbox.
-- Verify the full 40-character SHA before installing or testing.
-- Run the offline lockfile install before starting the root command.
-- Stream the worker log and download `tests/test-results` before deletion.
-- Delete the sandbox in an unconditional cleanup path.
-- Retry transient provider failures with bounded backoff.
-- Fail the workflow when sandbox deletion exhausts its retry budget.
-- Keep product sandbox-lifecycle flows separate from the CI worker sandbox.
-- Give each parallel lane a unique sandbox run ID.
+- Check out the pull-request head SHA with `fetch-depth: 1`.
+- Run `pnpm install --frozen-lockfile`; Blacksmith serves the pnpm store from
+  its cache transparently.
+- Browser lanes: `pnpm --dir tests exec playwright install --with-deps chromium`
+  (cached under `PLAYWRIGHT_BROWSERS_PATH`) and
+  `pnpm exec supabase start --ignore-health-check` before the root command, and
+  `supabase stop --no-backup` in an `always()` step after it.
+- Use one Playwright worker for each local-stack browser shard in CI. Keep two
+  workers for deployed staging runs, which set `E2E_BROWSER_WORKERS` explicitly.
+- Export `KORTIX_PACKAGE_SKIP_SDK_TESTS=1` for the packages lane in full mode;
+  the SDK tests run in the core lane.
+- Keep the guard step and the artifact upload `if: always()`.
+- Do not reintroduce a cloud-sandbox worker for these lanes. The
+  Platinum/Daytona path (`tests/bin/sandbox-ci.ts`) was removed on 2026-08-26
+  after the provider chain failed on its own on about every third lane.
+  `deploy-preview.yml` keeps a sandbox because a preview needs a public HTTPS
+  origin.
 
 Before a production merge, run `pnpm test -- --target-smoke` against the exact
 staging hosts for a narrow rehearsal. The production release gate runs
@@ -118,37 +106,6 @@ staging hosts for a narrow rehearsal. The production release gate runs
 todo, or failed. Both commands require `RELEASE_SOURCE_SHA` to match the API and
 gateway health commits. Keep the Vercel bypass header for Playwright. Reject
 development and production targets.
-
-For Platinum:
-
-- Use one `kortix-ci-v*` template per `pnpm-lock.yaml` hash.
-- Build one OCI base and one stateful derived template per lockfile hash.
-- Pre-pull Supabase images during the stateful capture. Remove the temporary
-  database before capture.
-- Ignore initial Supabase service health only until migrations create the schema.
-- Keep `/workspace/suna` warm. Fetch and force-checkout the requested SHA into
-  it, then validate the lockfile with an offline install.
-- Set `HOME=/root` before the worker's offline install. The restored process
-  must use the same pnpm store path as the base-template build.
-- Request Platinum's `kernel_modules: container` template profile.
-- Load the injected container modules before starting dockerd.
-- Record `via=restore` or `via=cold-boot` for every worker benchmark.
-- Use a persistent 8 vCPU, 16 GiB RAM, 50 GiB disk worker for Platinum's
-  stateful restore path. Treat it as disposable and always delete it.
-- Stream the worker log through the Platinum file API.
-
-For Daytona:
-
-- Build one OCI base snapshot and one warm captured snapshot per lockfile hash.
-- Use `DAYTONA_CI_TARGET`, then `DAYTONA_TARGET`, to select the nested-Docker
-  region. Do not reuse the product `DAYTONA_WARM_TARGET`.
-- Start nested Docker in a temporary builder and pull the Supabase images.
-- Stop Supabase and dockerd before capturing the warm snapshot.
-- Require the warm marker after restore before starting tests.
-- Use a private 6 vCPU, 12 GiB RAM, 40 GiB disk worker. These are the current
-  Daytona organization maxima.
-- Label the worker with the repository, SHA, run ID, and run attempt.
-- Delete only a worker whose exact name and labels match the cleanup request.
 
 Do not add CI-only test logic. Change `pnpm test` when local and CI behavior
 must change together.

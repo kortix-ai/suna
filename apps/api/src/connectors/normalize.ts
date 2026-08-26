@@ -8,6 +8,7 @@
  */
 import type {
   ActionBinding,
+  ComposioToolLike,
   HttpRouteSpec,
   McpToolLike,
   NormalizedAction,
@@ -408,6 +409,60 @@ function pdType(t: string): string {
   return 'string';
 }
 
+/* ─── Composio ──────────────────────────────────────────────────────────── */
+
+/** Normalize Composio session tools. */
+export function normalizeComposio(tools: ComposioToolLike[], toolkit: string): NormalizedAction[] {
+  if (!Array.isArray(tools)) return [];
+  const prefix = `${toolkit.toUpperCase()}_`;
+  const actions: NormalizedAction[] = tools
+    .filter(
+      (tool) =>
+        tool?.type === 'function' &&
+        typeof tool.function?.name === 'string' &&
+        tool.function.name.length > 0,
+    )
+    .map((tool) => {
+      const toolSlug = tool.function.name;
+      return {
+        path: seg(toolSlug.startsWith(prefix) ? toolSlug.slice(prefix.length) : toolSlug),
+        name: toolSlug,
+        description: String(tool.function.description || toolSlug),
+        inputSchema: normalizeJsonSchema(tool.function.parameters),
+        outputSchema: null,
+        // The OpenAI wrapper does not retain Composio tool annotations. Default
+        // to write so policy evaluation fails closed for unknown mutations.
+        risk: 'write' as Risk,
+        binding: { kind: 'composio', toolkit, toolSlug } as ActionBinding,
+      };
+    });
+  return dedupePaths(actions);
+}
+
+function normalizeJsonSchema(schema: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!schema || typeof schema !== 'object') return null;
+  return boundedPlainSchema(schema);
+}
+
+function boundedPlainSchema(node: unknown): Record<string, unknown> | null {
+  let remaining = 2_000;
+  const seen = new WeakSet<object>();
+  const visit = (value: unknown, depth: number): unknown => {
+    if (typeof value === 'string') return value.length > 4_000 ? value.slice(0, 4_000) : value;
+    if (!value || typeof value !== 'object') return value;
+    if (depth >= 64 || remaining-- <= 0 || seen.has(value)) return {};
+    seen.add(value);
+    if (Array.isArray(value)) return value.slice(0, 200).map((entry) => visit(entry, depth + 1));
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value).slice(0, 300)) out[key] = visit(child, depth + 1);
+    return out;
+  };
+  const normalized = visit(node, 0);
+  return normalized && typeof normalized === 'object' && !Array.isArray(normalized)
+    ? (normalized as Record<string, unknown>)
+    : null;
+}
+
 /* ─── dispatch ───────────────────────────────────────────────────────────── */
 
 import type { ConnectorProvider } from '../projects/connectors';
@@ -420,6 +475,7 @@ type NormalizeInput =
   | { provider: 'mcp'; tools: McpToolLike[] }
   | { provider: 'http'; routes: HttpRouteSpec[] }
   | { provider: 'pipedream'; actions: PipedreamActionLike[]; app: string }
+  | { provider: 'composio'; tools: ComposioToolLike[]; toolkit: string }
   | { provider: 'channel'; platform: string };
 
 export function normalize(input: NormalizeInput): NormalizedAction[] {
@@ -432,6 +488,8 @@ export function normalize(input: NormalizeInput): NormalizedAction[] {
       return normalizeMcp(input.tools);
     case 'pipedream':
       return normalizePipedream(input.actions, input.app);
+    case 'composio':
+      return normalizeComposio(input.tools, input.toolkit);
     case 'http':
       return normalizeHttp(input.routes);
     case 'channel':

@@ -8,18 +8,21 @@ const compile = (messageId: string) =>
   new PgDialect().sqlToQuery(wireMessageIdMatches(messageId)!);
 
 describe('wireMessageIdMatches', () => {
-  test('matches all THREE columns a wire id can be recorded in', () => {
+  test('matches all FOUR columns a wire id can be recorded in', () => {
     const q = compile('msg_000000000001AAAAAAAAAAAAAA');
     expect(q.sql).toBe(
       '("kortix"."session_lifecycle_commands"."payload"->>\'wireMessageId\' = $1' +
         ' or "kortix"."session_lifecycle_commands"."payload"->>\'redeliveredMessageId\' = $2' +
-        ' or "kortix"."session_lifecycle_commands"."result"->>\'forwarded_message_id\' = $3)',
+        ' or "kortix"."session_lifecycle_commands"."result"->>\'forwarded_message_id\' = $3' +
+        " or coalesce(\"kortix\".\"session_lifecycle_commands\".\"payload\"->'redeliveredMessageIds', '[]'::jsonb) @> $4::jsonb)",
     );
-    // Bound, never interpolated — the id comes off the wire.
+    // Bound, never interpolated — the id comes off the wire. The fourth is the
+    // one-element JSON array the `@>` containment test needs.
     expect(q.params).toEqual([
       'msg_000000000001AAAAAAAAAAAAAA',
       'msg_000000000001AAAAAAAAAAAAAA',
       'msg_000000000001AAAAAAAAAAAAAA',
+      '["msg_000000000001AAAAAAAAAAAAAA"]',
     ]);
   });
 

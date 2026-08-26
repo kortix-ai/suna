@@ -18,7 +18,8 @@ import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, type ProviderListResponse } from '@kortix/sdk/react';
+import { contract, qk, useModelStore, type ProviderListResponse } from '@kortix/sdk/react';
+import { modelInDefaultView } from './model-picker-default-view';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -34,7 +35,6 @@ import { useParams } from 'next/navigation';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveAvailableSelectedModel } from './model-availability';
 import { modelItemValue, pickerGroupId, pickerGroupLabel, splitModelLabel } from './model-grouping';
-import { computeModelExtrasRows } from './model-popover-extras';
 import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
@@ -314,9 +314,6 @@ export interface ModelSelectorProps {
   modelsLoading?: boolean;
   triggerLabelClassName?: string;
 
-  variants?: string[];
-  selectedVariant?: string | null;
-  onVariantChange?: (variant: string | null) => void;
   projectId?: string;
 
   /**
@@ -329,8 +326,8 @@ export interface ModelSelectorProps {
    * the picker stayed shut, because this component's `open` was internal
    * state with no way in.
    *
-   * "Set reasoning effort" no longer routes here — it opens
-   * `ReasoningEffortSelector` in the toolbar instead.
+   * "Set reasoning effort" does not route here — it opens the toolbar's
+   * `ReasoningEffortSelector`, which sets the session variant.
    *
    * Controlled/uncontrolled is decided by whether `open` is `undefined`, the
    * same rule Radix itself uses — so every existing call site keeps its
@@ -349,10 +346,6 @@ export function ModelSelector({
   disabled = false,
   modelsLoading = false,
   triggerLabelClassName,
-  variants = [],
-  selectedVariant = null,
-  onVariantChange,
-  projectId: extrasProjectId,
   open: openProp,
   onOpenChange,
 }: ModelSelectorProps) {
@@ -407,17 +400,17 @@ export function ModelSelector({
   );
   const displayName = current?.modelName || unsetLabel;
 
-  const extrasRows = computeModelExtrasRows({
-    variants,
-    hasVariantHandler: !!onVariantChange,
-  });
-
   useEffect(() => {
     if (!open) {
       setSearch('');
     }
   }, [open]);
 
+  // The store's visibility rule (newest per family + flagships + user pins)
+  // curates the NO-SEARCH view for native providers — the client twin of the
+  // `enabled` stamping `/model-picker` gives gateway catalogs. See
+  // modelInDefaultView.
+  const pickerModelStore = useModelStore(baseModels);
   const visibleModels = useMemo(() => {
     const q = search.toLowerCase();
     return baseModels
@@ -427,10 +420,15 @@ export function ModelSelector({
           (!q ||
             (m.modelName || '').toLowerCase().includes(q) ||
             (m.modelID || '').toLowerCase().includes(q) ||
-            (m.providerName || '').toLowerCase().includes(q)),
+            (m.providerName || '').toLowerCase().includes(q)) &&
+          modelInDefaultView(m, {
+            search,
+            isStoreVisible: pickerModelStore.isVisible,
+            selected: selectedModel,
+          }),
       )
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [baseModels, search]);
+  }, [baseModels, search, pickerModelStore.isVisible, selectedModel]);
 
   /** Is there anything to pick AT ALL, ignoring the search box? The empty
    *  state below branches on this: "no models match your search" and "you have
@@ -731,18 +729,6 @@ export function ModelSelector({
                 </div>
               )}
             </CommandList>
-
-            {extrasRows.showSection && availableSelectedModel ? (
-              <div className="border-border/60 flex flex-col gap-2 border-t p-2">
-                {extrasRows.showVariantRow && (
-                  <ModelPopoverVariantRow
-                    variants={variants}
-                    selectedVariant={selectedVariant}
-                    onSelect={onVariantChange!}
-                  />
-                )}
-              </div>
-            ) : null}
           </>
         </CommandPopoverContent>
       </CommandPopover>
@@ -750,56 +736,3 @@ export function ModelSelector({
   );
 }
 
-// ─── Model popover extras (variant) ─────────────────────────────────────────
-//
-// The variant row renders as a flat chip list rather than nesting a second
-// Radix `Popover` inside this already-open one — that pattern is fragile: the
-// child's portaled content sits outside the parent's content subtree, so the
-// parent's outside-click dismissal can treat a click inside the child as
-// "outside" and close both. A flat row sidesteps that entirely.
-//
-// Reasoning effort used to be the second row here. It is now its own toolbar
-// control (`reasoning-effort-selector.tsx`'s `ReasoningEffortSelector`) — a
-// per-PROJECT setting does not belong folded inside a per-message picker,
-// where it was two clicks deep and invisible at rest. Do not fold it back in.
-
-const extrasChipBase =
-  'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-7 shrink-0 cursor-pointer items-center rounded-full px-2.5 text-[11px] font-medium capitalize transition-colors duration-200';
-const extrasChipSelected = 'bg-foreground/[0.06] text-foreground';
-const extrasRowLabel =
-  'text-muted-foreground/60 px-1 text-[10px] font-semibold tracking-wide uppercase';
-
-function ModelPopoverVariantRow({
-  variants,
-  selectedVariant,
-  onSelect,
-}: {
-  variants: string[];
-  selectedVariant: string | null;
-  onSelect: (variant: string | null) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className={extrasRowLabel}>Thinking mode</span>
-      <div className="flex flex-wrap gap-1 px-1">
-        <button
-          type="button"
-          onClick={() => onSelect(null)}
-          className={cn(extrasChipBase, !selectedVariant && extrasChipSelected)}
-        >
-          Default
-        </button>
-        {variants.map((variant) => (
-          <button
-            key={variant}
-            type="button"
-            onClick={() => onSelect(variant)}
-            className={cn(extrasChipBase, selectedVariant === variant && extrasChipSelected)}
-          >
-            {variant}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}

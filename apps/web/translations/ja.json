@@ -7725,7 +7725,7 @@
     "autoComponentsSetupLinksConnectorIntakeJsxTextSignInIn5b6c05ee": "開いたウィンドウでサインインします。接続したら、これを閉じてエージェントに「完了」を伝えることができます。",
     "autoComponentsSetupLinksConnectorIntakeJsxTextReopenConnectWindowb7f822cd": "接続ウィンドウを再度開きます",
     "autoComponentsSetupLinksConnectorIntakeJsxText1ClickConnect9e029325": "1クリックで接続",
-    "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "Pipedream 経由 — キーはチャットに貼り付けられたり、リポジトリに保存されたりしません。",
+    "autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477": "— キーがチャットに貼り付けられたり、リポジトリに保存されたりすることはありません。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1": "安全に保存されました",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da": "これを閉じることができます。エージェントがそれを受け取ります。続行するには「完了」と伝えます。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88": "保存時は暗号化されます。このプロジェクトのみが読み取ることができます。エージェントがその値を確認することはありません。",

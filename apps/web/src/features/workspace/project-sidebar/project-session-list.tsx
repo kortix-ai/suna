@@ -708,7 +708,7 @@ function ProjectSessionRow({
           // --session-row-surface paints the row AND the title fade in the same
           // style pass. Do not transition background — transition-colors made the
           // fill ease for 150ms while the fade snapped, which read as a flicker.
-          'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-[color] duration-150',
+          'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-none',
           isActive
             ? 'text-sidebar-foreground bg-[var(--session-row-surface)] font-medium [--session-row-surface:var(--sidebar-border)]'
             : 'text-muted-foreground hover:text-sidebar-foreground bg-[var(--session-row-surface)] [--session-row-surface:var(--sidebar)] hover:[--session-row-surface:var(--sidebar-border)]',

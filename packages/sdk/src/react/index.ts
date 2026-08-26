@@ -127,6 +127,7 @@ export * from './use-teams-installations';
 export * from './use-tunnel';
 export * from './use-admin-sandboxes';
 export * from './use-authenticated-preview-url';
+export * from './use-static-file-preview';
 export * from './run-pty-command';
 export * from './runtime-actions';
 

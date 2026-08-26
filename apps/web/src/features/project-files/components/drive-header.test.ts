@@ -60,24 +60,20 @@ const capabilityTabsSource = readFileSync(
 );
 
 describe('standalone Files header sidebar opener', () => {
-  // ProjectShell draws a web opener only on the desktop shell. On the web
-  // each view owns its own, gated by useShowPageSidebarOpener(). DriveHeader
-  // used to only pad for a toggle the shell never rendered.
-  test('visibility comes from the shared gate, not overlay padding', () => {
-    expect(headerSource).toContain('useShowPageSidebarOpener()');
-    expect(headerSource).toContain('sidebarOpenerLabel');
-    expect(headerSource).toContain('peekEnter');
-    expect(headerSource).toContain('peekLeave');
+  // ProjectShell draws a web opener only on the desktop shell. On the web every
+  // view renders the one `SidebarToggle`, which self-gates on
+  // useShowPageSidebarOpener() — pinned in
+  // project-layout/sidebar-toggle.test.ts. DriveHeader used to only pad for a
+  // toggle the shell never rendered, then grew its own copy of one.
+  test('renders the shared opener, not a local copy', () => {
+    expect(headerSource).toContain('<SidebarToggle />');
+    expect(headerCode).not.toContain('toggleSidebar');
+    expect(headerCode).not.toContain('sidebarOpenerLabel');
   });
 
   test('the opener sits in flow with the path bar, not absolute over it', () => {
-    const toggleStart = headerCode.indexOf('function FilesSidebarToggle');
-    const toggleEnd = headerCode.indexOf('export function DriveHeader');
-    expect(toggleStart).toBeGreaterThan(-1);
-    const toggle = headerCode.slice(toggleStart, toggleEnd);
-    expect(toggle).not.toContain('absolute');
-    expect(toggle).not.toContain('pl-14');
-    expect(toggle).toContain('toggleSidebar');
+    expect(headerCode).not.toContain('placement="floating"');
+    expect(headerCode).not.toContain('pl-14');
   });
 });
 

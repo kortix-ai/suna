@@ -7,8 +7,11 @@ import {
   connectedGatewayProviderIdsFromSecretNames,
   mergeProviderLists,
   mergeProjectSecretConnectedProviders,
+  mergeNativeProviderLists,
+  nativeProviderListFromCatalog,
   projectLlmCatalogToProviderList,
 } from './provider-selection';
+import { flattenModels } from './model-flatten';
 
 describe('LLM_PROVIDER_CREDENTIALS — Kortix auth requirements, not raw catalog env', () => {
   test('amazon-bedrock requires only the bearer token + region', () => {
@@ -147,5 +150,546 @@ describe('applyEnablementToProviderList', () => {
     applyEnablementToProviderList(providers, { 'glm-5.2': false });
     const models = (providers.all?.[0] as { models: Record<string, { enabled?: boolean }> }).models;
     expect(models['glm-5.2'].enabled).toBe(true);
+  });
+});
+
+// Native mode, BEFORE any sandbox runtime exists (project home, cold session):
+// there is no opencode /provider list to read, so the picker synthesizes a
+// ProviderListResponse from the ungated /llm-catalog/providers route plus the
+// project's secret NAMES. Without this the composer showed "No models
+// available" on every native project until a box booted — connecting a key
+// changed nothing.
+describe('nativeProviderListFromCatalog (pre-runtime native picker source)', () => {
+  const catalog = {
+    source: 'models.dev',
+    fetched_at: '2026-08-24T00:00:00Z',
+    provider_count: 3,
+    model_count: 5,
+    providers: [
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        env: ['ANTHROPIC_API_KEY'],
+        models: [
+          { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', released: '2026-02-01' },
+          { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', released: '2025-10-01' },
+        ],
+      },
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        env: ['OPENROUTER_API_KEY'],
+        models: [{ id: 'z-ai/glm-4.7-flash', name: 'GLM-4.7-Flash', released: null }],
+      },
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        env: ['OPENAI_API_KEY'],
+        models: [{ id: 'gpt-5.2', name: 'GPT-5.2', released: null }],
+      },
+    ],
+  };
+
+  test('providers whose key is in the secrets connect, with catalog models flattened-compatible', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    expect(list.connected).toEqual(['anthropic']);
+    const anthropic = (list.all ?? []).find((p) => p.id === 'anthropic') as {
+      models: Record<string, { name?: string; release_date?: string }>;
+    };
+    expect(Object.keys(anthropic.models)).toEqual(['claude-sonnet-4-6', 'claude-haiku-4-5']);
+    // `released` (catalog wire name) must land as `release_date` (the field
+    // flattenModels/the picker sort read).
+    expect(anthropic.models['claude-sonnet-4-6']!.release_date).toBe('2026-02-01');
+    // Disconnected providers are omitted entirely — 195 catalog providers per
+    // paint would be dead weight the flatten filters out anyway.
+    expect((list.all ?? []).some((p) => p.id === 'openai')).toBe(false);
+  });
+
+  test('the synthesized list flattens to native FlatModels', () => {
+    const list = nativeProviderListFromCatalog(
+      catalog as never,
+      new Set(['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY']),
+    );
+    const flat = flattenModels(list, { providerMode: 'native' });
+    expect(flat.map((m) => `${m.providerID}/${m.modelID}`).sort()).toEqual([
+      'anthropic/claude-haiku-4-5',
+      'anthropic/claude-sonnet-4-6',
+      'openrouter/z-ai/glm-4.7-flash',
+    ]);
+  });
+
+  test('no connected key and no Zen entry ⇒ an EMPTY list (the connect-provider call to action stays)', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set());
+    expect(list.all).toEqual([]);
+    expect(list.connected).toEqual([]);
+  });
+
+  // opencode auto-connects the OpenCode Zen provider (`opencode`) with its
+  // FREE models even when no key is present — the running sandbox always
+  // lists them. The pre-runtime source must too, or the picker's contents
+  // change the moment the box boots.
+  test('OpenCode Zen free models are always listed (keyless), paid Zen models are not', () => {
+    const withZen = {
+      ...catalog,
+      providers: [
+        ...catalog.providers,
+        {
+          id: 'opencode',
+          name: 'OpenCode Zen',
+          env: ['OPENCODE_API_KEY'],
+          models: [
+            { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', released: '2026-07-09', cost: { input: 2.5, output: 15 } },
+            { id: 'hy3-free', name: 'Hy3 Free', released: '2026-05-01', cost: { input: 0, output: 0 } },
+            { id: 'big-pickle', name: 'Big Pickle', released: '2026-06-01', cost: { input: 0, output: 0 } },
+          ],
+        },
+      ],
+    };
+    const list = nativeProviderListFromCatalog(withZen as never, new Set());
+    expect(list.connected).toEqual(['opencode']);
+    const zen = (list.all ?? []).find((p) => p.id === 'opencode') as { models: Record<string, unknown> };
+    expect(Object.keys(zen.models)).toEqual(['big-pickle', 'hy3-free']);
+    // Zen ranks after every keyed provider, and never becomes the default pick
+    // when a keyed provider exists.
+    const keyed = nativeProviderListFromCatalog(withZen as never, new Set(['ANTHROPIC_API_KEY']));
+    expect((keyed.all ?? []).map((p) => p.id)).toEqual(['anthropic', 'opencode']);
+    expect((keyed as { default?: Record<string, string> }).default).toEqual({
+      anthropic: 'claude-sonnet-4-6',
+      opencode: 'big-pickle',
+    });
+  });
+
+  // opencode drops every catalog model whose models.dev `status` is
+  // "deprecated" (core/src/plugin/provider/opencode.ts: `enabled = status !==
+  // "deprecated"`). Seen live on dev 2026-08-25: 29 free Zen models in the
+  // box's models.json, 7 served by the runtime — the other 22 were deprecated.
+  // The pre-boot source must apply the same rule for EVERY provider.
+  test('deprecated models are omitted, like the runtime does', () => {
+    const withDeprecated = {
+      ...catalog,
+      providers: [
+        {
+          id: 'anthropic',
+          name: 'Anthropic',
+          env: ['ANTHROPIC_API_KEY'],
+          models: [
+            { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', released: '2026-02-01', status: 'active' },
+            { id: 'claude-3-opus', name: 'Claude 3 Opus', released: '2024-02-29', status: 'deprecated' },
+            { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', released: '2025-10-01' },
+          ],
+        },
+        {
+          id: 'opencode',
+          name: 'OpenCode Zen',
+          env: ['OPENCODE_API_KEY'],
+          models: [
+            { id: 'hy3-free', name: 'Hy3 Free', released: '2026-07-06', cost: { input: 0, output: 0 } },
+            { id: 'glm-5-free', name: 'GLM 5 Free', released: '2026-02-11', cost: { input: 0, output: 0 }, status: 'deprecated' },
+          ],
+        },
+      ],
+    };
+    const list = nativeProviderListFromCatalog(withDeprecated as never, new Set(['ANTHROPIC_API_KEY']));
+    const ids = (list.all ?? []).map((p) => [p.id, Object.keys((p as { models: Record<string, unknown> }).models)]);
+    expect(ids).toEqual([
+      ['anthropic', ['claude-sonnet-4-6', 'claude-haiku-4-5']],
+      ['opencode', ['hy3-free']],
+    ]);
+  });
+
+  test('never synthesizes the synthetic kortix provider', () => {
+    const withKortix = {
+      ...catalog,
+      providers: [
+        ...catalog.providers,
+        { id: 'kortix', name: 'Kortix', env: [], models: [{ id: 'glm-5.2', name: 'GLM', released: null }] },
+      ],
+    };
+    const list = nativeProviderListFromCatalog(withKortix as never, new Set(['ANTHROPIC_API_KEY']));
+    expect((list.all ?? []).some((p) => p.id === 'kortix')).toBe(false);
+  });
+});
+
+// The first live dev run of the pre-runtime source auto-picked
+// `Hy-MT2-30B-A3B` (catalog file order) and OpenRouter answered "No endpoints
+// found that support tool use" on the user's very first message. The
+// synthesized list must therefore carry a per-provider `default` (the
+// composer's fallback reads `providers.default[id]` before "first model") and
+// order deterministically toward flagships.
+describe('nativeProviderListFromCatalog — default pick quality', () => {
+  const catalog = {
+    source: 'models.dev',
+    fetched_at: '2026-08-24T00:00:00Z',
+    provider_count: 2,
+    model_count: 5,
+    providers: [
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        env: ['OPENROUTER_API_KEY'],
+        models: [
+          { id: 'hy/hy-mt2-30b-a3b', name: 'Hy-MT2-30B-A3B', released: '2025-01-01' },
+          { id: 'z-ai/glm-4.7-flash', name: 'GLM-4.7-Flash', released: '2026-06-01' },
+          { id: 'old/thing', name: 'Old Thing', released: null },
+        ],
+      },
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        env: ['ANTHROPIC_API_KEY'],
+        models: [
+          { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', released: '2025-10-01' },
+          { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', released: '2026-01-01' },
+        ],
+      },
+    ],
+  };
+
+  test('a known flagship becomes the provider default', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    expect((list as { default?: Record<string, string> }).default).toEqual({
+      anthropic: 'claude-opus-4-8',
+    });
+  });
+
+  test('a provider with no flagship candidate defaults to its most recently released model', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['OPENROUTER_API_KEY']));
+    expect((list as { default?: Record<string, string> }).default).toEqual({
+      openrouter: 'z-ai/glm-4.7-flash',
+    });
+  });
+
+  test('flagship-table providers rank before the rest, so anthropic beats openrouter as first pick', () => {
+    const list = nativeProviderListFromCatalog(
+      catalog as never,
+      new Set(['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY']),
+    );
+    expect((list.all ?? []).map((p) => p.id)).toEqual(['anthropic', 'openrouter']);
+    expect(list.connected).toEqual(['anthropic', 'openrouter']);
+  });
+
+  test('models within a provider are ordered newest-first', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['OPENROUTER_API_KEY']));
+    const openrouter = (list.all ?? []).find((p) => p.id === 'openrouter') as {
+      models: Record<string, unknown>;
+    };
+    expect(Object.keys(openrouter.models)).toEqual([
+      'z-ai/glm-4.7-flash',
+      'hy/hy-mt2-30b-a3b',
+      'old/thing',
+    ]);
+  });
+});
+
+// PROVEN LIVE on the Essentia self-host 2026-08-26: a brand-new workspace with
+// Bedrock BYOK creds (AWS_BEARER_TOKEN_BEDROCK + AWS_REGION, native path,
+// llm_gateway OFF) auto-selected `xai.grok-4.6` — the newest Bedrock model in
+// the catalog and the one family with NO `global.`/`us.` twin. Bedrock refused
+// it ("Invocation of model ID xai.grok-4.6 with on-demand throughput isn't
+// supported. Retry your request with the ID or ARN of an inference profile")
+// and the session looped "Retrying in Ns" forever. Every fresh workspace was
+// wedged until a human picked another model.
+describe('nativeProviderListFromCatalog — Bedrock never auto-seeds a bare id', () => {
+  const bedrockCatalog = {
+    source: 'models.dev',
+    fetched_at: '2026-08-25T00:00:00Z',
+    provider_count: 1,
+    model_count: 4,
+    providers: [
+      {
+        id: 'amazon-bedrock',
+        name: 'Amazon Bedrock',
+        env: ['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION'],
+        models: [
+          { id: 'xai.grok-4.6', name: 'Grok 4.6', released: '2026-08-12' },
+          { id: 'anthropic.claude-opus-5', name: 'Claude Opus 5', released: '2026-07-24' },
+          { id: 'us.anthropic.claude-opus-5', name: 'Claude Opus 5', released: '2026-07-24' },
+          { id: 'global.anthropic.claude-opus-5', name: 'Claude Opus 5', released: '2026-07-24' },
+        ],
+      },
+    ],
+  };
+  const connected = new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']);
+
+  test('the default is the global. inference profile, never the newer bare id', () => {
+    const list = nativeProviderListFromCatalog(bedrockCatalog as never, connected);
+    expect((list as { default?: Record<string, string> }).default).toEqual({
+      'amazon-bedrock': 'global.anthropic.claude-opus-5',
+    });
+  });
+
+  test("the composer's \"first model\" fallback never lands on a bare twin either", () => {
+    const list = nativeProviderListFromCatalog(bedrockCatalog as never, connected);
+    const bedrock = (list.all ?? []).find((p) => p.id === 'amazon-bedrock') as {
+      models: Record<string, unknown>;
+    };
+    // Same release date → the inference profile sorts ahead of its bare twin.
+    expect(Object.keys(bedrock.models)).toEqual([
+      'xai.grok-4.6',
+      'global.anthropic.claude-opus-5',
+      'us.anthropic.claude-opus-5',
+      'anthropic.claude-opus-5',
+    ]);
+  });
+
+  test('a bare id is still LISTED — a human can pick it, nothing picks it for them', () => {
+    const list = nativeProviderListFromCatalog(bedrockCatalog as never, connected);
+    const bedrock = (list.all ?? []).find((p) => p.id === 'amazon-bedrock') as {
+      models: Record<string, unknown>;
+    };
+    expect(Object.keys(bedrock.models)).toContain('xai.grok-4.6');
+  });
+});
+
+// UX parity with the runtime picker (field report: the pre-runtime list showed
+// duplicate names and every historical version, and no thinking-mode row).
+// The catalog wire payload (runtimeModelCatalog snapshot = @kortix/llm-catalog
+// Catalog) already carries family/capabilities/reasoning_options — the
+// synthesized entries must pass them through so the picker's newest-per-family
+// curation, capability badges, and the variant (thinking mode) row behave
+// exactly as they do once the runtime list loads.
+describe('nativeProviderListFromCatalog — metadata parity with the runtime picker', () => {
+  const catalog = {
+    source: 'models.dev',
+    fetched_at: '2026-08-24T00:00:00Z',
+    provider_count: 1,
+    model_count: 3,
+    providers: [
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        env: ['ANTHROPIC_API_KEY'],
+        models: [
+          {
+            id: 'claude-opus-4-8',
+            name: 'Claude Opus 4.8',
+            released: '2026-01-01',
+            family: 'claude-opus',
+            reasoning: true,
+            reasoning_options: [
+              { type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] },
+            ],
+            tool_call: true,
+            attachment: true,
+            limit: { context: 200000, output: 64000 },
+            cost: { input: 5, output: 25 },
+          },
+          {
+            id: 'claude-sonnet-4-6',
+            name: 'Claude Sonnet 4.6',
+            released: '2025-11-01',
+            family: 'claude-sonnet',
+            reasoning: true,
+            reasoning_options: [{ type: 'budget_tokens', min: 1024, max: 32000 }],
+            tool_call: true,
+          },
+          {
+            id: 'claude-3-haiku',
+            name: 'Claude 3 Haiku',
+            released: '2024-03-01',
+            family: 'claude-haiku',
+            tool_call: true,
+          },
+        ],
+      },
+    ],
+  };
+
+  test('family, capabilities, limits, and cost survive onto the FlatModel', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    const flat = flattenModels(list, { providerMode: 'native' });
+    const opus = flat.find((m) => m.modelID === 'claude-opus-4-8')!;
+    expect(opus.family).toBe('claude-opus');
+    expect(opus.capabilities).toEqual({ reasoning: true, vision: true, toolcall: true });
+    expect(opus.contextWindow).toBe(200000);
+    expect(opus.cost).toEqual({ input: 5, output: 25 });
+    expect(opus.releaseDate).toBe('2026-01-01');
+  });
+
+  test('an effort knob synthesizes the same variant IDS opencode derives, so the thinking-mode row renders pre-runtime', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    const flat = flattenModels(list, { providerMode: 'native' });
+    const opus = flat.find((m) => m.modelID === 'claude-opus-4-8')!;
+    expect(Object.keys(opus.variants ?? {})).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  test('a budget_tokens knob synthesizes high/max, mirroring opencode budgetVariants', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    const flat = flattenModels(list, { providerMode: 'native' });
+    const sonnet = flat.find((m) => m.modelID === 'claude-sonnet-4-6')!;
+    expect(Object.keys(sonnet.variants ?? {})).toEqual(['high', 'max']);
+  });
+
+  test('a model with no reasoning knob gets no variants at all', () => {
+    const list = nativeProviderListFromCatalog(catalog as never, new Set(['ANTHROPIC_API_KEY']));
+    const flat = flattenModels(list, { providerMode: 'native' });
+    const haiku = flat.find((m) => m.modelID === 'claude-3-haiku')!;
+    expect(haiku.variants ?? {}).toEqual({});
+  });
+});
+
+// One picker across sandbox states: pre-boot the catalog synthesizes the
+// list, post-boot the runtime reports it. Swapping sources changed the
+// picker's contents on boot (different provider order, Zen appearing, the
+// auto-picked default flipping). The merge keeps ONE list: runtime truth per
+// provider, catalog order + curated defaults, runtime-only extras appended.
+describe('mergeNativeProviderLists (catalog ∪ runtime, one picker across boot)', () => {
+  const catalog = {
+    all: [
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        source: 'env',
+        models: {
+          'claude-opus-4-8': { id: 'claude-opus-4-8', name: 'Opus', variants: { high: {}, max: {} } },
+          'claude-sonnet-4-6': { id: 'claude-sonnet-4-6', name: 'Sonnet' },
+        },
+      },
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        source: 'env',
+        models: { 'z-ai/glm-4.7-flash': { id: 'z-ai/glm-4.7-flash', name: 'GLM' } },
+      },
+    ],
+    connected: ['anthropic', 'openrouter'],
+    default: { anthropic: 'claude-opus-4-8', openrouter: 'z-ai/glm-4.7-flash' },
+  } as never;
+  const runtime = {
+    all: [
+      {
+        id: 'opencode',
+        name: 'OpenCode Zen',
+        source: 'api',
+        models: { 'big-pickle': { id: 'big-pickle', name: 'Big Pickle' } },
+      },
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        source: 'env',
+        models: {
+          'claude-opus-4-8': {
+            id: 'claude-opus-4-8',
+            name: 'Opus',
+            variants: { high: { thinking: { budgetTokens: 16000 } }, max: { thinking: { budgetTokens: 31999 } } },
+          },
+          'claude-sonnet-4-6': { id: 'claude-sonnet-4-6', name: 'Sonnet' },
+          'claude-haiku-4-5': { id: 'claude-haiku-4-5', name: 'Haiku' },
+        },
+      },
+    ],
+    connected: ['opencode', 'anthropic'],
+    default: { anthropic: 'claude-haiku-4-5', opencode: 'big-pickle' },
+  } as never;
+
+  test('runtime provider objects win for shared ids (real variant settings), catalog order is kept, extras append', () => {
+    const merged = mergeNativeProviderLists(catalog, runtime)!;
+    expect((merged.all ?? []).map((p) => p.id)).toEqual(['anthropic', 'openrouter', 'opencode']);
+    const anthropic = (merged.all ?? []).find((p) => p.id === 'anthropic') as {
+      models: Record<string, { variants?: Record<string, unknown> }>;
+    };
+    expect(Object.keys(anthropic.models)).toEqual(['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5']);
+    expect(anthropic.models['claude-opus-4-8']!.variants).toEqual({
+      high: { thinking: { budgetTokens: 16000 } },
+      max: { thinking: { budgetTokens: 31999 } },
+    });
+    expect(merged.connected).toEqual(['anthropic', 'openrouter', 'opencode']);
+  });
+
+  test('the curated catalog default wins over the runtime default when the runtime serves that model', () => {
+    const merged = mergeNativeProviderLists(catalog, runtime)!;
+    expect((merged as { default?: Record<string, string> }).default).toEqual({
+      anthropic: 'claude-opus-4-8',
+      openrouter: 'z-ai/glm-4.7-flash',
+      opencode: 'big-pickle',
+    });
+  });
+
+  test('a catalog default the runtime does not serve falls back to the runtime default', () => {
+    const skewed = {
+      ...(catalog as { default: Record<string, string> }),
+      default: { anthropic: 'claude-opus-5', openrouter: 'z-ai/glm-4.7-flash' },
+    } as never;
+    const merged = mergeNativeProviderLists(skewed, runtime)!;
+    expect((merged as { default?: Record<string, string> }).default?.anthropic).toBe('claude-haiku-4-5');
+  });
+
+  test('either side missing returns the other unchanged', () => {
+    expect(mergeNativeProviderLists(catalog, undefined)).toBe(catalog);
+    expect(mergeNativeProviderLists(undefined, runtime)).toBe(runtime);
+    expect(mergeNativeProviderLists(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe('projectLlmCatalogToProviderList — variants for the gateway picker', () => {
+  test('a gateway model with an effort ladder gets one variant id per published tier, in order', () => {
+    const list = projectLlmCatalogToProviderList({
+      models: {
+        'amazon-bedrock/global.openai.gpt-5.6-sol': {
+          name: 'GPT-5.6 Sol (Global)',
+          reasoning: true,
+          reasoning_options: [
+            { type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] },
+          ],
+        },
+      },
+    });
+    const kortix = (list.all ?? []).find((p) => p.id === 'kortix')!;
+    const model = kortix.models['amazon-bedrock/global.openai.gpt-5.6-sol'] as {
+      variants?: Record<string, unknown>;
+    };
+    expect(Object.keys(model.variants ?? {})).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+  });
+
+  test('a budget_tokens-only knob (mainline Claude) synthesizes the gateway tiers the routing clamp accepts', () => {
+    const list = projectLlmCatalogToProviderList({
+      models: {
+        'anthropic/claude-sonnet-4-5': {
+          name: 'Claude Sonnet 4.5',
+          reasoning: true,
+          reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
+        },
+      },
+    });
+    const model = (list.all ?? [])[0].models['anthropic/claude-sonnet-4-5'] as {
+      variants?: Record<string, unknown>;
+    };
+    expect(Object.keys(model.variants ?? {})).toEqual(['low', 'medium', 'high']);
+  });
+
+  test('a model with no reasoning knob gets NO variants key — never a fabricated ladder', () => {
+    const list = projectLlmCatalogToProviderList({
+      models: {
+        'openai/gpt-4.1': { name: 'GPT-4.1', reasoning: false },
+        'zai/glm-5': { name: 'GLM-5', reasoning: true, reasoning_options: [] },
+      },
+    });
+    const models = (list.all ?? [])[0].models as Record<string, { variants?: unknown }>;
+    expect(models['openai/gpt-4.1'].variants).toBeUndefined();
+    expect(models['zai/glm-5'].variants).toBeUndefined();
+  });
+
+  test('a variants map the API already sends is kept verbatim (runtime truth wins over derivation)', () => {
+    const list = projectLlmCatalogToProviderList({
+      models: {
+        'openai/gpt-5.6-sol': {
+          name: 'GPT-5.6 Sol',
+          reasoning: true,
+          reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
+          variants: { deep: { reasoningEffort: 'high' } },
+        },
+      },
+    });
+    const model = (list.all ?? [])[0].models['openai/gpt-5.6-sol'] as {
+      variants?: Record<string, unknown>;
+    };
+    expect(model.variants).toEqual({ deep: { reasoningEffort: 'high' } });
   });
 });

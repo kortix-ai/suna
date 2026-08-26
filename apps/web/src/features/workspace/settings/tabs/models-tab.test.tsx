@@ -119,7 +119,10 @@ describe('Models page chrome', () => {
   });
 
   test('the tab strip is the shell’s filters slot, in the DEFAULT pill style', () => {
-    expect(gatewaySource).toContain('filters={<LlmTabStrip');
+    // Multiline now: the strip takes `value`/`tabs` forked on the gateway
+    // flag (native mode shows the Providers/Custom subset).
+    expect(gatewaySource).toContain('filters={');
+    expect(gatewaySource).toContain('<LlmTabStrip');
     // The exact control Connectors draws: a bare `TabsList`, no `type`, no
     // `size`, no className. `type="underline"` is what made this page read as a
     // different product beside its five siblings.
@@ -214,13 +217,18 @@ describe('Models page chrome', () => {
   });
 });
 
-describe('Models tab — the gate', () => {
-  test('renders nothing while the gateway is disabled, matching the panel it replaced', () => {
-    // The gate is the flag the host threads in, NOT a second derivation.
-    expect(tabSource).toContain('if (!llmGatewayEnabled) return null;');
+describe('Models tab — the mode fork', () => {
+  test('forwards the host-computed flag; native mode renders the key-intake subset, not null', () => {
+    // The flag the host threads in, NOT a second derivation. Both modes render
+    // the page now — gateway off restricts LlmManagementView to Providers +
+    // Custom (see gateway-view.tsx NATIVE_LLM_TABS) instead of blanking the
+    // route its rail row / hub card / ⌘K entry still advertise.
+    expect(tabSource).not.toContain('return null');
     expect(tabSource).not.toContain('isLlmGatewayEnabled(');
     expect(tabSource).not.toContain('llmGatewayAvailable');
-    expect(tabSource).toContain('<LlmManagementView projectId={projectId} />');
+    expect(tabSource).toContain(
+      '<LlmManagementView projectId={projectId} llmGatewayEnabled={llmGatewayEnabled} />',
+    );
   });
 });
 

@@ -93,6 +93,34 @@ export function isSandboxNotReadyError(error: unknown): boolean {
   return SANDBOX_NOT_READY_PATTERNS.some((pattern) => pattern.test(raw));
 }
 
+/**
+ * A message read (or any runtime read) that failed because the sandbox is
+ * still provisioning, resuming, or parked — the readiness state the control
+ * plane reports ON PURPOSE (a 503 from the sandbox proxy, or a body carrying
+ * one of `SANDBOX_NOT_READY_PATTERNS`). It is a RETRYABLE, "waking" state, not
+ * a terminal failure: a consumer must render it as loading and keep polling,
+ * never as an error and never as an empty result.
+ *
+ * Thrown by `readSessionMessagePage` and the framework-free HTTP page loader so
+ * `SessionSyncController` can tell "the box is waking" (freshness `loading`,
+ * keep retrying) apart from "the read genuinely failed" (freshness `error`).
+ * Its `message` always matches `isSandboxNotReadyError`, so a consumer that
+ * only has the string still classifies it correctly.
+ */
+export class SandboxNotReadyError extends Error {
+  constructor(detail?: string) {
+    const trimmed = detail?.trim();
+    super(
+      trimmed && isSandboxNotReadyError(trimmed)
+        ? trimmed
+        : trimmed
+          ? `sandbox not ready: ${trimmed}`
+          : 'sandbox not ready',
+    );
+    this.name = 'SandboxNotReadyError';
+  }
+}
+
 export function formatOpenCodeRuntimeError(error: unknown): {
   title: string;
   message: string;

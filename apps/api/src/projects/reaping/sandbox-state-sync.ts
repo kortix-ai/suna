@@ -230,8 +230,16 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.sandboxId, write.sandboxId))
     .limit(1);
+  // A stop the PROVIDER originated (E2B max-length pause, a lost VM, a
+  // webhook) also took down turns that had already been accepted; their work
+  // is unfinished through no choice of the user's, so those prompts come back
+  // as well — held, like every other requeue from a stop. A stop Kortix chose
+  // (idle deadline, user Stop) keeps the old rule: only never-accepted
+  // deliveries are given back. Essentia 2026-08-25: four provider-paused
+  // turns, every one needed the user to type "go on".
+  const providerOriginated = write.stopReason === 'provider_reconcile';
   const abandonedDeliveries = storedSandboxTurns(before?.metadata).filter(
-    (turn) => turn.state === 'delivering' && turn.messageId,
+    (turn) => !!turn.messageId && (turn.state === 'delivering' || providerOriginated),
   );
   await pauseComputeSession(write.sandboxId).catch((err) =>
     console.warn(

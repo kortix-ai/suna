@@ -1,5 +1,6 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import { getClient } from '../../core/runtime/client';
+import { SandboxNotReadyError, isSandboxNotReadyError } from '../../core/http/opencode-errors';
 import {
   SessionSyncController,
   type SessionSyncPage,
@@ -12,16 +13,27 @@ import { useSyncStore } from '../stores/sync-store';
 
 interface MessagesResponse {
   data?: Array<{ info: Message; parts: Part[] }>;
+  /**
+   * The generated OpenCode client RESOLVES with `{ error }` on a non-2xx
+   * response — it never throws unless the caller opted into `throwOnError`, and
+   * we do not. So the ONLY place a 503 or a runtime failure is visible is here.
+   * Reading `data ?? []` and ignoring this is exactly how a cold-boot 503
+   * became a success-looking empty page.
+   */
+  error?: unknown;
   response?: Response;
 }
 
 interface SessionMessageClient {
   session: {
-    messages: (request: {
-      sessionID: string;
-      limit: number;
-      before?: string;
-    }) => Promise<MessagesResponse>;
+    messages: (
+      request: {
+        sessionID: string;
+        limit: number;
+        before?: string;
+      },
+      options?: { signal?: AbortSignal },
+    ) => Promise<MessagesResponse>;
     status?: () => Promise<{ data?: Record<string, SessionStatus> }>;
   };
 }
@@ -109,16 +121,65 @@ function messageKey(info: { id: string; time?: { created?: number } }): string {
  *
  * Cheap, and it means nothing downstream has to be defensive about shape again.
  */
+/**
+ * The most specific message a failed `client.session.messages` response
+ * carries. `error` is genuinely `unknown` (its shape varies per endpoint), so
+ * this duck-types the same way `unwrap` (react/use-opencode-sessions/shared.ts)
+ * does, and falls back to the status code.
+ */
+function messagePageErrorText(result: MessagesResponse, status: number | undefined): string {
+  const err = result.error;
+  if (typeof err === 'string' && err) return err;
+  if (err && typeof err === 'object') {
+    const rec = err as Record<string, unknown>;
+    const data = rec.data && typeof rec.data === 'object' ? (rec.data as Record<string, unknown>) : undefined;
+    const message = data?.message ?? rec.message ?? rec.error;
+    if (typeof message === 'string' && message) return message;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      // fall through to the status
+    }
+  }
+  return status ? `Session message read failed: ${status}` : 'Session message read failed';
+}
+
 export async function readSessionMessagePage(
   client: SessionMessageClient,
   sessionId: string,
   request: { limit: number; before?: string },
+  signal?: AbortSignal,
 ): Promise<SessionSyncPage> {
-  const result = await client.session.messages({
-    sessionID: sessionId,
-    limit: request.limit,
-    ...(request.before ? { before: request.before } : {}),
-  });
+  const result = await client.session.messages(
+    {
+      sessionID: sessionId,
+      limit: request.limit,
+      ...(request.before ? { before: request.before } : {}),
+    },
+    signal ? { signal } : undefined,
+  );
+  // CLASSIFY, never swallow. The generated client resolves with `{ error }` on
+  // a non-2xx response, so a 503 arrives here as `{ data: undefined, error,
+  // response.status: 503 }`. `data ?? []` read that as a loaded, empty session
+  // — the transcript rendered blank and complete, no retry. Now:
+  //   - a sandbox-not-ready read (503, or a body matching the readiness
+  //     patterns) throws `SandboxNotReadyError` — retryable, "waking";
+  //   - any other failure throws a real error the controller marks `error`;
+  //   - only a genuine 2xx payload is normalized and returned.
+  const status = result.response?.status;
+  const failed =
+    result.error !== undefined || (typeof status === 'number' && status >= 400);
+  if (failed) {
+    const message = messagePageErrorText(result, status);
+    if (
+      status === 503 ||
+      isSandboxNotReadyError(result.error) ||
+      isSandboxNotReadyError(message)
+    ) {
+      throw new SandboxNotReadyError(message);
+    }
+    throw new Error(message);
+  }
   const items = (Array.isArray(result.data) ? result.data : []).filter(
     (item): item is { info: Message; parts: Part[] } =>
       !!item && typeof item === 'object' && !!(item as { info?: { id?: unknown } }).info?.id,
@@ -147,7 +208,8 @@ function resolveClient(key: string): SessionMessageClient {
 function createController(sessionId: string, key: string): SessionSyncController {
   return new SessionSyncController({
     sessionId,
-    loadPage: (request) => readSessionMessagePage(resolveClient(key), sessionId, request),
+    loadPage: (request, signal) =>
+      readSessionMessagePage(resolveClient(key), sessionId, request, signal),
     // No `loadStatus` / `setStatus`. The liveness poll reconciles the
     // transcript tail and claims nothing about whether the session is working:
     // `GET .../turn` answers that, and `setBusy` is already driven from that

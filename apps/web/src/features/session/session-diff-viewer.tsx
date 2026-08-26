@@ -1,326 +1,57 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+/**
+ * What this session changed — the Changes tab, and the diff modal.
+ *
+ * The old toolbar read:
+ *
+ *     12 files changed  |  +3  M5  D4  |  +142 −18  |  [▤][▥]  [⤢]
+ *
+ * Four numeric groups behind literal pipe characters, three of them restating
+ * what the rows underneath already showed one by one, and `M` / `D` are git
+ * status letters. Underneath, every row was a bordered card carrying a status
+ * icon AND a status chip AND the counts — the same fact three times per file.
+ *
+ * Now: the counts once, the controls, and one flat list ({@link ChangeList}) —
+ * the same list the proposed-change dialog renders, so the two surfaces cannot
+ * drift apart again.
+ *
+ * The controls are CONTENT, not a bar. The panel mount already sits under the
+ * explorer's tab row, and a second bordered bar beneath it would stack chrome
+ * two deep in a 400px panel. So there is no header here: the states render
+ * straight into the pane and the controls scroll with the list.
+ */
 
-import { DiffView } from '@/components/diff/diff-view';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { DiffStat, STATUS_TEXT, StatusBadge } from '@/components/ui/status';
+import {
+  ChangeList,
+  ChangeSummary,
+  DiffLayoutToggle,
+  ExpandAllButton,
+  entryFromVcsFile,
+  useChangeExpansion,
+  type ChangeEntry,
+  type DiffLayout,
+} from '@/features/changes';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useSessionChanges } from '@/features/session/session-changes-shared';
 import { cn } from '@/lib/utils';
-import type { FileDiff } from '@/ui/types';
-import {
-  CaretDownIcon as ChevronDown,
-  CaretRightIcon as ChevronRight,
-  ColumnsIcon as Columns2,
-  FileCodeIcon as FileCode2,
-  NotePencilIcon as FileEdit,
-  FilePlusIcon as FilePlus2,
-  FileXIcon as FileX2,
-  GitDiffIcon as GitCompareArrows,
-  ArrowsOutSimpleIcon as Maximize2,
-  ArrowsInSimpleIcon as Minimize2,
-  RowsIcon as Rows2,
-} from '@phosphor-icons/react';
-import { createTwoFilesPatch } from 'diff';
+import { ArrowsInSimpleIcon, ArrowsOutSimpleIcon, FileDashedIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
-
-// ============================================================================
-// Single file diff card
-// ============================================================================
-
-function FileDiffCard({
-  diff,
-  viewMode,
-  isFullscreen,
-}: {
-  diff: FileDiff;
-  viewMode: 'unified' | 'split';
-  isFullscreen?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  const statusIcon = useMemo(() => {
-    switch (diff.status) {
-      case 'added':
-        return <FilePlus2 className={cn('size-3.5', STATUS_TEXT.success)} />;
-      case 'deleted':
-        return <FileX2 className={cn('size-3.5', STATUS_TEXT.destructive)} />;
-      default:
-        return <FileEdit className={cn('size-3.5', STATUS_TEXT.info)} />;
-    }
-  }, [diff.status]);
-
-  const statusLabel = useMemo(() => {
-    switch (diff.status) {
-      case 'added':
-        return 'Added';
-      case 'deleted':
-        return 'Deleted';
-      default:
-        return 'Modified';
-    }
-  }, [diff.status]);
-
-  const statusVariant = useMemo((): 'success' | 'destructive' | 'info' => {
-    switch (diff.status) {
-      case 'added':
-        return 'success';
-      case 'deleted':
-        return 'destructive';
-      default:
-        return 'info';
-    }
-  }, [diff.status]);
-
-  const patch = useMemo(() => {
-    if (diff.patch) return diff.patch;
-    if (!diff.before && !diff.after) return '';
-    return createTwoFilesPatch(
-      diff.file || '',
-      diff.file || '',
-      diff.before || '',
-      diff.after || '',
-      '',
-      '',
-    );
-  }, [diff.file, diff.patch, diff.before, diff.after]);
-
-  const hasDiffContent = patch.length > 0;
-  const filename = diff.file?.split('/').pop() || diff.file;
-  const directory = diff.file?.includes('/')
-    ? diff.file?.substring(0, diff.file?.lastIndexOf('/'))
-    : '';
-
-  return (
-    <div className="border-border/50 bg-card overflow-hidden rounded-md border">
-      {/* File header */}
-      <button
-        onClick={() => hasDiffContent && setExpanded(!expanded)}
-        className={cn(
-          'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors',
-          hasDiffContent && 'hover:bg-muted/40 cursor-pointer',
-          !hasDiffContent && 'cursor-default',
-        )}
-      >
-        {hasDiffContent &&
-          (expanded ? (
-            <ChevronDown className="text-muted-foreground/50 size-3 shrink-0" />
-          ) : (
-            <ChevronRight className="text-muted-foreground/50 size-3 shrink-0" />
-          ))}
-        {!hasDiffContent && <span className="w-3" />}
-
-        {statusIcon}
-
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          <span className="text-foreground truncate text-xs font-medium">{filename}</span>
-          {directory && (
-            <span className="text-muted-foreground/50 hidden truncate text-xs sm:inline">
-              {directory}
-            </span>
-          )}
-        </div>
-
-        {/* Status badge */}
-        <StatusBadge tone={statusVariant}>{statusLabel}</StatusBadge>
-
-        {/* Addition/deletion counts */}
-        <DiffStat
-          additions={diff.additions}
-          deletions={diff.deletions}
-          className="shrink-0 text-xs whitespace-nowrap"
-        />
-      </button>
-
-      {/* Expanded diff content */}
-      {expanded && hasDiffContent && (
-        <div
-          className={cn(
-            'border-border/40 overflow-y-auto border-t',
-            isFullscreen ? 'max-h-[calc(100vh-12rem)]' : 'max-h-96',
-          )}
-        >
-          <DiffView patch={patch} layout={viewMode} hideFileHeader />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================================
-// Summary bar
-// ============================================================================
-
-function DiffSummaryBar({
-  diffs,
-  viewMode,
-  onViewModeChange,
-  isFullscreen,
-  onToggleFullscreen,
-  reserveCloseGutter,
-}: {
-  diffs: FileDiff[];
-  viewMode: 'unified' | 'split';
-  onViewModeChange: (mode: 'unified' | 'split') => void;
-  isFullscreen?: boolean;
-  onToggleFullscreen?: () => void;
-  reserveCloseGutter?: boolean;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const totals = useMemo(() => {
-    let additions = 0,
-      deletions = 0,
-      added = 0,
-      deleted = 0,
-      modified = 0;
-    for (const d of diffs) {
-      additions += d.additions;
-      deletions += d.deletions;
-      if (d.status === 'added') added++;
-      else if (d.status === 'deleted') deleted++;
-      else modified++;
-    }
-    return { additions, deletions, added, deleted, modified };
-  }, [diffs]);
-
-  const unifiedLabel = tHardcodedUi.raw(
-    'componentsSessionSessionDiffViewer.line186JsxAttrTitleUnifiedView',
-  );
-  const splitLabel = tHardcodedUi.raw(
-    'componentsSessionSessionDiffViewer.line198JsxAttrTitleSideBySideView',
-  );
-  const fullscreenLabel = isFullscreen ? 'Exit fullscreen' : 'Fullscreen';
-
-  return (
-    <div
-      className={cn(
-        'border-border/40 bg-muted/20 flex w-full items-center gap-3 border-b px-4 py-2.5',
-        // Only the modal mount has a floating close button to clear.
-        reserveCloseGutter && 'pr-14',
-      )}
-    >
-      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-        {diffs.length} {diffs.length === 1 ? 'file' : 'files'} changed
-      </span>
-      <div className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap">
-        {totals.added > 0 && (
-          <span className={cn('flex items-center gap-1 tabular-nums', STATUS_TEXT.success)}>
-            <FilePlus2 className="size-3" /> {totals.added}
-          </span>
-        )}
-        {totals.modified > 0 && (
-          <span className={cn('flex items-center gap-1 tabular-nums', STATUS_TEXT.info)}>
-            <FileEdit className="size-3" /> {totals.modified}
-          </span>
-        )}
-        {totals.deleted > 0 && (
-          <span className={cn('flex items-center gap-1 tabular-nums', STATUS_TEXT.destructive)}>
-            <FileX2 className="size-3" /> {totals.deleted}
-          </span>
-        )}
-        <span className="text-muted-foreground/50 mx-1">|</span>
-        <DiffStat
-          additions={totals.additions}
-          deletions={totals.deletions}
-          className="tabular-nums"
-        />
-
-        {/* View mode toggle — a two-state group, so each control reports its
-            own pressed state instead of relying on colour alone. */}
-        <span className="text-muted-foreground/50 mx-1">|</span>
-        <Hint label={unifiedLabel} side="bottom">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={unifiedLabel}
-            aria-pressed={viewMode === 'unified'}
-            onClick={() => onViewModeChange('unified')}
-            className={cn(
-              'active:scale-[0.96]',
-              viewMode === 'unified'
-                ? 'text-foreground bg-muted/60'
-                : 'text-muted-foreground/70 hover:text-foreground',
-            )}
-          >
-            <Rows2 className="size-3.5" />
-          </Button>
-        </Hint>
-        <Hint label={splitLabel} side="bottom">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={splitLabel}
-            aria-pressed={viewMode === 'split'}
-            onClick={() => onViewModeChange('split')}
-            className={cn(
-              'active:scale-[0.96]',
-              viewMode === 'split'
-                ? 'text-foreground bg-muted/60'
-                : 'text-muted-foreground/70 hover:text-foreground',
-            )}
-          >
-            <Columns2 className="size-3.5" />
-          </Button>
-        </Hint>
-
-        {/* Fullscreen toggle */}
-        {onToggleFullscreen && (
-          <Hint label={fullscreenLabel} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={fullscreenLabel}
-              aria-pressed={!!isFullscreen}
-              onClick={onToggleFullscreen}
-              className="text-muted-foreground/70 hover:text-foreground active:scale-[0.96]"
-            >
-              {isFullscreen ? (
-                <Minimize2 className="size-3.5" />
-              ) : (
-                <Maximize2 className="size-3.5" />
-              )}
-            </Button>
-          </Hint>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// Main SessionDiffViewer
-// ============================================================================
 
 interface SessionDiffViewerProps {
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
   /**
    * True only where the viewer renders under a floating close button — the
-   * modal mount ({@link DiffDialog}). The side-panel mount has no such button,
-   * and reserving the gutter there left the toolbar floating 56px short of the
-   * right edge.
+   * modal mount ({@link DiffDialog}). The panel mount has no such button, and
+   * reserving the gutter there left the controls 56px short of the edge.
    */
   reserveCloseGutter?: boolean;
-}
-
-/** Shared header for the non-content states, so all three stay identical. */
-function DiffPanelHeader({ reserveCloseGutter }: { reserveCloseGutter?: boolean }) {
-  return (
-    <div
-      className={cn(
-        'border-border/40 flex items-center gap-2 border-b px-5 py-4',
-        reserveCloseGutter && 'pr-14',
-      )}
-    >
-      <GitCompareArrows className="text-muted-foreground/40 size-4" />
-      <span className="text-muted-foreground text-xs font-medium">Changes</span>
-    </div>
-  );
 }
 
 export function SessionDiffViewer({
@@ -328,23 +59,25 @@ export function SessionDiffViewer({
   onToggleFullscreen,
   reserveCloseGutter,
 }: SessionDiffViewerProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   // The SAME query the tab badge and the header chip count. One array, one key
   // — the body can no longer say "no changes" under a badge reading 32.
-  const { files: diffs, isPending, error, refetch } = useSessionChanges();
-  const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
+  const { files, isPending, error, refetch } = useSessionChanges();
+  const [layout, setLayout] = useState<DiffLayout>('unified');
+
+  const entries = useMemo<ChangeEntry[]>(() => files.map(entryFromVcsFile), [files]);
+  const { expanded, setRow, allExpanded, toggleAll } = useChangeExpansion(entries);
 
   // A DISABLED query is not an empty result. While the sandbox boots, nothing
   // has been asked yet, so the honest state is "loading", not "no changes yet".
   if (isPending) {
     return (
-      <div className="flex h-full flex-col">
-        <DiffPanelHeader reserveCloseGutter={reserveCloseGutter} />
-        {/* Shape-matched to the file rows below and anchored to the top, so
-            content does not jump up from the middle of the pane on load. */}
-        <div className="min-h-0 flex-1 space-y-2 p-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-9 w-full py-0" />
+      // Shape-matched to the rows below and anchored to the top, so content
+      // does not jump up from the middle of the pane on load.
+      <div className="space-y-2 p-2">
+        <Skeleton className="h-4 w-28" />
+        <div className="space-y-px pt-1">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-full py-0" />
           ))}
         </div>
       </div>
@@ -353,62 +86,66 @@ export function SessionDiffViewer({
 
   if (error) {
     return (
-      <div className="flex h-full flex-col">
-        <DiffPanelHeader reserveCloseGutter={reserveCloseGutter} />
-        <ErrorState
-          size="sm"
-          className="min-h-0 flex-1"
-          title={tHardcodedUi.raw(
-            'componentsSessionSessionDiffViewer.line355JsxTextFailedToLoadChanges',
-          )}
-          action={
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              Retry
-            </Button>
-          }
-        />
-      </div>
+      <ErrorState
+        size="sm"
+        className="h-full"
+        title="Could not load the changes"
+        action={
+          <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            Try again
+          </Button>
+        }
+      />
     );
   }
 
-  if (diffs.length === 0) {
+  if (entries.length === 0) {
     return (
-      <div className="flex h-full flex-col">
-        <DiffPanelHeader reserveCloseGutter={reserveCloseGutter} />
-        <EmptyState
-          icon={FileCode2}
-          className="min-h-0 flex-1"
-          title={tHardcodedUi.raw('componentsSessionSessionDiffViewer.line370JsxTextNoChangesYet')}
-          description={tHardcodedUi.raw(
-            'componentsSessionSessionDiffViewer.line372JsxTextFileChangesWillAppearHereAsTheSession',
-          )}
-        />
-      </div>
+      <EmptyState
+        icon={FileDashedIcon}
+        size="sm"
+        className="h-full"
+        title="Nothing changed yet"
+        description="Files the agent edits in this session show up here."
+      />
     );
   }
+
+  const fullscreenLabel = isFullscreen ? 'Exit fullscreen' : 'Fullscreen';
 
   return (
-    <div className="flex h-full flex-col">
-      <DiffSummaryBar
-        diffs={diffs}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        isFullscreen={isFullscreen}
-        onToggleFullscreen={onToggleFullscreen}
-        reserveCloseGutter={reserveCloseGutter}
-      />
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-2 p-3">
-          {diffs.map((diff) => (
-            <FileDiffCard
-              key={diff.file}
-              diff={diff}
-              viewMode={viewMode}
-              isFullscreen={isFullscreen}
-            />
-          ))}
+    <ScrollArea className="h-full">
+      <div className="space-y-2 p-2">
+        <div className={cn('flex items-center gap-1.5', reserveCloseGutter && 'pr-11')}>
+          <ChangeSummary entries={entries} className="min-w-0 flex-1" />
+          <ExpandAllButton allExpanded={allExpanded} onToggle={toggleAll} />
+          <DiffLayoutToggle layout={layout} onChange={setLayout} />
+          {onToggleFullscreen && (
+            <Hint label={fullscreenLabel} side="bottom">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={fullscreenLabel}
+                aria-pressed={!!isFullscreen}
+                onClick={onToggleFullscreen}
+                className="text-muted-foreground/70 hover:text-foreground active:scale-[0.96]"
+              >
+                {isFullscreen ? (
+                  <ArrowsInSimpleIcon className="size-3.5" />
+                ) : (
+                  <ArrowsOutSimpleIcon className="size-3.5" />
+                )}
+              </Button>
+            </Hint>
+          )}
         </div>
-      </ScrollArea>
-    </div>
+        <ChangeList
+          entries={entries}
+          layout={layout}
+          expanded={expanded}
+          onRowOpenChange={setRow}
+        />
+      </div>
+    </ScrollArea>
   );
 }

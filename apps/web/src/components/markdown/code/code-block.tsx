@@ -118,7 +118,7 @@ export function CodeBlock({
         >
           {languageLabel(language)}
         </span>
-        {code && !isStreaming && <CopyButton code={code} />}
+        {code && <CopyButton code={code} />}
       </figcaption>
       <pre
         ref={scrollRef}

@@ -1,3 +1,4 @@
+import { upstreamFetch } from '../upstream-fetch';
 import type {
   AuthedPrincipal,
   AuthorizeResult,
@@ -7,9 +8,11 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
-import { GatewayResolutionError, UpstreamHttpError } from '../errors';
+import { GatewayResolutionError, UpstreamHttpError, isUnknownParameterRejection } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
-import { type ExtractedUsage, extractUsageFromJson } from '../usage';
+import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/request';
+import { resolveTransportKind } from '../transports/route-kind';
+import { type ExtractedUsage, type SseErrorFrame, extractUsageFromJson } from '../usage';
 import { calculateCost } from '../usage/pricing';
 import { gatewayErrorResponse } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
@@ -58,12 +61,63 @@ export interface HandlerRuntime {
  * an admission reservation forever while Cloudflare gave the caller a 524 at
  * 100s. This fires first, so the caller gets a typed 503 it can retry.
  *
- * Headers only: once the stream is flowing, `relayStream`'s heartbeat and its
- * 90-minute inactivity budget govern it — a long-thinking model is not a
- * timeout.
+ * Headers only: once the provider fetch resolves, the timer is cleared and
+ * `relayStream`'s heartbeat plus inactivity budget govern the response body.
+ * AI SDK streams get five minutes because their synthetic gateway headers keep
+ * the client alive while a large model prefill still waits on provider headers.
  */
 const UPSTREAM_HEADERS_TIMEOUT_MS =
   Number(process.env.GATEWAY_UPSTREAM_HEADERS_TIMEOUT_MS) || 90_000;
+const SYNTHETIC_STREAMING_HEADERS_TIMEOUT_MS =
+  Number(process.env.GATEWAY_STREAMING_UPSTREAM_HEADERS_TIMEOUT_MS) || 5 * 60_000;
+
+export function upstreamHeadersTimeoutMs(
+  body: Record<string, unknown>,
+  descriptor: UpstreamDescriptor,
+  streaming: boolean,
+  limits: { direct: number; syntheticStreaming: number } = {
+    direct: UPSTREAM_HEADERS_TIMEOUT_MS,
+    syntheticStreaming: SYNTHETIC_STREAMING_HEADERS_TIMEOUT_MS,
+  },
+): number {
+  const transportKind = resolveTransportKind(body, descriptor);
+  const hasSyntheticStreamingHeaders =
+    streaming && transportKind !== 'openai-compat' && transportKind !== 'custom';
+  return hasSyntheticStreamingHeaders ? limits.syntheticStreaming : limits.direct;
+}
+
+export function withUpstreamHeadersTimeout(
+  fetchImpl: FetchImpl,
+  timeoutMs: number = UPSTREAM_HEADERS_TIMEOUT_MS,
+): FetchImpl {
+  return async (input, init) => {
+    const deadline = new AbortController();
+    const timer = setTimeout(
+      () => deadline.abort(new DOMException('Provider response headers timed out', 'TimeoutError')),
+      timeoutMs,
+    );
+    const signal = init.signal ? AbortSignal.any([init.signal, deadline.signal]) : deadline.signal;
+
+    try {
+      return await fetchImpl(input, { ...init, signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
+
+export function streamErrorTraceStatus(error: SseErrorFrame): number {
+  if (error.code === 'client_aborted') return 499;
+  if (
+    typeof error.code === 'number' &&
+    Number.isInteger(error.code) &&
+    error.code >= 400 &&
+    error.code <= 599
+  ) {
+    return error.code;
+  }
+  return 502;
+}
 
 const EMPTY_USAGE: TokenCounts = {
   promptTokens: 0,
@@ -146,6 +200,28 @@ function refundHold(hooks: GatewayHooks, principal: AuthedPrincipal): void {
     billingHoldUsd: principal.billingHold.amountUsd,
   };
   void hooks.recordUsage(event).catch(() => {});
+}
+
+// Cross-region inference profile prefixes to try, best first. `global.` serves
+// every commercial region; `us.` is the widest regional profile.
+const BEDROCK_PROFILE_PREFIXES = ['global.', 'us.'] as const;
+
+// A Bedrock descriptor whose resolved id carries no profile prefix — the only
+// shape the inference-profile retry applies to.
+function bedrockBareModelId(descriptor: UpstreamDescriptor): string | null {
+  if (descriptor.kind !== 'bedrock') return null;
+  const id = descriptor.resolvedModel;
+  if (!id || /^(global|us|eu|jp|apac|au|ca|sa|us-gov)\./.test(id)) return null;
+  return id;
+}
+
+// Bedrock's exact refusal of a bare id (ASCII and curly apostrophe both seen).
+function needsInferenceProfile(error: unknown): boolean {
+  return (
+    error instanceof UpstreamHttpError &&
+    error.status === 400 &&
+    /on-demand throughput isn.t supported/i.test(error.body)
+  );
 }
 
 function rawProviderError(error: UpstreamHttpError): Response {
@@ -314,62 +390,136 @@ export async function handleChatCompletions(
 
   const streaming = body.stream === true;
   if (streaming) body.stream_options = { include_usage: true };
+  const dispatchFetch = withUpstreamHeadersTimeout(
+    // upstreamFetch, never bare globalThis.fetch: Bun's default 300 s idle
+    // timeout would end a silent `max`-effort reasoning stretch with
+    // `TimeoutError: The operation timed out.` (see upstream-fetch.ts).
+    fetchImpl ?? upstreamFetch,
+    upstreamHeadersTimeoutMs(body, descriptor, streaming),
+  );
+  // The descriptor actually served — swapped for its inference-profile twin
+  // when Bedrock refuses the bare id (see the retry below).
+  let served: UpstreamDescriptor = descriptor;
   let upstream: Response;
+  // The one retry this handler performs itself for a PARAMETER: an upstream
+  // that refuses `reasoning_effort` (not the request) gets the same request
+  // once more without it. Kept only while such a retry is possible — the
+  // parsed graph is otherwise dropped before the provider wait, see below.
+  let retryWithoutEffort: Record<string, unknown> | null = retryWithoutReasoningEffortPossible(
+    body,
+    served,
+  )
+    ? body
+    : null;
+  // The one retry for a MODEL ID: Bedrock refuses the bare in-region id of
+  // most current models ("Invocation of model ID xai.grok-4.6 with on-demand
+  // throughput isn't supported. Retry your request with the ID or ARN of an
+  // inference profile") while the `global.` / `us.` profile of the same model
+  // answers. models.dev carries the bare id for every such model and the
+  // profile only for some (grok-4.6 has none), so the retry lives here: keep
+  // the body for a bare Bedrock id and re-dispatch once per profile prefix on
+  // exactly that 400.
+  const profileRetryBody = bedrockBareModelId(served) ? structuredClone(body) : null;
+  let attempts = 1;
+  const candidatesTried = [served.provider];
   try {
-    // Abort the dispatch if the provider has not produced response headers in
-    // time — combined with the client's own signal so a disconnect still wins.
-    const headersDeadline = AbortSignal.timeout(UPSTREAM_HEADERS_TIMEOUT_MS);
-    const dispatch = callUpstream(body, descriptor, {
-      fetchImpl,
-      signal: req.signal ? AbortSignal.any([req.signal, headersDeadline]) : headersDeadline,
+    const dispatch = callUpstream(body, served, {
+      fetchImpl: dispatchFetch,
+      signal: req.signal,
       requestId: id,
     });
     // Dispatch has serialized (openai-compat) or translated (ai-sdk) the
     // body synchronously up to its first await; this frame no longer needs
     // the parsed graph. Drop it before waiting on the provider.
     body = null;
-    upstream = await dispatch;
+    try {
+      upstream = await dispatch;
+    } catch (error) {
+      if (retryWithoutEffort && isUnknownParameterRejection(error, 'reasoning_effort')) {
+        const model = served.resolvedModel ?? routedModel;
+        noteBedrockOpenAiRejectsReasoningEffort(model);
+        logger.warn(
+          `[gateway] ${id}: ${served.provider} rejected reasoning_effort for ${model}; retrying once without it (the model is remembered)`,
+        );
+        const { reasoning_effort: _dropped, ...stripped } = retryWithoutEffort;
+        retryWithoutEffort = null;
+        attempts += 1;
+        upstream = await callUpstream(stripped, served, {
+          fetchImpl: dispatchFetch,
+          signal: req.signal,
+          requestId: id,
+        });
+      } else if (profileRetryBody && needsInferenceProfile(error)) {
+        let retried: Response | undefined;
+        let lastError: unknown = error;
+        for (const prefix of BEDROCK_PROFILE_PREFIXES) {
+          const candidate = { ...served, resolvedModel: `${prefix}${served.resolvedModel}` };
+          attempts += 1;
+          candidatesTried.push(`${served.provider}:${candidate.resolvedModel}`);
+          try {
+            retried = await callUpstream(structuredClone(profileRetryBody), candidate, {
+              fetchImpl: dispatchFetch,
+              signal: req.signal,
+              requestId: id,
+            });
+            served = candidate;
+            break;
+          } catch (retryError) {
+            lastError = retryError;
+            if (!needsInferenceProfile(retryError)) break;
+          }
+        }
+        if (!retried) throw lastError;
+        upstream = retried;
+      } else {
+        throw error;
+      }
+    }
+    retryWithoutEffort = null;
   } catch (error) {
     refundHold(hooks, principal);
     emit({
       ...identity(principal),
       requestedModel,
-      resolvedModel: descriptor.resolvedModel ?? routedModel,
-      provider: descriptor.provider,
-      billingMode: descriptor.billingMode,
+      resolvedModel: served.resolvedModel ?? routedModel,
+      provider: served.provider,
+      billingMode: served.billingMode,
       streaming,
       status: error instanceof UpstreamHttpError ? error.status : 502,
       ok: false,
       errorCode: 'upstream_error',
       errorMessage: error instanceof Error ? error.message : String(error),
-      attempts: 1,
-      candidatesTried: [descriptor.provider],
+      attempts,
+      candidatesTried,
     });
     if (error instanceof UpstreamHttpError) return rawProviderError(error);
     // A headers timeout is "try again", not "this request is malformed".
     const timedOut = (error as { name?: unknown })?.name === 'TimeoutError' && !req.signal?.aborted;
     if (timedOut)
       return gatewayErrorResponse(503, {
-        message: `Provider ${descriptor.provider} sent no response headers within ${UPSTREAM_HEADERS_TIMEOUT_MS}ms`,
+        message: `Provider ${served.provider} sent no response headers within ${UPSTREAM_HEADERS_TIMEOUT_MS}ms`,
         code: 'upstream_timeout',
-        provider: descriptor.provider,
+        provider: served.provider,
         requestedModel,
-        resolvedModel: descriptor.resolvedModel ?? routedModel,
+        resolvedModel: served.resolvedModel ?? routedModel,
         requestId: id,
         suggestion: 'Retry the request, or choose another model.',
       });
     return gatewayErrorResponse(502, {
       message: error instanceof Error ? error.message : 'Provider request failed',
       code: 'upstream_error',
-      provider: descriptor.provider,
+      provider: served.provider,
       requestedModel,
-      resolvedModel: descriptor.resolvedModel ?? routedModel,
+      resolvedModel: served.resolvedModel ?? routedModel,
       requestId: id,
       suggestion: 'Retry the request or choose another model.',
     });
   }
 
-  const settle = async (usage: ExtractedUsage | null): Promise<void> => {
+  const settle = async (
+    usage: ExtractedUsage | null,
+    streamError: SseErrorFrame | null = null,
+  ): Promise<void> => {
     const counts: TokenCounts = usage
       ? {
           promptTokens: usage.promptTokens,
@@ -379,11 +529,11 @@ export async function handleChatCompletions(
         }
       : EMPTY_USAGE;
     const { upstreamCost, finalCost } = calculateCost(
-      descriptor.resolvedModel ?? routedModel,
+      served.resolvedModel ?? routedModel,
       counts,
-      descriptor.billingMode === 'none' ? 0 : descriptor.markup,
+      served.billingMode === 'none' ? 0 : served.markup,
       usage?.upstreamCostHint,
-      descriptor.pricing,
+      served.pricing,
     );
     if (counts.promptTokens + counts.completionTokens > 0 || principal.billingHold) {
       await hooks.recordUsage({
@@ -392,11 +542,11 @@ export async function handleChatCompletions(
         actorUserId: principal.userId,
         projectId: principal.projectId,
         sessionId: principal.sessionId,
-        provider: descriptor.provider,
-        model: descriptor.resolvedModel ?? routedModel,
+        provider: served.provider,
+        model: served.resolvedModel ?? routedModel,
         upstreamCost,
         finalCost,
-        billingMode: descriptor.billingMode,
+        billingMode: served.billingMode,
         streaming,
         requestId: id,
         ...(principal.billingHold ? { billingHoldUsd: principal.billingHold.amountUsd } : {}),
@@ -405,14 +555,16 @@ export async function handleChatCompletions(
     emit({
       ...identity(principal),
       requestedModel,
-      resolvedModel: descriptor.resolvedModel ?? routedModel,
-      provider: descriptor.provider,
-      billingMode: descriptor.billingMode,
+      resolvedModel: served.resolvedModel ?? routedModel,
+      provider: served.provider,
+      billingMode: served.billingMode,
       streaming,
-      status: upstream.status,
-      ok: upstream.ok,
-      attempts: 1,
-      candidatesTried: [descriptor.provider],
+      status: streamError ? streamErrorTraceStatus(streamError) : upstream.status,
+      ok: !streamError && upstream.ok,
+      errorCode: streamError ? String(streamError.code ?? 'upstream_stream_error') : undefined,
+      errorMessage: streamError?.message,
+      attempts,
+      candidatesTried,
       usage: counts,
       upstreamCost,
       finalCost,
@@ -426,7 +578,7 @@ export async function handleChatCompletions(
         requestId: id,
         logger,
         signal: req.signal,
-        settle: async (usage) => settle(usage),
+        settle,
       }),
       { status: upstream.status, headers: passthroughHeaders(upstream.headers) },
     );
@@ -446,4 +598,20 @@ export async function handleChatCompletions(
     statusText: upstream.statusText,
     headers: passthroughHeaders(upstream.headers),
   });
+}
+
+/**
+ * Only a Bedrock-family candidate carrying a `reasoning_effort` can hit the
+ * `unknown_parameter` rejection this handler retries around; on every other
+ * wire the field is native.
+ */
+export function retryWithoutReasoningEffortPossible(
+  body: Record<string, unknown> | null,
+  descriptor: UpstreamDescriptor,
+): boolean {
+  return (
+    !!body &&
+    typeof body.reasoning_effort === 'string' &&
+    (descriptor.kind === 'bedrock' || descriptor.provider === 'amazon-bedrock')
+  );
 }

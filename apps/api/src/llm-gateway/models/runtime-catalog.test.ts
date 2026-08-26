@@ -134,6 +134,32 @@ describe('runtime model catalog', () => {
   // the live path's raw passthrough matches EXACTLY what the enrich script
   // would normalize the same input to for a budget_tokens entry — i.e. the
   // object survives verbatim on both paths, not just on live.
+  // models.dev marks retired entries `status: "deprecated"`; opencode hides
+  // those in the sandbox. The pre-runtime picker source reads this route, so
+  // the field must survive or the two pickers disagree (dev 2026-08-25: 29
+  // vs 7 free Zen models).
+  test('`status` passes through from models.dev', async () => {
+    const catalog = createRuntimeModelCatalog({
+      seed,
+      sourceUrl: 'https://catalog.test/api.json',
+      fetchImpl: async () => new Response(JSON.stringify({
+        opencode: {
+          id: 'opencode',
+          name: 'OpenCode Zen',
+          env: ['OPENCODE_API_KEY'],
+          models: {
+            'glm-5-free': { id: 'glm-5-free', name: 'GLM 5 Free', status: 'deprecated' },
+            'hy3-free': { id: 'hy3-free', name: 'Hy3 Free' },
+          },
+        },
+      }), { status: 200 }),
+    });
+    expect(await catalog.refresh()).toBe(true);
+    const models = catalog.snapshot().providers[0]?.models ?? [];
+    expect(models.find((m) => m.id === 'glm-5-free')?.status).toBe('deprecated');
+    expect(models.find((m) => m.id === 'hy3-free')?.status).toBeUndefined();
+  });
+
   test('a budget_tokens reasoning_options entry survives the live path in the SAME shape the baked enrich script normalizes it to', async () => {
     const rawBudgetTokensOption = { type: 'budget_tokens', min: 1024 };
     const catalog = createRuntimeModelCatalog({

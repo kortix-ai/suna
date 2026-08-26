@@ -293,17 +293,6 @@ export function CustomProviderForm({
         </InfoBanner>
       ) : null}
 
-      {/* GAP C2 — a custom provider's traffic goes straight to `baseURL`
-          (see buildCustomProviderSnippet's `options.baseURL`), never through
-          the Kortix gateway — so it never appears in gateway logs, never
-          counts against gateway budgets, and never participates in routing
-          policy/fallback. Disclosed here since nothing else in this flow
-          says so. */}
-      <InfoBanner tone="warning" icon={Info} title="Note">
-        Requests to a custom provider go straight to its own endpoint — they don&apos;t pass through
-        the Kortix gateway, so they&apos;re not covered by gateway budgets, logs, or routing.
-      </InfoBanner>
-
       <div className="flex justify-end">
         <Button type="submit" size="sm" disabled={save.isPending}>
           {save.isPending ? (

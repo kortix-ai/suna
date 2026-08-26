@@ -81,14 +81,16 @@ describe('MarkdownCode — fenced blocks', () => {
     expect(labelOf(markup)).toBe('typescript');
   });
 
-  test('isStreaming suppresses the copy button while the label stays', () => {
+  test('isStreaming keeps the copy button and the label', () => {
+    // The message-wide streaming flag must not strip copy from blocks whose
+    // fence already closed; a mid-stream click copies the visible snapshot.
     const markup = render({
       className: 'language-typescript',
       children: 'const a = 1;',
       isStreaming: true,
     });
 
-    expect(markup).not.toContain(COPY);
+    expect(markup).toContain(COPY);
     expect(markup).toContain(CARD);
     expect(labelOf(markup)).toBe('typescript');
   });

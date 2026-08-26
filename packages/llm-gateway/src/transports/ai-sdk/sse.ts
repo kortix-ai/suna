@@ -227,7 +227,7 @@ export function openAiSseFromFullStream(
               roleSent = true;
             }
             const text = part.text as string;
-            if (text) emit(delta({ reasoning: text }));
+            if (text) emit(delta({ reasoning: text, reasoning_content: text }));
             break;
           }
           case 'tool-input-start': {
@@ -331,11 +331,13 @@ export function openAiSseFromFullStream(
             // toTransportError (index.ts) does for the non-streaming path.
             const rawCode = errObj?.statusCode ?? errObj?.code;
             const code =
-              typeof rawCode === 'number' || typeof rawCode === 'string'
-                ? rawCode
-                : looksLikeTerminalAuthFailure(rawMessage)
-                  ? 401
-                  : undefined;
+              errObj?.name === 'TimeoutError'
+                ? 'upstream_timeout'
+                : typeof rawCode === 'number' || typeof rawCode === 'string'
+                  ? rawCode
+                  : looksLikeTerminalAuthFailure(rawMessage)
+                    ? 401
+                    : undefined;
             // `@ai-sdk/*` wraps an HTTP failure in an APICallError whose
             // `.message` is the upstream's real `error.message` ONLY when the
             // body parsed against the provider's error schema; if it didn't (a
@@ -411,8 +413,10 @@ export function openAiSseFromFullStream(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const code =
-        (err as { statusCode?: number })?.statusCode ??
-        (looksLikeTerminalAuthFailure(message) ? 401 : undefined);
+        (err as { name?: string })?.name === 'TimeoutError'
+          ? 'upstream_timeout'
+          : ((err as { statusCode?: number })?.statusCode ??
+            (looksLikeTerminalAuthFailure(message) ? 401 : undefined));
       emit(sse({ error: { message, ...(code != null ? { code } : {}) } }));
     }
 

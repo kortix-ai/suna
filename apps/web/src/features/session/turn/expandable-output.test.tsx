@@ -79,15 +79,16 @@ describe('ExpandableRegion — the affordance', () => {
     expect(markup).not.toContain('bg-gradient-to-t');
   });
 
-  test('long output gets a centred transparent toggle over a bottom fade', () => {
+  test('long output gets a centred secondary toggle over a bottom fade', () => {
     const markup = renderRegion();
     expect(markup).toContain('>Expand<');
     expect(markup).toContain('aria-expanded="false"');
-    // The spec: transparent variant, horizontally centred, bottom-4.
+    // The spec: secondary variant (a visible chip over the fade — the old
+    // transparent variant vanished against long outputs), centred, bottom-4.
     expect(markup).toContain('bottom-4');
     expect(markup).toContain('left-1/2');
     expect(markup).toContain('-translate-x-1/2');
-    expect(markup).toContain('bg-transparent');
+    expect(markup).toContain('bg-secondary');
     // Bottom gradient fade, keyed to the surface the panel sits on.
     expect(markup).toContain('bg-gradient-to-t');
     expect(markup).toContain('from-secondary');

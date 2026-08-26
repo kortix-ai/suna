@@ -31,14 +31,25 @@ const E2B_RUNTIME_BACKSTOP_MS = configuredTimeoutMs(
   60_000,
 );
 const KORTIX_ENTRYPOINT = '/usr/local/bin/kortix-entrypoint';
-const KORTIX_ENTRYPOINT_COMMAND = `exec flock -n /run/kortix-entrypoint.lock ${KORTIX_ENTRYPOINT}`;
+const KORTIX_ENTRYPOINT_LOCK = '/run/kortix-entrypoint.lock';
+const KORTIX_ENTRYPOINT_COMMAND = `exec flock -n ${KORTIX_ENTRYPOINT_LOCK} ${KORTIX_ENTRYPOINT}`;
 const RUNTIME_ENV_PATH = '/etc/kortix/runtime-env.json';
 const RUNTIME_ENV_ENVELOPE = 'kortix-e2b-runtime-env-v1';
 const RUNTIME_ENV_TAG_LENGTH = 16;
-const KORTIX_HEALTH_WAIT =
-  'for attempt in $(seq 1 180); do ' +
+const kortixHealthWait = (attempts: number): string =>
+  `for attempt in $(seq 1 ${attempts}); do ` +
   'if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8000/kortix/health >/dev/null; then exit 0; fi; ' +
   'sleep 1; done; exit 1';
+const KORTIX_HEALTH_WAIT = kortixHealthWait(180);
+/**
+ * How long a RESUMED box may stay unreachable before the dead-process-tree
+ * workaround below fires. Long enough for an ordinary cold boot from disk to
+ * bind port 8000 (measured ~0.5 s to runtime bootstrap on a healthy resume,
+ * 11.6 s worst case with an OpenCode init), short enough that a dead resume
+ * costs seconds instead of the caller's whole wake budget.
+ */
+const KORTIX_RESUME_HEALTH_PROBE_ATTEMPTS = 15;
+const KORTIX_RESUME_HEALTH_PROBE = kortixHealthWait(KORTIX_RESUME_HEALTH_PROBE_ATTEMPTS);
 const KORTIX_APPD = '/kortix/bin/kortix-appd';
 const KORTIX_APPD_COMMAND = `exec flock -n /run/kortix-appd.lock ${KORTIX_APPD}`;
 const KORTIX_APPD_HEALTH_WAIT =
@@ -53,6 +64,35 @@ const ENV_METADATA = 'kortix_env';
 // after that budget. This outer timer bounds all permanent-removal call sites.
 const E2B_REMOVE_TIMEOUT_MS = configuredTimeoutMs('KORTIX_E2B_REMOVE_TIMEOUT_MS', 25_000, 1_000);
 const E2B_RENEW_TIMEOUT_MS = configuredTimeoutMs('KORTIX_E2B_RENEW_TIMEOUT_MS', 25_000, 1_000);
+// How far the provider deadline may lag `now + backstop` before a renewal is
+// treated as ignored. Renewals run every ~20 s; a 1h team cap shows up as a
+// deadline pinned at `startedAt + 1h`, i.e. minutes short within minutes.
+const E2B_RENEWAL_TOLERANCE_MS = configuredTimeoutMs(
+  'KORTIX_E2B_RENEWAL_TOLERANCE_MS',
+  2 * 60 * 1000,
+  1_000,
+);
+
+/** The provider acknowledged a renewal (204) but its deadline did not move. */
+export class E2BLifecycleRenewalIgnoredError extends Error {
+  readonly code = 'e2b_lifecycle_renewal_ignored';
+  constructor(
+    message: string,
+    readonly providerEndAtMs: number,
+  ) {
+    super(message);
+    this.name = 'E2BLifecycleRenewalIgnoredError';
+  }
+}
+
+function parseProviderInstant(value: unknown): number | null {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const ms = new Date(value).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  return null;
+}
 const E2B_STOP_TIMEOUT_MS = configuredTimeoutMs('KORTIX_E2B_STOP_TIMEOUT_MS', 25_000, 1_000);
 
 /**
@@ -89,6 +129,9 @@ function isMissingSandboxError(error: unknown): boolean {
  * after API restarts recovers a fresh token and explicitly resumes a paused box.
  */
 const connectedSandboxes = new Map<string, E2BSandbox>();
+export const E2B_INGRESS_HANDLE_TTL_MS = 5_000;
+const connectedSandboxCachedAt = new Map<string, number>();
+const connectOperations = new Map<string, { generation: object; promise: Promise<E2BSandbox> }>();
 export const E2B_RUNNING_STATUS_CACHE_TTL_MS = 3_000;
 const runningStatusCache = new Map<string, number>();
 const statusCacheGeneration = new Map<string, object>();
@@ -105,6 +148,12 @@ function currentStatusGeneration(externalId: string): object {
 function invalidateRunningStatus(externalId: string): void {
   runningStatusCache.delete(externalId);
   statusCacheGeneration.set(externalId, {});
+}
+
+function invalidateConnectedSandbox(externalId: string): void {
+  connectedSandboxes.delete(externalId);
+  connectedSandboxCachedAt.delete(externalId);
+  connectOperations.delete(externalId);
 }
 
 function validateRuntimeEnv(value: unknown, externalId: string): Record<string, string> {
@@ -243,29 +292,103 @@ function requirePrivateTrafficToken(sandbox: E2BSandbox): string {
   return sandbox.trafficAccessToken;
 }
 
-async function ensureKortixEntrypoint(
+async function kortixEntrypointIsRunning(sandbox: E2BSandbox): Promise<boolean> {
+  const processes = await sandbox.commands.list({ requestTimeoutMs: 10_000 });
+  return processes.some((process) =>
+    `${process.cmd} ${process.args.join(' ')}`.includes(KORTIX_ENTRYPOINT),
+  );
+}
+
+async function launchKortixEntrypoint(
   sandbox: E2BSandbox,
   envs?: Record<string, string>,
 ): Promise<void> {
-  const processes = await sandbox.commands.list({ requestTimeoutMs: 10_000 });
-  const alreadyRunning = processes.some((process) =>
-    `${process.cmd} ${process.args.join(' ')}`.includes(KORTIX_ENTRYPOINT),
-  );
-  if (!alreadyRunning) {
-    // The guest lock is the cross-process/cross-replica authority. Two API
-    // replicas can both miss commands.list() during the first few milliseconds
-    // of a cold boot; only one is allowed to own the long-lived daemon.
-    await sandbox.commands.run(KORTIX_ENTRYPOINT_COMMAND, {
-      background: true,
+  // The guest lock is the cross-process/cross-replica authority. Two API
+  // replicas can both miss commands.list() during the first few milliseconds
+  // of a cold boot; only one is allowed to own the long-lived daemon.
+  await sandbox.commands.run(KORTIX_ENTRYPOINT_COMMAND, {
+    background: true,
+    user: 'root',
+    ...(envs ? { envs } : {}),
+    // E2B applies timeoutMs to the total lifetime of a background command;
+    // its default is 60s and our former 20s value deterministically killed
+    // the Kortix daemon after boot. Zero is the SDK's documented no-timeout
+    // value. The sandbox lifecycle/reaper remains the authority that stops it.
+    timeoutMs: 0,
+  });
+}
+
+async function kortixHealthy(
+  sandbox: E2BSandbox,
+  envs: Record<string, string> | undefined,
+  command: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  try {
+    await sandbox.commands.run(command, {
       user: 'root',
       ...(envs ? { envs } : {}),
-      // E2B applies timeoutMs to the total lifetime of a background command;
-      // its default is 60s and our former 20s value deterministically killed
-      // the Kortix daemon after boot. Zero is the SDK's documented no-timeout
-      // value. The sandbox lifecycle/reaper remains the authority that stops it.
-      timeoutMs: 0,
+      timeoutMs,
     });
+    return true;
+  } catch {
+    return false;
   }
+}
+
+/**
+ * Bring the Kortix daemon up on a box and prove it answers.
+ *
+ * `reviveOnStall` is the RESUME path's extra guarantee. E2B's filesystem-only
+ * pause has no autostart contract to lean on: `lifecycle.autoResume` requires a
+ * MEMORY snapshot (`keepMemory: true`), and the E2B SDK documents a
+ * filesystem-only snapshot as one that "cold-boots" and "must be resumed
+ * explicitly via connect()". Kortix sets no template `startCmd` either, so
+ * apps/api is the ONLY thing that starts the runtime after a resume — and a
+ * resume that leaves the process tree dead (observed on Essentia box
+ * `igu3qpz1ctv0pg2agda1x`: `/opt/kortix/logs/daemon.log` gained no boot entries
+ * after the pause) used to spin the caller for the full 190 s health wait and
+ * then hand back an unreachable box. Only a human restart — a NEW sandbox —
+ * healed it.
+ *
+ * So on a resume the health answer is probed on a SHORT bound first. If the box
+ * is unreachable AND no entrypoint process is alive, the stale lock is cleared
+ * and the entrypoint relaunched exactly once, then the normal wait re-verifies.
+ * The process-liveness precondition is what keeps this from ever double-starting
+ * a daemon that is merely slow: `rm -f` on a flock'd path does not release the
+ * live holder's lock, it just lets the next `flock -n` win a different inode.
+ */
+async function ensureKortixEntrypoint(
+  sandbox: E2BSandbox,
+  envs?: Record<string, string>,
+  opts?: { reviveOnStall?: boolean },
+): Promise<void> {
+  if (!(await kortixEntrypointIsRunning(sandbox))) await launchKortixEntrypoint(sandbox, envs);
+
+  if (opts?.reviveOnStall) {
+    const reachable = await kortixHealthy(
+      sandbox,
+      envs,
+      KORTIX_RESUME_HEALTH_PROBE,
+      (KORTIX_RESUME_HEALTH_PROBE_ATTEMPTS + 10) * 1_000,
+    );
+    // Reachable already: the resume worked. Skip the long wait — it would only
+    // re-ask a question this probe just answered.
+    if (reachable) return;
+    if (!(await kortixEntrypointIsRunning(sandbox))) {
+      console.error(
+        `[e2b] dead resume workaround: sandbox ${sandbox.sandboxId} came back from a ` +
+          `filesystem-only pause with no kortix-entrypoint process and no health answer after ` +
+          `${KORTIX_RESUME_HEALTH_PROBE_ATTEMPTS}s — clearing ${KORTIX_ENTRYPOINT_LOCK} and relaunching`,
+      );
+      await sandbox.commands.run(`rm -f ${KORTIX_ENTRYPOINT_LOCK}`, {
+        user: 'root',
+        timeoutMs: 10_000,
+      });
+      await launchKortixEntrypoint(sandbox, envs);
+    }
+  }
+
   await sandbox.commands.run(KORTIX_HEALTH_WAIT, {
     user: 'root',
     ...(envs ? { envs } : {}),
@@ -298,11 +421,13 @@ async function ensureAppEntrypoint(
 
 export class E2BProvider implements SandboxProvider {
   readonly name: ProviderName = 'e2b';
+  readonly ingressCacheTtlMs = 0;
 
   constructor(
     private readonly removeTimeoutMs = E2B_REMOVE_TIMEOUT_MS,
     private readonly renewTimeoutMs = E2B_RENEW_TIMEOUT_MS,
     private readonly stopTimeoutMs = E2B_STOP_TIMEOUT_MS,
+    private readonly now: () => number = Date.now,
   ) {}
 
   readonly provisioning: ProvisioningTraits = {
@@ -365,6 +490,7 @@ export class E2BProvider implements SandboxProvider {
     }
 
     connectedSandboxes.set(sandbox.sandboxId, sandbox);
+    connectedSandboxCachedAt.set(sandbox.sandboxId, this.now());
     try {
       // E2B preserves the filesystem but not Sandbox.create(...envs) across a
       // keepMemory:false pause. Persist the complete per-session environment on
@@ -376,7 +502,7 @@ export class E2BProvider implements SandboxProvider {
       if (workloadType === 'app') await ensureAppEntrypoint(sandbox, envVars);
       else await ensureKortixEntrypoint(sandbox, envVars);
     } catch (error) {
-      connectedSandboxes.delete(sandbox.sandboxId);
+      invalidateConnectedSandbox(sandbox.sandboxId);
       await sandbox.kill({ requestTimeoutMs: 20_000 }).catch(() => false);
       throw new Error(
         `[e2b] failed to launch Kortix entrypoint: ${error instanceof Error ? error.message : String(error)}`,
@@ -402,22 +528,25 @@ export class E2BProvider implements SandboxProvider {
 
   private async startOnce(externalId: string, generation: object): Promise<void> {
     try {
-      const sandbox = await Sandbox.connect(externalId, {
-        ...apiOpts(),
-        timeoutMs: E2B_RUNTIME_BACKSTOP_MS,
-      });
-      connectedSandboxes.set(externalId, sandbox);
+      const sandbox = await this.connectFresh(externalId, generation);
+      if (statusCacheGeneration.get(externalId) === generation) {
+        connectedSandboxes.set(externalId, sandbox);
+        connectedSandboxCachedAt.set(externalId, this.now());
+      }
       // A filesystem-only pause cold-boots on connect. E2B normally runs the
       // template start command during that boot; this explicit check makes the
       // Kortix runtime invariant independent of provider startup behavior.
       const envVars = await loadRuntimeEnv(sandbox);
       if (envVars.KORTIX_WORKLOAD_TYPE === 'app') await ensureAppEntrypoint(sandbox, envVars);
-      else await ensureKortixEntrypoint(sandbox, envVars);
+      // RESUME, not create: this is the path that has to survive a provider
+      // resume which brings the VM back with a dead process tree.
+      else await ensureKortixEntrypoint(sandbox, envVars, { reviveOnStall: true });
       if (statusCacheGeneration.get(externalId) === generation) {
         runningStatusCache.set(externalId, Date.now());
+        connectedSandboxCachedAt.set(externalId, this.now());
       }
     } catch (error) {
-      connectedSandboxes.delete(externalId);
+      invalidateConnectedSandbox(externalId);
       invalidateRunningStatus(externalId);
       throw error;
     }
@@ -466,11 +595,33 @@ export class E2BProvider implements SandboxProvider {
     // E2B's timeout is an ABSOLUTE provider deadline. Guest activity does not
     // move it. Reset it through the static control-plane API so this operation
     // cannot connect to, resume, or otherwise wake a stopped sandbox.
+    const requestedAtMs = Date.now();
     await withTimeout(
       Sandbox.setTimeout(externalId, E2B_RUNTIME_BACKSTOP_MS, apiOpts()),
       this.renewTimeoutMs,
       `E2B lifecycle renewal(${externalId})`,
     );
+    // A 204 is not proof. E2B's KeepAliveFor clamps every renewal to the
+    // team's `max_length_hours` (tier + project_limits), so on a team capped
+    // at 1h the deadline never moves past `startedAt + 1h` and the sandbox is
+    // paused mid-turn exactly one hour after create/resume — while Kortix
+    // logged a successful renewal every 20 s (Essentia 2026-08-25: 375 blind
+    // 204s, 4 turns killed). Read the deadline back and refuse to call a
+    // renewal that did not land a renewal.
+    const info = await withTimeout(
+      Sandbox.getInfo(externalId, apiOpts()),
+      this.renewTimeoutMs,
+      `E2B lifecycle renewal read-back(${externalId})`,
+    );
+    const endAtMs = parseProviderInstant(info.endAt);
+    if (endAtMs === null) return;
+    const expectedMinMs = requestedAtMs + E2B_RUNTIME_BACKSTOP_MS - E2B_RENEWAL_TOLERANCE_MS;
+    if (endAtMs >= expectedMinMs) return;
+    const shortfallS = Math.round((requestedAtMs + E2B_RUNTIME_BACKSTOP_MS - endAtMs) / 1000);
+    const backstopS = Math.round(E2B_RUNTIME_BACKSTOP_MS / 1000);
+    const message = `E2B ignored the lifecycle renewal for ${externalId}: provider endAt ${new Date(endAtMs).toISOString()} is ${shortfallS}s short of the requested ${backstopS}s backstop. The E2B team's max_length_hours caps every renewal; raise it (tiers.max_length_hours / project_limits) or this sandbox is paused mid-turn at endAt.`;
+    console.error(`[e2b] ${message}`);
+    throw new E2BLifecycleRenewalIgnoredError(message, endAtMs);
   }
 
   async stop(externalId: string): Promise<void> {
@@ -484,11 +635,11 @@ export class E2BProvider implements SandboxProvider {
       `E2B stop(${externalId})`,
     );
     invalidateRunningStatus(externalId);
-    connectedSandboxes.delete(externalId);
+    invalidateConnectedSandbox(externalId);
   }
 
   async remove(externalId: string): Promise<void> {
-    connectedSandboxes.delete(externalId);
+    invalidateConnectedSandbox(externalId);
     invalidateRunningStatus(externalId);
     try {
       await withTimeout(
@@ -506,10 +657,7 @@ export class E2BProvider implements SandboxProvider {
 
   async getStatus(externalId: string): Promise<SandboxStatus> {
     const cachedAt = runningStatusCache.get(externalId);
-    if (
-      cachedAt !== undefined &&
-      Date.now() - cachedAt < E2B_RUNNING_STATUS_CACHE_TTL_MS
-    )
+    if (cachedAt !== undefined && Date.now() - cachedAt < E2B_RUNNING_STATUS_CACHE_TTL_MS)
       return 'running';
     const generation = currentStatusGeneration(externalId);
     try {
@@ -535,13 +683,40 @@ export class E2BProvider implements SandboxProvider {
 
   private async connected(externalId: string): Promise<E2BSandbox> {
     const cached = connectedSandboxes.get(externalId);
-    if (cached) return cached;
-    const sandbox = await Sandbox.connect(externalId, {
+    const cachedAt = connectedSandboxCachedAt.get(externalId);
+    if (cached && cachedAt !== undefined && this.now() - cachedAt < E2B_INGRESS_HANDLE_TTL_MS)
+      return cached;
+
+    const providerStatus = await this.getStatus(externalId);
+    if (providerStatus !== 'running') {
+      throw new Error(`[e2b] sandbox ${externalId} is not running (status: ${providerStatus})`);
+    }
+    const generation = currentStatusGeneration(externalId);
+    return this.connectFresh(externalId, generation);
+  }
+
+  private connectFresh(externalId: string, generation: object): Promise<E2BSandbox> {
+    const inFlight = connectOperations.get(externalId);
+    if (inFlight) return inFlight.promise;
+
+    const promise = Sandbox.connect(externalId, {
       ...apiOpts(),
       timeoutMs: E2B_RUNTIME_BACKSTOP_MS,
-    });
-    connectedSandboxes.set(externalId, sandbox);
-    return sandbox;
+    })
+      .then((sandbox) => {
+        if (statusCacheGeneration.get(externalId) === generation) {
+          connectedSandboxes.set(externalId, sandbox);
+          connectedSandboxCachedAt.set(externalId, this.now());
+        }
+        return sandbox;
+      })
+      .finally(() => {
+        if (connectOperations.get(externalId)?.promise === promise) {
+          connectOperations.delete(externalId);
+        }
+      });
+    connectOperations.set(externalId, { generation, promise });
+    return promise;
   }
 
   async resolveIngress(

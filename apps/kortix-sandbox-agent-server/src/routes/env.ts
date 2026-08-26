@@ -4,12 +4,17 @@ import { writeAgentEnvFile } from '../agent-env-file'
 import type { Config } from '../config'
 import { syncEgressShim } from '../egress-shim'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import { llmProxyBaseUrl, setLlmProxyToken } from '../llm-proxy'
 import { logger } from '../logger'
 import { requiresRespawn, type Opencode } from '../opencode'
 import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_BASE_URL',
+  // The daemon-local LLM proxy URL (warm-fork boxes). Cleared on a live
+  // gateway→native toggle — hasKortixLlmGateway() treats a set proxy URL as
+  // "gateway on", so leaving it behind would pin the box in gateway mode.
+  'KORTIX_LLM_PROXY_URL',
   // The session's model. opencode reads this when it builds its config at spawn
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
@@ -91,6 +96,10 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
   if (!enabled) {
     return setOpencodeRuntimeEnv({
       KORTIX_LLM_BASE_URL: null,
+      // Warm-fork boxes run a localhost LLM proxy and mark it here; it also
+      // reads as "gateway on" (hasKortixLlmGateway), so a live disable must
+      // clear both or the respawned opencode keeps the kortix provider.
+      KORTIX_LLM_PROXY_URL: null,
     })
   }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
@@ -99,6 +108,17 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
   const token = process.env.KORTIX_TOKEN
   if (!token) {
     throw new Error('KORTIX_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
+  }
+  // A running localhost LLM proxy (every gateway session since the in-sandbox
+  // image window) learns the new upstream + token and stays the provider
+  // base URL; a box that never started one keeps the direct config.
+  const proxyUrl = llmProxyBaseUrl()
+  if (proxyUrl && process.env.KORTIX_LLM_PROXY_DISABLE !== '1') {
+    setLlmProxyToken(token, baseUrl)
+    return setOpencodeRuntimeEnv({
+      KORTIX_LLM_BASE_URL: baseUrl,
+      KORTIX_LLM_PROXY_URL: proxyUrl,
+    })
   }
   return setOpencodeRuntimeEnv({
     KORTIX_LLM_BASE_URL: baseUrl,
