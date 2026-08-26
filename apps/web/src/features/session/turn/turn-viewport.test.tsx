@@ -1,29 +1,42 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TurnViewport, turnViewportClassName } from './turn-viewport';
+import { TurnViewport, turnIntrinsicSize, turnViewportClassName } from './turn-viewport';
 
 describe('turnViewportClassName — the two containment rules', () => {
   test('RULE 1: an unmeasured turn carries no containment, so it lays out for real', () => {
-    // `contain-intrinsic-size: auto` can only stand in at a turn's
-    // LAST-REMEMBERED size, and a turn earns one by being laid out while NOT
-    // skipping. Skip it first and it stands in at the flat 600px guess —
-    // which is what threw the reader around when scrolling up.
+    // A turn only earns a stand-in size by being laid out. Contain it before
+    // that and it reports a size nobody measured — which is what threw the
+    // reader around when scrolling up.
     expect(turnViewportClassName('unmeasured')).toBe('');
     expect(turnViewportClassName('unmeasured', 'mt-12')).toBe('mt-12');
+    expect(turnIntrinsicSize('unmeasured', 320)).toBeUndefined();
   });
 
-  test('a measured turn skips, with an intrinsic size it can now honour', () => {
+  test('a measured turn skips, standing in at ITS OWN height — never a shared guess', () => {
     const className = turnViewportClassName('measured', 'mt-12');
     expect(className).toContain('[content-visibility:auto]');
-    expect(className).toContain('[contain-intrinsic-size:auto_600px]');
     expect(className).toContain('mt-12');
+    // The regression this replaces: one flat `600px` for every turn. Real
+    // turns are 100-500px, so every skipped turn inflated the transcript and
+    // deflated again when it came back through the viewport.
+    expect(className).not.toContain('contain-intrinsic-size');
+    expect(turnIntrinsicSize('measured', 101)).toBe('auto 101px');
+    expect(turnIntrinsicSize('measured', 503)).toBe('auto 503px');
+    expect(turnIntrinsicSize('measured', 320.4)).toBe('auto 320px');
   });
 
-  test('RULE 2: an empty turn gets NO containment — a 0px element never intersects, so it would skip forever at the 600px guess and oscillate', () => {
+  test('a measured turn with no height yet is not contained — no stand-in, no guess', () => {
+    expect(turnIntrinsicSize('measured', 0)).toBeUndefined();
+    expect(turnIntrinsicSize('measured', Number.NaN)).toBeUndefined();
+  });
+
+  test('RULE 2: an empty turn gets NO containment — a 0px element never intersects, so it would skip forever at its stand-in size and oscillate', () => {
     const className = turnViewportClassName('empty', 'mt-12');
     expect(className).not.toContain('content-visibility');
     expect(className).not.toContain('contain-intrinsic-size');
+    // Even carrying a height from before it emptied out.
+    expect(turnIntrinsicSize('empty', 480)).toBeUndefined();
   });
 
   test("RULE 2: an empty turn drops its caller's spacing, so invisible turns contribute 0px", () => {
@@ -49,6 +62,7 @@ describe('TurnViewport', () => {
     const markup = render();
     expect(markup).not.toContain('content-visibility');
     expect(markup).not.toContain('contain-intrinsic-size');
+    expect(markup).not.toContain('style=');
   });
 
   test('keeps the scroll anchor every scroll consumer measures through', () => {
