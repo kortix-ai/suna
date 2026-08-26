@@ -15,6 +15,11 @@ import {
   resetSessionSyncControllersForSession,
   retainSessionSyncController,
 } from '../browser/session-sync/session-sync-registry';
+import {
+  loadSessionTranscriptMirror,
+  mirrorMessagesForHydrate,
+  shouldHydrateFromMirror,
+} from '../browser/session-sync/server-transcript-mirror';
 import { transcriptIsFragment } from '../core/session-sync/fragment';
 import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
@@ -152,6 +157,53 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     );
     useSyncStore.getState().clearSession(sessionId);
   }, [cacheOwnerScope, runtimeScope, sessionId]);
+
+  // FIRST PAINT FROM THE SERVER'S MIRROR — deliberately NOT gated on
+  // `networkEnabled`, `runtimeHealthy`, or `runtimeScope`.
+  //
+  // That is the whole point. Every other read in this hook waits for the box;
+  // opening a hibernated session therefore showed a full-screen loader with no
+  // transcript for the length of the wake (measured 5-240 s) although every
+  // message existed. This read asks the CONTROL PLANE, which is up, for the
+  // copy it wrote at the last turn end.
+  //
+  // It is not the disk mirror returning. That one was deleted because its
+  // freshness test read the transcript's SHAPE and a Stop moves none of it, so
+  // a stopped thread painted as still running. This payload carries OpenCode's
+  // `info` VERBATIM — `time.completed` and `error` included — and the server
+  // writes it BECAUSE a turn ended, so there is no client-side freshness test
+  // left to get wrong. `shouldHydrateFromMirror` additionally refuses a mirror
+  // captured from a different OpenCode root, which the scope-keyed disk cache
+  // could not check.
+  //
+  // Painted with `source: 'cache'`, so the store's existing settle rule owns
+  // reconciliation: the first runtime read confirms every id it contains and
+  // drops any it covers but lacks. Nothing here needs the settle rule changed.
+  useEffect(() => {
+    if (!canQueryOpenCodeSession(sessionId) || !kortixSessionScope) return;
+    // Already have the thread (a warm remount, or the runtime beat us): the
+    // live read outranks a snapshot and must never be overwritten by one.
+    if ((useSyncStore.getState().messages[sessionId]?.length ?? 0) > 0) return;
+    const abort = new AbortController();
+    void loadSessionTranscriptMirror({
+      kortixSessionScope,
+      signal: abort.signal,
+    }).then((envelope) => {
+      if (abort.signal.aborted || !envelope) return;
+      const state = useSyncStore.getState();
+      if (
+        !shouldHydrateFromMirror({
+          envelope,
+          runtimeSessionId: sessionId,
+          hasMessages: (state.messages[sessionId]?.length ?? 0) > 0,
+        })
+      ) {
+        return;
+      }
+      state.hydrate(sessionId, mirrorMessagesForHydrate(envelope), { source: 'cache' });
+    });
+    return () => abort.abort();
+  }, [kortixSessionScope, sessionId]);
 
   // NO DISK PAINT. The transcript renders from the runtime and from this tab's
   // own optimistic writes — nothing else.

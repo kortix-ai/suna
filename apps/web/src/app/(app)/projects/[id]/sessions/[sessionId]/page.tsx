@@ -40,8 +40,12 @@ import {
   isSandboxResumable,
 } from '@/features/session/session-resume';
 import { canPollSessionStart } from '@/features/session/session-start-gate';
-import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import {
+  SessionConnectingBanner,
+  SessionStartingLoader,
+} from '@/features/session/session-starting-loader';
+import {
+  resolveBootPresentation,
   resolveSessionOverlay,
   shouldForgetNewSessionHint,
   shouldMountSessionChat,
@@ -431,6 +435,31 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const hasTranscript = session.messages.length > 0 || sawTranscript;
   const surface = { newSessionHint: handoff.newSessionHint, hasTranscript };
   const overlay = resolveSessionOverlay({ ...surface, shellShowsFirstPrompt });
+  // WHICH overlay is settled above; this decides whether it may COVER the chat.
+  //
+  // It may not, once there is a transcript under it. The server-side transcript
+  // mirror (`GET …/transcript?shape=sync`, hydrated by the SDK with
+  // `source: 'cache'`) means a hibernated session paints its history on the
+  // first frame, so a full-screen "Connecting…" would now be hiding a readable
+  // conversation for the length of the wake — 5-240 s, the exact complaint.
+  // Boot status becomes a compact banner above the thread instead.
+  const bootPresentation = resolveBootPresentation({ overlay, hasTranscript });
+
+  // The overlay is DISMISSED for two reasons now, and both use the same 300ms
+  // crossfade the chat layer was already painted underneath: the chat reported
+  // ready, or the transcript arrived and boot status moved into the banner.
+  // Reusing the fade is deliberate — flipping the presentation with a hard
+  // unmount would swap an opaque panel for the thread in one frame.
+  const overlayDismissed = chatReady || bootPresentation === 'banner';
+  // Sibling of the `chatReady` unmount timer above, for the other dismissal
+  // reason. Same 350ms belt-and-braces: `transitionend` never fires in a
+  // backgrounded tab, nor under `prefers-reduced-motion` where the duration
+  // is 0.
+  useEffect(() => {
+    if (bootPresentation !== 'banner' || !loaderMounted) return;
+    const t = setTimeout(() => setLoaderMounted(false), 350);
+    return () => clearTimeout(t);
+  }, [bootPresentation, loaderMounted]);
 
   // Drop the local hint as soon as it has done its job OR been proven wrong.
   // This used to wait on `chatReady`, which the hint itself could withhold — so
@@ -827,7 +856,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               // block — under it you would see the chat's own compact loader
               // through the gaps, two spinners deep.
               'bg-background absolute inset-0 flex flex-col transition-opacity duration-300 ease-out',
-              chatReady ? 'pointer-events-none opacity-0' : 'opacity-100',
+              overlayDismissed ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
           >
             {overlay === 'new-session-shell' ? (
@@ -848,6 +877,21 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               </HeaderlessSessionSurface>
             )}
           </div>
+        )}
+
+        {/* Boot status ABOVE the conversation, never in front of it. Mounted
+            only in the `banner` presentation — i.e. only when there is a
+            transcript underneath worth reading — and held until the runtime is
+            actually reachable, so the strip does not disappear the instant the
+            chat paints while the box is still coming up. What SENDING will do
+            during the wake is the composer's own notice; this says only which
+            phase the boot is in. */}
+        {bootPresentation === 'banner' && (startStage !== 'ready' || !chatReady) && (
+          <SessionConnectingBanner
+            stage={authLoading || !user ? 'provisioning' : startStage}
+            projectId={projectId}
+            sessionId={sessionId}
+          />
         )}
       </div>
     );

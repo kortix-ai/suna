@@ -644,3 +644,86 @@ export function SessionStartingLoader({
     </div>
   );
 }
+
+/**
+ * The compact boot banner — status ABOVE the conversation instead of a wall in
+ * front of it.
+ *
+ * Opening a hibernated session used to show {@link SessionStartingLoader}
+ * full-screen for the whole wake (measured 5-240 s) with the transcript hidden
+ * behind it, although every message existed. Now that the control plane serves
+ * a durable transcript mirror the conversation is on screen from the first
+ * frame, so covering it is no longer honest — the session is READABLE, only its
+ * runtime is not yet reachable. `resolveBootPresentation` picks between the two.
+ *
+ * One strip, one job: which phase the boot is in. It deliberately does NOT
+ * repeat what sending will do — the composer's own readiness notice owns that,
+ * and two components saying the same thing is how a calm surface turns noisy.
+ *
+ * `pointer-events-none` on the strip with an explicit re-enable on the restart
+ * offer: the transcript underneath must stay scrollable and selectable through
+ * it. That is the entire reason this is a banner.
+ */
+export function SessionConnectingBanner({
+  stage = 'provisioning',
+  projectId,
+  sessionId,
+  className,
+}: {
+  stage?: SessionStartStage;
+  projectId?: string;
+  sessionId?: string;
+  className?: string;
+}) {
+  const queryClient = useQueryClient();
+  const { active, now } = useBootProgress(stage);
+  const clockStart = useRef(now);
+  const stuck = now - clockStart.current >= STUCK_AFTER_MS;
+  const canRestart = !!projectId && !!sessionId;
+  const step = STEPS[Math.min(active, STEPS.length - 1)];
+
+  const restartMutation = useMutation({
+    mutationFn: () => restartProjectSession(projectId!, sessionId!),
+    onSuccess: () => {
+      clockStart.current = Date.now();
+      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId!, sessionId!) });
+      queryClient.invalidateQueries({
+        queryKey: qk.project.sessionSandbox(projectId ?? '', sessionId ?? ''),
+      });
+    },
+    onError: (err) => {
+      errorToast(err instanceof Error ? err.message : 'Failed to restart session');
+    },
+  });
+
+  return (
+    <div
+      // `role="status"` + `aria-live`: this appears without the user doing
+      // anything and it explains why the composer is holding their message.
+      role="status"
+      aria-live="polite"
+      data-session-connecting-banner=""
+      className={cn(
+        'pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center px-3 pt-3',
+        className,
+      )}
+    >
+      <div className="bg-background/85 text-muted-foreground flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-xs shadow-xs backdrop-blur-sm">
+        <Loading variant="spokes" className="size-3.5 shrink-0 text-current" />
+        <span className="truncate">{step.label}</span>
+        {stuck && canRestart ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="pointer-events-auto -mr-2 h-6 px-2 text-xs"
+            disabled={restartMutation.isPending}
+            onClick={() => restartMutation.mutate()}
+          >
+            {restartMutation.isPending ? 'Restarting…' : 'Restart'}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}

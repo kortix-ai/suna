@@ -1047,6 +1047,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
         P.getSessionTranscript(projectId, sessionId, options),
+      /** The DURABLE server-side transcript mirror, in sync-store shape
+       *  (OpenCode message envelopes verbatim, attachment bytes and tool
+       *  inputs/outputs stripped). This is the read that answers while the
+       *  sandbox is stopped or still waking. */
+      transcriptSync: (options?: Parameters<typeof P.getSessionTranscriptSync>[2]) =>
+        P.getSessionTranscriptSync(projectId, sessionId, options),
       /** Which turns are running right now, and how did the last one end?
        *  Server truth from the control plane's lifecycle authority, independent
        *  of the live stream. */
