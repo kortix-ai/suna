@@ -591,7 +591,16 @@ export class SessionSyncController {
 
   private async loadCompleteOlderTurn(before: string): Promise<SessionSyncPage> {
     const firstPage = await this.loadPage('older', 'manual', before);
-    return this.loadCompleteTurn(firstPage, 'older', 'manual', before);
+    // Commit each page as it lands. The walk is up to 11 sequential reads
+    // (MAX_TURN_BACKFILL_PAGES + 1) and used to commit all of them in one
+    // `.then`, so a rejection on the last page discarded every successful read
+    // and left `nextCursor` unmoved — nothing to resume from, so the retry
+    // replayed the identical walk. `onPage` existed for exactly this and was
+    // never passed.
+    return this.loadCompleteTurn(firstPage, 'older', 'manual', before, (messagesSoFar) => {
+      this.rememberUserMessages(messagesSoFar);
+      this.options.hydrate(messagesSoFar);
+    });
   }
 
   private async loadCompleteTurn(

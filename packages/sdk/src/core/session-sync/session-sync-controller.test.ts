@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import { SandboxNotReadyError } from '../http/opencode-errors';
 import {
@@ -365,8 +365,23 @@ describe('SessionSyncController', () => {
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-3' },
     ]);
+    // S2 (Task 4): each page of the older-history walk now hydrates as it
+    // lands (`onPage`), on top of the pre-existing final commit — so the tail
+    // read is followed by one hydrate per walked page, then the final,
+    // already-complete commit. Redundant, not incorrect: `hydrate` is
+    // idempotent by message id in the real store; this mock just records
+    // every call verbatim.
     expect(hydrated).toEqual([
       ['user-new', 'assistant-new'],
+      ['assistant-old-1', 'assistant-old-2', 'assistant-old-3', 'assistant-old-4'],
+      [
+        'user-old',
+        'assistant-old-0',
+        'assistant-old-1',
+        'assistant-old-2',
+        'assistant-old-3',
+        'assistant-old-4',
+      ],
       [
         'user-old',
         'assistant-old-0',
@@ -1220,5 +1235,76 @@ describe('SessionSyncController — bounded turn walk', () => {
     // The cursor survives, so the rest of history is reachable rather than
     // drained on this one pull.
     expect(controller.getSnapshot().hasOlder).toBe(true);
+  });
+});
+
+/**
+ * Partial commit of a failed older-history walk (S2 / Task 4). `loadOlder`
+ * walks up to MAX_TURN_BACKFILL_PAGES + 1 = 11 pages and used to commit them
+ * all in one atomic `.then`, so a rejection on a later page discarded every
+ * successful read AND left `nextCursor` unmoved — the only recovery was to
+ * replay the identical walk. That is the "continuously tries to fetch more &
+ * more, but no messages render" report.
+ */
+describe('SessionSyncController — partial commit of a failed history walk', () => {
+  /**
+   * Builds a controller wired to a paged, mockable `loadPage`, already past
+   * its initial tail read (so `nextCursor` is set and `loadOlder` can walk).
+   * Every older page carries an assistant message whose parent is never
+   * resolved, so the turn-completion walk keeps going instead of stopping
+   * after one page — mirrors the "bounded turn walk" setup above. The Nth
+   * older-history read (1-indexed; the first page counts) rejects when it
+   * matches `rejectAtPage`.
+   */
+  async function makeControllerWithPagedHistory(options: {
+    pages: number;
+    rejectAtPage?: number;
+  }) {
+    const { pages, rejectAtPage } = options;
+    const hydrated: MessageWithParts[] = [];
+    let olderReads = 0;
+    const servePage = mock(async (request: { limit: number; before?: string }) => {
+      if (!request.before) {
+        // The initial tail page — seeds the cursor `loadOlder` walks back from.
+        return page(['tail'], 'cursor-0');
+      }
+      olderReads += 1;
+      if (rejectAtPage && olderReads === rejectAtPage) {
+        throw new Error(`page ${olderReads} failed`);
+      }
+      const isLastPage = olderReads >= pages;
+      return messagePage(
+        [{ id: `assistant-${olderReads}`, role: 'assistant', parentID: 'user-never' }],
+        isLastPage ? undefined : `cursor-${olderReads}`,
+      );
+    });
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: servePage,
+      hydrate: (messages) => hydrated.push(...messages),
+      markLoaded: () => {},
+    });
+    await controller.start();
+    return { controller, hydrated, servePage };
+  }
+
+  // S2: an older-history pull walks up to 11 pages. Committing them in one
+  // atomic `.then` meant a rejection on page 6 discarded five successful reads
+  // AND left the cursor unmoved, so the only recovery was to replay the
+  // identical walk — the "continously tries to fetch more & more" report.
+  test('a history walk that fails midway keeps the pages it already read', async () => {
+    const { controller, hydrated, servePage } = await makeControllerWithPagedHistory({
+      pages: 11,
+      rejectAtPage: 6,
+    });
+
+    await controller.loadOlder().catch(() => undefined);
+
+    // Pages from the older-history walk (not the initial tail read) reached
+    // the store before page 6 rejected.
+    const olderHydrated = hydrated.filter((message) => message.info.id.startsWith('assistant-'));
+    expect(olderHydrated.length).toBeGreaterThan(0);
+    // And the walk read multiple distinct pages before it failed.
+    expect(servePage.mock.calls.at(-1)?.[0]).not.toEqual(servePage.mock.calls[0]?.[0]);
   });
 });
