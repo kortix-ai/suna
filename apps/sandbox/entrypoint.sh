@@ -228,6 +228,33 @@ rollback_agent() {
 
 mkdir -p "${AGENT_STATE_DIR}" 2>/dev/null || true
 
+COMPILED_RUNTIME_PATH=""
+COMPILED_RUNTIME_ACTIVE=0
+case "${KORTIX_COMPILED_BOOT_MODE:-off}" in
+  off) ;;
+  shadow|prefer|required)
+    bootstrap_agent="$(select_agent)"
+    if COMPILED_RUNTIME_PATH="$("${bootstrap_agent}" install-compiled-runtime)" \
+      && [ -f "${COMPILED_RUNTIME_PATH}" ]; then
+      echo "[entrypoint] verified compiled server.mjs at ${COMPILED_RUNTIME_PATH}" >&2
+      case "${KORTIX_COMPILED_BOOT_MODE}" in
+        prefer|required) COMPILED_RUNTIME_ACTIVE=1 ;;
+      esac
+    else
+      COMPILED_RUNTIME_PATH=""
+      if [ "${KORTIX_COMPILED_BOOT_MODE}" = "required" ]; then
+        echo "[entrypoint] compiled runtime is required but unavailable" >&2
+        exit 1
+      fi
+      echo "[entrypoint] compiled runtime unavailable; using baked agent" >&2
+    fi
+    ;;
+  *)
+    echo "[entrypoint] invalid KORTIX_COMPILED_BOOT_MODE=${KORTIX_COMPILED_BOOT_MODE}" >&2
+    exit 1
+    ;;
+esac
+
 echo "[entrypoint] daemon takeover (cwd=/, workspace=${WORKSPACE})" >&2
 while :; do
   # A staged binary from the previous run is installed before launch, never
@@ -237,10 +264,23 @@ while :; do
   agent_bin="$(select_agent)"
   started=$(date +%s)
   set +e
-  "${agent_bin}" "$@"
+  if [ "${COMPILED_RUNTIME_ACTIVE}" -eq 1 ]; then
+    KORTIX_AGENT_BIN="${agent_bin}" node "${COMPILED_RUNTIME_PATH}" "$@"
+  else
+    "${agent_bin}" "$@"
+  fi
   status=$?
   set -e
   ran=$(( $(date +%s) - started ))
+
+  if [ "${COMPILED_RUNTIME_ACTIVE}" -eq 1 ] \
+     && { [ "${status}" -eq 78 ] || [ "${status}" -eq 127 ]; } \
+     && [ "${KORTIX_COMPILED_BOOT_MODE}" = "prefer" ]; then
+    echo "[entrypoint] compiled runtime rejected launch; falling back to baked agent" >&2
+    COMPILED_RUNTIME_ACTIVE=0
+    early_exits=0
+    continue
+  fi
 
   if [ "${status}" -eq "${SWAP_CODE}" ]; then
     echo "[entrypoint] daemon requested update swap (ran ${ran}s)" >&2

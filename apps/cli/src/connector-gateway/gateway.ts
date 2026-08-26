@@ -110,7 +110,23 @@ export interface SecretLinkResult {
   expires_at: string;
 }
 
-/** Start the configured provider's authorization for a declared connector. */
+/**
+ * Mint the KORTIX connect link a human should open for a declared connector.
+ *
+ * It must be OUR `${FRONTEND_URL}/connect/<token>` url, not the provider's own
+ * page. The web transcript turns exactly that shape into the one-click Connect
+ * button (`parseSetupLinkHref` -> `SetupLinkButton`), and anything else renders
+ * as a bare underlined link — which is what a `connect.composio.dev/link/...`
+ * url did, next to a generic link preview, with no button and no popup.
+ *
+ * Despite its name this used to POST the provider-authorization route and hand
+ * back that raw url, quietly dropping `expiresInMinutes` because that route has
+ * no such parameter. The setup-link route is the one that takes it.
+ *
+ * Falls back to the provider url only when no setup link can be minted (a
+ * connector whose provider has no hosted page). A bare url is worse than a
+ * button, but far better than telling the human nothing.
+ */
 export async function mintConnectLink(opts: {
   slug: string;
   expiresInMinutes?: number;
@@ -118,6 +134,30 @@ export async function mintConnectLink(opts: {
 }): Promise<ConnectLinkResult> {
   if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
   const { client, projectId } = connectorProjectContext(opts.projectOverride);
+  try {
+    const link = await client.post<{ url?: string; app?: string | null; expires_at?: string }>(
+      `/projects/${projectId}/connect-requests`,
+      {
+        slug: opts.slug,
+        ...(opts.expiresInMinutes ? { expires_in_minutes: opts.expiresInMinutes } : {}),
+      },
+    );
+    if (link?.url) {
+      return {
+        provider: 'kortix',
+        url: link.url,
+        slug: opts.slug,
+        app: link.app ?? null,
+        connected: false,
+        is_no_auth: false,
+        session_id: null,
+        connection_id: null,
+        request_id: null,
+      };
+    }
+  } catch {
+    // Fall through to the provider url below.
+  }
   const result = await client.post<{
     provider?: string;
     app?: string | null;

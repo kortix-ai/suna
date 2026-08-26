@@ -114,6 +114,20 @@ export function shouldCountProbeFailure(input: {
   return true;
 }
 
+/**
+ * The one genuine runtime error a health body can carry.
+ *
+ * A cold boot answers `{status:'starting', reason:'schema not ready'}` (503) —
+ * `reason`/`message`/`status` are routine PROGRESS, not failures. Treating them
+ * as `store.runtimeError` painted a terminal "OpenCode runtime is not ready"
+ * card over a session that was simply booting (RC-1). Only `boot_error` — set
+ * by the daemon when a boot actually failed — is an error worth surfacing;
+ * everything else is null.
+ */
+export function runtimeErrorFromHealth(health: SessionHealthResponse | null): string | null {
+  return health?.boot_error ?? null;
+}
+
 /** Statuses whose HTTP response itself signals "nothing is home" — no threshold needed. */
 export function isImmediateOfflineStatus(status: number): boolean {
   return status === 502 || status === 503 || status === 504;
@@ -328,12 +342,26 @@ export function useRuntimeReconnect() {
           }
           case 'booting': {
             resetSandboxFail();
-            setSandboxStatus('connected');
-            setOpenCodeHealth(
-              false,
-              outcome.health?.version,
-              outcome.health?.boot_error ?? outcome.health?.message ?? outcome.health?.reason ?? null,
-            );
+            // A 503 the proxy attributes to `control_plane` was answered from
+            // the session row without dialling the box: the sandbox is PARKED
+            // (stopped/queued), not "OpenCode booting behind a live proxy". It
+            // resumes only on the next SEND, so it must not be reported as
+            // `connected`, and its stall clock must stay off (RC-3) — otherwise
+            // the idle session escalates to "taking longer than usual" forever.
+            const parked = result.hop === 'control_plane';
+            if (parked) {
+              setOpenCodeHealth(false, outcome.health?.version, null, { parked: true });
+            } else {
+              setSandboxStatus('connected');
+              // Only a real `boot_error` is an error; the routine boot `reason`
+              // ("schema not ready") is progress and must not paint a terminal
+              // card (RC-1). See `runtimeErrorFromHealth`.
+              setOpenCodeHealth(
+                false,
+                outcome.health?.version,
+                runtimeErrorFromHealth(outcome.health),
+              );
+            }
             break;
           }
           case 'failure': {
@@ -345,10 +373,13 @@ export function useRuntimeReconnect() {
           case 'healthy': {
             resetSandboxFail();
             setSandboxStatus('connected');
+            // Same rule as the booting branch: a `200` that is not yet ready
+            // still carries only routine progress in `reason`/`message`; only a
+            // real `boot_error` is an error (RC-1).
             setOpenCodeHealth(
               isRuntimeReady(outcome.health),
               outcome.health?.version,
-              outcome.health?.boot_error ?? outcome.health?.message ?? outcome.health?.reason ?? null,
+              runtimeErrorFromHealth(outcome.health),
             );
             break;
           }

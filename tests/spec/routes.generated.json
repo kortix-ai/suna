@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 598,
+  "count": 600,
   "routes": [
     {
       "method": "GET",
@@ -935,6 +935,10 @@
       "path": "/v1/connectors/projects/:projectId/policies"
     },
     {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests"
+    },
+    {
       "method": "POST",
       "path": "/v1/connectors/webhook/pipedream"
     },
@@ -949,6 +953,14 @@
     {
       "method": "GET",
       "path": "/v1/generation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/compiled-checkout"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/compiled-runtime"
     },
     {
       "method": "POST",

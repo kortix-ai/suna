@@ -1,6 +1,7 @@
 import './environment-secret';
 import { config } from './config';
-import { buildServer } from './server';
+import { bunRequestBodyCeilingBytes } from './request-body-ceiling';
+import { buildServer, perRequestCapBytes } from './server';
 
 const { app, traces, inflightRequests } = buildServer();
 
@@ -21,6 +22,11 @@ const server = Bun.serve({
   // (pipeline/streaming.ts INACTIVITY_TIMEOUT_MS), and a real client disconnect
   // still aborts req.signal (a separate mechanism, unaffected by idleTimeout).
   idleTimeout: 0,
+  // Bun's own body ceiling, kept above the pipeline's per-request cap so an
+  // over-limit body is refused by the pipeline (logged, typed 413) and never
+  // by Bun (silent plain-text 413 / mid-upload socket close). See
+  // request-body-ceiling.ts.
+  maxRequestBodySize: bunRequestBodyCeilingBytes(perRequestCapBytes),
   fetch: app.fetch,
 });
 

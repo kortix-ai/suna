@@ -21,6 +21,153 @@ linked, not inlined.
 
 ## Register
 
+### A release-gate flow is added or un-quarantined only in the PR that carries its green deployed run (2026-08-26)
+
+**When:** adding a flow with `requires: ['daytona']` (it never runs in local
+CI), or deleting a `quarantine:` field. Local lanes skip these flows, so a
+green PR proves nothing about them; the first time they execute is the next
+production release gate. Two did exactly that in v0.13.6 (gate run
+32992496089): SESS-23, un-quarantined in `09aa887a55` with a comment saying
+the wake path "must prove the contract on every run", failed on the first run
+with the SAME stop→wake 503 its old quarantine text described; CONN-26, a
+new real-LLM flow (`gpt-5.6-luna` must call `add_connector` within 300 s),
+added in `5b070ebb18` by direct push, timed out at 392 s and left no
+transcript. Each cost a staging hotfix + rebuild + redeploy (~25 min) inside
+the release, on top of a GitHub Actions outage.
+Rules: (1) the PR that adds or un-quarantines a deployed-only flow links a
+green `tests-release.yml` dry run (`gh workflow run tests-release.yml --ref
+staging -f expected_sha=<sha>`) — no link, no merge; (2) an LLM-behaviour
+flow captures the transcript on timeout, or it cannot be diagnosed from CI;
+(3) a `quarantine:` text is a claim about the product — re-quarantine with the
+new evidence rather than arguing with the old text. Re-quarantined in
+#6927/#6928 (SESS-23) and #6929/#6930 (CONN-26).
+*Enforcer:* none — a check that a PR touching `quarantine:` or a
+`requires: [... 'daytona']` flow links a tests-release run is the TODO.
+
+### A runner migration re-tests every setup action; one job on a different major is a latent break (2026-08-26)
+
+**When:** moving a workflow to a different runner image (Blacksmith), or
+bumping a setup action (`pnpm/action-setup`, `setup-node`) in ONE job of a
+multi-job workflow. `tests-release.yml` ran `pnpm/action-setup@v4` in three
+jobs and `@v6` in the `deployed browser shard` only (dependabot #6343 bumped
+one). On GitHub's `ubuntu-latest` no pnpm is preinstalled, so both majors
+behaved the same and the v0.13.5 gate was green. The Blacksmith image ships
+pnpm v11.19.0 at `PNPM_HOME`; `@v6`'s self-installer took its "Switching pnpm
+from v11.19.0 to v8.11.0" path, warned `Failed to create bin ... @pnpm/exe ...
+ENOENT`, and left a standalone `@pnpm/exe` on PATH. That binary runs on its
+own bundled Node (18.5.0), so `pnpm install --frozen-lockfile` failed
+`engine-strict` against `eslint@9.39.4` (`Got: v18.5.0`) although
+`setup-node` had put 22.22.0 on PATH one step earlier. All three browser
+shards of the v0.13.6 gate died in ~60 s; the api shards on the SAME runner
+label passed on `@v4`.
+Rules: (1) every job in a workflow uses one major of each setup action — a
+dependabot bump that touches one `uses:` line of four is a review reject;
+(2) after a runner-image migration, run the release gate as a dry run
+(`gh workflow run tests-release.yml --ref staging -f expected_sha=<sha>`)
+BEFORE the next promote — Blacksmith (#6906) moved the gate on 2026-08-25 and
+the first real run was the release; (3) a whole-shard failure in well under
+the usual runtime is a setup failure — read the install step, not the tests
+(same class as the 2026-08-18 lockfile entry).
+*Incident:* v0.13.6 release PR #6923, gate run 32992496089; fixed by #6925 /
+#6926 (pin `@v4`); ~1 h of release delay on top of the GitHub Actions outage.
+*Enforcer:* none — a lint that every `pnpm/action-setup@` in a workflow file
+shares one major is the TODO.
+
+
+### A row lock held to COMMIT makes batch size a blast radius, and a 500 turns backpressure into a livelock (2026-08-26)
+
+**When:** writing anything that inserts into `kortix.audit_events`, sizing an
+audit batch, or triaging `insert into "kortix"."audit_events"` blocking another
+one in `pg_stat_activity`.
+`kortix.audit_prepare_event` allocates the per-session sequence and hash-chain
+head from `kortix.audit_session_sequences`; PostgreSQL holds that row lock until
+the inserting transaction COMMITs. So the lock is held for the WHOLE statement,
+not the allocation: one 200-row ingest pinned a session for its full duration and
+one 100-row queue flush built in arrival order pinned up to 100 sessions at once.
+Rules: (1) one statement never spans two sessions; (2) chunk a batch so the lock
+is held per chunk and committed chunks survive a later failure; (3) give the
+audit pool a `lock_timeout` far below its `statement_timeout` — a lock wait is
+not work; (4) report contention (57014/55P03/40001/40P01) as a retryable 503 with
+`Retry-After`, never a 500, and back the client off exponentially.
+*Incident:* Essentia self-host 2026-08-26 — `POST …/audit/events` returned
+500 [57014] 445 times in 3h, each at ~10s, while the sandbox relay's flat 1s
+retry re-entered the same lock queue and kept the convoy alive. Predecessor:
+PR #6702's dedicated audit pool isolated the damage but did not remove it.
+*Enforcer:* `statementBatches` + its tests (`apps/api/src/shared/audit-queue.ts`),
+`isAuditContentionError` tests (`apps/api/src/shared/audit-db.test.ts`), the
+per-session lock-scope integration test in
+`packages/db/scripts/centralized-audit-v2.integration.test.ts`.
+
+### A CI lane that runs inside a third-party sandbox inherits that provider's availability, and a fallback nobody exercises is not a fallback (2026-08-26)
+
+**When:** deciding where a test lane executes, or adding a provider fallback
+to any CI path. The PR gate ran each lane inside a Platinum sandbox with
+`auto` fallback to Daytona. On 2026-08-25 Platinum restores timed out for ~an
+hour; every lane that fell back landed on a Daytona guest whose kernel
+(6.18.15) could not mount overlay2, so `dockerd` never started and the lane
+exited 3 — on runs 32905168237, 32906337979, 32908378870 and all three
+attempts of 32909110032. The fallback had never been exercised under load;
+it added a second provider's failure modes instead of removing the first's.
+The runner (8 vCPU / 32 GB, Docker, cached pnpm store and Docker images)
+could run the lane itself: core 2m16s and browser 4m30s natively versus ~5 min
+each through the sandbox. Rule: **run a lane on the runner unless the lane
+needs something the runner cannot provide (a public origin, a specific
+kernel, GPU); if a lane must use a provider, rehearse the fallback path
+weekly or delete it.** PR #6906 removed the sandbox-worker path for the PR
+gate; `deploy-preview.yml` keeps a sandbox only because a preview needs a
+public HTTPS origin.
+*Enforcer:* `tests/unit/sandbox-workflow.test.ts` "has no cloud-sandbox
+worker path left" fails if `tests.yml` or `tests-pr.yml` names a provider
+again.
+
+### A guard that tolerates its own tool being absent guards nothing (2026-08-25)
+
+**When:** writing any CI step of the form `if <tool> <pattern> … 2>/dev/null; then fail`.
+If the tool is missing, the command fails, `2>/dev/null` hides why, the `if` reads
+false, and the step prints its success line. Use a tool every runner image ships
+(`grep`), or probe for it (`command -v rg || exit 2`) BEFORE the check; and pin
+the pattern in one place the producer also uses (`GUARD_PATTERN_SOURCE` in
+`tests/src/core/scrub.ts`), so the writer scrubs exactly what the guard greps.
+*Incident:* `Guard test artifacts against secrets` in tests.yml / tests-release.yml /
+tests-browser-nightly.yml called `rg`, which GitHub's ubuntu-24.04 image does not
+ship. It reported "No secret-shaped values found." on every run since it was
+written. The first Blacksmith run (image ships rg) failed it: 32 secret-shaped
+values — 8 `kortix_pat_*`, `kortix_sa_*`, setup-link `{accountId,nonce,exp}`
+tokens — inside the 73 MB `results.json` + `report.html` uploaded as PUBLIC
+workflow artifacts on every PR (tokens of an ephemeral local stack; the
+release gate would have uploaded STAGING tokens the same way). Fixed in the
+Blacksmith follow-up PR: write-time shape scrub in `report.ts` (proven 32 → 0
+on the real artifact) + grep-based guard.
+*Enforcer:* `tests/unit/scrub-secret-shapes.test.ts` — scrubber vs guard
+pattern parity, `writeResults` output passes the guard, and every guard step
+uses `grep -rEIl "$pattern"` with the shared pattern, never `rg`.
+
+### A runner label is a tested contract, and a third-party runner pool is a deploy dependency (2026-08-25)
+
+**When:** changing any `runs-on` / matrix `runner:` in `.github/workflows/`,
+including an auto-generated PR (Blacksmith's Migration Wizard, Dependabot).
+Two rules. (1) Run the workflow-pinning unit lane before merging —
+`pnpm --dir tests test:unit` — because `tests/unit/*-workflow.test.ts` pin
+runner labels, cache directives and step order as source text; a label
+rewrite that touches nothing else still turns `main` red. (2) Never commit a
+bare runner label. Every Linux `runs-on` is
+`${{ vars.CI_RUNNER_<tier> || '<blacksmith label>' }}` so a repository
+variable can move a tier back to GitHub-hosted without a PR — a PR cannot fix a
+runner outage, its checks need runners. Off-Blacksmith the Docker actions
+fall back (cold) instead of failing. Runbook: `docs/runbooks/ci-runners.md`.
+*Incident:* PR #6901 (wizard, 125 label rewrites) merged at 22:00 UTC with its
+`warm core worker` check red on 3 `image-build-speed-workflow.test.ts`
+assertions (`ubuntu-24.04-arm` pinned) and three amd64 matrix legs left on
+`ubuntu-latest`; in the following hour Deploy Dev jobs waited 14 s – 6 min in
+`queued` for a Blacksmith runner while ≤3 ran. No prod impact.
+*Enforcer:* `image-build-speed-workflow.test.ts` "every Linux job keeps the
+Blacksmith runner kill switch" rejects any bare label in any workflow.
+*Addendum (same day):* a vendor's cache claim is not a measurement. Five
+consecutive builds of one `cache-key` on Blacksmith's sticky-disk builder
+reused 0 layers (`WORKDIR /app` re-executed) while the registry cache reused
+34–45 on the same Dockerfile; `grep -c ' CACHED'` on the build log is the only
+proof of a warm build. Keep `cache-from`/`cache-to: type=registry` until a
+re-measurement shows the sticky disk hitting (PR #6905).
 ### A provider handed to the provisioner is a PREFERENCE, not a lock (2026-08-26)
 
 **When:** passing a sandbox provider into `provisionSessionSandbox`, or reading
@@ -2431,3 +2578,670 @@ above passed every unit test in the suite. Assert the process afterwards:
 leak); the 60x27 MiB overload that killed the container now peaks at 827 MiB
 and stays healthy. Enforcement: `read-bounded-body.test.ts` abort cases,
 `memory-envelope.test.ts` backpressure case.
+
+## A sandbox model failure is a version question before it is a code question
+
+Found 2026-08-25 on the Essentia box. Native-mode sessions on
+`amazon-bedrock/global.openai.gpt-5.6-sol` failed every reasoning stream:
+`Type validation failed` on `contentBlockDelta.delta.reasoningContent.redactedContent`.
+The first diagnosis blamed an "old SDK in the opencode fork" and planned a
+fork patch. `github.com/sst/opencode` redirects to `anomalyco/opencode`; it is
+upstream. Upstream had already fixed the crash (anomalyco/opencode#43686 →
+#43909, `@ai-sdk/amazon-bedrock` 4.0.112 → 4.0.158, first release v1.18.22).
+Our pin in `packages/shared/src/runtime-versions.json` was 1.18.19.
+
+**Rules.**
+1. For any failure inside the sandbox runtime, read the pinned OpenCode
+   version first, then the dependency pins of that exact tag
+   (`raw.githubusercontent.com/anomalyco/opencode/v<tag>/packages/opencode/package.json`)
+   and the upstream issue tracker. Diagnose code only after the pin is current.
+2. Bump OpenCode through the lockstep sites only: `runtime-versions.json`
+   (`opencode` + `opencodeSdk`), `packages/sdk/package.json`
+   (`@opencode-ai/sdk`), and the shared Dockerfile goldens. The Dockerfile,
+   the runtime-assets manifest, and the plugin pin read the JSON.
+3. Audit the upstream diff between the two tags for `packages/opencode/src`
+   before merging; record behavior changes that touch the daemon (turn
+   termination, retry classification, provider transforms).
+4. Do not rebuild sandboxes to propagate. The manifest states the version;
+   the daemon converges idle-only and restarts opencode. Verify on one old box:
+   `GET <sandbox_url>/global/health` reports the new version and
+   `/opt/kortix/runtime-assets-state.json` records it.
+
+*Automation:* `apps/api/src/snapshots/__tests__/config-deps-version.test.ts`
+guards the lockstep pins; the shared sandbox goldens fail on a pin drift.
+
+*Incident:* no outage. Essentia's Bedrock model was unusable in native mode
+until PR #6873 (1.18.23) deployed and the box updated with
+`kortix self-host update --version dev`.
+
+## A provider's 204 is not a renewal; read the deadline back
+
+*Incident (2026-08-25, Essentia self-host):* four agent turns died mid-work,
+each exactly one hour after the sandbox was created or resumed. The last
+assistant message of each was `tokens 0/0/0, parts: []` — an LLM call that was
+in flight when the VM froze. Kortix had renewed every box every 20 s
+(`[active-turn-renewal]`, `errors:0`; E2B API log: 375 × `POST
+/sandboxes/<id>/timeout → 204`). E2B's `KeepAliveFor` clamps every renewal to
+the team's `max_length_hours`; the Essentia team sat on tier `base_v1`
+(`max_length_hours = 1`, the upstream migration default) with a matching
+`project_limits` row, so `endAt` never moved past `startedAt + 1h` and E2B
+paused the box (`sandbox_pause_initiated pause_reason=timeout`).
+
+**Rules.**
+1. `renewLifecycle` (`apps/api/src/platform/providers/e2b.ts`) reads `endAt`
+   back after `setTimeout` and throws `E2BLifecycleRenewalIgnoredError` when the
+   deadline did not advance to within `KORTIX_E2B_RENEWAL_TOLERANCE_MS` of the
+   backstop. The reaper and the active-turn renewal loop count it as an error
+   and the log names `max_length_hours`.
+2. A self-hosted E2B cluster must run its Kortix team at
+   `max_length_hours ≥ 24` (`tiers` and `project_limits`; the `team_limits`
+   view prefers `project_limits`). The cap is a ceiling on continuous running
+   time, not a lifetime: Kortix's own `deadline_at` still stops idle boxes.
+3. Existing sandboxes keep the cap they were created with. After raising it,
+   pause+resume (or restart) the live boxes; a fresh `POST /timeout` must move
+   `endAt`.
+4. The fingerprint of this class of failure: an assistant message with
+   `tokens 0/0/0` and no parts, created seconds before a provider pause; the
+   OpenCode log ends at `llm runtime selected` with no stream line after it.
+
+*Automation:* `apps/api/src/platform/providers/e2b.test.ts` — "refuses to
+report a renewal the provider clamped".
+
+## The runtime's body limit is the one that logs, never the one that is silent
+
+*Incident (2026-08-25, Essentia):* three empty assistant messages in two
+sessions were `413 Request Entity Too Large` on image-heavy turns (381k input
+tokens, 118 inline screenshots). Nothing in the gateway log explained them:
+Bun's own `maxRequestBodySize` default (128 MiB) equals
+`DEFAULT_MAX_REQUEST_BYTES`, so Bun refused the body before `fetch()` ran —
+plain-text 413, no `request_too_large` step, and a mid-upload socket close on
+the first attempt (`Cannot connect to API: The socket…`).
+
+**Rules.**
+1. `Bun.serve` in `apps/llm-gateway/src/main.ts` sets `maxRequestBodySize`
+   strictly above the pipeline's per-request cap
+   (`bunRequestBodyCeilingBytes`), so an over-limit body is refused by the
+   pipeline with its logged, digit-free 413.
+2. Any host runtime that enforces a body limit of its own (Bun, Caddy, an
+   ALB) must be configured above the application's cap, or the application's
+   limit is decoration.
+3. Raise a self-host gateway's cap through `GATEWAY_MAX_REQUEST_BYTES`; the
+   in-flight memory budget clamps it to what the process can hold.
+
+*Automation:* `apps/llm-gateway/src/request-body-ceiling.test.ts`.
+
+## The daemon owns the OpenCode binary; OpenCode must never upgrade itself
+
+*Incident (2026-08-22 and again 2026-08-25, Essentia):* a human ran `opencode`
+in the Session terminal. OpenCode's autoupdate (`autoupdate` unset = on)
+installed the newer version with plain `pnpm add -g` — no postinstall — leaving
+a 479-byte launcher stub, deleting the old global dir and dangling
+`/opt/kortix/opencode.current`. The running server survived on a deleted
+inode; the next restart booted the stub ("Still waking this session up").
+
+**Rules.**
+1. `buildOpencodeConfigContent` always emits `autoupdate: false`; a base
+   config cannot turn it back on. The composed Kortix config is never
+   `undefined` any more.
+2. Version changes reach a box only through the runtime-assets manifest and
+   `installOpencodeVersion` (`pnpm add -g --allow-build=opencode-ai`).
+
+*Automation:* `connector-mcp-config.test.ts` — "always disables OpenCode
+autoupdate".
+
+## A boot budget measures lack of progress, not wall-clock
+
+*Incident (2026-08-25 17:23–17:25, Essentia):* both reopened sessions failed
+to wake. The resume converged OpenCode 1.18.19 → 1.18.23 (manifest bump live
+since the updater restarted the API) and then sat through the new version's
+53 s first init. `/start` polled `starting` for 83 s and the fixed
+`STALE_OPENCODE_NOT_READY_MS = 90 s` budget parked both boxes as
+`runtime_boot_failed`; the automatic restart then booted in 20 s because the
+install had already landed.
+
+**Rules.**
+1. Every not-ready 503 from the daemon carries `X-Kortix-Boot-Phase`
+   (`boot-phase.ts`: last boot mark, OpenCode state, runtime-assets activity
+   such as `installing-opencode@<v>`, and the not-ready reason).
+2. The API restarts the per-reason clock whenever that phase changes
+   (`opencodeReadyWaitPatch`); `STALE_OPENCODE_NOT_READY_MS` now bounds time
+   without progress. `STALE_OPENCODE_BOOT_HARD_MS` (10 min from first
+   observation) bounds a boot that changes phase forever. A stub launcher
+   respawning in a loop never changes phase and is still caught at 90 s.
+3. Do not "fix" a slow legitimate boot by raising the fixed budget; expose the
+   progress and budget that.
+
+*Automation:* `unit-session-restart-url-contract.test.ts` ("progress-aware
+OpenCode boot budget"), `boot-phase.test.ts`, `proxy-auth.test.ts` ("names the
+boot phase").
+
+## A runtime started from `stopped` owns no turn; settle and redeliver on the wake
+
+*Incident (2026-08-25, Essentia):* the provider paused two boxes mid-turn. One
+was woken by the UI through the proxy before the reaper confirmed the stop:
+the fresh runtime answered `idle`, the open turn closed `completed`, and the
+user saw the agent "just stop" with nothing to resume. The other closed
+`runtime_gone` but its accepted prompt was never redelivered (only
+never-accepted deliveries were), so the user typed "go on".
+
+**Rules.**
+1. Every path that starts a provider-`stopped` box (`wakeSandbox` in the
+   preview proxy, the `/start` wake finalize) calls
+   `recoverTurnsAfterRuntimeRestart`: open ledger rows → `runtime_gone`,
+   turn authority dropped, each prompt redelivered DUE (`hold:false`).
+2. A stop the PROVIDER originated (`stopReason: provider_reconcile`) requeues
+   accepted prompts too (held); a stop Kortix chose keeps the old rule.
+3. A turn's verdict is never derived from a runtime that did not run it.
+
+*Automation:* `runtime-restart-recovery.test.ts`.
+
+## A refresh never converges a booting runtime; a stub launcher is never spawned
+
+*Incident (2026-08-25, Essentia):* the session-open refresh (env-sync) ran the
+runtime-assets pass during a resume, installing OpenCode 1.18.23 and
+restarting it under the boot; and the PATH launcher on two boxes was the
+479-byte pnpm postinstall stub, one restart away from a dead session.
+
+**Rules.**
+1. `refreshMayConvergeRuntime`: the refresh route schedules a reconcile only
+   when OpenCode is serving (`ok`); main.ts owns the post-boot pass.
+2. `isStubOpencodeLauncher`: the PATH launcher is skipped when it is (or shims
+   to) the postinstall stub; resolution falls through to the managed links.
+   Conservative: anything unreadable is not a stub.
+
+*Automation:* `refresh-converge-guard.test.ts`, `opencode-binary.test.ts`.
+
+## Window inline images inside the sandbox; the edge is too late
+
+*Incident (2026-08-25, Essentia):* vision-heavy turns accumulated 118 inline
+screenshots (>128 MiB per request). The gateway's image window keeps 12, but
+only after the body has crossed the wire; the runtime's body ceiling refused it
+first and the turn died with an empty assistant message.
+
+**Rules.**
+1. Every gateway session routes OpenCode through the daemon's localhost LLM
+   proxy (`main.ts`, not only warm hot-swap forks). The proxy applies the same
+   window (`llm-image-window.ts`, default keep 12 of ≤20) to `chat/completions`,
+   `messages` and `responses` bodies BEFORE they leave the box, and lifts its
+   own body ceiling so a large body can be shrunk rather than refused.
+2. Kill switch `KORTIX_LLM_PROXY_DISABLE=1` (direct provider config);
+   `KORTIX_LLM_MAX_INLINE_IMAGES=0` disables the window only.
+3. A live gateway enable/disable (`/kortix/env`) keeps the proxy's upstream +
+   token in step (`applyLlmGatewayMode`).
+
+*Automation:* `llm-image-window.test.ts`, `llm-proxy.test.ts` ("in-sandbox
+inline image window").
+
+## A gateway may not refuse a request parameter the client sends by default
+
+Found 2026-08-25 on dev, one hour after #6887 deployed. The bedrock adapter
+answered `400 unsupported_param` for a `reasoning_effort` it could not map
+(Nova, Grok, DeepSeek on Bedrock). The first turn of a fresh project — the
+auto-seeded `amazon-bedrock/xai.grok-4.6`, no tier picked — failed with that
+400. opencode attaches a default reasoning effort to every reasoning-capable
+model, so refusing the parameter refused the model, managed Grok included.
+Reverted in #6893 to a documented drop.
+
+**Rules.**
+1. Before a gateway refuses a request field, capture what opencode sends for a
+   turn where the user set nothing. A field present by default is part of the
+   model contract, not a user choice.
+2. Verify a provider wire shape against the real provider before mapping it.
+   The AI SDK's mapping is a hint: `@ai-sdk/amazon-bedrock` 5.0.59 emits
+   `reasoning_effort` for OpenAI ids; Bedrock GPT-5.6 rejects it with
+   `unknown_parameter` and accepts `reasoning: { effort }` (verified with the
+   Essentia account, us-west-2, every published tier).
+3. Prefer "drop and document" over "refuse" for a field with no verified
+   mapping; log the drop so the gap is visible.
+4. A dev verification with a fake provider key proves routing only. Use a real
+   key (a short-lived Bedrock bearer token from `aws-bedrock-token-generator`
+   on the provider account's profile) before calling a wire mapping verified.
+
+*Automation:* `packages/llm-gateway/src/transports/ai-sdk/ai-sdk.test.ts`
+pins the drop for Nova/Grok and the `reasoning.effort` shape for OpenAI ids.
+
+*Incident:* dev only; every Grok-on-Bedrock turn 400'd between the #6887
+deploy (`2635791cf1`) and the #6893 deploy (`77ec6b2307`), about 70 minutes.
+Prod was not promoted in that window. No data loss.
+
+## A 400 that names one parameter is never the turn's final answer
+
+*Incident (2026-08-25 19:40Z, Essentia session 58da74d4):* the gateway
+forwarded a reasoning field in a shape Bedrock's GPT-5.6 profile rejects
+(`400 unknown_parameter: reasoning_effort`); every turn on the model died with
+an empty assistant message until the wire shape was verified and corrected
+(#6893). The project's configured default was the trigger; the live mitigation
+was stripping it from `project_llm_routing_policies.model_generation_config`.
+
+**Rules.**
+1. `isUnknownParameterRejection(err, param)` (errors.ts) recognises an
+   upstream refusing ONE field. The chat handler re-dispatches a Bedrock
+   candidate once without `reasoning_effort` and remembers the model
+   (`noteBedrockOpenAiRejectsReasoningEffort`); the adapter never attaches the
+   field for a remembered model again. One retry, never the turn.
+2. The verified wire (#6893) stays the primary path; this is the backstop for
+   the next unverified claim, not a substitute for verifying.
+
+*Automation:* `errors.test.ts`, `simple-handler.test.ts`, `ai-sdk.test.ts`
+("never receives it again").
+
+## Regenerating a CA on every listener restart breaks trust and the CI clock
+
+*Incident (2026-08-25):* the daemon egress shim minted a fresh RSA CA on every
+rule change (`syncEgressShim` restart). Shells that had sourced the previous
+trust bundle would fail TLS until re-sourced, and node-forge's keygen (1-4 s)
+made the packages CI lane time out on the restart tests.
+
+**Rules.** One CA per daemon process (`sessionCa` in `egress-shim/index.ts`),
+reused across restarts; tests reset it via `__resetEgressShimForTests`.
+Timing tests keep at least a 5× margin between the paced event and the budget
+they assert (relay-transport "measures SILENCE").
+
+## Every blocking OpenCode endpoint must be exempted in BOTH proxy timeout layers
+
+Found 2026-08-26. `POST /session/:id/summarize` (the /compact flow) failed
+100% of the time with `503 {"error":"upstream unreachable","details":"The
+operation was aborted."}`. OpenCode holds the summarize response open until
+the whole summary turn completes (30s+ on a large model), but both proxy
+layers only exempted `message|command` from their short response timeouts:
+the in-sandbox daemon (`apps/kortix-sandbox-agent-server/src/proxy.ts`,
+`isBlockingTurnRequest`, 10s generic bound — the layer that actually emitted
+the error) and apps/api (`sandbox-proxy/preview-retry-budget.ts`,
+`isLongTurnCompletionRequest`, 15s bound). Because summarize was also absent
+from `isNonIdempotentSessionWrite` (`prompt-dedupe.ts`), the apps/api retry
+loop re-POSTed the non-idempotent summarize on each abort, stacking failed
+summary-attempt turns into the transcript. This is the THIRD instance of the
+same shape: `/message` (original), `/command` (2026-08-11, 4x duplicate
+sends), now `/summarize`.
+
+**Rules.**
+1. Any OpenCode endpoint that withholds response headers until a model turn
+   finishes must be listed in BOTH predicates (`isBlockingTurnRequest` in the
+   daemon, `isLongTurnCompletionRequest` in apps/api) AND in
+   `isNonIdempotentSessionWrite` so the retry loop never re-sends it.
+2. If the endpoint's request body is byte-identical between two deliberate
+   user retries (command: `{command,arguments}`, summarize:
+   `{providerID,modelID}`), it must be key-gated in
+   `shouldClaimPromptDelivery` — a keyless content-hash claim silently
+   swallows the user's own retry as `{"deduplicated":true}`.
+3. The daemon fix reaches only NEW sandboxes (the daemon is baked into the
+   snapshot); apps/api fixes apply on API restart. Verify on a session
+   created AFTER the snapshot rebuild, not on the box that reproduced it.
+
+*Automation:* the cross-layer drift test
+(`apps/kortix-sandbox-agent-server/src/__tests__/blocking-turn-timeout.test.ts`,
+"the two proxy layers agree on which calls block") drives both predicates
+with the same paths and fails on any drift, and now covers `summarize`;
+`preview-retry-budget.test.ts` + `prompt-dedupe.test.ts` pin the apps/api
+side.
+
+*Incident:* no prod outage — caught on local dev, but the identical code
+paths ship to prod, where every /compact would have 503'd the same way.
+
+## A turn probe never lists the whole root — the list is unbounded, the budget is not
+
+*Incident (2026-08-25, Essentia sessions 9c8749ac and 9df2a873):* the reaper
+asks the daemon `GET /kortix/health?turn=1&turn_session_id&turn_message_id`
+and acts on `turn_in_flight`. The daemon answered it by fetching the root's
+ENTIRE OpenCode message list inside a 5 s budget. On 9c8749ac that list was
+276.7 MB (inline base64 image parts; `?limit=20` alone was 26 MB). The read
+never fit, the daemon answered `turn_in_flight: null` ("could not tell") on
+every visit, the reaper drip-extended the box on that non-answer for 2.5 h
+after OpenCode had finished the turn (`exiting loop` 21:00:18Z, probe still
+null at 22:10Z), and the session rendered "working" until the ledger row was
+settled by hand.
+
+**Rules.**
+1. `observeOpencodeDelivery` / `inspectOpencodeRoot` read the newest
+   `TURN_PROBE_WINDOW` (12) messages via `?limit=` — the newest N in
+   chronological order (verified on OpenCode 1.18.23) — with a 20 s budget.
+   A prompt older than the window is proved by `GET /session/:id/message/:id`
+   (~400 bytes; 404 `NotFoundError` when absent). Only a proven absence is
+   `abandoned`; a failed by-id read stays `null`.
+2. Any new daemon read of a session transcript states its bound in the
+   request. Roots grow for hours; "the list" is never small.
+3. The live opencode port is a property of the PROCESS (`childPorts`,
+   `livePort()` in opencode.ts), never a variable beside it. Same box, same
+   day: the daemon reported `starting` on 4096 for 2 h while its own child
+   (pid 2423) served on 4097 — every prompt 503'd and no turn end was ever
+   observed. The verified reload (two opencodes, promote the proven one) is
+   by design; a bookkeeping variable that can drift from the process is not.
+   The verifier also declines when the candidate half already answers: the
+   incumbent would otherwise "prove" a candidate that died on EADDRINUSE and
+   promotion would kill the only opencode the box has.
+4. The daemon log is on the box: every logger line also lands in
+   `KORTIX_DAEMON_LOG_FILE` (default `/opt/kortix/logs/daemon.log`, rotated at
+   32 MiB to `.1`), readable with `GET /kortix/logs?source=daemon|opencode|all&tail=N`
+   through the sandbox proxy (`/v1/p/<external_id>/8000/kortix/logs`). A
+   daemon whose only log is a stream nobody keeps cannot be debugged after
+   the fact — that is why this entry says "unproven".
+5. Box telemetry is on record: `[resources]` every 60 s and on every OpenCode
+   state change (memory, cgroup limit + oom_kill counter, load, disk on
+   /workspace + /opt/kortix + /tmp, daemon + opencode RSS, duplicate
+   `opencode serve` pids), `[resources] pressure` when a threshold is
+   crossed, and `GET /kortix/diag` returns state + resources + runtime
+   report + both log tails in one document. Ask the box before guessing.
+
+*Cost of the old probe, measured (2026-08-25 23:12Z, session 9df2a873):* the
+reaper visited that box 345 times in one hour; every visit made OpenCode
+JSON-serialise its 140 MB root (~48 GB of serialisation per hour) for an
+answer that never fit the budget. OpenCode reached 6.48 GB RSS on an 8 GB
+box and the kernel OOM-killed it mid-turn (`dmesg`: `Killed process 1506
+(opencode.exe) anon-rss:6484532kB`). An unbounded probe is not only blind,
+it is a memory attack on the process it probes.
+
+*Automation:* `orphaned-turn-finalize.test.ts` ("turn probes read a bounded
+window, never the whole root"); the stub fetch there serves `?limit=` and
+`/message/:id` the way 1.18.23 does.
+
+## Bun's fetch has a hidden 300 s idle timeout — every model hop opts out
+
+*Incident (2026-08-25 22:04Z, Essentia session 9c27242e):* a turn on
+`codex/gpt-5.6-sol` at reasoning effort `max` died after 273.8 s with
+`{"message":"The operation timed out.","code":"upstream_timeout"}`. Nothing in
+this repo sets a 300 s timer; the gateway's own budgets are 90 s / 5 min for
+response headers and 90 min for body inactivity. Measured on Bun 1.3.14 the
+same night: `fetch` throws `TimeoutError: The operation timed out.` at 300.0 s
+when the socket is idle (no headers, or headers then silence); a stream that
+drips a byte every 60 s lives past 420 s; a caller `signal` does NOT disable
+it; `timeout: false` (or `0`) does. The provider was still thinking.
+
+**Rules.**
+1. Every fetch on the model path passes `timeout: false`: gateway → provider
+   (`upstreamFetch`, `packages/llm-gateway/src/upstream-fetch.ts`, used by
+   both `callUpstream` and the AI-SDK transport), API relay → gateway
+   (`apps/api/src/llm-gateway/wire.ts`), box llm-proxy → API
+   (`kortix-sandbox-agent-server/src/llm-proxy.ts`). The gateway's explicit
+   timeouts are the only ones on that path.
+2. A timeout you did not write is still yours to know about. When an error
+   message is not in the repo, measure the runtime before blaming the
+   provider: `bun-idle.ts` (headers-then-silence, no-headers, drip, option
+   variants) took 12 minutes and settled it.
+
+*Automation:* `packages/llm-gateway/src/upstream-fetch.test.ts` (option is
+forwarded; Bun accepts it on a real request).
+
+## Image bytes never live in the transcript; memory is guarded before the kernel; an unknown probe backs off
+
+*Incident (2026-08-25 23:12Z, Essentia session 9df2a873):* the kernel OOM-killed
+OpenCode at 6.48 GB RSS on an 8 GB box (`dmesg`: `Killed process 1506
+(opencode.exe) anon-rss:6484532kB`), mid-turn, leaving an empty assistant
+husk. Two forces met: the transcript held 275 MB of base64 tool screenshots in
+`part.state.attachments[].url` (352 of 538 tool parts) which every LLM step
+and every list re-serialised, and the reaper re-probed the box 345 times in
+one hour after `unknown` (two replicas, 20 s cadence), each probe forcing a
+full-transcript serialisation. OpenCode's own compaction clears old tool
+output text and stops SENDING old attachments, but never removes bytes from
+storage (`session/compaction.ts`, `message-v2.ts`); there is no native
+"store a path instead" for tool attachments (`tool/read.ts` writes `data:`).
+
+**Rules.**
+1. `attachment-offload.ts` (daemon): when idle, attachments older than the
+   newest 12 per session (and every one OpenCode marked `compacted`) move
+   to `~/.local/share/kortix/attachments/<id>`; the row keeps a 1×1 PNG
+   `data:` placeholder (valid for OpenCode's model conversion, the AI SDK,
+   the media-extraction path) plus `kortix:{offloaded,sidecar,bytes,mime}`.
+   Optimistic UPDATE on `time_updated`; never the newest message; never
+   during a turn. Verified on 1.18.23: OpenCode serves the rewritten row on
+   the next read (7 ms UPDATE, no restart). `/kortix/part` serves sidecar
+   bytes and searches nested `state.attachments` (tool screenshots 404'd
+   before).
+2. Memory guard (`resources.ts`): ≥80 % box/cgroup memory → 10 s sampling;
+   ≥92 % with a turn in flight → `POST /session/:id/abort`, turn-stream
+   `kind:end status:error error_name:SandboxMemoryGuard` with the numbers,
+   then an offload pass. One action per crossing; re-armed below 80 %.
+   `KORTIX_MEMORY_GUARD_PCT` overrides.
+3. Reaper (`box-reaper.ts`): an `unknown` observation backs the PROBE off
+   per sandbox (20 s → 5 min, per replica); the drip still extends.
+   `probeBackoff` clears on the first readable answer.
+
+*Automation:* `attachment-offload.test.ts` (real bun:sqlite fixture in the
+1.18.23 row shape, optimistic-skip race), `part-route-attachments.test.ts`,
+`resources.test.ts` ("memory guard"), `sandbox-reaper.test.ts` ("not
+re-probed until its back-off elapses").
+
+## A non-prod secrets profile must never hold a production-reaching credential
+
+Found 2026-08-26 while scoping Dotenvx Armor access. `apps/api/.env` — the
+local profile every Armor member decrypts daily — carried 22 secrets
+byte-identical to `apps/api/.env.prod`. One of them, `SUPABASE_MGMT_TOKEN`,
+was a personal Supabase management token that executed SQL on the Kortix
+PROD project (`POST /v1/projects/<ref>/database/query` → 201) and was used
+nowhere in the repository. Restricting the PROD keypair to the owner had
+protected nothing, because the same credentials lived in the file everyone
+had.
+
+**Rules.**
+1. Classify a profile by what its credentials can reach, not by which
+   database URL it names. A local DB with production vendor keys is a
+   production profile.
+2. A secret-classed key in `.env`, `.env.dev`, or `.env.staging` must not
+   equal its `.env.prod` value. Every exception is a listed debt with the
+   rotation that removes it.
+3. Delete a credential the code never reads. A dead key is pure exposure.
+4. Personal tokens never belong in a shared profile. Use a service credential
+   scoped to one environment.
+5. A per-key access control (Armor FGAC) only works after the split above.
+   Do the split first, then restrict the prod keypair.
+6. Classify each environment's data explicitly. The dev Supabase project
+   holds 2.7k signups that the owner classifies as synthetic; that decision
+   is recorded, not assumed. Until the shared vendor keys are split, only
+   `.env` qualifies for people without production clearance.
+
+*Automation:* `pnpm test:envs` runs `scripts/secrets-envs-separation.py`,
+which fails on any unlisted non-prod secret that equals its prod value;
+`scripts/secrets-shared-with-prod.allowlist` is the tracked exception list.
+
+*Incident:* no known misuse. The Armor audit log shows the PROD keypairs were
+decrypted by 4 members and 1 former member before the restriction; the shared
+vendor credentials remain to be rotated per the allowlist (PR #6910).
+
+## A stamped failure is a cooldown, never a gravestone — and a negative is a claim
+
+*Incident (2026-08-26, Essentia).* Two sessions could only be recovered by a
+human pressing Restart.
+
+- Session `e06ad0c4` answered `POST …/start` with `stage:"failed"` in **47 ms**,
+  making **no provider call**. A wake had exceeded the FIXED
+  `RUNTIME_WAKE_LEASE_MS = 240_000`, and maintenance stamped
+  `stopReason:"runtime_wake_failed"`. The box was startable: the manual restart
+  reached ready in **10 s**.
+- Session `9c8749ac` (box `i67m4fhw2t3nesssgl4yf`) replayed
+  `{"stage":"failed","retriable":false,…"stopReason":"runtime_boot_failed",
+  "healthStatus":"unknown","lastInitError":null}` on **every open for 10+
+  hours** from a stamp written at 03:37Z. Four fields from four different
+  writes; none described the call, which touched nothing.
+
+Both stamps were written by a budget that measured wall clock, and both were
+consumed by a `/start` branch that returned before any provider call. Only
+`POST …/restart` cleared them, which is why the human's one click always worked.
+
+**The rules.**
+
+1. **A stamped runtime failure suppresses re-attempts for a COOLDOWN, and for
+   nothing longer.** After it lapses the next `/start` re-attempts by itself.
+   The cooldown escalates with consecutive failures (2 / 5 / 10 min) so a broken
+   provider is not hammered, and the verdict expires 30 min after the last
+   failure: no verdict outlives its evidence.
+2. **Cover every stamp that short-circuits the path**, not the one in the
+   report. `runtime_wake_failed` AND `runtime_boot_failed` produced the same
+   dead end from two different writers.
+3. **`retriable` is derived on every call, never persisted.** Anything the
+   server can still re-attempt must not answer `retriable:false` — that flag
+   tells the client's escalation ladder to stop.
+4. **A negative is a claim: carry its evidence.** Every `/start` failure now
+   ships `failure.evidence` = which check, when it ran, the provider text, the
+   attempt count, and `next_retry_at`. A `failed` payload with
+   `lastInitError:null` tells a user nothing.
+5. **The answer states what THIS call did and observed.** `action`,
+   `observation` (with `known:false` meaning NOT CHECKED, never "checked and
+   unknown"), `boot.actively_starting`, and one `observed_at`. A payload no live
+   check supports is not a state worth naming.
+6. **The wake budget measures lack of progress** — the same rule as
+   "A boot budget measures lack of progress, not wall-clock". A provider-state
+   change restarts the 90 s no-progress budget and refreshes the durable lease;
+   `RUNTIME_WAKE_HARD_MS = 10 min` bounds the whole wake and never restarts, so
+   the reconcile/billing exemption that lease grants can never be held open by a
+   flapping provider.
+7. **The observer that DEFERS a park owns the confirmation.** A mid-turn
+   `stopped` read that waits for a second observation must schedule that second
+   read itself, not assume someone polls again. Session `29861dfa` /
+   `inqwpv4a1cc1kynlg46k8` read `running` for 5+ minutes while the provider said
+   `not running (status: stopped)`, and the queued prompt burned against it.
+
+*Automation:* `apps/api/src/projects/routes/stopped-wake-result.test.ts` (the
+10-hour replay, both stamps, the ladder, the evidence),
+`session-lifecycle/runtime-wake-fence.test.ts` (progress-aware budget, hard cap,
+cooldown ladder), `session-lifecycle/runtime-wake-billing-invariant.test.ts`
+(the 2026-08-17 mid-turn park and the compute-close exemption stay intact),
+`session-lifecycle/stopped-observation-followup.test.ts` (bounded confirmation),
+`session-lifecycle/start-envelope.test.ts` (one envelope per open state).
+
+### A retry class is a claim about the FAILURE, not about the call that returned it (2026-08-26)
+
+**When:** writing or reviewing any `retryable = <outcome> === …` line on a
+delivery/queue path. `executeQueuedContinue` derived retryability from one
+outcome value, and every producer of that value — a stopped box, a parked
+session, a dead resolved target — was a DOWN RUNTIME, not a bad message. A
+queued prompt delivered while its box was unreachable went `dead_lettered` on
+attempt 1 (`state:failed, attempts:1, last_error:"delivery outcome: failed"`)
+and was never re-tried when the box returned minutes later. Rule: **name the
+unreachable-runtime class separately from the refusal class, keep the work
+queued with a runtime-scaled backoff, spend no dead-letter budget on it, and
+re-arm it on the event you are actually waiting for.** *Enforcer:*
+`deliver.test.ts` (stopped/parked → `unreachable`, missing → `no-session`) and
+`runtime-unreachable-park.test.ts` (bounded budget, backoff ladder, fresh
+idempotency key, Stop survives as a hold).
+
+### A provider's "resume" is not a promise that your processes come back (2026-08-26)
+
+**When:** using any pause/resume sandbox lifecycle that persists the filesystem
+only. E2B's `lifecycle.autoResume` requires a MEMORY snapshot; with
+`keepMemory:false` the SDK documents the box as cold-booting and needing an
+explicit `connect()`, and Kortix sets no template `startCmd` — so apps/api is
+the only thing that starts the runtime. Resumes that came back with a dead
+process tree burned the full 190 s health wait and handed back an unreachable
+box; only a human restart (a NEW sandbox) healed it. Rule: **after a resume,
+prove the daemon answers on a short bound; if it does not AND no supervisor
+process is alive, clear the stale lock, relaunch once, re-verify, and log the
+workaround under one greppable string so its rate is countable.** Never `rm` a
+flock'd lock while a live holder exists — that does not free the lock, it lets a
+second daemon win a different inode. *Enforcer:* `e2b.test.ts` — dead resume is
+revived and re-verified, a healthy resume touches nothing, a merely-slow resume
+is never double-started.
+
+### An image is a cache; a boot that blocks on building one has confused it for the truth (2026-08-26)
+
+**When:** touching `ensureSandboxImage` or any boot-path call that can reach a
+provider build. Every `self-host update` bumps the runtime fingerprint and
+starts a template rebuild (14 m 11 s measured); session starts inside that
+window sat in `provisioning` for 10–34 minutes, polling the in-flight build for
+up to 12 minutes or building inline. The daemon converges on the deploy's
+runtime assets at boot and on every resume, so a box booted from the previous
+ready image serves the same CLI, skills and OpenCode pin. Rule: **a session boot
+serves the last image its template lineage actually shipped and lets the new one
+bake behind it; only a genuinely FIRST build may block.** Bound the fallback to
+the same lineage, same provider, recent — convergence does not rebuild the base
+rootfs. *Enforcer:* `last-ready-image.test.ts` (predecessor served while the new
+identity builds; first build still blocks) and `e2b.test.ts` (a resume never
+consults a template at all).
+
+## A retry that inherits the previous attempt's budget is not a retry
+
+*Incident (2026-08-26, Essentia, session `29861dfa` / box `inqwpv4a`).* The
+first production outing of the automatic wake-cooldown ladder (see "A stamped
+failure is a cooldown, never a gravestone") defeated itself.
+
+Attempt 1 failed at ~13:27 in a post-roll build storm. The cooldown rung
+re-attempted at ~13:33: the resume launched the entrypoint, the daemon booted
+through 13:34:48.8, authenticated to the gateway at 13:34:48.5–49.1 and claimed
+its initial turn at **13:34:49.216** — and `/start` parked the box at
+**13:34:49.202**. The boot lost by **14 ms**.
+
+`opencodeBootWaitFirstSeenAt` was stamped during attempt 1 and cleared by
+nothing: `parkEstablishedRuntime` copies the whole metadata object, the wake
+claim stripped only four of the ten readiness-clock keys, and
+`clearRuntimeReadinessClocks` stripped the first eight **by hardcoded index**.
+Only a human Restart (`prepareInPlaceRestartMetadata`, which loops the whole
+list) cleared it. So the 10-minute hard cap was ~7 minutes old before attempt 2
+started booting, and **every automatic rung after the first five minutes was
+deterministically doomed, regardless of progress.**
+
+**The rules.**
+
+1. **Every automatic retry re-baselines the same clocks a human retry does.** An
+   attempt judged against a predecessor's budget is not an attempt. The only
+   thing an automatic rung keeps that a human restart clears is the
+   consecutive-failure accounting that drives its own escalation.
+2. **Never write a key list twice.** The four/eight/ten split existed because
+   three call sites hand-wrote `- 'key'` chains. Generate every chain from the
+   single exported list; index-addressed subsets (`KEYS[0] … KEYS[7]`) silently
+   stop covering a list that grows.
+3. **Scope a budget to its attempt, causally.** `staleOpencodeReadyReason` now
+   ignores any clock stamped before this attempt's boot epoch
+   (`runtimeBootEpochMs` = newest of `runtimeWakeStartedAt`,
+   `providerRunningConfirmedAt`, `initSucceededAt`). This is **not** a
+   progress reset: a stub launcher that changes phase for ever is still caught
+   at the cap, because only a NEW attempt moves the epoch. Do not "fix" an
+   inherited budget by making the hard cap progress-aware — that undoes
+   "A boot budget measures lack of progress, not wall-clock".
+4. **`jsonb - $1` is ambiguous; strip keys as literals.** Postgres cannot
+   choose between `jsonb - text` and `jsonb - integer` for an untyped
+   parameter. A bind-parameter strip inside a `try/catch` that only
+   `console.warn`s fails invisibly — which is the likeliest reason the
+   ready-path clear never cleared anything in production.
+
+*Automation:* `unit-session-restart-url-contract.test.ts` — "an automatic rung
+never inherits the previous attempt boot budget" (8 tests, including "a stub
+launcher that changes phase for ever is still caught at the cap" and
+"who resets the retry accounting"); `e2e-project-session-contract.test.ts` —
+"the automatic rung re-baselines the boot clocks but KEEPS the failure
+accounting".
+
+## An alarm on a metric the workload violates by design is noise, and noise trains you to delete the real page (2026-08-26)
+
+**When:** adding or reviewing any CloudWatch/SNS alarm, especially compliance
+alarms that exist to satisfy a control (Drata DCF-86) rather than an incident.
+`TargetResponseTime` Average ≥ 2 s on the gateway and API ALBs fired on 6–11 s
+averages — normal, because the gateway streams LLM completions and the API
+holds SSE `/event` streams for minutes. The alarm flapped ALARM/OK every 5–10
+min; each flap fanned out through **two** alarm sets on the same ALB (a
+hand-made `compliance-*` set from the 2026-07-27 evidence pass, never in
+Terraform, plus the `kortix-alb-*` set) × **three** email subscriptions on the
+same person = ~300 emails in one day and zero incidents. The 5xx alarms in the
+same inbox — the ones that page a real outage — had 3 messages each and were
+being trashed with the rest. Rules: **(1) before adding a threshold alarm, name
+the request shape that violates it in steady state; if streaming, long-poll or
+SSE traffic crosses it by design, alarm on errors and host health instead.
+(2) One alarm set per resource, and it lives in code — a console-made duplicate
+is drift, and the reconciler that owns the family deletes it. (3) A reconciler
+that can only create is half a reconciler: it must also delete what it retires,
+or a deleted alarm is resurrected on the next tick and Terraform's forget/destroy
+is undone.** `removed { lifecycle { destroy = false } }` lets the automatic
+apply pass its no-delete guard while the Lambda does the real deletion.
+*Enforcer:* `functions/test_alb_alarm_reconciler.py` — `ALARM_SPECS` contains no
+`TargetResponseTime`; retired `kortix-alb-*-target-response-time` (including the
+per-target-group variants Terraform never managed) and `compliance-*` alarms in
+`AWS/ApplicationELB` are deleted; `compliance-*-cpu-high` and every desired
+alarm survive.
+
+## A scheduled control that crashes is a control that never ran — alarm on the reconciler itself (2026-08-26)
+
+**When:** adding a boto3 call to any compliance Lambda
+(`infra/terraform/compliance-monitoring/functions/*`), or trusting that a
+scheduled reconciler "has been running". `fcf779ffb3` (2026-08-06) taught the
+ALB alarm reconciler to call `describe_target_groups`; its role only allowed
+`DescribeLoadBalancers`. Every 5-minute tick in 3 regions raised `AccessDenied`
+for 20 days. The schedule was ENABLED, the function Active, the apply green —
+and the alarms the reconciler exists to maintain silently stopped being
+maintained. It surfaced only because #6919 needed the reconciler to delete
+alarms and nothing was deleted. Rules: **(1) every AWS API a Lambda calls is
+asserted against its IAM policy in CI, not discovered in prod.** **(2) a
+scheduled control gets an `AWS/Lambda Errors ≥ 1` alarm to the same topic as
+the alarms it maintains; a control's own failure is the loudest alarm in the
+family.** **(3) "the apply succeeded" proves the code shipped, not that it ran
+— read the function's log group or its result payload before calling the
+change verified.** *Enforcer:*
+`infra/terraform/scripts/test_reconciler_iam_coverage.py` (terraform-ci) and
+`reconciler-health.tf` (`kortix-compliance-<function>-errors` alarms, 3
+regions).

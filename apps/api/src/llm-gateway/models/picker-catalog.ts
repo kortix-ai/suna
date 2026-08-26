@@ -1,4 +1,4 @@
-import { type Catalog, type CatalogModel } from '@kortix/llm-catalog';
+import { type Catalog, type CatalogModel, autoSeedDefaultModel } from '@kortix/llm-catalog';
 import { toWireModel } from '../resolution/effective';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
@@ -73,14 +73,17 @@ export function providerFlagship(providerId: string): string | null {
   for (const candidate of FLAGSHIP_CANDIDATES[providerId] ?? []) {
     if (ids.has(candidate)) return candidate;
   }
-  // Fallback: the most recently released model the catalog carries for this
-  // provider (deterministic, real). Released dates sort lexically (YYYY-MM-DD).
+  // Fallback: the newest AUTO-SELECTABLE model the catalog carries for this
+  // provider (deterministic, real). Released dates sort lexically
+  // (YYYY-MM-DD); `autoSeedDefaultModel` additionally drops the bare Bedrock
+  // ids whenever the provider serves inference profiles. A tie-break alone was
+  // not enough: `xai.grok-4.6` is the NEWEST Bedrock model and has no
+  // `global.`/`us.` twin to tie with, so it won outright and a fresh BYOK
+  // Bedrock project was seeded with `amazon-bedrock/xai.grok-4.6` — which
+  // Bedrock refuses ("on-demand throughput isn't supported").
   const provider = state.catalog.providers.find((p) => p.id === providerId);
   if (!provider || provider.models.length === 0) return null;
-  const sorted = [...provider.models].sort((a, b) =>
-    (b.released ?? '').localeCompare(a.released ?? ''),
-  );
-  return sorted[0]?.id ?? null;
+  return autoSeedDefaultModel(provider.models)?.id ?? null;
 }
 
 /** Whether a provider exposes a BYOK upstream and is connected for `connectedEnvVars`. */

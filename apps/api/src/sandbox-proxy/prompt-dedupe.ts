@@ -40,7 +40,7 @@ export function isNonIdempotentSessionWrite(
 ): boolean {
   if (port !== 8000) return false;
   if (method.toUpperCase() !== 'POST') return false;
-  return /^\/session\/[^/]+\/(?:prompt_async|message|command)(?:$|[/?#])/.test(path);
+  return /^\/session\/[^/]+\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/.test(path);
 }
 
 /**
@@ -71,8 +71,11 @@ export function isNonIdempotentSessionWrite(
  * all refuse), there is no duplicate left for the claim to catch.
  */
 export function shouldClaimPromptDelivery(path: string, hasIdempotencyKey: boolean): boolean {
-  const isCommand = /^\/session\/[^/]+\/command(?:$|[/?#])/.test(path);
-  return isCommand ? hasIdempotencyKey : true;
+  // `/summarize` shares the command trap: its whole body is `{providerID,
+  // modelID}`, byte-identical between two deliberate runs, so a keyless claim
+  // would answer a user's retry `200 {"deduplicated":true}` and never run it.
+  const isByteIdenticalBody = /^\/session\/[^/]+\/(?:command|summarize)(?:$|[/?#])/.test(path);
+  return isByteIdenticalBody ? hasIdempotencyKey : true;
 }
 
 // T13: 10 minutes, not 60s. A wake from auto-stop routinely takes

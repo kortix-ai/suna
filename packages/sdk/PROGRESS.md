@@ -12,6 +12,371 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-26 — session `session-ux` (WS-R) — stop-release: a re-minted prompt's echo must find ITS OWN bubble — DONE
+
+**Files:** `browser/stores/sync-store.ts` (`registerOptimisticEcho` follows the
+alias chain) · `browser/stores/sync-store.test.ts` (one new case). **Public
+surface: unchanged** — same signature, same semantics, strictly more of the
+calls the host already makes now take effect.
+
+**Why.** User report (2026-08-26): a prompt queued mid-turn, then Stop, then
+the queued prompt delivers — and the transcript shows the user bubble twice.
+The host (`apps/web/src/features/session/session-chat.tsx:2749`) registers the
+alias from the id the inbox ROW reports as the prompt's origin
+(`wire_message_id` — the id this tab minted and painted). That id stops being
+optimistic at the FIRST echo, and the drain re-mints on every later delivery:
+a Stop takes the runtime copy back out (`message.removed` →
+`reclaimRemovedMessage` re-marks the ECHO optimistic), then the release
+re-mints again. `registerOptimisticEcho` refused every registration after the
+first because its `optimisticID` argument was no longer optimistic, so the
+re-delivery's echo matched no alias. With one send in flight the ordinal
+fallback still guessed right; with two it correctly refuses to guess, and the
+echo was DROPPED — each prompt stayed on screen as a bubble nothing would ever
+confirm. Fix: when the named id is not optimistic, follow
+`optimisticEchoes` to the id that IS on screen and register from there.
+
+**Gates:** `pnpm --filter @kortix/sdk typecheck` clean · `bun run test` 2644
+pass 0 fail across 176 files · `smoke:install` pass. New test fails on the
+parent commit (echoes land as `msg_fwd*`, not `msg_rel*`).
+
+### 2026-08-26 — session `session-random-pause` — transcript freeze mid-turn: unbreakable repair loop — DONE
+
+**Files:** `react/use-session-sync.ts` (`livenessBusy` + `UseSessionSyncOptions`
+gain optional `serverHoldsTurn`) · `react/use-session.ts` (passes
+`working.serverOpenTurnToken !== null`) ·
+`core/session-sync/session-sync-controller.ts` (optional `verifyIntervalMs`,
+default 30s: a busy session re-reads the tail on that cadence even while
+`noteActivity` keeps firing) · `browser/stores/sync-store.ts` (`hydrate` stamps
+`sessionActivityAt` when a RUNTIME read shows the transcript moved with an
+open tail) · comment corrections in `core/session/working.ts`. Tests beside
+each. **Public surface: additive only** (three optional fields on published
+option types).
+
+**Why.** Prod report (essentia, 2026-08-26, after #6864): randomly mid-run the
+transcript freezes minutes behind the runtime and the session renders stopped;
+only a reload repairs. Root cause is a self-sustaining chain: the SSE stream
+black-holes (server audit: a stale cached ingress can answer 200 and never
+write; no keepalives exist; suppressed from api logs), the stale wire idle
+frame then vetoes the server's open `/turn` row (`endedByRuntime` — the veto is
+deliberately unbounded, and `started_at` (server clock) vs `atMs` (tab clock)
+skew can veto even new turns), the projection answers idle, and `working:
+false` switches off the liveness poll — the ONE read whose evidence could
+disprove the veto. Fix is evidence, not time: the poll stays on while the
+server holds a turn open, its hydrate stamps activity when the transcript
+moved mid-turn, and `activityAfterIdle` outranks the stale frame. Separately,
+`noteActivity` let a degraded-but-alive stream postpone the tail read forever;
+the verify cadence bounds divergence to 30s.
+
+**Gates:** `pnpm --filter @kortix/sdk typecheck` clean · `pnpm --filter
+@kortix/sdk test` 2550 pass 0 fail across 155 files (baseline 2541 + 9 new) ·
+`smoke:install` pass.
+
+**Round 2 (same session, same branch; committed `4fe9531e28` on Jay's "make
+the pr" — PR #6899):** two remaining holes closed in the SDK, and the
+server-side follow-ups implemented.
+SDK: `browser/stores/sync-store.ts` gains `sessionStatusAt` (arrival stamp per
+status frame; stamped on value change and origin flip, kept across same-value
+rewrites); `use-opencode-events/helpers.ts` gains pure `shouldSkipStatusFill`
+(+`WIRE_STATUS_FILL_FRESHNESS_MS` = `STREAM_OBSERVATION_MAX_MS`) — the
+reconnect status fill now OVERWRITES a wire frame older than 45s, so a dead
+stream's idle frame stops vetoing `/turn` even when a long tool call moves no
+transcript; `use-session-working.ts` gains `streamObservationStamp` — the
+observation stamp comes from the store, so a remount cannot resurrect a stale
+frame as fresh. Server: `apps/kortix-sandbox-agent-server/src/sse-keepalive.ts`
+injects a typed `kortix.keepalive` event (NOT an SSE comment — parsers swallow
+comments without feeding any client heartbeat) every 20s of upstream silence,
+event-boundary-guarded, backpressure-preserving, wired in `proxy.ts` for
+`text/event-stream` responses; `apps/api/src/sandbox-proxy/sse-stall.ts`
+counts `/global/event` bytes and a zero-byte stream (the stale-cached-ingress
+200-then-silence signature) makes the NEXT connect bypass the ingress cache
+(consume-once), wired in `routes/preview.ts`. Consumers verified tolerant of
+`kortix.keepalive`: SDK event machine (resets heartbeat, drops unknown type),
+`narrowChatEvent` (default null), apps/mobile (`resetHeartbeat()` on any
+message, unmatched switch case).
+
+**Gates (round 2):** sdk typecheck clean · sdk suite 2565 pass / 0 fail / 155
+files · `smoke:install` pass · daemon `bun test` 864 pass / 0 fail / 71 files +
+`tsc --noEmit` clean · api `tsc --noEmit` clean + `bun test --isolate
+src/sandbox-proxy/` 311 pass / 0 fail (non-isolated shows the known
+process-wide mock.module fails — not new).
+
+**Still open (not claimed):** link browser-disconnect aborts to the api's
+upstream fetch; `preview-retry-budget.ts` comments still say "60s ALB idle
+timeout" while terraform sets 300s; daemon keepalives reach only sandboxes
+built from a NEW snapshot (agent-server changes are baked, not hot-deployed)
+and only providers routed through the daemon (Platinum; Daytona dials opencode
+directly).
+
+---
+
+### 2026-08-26 — session `session-ux-ws-l` — a stopped session paints its transcript from the SERVER's mirror — DONE
+
+**Files:** `core/rest/projects-client/sessions.ts` (`SessionTranscriptSource`,
+`SessionTranscriptSyncMessage`, `SessionTranscriptSyncEnvelope`,
+`getSessionTranscriptSync`; `SessionTranscript` gains `source`/`complete`/`captured_at`)
+· `browser/session-sync/server-transcript-mirror.ts` (NEW — `shouldHydrateFromMirror`,
+`mirrorMessagesForHydrate`, `parseKortixSessionScope`, `loadSessionTranscriptMirror`)
+· `browser/session-sync/server-transcript-mirror.test.ts` (NEW, 12 tests)
+· `react/use-session-sync.ts` (first-paint hydrate, NOT gated on `networkEnabled`)
+· `core/client/kortix.ts` (`kortix.session(p,s).transcriptSync()`)
+· `index.ts` + both public-surface snapshots (additive only).
+Hosts: `apps/api` (the mirror itself), `apps/web` (the banner that replaces the wall).
+
+**What.** Opening a stopped/hibernated session showed a full-screen "Connecting…"
+with NO transcript for the whole wake — measured 5-240 s — although every message
+existed. `apps/api` `buildSessionTranscriptDigest` proxied the sandbox, so it
+answered `unavailable` for any non-running session, and the browser-side
+IndexedDB mirror that used to cover the gap was deleted (`5a7a43517f`).
+
+**Why the old mirror was deleted, and why this one is different.** Its freshness
+test read the transcript's SHAPE (message count, part count, tail id) and the two
+things that end a turn move none of them: `time.completed`, and the `error` a
+Stop stamps. `use-session-sync.ts` states the acceptance criterion for any
+replacement — *a mirror whose freshness test reads the MESSAGE, not its shape*.
+This one satisfies it three ways: (1) the SERVER writes it BECAUSE a turn ended,
+so there is no client-side freshness test left to get wrong; (2) `info` travels
+VERBATIM, so `time.completed`/`error` reach every turn predicate; (3) the
+envelope names the OpenCode root it was captured from, so a mirror belonging to a
+re-pinned box is REFUSED instead of painted as ghosts — a check the scope-keyed
+disk cache could not make.
+
+**Fix.** Hydrated with `source: 'cache'`, so the store's existing `cacheSourcedIds`
+settle rule owns reconciliation unchanged: the first runtime read confirms every
+id it contains and drops any it covers but lacks. The rule needed no extension —
+what it lacked was real OpenCode ids to settle, which the server payload
+guarantees and the disk cache did not (it also held optimistic stubs the runtime
+never had).
+
+**Public surface: additive.** Three new types, one new function, three new fields
+on `SessionTranscript`. No rename, no removal — both snapshots reviewed.
+
+**Known cost, accepted:** one extra control-plane GET per session mount. It is
+not gated on the runtime, which is the entire point.
+
+**Left in place, deliberately:** the settle rule's `id >= oldestIncoming` bound is
+an id comparison over a time-ordered list (`sync-store.ts:1704`, flagged there as
+an open question). A server mirror carries real ids from the same root, so it is
+neither better nor worse off than the runtime's own page. Not touched here.
+
+**Gates:** `typecheck` clean (both projects) · `bun run test` (`--isolate`)
+**2593 pass / 0 fail**, 174 files · `smoke:install` passed · apps/web
+`bun test src/features/session` 2628 pass / 0 fail · apps/api canonical
+`bash scripts/test.sh` **8304 pass / 0 fail / 78 skip**, 722 files.
+
+> **Trap for the next session:** the mirror capture reuses
+> `resolveSessionOpencodeEndpoint`, so on a local Platinum box it fails with
+> `expose -> 409 sandbox_not_running` whenever the provider has parked the box —
+> the same exposure `reconcileForwardedTurnsAtEnd` already has. A capture that
+> fails is not lost work: the next one re-reads the last 80 messages and
+> back-fills, and it never throws.
+
+---
+
+### 2026-08-26 — session `session-ux-ws-k` (round 2) — the bare Bedrock id is healed at RESOLUTION time — DONE
+
+**Files:** `react/bedrock-invokable.ts` (NEW, internal — `healBedrockModelKey`)
+· `react/use-opencode-local.ts` (guard applied to `currentModelKey` AND
+`sendModelKey`; the fallback's "first model of provider" loop now iterates
+`autoSeedableModels`).
+
+**Why.** Round 1 fixed the catalog default and was merged (PR #6914,
+865223ebea), and the Essentia frontend bundle was proven new by content — yet
+a fresh native Bedrock workspace still preselected "Grok 4.6". The catalog
+default is only Priority 3 of the LAST source in this hook's chain
+(explicit > serverDefault > globalDefault > agent.model > fallback), and the
+explicit slot is browser-global: `agentScopedModelSelectionKey(mode, name)` is
+`` `${mode}:${name ?? ''}` `` (use-opencode-local.ts:226-231), and the
+project-home composer has no agent and no sessionId — so every native project
+in one browser shares the slot `native:`. One earlier wedged session pinned
+`xai.grok-4.6` there and every future workspace inherited it. Healing at the
+resolution seam covers that slot and every other source (recent,
+globalDefault, agent.model, config.model, first-model), and repairs
+already-pinned browsers with no migration.
+
+**Public surface: unchanged** — `bedrock-invokable.ts` is internal (not
+re-exported from `react/index`); both snapshots are untouched.
+
+### 2026-08-26 — session `session-ux-ws-k` — a fresh Bedrock workspace never auto-seeds a bare in-region id — DONE
+
+**Files:** `react/provider-selection.ts` (`nativeProviderListFromCatalog`: the
+per-provider `default` fallback is now `autoSeedDefaultModel(models)?.id`
+instead of `models[0]?.id`, and the newest-first model sort gained
+`bedrockInferenceProfileRank` as a tie-break so the profile precedes its bare
+twin in insertion order). Shared rule added in `@kortix/llm-catalog`
+(`autoSeedableModels` + `autoSeedDefaultModel`), reused by the API's
+`providerFlagship` so the gateway and native default paths cannot drift.
+
+**Why.** Proven live on the Essentia self-host 2026-08-26: a brand-new
+workspace with Bedrock BYOK creds (`AWS_BEARER_TOKEN_BEDROCK` + `AWS_REGION`,
+llm_gateway OFF) auto-selected `xai.grok-4.6`. Bedrock refused it
+("Invocation of model ID xai.grok-4.6 with on-demand throughput isn't
+supported. Retry your request with the ID or ARN of an inference profile") and
+the session looped "Retrying in Ns" forever — every fresh workspace wedged out
+of the box. `xai.grok-4.6` is the NEWEST Bedrock model in the 2026-08-25
+catalog AND the one family with no `global.`/`us.` twin, so PR #6897's
+release-date tie-break could not save it. New rule: when a provider's set
+carries ANY inference-profile id, its bare ids are not AUTO-selectable. They
+stay listed and pickable; nothing picks them for the user. Inert for every
+non-Bedrock provider (no id has rank > 0).
+
+**Public surface: unchanged** — `nativeProviderListFromCatalog`'s signature and
+shape are identical; only which id lands in `default[providerId]` changed.
+
+### 2026-08-26 — session `session-ux-ws-b` — a 503 is never an empty transcript + read cancellation — DONE
+
+**Files:** `core/http/opencode-errors.ts` (NEW `SandboxNotReadyError` class; its
+message always matches `isSandboxNotReadyError`) ·
+`browser/session-sync/session-sync-registry.ts` (`readSessionMessagePage`
+CLASSIFIES the resolved result — 503/not-ready body → `SandboxNotReadyError`,
+other `error`/≥400 → real throw, only a genuine 2xx returns a page; threads an
+optional `AbortSignal` into `client.session.messages`) ·
+`core/session-sync/session-sync-controller.ts` (`loadPage` gains an optional
+`signal` param; one controller-lifetime `AbortController` aborted in
+`destroy()`; `loadTail` catch classifies — abort → no-op, not-ready →
+freshness `loading` + backoff retry (existing 1s→15s cap), real error →
+`error`; the framework-free HTTP loader throws `SandboxNotReadyError` on 503
+and forwards the signal) · `react/use-session-sync.ts` (+`retryTranscript`) ·
+`react/use-session.ts` (forwards `freshness` + `retryTranscript`). Host:
+`apps/web` session-chat gates the empty transcript on freshness (error →
+retry card, loading → loader) and the older-load sentinel re-arms only after
+leaving the rootMargin zone (`nextOlderAutoloadArm`).
+**Public surface: additive only** — `SandboxNotReadyError` (both snapshots
+regenerated; diff shows additions only) and two new fields on published hook
+returns.
+
+**Why.** FINDINGS-B: the generated OpenCode client RESOLVES with `{ error }`
+on non-2xx, and `readSessionMessagePage` read `result.data ?? []` — a
+cold-boot 503 became a success-looking empty page, `hydrate([])`, freshness
+`'fresh'`, and the thread rendered blank-and-complete with no retry. Also: no
+cancellation (a superseded read could hydrate a navigated-away store), and a
+short-turn prepend could chain older-pulls in one paint.
+
+**Gates:** `npx tsc --noEmit` clean (sdk, exit 0) · `bun test --isolate src`
+**2562 pass / 0 fail** across 172 files (session baseline 2547/172; +9 tests
+here, +6 from concurrent WS-A) · `pnpm run smoke:install` passed · both
+surface snapshots regenerated, diff additive-only · apps/web: targeted
+session tests 19 pass / 0 fail, eslint 0 errors on touched files, `tsc`
+noise limited to the known `@types/bun` `test.each` files.
+
+---
+
+### 2026-08-26 — session `session-ux` (WS-A) — routine boot progress is not a runtime error; parked box does not arm the stall clock — DONE
+
+**Files:** `src/react/use-runtime-reconnect.ts` (+ `runtimeErrorFromHealth`: only a
+genuine `boot_error` becomes `store.runtimeError`; the routine boot
+`reason`/`message` — e.g. `{status:'starting', reason:'schema not ready'}` — is
+progress, never an error. The `booting` branch now distinguishes a PARKED box —
+`hop === 'control_plane'`, the platform answered from the session row without
+dialling the box — from a genuinely booting one: parked does not report
+`connected` and does not arm the stall clock) ·
+`src/browser/stores/sandbox-connection-store.ts` (`setOpenCodeHealth` gains an
+optional `options?: { parked?: boolean }` 4th param — additive, existing callers
+unchanged; parked clears/never arms `bootingSinceAt`) · tests in
+`use-runtime-reconnect.test.ts` (RED first, then GREEN).
+**Public surface: additive** — one new export (`runtimeErrorFromHealth`) and one
+optional trailing param on `setOpenCodeHealth`; no renames, no removals.
+Snapshots regenerated (the diff also picked up `SandboxNotReadyError` from
+concurrent WS-B work in the same worktree).
+
+**Why.** RC-1/RC-3 of the session-ux runtime-status pass: the boot `reason`
+string landed in `runtimeError` and the web route painted a terminal "OpenCode
+runtime is not ready" card during every normal cold boot; a parked (idle)
+sandbox's control-plane 503 armed `bootingSinceAt`, so after 45s the composer
+latched "Still waking… taking longer than usual" forever over a box that only
+resumes on the next send.
+
+**Gates:** `tsc --noEmit` (main + examples) clean · `bun test
+src/react/use-runtime-reconnect.test.ts` 46 pass 0 fail · surface snapshot
+tests pass after regen · smoke:install run recorded in the session report.
+
+---
+
+### 2026-08-25 — session `effort-unify` — gateway picker carries variants + raw picker hook — DONE
+
+**Files:** `src/react/provider-selection.ts` (`projectLlmCatalogToProviderList`
+derives `variants` from `reasoning_options` via `@kortix/llm-catalog`'s
+`generationControlCapabilities`; an API-sent `variants` map wins) ·
+`src/react/use-project-models.ts` (+ `useProjectModelPickerCatalog`, the raw
+`/model-picker` record, same query key as `useProjectModels`) · tests.
+**Public surface: additive** — one new hook export from `@kortix/sdk/react`; no
+renames, no removals, no subpath change.
+
+**Why.** On-gateway the picker list never carried `variants`, so the composer's
+Thinking control (`Object.keys(model.variants)`) had nothing to offer and the
+only effort path was a project-level routing-policy write from the composer
+(#6872 split the knob by mode). Now both modes expose the model's own tiers as
+the session variant; the sandbox publishes the same ids on the `kortix`
+provider (apps/kortix-sandbox-agent-server, follow-up PR) and the gateway
+forwards / refuses (400 `unsupported_param`) per upstream family.
+
+---
+
+### 2026-08-25 — session `opencode-bump-11823` — OpenCode 1.18.19 → 1.18.23 lockstep — DONE
+
+**Files:** `package.json` (`@opencode-ai/sdk` 1.18.23) · `packages/shared/src/runtime-versions.json`
+(`opencode` + `opencodeSdk`) · shared Dockerfile goldens. **Public surface: no
+changes** — `@opencode-ai/sdk` 1.18.19→1.18.23 changes one line each in
+`v2/gen/types.gen.ts` / `sdk.gen.ts` (the `global.upgrade` payload); the
+type-surface snapshot is byte-identical.
+
+**Why.** Essentia (native mode) ran `amazon-bedrock/global.openai.gpt-5.6-sol`
+and every reasoning stream died on `contentBlockDelta.delta.reasoningContent.redactedContent`
+failing schema validation. Upstream anomalyco/opencode#43686 → #43909 bumped
+`@ai-sdk/amazon-bedrock` 4.0.112→4.0.158 (adds `redactedContent`); first
+release carrying it is v1.18.22. We pinned 1.18.19.
+
+**Gates:** `pnpm typecheck` clean · `pnpm test` 172 files 0 fail ·
+`public-type-surface.test.ts` pass · api `config-deps-version.test.ts` pass ·
+shared sandbox suite 72 pass (goldens regenerated).
+
+### 2026-08-25 — session `native-catalog-status` — pre-boot picker hides deprecated models like the runtime — DONE
+
+**Files:** `react/provider-selection.ts` (`nativeProviderListFromCatalog` drops
+`status === 'deprecated'` for every provider) + test. Cross-package:
+`packages/llm-catalog` `CatalogModel.status?`, `apps/api`
+`runtime-catalog.ts` passthrough + test, `apps/web/scripts/enrich-llm-catalog-capabilities.ts`
+(baked path keeps the same field set). **Public surface: `CatalogModel` gains
+an optional field** (additive; type-surface snapshot unchanged).
+
+**What.** Dev verification of the merged picker (#6872) on a native project:
+pre-boot listed 16 OpenCode Zen free models, the running box served 7. The
+box's own `~/.cache/opencode/models.json` had all 29 — opencode hides the 22
+marked `status: "deprecated"` (core plugin: `enabled = status !== "deprecated"`).
+Our `/llm-catalog/providers` route whitelists model fields and dropped
+`status`, so the pre-boot source could not apply the rule. Now it can, for
+every provider, not only Zen.
+
+**Gates:** `pnpm typecheck` clean · `pnpm test` (see run) · type-surface pass.
+
+### 2026-08-25 — session `native-picker-unify` — ONE native picker across sandbox states + no dead effort chip — DONE
+
+**Files:** `react/provider-selection.ts` (NEW pure `mergeNativeProviderLists`;
+`nativeProviderListFromCatalog` now lists OpenCode Zen's free models keyless,
+ranked last) + tests · `react/use-opencode-sessions/providers.ts` (the
+`native-catalog` query stays enabled after boot; native mode returns the
+catalog ∪ runtime merge, never a source swap) ·
+`react/use-gateway-routing-policy.ts` (`llmGatewayEnabled` beside `data`) +
+test. **Public surface: no barrel changes** (additive field on the routing
+hook result; type-surface snapshot unchanged).
+
+**What.** Two field reports on the native path. (1) "the model pickers are
+different when the sandbox isn't started and when it is" — pre-boot the picker
+read the catalog synthesis, post-boot the runtime list; the two disagreed on
+provider order, on Zen (runtime auto-connects `opencode` free models keyless),
+and on the auto-picked default (runtime `default` is catalog-file-order). Now
+the catalog list is the skeleton (order + curated flagship default), the
+runtime provider object replaces each shared id (real variant settings, the
+box's exact models), runtime-only providers append, and a catalog default
+survives only while the runtime serves that model. (2) "2 thinking mode
+selections" — the composer's reasoning-effort chip is a gateway routing-policy
+control; the hook's query is disabled off-gateway, but a disabled query still
+serves cache residue, so `data.capabilities.write` kept the chip alive beside
+the model's real THINKING MODE variants. The hook now states the flag; the
+web chip requires it.
+
+**Gates:** `pnpm typecheck` clean · `pnpm test` 172 files 0 fail ·
+`public-type-surface.test.ts` pass · `pnpm smoke:install` pass.
+
 ### 2026-08-24 — session `fabricated-idle-veto` — a fabricated idle frame can no longer contradict the ledger — DONE (PR open, not merged)
 
 **Files:** `core/session/working.ts` (`WorkingStreamInput.origin?: 'wire' | 'local'`;
@@ -851,3 +1216,74 @@ the same measurement showed idle→working→idle with a 15.1s false-busy leg.
 2402 pass / 2 skip / 0 fail · `smoke:install` — see below.
 
 ---
+
+### 2026-08-26 — session `session-ux-orchestrator` — corrupt model-store localStorage can no longer brick the app — DONE
+
+**Files:** `react/use-model-store.ts` (new exported `sanitizeModelStore(raw)`;
+`loadStore` runs every parsed value through it). Proven live on Essentia
+2026-08-26: a malformed `opencode-model-store-v1` value crashed EVERY route with
+the full-screen "Something went wrong — a.user is not iterable" card, because
+consumers iterate `store.user` and `loadStore` returned `JSON.parse(raw)`
+unvalidated. Corrupt/legacy data now degrades to defaults field-by-field
+(arrays filtered to objects, wrong-typed fields dropped, valid fields kept).
+RED first: `react/model-store-sanitize.test.ts` (5 tests / 16 expects) written
+against the missing export, then green. Public surface: additive module export
+only; package entry points unchanged.
+
+---
+
+### 2026-08-26 — session `WS-M` — a slow wake escalates instead of dead-ending — DONE
+
+**Files:** `core/session/wake-escalation.ts` (new, pure) + its test ·
+`react/use-wake-escalation.ts` (new, thin glue) · barrels
+`core/session/index.ts`, `react/opencode.ts` · both public-surface snapshots.
+
+**The defect.** The wake budget was FIXED, not progress-aware. The server's
+`RUNTIME_WAKE_LEASE_MS` (240s) expires, maintenance stamps
+`stopReason: 'runtime_wake_failed'`, and every later `/start` short-circuits to
+a terminal payload — "The session runtime did not become reachable. Restart the
+session to try again." Measured on Essentia (box `inqwpv4a1cc1kynlg46k8`,
+2026-08-26): that card painted while the box was seconds from ready — its daemon
+logged `opencode ready` at 06:10:02, right after the budget expired. The card
+offered no auto-recovery, and the human fix was always one click of Restart.
+Two more recurrences followed, both during a post-deploy image rebuild.
+
+**The two rules.** (1) A budget measures SILENCE, not elapsed time: any change
+to the progress fingerprint resets the clock, so a visibly-advancing wake never
+expires, and only `WAKE_NO_PROGRESS_MS` (75s) of zero observable change
+escalates. (2) Escalate through the ladder the human uses — quiet `/start`
+retry, then RESTART, bounded by `WAKE_MAX_RESTARTS` (2), `WAKE_ESCALATION_
+COOLDOWN_MS` (20s) apart — and only then show a terminal card that NAMES what
+was tried (`wakeEscalationAttemptSummary`). Blanket restart-by-default was
+rejected: it destroys ~1.9s warm resumes.
+
+`runtimeReachable` is a separate input from `waking` because the session row is
+not proof: on Essentia the same day `/start` answered and the row stayed
+`running` for 5+ minutes while the E2B resume had silently failed and the proxy
+answered `503 sandbox_not_ready`. The wake ends when the DAEMON answers, and
+that latches — a box that drops mid-session is `useRuntimeReconnect`'s job, not
+this ladder's.
+
+**RED first:** `core/session/wake-escalation.test.ts` written against the
+missing module (23 tests / 94 expects), then green. Two tests exist only because
+designing the browser proof exposed real holes: `useRestartProjectSession` seeds
+`{stage:'provisioning', sandbox:null}` on every restart, so `waking:false` had
+to PAUSE the ladder rather than clear it — clearing made `WAKE_MAX_RESTARTS`
+bound nothing and turned the ladder into a restart loop.
+
+**Verified in the real UI** (Playwright, worktree stack, `/start` + `/restart`
+stubbed at the network boundary with the exact 240s-lease payload): 5/5 — no
+terminal card while rungs remain; the on-screen notes are literally
+`Still waking — retrying the runtime (attempt 2)` /
+`… restarting the runtime (attempt 3)` / `(attempt 4)`; 2 automatic
+`POST /restart`; the card returns at exhaustion carrying "Tried: re-issuing the
+wake, then restarting the session twice."; and 0 further restarts for 30s after.
+The transcript mirror renders underneath throughout.
+
+**Public surface:** additive only — 15 names on `.`, 3 on `./react`. No entry
+point added, no rename. Both snapshots regenerated; the same regeneration also
+picked up `sanitizeModelStore`, which the entry above added without recording
+(the snapshot tests were already red on this branch before this change).
+
+**Gates:** `typecheck` clean · `bun test --isolate src` 2621 pass / 0 fail ·
+`smoke:install` pass.

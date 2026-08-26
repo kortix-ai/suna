@@ -63,6 +63,7 @@ let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let lastSessionInsertValues: Record<string, unknown> | null = null;
 const lifecycleCommandInserts: Array<Record<string, unknown>> = [];
+let lifecycleDrainClaimWhere: unknown = null;
 let lastSessionListWhere: unknown = null;
 // `active_since` / `deadline_at` are assigned by a DB trigger, never by
 // application code, so these HTTP-contract fixtures deliberately omit them —
@@ -133,6 +134,7 @@ function resetState() {
   activeSessionCount = 0;
   lastSessionInsertValues = null;
   lifecycleCommandInserts.length = 0;
+  lifecycleDrainClaimWhere = null;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
   projectRow.defaultBranch = 'main';
@@ -624,7 +626,11 @@ mock.module('../shared/db', () => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
             Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
           },
-          orderBy: async () => {
+          orderBy: () => {
+            if (table === sessionLifecycleCommands) {
+              lifecycleDrainClaimWhere = predicate ?? null;
+              return { limit: async () => [] };
+            }
             if (table === projectSecrets) return secretRows;
             if (table === projectSessions) {
               // Recorded so a test can assert WHICH predicate the list route
@@ -632,9 +638,9 @@ mock.module('../shared/db', () => ({
               // asserting on the response alone would pass even if the filter
               // were never applied.
               lastSessionListWhere = predicate ?? null;
-              return sessionRow ? [sessionRow] : [];
+              return Promise.resolve(sessionRow ? [sessionRow] : []);
             }
-            return [];
+            return Promise.resolve([]);
           },
           limit: async () => {
             if (fields && Object.keys(fields).includes('activeCount'))
@@ -1390,21 +1396,28 @@ describe('project session API contract', () => {
       { method: 'POST' },
     );
     expect(response.status).toBe(200);
+    // The cooldown is NOT a terminal answer: the server itself re-attempts once
+    // it lapses, so the honest stage is `starting` and `retriable` is true.
+    // It says WHICH check failed and WHEN it will try again.
     expect(await response.json()).toMatchObject({
-      stage: 'stopped',
-      retriable: false,
+      stage: 'starting',
+      retriable: true,
       reason: 'runtime_wake_cooldown',
+      action: 'cooling_down',
+      boot: { phase: 'resuming', actively_starting: false },
       sandbox: { status: 'stopped' },
       failure: {
         category: 'sandbox-provider',
         retryable: true,
+        evidence: { check: 'start_failed', attempts: 1 },
       },
     });
+    // …and the cooldown still holds the provider off: exactly one start.
     expect(providerStartCalls).toBe(1);
-
+    expect(failureMetadata.runtimeStartFailureCount).toBe(1);
   });
 
-  test('an expired runtime wake failure requires an explicit restart', async () => {
+  test('an expired wake cooldown RE-ATTEMPTS on the next /start — no restart needed', async () => {
     sessionRow = { ...sessionRow!, status: 'stopped', error: null };
     sessionSandboxRows = [
       {
@@ -1429,6 +1442,9 @@ describe('project session API contract', () => {
       },
     ];
 
+    // Essentia 2026-08-26: this gate used to answer `false` for ever, so the
+    // stamp could only be cleared by a human pressing Restart (sessions
+    // e06ad0c4 and 9c8749ac). Past the cooldown it is permission to try again.
     expect(
       await resumeStoppedSandbox({
         sandboxId: SESSION_ID,
@@ -1438,7 +1454,9 @@ describe('project session API contract', () => {
         externalId: 'platinum-expired-wake-failure',
         metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
       }),
-    ).toBe(false);
+    ).toBe(true);
+    await flushUntil(() => providerStartCalls > 0);
+    expect(providerStartCalls).toBe(1);
 
     const response = await createApp().request(
       `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
@@ -1446,12 +1464,73 @@ describe('project session API contract', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      stage: 'failed',
-      retriable: false,
-      reason: 'runtime_wake_failed',
-    });
-    expect(providerStartCalls).toBe(0);
+    // The re-attempt is a live wake, not a replayed stamp.
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.stage).toBe('starting');
+    expect(body.retriable).toBe(true);
+    expect(body.reason).not.toBe('runtime_wake_failed');
+  });
+
+  test('the automatic rung re-baselines the boot clocks but KEEPS the failure accounting', async () => {
+    // Essentia 2026-08-26, session 29861dfa / box inqwpv4a. Attempt 1's
+    // `opencodeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
+    // boot was judged against a 10-minute cap that had already run ~7 minutes.
+    // It was parked at 13:34:49.202 — 14 ms before its daemon claimed its first
+    // turn at 13:34:49.216.
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    const attempt1 = new Date(Date.now() - 11 * 60_000).toISOString();
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rung-rebaseline',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          stopReason: 'runtime_boot_failed',
+          runtimeParkReason: 'runtime_not_ready_timeout',
+          runtimeStartFailureCount: 2,
+          runtimeStartFailedAt: attempt1,
+          runtimeStartRetryAfterAt: new Date(Date.now() - 1_000).toISOString(),
+          // Attempt 1's clocks, which nothing used to clear.
+          opencodeBootWaitFirstSeenAt: attempt1,
+          opencodeNotReadyWaitStartedAt: attempt1,
+          opencodeReadyWaitReason: 'not_ready',
+          opencodeBootPhase: 'config-deps|opencode=starting',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rung-rebaseline',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+
+    const claimed = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    // Every readiness clock is gone: attempt 2 boots against a clean budget.
+    expect(claimed.opencodeBootWaitFirstSeenAt).toBeUndefined();
+    expect(claimed.opencodeBootPhase).toBeUndefined();
+    expect(claimed.opencodeNotReadyWaitStartedAt).toBeUndefined();
+    expect(claimed.opencodeReadyWaitReason).toBeUndefined();
+    // …and the escalation accounting survives, unlike a human Restart.
+    expect(claimed.runtimeStartFailureCount).toBe(2);
+    expect(claimed.runtimeStartFailedAt).toBe(attempt1);
+    // The claim is live, so /start reports a wake rather than a stamp.
+    expect(typeof claimed.runtimeWakeId).toBe('string');
   });
 
   test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
@@ -3432,16 +3511,24 @@ describe('project session API contract', () => {
     expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
     expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
 
+    // The park stamps a retry clock, so the immediate re-poll is a COOLDOWN,
+    // not the 10-hour `stage:"failed"` replay session 9c8749ac lived in.
+    expect(typeof parkedMetadata.runtimeStartRetryAfterAt).toBe('string');
+    expect(parkedMetadata.runtimeStartFailureCount).toBe(1);
+
     const retry = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(retry.status).toBe(200);
     expect(await retry.json()).toMatchObject({
-      stage: 'failed',
-      retriable: false,
-      reason: 'runtime_unreachable_timeout',
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_wake_cooldown',
+      action: 'cooling_down',
       sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
+      failure: { retryable: true, evidence: { attempts: 1 } },
     });
+    // The cooldown is what holds the provider off — not a permanent verdict.
     expect(providerStartCalls).toBe(0);
   });
 
@@ -3840,6 +3927,9 @@ describe('project session API contract', () => {
     });
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
+    await flushUntil(() => lifecycleDrainClaimWhere !== null);
+    const drainClaim = new PgDialect().sqlToQuery(lifecycleDrainClaimWhere as SQL);
+    expect(drainClaim.params).toContain(`prompt:${SESSION_ID}:pending-first`);
   });
 
   test('a pending prompt with data-URL file parts rides the row; an empty one makes no row', async () => {

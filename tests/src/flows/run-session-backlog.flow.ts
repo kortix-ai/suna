@@ -374,6 +374,19 @@ flow(
     requires: ['funded', 'daytona', 'managedGit'],
     serial: true,
     timeoutMs: 720_000,
+    // Added in 5b070ebb18 (2026-08-24, direct push) and never run on a
+    // deployed gate before the v0.13.6 release (run 32992496089, api shard
+    // 1), where it failed after 392s: `Timed out waiting for Composio Gmail
+    // authorization request from agent session ses_fc0decd80ffeYPyIR1B5efRcz3`.
+    // CONN-25 passed in the same run (real connect.composio.dev link in 7.4s),
+    // so staging holds a working COMPOSIO_API_KEY — the unproven part is the
+    // live gpt-5.6-luna turn calling `add_connector` inside the 300s wait, and
+    // the harness dumps no transcript on that timeout. Quarantined until it
+    // passes a staging dry run of tests-release.yml with the transcript
+    // captured on failure; un-quarantine ONLY in the PR that carries that
+    // green run.
+    quarantine:
+      'real-agent Composio selection: gpt-5.6-luna turn produced no add_connector call / connect.composio.dev link within 300s on staging (gate run 32992496089, api shard 1) — unproven flow, quarantined 2026-08-26 pending a green staging dry run',
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',

@@ -1,0 +1,81 @@
+name: Catalog refresh
+
+# Regenerates packages/llm-catalog/src/catalog.generated.json from models.dev
+# and opens (or updates) one PR with the diff. The seed is NOT the capability
+# source any more — the API's runtime catalog (1h refresh) is — but it still
+# seeds the provider-connect modal and the SDK/CLI offline lists, and it sat 38
+# days stale (2026-07-18 → 2026-08-25, 186 live models missing) before #6879.
+# Weekly is plenty: anything time-critical reads the live catalog.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: catalog-refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    name: Regenerate + PR
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Regenerate the baked catalog from models.dev
+        working-directory: apps/web
+        run: bun scripts/enrich-llm-catalog-capabilities.ts
+
+      - name: Diff summary
+        id: diff
+        run: |
+          if git diff --quiet -- packages/llm-catalog/src/catalog.generated.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Catalog unchanged."
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "fetched_at: $(python3 -c 'import json;print(json.load(open("packages/llm-catalog/src/catalog.generated.json"))["fetched_at"])')"
+            echo "models: $(git show HEAD:packages/llm-catalog/src/catalog.generated.json | python3 -c 'import json,sys;print(json.load(sys.stdin)["model_count"])') → $(python3 -c 'import json;print(json.load(open("packages/llm-catalog/src/catalog.generated.json"))["model_count"])')"
+          } | tee catalog-summary.txt
+
+      - name: Run the catalog-dependent unit tests
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          cd packages/llm-catalog && bun test
+          cd ../../apps/web && bun test src/features/session/reasoning-effort-selector.test.ts src/features/workspace/customize/sections/view/gateway
+
+      - name: Open or update the PR
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BR="bot/catalog-refresh"
+          git config user.name "kortix-bot"
+          git config user.email "bot@kortix.ai"
+          git checkout -B "$BR"
+          git add packages/llm-catalog/src/catalog.generated.json
+          git commit -m "chore(catalog): refresh catalog.generated.json from models.dev ($(date -u +%F))"
+          git push --force origin "$BR"
+          existing="$(gh pr list --base main --head "$BR" --state open --json number --jq '.[0].number' || true)"
+          BODY="$(printf 'Automated weekly refresh of the baked models.dev seed.\n\n```\n%s\n```\n\nNot the capability source (the API runtime catalog is) — seeds the provider-connect modal and offline lists. Review: nothing but the JSON should change.' "$(cat catalog-summary.txt)")"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --body "$BODY"
+            echo "Updated PR #$existing"
+          else
+            gh pr create --base main --head "$BR" --title "chore(catalog): weekly models.dev refresh" --body "$BODY"
+          fi

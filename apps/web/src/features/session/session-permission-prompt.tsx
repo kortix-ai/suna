@@ -251,7 +251,7 @@ export function SessionPermissionPrompt({
 
   if (autoApprove) {
     return (
-      <div className="border-border bg-popover mb-2 flex items-center gap-2 rounded-md border px-3 py-2">
+      <div className="border-border bg-popover flex w-full items-center gap-2 rounded-md border px-3 py-2">
         <ShieldCheck className="text-kortix-green size-4" />
         <span className="text-muted-foreground flex-1 text-xs">
           Auto-allowing all permission requests for this session
@@ -266,7 +266,9 @@ export function SessionPermissionPrompt({
   if (permissions.length === 0) return null;
 
   return (
-    <div className="bg-popover border-kortix-orange/25 mb-2 overflow-hidden rounded-md border">
+    // `w-full`: the composer strip is an `items-center` flex column, which
+    // sizes a child to its content unless it says otherwise (composer.tsx).
+    <div className="bg-popover border-kortix-orange/25 w-full overflow-hidden rounded-md border">
       <div className="border-kortix-orange/20 flex items-center gap-2 border-b px-3 py-2">
         <ShieldAlert className="text-kortix-orange size-4" />
         <span className="text-foreground text-xs font-medium">

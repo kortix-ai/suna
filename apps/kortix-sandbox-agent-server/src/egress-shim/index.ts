@@ -207,10 +207,21 @@ export function egressShimPort(env: NodeJS.ProcessEnv = process.env): number {
   return Number(env.KORTIX_EGRESS_SHIM_PORT) || DEFAULT_SHIM_PORT
 }
 
+// The session's CA, minted once per daemon process and REUSED across shim
+// restarts (a rule change restarts the listener — see syncEgressShim). Two
+// reasons: every agent shell that already sourced the trust bundle keeps
+// trusting the same root instead of failing TLS until it re-sources, and
+// node-forge's RSA keygen is the whole restart cost (1-4 s of pure JS — the
+// CI lane timed out at exactly that on 2026-08-25).
+let sessionCa: ReturnType<typeof createEphemeralCa> | null = null
+let sessionCaSeed: string | null = null
+
 /** Test seam: reset the module singletons. */
 export function __resetEgressShimForTests(): void {
   started = null
   armedSignature = null
+  sessionCa = null
+  sessionCaSeed = null
 }
 
 /** Stop the listener and drop the in-memory CA key. Safe to call with no shim. */
@@ -244,7 +255,12 @@ export async function startEgressShim(
 
   const port = egressShimPort(env)
   const hosts = [...new Set(config.rules.flatMap((rule) => rule.hosts))]
-  const ca = createEphemeralCa(env.KORTIX_PROJECT_ID?.slice(0, 8) ?? 'sandbox')
+  const caSeed = env.KORTIX_PROJECT_ID?.slice(0, 8) ?? 'sandbox'
+  if (!sessionCa || sessionCaSeed !== caSeed) {
+    sessionCa = createEphemeralCa(caSeed)
+    sessionCaSeed = caSeed
+  }
+  const ca = sessionCa
 
   writeTrustBundle(ca.certPem)
   const systemTrust = installSystemTrust(ca.certPem)

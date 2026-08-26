@@ -58,6 +58,23 @@ describe('clone depth configuration', () => {
     expect(loadConfig(BASE_ENV as NodeJS.ProcessEnv).cloneDepth).toBe(1)
   })
 
+  test('defaults compiled boot to off', () => {
+    expect(loadConfig(BASE_ENV as NodeJS.ProcessEnv).compiledBootMode).toBe('off')
+  })
+
+  test.each(['shadow', 'prefer', 'required'] as const)('accepts compiled boot mode %s', (mode) => {
+    expect(
+      loadConfig({ ...BASE_ENV, KORTIX_COMPILED_BOOT_MODE: mode } as NodeJS.ProcessEnv)
+        .compiledBootMode,
+    ).toBe(mode)
+  })
+
+  test('rejects an unknown compiled boot mode', () => {
+    expect(() =>
+      loadConfig({ ...BASE_ENV, KORTIX_COMPILED_BOOT_MODE: 'enabled' } as NodeJS.ProcessEnv),
+    ).toThrow()
+  })
+
   test('no partial-clone filter is applied by default', () => {
     expect(loadConfig(BASE_ENV as NodeJS.ProcessEnv).cloneFilter).toBe('')
   })

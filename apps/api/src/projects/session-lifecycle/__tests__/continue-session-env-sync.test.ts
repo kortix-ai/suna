@@ -192,6 +192,11 @@ mock.module("../store", () => ({
   enqueueContinueSessionCommand: async () => {
     throw new Error("not expected");
   },
+  // The delivery path parks a prompt whose RUNTIME was down instead of
+  // dead-lettering it. Present so the module mock stays complete.
+  MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
+  parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
+  reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (commandId: string, message: string) => {
     failedCalls.push({ commandId, message });
   },
@@ -212,6 +217,8 @@ mock.module("../store", () => ({
   // the engine import fails outright. Nothing in this file drives a row through
   // it, so an identity pass-through is the whole of it.
   withNextDeliveryAttempt: (payload: unknown) => payload,
+  // Mirrors the real bound jsonb param so `persistedWireIds` can still read it.
+  withRemintedWireId: (id: string) => JSON.stringify({ redeliveredMessageId: id }),
   resultFromExistingCommand: () => {
     throw new Error("not expected");
   },

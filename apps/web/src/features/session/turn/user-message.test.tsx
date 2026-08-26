@@ -395,3 +395,46 @@ describe('UserMessage renders the plan it owns', () => {
     expect(markup).toContain('self-end max-w-[80%]');
   });
 });
+
+describe('UserMessage inline edit-from-here editor', () => {
+  const editProps = {
+    editingText: 'do it differently',
+    onEditCancel: () => {},
+    onEditSend: () => {},
+  };
+
+  test('editing replaces the bubble with a textarea prefilled with the prompt text', () => {
+    const markup = renderText('ship the thing', editProps);
+    expect(markup).toContain('<textarea');
+    expect(markup).toContain('aria-label="Edit message"');
+    // The editor carries the CAPTURED prompt text, and the read-only bubble —
+    // including the message's own text — is gone.
+    expect(markup).toContain('do it differently');
+    expect(markup).not.toContain('ship the thing');
+  });
+
+  test('the editor is the full column, not the 80% bubble rail', () => {
+    const markup = renderText('ship the thing', editProps);
+    expect(markup).not.toContain('max-w-[80%]');
+  });
+
+  test('the editor carries Cancel and Send, both live while idle', () => {
+    const markup = renderText('ship the thing', editProps);
+    expect(markup).toContain('Cancel');
+    expect(markup).toContain('Send');
+    // `disabled=""` is the rendered ATTRIBUTE — the Button base classes carry
+    // `disabled:` variants either way, so the bare word proves nothing.
+    expect(markup).not.toContain('disabled=""');
+  });
+
+  test('pending holds both buttons', () => {
+    const markup = renderText('ship the thing', { ...editProps, editPending: true });
+    expect((markup.match(/disabled=""/g) ?? []).length).toBe(2);
+  });
+
+  test('editingText without handlers changes nothing — the bubble stays', () => {
+    const markup = renderText('ship the thing', { editingText: 'do it differently' });
+    expect(markup).not.toContain('<textarea');
+    expect(markup).toContain('ship the thing');
+  });
+});

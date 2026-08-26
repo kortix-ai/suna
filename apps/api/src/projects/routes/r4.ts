@@ -14,7 +14,7 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import {
   agentMailProvisioningClientIds,
@@ -66,6 +66,7 @@ import {
 } from '../../connectors/credentials';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
+import { composioConfigured } from '../../connectors/composio';
 import {
   finalizePipedreamConnectionAuthorization,
   pipedreamConfigured,
@@ -81,9 +82,8 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
+import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import {
@@ -98,15 +98,13 @@ import {
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
-import {
-  getProjectRoutingPolicy,
-  setProjectModelOverrides,
-} from '../../repositories/project-routing-policies';
+import { setProjectModelOverrides } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { continueSession, drainSessionLifecycleQueue } from '../session-lifecycle';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
+import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import {
   getOpenQuestion,
   recordPendingQuestion,
@@ -153,7 +151,6 @@ import {
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
-import { listProjectSecretNamesForConsumer } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
@@ -1006,11 +1003,104 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
           409,
         );
       }
+      // Provider-neutral, like the connector-scoped route and the connect-link
+      // intake. This was Pipedream-only, so a Composio connector's labelled
+      // (non-default) connection answered "not a pipedream connector" — the
+      // multi-account path silently had no Composio support at all.
+      if (!composioConfigured() && !pipedreamConfigured()) {
+        return c.json({ error: 'no hosted connector authorization provider is configured' }, 501);
+      }
+      const app = (connection.connectorConfig as Record<string, unknown> | null)?.app;
+      if (typeof app !== 'string' || !app) {
+        return c.json({ error: 'connector names no provider app' }, 404);
+      }
+      if (connection.providerType === 'composio') {
+        if (!composioConfigured()) return c.json({ error: 'composio not configured' }, 501);
+        const { composioConnectUrl, finalizeComposioConnection, composioUserId } = await import(
+          '../../connectors/composio'
+        );
+        const { composioConnectionMetadata } = await import('../../connectors/db-deps');
+        const stableUserId = composioUserId(connectionId);
+        const metadata = (connection.metadata ?? {}) as Record<string, unknown>;
+        if (operation === 'connect') {
+          const body = await readBody(c);
+          const redirects =
+            body.success_redirect_uri || body.error_redirect_uri
+              ? {
+                  success:
+                    typeof body.success_redirect_uri === 'string'
+                      ? body.success_redirect_uri
+                      : undefined,
+                  error:
+                    typeof body.error_redirect_uri === 'string'
+                      ? body.error_redirect_uri
+                      : undefined,
+                }
+              : undefined;
+          const result = await composioConnectUrl({
+            projectId,
+            slug: connection.connectorAlias,
+            app,
+            connectionId,
+            stableUserId,
+            redirects,
+          });
+          await db
+            .update(connectorConnections)
+            .set({
+              status: 'active',
+              metadata: composioConnectionMetadata({
+                toolkit: app,
+                stableUserId,
+                sessionId: result.sessionId,
+                authRequestId: result.authRequestId,
+                connectedAccountId: result.connectedAccountId,
+                isNoAuth: result.isNoAuth,
+              }),
+              updatedAt: sql`now()`,
+            })
+            .where(eq(connectorConnections.connectionId, connectionId));
+          return c.json({
+            app,
+            connectUrl: result.connectUrl,
+            connected: result.connected,
+            isNoAuth: result.isNoAuth,
+          });
+        }
+        const sessionId = typeof metadata.session_id === 'string' ? metadata.session_id : '';
+        if (!sessionId) return c.json({ connected: false });
+        const result = await finalizeComposioConnection({
+          projectId,
+          slug: connection.connectorAlias,
+          app,
+          connectionId,
+          stableUserId,
+          sessionId,
+          ...(typeof metadata.auth_request_id === 'string'
+            ? { authRequestId: metadata.auth_request_id }
+            : {}),
+        });
+        await db
+          .update(connectorConnections)
+          .set({
+            status: 'active',
+            metadata: composioConnectionMetadata({
+              toolkit: app,
+              stableUserId,
+              sessionId: result.sessionId,
+              authRequestId: result.authRequestId,
+              connectedAccountId: result.connectedAccountId,
+              isNoAuth: result.isNoAuth,
+            }),
+            updatedAt: sql`now()`,
+          })
+          .where(eq(connectorConnections.connectionId, connectionId));
+        return c.json({ connected: result.connected, accountId: result.connectedAccountId });
+      }
       if (!pipedreamConfigured()) {
         return c.json({ error: 'pipedream not configured' }, 501);
       }
-      const app = (connection.connectorConfig as Record<string, unknown> | null)?.app;
-      if (connection.providerType !== 'pipedream' || typeof app !== 'string' || !app) {
+      if (connection.providerType !== 'pipedream') {
         return c.json({ error: 'not a pipedream connector' }, 404);
       }
       if (operation === 'connect') {
@@ -2635,6 +2725,19 @@ projectsApp.openapi(
           ),
         );
       }
+      // THE TURN ENDED, SO THE TRANSCRIPT IS FINAL — mirror it.
+      //
+      // This is the one instant the deleted client-side mirror could not
+      // observe (its freshness test read the transcript's SHAPE, and a STOP
+      // moves none of that), which is why the SERVER writes the copy here
+      // rather than the browser writing it on a timer. The box is definitionally
+      // reachable — it just relayed — and both halves of the turn are settled.
+      // Fire-and-forget beside the reconcile above: a mirror write must never be
+      // able to fail a turn-end report, and `captureSessionTranscriptMirror`
+      // never throws.
+      if (!childSession) {
+        void captureSessionTranscriptMirror(sessionId);
+      }
       // THE TURN ENDED — the session's next queued prompt is admissible NOW.
       // Fire-and-forget: the drain re-runs admission itself, and a lost kick
       // falls back to the scheduler tick (bounded by the admission backoff).
@@ -3023,61 +3126,14 @@ projectsApp.openapi(
     }
 
     const accountId = loaded.row.accountId as string;
-    const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
-    const [secrets, defaults, routing] = await Promise.all([
-      listProjectSecretNamesForConsumer({
-        projectId,
-        principalUserId: loaded.userId,
-        consumer: 'llm_gateway',
-      }).catch(() => [] as string[]),
-      getAccountModelDefaults(accountId, projectId),
-      getProjectRoutingPolicy(projectId),
-    ]);
-    // What `auto` resolves to for this project. Served below so the client can
-    // LOCK its switch instead of offering a toggle that always 409s.
-    const effectiveDefault = toWireModel(
-      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
-    );
-    const requiredModels = [
-      defaults.projects[projectId],
-      defaults.account,
-      platformDefaultModelId(),
-      routing?.visionModel,
-      ...(routing?.defaultFallback?.models ?? []),
-      ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
-    ].filter((model): model is string => !!model);
-    const models = projectPickerCatalog(
-      gatewayModelCatalog(projectId, { freeManagedOnly }),
-      new Set(secrets),
-      requiredModels,
-    );
-    // Server-owned per-project enablement, resolved HERE and stamped onto each
-    // model so every client renders the same answer. The session picker shows
-    // the enabled ones; "Manage models" shows them all and switches on this
-    // flag. Neither re-derives it. Display-only: the gateway never refuses a
-    // request over enablement (that 400'd in-use models — the #5932 revert).
-    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
-    return c.json({
-      models: Object.fromEntries(
-        Object.entries(models).map(([id, model]) => [
-          id,
-          { ...model, enabled: enabled.get(id) ?? true },
-        ]),
-      ),
-      // The stored EXCEPTIONS, so a client toggling one model can PUT the
-      // merged map back without having to reconstruct it by diffing the
-      // resolved flags against a default it would have to recompute.
-      modelOverrides: routing?.modelOverrides ?? {},
-      // The model `auto` resolves to. It cannot be turned off (that would break
-      // every default request — the PUT refuses it with 409), so the client
-      // renders its switch as locked rather than letting the user click into an
-      // error.
-      defaultModel: effectiveDefault || undefined,
-      // True while the project has made no exceptions at all — the only thing
-      // "reset to defaults" has left to act on, and not derivable from the
-      // `enabled` flags alone (they look identical either way).
-      usingDefaults: Object.keys(routing?.modelOverrides ?? {}).length === 0,
+    // One composition, shared with the sandbox's boot fetch
+    // (`/v1/llm/models?scope=picker`) — see servableProjectCatalog.
+    const catalog = await servableProjectCatalog({
+      projectId,
+      accountId,
+      principalUserId: loaded.userId,
     });
+    return c.json(catalog);
   },
 );
 

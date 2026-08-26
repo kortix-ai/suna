@@ -11,6 +11,7 @@ import {
   isEditableTarget,
   keyScrollIntentFor,
   roomUnderNewestTurn,
+  shouldReleaseFollow,
 } from './use-auto-scroll';
 
 describe('roomUnderNewestTurn — FACT 1, the room is one value streaming or idle', () => {
@@ -166,5 +167,36 @@ describe('keyScrollIntentFor', () => {
   test('non-scroll keys stay null wherever focus is', () => {
     expect(keyScrollIntentFor({ key: 'k', metaKey: true, target: BODY })).toBe(null);
     expect(keyScrollIntentFor({ key: 'Escape', target: BODY })).toBe(null);
+  });
+});
+
+describe('shouldReleaseFollow — never fight a scroll we did not make', () => {
+  const base = { following: true, ours: false, geometryChanged: false, distanceFromEnd: 12_256 };
+
+  test('a foreign scroll away from the end drops follow', () => {
+    // find-in-page, `scrollIntoView`, the minimap, a test driver. Following
+    // through one of those put the reader back at the end within a frame —
+    // measured: `scrollTop = 0` on a 12,976px transcript was undone to 12,256px.
+    expect(shouldReleaseFollow(base)).toBe(true);
+  });
+
+  test('our own settle write is not intent', () => {
+    expect(shouldReleaseFollow({ ...base, ours: true })).toBe(false);
+  });
+
+  test('a clamp is not intent — the composer resize that used to kill follow', () => {
+    // The content shrank or the viewport grew in the same breath, so the
+    // browser moved `scrollTop`, not a reader.
+    expect(shouldReleaseFollow({ ...base, geometryChanged: true })).toBe(false);
+  });
+
+  test('a scroll that is still at the end changes nothing', () => {
+    expect(shouldReleaseFollow({ ...base, distanceFromEnd: 0 })).toBe(false);
+    expect(shouldReleaseFollow({ ...base, distanceFromEnd: AT_END_PX })).toBe(false);
+    expect(shouldReleaseFollow({ ...base, distanceFromEnd: AT_END_PX + 1 })).toBe(true);
+  });
+
+  test('a reader who already left the end is left alone', () => {
+    expect(shouldReleaseFollow({ ...base, following: false })).toBe(false);
   });
 });

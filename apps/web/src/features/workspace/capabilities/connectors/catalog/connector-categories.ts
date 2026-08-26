@@ -7,7 +7,7 @@
  */
 export const CATEGORY_ROW_CAP = 6;
 
-const OTHER = 'Other';
+export const OTHER = 'Other';
 
 /**
  * The synthetic first section. Not a catalogue category — see `catalogSections`
@@ -322,11 +322,19 @@ export function sectionTitle(key: string): string {
  * Productivity, and an app claiming both would otherwise render twice in that
  * grid under two identical React keys.
  */
-export function sectionKeysForEntry(categories: readonly string[]): Set<string> {
+export function sectionKeysForEntry(
+  categories: readonly string[],
+  opts: { raw?: boolean } = {},
+): Set<string> {
   const named: string[] = [];
   for (const category of categories) {
     const trimmed = category.trim();
-    if (trimmed.length > 0) named.push(sectionKeyForCategory(trimmed));
+    // `raw` keeps the catalogue's own slug as the section key instead of folding
+    // it into a curated bucket. Required wherever a section heading doubles as a
+    // server-side filter value: the curated keys are ours, and asking the
+    // provider for `sales-marketing` (which claims `crm` + `marketing`) returns
+    // zero, which the grid renders as "Catalogue unavailable".
+    if (trimmed.length > 0) named.push(opts.raw ? trimmed : sectionKeyForCategory(trimmed));
   }
   return named.length > 0 ? new Set(named) : new Set([OTHER]);
 }
@@ -367,10 +375,11 @@ export function countInSection<T>(
 export function groupIntoSections<T>(
   items: readonly T[],
   getCategories: (item: T) => readonly string[],
+  opts: { raw?: boolean } = {},
 ): Array<{ category: string; items: T[] }> {
   const buckets = new Map<string, T[]>();
   for (const item of items) {
-    for (const key of sectionKeysForEntry(getCategories(item))) {
+    for (const key of sectionKeysForEntry(getCategories(item), opts)) {
       const bucket = buckets.get(key);
       if (bucket) bucket.push(item);
       else buckets.set(key, [item]);

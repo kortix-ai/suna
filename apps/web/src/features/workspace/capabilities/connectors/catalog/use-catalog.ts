@@ -373,7 +373,15 @@ export function useCatalog(
         items: section.apps.map(catalogEntryFromEasyConnect),
       }));
     }
-    return catalogSections(entries, { popularCap: SECTION_CARD_COUNT }).map((section) => ({
+    // Composio serves each section's "View all" from its own catalogue, filtered
+    // by this key. Curated keys are ours and it does not have them — asking for
+    // `sales-marketing` answers zero, which the grid renders as an empty
+    // catalogue. Keying by the provider's slug keeps the heading and the grid
+    // behind it describing the same set.
+    return catalogSections(entries, {
+      popularCap: SECTION_CARD_COUNT,
+      rawCategoryKeys: easyConnectProvider === 'composio',
+    }).map((section) => ({
       key: section.category,
       label: sectionTitle(section.category),
       total: section.items.length,

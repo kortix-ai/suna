@@ -182,6 +182,9 @@ function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
         actionPath: path,
         rawArgsPreview: hasArgsPreview ? rawArgsPreview : undefined,
         reviewComplete: d.args_preview_complete === true,
+        // The API omits `args_preview` entirely for a viewer without argument
+        // visibility, which is indistinguishable from "the row recorded none".
+        previewAuthorized: d.args_preview_authorized !== false,
         connectorRisk: str(d.risk) ?? null,
         policySource: 'Requires approval',
       },

@@ -1,4 +1,6 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
+import { SandboxNotReadyError, isSandboxNotReadyError } from '../http/opencode-errors';
+import { isAbortError } from '../http/abort-error';
 
 /**
  * Messages per bounded read — the newest-first window a session opens with,
@@ -130,7 +132,17 @@ export interface SessionSyncTelemetryEvent {
 
 export interface SessionSyncControllerOptions {
   sessionId: string;
-  loadPage: (request: { limit: number; before?: string }) => Promise<SessionSyncPage>;
+  /**
+   * Read one bounded page. `signal` is the controller's own — aborted on
+   * `destroy()` (a scope reset destroys the controller), so a page loader that
+   * forwards it into `fetch` cancels a read the tab has navigated away from,
+   * and a superseded read can never hydrate the store. Passing it is optional;
+   * a loader that ignores it still works, it just cannot be cancelled.
+   */
+  loadPage: (
+    request: { limit: number; before?: string },
+    signal?: AbortSignal,
+  ) => Promise<SessionSyncPage>;
   /**
    * @deprecated Never called. The liveness poll no longer reads status: `GET
    * .../turn` is the status authority, and this controller's own `setBusy` is
@@ -152,6 +164,21 @@ export interface SessionSyncControllerOptions {
   onTelemetry?: (event: SessionSyncTelemetryEvent) => void;
   scheduler?: SessionSyncScheduler;
   livenessIntervalMs?: number;
+  /**
+   * Max age of the last tail read while the session is busy, whatever the
+   * stream delivers. Default 30s.
+   *
+   * The quiet-based poll trusts `noteActivity`: any transcript frame renews it.
+   * A DEGRADED stream — events lost at the source or the edge, connection
+   * alive, a trickle still arriving — therefore postponed the tail read
+   * indefinitely while the transcript diverged arbitrarily far from the
+   * runtime (prod, 2026-08-26: content minutes behind mid-run, repaired only
+   * by reload). Frames arriving proves the wire is up; it proves nothing about
+   * the frames that never arrived. This is the bound on how long that
+   * difference can go unchecked: one tail page per interval, and against a
+   * healthy stream the hydrate is a no-op.
+   */
+  verifyIntervalMs?: number;
 }
 
 export interface HttpSessionSyncControllerOptions extends Pick<
@@ -163,6 +190,7 @@ export interface HttpSessionSyncControllerOptions extends Pick<
   | 'onTelemetry'
   | 'scheduler'
   | 'livenessIntervalMs'
+  | 'verifyIntervalMs'
 > {
   baseUrl: string;
   getToken?: () => string | null | Promise<string | null>;
@@ -181,15 +209,24 @@ export function createHttpSessionSyncPageLoader(
 ): SessionSyncControllerOptions['loadPage'] {
   const fetchImpl: SessionSyncFetch = options.fetch ?? globalThis.fetch;
   const baseUrl = options.baseUrl.replace(/\/$/, '');
-  return async ({ limit, before }) => {
+  return async ({ limit, before }, signal) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (before) query.set('before', before);
     const token = await options.getToken?.();
     const response = await fetchImpl(
       `${baseUrl}/session/${encodeURIComponent(options.sessionId)}/message?${query}`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        ...(signal ? { signal } : {}),
+      },
     );
     if (!response.ok) {
+      // A 503 from the sandbox proxy is the box waking, not a failure — throw
+      // the retryable, "loading" error so the controller keeps polling instead
+      // of painting an error state over a session that is about to load.
+      if (response.status === 503) {
+        throw new SandboxNotReadyError(`session ${response.status}`);
+      }
       throw new Error(`Session synchronization failed: ${response.status}`);
     }
     return {
@@ -282,6 +319,9 @@ export class SessionSyncController {
   private readonly options: SessionSyncControllerOptions;
   private readonly scheduler: SessionSyncScheduler;
   private readonly livenessIntervalMs: number;
+  private readonly verifyIntervalMs: number;
+  /** When the last tail read was ISSUED — see `verifyIntervalMs`. */
+  private lastTailReadAt: number;
   /** Consecutive failed tail reads, for the retry backoff. Reset by success. */
   private retryAttempt = 0;
   private tailRetryTimer: unknown;
@@ -299,12 +339,21 @@ export class SessionSyncController {
   private lastActivityAt: number;
   private listeners = new Set<() => void>();
   private destroyed = false;
+  /**
+   * One controller-lifetime signal, threaded into every read. A scope reset
+   * (registry `resetSessionSyncControllersForSession`) or unmount destroys this
+   * controller, `destroy()` aborts this, and the in-flight read cancels — so a
+   * navigated-away or superseded read frees its socket and can never hydrate.
+   */
+  private readonly abortController = new AbortController();
 
   constructor(options: SessionSyncControllerOptions) {
     this.options = options;
     this.scheduler = options.scheduler ?? defaultScheduler;
     this.livenessIntervalMs = options.livenessIntervalMs ?? 10_000;
+    this.verifyIntervalMs = options.verifyIntervalMs ?? 30_000;
     this.lastActivityAt = this.scheduler.now();
+    this.lastTailReadAt = this.scheduler.now();
   }
 
   getSnapshot = (): SessionSyncSnapshot => this.snapshot;
@@ -322,8 +371,14 @@ export class SessionSyncController {
   reconcile(reason: SessionSyncReason = 'manual'): Promise<void> {
     if (this.destroyed) return Promise.resolve();
     if (this.tailRequest) return this.tailRequest;
+    // `loading` covers the first read AND a not-ready retry, so a waking box
+    // does not flip to `stale` between attempts; a session that already has a
+    // fresh transcript revalidates as `stale`.
     this.update({
-      freshness: this.snapshot.freshness === 'idle' ? 'loading' : 'stale',
+      freshness:
+        this.snapshot.freshness === 'idle' || this.snapshot.freshness === 'loading'
+          ? 'loading'
+          : 'stale',
     });
     this.tailRequest = this.loadTail(reason).finally(() => {
       this.tailRequest = undefined;
@@ -402,10 +457,17 @@ export class SessionSyncController {
       this.cancelTimer(this.tailRetryTimer);
       this.tailRetryTimer = undefined;
     }
+    // Cancel any in-flight read so it frees its socket and cannot hydrate a
+    // controller that is being torn down.
+    this.abortController.abort();
     this.listeners.clear();
   }
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
+    // Stamped at ISSUE: any tail read — initial, poll, gap, visible — is a
+    // verification, so the busy-verification cadence counts from the last
+    // attempt rather than piling on top of reads other reasons already ran.
+    this.lastTailReadAt = this.scheduler.now();
     try {
       // ONE PAGE. Render it. This is what OpenCode's own client does, and the
       // reason we now do it too is measured:
@@ -451,9 +513,17 @@ export class SessionSyncController {
       // about the session. A failed read is not a fact about anything.
       this.options.markLoaded();
       this.retryAttempt = 0;
-    } catch {
+    } catch (error) {
       if (this.destroyed) return;
-      this.update({ freshness: 'error' });
+      // A superseded/cancelled read is not a failure and never hydrates — it
+      // must not paint an error over a live transcript, and it must not retry.
+      if (isAbortError(error) || this.abortController.signal.aborted) return;
+      // A sandbox that is still waking is a RETRYABLE, "loading" state, not a
+      // fault: the box may come up any second, so keep polling and keep the UI
+      // on its loader. Only a genuine failure earns `error`. NEVER an
+      // empty-`fresh` — `markLoaded` above ran only on success, so a failed
+      // read never records the session as an empty transcript.
+      this.update({ freshness: isSandboxNotReadyError(error) ? 'loading' : 'error' });
       this.scheduleTailRetry(reason);
     }
   }
@@ -490,12 +560,15 @@ export class SessionSyncController {
   ): Promise<SessionSyncPage> {
     const startedAt = this.scheduler.now();
     try {
-      const page = await this.options.loadPage({
-        // The tail is what someone is waiting for; an older page is what they
-        // asked for. Different budgets — see SESSION_SYNC_TAIL_PAGE_SIZE.
-        limit: operation === 'tail' ? SESSION_SYNC_TAIL_PAGE_SIZE : SESSION_SYNC_PAGE_SIZE,
-        ...(before ? { before } : {}),
-      });
+      const page = await this.options.loadPage(
+        {
+          // The tail is what someone is waiting for; an older page is what they
+          // asked for. Different budgets — see SESSION_SYNC_TAIL_PAGE_SIZE.
+          limit: operation === 'tail' ? SESSION_SYNC_TAIL_PAGE_SIZE : SESSION_SYNC_PAGE_SIZE,
+          ...(before ? { before } : {}),
+        },
+        this.abortController.signal,
+      );
       this.options.onTelemetry?.({
         operation,
         reason,
@@ -584,9 +657,15 @@ export class SessionSyncController {
   }
 
   private async checkLiveness(): Promise<void> {
-    if (this.destroyed || this.scheduler.now() - this.lastActivityAt <= this.livenessIntervalMs) {
-      return;
-    }
+    if (this.destroyed) return;
+    const nowMs = this.scheduler.now();
+    const quiet = nowMs - this.lastActivityAt > this.livenessIntervalMs;
+    // `noteActivity` proves frames are ARRIVING, not that none were lost. A
+    // degraded stream that still delivers a trickle renewed the quiet timer
+    // forever while the transcript diverged — so a busy session re-reads the
+    // tail at `verifyIntervalMs` no matter how live the stream looks.
+    const verifyDue = nowMs - this.lastTailReadAt >= this.verifyIntervalMs;
+    if (!quiet && !verifyDue) return;
     // Reconcile the TAIL, and nothing else. This is the repair for a dropped
     // SSE stream: the transcript catches up on messages the stream never
     // delivered.

@@ -58,6 +58,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',
@@ -982,9 +983,42 @@ describe('daemon proxy auth gate', () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode(), Date.now())
     const res = await app.request('/kortix/health')
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { daemon: string; auth: string }
+    const body = (await res.json()) as {
+      daemon: string
+      auth: string
+      compiled_boot_mode: string
+      compiled_checkout: boolean
+      compiled_runtime: boolean
+    }
     expect(body.daemon).toBe('ok')
     expect(body.auth).toBe('configured')
+    expect(body.compiled_boot_mode).toBe('off')
+    expect(body.compiled_checkout).toBe(false)
+    expect(body.compiled_runtime).toBe(false)
+  })
+
+  it('reports when the workspace came from a compiled checkout', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-compiled-health-'))
+    try {
+      const target = join(root, 'workspace')
+      git(['init', '-b', 'main', target])
+      writeFileSync(join(target, '.git', 'kortix-compiled-checkout.json'), '{}')
+      const app = buildOpencodeApp(
+        baseConfig({ projectTarget: target, compiledBootMode: 'prefer' }),
+        fakeOpencode(),
+        Date.now(),
+      )
+
+      const res = await app.request('/kortix/health')
+      const body = (await res.json()) as {
+        compiled_boot_mode: string
+        compiled_checkout: boolean
+      }
+      expect(body.compiled_boot_mode).toBe('prefer')
+      expect(body.compiled_checkout).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('reports auth=unconfigured when the sandbox token is unset', async () => {
@@ -1027,6 +1061,44 @@ describe('daemon proxy auth gate', () => {
       const body = (await res.json()) as { error: string; reason: string }
       expect(body.error).toBe('sandbox runtime not ready')
       expect(body.reason).toBe('repo_materialization_failed')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('names the boot phase on every not-ready answer so the API can measure progress', async () => {
+    // Essentia 2026-08-25 17:23: a resume that converged OpenCode 1.18.19 →
+    // 1.18.23 and sat through the new version's 53 s first init was parked as
+    // runtime_boot_failed by a fixed 90 s budget. The header lets the API
+    // restart its clock on progress instead.
+    const root = mkdtempSync(join(tmpdir(), 'kortix-boot-phase-'))
+    try {
+      const target = join(root, 'workspace')
+      mkdirSync(target)
+      const timeline: { label: string; atMs: number }[] = [{ label: 'config-deps', atMs: 1 }]
+      const app = buildOpencodeApp(
+        baseConfig({ autoClone: false, projectTarget: target }),
+        fakeOpencode('starting'),
+        Date.now(),
+        { repoMaterializationError: null, timeline },
+      )
+      const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+      const first = await app.request('/session?directory=%2Fworkspace', {
+        headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+      })
+      expect(first.status).toBe(503)
+      const firstPhase = first.headers.get('x-kortix-boot-phase') ?? ''
+      expect(firstPhase).not.toBe('')
+      expect(firstPhase).toContain('config-deps')
+      expect(firstPhase).toContain('opencode=starting')
+      expect(((await first.json()) as { phase: string }).phase).toBe(firstPhase)
+
+      timeline.push({ label: 'opencode-spawned', atMs: 2 })
+      const second = await app.request('/session?directory=%2Fworkspace', {
+        headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+      })
+      expect(second.status).toBe(503)
+      expect(second.headers.get('x-kortix-boot-phase')).not.toBe(firstPhase)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

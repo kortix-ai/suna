@@ -4,6 +4,7 @@ import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
 import type { Config } from './config'
+import { materializeCompiledCheckoutToStage } from './compiled-checkout'
 import { logger } from './logger'
 
 type ExecResult = { code: number; stdout: string; stderr: string }
@@ -702,6 +703,33 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     await clearDirContents(target)
   }
   {
+    if (cfg.compiledBootMode !== 'off' && cfg.sessionFresh) {
+      const stage = await createStagePath(target, 'compiled')
+      try {
+        const metrics = await materializeCompiledCheckoutToStage(cfg, stage, base)
+        if (cfg.compiledBootMode === 'shadow') {
+          logger.info('[git] compiled checkout verified in shadow mode; using clone path', metrics)
+          await rm(stage, { recursive: true, force: true })
+        } else {
+          await swapStageIntoTarget(stage, target)
+          const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', cfg.repoUrl])
+          if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
+          if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
+          await configureRepoGitIdentity(cfg, target)
+          await markSessionCheckoutAdopted(target, cfg.branchName)
+          logger.info('[git] repo materialized from compiled checkout', metrics)
+          return
+        }
+      } catch (error) {
+        await rm(stage, { recursive: true, force: true }).catch(() => {})
+        if (cfg.compiledBootMode === 'required') throw error
+        logger.warn('[git] compiled checkout unavailable; using clone path', {
+          mode: cfg.compiledBootMode,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
     // Scaffold fast path: the image bakes the canonical starter repo at
     // /opt/kortix/scaffold.git whose root commit is SHARED with every project
     // seeded from the starter (deterministic root — comp git-backends/seed.ts).

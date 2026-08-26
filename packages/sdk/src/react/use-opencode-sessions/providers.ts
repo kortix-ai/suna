@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import { useKortixRouteProjectId } from '../route-project';
@@ -19,6 +20,7 @@ import {
   filterToNativeProviders,
   GATEWAY_PROVIDER_IDS,
   LLM_PROVIDER_CREDENTIALS,
+  mergeNativeProviderLists,
   mergeProjectSecretConnectedProviders,
   nativeProviderListFromCatalog,
   normalizeProviderList,
@@ -176,14 +178,27 @@ export function useOpenCodeProviders() {
         new Set(items.map((secret: { name: string }) => secret.name)),
       );
     },
-    enabled: !!projectId && projectModeKnown && !projectGatewayEnabled && !runtimeReady,
+    // Stays live after boot: the merged picker keeps catalog order + curated
+    // defaults under the runtime's provider objects (see
+    // `mergeNativeProviderLists`), so the list does not change under the user
+    // the moment the sandbox reports in.
+    enabled: !!projectId && projectModeKnown && !projectGatewayEnabled,
     ...contract('config'),
     retry: false,
   });
 
+  const mergedNative = useMemo(
+    () => mergeNativeProviderLists(nativeCatalogQuery.data, nativeProvidersQuery.data),
+    [nativeCatalogQuery.data, nativeProvidersQuery.data],
+  );
+
   if (projectId && projectGatewayEnabled) return gatewayProvidersQuery;
-  if (projectId && projectModeKnown && !runtimeReady && !nativeProvidersQuery.data) {
-    return nativeCatalogQuery;
+  if (projectId && projectModeKnown && !projectGatewayEnabled) {
+    // ONE native picker across sandbox states. `isLoading` follows whichever
+    // source is still the only one expected right now: pre-boot the catalog,
+    // post-boot the runtime.
+    const base = runtimeReady || nativeProvidersQuery.data ? nativeProvidersQuery : nativeCatalogQuery;
+    return Object.assign({}, base, { data: mergedNative }) as typeof nativeProvidersQuery;
   }
   return nativeProvidersQuery;
 }

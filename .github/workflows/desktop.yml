@@ -60,7 +60,7 @@ jobs:
               apps/desktop-electron/dist/*.blockmap
               apps/desktop-electron/dist/latest.yml
           - target_pretty: linux-x64
-            runner: ubuntu-22.04
+            runner: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
             eb_flag: --linux
             artifact: desktop-linux-x64
             files: |
@@ -173,7 +173,7 @@ jobs:
     # Publish whatever installers built — a single OS's signing failure shouldn't
     # discard the others.
     if: always() && needs.build.result != 'cancelled'
-    runs-on: ubuntu-22.04
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     permissions:
       contents: write
     steps:

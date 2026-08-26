@@ -388,6 +388,10 @@ export interface ConnectorRouterDeps {
     slug: string,
     userId: string,
     redirects?: { success?: string; error?: string },
+    /** The session whose agent asked for this connector, when a session token made
+     *  the call. Persisted on the connection so finalize can tell that agent the
+     *  account landed instead of it re-minting a link on its next run. */
+    requestingSessionId?: string | null,
   ): Promise<{
     provider: string;
     token?: string;
@@ -405,6 +409,12 @@ export interface ConnectorRouterDeps {
     userId: string,
     selector?: { connectionId?: string; requestId?: string },
   ): Promise<{ provider: string; connected: boolean; accountId?: string; connectionId?: string; isNoAuth?: boolean } | null>;
+  /** Connectors this session's agent asked a human to authorize, and whether
+   *  each is connected yet. Drives the in-session Connect button. */
+  listSessionConnectRequests?(
+    projectId: string,
+    sessionId: string,
+  ): Promise<Array<{ slug: string; app: string; provider: string; connected: boolean }>>;
   connectStatus?(): Promise<{ configured: boolean; provider: string | null; providers?: string[] }>;
   listConnectToolkits?(projectId: string, input: { q?: string; category?: string; cursor?: string; limit?: number }): Promise<unknown | null>;
   /**
@@ -1830,7 +1840,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       } catch {
         /* no body */
       }
-      const result = await connect(projectId, slug, admin.userId, redirects);
+      // Set by the auth middleware from a scoped session token, so this is
+      // populated exactly when the agent in a sandbox made the call — and null
+      // when a human clicked Connect in project settings, which has no session
+      // waiting on the answer.
+      const requestingSessionId = (c.get('sessionId') as string | undefined) ?? null;
+      const result = await connect(projectId, slug, admin.userId, redirects, requestingSessionId);
       if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
       return c.json(result);
     },
@@ -1872,6 +1887,39 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const result = await finalize(projectId, slug, admin.userId, selector);
       if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
       return c.json(result);
+    },
+  );
+
+  // ── Connect requests this session is waiting on ──────────────────────────
+  //
+  // The agent mints a connect link mid-turn and stops. The web session reads
+  // this to swap that raw URL for a real Connect button, which runs the same
+  // popup + finalize flow project settings already uses. Provider-neutral: the
+  // rows are keyed on the requesting session, not on who issued the link.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/sessions/{sessionId}/connect-requests',
+      tags: ['connector'],
+      summary: 'Connectors this session asked a human to authorize',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string().min(1) }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Pending connect requests'),
+        ...errors(403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listSessionConnectRequests) {
+        return featureNotSupportedResponse(c, 'session_connect_requests');
+      }
+      return c.json({ connectors: await deps.listSessionConnectRequests(projectId, sessionId) });
     },
   );
 

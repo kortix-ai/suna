@@ -508,15 +508,58 @@ export interface SessionTranscriptMessage {
   error: { name?: string; message?: string } | null;
 }
 
+/**
+ * Which source answered a transcript read.
+ *
+ * `live` is the sandbox's own OpenCode endpoint. `mirror` is the durable
+ * server-side copy the control plane writes at turn end, which is what lets a
+ * STOPPED or waking session answer at all. `none` is the honest "nothing could
+ * answer" and is the only value that accompanies `available: false`. The two
+ * sources are never merged — this field says which one you got.
+ */
+export type SessionTranscriptSource = 'live' | 'mirror' | 'none';
+
 /** Compact server-side transcript read — text + tool calls, stripped of tool
  *  inputs/outputs, for project automation (callable with project-scoped
  *  session tokens, unlike the raw sandbox proxy). */
 export interface SessionTranscript {
   available: boolean;
   reason: string | null;
+  source: SessionTranscriptSource;
+  /** The response contains the session's FIRST message. False means "this is a
+   *  tail", never "something is broken". */
+  complete: boolean;
+  /** When the mirror was last written; null for a live read. */
+  captured_at: string | null;
   opencode_session_id: string | null;
   message_count: number;
   messages: SessionTranscriptMessage[];
+}
+
+/** One mirrored message in the shape the session sync store hydrates from:
+ *  OpenCode's own envelope, with the parts array stripped of tool
+ *  inputs/outputs and file urls. */
+export interface SessionTranscriptSyncMessage {
+  info: Record<string, unknown>;
+  parts: Array<Record<string, unknown>>;
+}
+
+/**
+ * The durable transcript mirror, in sync-store shape.
+ *
+ * `source` is `mirror` or `none` — never `live`. A client whose sandbox is up
+ * reads the runtime directly, so this endpoint deliberately does not re-proxy
+ * it.
+ */
+export interface SessionTranscriptSyncEnvelope {
+  available: boolean;
+  reason: string | null;
+  source: SessionTranscriptSource;
+  complete: boolean;
+  captured_at: string | null;
+  opencode_session_id: string | null;
+  message_count: number;
+  messages: SessionTranscriptSyncMessage[];
 }
 
 export async function getSessionTranscript(
@@ -531,6 +574,32 @@ export async function getSessionTranscript(
   return unwrap(
     await backendApi.get<SessionTranscript>(
       `/projects/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+/**
+ * Read the durable server-side transcript mirror for a session.
+ *
+ * This is the ONE read that answers while the sandbox is down. It exists so a
+ * hibernated session can paint its history immediately instead of showing a
+ * full-screen loader for the length of the wake (measured 5-240 s).
+ *
+ * Messages carry OpenCode's real ids, so a client hydrates them provisionally
+ * (`hydrate(..., { source: 'cache' })`) and the live runtime read SETTLES them
+ * by id rather than duplicating them.
+ */
+export async function getSessionTranscriptSync(
+  projectId: string,
+  sessionId: string,
+  options?: { limit?: number; signal?: AbortSignal },
+) {
+  const search = new URLSearchParams({ shape: 'sync' });
+  if (options?.limit != null) search.set('limit', String(options.limit));
+  return unwrap(
+    await backendApi.get<SessionTranscriptSyncEnvelope>(
+      `/projects/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
+      { showErrors: false },
     ),
   );
 }

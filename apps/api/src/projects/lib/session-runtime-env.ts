@@ -16,6 +16,8 @@ export interface SessionRuntimeEnvInput {
   workspaceMode?: WorkspaceModeV2 | null;
   /** Enables the rollback-safe fresh-session Git fast path. */
   fastColdBootEnabled?: boolean;
+  /** Experimental compiled checkout and OpenCode launcher rollout mode. */
+  compiledBootMode?: 'off' | 'shadow' | 'prefer' | 'required';
   /** True only for a newly-created session branch that still equals base. */
   freshSession?: boolean;
   /** Replacement runtime must fetch the existing remote session branch once. */
@@ -36,6 +38,8 @@ export interface SessionRuntimeEnvInput {
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
   const allowsFullRepository = workspaceModeAllowsFullRepository(input.workspaceMode);
+  const compiledBootMode = input.compiledBootMode ?? 'off';
+  const compiledBootEnabled = compiledBootMode !== 'off';
   const projectGitEnv: Record<string, string> = allowsFullRepository
     ? {
         KORTIX_REPO_URL: input.repoUrl,
@@ -45,9 +49,10 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
       }
     : {};
   const fastGitBootEnv: Record<string, string> =
-    allowsFullRepository && input.fastColdBootEnabled && input.freshSession
+    allowsFullRepository && (input.fastColdBootEnabled || compiledBootEnabled) && input.freshSession
       ? {
           KORTIX_SESSION_FRESH: '1',
+          ...(compiledBootEnabled ? { KORTIX_COMPILED_BOOT_MODE: compiledBootMode } : {}),
           ...(input.baseSha ? { KORTIX_BASE_SHA: input.baseSha } : {}),
           ...(input.gitDeltaBundleBase64
             ? { KORTIX_GIT_DELTA_BUNDLE_BASE64: input.gitDeltaBundleBase64 }

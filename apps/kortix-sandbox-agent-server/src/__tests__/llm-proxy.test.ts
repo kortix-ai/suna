@@ -230,3 +230,86 @@ describe('refreshGatewayCatalogFile — warm snapshot catalog recovery', () => {
     }
   })
 })
+
+describe('in-sandbox inline image window (Essentia 2026-08-25: >128 MiB vision bodies 413d at the edge)', () => {
+  afterEach(() => {
+    stopLlmProxy()
+    delete process.env.KORTIX_LLM_MAX_INLINE_IMAGES
+  })
+
+  function countingUpstream() {
+    let seen: { images: number; bytes: number; contentLength: string | null; auth: string | null } | null = null
+    const server = Bun.serve({
+      port: 0,
+      maxRequestBodySize: 512 * 1024 * 1024,
+      async fetch(req) {
+        const text = await req.text()
+        const body = JSON.parse(text) as { messages: Array<{ content: Array<{ type: string }> }> }
+        const images = body.messages.flatMap((m) => m.content).filter((p) => p.type === 'image_url').length
+        seen = { images, bytes: text.length, contentLength: req.headers.get('content-length'), auth: req.headers.get('authorization') }
+        return new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } })
+      },
+    })
+    return { url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true), seen: () => seen }
+  }
+
+  const img = (n: number) => ({ type: 'image_url', image_url: { url: `data:image/png;base64,${'A'.repeat(64 * 1024)}${n}` } })
+
+  test('a model request over the window leaves the sandbox with only the most recent images', async () => {
+    const up = countingUpstream()
+    try {
+      startLlmProxy(14321, up.url, 'real-token')
+      const messages = [
+        { role: 'user', content: [{ type: 'text', text: 'a' }, ...Array.from({ length: 15 }, (_, i) => img(i))] },
+        { role: 'user', content: [{ type: 'text', text: 'b' }, ...Array.from({ length: 15 }, (_, i) => img(15 + i))] },
+      ]
+      const res = await fetch(`${llmProxyBaseUrl()}/v1/llm/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${LLM_PROXY_PLACEHOLDER_KEY}` },
+        body: JSON.stringify({ model: 'x', messages }),
+      })
+      expect(res.status).toBe(200)
+      const seen = up.seen()!
+      expect(seen.images).toBe(12) // DEFAULT_IMAGE_WINDOW.keepOnOverflow
+      expect(seen.auth).toBe('Bearer real-token')
+      expect(Number(seen.contentLength)).toBe(seen.bytes)
+      expect(seen.bytes).toBeLessThan(15 * 64 * 1024)
+    } finally {
+      up.stop()
+    }
+  })
+
+  test('a request under the window and a non-model path stream through untouched', async () => {
+    const up = countingUpstream()
+    try {
+      startLlmProxy(14322, up.url, 'real-token')
+      const messages = [{ role: 'user', content: [{ type: 'text', text: 'a' }, img(1), img(2)] }]
+      const res = await fetch(`${llmProxyBaseUrl()}/v1/llm/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'x', messages }),
+      })
+      expect(res.status).toBe(200)
+      expect(up.seen()!.images).toBe(2)
+    } finally {
+      up.stop()
+    }
+  })
+
+  test('KORTIX_LLM_MAX_INLINE_IMAGES=0 disables the window', async () => {
+    process.env.KORTIX_LLM_MAX_INLINE_IMAGES = '0'
+    const up = countingUpstream()
+    try {
+      startLlmProxy(14323, up.url, 'real-token')
+      const messages = [{ role: 'user', content: Array.from({ length: 25 }, (_, i) => img(i)) }]
+      await fetch(`${llmProxyBaseUrl()}/v1/llm/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'x', messages }),
+      })
+      expect(up.seen()!.images).toBe(25)
+    } finally {
+      up.stop()
+    }
+  })
+})

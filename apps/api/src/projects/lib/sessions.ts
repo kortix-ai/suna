@@ -115,6 +115,7 @@ import {
   buildPlatformMetaOpenCodeConfig,
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
+import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
 
 export type SessionCreateError = {
   status: number;
@@ -653,6 +654,7 @@ export async function buildSessionSandboxEnvVars(input: {
       compiledAgentConfig,
       workspaceMode: input.workspaceMode,
       fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
+      compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
       restoreSessionBranch: input.restoreSessionBranch,
       baseSha: input.baseSha,
@@ -847,6 +849,7 @@ export async function createProjectSession(input: {
   row?: ProjectSessionRow;
   error?: SessionCreateError;
   headers?: Record<string, string>;
+  pendingPromptIdempotencyKey?: string | null;
 }> {
   const { project, userId, body } = input;
   const projectId = project.projectId;
@@ -1649,7 +1652,8 @@ export async function createProjectSession(input: {
       // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
       // with gitAuth (folded into the env-build chain, not awaited inline).
       let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
-      const fastBootGitHintPromise = config.KORTIX_FAST_COLD_BOOT_ENABLED
+      const fastBootGitHintPromise =
+        config.KORTIX_FAST_COLD_BOOT_ENABLED || config.KORTIX_COMPILED_BOOT_MODE !== 'off'
         ? Promise.race([
             projectWithGitAuthPromise
               .then((projectWithGitAuth) =>
@@ -1667,6 +1671,38 @@ export async function createProjectSession(input: {
             if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
           })
         : Promise.resolve(undefined);
+      if (config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
+        void Promise.all([projectWithGitAuthPromise, fastBootGitHintPromise])
+          .then(([projectWithGitAuth, hint]) =>
+            hint?.baseSha
+              ? prebuildCompiledBootArtifacts(
+                  projectWithGitAuth,
+                  baseRef,
+                  hint.baseSha,
+                  proxyGitUrl(projectId),
+                )
+              : null,
+          )
+          .then((artifacts) => {
+            if (!artifacts) return;
+            console.info('[compiled-boot] session artifacts ready', {
+              projectId,
+              sessionId,
+              ref: baseRef,
+              sourceSha: artifacts.runtime.sourceSha,
+              checkoutCache: artifacts.checkout.cacheHit ? 'hit' : 'miss',
+              runtimeCache: artifacts.runtime.cacheHit ? 'hit' : 'miss',
+            });
+          })
+          .catch((error) => {
+            console.warn('[compiled-boot] session artifact prebuild failed', {
+              projectId,
+              sessionId,
+              ref: baseRef,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+      }
       const envPromise = fastBootGitHintPromise
         .then((fastBootGitHint) =>
           buildSessionSandboxEnvVars({
@@ -1801,5 +1837,10 @@ export async function createProjectSession(input: {
     }
   })();
 
-  return { row: sessionRow, headers: responseHeaders };
+  return {
+    row: sessionRow,
+    headers: responseHeaders,
+    pendingPromptIdempotencyKey:
+      pendingPromptConversion?.rowValues?.idempotencyKey ?? null,
+  };
 }

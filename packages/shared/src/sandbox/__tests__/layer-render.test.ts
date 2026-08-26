@@ -403,6 +403,13 @@ describe('the entrypoint survives providers that discard image USER/ENV', () => 
     expect(proc.exitCode).toBe(0);
   });
 
+  test('compiled boot verifies server.mjs before launch and preserves prefer fallback', () => {
+    expect(entrypoint).toContain('install-compiled-runtime')
+    expect(entrypoint).toContain('node "${COMPILED_RUNTIME_PATH}"')
+    expect(entrypoint).toContain('compiled runtime is required but unavailable')
+    expect(entrypoint).toContain('compiled runtime rejected launch; falling back to baked agent')
+  });
+
   test('build verifies entrypoint syntax before wiring it as the entrypoint', () => {
     expect(rendered).toContain('&& bash -n /usr/local/bin/kortix-entrypoint');
   });

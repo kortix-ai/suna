@@ -303,7 +303,7 @@ different secret allowlist, connector binding map, or runtime context returns
 | `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist contains an unknown project-secret identifier.                |
 | `409`                        | `CONNECTOR_CONNECTION_REQUIRED`               | A mandatory connector has no valid active connection. Every failing connector is listed in `connector_connections`. |
 | `409`                        | `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`         | A required slug has no configured connector at all. Every failing alias is listed in `connectors`. |
-| `409`                        | `CONNECTOR_NOT_PIPEDREAM`                        | The alias is a connector on the project but not a Pipedream one, so no Quick Connect link exists for it. |
+| `409`                        | `CONNECTOR_PROVIDER_UNSUPPORTED`                 | The alias is a connector on the project but its provider has no hosted authorization page, so no connect link exists for it. |
 | `409`                        | `CONNECTOR_PIPEDREAM_APP_MISSING`                | The Pipedream connector names no app, so no connect link can be built.  |
 | `409` create / `403` rescope | `CONNECTOR_CONNECTION_INACTIVE`                     | The selected connection or connector is inactive.                       |
 | `409`                        | `IDEMPOTENCY_*_CONFLICT`                         | The idempotency key was replayed with a different request body.                    |

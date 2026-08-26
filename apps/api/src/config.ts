@@ -539,6 +539,14 @@ const envSchema = z.object({
   // legacy session per-project image path. An unset value preserves the legacy
   // KORTIX_WARM_SNAPSHOT_ENABLED rollout while leaving new accelerators off.
   KORTIX_FAST_COLD_BOOT_ENABLED: optBoolUnset,
+  // Experimental compiled boot path. The API builds a verified checkout and
+  // OpenCode launcher for one exact Git SHA. `off` preserves the clone and
+  // baked-agent path. `shadow` verifies both artifacts without using them.
+  // `prefer` uses both artifacts with legacy fallback. `required` fails closed.
+  KORTIX_COMPILED_BOOT_MODE: z
+    .enum(['off', 'shadow', 'prefer', 'required'])
+    .optional()
+    .default('off'),
   // Per-provider allowlist for legacy WARM project images of CUSTOM
   // (non-default-slug) templates. The FAST experiment never uses this
   // allowlist; it creates project images only for the shared default template.
@@ -1160,6 +1168,7 @@ export const config = {
   KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
   KORTIX_FAST_COLD_BOOT_CONFIGURED: env.KORTIX_FAST_COLD_BOOT_ENABLED !== undefined,
+  KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,

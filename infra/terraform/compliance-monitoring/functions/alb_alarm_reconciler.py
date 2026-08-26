@@ -7,23 +7,29 @@ from collections.abc import Iterable
 from typing import Any
 
 ALARM_PREFIX = "kortix-alb-"
+ALARM_NAMESPACE = "AWS/ApplicationELB"
 TARGET_GROUP_METRICS = {
-    "target-response-time",
     "unhealthy-hosts",
     "zero-healthy-hosts",
 }
 
+# Alarm suffixes this reconciler used to own and now deletes on every run.
+#
+# "target-response-time" alarmed on average TargetResponseTime >= 2 s. The
+# gateway ALB streams LLM completions and the API ALB holds SSE streams, so a
+# 6-11 s average is normal traffic there. The alarm flapped ALARM/OK every
+# 5-10 minutes and produced ~300 SNS emails in one day (2026-08-26) without
+# one real incident. Availability is still covered by elb-5xx,
+# unhealthy-hosts, and zero-healthy-hosts.
+RETIRED_ALARM_SUFFIXES = ("-target-response-time",)
+
+# Hand-made ALB alarms from the 2026-07-27 compliance evidence pass. They
+# duplicate the kortix-alb-* set on the same load balancers and are not in
+# Terraform. Only alarms in the ALB namespace match; compliance-*-cpu-high
+# alarms live in AWS/EC2 and belong to the EC2 reconciler.
+LEGACY_ALARM_PREFIX = "compliance-"
+
 ALARM_SPECS: dict[str, dict[str, Any]] = {
-    "target-response-time": {
-        "AlarmDescription": "SOC2 DCF-86: ALB target response time is elevated",
-        "MetricName": "TargetResponseTime",
-        "Statistic": "Average",
-        "Period": 300,
-        "EvaluationPeriods": 2,
-        "DatapointsToAlarm": 2,
-        "Threshold": 2.0,
-        "ComparisonOperator": "GreaterThanThreshold",
-    },
     "elb-5xx": {
         "AlarmDescription": "SOC2 DCF-86: ALB server errors detected",
         "MetricName": "HTTPCode_ELB_5XX_Count",
@@ -128,7 +134,7 @@ def _alarm_configuration(
         **ALARM_SPECS[suffix],
         "ActionsEnabled": True,
         "AlarmActions": [topic_arn],
-        "Namespace": "AWS/ApplicationELB",
+        "Namespace": ALARM_NAMESPACE,
         "Dimensions": dimensions,
         "TreatMissingData": "notBreaching",
         "Tags": [
@@ -172,6 +178,41 @@ def _is_compliant(
     return dimensions == expected_dimensions and alarm.get("AlarmActions", []) == [
         topic_arn
     ]
+
+
+def _alarms_with_prefix(cloudwatch: Any, prefix: str) -> list[dict[str, Any]]:
+    alarms: list[dict[str, Any]] = []
+    paginator = cloudwatch.get_paginator("describe_alarms")
+    for page in paginator.paginate(AlarmNamePrefix=prefix, AlarmTypes=["MetricAlarm"]):
+        alarms.extend(page.get("MetricAlarms", []))
+    return alarms
+
+
+def _stale_alarm_names(cloudwatch: Any, desired_names: set[str]) -> list[str]:
+    """Alarms this reconciler owns that no longer belong in the account.
+
+    Two families qualify:
+
+    - kortix-alb-* alarms whose suffix is retired. Terraform only ever managed
+      the single-target-group name; the per-target-group variants
+      (kortix-alb-<lb>-<tg>-target-response-time) were created by this
+      function alone, so only this function can remove them.
+    - compliance-* alarms in the ALB namespace. They are unmanaged duplicates
+      of the kortix-alb-* coverage.
+
+    Any name in `desired_names` is never stale.
+    """
+    stale: set[str] = set()
+    for alarm in _alarms_with_prefix(cloudwatch, ALARM_PREFIX):
+        name = alarm["AlarmName"]
+        if name in desired_names:
+            continue
+        if name.endswith(RETIRED_ALARM_SUFFIXES):
+            stale.add(name)
+    for alarm in _alarms_with_prefix(cloudwatch, LEGACY_ALARM_PREFIX):
+        if alarm.get("Namespace") == ALARM_NAMESPACE:
+            stale.add(alarm["AlarmName"])
+    return sorted(stale)
 
 
 def reconcile(elbv2: Any, cloudwatch: Any, topic_arn: str) -> dict[str, Any]:
@@ -228,10 +269,15 @@ def reconcile(elbv2: Any, cloudwatch: Any, topic_arn: str) -> dict[str, Any]:
             )
             updated.append(name)
 
+    deleted = _stale_alarm_names(cloudwatch, set(alarm_names))
+    for names in _chunks(deleted):
+        cloudwatch.delete_alarms(AlarmNames=names)
+
     result = {
         "load_balancers": len(load_balancers),
         "covered_alarms": len(desired),
         "updated_alarms": updated,
+        "deleted_alarms": deleted,
     }
     print(result)
     return result

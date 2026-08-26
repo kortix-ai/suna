@@ -25,10 +25,30 @@ describe('sessionComposerReadiness', () => {
     expect(readiness.ready).toBe(false);
   });
 
-  test('only a box the control plane says is down is announced as waking', () => {
-    expect(sessionComposerReadiness({ runtimeReady: false, connection: 'waking' }).notice).toMatch(
-      /waking/i,
-    );
+  // RC-3 — a box the control plane says is down (`connection === 'waking'`) is
+  // PARKED, not actively booting. It resumes on the next send, so the composer
+  // states that honestly instead of showing a "waking" spinner-lie: no infinite
+  // spinner, no retry, and the copy names what a send does.
+  test('a parked/idle box gets an honest idle state, not a waking spinner', () => {
+    const readiness = sessionComposerReadiness({ runtimeReady: false, connection: 'waking' });
+    expect(readiness.notice).toMatch(/idle/i);
+    expect(readiness.notice).not.toMatch(/waking/i);
+    expect(readiness.notice).toMatch(/starts it automatically|send/i);
+    expect(readiness.ready).toBe(false);
+    // No retry: there is nothing to reset — the box is simply parked, and a
+    // send (not a retry button) is what wakes it.
+    expect(readiness.retryable).toBe(false);
+  });
+
+  test('a parked box never escalates to the "taking longer than usual" stall copy', () => {
+    // The SDK no longer arms the boot-stall clock for a parked box, so `stalled`
+    // stays false; the composer therefore never reaches the stall branch.
+    const readiness = sessionComposerReadiness({
+      runtimeReady: false,
+      connection: 'waking',
+      stalled: false,
+    });
+    expect(readiness.notice).not.toMatch(/taking longer/i);
   });
 
   test('an unreachable runtime is still announced', () => {

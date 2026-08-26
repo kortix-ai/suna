@@ -39,6 +39,20 @@ export interface SessionStartFailure {
   message: string;
   /** A user action can retry. Automatic polling must still stop. */
   retryable: boolean;
+  /**
+   * WHY this negative was claimed: which check produced it, when, what the
+   * provider said, how many consecutive attempts it counts, and when the
+   * SERVER re-attempts by itself (`next_retry_at`).
+   *
+   * Absent on payloads from an API older than the session-open envelope.
+   */
+  evidence?: {
+    check: string;
+    observed_at: string | null;
+    error: string | null;
+    attempts: number;
+    next_retry_at: string | null;
+  };
 }
 
 export interface SessionStartResult {
@@ -61,6 +75,51 @@ export interface SessionStartResult {
    */
   runtime_url?: string | null;
   reason?: string;
+
+  // ── Session-open envelope. Every field describes THIS call, not the row's
+  // accumulated history. Optional: an older API omits them entirely.
+  /** ONE clock for the whole answer. */
+  observed_at?: string;
+  /**
+   * What the server DID on this call. There is deliberately no
+   * `replayed_stamp`: an answer no live check supports is a defect, not a
+   * state. Before this existed, `/start` could return `stage:"failed"` from a
+   * stamp written hours earlier without contacting a provider.
+   */
+  action?:
+    | "inspected"
+    | "checked_provider"
+    | "resumed"
+    | "provisioned"
+    | "restored"
+    | "reconciled"
+    | "awaited_wake"
+    | "cooling_down";
+  /** Where the box is in its boot, and whether anything is driving it now. */
+  boot?: {
+    phase: "provisioning" | "resuming" | "booting" | "ready" | "parked" | "failed";
+    since: string | null;
+    /**
+     * Is a provider operation running for this session right now? `false` on a
+     * `starting` payload means the server is waiting out a retry cooldown, not
+     * that a box is being started.
+     */
+    actively_starting: boolean;
+  };
+  /**
+   * What the server checked on this call. `known: false` means NOT CHECKED —
+   * never "checked and found nothing". The sandbox row's own
+   * `metadata.healthStatus: "unknown"` conflates those two; this does not.
+   */
+  observation?: {
+    provider: { known: boolean; status: string | null; checked_at: string | null };
+    runtime: {
+      known: boolean;
+      state: "ready" | "booting" | "unreachable" | null;
+      boot_phase: string | null;
+      checked_at: string | null;
+    };
+  };
 }
 
 /**

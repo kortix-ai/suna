@@ -33,6 +33,11 @@ export function useGatewayRoutingPolicy(projectId: string | null | undefined) {
     });
 
   return Object.assign(query, {
+    // Stated beside `data` on purpose: a disabled query still serves cache
+    // residue from before the flag flipped, and a consumer that only checks
+    // `data?.capabilities.write` would keep rendering a gateway-only control
+    // (the composer's reasoning-effort chip) for a native project.
+    llmGatewayEnabled: !!projectId && gateway.enabled,
     set: useMutation({
       mutationKey: gatewayRoutingPolicyKey(projectId),
       mutationFn: (policy: GatewayProjectRoutingPolicy) =>

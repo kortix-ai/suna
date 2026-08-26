@@ -23,6 +23,10 @@ export interface ApprovalRequestData {
   requestedAt: string;
   argsPreview: Record<string, unknown> | null;
   reviewComplete?: boolean;
+  /** False when the VIEWER may not see connector arguments (Review Center
+   *  read-only members). Changes only the wording — the call is unreviewable
+   *  either way, but "nothing was recorded" would be a lie here. */
+  previewAuthorized?: boolean;
   resolution?: ApprovalDecisionValue | null;
   pending: boolean;
   status?: string | null;
@@ -30,6 +34,34 @@ export interface ApprovalRequestData {
 }
 
 export type ApprovalDecisionValue = 'approve' | 'deny';
+
+/**
+ * Can a human actually judge this call from what we recorded?
+ *
+ * TRUNCATION IS NOT BLINDNESS. `reviewComplete` (server:
+ * `args_preview_complete`) goes false whenever the preview builder elided
+ * ANYTHING — an 11th recipient, a 96-char URL, a fourth nesting level, an
+ * attachment body — and every elision is written into the preview the human
+ * reads (`[+3 more]`, `[204800 chars omitted]`). Gating the decision on it made
+ * an ordinary "email this PDF" call permanently un-approvable: a disabled
+ * button beside a warning, with Deny as the only possible answer.
+ *
+ * Reviewability is the narrower question: is there anything to look at? A call
+ * that shows its parameters is decidable, elisions and all. One that shows none
+ * is not — and no approve path is offered for it, rather than a dead control.
+ *
+ * Mirrors `approvalPreviewReviewable` in apps/api (connectors/args-preview.ts),
+ * which enforces the same rule on POST /approvals/:executionId.
+ */
+export function approvalReviewable(
+  argsPreview: Record<string, unknown> | null | undefined,
+  reviewComplete: boolean | undefined,
+): boolean {
+  if (argsPreview && Object.keys(argsPreview).length > 0) return true;
+  // No preview is still reviewable when the server confirms nothing was
+  // withheld — an argument-less call hides nothing.
+  return reviewComplete !== false;
+}
 
 interface ApprovalRequestProps {
   request: ApprovalRequestData;
@@ -114,18 +146,23 @@ export function ApprovalParameters({
     >
       <div
         className={cn(
-          'bg-primary/[0.03] border-border border-b',
+          'bg-primary/[0.03] border-border',
+          // No list under it means no divider — otherwise the empty case draws
+          // a rule along the bottom of the box for nothing.
+          entries.length > 0 && 'border-b',
           dense ? 'px-3 py-1.5' : 'px-4 py-2',
         )}
       >
         <p className="text-foreground text-xs font-medium">Parameters</p>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-          {reviewComplete
-            ? 'These are the redacted values the connector will receive.'
-            : 'Some connector values could not be displayed in full.'}
+          {entries.length === 0
+            ? 'No parameters were recorded for this call.'
+            : reviewComplete
+              ? 'These are the redacted values the connector will receive.'
+              : 'These are the redacted values the connector will receive. Values too long to show are marked in place.'}
         </p>
       </div>
-      {entries.length > 0 ? (
+      {entries.length > 0 && (
         <dl>
           {entries.map(([key, value]) => (
             <div
@@ -153,26 +190,23 @@ export function ApprovalParameters({
             </div>
           ))}
         </dl>
-      ) : (
-        <p
-          className={cn(
-            'text-muted-foreground text-xs text-pretty',
-            dense ? 'px-3 py-2' : 'px-4 py-4',
-          )}
-        >
-          This call has no recorded parameter preview. Review the session context before you approve
-          it.
-        </p>
       )}
     </div>
   );
 }
 
-/** Why Approve is unavailable. Denying an unreviewable call is still allowed. */
-export function ApprovalIncompleteNotice({
+/**
+ * Shown ONLY when the row records no parameters at all — a call written before
+ * previews existed, or a viewer not authorised to see connector arguments.
+ * There is no Approve button beside it: approving what you cannot see is the
+ * one thing this gate exists to prevent, and a permanently disabled control
+ * next to a warning is not a decision, it is a dead end.
+ */
+export function ApprovalUnreviewableNotice({
+  previewAuthorized = true,
   dense = false,
   className,
-}: DenseProp & { className?: string }) {
+}: DenseProp & { previewAuthorized?: boolean; className?: string }) {
   return (
     <p
       className={cn(
@@ -181,8 +215,9 @@ export function ApprovalIncompleteNotice({
         className,
       )}
     >
-      Kortix cannot approve this call because the complete parameters are not available. You can
-      deny it.
+      {previewAuthorized
+        ? 'Nothing was recorded about what this call would do, so it cannot be reviewed here — only denied.'
+        : 'You are not allowed to see this call’s parameters, so it cannot be approved here. Ask a project manager to review it.'}
     </p>
   );
 }
@@ -196,13 +231,15 @@ export function ApprovalIncompleteNotice({
 export function ApprovalDecisionActions({
   onDecision,
   busyDecision = null,
-  approveDisabled = false,
+  approvable = true,
   dense = false,
   className,
 }: DenseProp & {
   onDecision: (decision: ApprovalDecisionValue) => void;
   busyDecision?: ApprovalDecisionValue | null;
-  approveDisabled?: boolean;
+  /** False only when the call shows nothing to review — Approve is then not
+   *  offered at all, instead of rendered as a control that can never fire. */
+  approvable?: boolean;
   className?: string;
 }) {
   const size = dense ? 'sm' : 'default';
@@ -229,19 +266,21 @@ export function ApprovalDecisionActions({
         )}
         Deny
       </Button>
-      <Button
-        type="button"
-        size={size}
-        disabled={busyDecision !== null || approveDisabled}
-        onClick={() => onDecision('approve')}
-      >
-        {busyDecision === 'approve' ? (
-          <Loading className="size-4 shrink-0" />
-        ) : (
-          <CheckCircleIcon className="size-4 shrink-0" />
-        )}
-        Approve this call
-      </Button>
+      {approvable ? (
+        <Button
+          type="button"
+          size={size}
+          disabled={busyDecision !== null}
+          onClick={() => onDecision('approve')}
+        >
+          {busyDecision === 'approve' ? (
+            <Loading className="size-4 shrink-0" />
+          ) : (
+            <CheckCircleIcon className="size-4 shrink-0" />
+          )}
+          Approve this call
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -255,6 +294,7 @@ export function ApprovalRequest({
   className,
 }: ApprovalRequestProps) {
   const reviewComplete = request.reviewComplete !== false;
+  const reviewable = approvalReviewable(request.argsPreview, request.reviewComplete);
   const actionable = request.pending && onDecision;
   const resolved = !request.pending || outcome !== null;
   const resolutionLabel = resolvedLabel(request, outcome);
@@ -316,13 +356,15 @@ export function ApprovalRequest({
         <p className="text-destructive border-border border-t px-4 py-3 text-xs">{error}</p>
       ) : null}
 
-      {!reviewComplete ? <ApprovalIncompleteNotice /> : null}
+      {actionable && !reviewable ? (
+        <ApprovalUnreviewableNotice previewAuthorized={request.previewAuthorized !== false} />
+      ) : null}
 
       {actionable ? (
         <ApprovalDecisionActions
           onDecision={actionable}
           busyDecision={busyDecision}
-          approveDisabled={!reviewComplete}
+          approvable={reviewable}
         />
       ) : null}
     </section>

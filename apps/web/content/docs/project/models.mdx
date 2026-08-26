@@ -25,6 +25,11 @@ Turning the flag off is a fully supported path. The project then runs
 - Model ids are OpenCode's native `provider/model` refs, like
   `anthropic/claude-opus-4-8`. Managed bare ids and `kortix/…` refs do not
   exist off-gateway.
+- The model picker shows one list before and after the sandbox boots: the
+  providers your keys connect, plus OpenCode Zen's free models (OpenCode
+  connects those without a key). Thinking effort is the composer's thinking
+  control (the model's own variants); the gateway's Generation defaults do not
+  apply.
 - The gateway surfaces on this page — managed models, the model-defaults
   chain, budgets, logs — do not apply; OpenCode resolves the default model in
   the sandbox.
@@ -42,6 +47,31 @@ A model id has one of three shapes:
 
 Connect a BYOK key on the project's Model settings page, or set the
 provider's env var directly as a [secret](/docs/project/secrets).
+
+## Thinking effort
+
+The composer's thinking control sets the session's model **variant** in both
+modes. The choices are the model's own published tiers (models.dev
+`reasoning_options`), never a fixed ladder; a model without a knob shows no
+control. `Auto` clears the variant.
+
+- Native (gateway off): OpenCode applies the variant as the provider's own
+  request field.
+- Gateway on: the request carries `reasoning_effort`; the gateway maps it per
+  upstream (OpenAI → `reasoning_effort`, Claude → adaptive thinking, OpenAI on
+  Amazon Bedrock → Bedrock's `reasoning.effort` request field). For an upstream it
+  cannot map yet (Nova, Grok on Bedrock today) the value is dropped and the
+  model runs at its own default.
+- Amazon Bedrock refuses the bare in-region id of most current models
+  ("on-demand throughput isn't supported"). The picker prefers the `global.` /
+  regional inference-profile id when the catalog carries one, and the gateway
+  retries a refused bare id once per profile prefix (`global.`, `us.`).
+- The sandbox learns the project's servable model set from the API at every
+  boot (`GET /v1/llm/models?scope=picker`, the same composition as the web
+  picker), so a model the picker offers always resolves in the runtime.
+- A project default per model lives in Customize → Gateway → Routing →
+  **Generation defaults** (`model_generation_config`). It fills only a field
+  the request left unset, so a session's variant always wins.
 
 ## How auto picks a model
 

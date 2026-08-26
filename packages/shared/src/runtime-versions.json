@@ -29,8 +29,8 @@
   "bun": "1.3.14",
   "bunSha256Amd64": "951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f",
   "bunSha256Arm64": "a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b",
-  "opencode": "1.18.19",
-  "opencodeSdk": "1.18.19",
+  "opencode": "1.18.23",
+  "opencodeSdk": "1.18.23",
   "agentBrowser": "0.27.0",
   "playwright": "1.60.0",
   "anydoc": "0.1.6"

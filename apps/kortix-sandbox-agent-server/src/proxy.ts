@@ -1,4 +1,6 @@
 import { Hono } from 'hono'
+import { BOOT_PHASE_HEADER, bootPhaseLabel } from './boot-phase'
+import { runtimeAssetsActivity } from './runtime-assets'
 import { egressShimPort } from './egress-shim'
 import type { ServerWebSocket } from 'bun'
 
@@ -6,10 +8,17 @@ import type { Config } from './config'
 import { logger } from './logger'
 import { createPartRouter } from './routes/part'
 import { stripInlineAttachmentBytes } from './inline-attachments'
+import { withSseKeepalive } from './sse-keepalive'
 import type { Opencode } from './opencode'
 import { isRepoMaterialized } from './git'
 import { createHealthRouter, type SandboxBootState } from './routes/health'
 import { createRefreshRouter } from './routes/refresh'
+import { createLogsRouter } from './routes/logs'
+import { createDiagRouter } from './routes/diag'
+import { type ResourceMonitor, startResourceMonitor } from './resources'
+import { defaultSidecarDir, opencodeDbPath, runAttachmentOffloadPass } from './attachment-offload'
+import { opencodeTurnInFlight, readPinnedSessionId } from './opencode-turn-state'
+import { OPENCODE_HOME } from './opencode'
 import { createAbortRouter } from './routes/abort'
 import { createEnvRouter } from './routes/env'
 import { createGitRouter } from './routes/git'
@@ -41,6 +50,10 @@ const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
 // create handling in the `open` websocket handler below.
 const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty(?:\/([^/]+))?\/connect\/?$/
 const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
+
+// One per process: the periodic box telemetry (resources.ts). Started by
+// startProxy, read by /kortix/diag. Null in unit tests that build the app only.
+let resourceMonitor: ResourceMonitor | null = null
 
 // Bound on waiting for opencode to respond to a proxied request. Applied only
 // to the wait for the response to arrive (headers), never to a streaming body
@@ -91,7 +104,7 @@ const LONG_TURN_RESPONSE_TIMEOUT_MS = 10 * 60_000
 export function isBlockingTurnRequest(method: string, path: string): boolean {
   return (
     method.toUpperCase() === 'POST' &&
-    /^\/session\/[^/]+\/(?:message|command)(?:$|[/?#])/.test(path)
+    /^\/session\/[^/]+\/(?:message|command|summarize)(?:$|[/?#])/.test(path)
   )
 }
 
@@ -185,9 +198,23 @@ export function buildOpencodeApp(
   kortixRouter.route('/pty', ptyRouter)
   kortixRouter.route('/pty/', ptyRouter)
   // /kortix/part — attachment bytes on demand; see routes/part.ts.
-  const partRouter = createPartRouter(opencode)
+  const partRouter = createPartRouter(opencode, { sidecarDir: defaultSidecarDir(OPENCODE_HOME) })
   kortixRouter.route('/part', partRouter)
   kortixRouter.route('/part/', partRouter)
+  // /kortix/logs — the daemon's own log file + OpenCode's; see routes/logs.ts.
+  const logsRouter = createLogsRouter(cfg, { opencodeHome: OPENCODE_HOME })
+  kortixRouter.route('/logs', logsRouter)
+  kortixRouter.route('/logs/', logsRouter)
+  // /kortix/diag — the whole error report in one JSON document; see routes/diag.ts.
+  const diagRouter = createDiagRouter(cfg, {
+    opencode,
+    bootTime,
+    bootState,
+    opencodeHome: OPENCODE_HOME,
+    resources: () => resourceMonitor,
+  })
+  kortixRouter.route('/diag', diagRouter)
+  kortixRouter.route('/diag/', diagRouter)
   if (envRouter) {
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)
@@ -280,55 +307,69 @@ export function buildOpencodeApp(
   // attempting a fetch — surfaces the situation clearly to the client and
   // prevents noisy ECONNREFUSED loops.
   app.all('*', async (c) => {
+    // Every not-ready answer names the boot phase (X-Kortix-Boot-Phase) so the
+    // API's start budget measures lack of PROGRESS, not wall-clock. See
+    // boot-phase.ts.
+    const notReady = (body: Record<string, unknown>, reason: string) => {
+      const phase = bootPhaseLabel({
+        timeline: bootState.timeline,
+        opencodeState: opencode.getState(),
+        runtimeAssetsActivity: runtimeAssetsActivity(),
+        notReadyReason: reason,
+      })
+      c.header(BOOT_PHASE_HEADER, phase)
+      return c.json({ ...body, phase }, 503)
+    }
+
     if (bootState.repoMaterializationError) {
-      return c.json(
+      return notReady(
         {
           error: 'sandbox runtime not ready',
           reason: 'repo_materialization_failed',
           message: bootState.repoMaterializationError,
         },
-        503,
+        'repo_materialization_failed',
       )
     }
 
     if (cfg.autoClone && !(await isRepoMaterialized(cfg.projectTarget))) {
-      return c.json(
+      return notReady(
         {
           error: 'sandbox runtime not ready',
           reason: 'repo_not_materialized',
         },
-        503,
+        'repo_not_materialized',
       )
     }
 
     if (bootState.initialOpenCodeSessionError) {
-      return c.json(
+      return notReady(
         {
           error: 'sandbox runtime not ready',
           reason: 'initial_opencode_session_failed',
           message: bootState.initialOpenCodeSessionError,
         },
-        503,
+        'initial_opencode_session_failed',
       )
     }
 
     if (bootState.initialOpenCodeSessionRequired && !bootState.initialOpenCodeSessionId) {
-      return c.json(
+      return notReady(
         {
           error: 'sandbox runtime not ready',
           reason: 'initial_opencode_session_pending',
         },
-        503,
+        'initial_opencode_session_pending',
       )
     }
 
     if (opencode.getState() !== 'ok') {
-      return c.json(
+      return notReady(
         {
           error: 'opencode not ready',
           opencode: opencode.getState(),
         },
-        503,
+        'opencode_not_ready',
       )
     }
 
@@ -413,6 +454,22 @@ export function buildOpencodeApp(
         return new Response(body, { status: upstream.status, statusText: upstream.statusText, headers: respHeaders })
       }
 
+      // SSE gets a keepalive-injecting passthrough. This proxy is one
+      // localhost hop from opencode, so a keepalive it emits proves the whole
+      // daemon → edge → api → browser path — the path that used to die
+      // silently (stale ingress answering 200 and never writing, edge stalls,
+      // the ALB's idle timeout) with the SDK's 60s heartbeat as the only
+      // detector. See `sse-keepalive.ts` for the wire-format rules.
+      const upstreamContentType = upstream.headers.get('content-type') ?? ''
+      if (upstream.ok && upstream.body && upstreamContentType.includes('text/event-stream')) {
+        respHeaders.delete('content-length')
+        return new Response(withSseKeepalive(upstream.body), {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: respHeaders,
+        })
+      }
+
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -459,6 +516,60 @@ export function startProxy(
   // Constructed once, outside reload() — pty state must survive a config
   // hot-swap (warm-snapshot restore) exactly like `opencode`/`bootState` do.
   const ptyRegistry = createPtyRegistry(cfg)
+  // Box telemetry: a `[resources]` log line every minute and on every
+  // opencode state change, `[resources] pressure` when a threshold is crossed.
+  resourceMonitor?.stop()
+  const turnInFlight = () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace)
+  // Attachment offload (attachment-offload.ts): inline image bytes out of the
+  // transcript store, only while no turn runs. Every 5 min, and right after a
+  // memory-guard abort.
+  const offloadDbPath = opencodeDbPath(OPENCODE_HOME)
+  const offloadSidecarDir = defaultSidecarDir(OPENCODE_HOME)
+  let offloadRunning = false
+  const runOffloadIfIdle = async (why: string): Promise<void> => {
+    if (offloadRunning) return
+    if (process.env.KORTIX_ATTACHMENT_OFFLOAD === '0') return
+    offloadRunning = true
+    try {
+      if ((await turnInFlight()) !== false) return
+      const result = await runAttachmentOffloadPass({ dbPath: offloadDbPath, sidecarDir: offloadSidecarDir })
+      if (result.offloaded > 0) logger.info('[offload] moved attachment bytes out of the transcript', { why, ...result })
+    } catch (err) {
+      logger.warn('[offload] pass threw', { err: (err as Error).message })
+    } finally {
+      offloadRunning = false
+    }
+  }
+  const offloadTimer = setInterval(() => void runOffloadIfIdle('interval'), 5 * 60_000)
+  offloadTimer.unref?.()
+  setTimeout(() => void runOffloadIfIdle('boot'), 90_000).unref?.()
+
+  resourceMonitor = startResourceMonitor({
+    opencodePid: () => opencode.getPid(),
+    opencodeState: () => opencode.getState(),
+    diskPaths: [cfg.workspace, '/opt/kortix', '/tmp'],
+    guard: {
+      guardPct: Number(process.env.KORTIX_MEMORY_GUARD_PCT) || undefined,
+      turnInFlight,
+      abortTurn: async (reason) => {
+        const sessionId = readPinnedSessionId()
+        if (!sessionId) return false
+        const url =
+          `${opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/abort` +
+          `?directory=${encodeURIComponent(cfg.workspace)}`
+        logger.error('[resources] memory guard aborting the running turn', { sessionId, reason })
+        const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(10_000) })
+        return res.ok
+      },
+      onGuard: async ({ reason, snapshot, aborted }) => {
+        // Tell the control plane in the same words the UI already renders for
+        // a turn that ended in error, BEFORE OpenCode's own `session.error`
+        // ("Aborted") can claim the turn end — the first end wins.
+        await relayMemoryGuardTurnEnd({ reason, aborted, opencodeRssMb: snapshot.opencode?.rssMb ?? null })
+        void runOffloadIfIdle('memory-guard')
+      },
+    },
+  })
   // A staged daemon update must not exit this process while somebody has a
   // terminal open — the PTY dies with the daemon that spawned it. The registry
   // is the only thing that knows, so it answers the question rather than the
@@ -552,5 +663,50 @@ export function startProxy(
     async stop() {
       server.stop(true)
     },
+  }
+}
+
+/**
+ * Report a memory-guard abort to apps/api as the turn's end, in the shape
+ * the turn-stream already accepts (`kind: 'end'`, `status: 'error'`), so the
+ * ledger records `failed` with a reason that names memory and the UI shows
+ * it. Sent BEFORE the abort lands: OpenCode's own `session.error` ("Aborted")
+ * follows, and the turn-stream keeps the first end for a turn.
+ */
+export async function relayMemoryGuardTurnEnd(input: {
+  reason: string
+  aborted: boolean
+  opencodeRssMb: number | null
+}): Promise<boolean> {
+  const projectId = process.env.KORTIX_PROJECT_ID
+  const sessionId = process.env.KORTIX_SESSION_ID
+  const token = process.env.KORTIX_TOKEN
+  const apiUrl = (process.env.KORTIX_API_URL ?? '').replace(/\/+$/, '')
+  if (!projectId || !sessionId || !token || !apiUrl) return false
+  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  try {
+    const res = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        session_id: sessionId,
+        kind: 'end',
+        status: 'error',
+        opencode_session_id: readPinnedSessionId() ?? undefined,
+        error_name: 'SandboxMemoryGuard',
+        error_message: input.reason,
+        error_retryable: true,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    })
+    logger.warn('[resources] memory guard relayed to the control plane', {
+      status: res.status,
+      aborted: input.aborted,
+      opencodeRssMb: input.opencodeRssMb,
+    })
+    return res.ok
+  } catch (err) {
+    logger.warn('[resources] memory guard relay failed', { err: (err as Error).message })
+    return false
   }
 }

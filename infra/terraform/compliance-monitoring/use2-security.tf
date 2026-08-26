@@ -353,23 +353,11 @@ resource "aws_wafv2_web_acl_logging_configuration" "use2" {
   log_destination_configs = [aws_cloudwatch_log_group.use2_waf.arn]
 }
 
-resource "aws_cloudwatch_metric_alarm" "use2_target_response_time" {
-  provider            = aws.use2
-  for_each            = local.use2_albs
-  alarm_name          = "kortix-alb-${each.value.name}-target-response-time"
-  alarm_description   = "SOC2 DCF-86: ALB target response time is elevated"
-  namespace           = "AWS/ApplicationELB"
-  metric_name         = "TargetResponseTime"
-  dimensions          = { LoadBalancer = each.value.dimension }
-  statistic           = "Average"
-  period              = 300
-  evaluation_periods  = 2
-  datapoints_to_alarm = 2
-  threshold           = 2
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [aws_sns_topic.use2_alerts.arn]
-  tags                = local.alarm_tags
+removed {
+  from = aws_cloudwatch_metric_alarm.use2_target_response_time
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "use2_elb_5xx" {

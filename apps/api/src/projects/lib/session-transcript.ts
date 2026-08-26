@@ -8,79 +8,138 @@ import {
 } from '../opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import type { ProjectSessionRow } from './serializers';
+import {
+  type CompactMessage,
+  type CompactToolCall,
+  compactMessage,
+  normalizeMessageList,
+} from './session-transcript-compact';
+import {
+  type MirrorMessage,
+  type MirrorSnapshot,
+  readSessionTranscriptMirror,
+} from './session-transcript-mirror';
 
 const WORKSPACE_DIRECTORY = '/workspace';
 
-export interface CompactToolCall {
-  tool: string;
-  status: string | null;
-}
+export type { CompactMessage, CompactToolCall };
 
-export interface CompactMessage {
-  role: string;
-  created: string | null;
-  completed: string | null;
-  text: string;
-  tools: CompactToolCall[];
-  files: Array<{ filename: string | null; mime: string | null }>;
-  reasoning_omitted: boolean;
-  error: { name?: string; message?: string } | null;
-}
+/**
+ * Which source answered.
+ *
+ * A NEGATIVE IS A CLAIM, so this is never inferred from an empty array. `live`
+ * is the sandbox's own OpenCode endpoint; `mirror` is the durable server-side
+ * copy written at turn end (`session-transcript-mirror.ts`); `none` is the
+ * honest "nothing could answer", and it is the only value that ever accompanies
+ * `available: false`. Mirror and live are NEVER merged — the field says which
+ * one you got.
+ */
+export type SessionTranscriptSource = 'live' | 'mirror' | 'none';
 
 export interface SessionTranscriptDigest {
   available: boolean;
+  /** Why this is not a live read. Set on `mirror` too, where it carries the
+   *  reason the live path could not answer — an unavailable digest is not the
+   *  only thing worth explaining. */
   reason: string | null;
+  source: SessionTranscriptSource;
+  /**
+   * The response contains the session's FIRST message — nothing older exists in
+   * the source that answered. For `live` that means the box returned fewer
+   * messages than the window asked for; for `mirror` it is the `head_complete`
+   * bit a capture PROVED (and retention pruning clears). False means "this is a
+   * tail", never "something is broken".
+   */
+  complete: boolean;
+  /** When the mirror was last written. Null for a live read. */
+  captured_at: string | null;
   opencode_session_id: string | null;
   message_count: number;
   messages: CompactMessage[];
 }
 
-type RawOpencodeMessage = {
-  info?: {
-    role?: string;
-    time?: { created?: number; completed?: number };
-    error?: { name?: string; message?: string } | null;
-  };
-  role?: string;
-  time?: { created?: number; completed?: number };
-  error?: { name?: string; message?: string } | null;
-  parts?: RawOpencodePart[];
-};
+/** The sync-store shape: OpenCode message envelopes verbatim, with the parts
+ *  array stripped of tool inputs/outputs and file urls. Mirror-only — a running
+ *  session's client reads the runtime directly. */
+export interface SessionTranscriptSyncEnvelope {
+  available: boolean;
+  reason: string | null;
+  source: SessionTranscriptSource;
+  complete: boolean;
+  captured_at: string | null;
+  opencode_session_id: string | null;
+  message_count: number;
+  messages: MirrorMessage[];
+}
 
-type RawOpencodePart = {
-  type?: string;
-  text?: string;
-  synthetic?: boolean;
-  tool?: string;
-  state?: { status?: string };
-  filename?: string;
-  mime?: string;
-};
+/** Seam for tests: the mirror read is the one collaborator whose absence vs
+ *  presence changes which branch the digest takes, and a DB is not needed to
+ *  prove that. Production never passes it. */
+export interface SessionTranscriptDeps {
+  readMirror?: (sessionId: string, limit: number) => Promise<MirrorSnapshot | null>;
+}
 
-export async function buildSessionTranscriptDigest(input: {
-  session: ProjectSessionRow;
-  projectId: string;
-  accountId: string;
-  userId: string;
-  limit: number;
-  maxChars: number;
-}): Promise<SessionTranscriptDigest> {
+export async function buildSessionTranscriptDigest(
+  input: {
+    session: ProjectSessionRow;
+    projectId: string;
+    accountId: string;
+    userId: string;
+    limit: number;
+    maxChars: number;
+  },
+  deps: SessionTranscriptDeps = {},
+): Promise<SessionTranscriptDigest> {
   const { session, projectId, accountId, userId, limit, maxChars } = input;
-  const unavailable = (reason: string): SessionTranscriptDigest => ({
-    available: false,
-    reason,
-    opencode_session_id: session.opencodeSessionId,
-    message_count: 0,
-    messages: [],
-  });
+  const readMirror = deps.readMirror ?? readMirrorSafely;
+
+  /**
+   * The live path could not answer. Serve the durable mirror if there is one —
+   * a stopped session is the WHOLE reason the mirror exists — and say so in
+   * `source`. Falling back to `unavailable` when a mirror exists would be the
+   * old behaviour with extra steps.
+   */
+  const degrade = async (
+    reason: string,
+    opencodeSessionId: string | null,
+  ): Promise<SessionTranscriptDigest> => {
+    const mirror = await readMirror(session.sessionId, limit);
+    if (mirror) {
+      return {
+        available: true,
+        reason,
+        source: 'mirror',
+        complete: mirrorIsComplete(mirror),
+        captured_at: mirror.captured_at,
+        opencode_session_id: mirror.opencode_session_id ?? opencodeSessionId,
+        message_count: mirror.messages.length,
+        messages: mirror.messages.map((m) =>
+          compactMessage({ info: m.info as never, parts: m.parts as never }, maxChars),
+        ),
+      };
+    }
+    return {
+      available: false,
+      reason,
+      source: 'none',
+      complete: false,
+      captured_at: null,
+      opencode_session_id: opencodeSessionId,
+      message_count: 0,
+      messages: [],
+    };
+  };
 
   if (session.status !== 'running') {
-    return unavailable(`session is ${session.status}; live transcript requires a running sandbox`);
+    return degrade(
+      `session is ${session.status}; live transcript requires a running sandbox`,
+      session.opencodeSessionId,
+    );
   }
 
   const externalId = await resolveSessionExternalId({ session, projectId, accountId });
   if (!externalId) {
-    return unavailable('session has no reachable sandbox external id yet');
+    return degrade('session has no reachable sandbox external id yet', session.opencodeSessionId);
   }
 
   const ensured = await ensureOpencodeSessionPin({
@@ -93,10 +152,7 @@ export async function buildSessionTranscriptDigest(input: {
   });
   const opencodeSessionId = ensured.pin;
   if (!opencodeSessionId) {
-    return {
-      ...unavailable(opencodeReason(ensured.reason)),
-      opencode_session_id: null,
-    };
+    return degrade(opencodeReason(ensured.reason), null);
   }
 
   // Endpoint resolution touches the sandbox provider (Daytona preview-link /
@@ -105,22 +161,16 @@ export async function buildSessionTranscriptDigest(input: {
   // best-effort enrichment (the session row is already loaded); a provider
   // throw must NEVER bubble up and 500 the transcript read (see #3567 for the
   // sibling title-sync fix — this is the same class of bug on a different
-  // post-#3567 call site). Degrade to an unavailable digest instead.
+  // post-#3567 call site). Degrade to the mirror instead.
   let endpoint: { url: string; headers: Record<string, string> } | null;
   try {
     endpoint = await sandboxOpencodeEndpoint(externalId, userId);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return {
-      ...unavailable(`could not reach sandbox: ${message}`),
-      opencode_session_id: opencodeSessionId,
-    };
+    return degrade(`could not reach sandbox: ${message}`, opencodeSessionId);
   }
   if (!endpoint) {
-    return {
-      ...unavailable('sandbox service key unavailable'),
-      opencode_session_id: opencodeSessionId,
-    };
+    return degrade('sandbox service key unavailable', opencodeSessionId);
   }
 
   try {
@@ -135,26 +185,84 @@ export async function buildSessionTranscriptDigest(input: {
       signal: AbortSignal.timeout(8_000),
     });
     if (!res.ok) {
-      return {
-        ...unavailable(await messageReadReason(res)),
-        opencode_session_id: opencodeSessionId,
-      };
+      return degrade(await messageReadReason(res), opencodeSessionId);
     }
     const payload = (await res.json().catch(() => null)) as unknown;
     const rawMessages = normalizeMessageList(payload).slice(-limit);
     return {
       available: true,
       reason: null,
+      source: 'live',
+      // Fewer than the window asked for means the box had nothing older.
+      complete: rawMessages.length < limit,
+      captured_at: null,
       opencode_session_id: opencodeSessionId,
       message_count: rawMessages.length,
       messages: rawMessages.map((m) => compactMessage(m, maxChars)),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    return degrade(`could not read sandbox transcript: ${message}`, opencodeSessionId);
+  }
+}
+
+/**
+ * The sync-store envelope. Always the mirror: a client whose sandbox is up
+ * reads the runtime directly, so re-proxying it here would only duplicate the
+ * body this endpoint exists to avoid.
+ */
+export async function buildSessionTranscriptSyncEnvelope(
+  input: {
+    session: ProjectSessionRow;
+    limit: number;
+  },
+  deps: SessionTranscriptDeps = {},
+): Promise<SessionTranscriptSyncEnvelope> {
+  const mirror = await (deps.readMirror ?? readMirrorSafely)(
+    input.session.sessionId,
+    input.limit,
+  );
+  if (!mirror) {
     return {
-      ...unavailable(`could not read sandbox transcript: ${message}`),
-      opencode_session_id: opencodeSessionId,
+      available: false,
+      reason: 'no server-side transcript has been captured for this session yet',
+      source: 'none',
+      complete: false,
+      captured_at: null,
+      opencode_session_id: input.session.opencodeSessionId,
+      message_count: 0,
+      messages: [],
     };
+  }
+  return {
+    available: true,
+    reason: null,
+    source: 'mirror',
+    complete: mirrorIsComplete(mirror),
+    captured_at: mirror.captured_at,
+    opencode_session_id: mirror.opencode_session_id ?? input.session.opencodeSessionId,
+    message_count: mirror.messages.length,
+    messages: mirror.messages,
+  };
+}
+
+/** Complete only when the mirror proved it holds the head AND this window
+ *  returned every row it holds. Both halves are evidence, neither is a guess. */
+export function mirrorIsComplete(mirror: MirrorSnapshot): boolean {
+  return mirror.head_complete && mirror.messages.length >= mirror.total;
+}
+
+/** A mirror read must never be able to fail a transcript request: the mirror is
+ *  an enrichment, and its absence is already an expressible answer. */
+async function readMirrorSafely(sessionId: string, limit: number): Promise<MirrorSnapshot | null> {
+  try {
+    return await readSessionTranscriptMirror({ sessionId, limit });
+  } catch (err) {
+    console.warn(
+      `[transcript-mirror] read failed for session ${sessionId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
   }
 }
 
@@ -217,53 +325,4 @@ async function messageReadReason(res: Response): Promise<string> {
   if (res.status === 503) return detail ?? 'OpenCode not ready in the sandbox';
   if (res.status === 404) return detail ?? 'OpenCode session messages not found';
   return detail ? `OpenCode messages unavailable: ${detail}` : `OpenCode messages unavailable: HTTP ${res.status}`;
-}
-
-function normalizeMessageList(payload: unknown): RawOpencodeMessage[] {
-  const list = Array.isArray(payload)
-    ? payload
-    : typeof payload === 'object' && payload && 'messages' in payload && Array.isArray((payload as { messages?: unknown }).messages)
-      ? (payload as { messages: unknown[] }).messages
-      : [];
-  return list.filter((m): m is RawOpencodeMessage => typeof m === 'object' && m !== null);
-}
-
-function compactMessage(msg: RawOpencodeMessage, maxChars: number): CompactMessage {
-  const info = msg.info ?? msg;
-  const parts = Array.isArray(msg.parts) ? msg.parts : [];
-  const text = parts
-    .filter((p) => p.type === 'text' && !p.synthetic && typeof p.text === 'string')
-    .map((p) => p.text as string)
-    .filter(Boolean)
-    .join('\n');
-  const tools = parts
-    .filter((p) => p.type === 'tool')
-    .map((p) => ({
-      tool: p.tool ?? 'tool',
-      status: p.state?.status ?? null,
-    }));
-  const files = parts
-    .filter((p) => p.type === 'file')
-    .map((p) => ({
-      filename: p.filename ?? null,
-      mime: p.mime ?? null,
-    }));
-  return {
-    role: info.role ?? 'unknown',
-    created: info.time?.created ? new Date(info.time.created).toISOString() : null,
-    completed: info.time?.completed ? new Date(info.time.completed).toISOString() : null,
-    text: truncate(normalizeWhitespace(text), maxChars),
-    tools,
-    files,
-    reasoning_omitted: parts.some((p) => p.type === 'reasoning'),
-    error: info.error ?? null,
-  };
-}
-
-function normalizeWhitespace(s: string): string {
-  return s.replace(/\s+/g, ' ').trim();
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, Math.max(0, max - 1))}…`;
 }

@@ -718,6 +718,102 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     }
   });
 
+  const BEDROCK_OPENAI = 'global.openai.gpt-5.6-sol';
+
+  it('bedrock: OpenAI-on-Bedrock forwards every published effort tier as additionalModelRequestFields.reasoning.effort (the shape real Bedrock accepts; flat reasoning_effort is 400 unknown_parameter) — never the Claude reasoningConfig/cachePoint', () => {
+    for (const effort of ['none', 'low', 'medium', 'high', 'xhigh', 'max']) {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'bedrock', {
+        resolvedModel: BEDROCK_OPENAI,
+      });
+      expect((args.providerOptions as any)?.bedrock).toEqual({
+        additionalModelRequestFields: { reasoning: { effort, summary: 'auto' } },
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields?.reasoning_effort).toBeUndefined();
+      expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
+      expect(args.providerOptions).not.toHaveProperty('anthropic');
+    }
+  });
+
+  it('bedrock: a model that once answered unknown_parameter for the reasoning field never receives it again', async () => {
+    const {
+      noteBedrockOpenAiRejectsReasoningEffort,
+      resetBedrockOpenAiReasoningEffortRejectionsForTests,
+    } = await import('./request');
+    try {
+      noteBedrockOpenAiRejectsReasoningEffort(BEDROCK_OPENAI);
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'max' }, 'bedrock', {
+        resolvedModel: BEDROCK_OPENAI,
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+      const other = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: 'openai.gpt-oss-120b',
+      });
+      expect((other.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+        reasoning: { effort: 'high', summary: 'auto' },
+      });
+    } finally {
+      resetBedrockOpenAiReasoningEffortRejectionsForTests();
+    }
+  });
+
+  it('bedrock: OpenAI-on-Bedrock accepts the Responses-style nested reasoning.effort too', () => {
+    const args = buildAiSdkArgs({ messages: [], reasoning: { effort: 'xhigh' } }, 'bedrock', {
+      resolvedModel: BEDROCK_OPENAI,
+    });
+    expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+      reasoning: { effort: 'xhigh', summary: 'auto' },
+    });
+  });
+
+  it('bedrock: OpenAI-on-Bedrock effort is gated by the resolved model — a tier the model does not publish is dropped, not forwarded', () => {
+    const model = {
+      id: BEDROCK_OPENAI,
+      name: 'GPT-5.6 Sol (Global)',
+      reasoning: true,
+      reasoning_options: [{ type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }],
+    };
+    const ok = buildAiSdkArgs({ messages: [], reasoning_effort: 'xhigh' }, 'bedrock', {
+      resolvedModel: BEDROCK_OPENAI,
+      model,
+    });
+    expect((ok.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+      reasoning: { effort: 'xhigh', summary: 'auto' },
+    });
+    const dropped = buildAiSdkArgs({ messages: [], reasoning_effort: 'minimal' }, 'bedrock', {
+      resolvedModel: BEDROCK_OPENAI,
+      model,
+    });
+    expect((dropped.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+  });
+
+  it('bedrock: OpenAI-on-Bedrock without any effort sends no bedrock provider options at all', () => {
+    const args = buildAiSdkArgs({ messages: [] }, 'bedrock', { resolvedModel: BEDROCK_OPENAI });
+    expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
+  });
+
+  it('bedrock: the in-region OpenAI ids (openai.gpt-5.6-terra, openai.gpt-oss-120b-1:0) take the same path; Nova and Grok still get nothing', () => {
+    for (const id of ['openai.gpt-5.6-terra', 'openai.gpt-oss-120b-1:0', 'us.openai.gpt-5.5']) {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: id,
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+        reasoning: { effort: 'high', summary: 'auto' },
+      });
+    }
+    for (const id of ['us.amazon.nova-micro-v1:0', 'xai.grok-4.6']) {
+      // No verified mapping for these families yet: the effort is DROPPED and
+      // the plain Converse request goes out. opencode sends a default effort
+      // for every reasoning-capable model, so refusing it (as #6887 briefly
+      // did) refused the model — including the managed Grok default.
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: id,
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+      expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
+    }
+  });
+
   it('bedrock: a raw body.thinking:{type:"enabled",budget_tokens} is normalized to adaptive (never forwarded verbatim)', () => {
     const args = buildAiSdkArgs(
       { messages: [], thinking: { type: 'enabled', budget_tokens: 5000 } },

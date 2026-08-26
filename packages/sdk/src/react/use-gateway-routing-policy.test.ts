@@ -46,6 +46,17 @@ describe("useGatewayRoutingPolicy", () => {
     expect((useGatewayRoutingPolicy("P1") as any).enabled).toBe(false);
   });
 
+  // A disabled query still serves whatever the cache holds from before the
+  // flag flipped. Consumers (the composer's reasoning-effort chip) must be
+  // able to ask "does this policy apply at all?" without reasoning about
+  // cache residue — so the hook states the flag alongside `data`.
+  test("exposes llmGatewayEnabled so consumers hide gateway-only controls off-gateway", () => {
+    expect((useGatewayRoutingPolicy("P1") as any).llmGatewayEnabled).toBe(true);
+    projectGatewayFlag = false;
+    expect((useGatewayRoutingPolicy("P1") as any).llmGatewayEnabled).toBe(false);
+    expect((useGatewayRoutingPolicy(null) as any).llmGatewayEnabled).toBe(false);
+  });
+
   test("set and reset invalidate the policy while preview remains a one-shot mutation", () => {
     const result = useGatewayRoutingPolicy("P1") as any;
     expect(result.set.mutationKey).toEqual(gatewayRoutingPolicyKey("P1"));

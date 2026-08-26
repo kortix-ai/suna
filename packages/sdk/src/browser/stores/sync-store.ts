@@ -175,6 +175,21 @@ interface SyncState {
 	 */
 	sessionStatusOrigin: Record<string, "wire" | "local">;
 	/**
+	 * When each session's current `sessionStatus` value LANDED in this store —
+	 * stamped by `setStatus` on any state change (a new value, or an origin
+	 * flip over an unchanged value, which is a new observation), and preserved
+	 * across same-value rewrites exactly like the status object's identity.
+	 *
+	 * The store used to keep no arrival time, and freshness was stamped by
+	 * whichever component observed the slot. Two failures grew out of that: a
+	 * remount re-stamped a dead stream's last idle frame as brand new, and the
+	 * reconnect status fill could not tell a frame the live stream just
+	 * delivered from one a dead stream left behind — so it protected both
+	 * (`shouldSkipStatusFill`). Absent means the slot predates this slice; the
+	 * readers fall back to their old stamping.
+	 */
+	sessionStatusAt: Record<string, number>;
+	/**
 	 * When the RUNTIME'S OWN OUTPUT last reached this tab, per session.
 	 *
 	 * Not a status, not a poll — the instant a streamed part or message landed.
@@ -1081,6 +1096,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	parts: {},
 	sessionStatus: {},
 	sessionStatusOrigin: {},
+	sessionStatusAt: {},
 	sessionActivityAt: {},
 	diffs: {},
 	todos: {},
@@ -1304,12 +1320,18 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// landing over a fabricated one (or the reverse) changes what the
 				// frame is allowed to decide. Update only the origin — the status
 				// object keeps its identity so nothing re-stamps a stale value.
+				// The arrival stamp DOES move: an origin flip is a new observation
+				// (`use-session-working` re-stamps on it for the same reason).
 				if ((s.sessionStatusOrigin[sessionID] ?? "wire") === origin) return s;
-				return { sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin } };
+				return {
+					sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
+					sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
+				};
 			}
 			return {
 				sessionStatus: { ...s.sessionStatus, [sessionID]: status },
 				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
+				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
 			};
 		}),
 
@@ -1470,9 +1492,25 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	},
 
 	registerOptimisticEcho: (sessionID, optimisticID, echoID) => {
-		if (!isOptimistic(sessionID, optimisticID)) return;
 		if (optimisticID === echoID) return;
-		recordOptimisticEcho(sessionID, optimisticID, echoID);
+		// The caller always names the id the ROW reports as this prompt's origin
+		// — its `wire_message_id`, the id this tab minted and painted. That id
+		// stops being optimistic the moment the FIRST echo supersedes it, and
+		// after a Stop takes the prompt back out of the runtime the bubble on
+		// screen is that echo (`reclaimRemovedMessage` re-marks it optimistic),
+		// not the wire id. Registering against the wire id alone therefore did
+		// nothing on every second and later re-mint, and the drain re-mints on
+		// every one of them: the re-delivery's echo then matched no alias, and
+		// with more than one send in flight the ordinal fallback correctly
+		// refuses to guess — so the echo was dropped and the prompt stayed on
+		// screen as a bubble nothing would ever confirm.
+		//
+		// Follow the chain to the id that IS on screen and register from there.
+		const live = isOptimistic(sessionID, optimisticID)
+			? optimisticID
+			: optimisticEchoes.get(sessionID)?.get(optimisticID);
+		if (!live || live === echoID || !isOptimistic(sessionID, live)) return;
+		recordOptimisticEcho(sessionID, live, echoID);
 	},
 
 	reclaimRemovedMessage: (sessionID, messageID) => {
@@ -1575,6 +1613,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// whether the runtime is running. Marked local so it can never
 				// veto the control plane's open turn (`WorkingStreamInput.origin`).
 				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: "local" as const },
+				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
 				diffs: { ...s.diffs, [sessionID]: [] },
 				todos: { ...s.todos, [sessionID]: [] },
 				sessionRevert: { ...s.sessionRevert, [sessionID]: null },
@@ -1660,7 +1699,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		return result;
 	},
 
-	hydrate: (sessionID, msgs, opts) =>
+	hydrate: (sessionID, msgs, opts) => {
+		// Set inside the updater below when a RUNTIME read shows the transcript
+		// moved while its tail is still open — the runtime's own output reaching
+		// this tab by pull instead of push. Stamped after the set() commits.
+		let stampRuntimeActivity = false;
 		set((s) => {
 			// An authoritative load — the disk repaint itself, or a reconcile —
 			// re-establishes the session, so its entry is no longer a fragment.
@@ -1759,6 +1802,46 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			//
 			// The rule is now identity-based, in two passes.
 			const existingIds = new Set(existing.map((m) => m.id));
+
+			// ---- Runtime-read activity evidence. ----
+			// Movement on a transcript this tab ALREADY held, with the tail still
+			// open, observed by a runtime read: the runtime is producing output
+			// right now, whatever the stream's last status frame claimed. Guards,
+			// each load-bearing (asserted in the test file): an initial fill is
+			// history, not movement; a completed tail is a finished turn and must
+			// not paint busy on a returning tab; a cache repaint is this tab's own
+			// disk, not the runtime speaking.
+			if (!fromCache && existingAll.length > 0) {
+				const tail = incoming[incoming.length - 1];
+				const tailOpen =
+					!!tail &&
+					tail.role === "assistant" &&
+					!(tail as { time?: { completed?: number } }).time?.completed &&
+					!(tail as { error?: unknown }).error;
+				if (tailOpen) {
+					stampRuntimeActivity =
+						incoming.some((m) => !existingIds.has(m.id)) ||
+						msgs.some((entry) => {
+							const mid = entry?.info?.id;
+							if (!mid || isOptimistic(sessionID, mid) || !existingIds.has(mid)) {
+								return false;
+							}
+							const prev = s.parts[mid];
+							if (!prev || prev.length === 0) return (entry.parts?.length ?? 0) > 0;
+							const prevById = new Map(prev.map((p) => [p.id, p]));
+							return (entry.parts ?? []).some((p) => {
+								if (!p?.id) return false;
+								const prevPart = prevById.get(p.id);
+								if (!prevPart) return true;
+								return (
+									isTextLikePart(p) &&
+									isTextLikePart(prevPart) &&
+									(p.text?.length ?? 0) > (prevPart.text?.length ?? 0)
+								);
+							});
+						});
+				}
+			}
 
 			// The echo may arrive under the optimistic message's OWN id: the host
 			// minted the wire id and painted the bubble with it. That is a
@@ -2069,7 +2152,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				messages: { ...s.messages, [sessionID]: merged },
 				parts: newParts,
 			};
-		}),
+		});
+		// Outside the updater: `noteSessionActivity` runs its own set(), and the
+		// stamp is quantized there. This is the evidence `projectWorking`'s
+		// content-first rule needs to outrank a stale wire idle frame whose veto
+		// would otherwise silence every fresh `/turn` read for the rest of a turn
+		// the SSE stream stopped reporting (prod, 2026-08-26).
+		if (stampRuntimeActivity) get().noteSessionActivity(sessionID);
+	},
 
 	reset: () => {
 		optimisticIds.clear();
@@ -2092,6 +2182,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			parts: {},
 			sessionStatus: {},
 			sessionStatusOrigin: {},
+			sessionStatusAt: {},
+			sessionActivityAt: {},
 			diffs: {},
 			todos: {},
 			sessionRevert: {},

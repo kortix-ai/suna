@@ -311,6 +311,64 @@ See [Error classes](#error-classes) for the full `ApiError` shape. In React,
 [`useSession`](/docs/sdk/react) retries `/start` for you, so you do not need
 this pattern.
 
+## What `/start` tells you
+
+Every `/start` answer describes **that call**, not the row's accumulated
+history. Four fields carry it.
+
+| Field | Meaning |
+| --- | --- |
+| `observed_at` | One clock for the whole answer. |
+| `action` | What the server did: `inspected`, `checked_provider`, `resumed`, `provisioned`, `restored`, `reconciled`, `awaited_wake`, `cooling_down`. |
+| `observation` | What the server checked. `known: false` means **not checked on this call** — never "checked and found nothing". |
+| `boot` | `phase` (`provisioning` / `resuming` / `booting` / `ready` / `parked` / `failed`), `since`, and `actively_starting`. |
+
+`boot.actively_starting` answers "is a provider operation running for this
+session right now?". A `starting` payload with `actively_starting: false` means
+the server is waiting out a retry cooldown, not that a box is booting.
+
+```jsonc
+{
+  "stage": "starting",
+  "retriable": true,
+  "reason": "runtime_wake_cooldown",
+  "observed_at": "2026-08-26T14:00:00.000Z",
+  "action": "cooling_down",
+  "boot": { "phase": "resuming", "since": "2026-08-26T13:58:00.000Z", "actively_starting": false },
+  "observation": {
+    "provider": { "known": false, "status": null, "checked_at": null },
+    "runtime": { "known": false, "state": null, "boot_phase": null, "checked_at": null }
+  },
+  "failure": {
+    "category": "sandbox-provider",
+    "message": "The runtime did not start (attempt 2). Retrying automatically.",
+    "retryable": true,
+    "evidence": {
+      "check": "provider_not_running",
+      "observed_at": "2026-08-26T13:58:00.000Z",
+      "error": null,
+      "attempts": 2,
+      "next_retry_at": "2026-08-26T14:03:00.000Z"
+    }
+  }
+}
+```
+
+### A failed start is retried for you
+
+A start that fails stamps a **cooldown**, not a permanent verdict. The next
+`/start` after the cooldown re-attempts the wake by itself. The cooldown grows
+with consecutive failures (2 min, 5 min, 10 min). After five consecutive
+failures `/start` answers `stage: "failed"` with the attempt count in
+`failure.message`; that verdict expires 30 minutes after the last failure, and
+`POST …/restart` clears it immediately.
+
+`retriable` is derived on every call. A state the server can still re-attempt
+never carries `retriable: false`.
+
+`failure.evidence` names the check that produced the negative, when it ran, and
+when the server retries. Every `/start` failure carries it.
+
 ## Files
 
 `s.files` reads and writes the session's sandbox: `list`, `read`, `readBlob`,

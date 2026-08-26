@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Message } from '@opencode-ai/sdk/v2/client';
+import { SandboxNotReadyError } from '../../core/http/opencode-errors';
 import { useSyncStore } from '../stores/sync-store';
 import { setCurrentRuntime } from '../../core/session/current-runtime';
 import {
@@ -393,5 +394,86 @@ describe('loadSessionRuntimeStatus refuses to launder failures into idle', () =>
       },
     } as never;
     await expect(loadSessionRuntimeStatus('ses-1', client)).rejects.toThrow();
+  });
+});
+
+/**
+ * The 503-swallowed-to-empty-page bug (FINDINGS-B root cause #1).
+ *
+ * The generated OpenCode client RESOLVES with `{ data: undefined, error,
+ * response.status }` on a non-2xx response — it does not throw. Reading
+ * `result.data ?? []` therefore turned a cold-boot 503 into a success-looking
+ * empty page: the transcript rendered blank and "complete", with no retry and
+ * no error. `readSessionMessagePage` must CLASSIFY the result instead.
+ */
+describe('readSessionMessagePage — error classification', () => {
+  function failingClient(payload: {
+    data?: unknown;
+    error?: unknown;
+    status?: number;
+  }) {
+    return {
+      session: {
+        messages: async () => ({
+          data: payload.data,
+          error: payload.error,
+          response: payload.status
+            ? new Response(null, { status: payload.status })
+            : undefined,
+        }),
+      },
+    } as never;
+  }
+
+  test('a 503 throws a retryable SandboxNotReadyError, never an empty page', async () => {
+    const client = failingClient({
+      error: { data: { message: 'sandbox not ready (status: starting)' } },
+      status: 503,
+    });
+    const promise = readSessionMessagePage(client, 'session-1', { limit: 50 });
+    await expect(promise).rejects.toBeInstanceOf(SandboxNotReadyError);
+    await expect(promise).rejects.toThrow(/sandbox not ready/i);
+  });
+
+  test('a not-ready body classifies as SandboxNotReadyError even without a 503 status', async () => {
+    const client = failingClient({ error: { message: 'opencode session is not ready' } });
+    await expect(
+      readSessionMessagePage(client, 'session-1', { limit: 50 }),
+    ).rejects.toBeInstanceOf(SandboxNotReadyError);
+  });
+
+  test('a 500 throws a real error, not a not-ready error', async () => {
+    const client = failingClient({ error: { message: 'internal error' }, status: 500 });
+    const promise = readSessionMessagePage(client, 'session-1', { limit: 50 });
+    await expect(promise).rejects.toThrow('internal error');
+    await expect(promise).rejects.not.toBeInstanceOf(SandboxNotReadyError);
+  });
+
+  test('a 2xx payload is still normalized and returned', async () => {
+    const client = {
+      session: {
+        messages: async () => ({
+          data: [{ info: { id: 'm1', time: { created: 1 } }, parts: [] }],
+          response: new Response(null, { status: 200 }),
+        }),
+      },
+    } as never;
+    const result = await readSessionMessagePage(client, 'session-1', { limit: 50 });
+    expect(result.messages.map((m) => m.info.id)).toEqual(['m1']);
+  });
+
+  test('threads the AbortSignal into client.session.messages', async () => {
+    let seen: AbortSignal | undefined;
+    const client = {
+      session: {
+        messages: async (_request: unknown, options?: { signal?: AbortSignal }) => {
+          seen = options?.signal;
+          return { data: [], response: new Response(null, { status: 200 }) };
+        },
+      },
+    } as never;
+    const controller = new AbortController();
+    await readSessionMessagePage(client, 'session-1', { limit: 50 }, controller.signal);
+    expect(seen).toBe(controller.signal);
   });
 });

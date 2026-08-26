@@ -935,7 +935,7 @@ function InlineTriggerTitle({
   return (
     <>
       <span className="text-foreground shrink-0 text-sm whitespace-nowrap">{trigger.title}</span>
-      {(trigger.subtitle || args.length > 0) && (
+      {(trigger.subtitle || args.length > 0 || trigger.stat) && (
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           {trigger.subtitle &&
             (running ? (
@@ -978,6 +978,16 @@ function InlineTriggerTitle({
                 {trigger.subtitle}
               </span>
             ))}
+          {/* `shrink-0`: the count is the row's verdict-sized fact, so a long
+              filename truncates before the stat gives up a digit. DiffStat
+              nulls itself when both counts are zero. */}
+          {trigger.stat && (
+            <DiffStat
+              additions={trigger.stat.additions}
+              deletions={trigger.stat.deletions}
+              className="shrink-0 text-xs"
+            />
+          )}
           {args.length > 0 && (
             <>
               {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
@@ -1113,6 +1123,14 @@ function PanelRowTitle({
         >
           {trigger.subtitle}
         </span>
+      )}
+      {/* Same slot as the inline row's: after the name, never truncated. */}
+      {trigger.stat && (
+        <DiffStat
+          additions={trigger.stat.additions}
+          deletions={trigger.stat.deletions}
+          className="shrink-0 text-xs"
+        />
       )}
       {args.length > 0 && (
         <span

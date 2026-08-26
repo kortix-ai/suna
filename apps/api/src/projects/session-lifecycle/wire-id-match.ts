@@ -9,9 +9,15 @@ import { type SQL, or, sql } from 'drizzle-orm';
  *
  *  - `payload.wireMessageId` — the id the CLIENT minted when the user pressed
  *    Enter, persisted at create (`store.ts`).
- *  - `payload.redeliveredMessageId` — the id a RE-MINT placed it under, when
- *    the row waited behind a live turn or came back from a strand
+ *  - `payload.redeliveredMessageId` — the LATEST id a RE-MINT placed it under,
+ *    when the row waited behind a live turn or came back from a strand
  *    (`engine.ts`'s `remintWireMessageId`).
+ *  - `payload.redeliveredMessageIds` — EVERY id a re-mint ever placed it under,
+ *    appended (never overwritten) by the same two paths. A prompt re-minted
+ *    twice keeps the scalar at the newest id, so a ledger row keyed on the
+ *    FIRST re-minted id would match nothing without this. The array is the
+ *    "any of them" reader; the scalar stays the "latest" one every floor read
+ *    still wants.
  *  - `result.forwarded_message_id` — the id the delivery ACTUALLY used,
  *    written by `markCommandForwarded` (`store.ts:518`) precisely so a reader
  *    does not have to re-derive which of the two payload ids the attempt
@@ -47,5 +53,6 @@ export function wireMessageIdMatches(messageId: string): SQL | undefined {
     sql`${sessionLifecycleCommands.payload}->>'wireMessageId' = ${messageId}`,
     sql`${sessionLifecycleCommands.payload}->>'redeliveredMessageId' = ${messageId}`,
     sql`${sessionLifecycleCommands.result}->>'forwarded_message_id' = ${messageId}`,
+    sql`coalesce(${sessionLifecycleCommands.payload}->'redeliveredMessageIds', '[]'::jsonb) @> ${JSON.stringify([messageId])}::jsonb`,
   );
 }

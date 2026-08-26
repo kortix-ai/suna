@@ -104,6 +104,59 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
 });
 
 describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
+  test('enables compiled checkout independently from the legacy fast-cold-boot flag', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      compiledBootMode: 'prefer',
+      fastColdBootEnabled: false,
+      freshSession: true,
+      baseSha: 'a'.repeat(40),
+    });
+
+    expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('prefer');
+    expect(env.KORTIX_SESSION_FRESH).toBe('1');
+    expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
+    expect(env).not.toHaveProperty('KORTIX_OPENCODE_BINARY_PREFETCH');
+  });
+
+  test('emits required mode for strict compiled runtime verification', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      compiledBootMode: 'required',
+      freshSession: true,
+      baseSha: 'a'.repeat(40),
+    });
+
+    expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('required');
+    expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
+  });
+
+  test('keeps off, resumed, and repository-free sessions on the existing path', () => {
+    for (const env of [
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        compiledBootMode: 'off',
+        freshSession: true,
+        baseSha: 'a'.repeat(40),
+      }),
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        compiledBootMode: 'prefer',
+        freshSession: false,
+        baseSha: 'a'.repeat(40),
+      }),
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        workspaceMode: 'runtime',
+        compiledBootMode: 'prefer',
+        freshSession: true,
+        baseSha: 'a'.repeat(40),
+      }),
+    ]) {
+      expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
+    }
+  });
+
   test('marks replacement runtimes for remote session-branch restoration', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,

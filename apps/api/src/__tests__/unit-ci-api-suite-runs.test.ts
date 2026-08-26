@@ -13,37 +13,32 @@ const packageJson = JSON.parse(read('apps/api/package.json')) as {
   scripts: Record<string, string>;
 };
 
-const sandboxJob = workflow.slice(workflow.indexOf('\n  sandbox:'));
+const laneJob = workflow.slice(workflow.indexOf('\n  lane:'));
 
 describe('the kortix-api suite actually runs on pull requests', () => {
-  test('the reusable workflow runs every root lane on exact-SHA sandbox workers', () => {
-    expect(sandboxJob).toContain('matrix:');
-    expect(sandboxJob).toContain('- lane: core');
-    expect(sandboxJob).toContain('- lane: browser-1');
-    expect(sandboxJob).toContain('- lane: browser-2');
-    expect(sandboxJob).toContain('- lane: packages');
-    expect(sandboxJob).toContain('core) bun tests/bin/sandbox-ci.ts ;;');
-    expect(sandboxJob).toContain(
-      'browser-1) bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=1/2 ;;',
-    );
-    expect(sandboxJob).toContain(
-      'browser-2) bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=2/2 ;;',
-    );
-    expect(sandboxJob).toContain('packages)');
-    expect(sandboxJob).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
-    expect(sandboxJob).toContain('bun tests/bin/sandbox-ci.ts --packages-only');
-    expect(sandboxJob).toContain('SANDBOX_TEST_SHA:');
-    expect(sandboxJob).toContain('SANDBOX_TEST_REF:');
-    expect(sandboxJob).toContain('TEST_SANDBOX_PROVIDER:');
+  test('the reusable workflow runs every root lane natively at the exact PR head SHA', () => {
+    expect(laneJob).toContain('matrix:');
+    expect(laneJob).toContain('- lane: core');
+    expect(laneJob).toContain('- lane: browser-1');
+    expect(laneJob).toContain('- lane: browser-2');
+    expect(laneJob).toContain('- lane: packages');
+    expect(laneJob).toContain('args: --browser-only --browser-shard=1/2');
+    expect(laneJob).toContain('args: --browser-only --browser-shard=2/2');
+    expect(laneJob).toContain('args: --packages-only');
+    expect(laneJob).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
+    expect(laneJob).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
+    expect(laneJob).toContain('TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}');
+    expect(laneJob).toContain('ref: ${{ env.TEST_SHA }}');
   });
 
-  test('the sandbox job never receives the dotenvx master key', () => {
-    expect(sandboxJob).not.toContain('DOTENV_PRIVATE_KEY:');
+  test('the lane job never receives the dotenvx master key', () => {
+    expect(laneJob).not.toContain('DOTENV_PRIVATE_KEY:');
   });
 
-  test('the sandbox job has an independent provider-neutral cleanup step', () => {
-    expect(sandboxJob).toContain('if: always()');
-    expect(sandboxJob).toContain('bun tests/bin/sandbox-ci-cleanup.ts');
+  test('the lane job always stops its local Supabase and always uploads results', () => {
+    expect(laneJob).toContain("if: always() && matrix.mode == 'browser'");
+    expect(laneJob).toContain('pnpm exec supabase stop --no-backup || true');
+    expect(laneJob).toContain('actions/upload-artifact@v7');
   });
 
   test('full mode reaches every package and app test through package-quality', () => {

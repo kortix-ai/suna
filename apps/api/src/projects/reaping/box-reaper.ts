@@ -136,6 +136,20 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
 const ORPHANED_PROMPT_MIN_AGE_MS = 30_000;
 
 /**
+ * Per-sandbox probe back-off after an `unknown` turn observation, in this
+ * process. 20 s → 40 s → … → 5 min, cleared by the first readable answer.
+ * Per replica on purpose: no shared state to fail on, and two replicas
+ * together still ask far less than the old fixed cadence.
+ */
+const PROBE_BACKOFF_MIN_MS = 20_000;
+const PROBE_BACKOFF_MAX_MS = 5 * 60_000;
+const probeBackoff = new Map<string, { backoffMs: number; until: number }>();
+/** Tests: forget every back-off. */
+export function __resetProbeBackoffForTests(): void {
+  probeBackoff.clear();
+}
+
+/**
  * Give an inbox prompt back when its delivery is PROVEN never to have run.
  *
  * Never fails the pass: a redelivery is a repair, and a repair that throws must
@@ -264,6 +278,7 @@ export async function reapAndReconcileSandboxes(
           // answered unknown`, which is a statement about answers, not about
           // records. EVERY record is probed, so the count is complete.
           let unreadableTurns = 0;
+          let backedOffProbes = 0;
           // Probes the daemon ANSWERED, whatever it said. A separate fact from
           // the observation, and the drip below needs it: an answer proves the
           // runtime is up and only its description of the turn is missing (an
@@ -308,15 +323,26 @@ export async function reapAndReconcileSandboxes(
                   : turn.startedAtMs + turnDeliveryGraceMs();
               const withinDeliveryGrace =
                 turn.state === 'delivering' && deliveryGraceEndsAtMs > now.getTime();
-              const { observation, endReason, daemonAnswered, orphanedPrompt } =
-                await dependencies.observeSandboxTurn(
-                  provider,
-                  row.externalId,
-                  row.sandboxId,
-                  turn,
-                );
+              // Back-off on "could not tell": a box that answered `unknown`
+              // is not asked again until its back-off elapses. The extension
+              // below still happens (the record's own bound governs it), the
+              // PROBE does not. Essentia 2026-08-25: two replicas probed one
+              // box 345 times in an hour, each probe made OpenCode serialise
+              // its 140 MB transcript, and the kernel OOM-killed it.
+              const backoff = probeBackoff.get(row.sandboxId);
+              const backedOff = backoff !== undefined && backoff.until > now.getTime();
+              const { observation, endReason, daemonAnswered, orphanedPrompt } = backedOff
+                ? ({ observation: 'unknown', endReason: null, daemonAnswered: false, orphanedPrompt: false } as const)
+                : await dependencies.observeSandboxTurn(
+                    provider,
+                    row.externalId,
+                    row.sandboxId,
+                    turn,
+                  );
               if (observation === 'unknown') unreadableTurns += 1;
+              else probeBackoff.delete(row.sandboxId);
               if (daemonAnswered) answeredProbes += 1;
+              if (backedOff) backedOffProbes += 1;
               // Inside the delivery grace only a POSITIVE answer may be acted
               // on: `active` is proof the prompt reached OpenCode and promotes
               // the record early. `terminal` and `unknown` are the ambiguous
@@ -545,16 +571,29 @@ export async function reapAndReconcileSandboxes(
           if (
             turns.length > 0 &&
             unreadableTurns === turns.length &&
-            answeredProbes > 0 &&
+            (answeredProbes > 0 || backedOffProbes > 0) &&
             row.deadlineAt.getTime() > now.getTime() &&
             hasFreshTurnRecord(turns, now)
           ) {
             const extended = await dependencies.extendUnconfirmedTurnDeadline(row.sandboxId);
+            // Escalate only on a pass that actually ASKED and got nothing readable;
+            // a pass that skipped the probe must not double the wait it did not test.
+            if (backedOffProbes === 0) {
+              const nextBackoffMs = Math.min(
+                PROBE_BACKOFF_MAX_MS,
+                Math.max(PROBE_BACKOFF_MIN_MS, (probeBackoff.get(row.sandboxId)?.backoffMs ?? 0) * 2),
+              );
+              probeBackoff.set(row.sandboxId, { backoffMs: nextBackoffMs, until: now.getTime() + nextBackoffMs });
+            }
             console.warn('[reaper] turn observation unknown; drip-extending', {
               sandboxId: row.sandboxId,
               externalId: row.externalId,
               provider: row.provider,
               turns: turns.length,
+              // Was the daemon ASKED this pass, or is this a backed-off drip?
+              // Without this the log cannot tell 20 s drips from 20 s probes.
+              probed: backedOffProbes === 0,
+              backoffMs: probeBackoff.get(row.sandboxId)?.backoffMs ?? null,
               deadlineAt: row.deadlineAt.toISOString(),
               extended,
             });

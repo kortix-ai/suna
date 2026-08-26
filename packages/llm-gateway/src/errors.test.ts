@@ -8,6 +8,7 @@ import {
   defaultIsRetryable,
   indicatesUpstreamDown,
   looksLikeTerminalAuthFailure,
+  isUnknownParameterRejection,
 } from './errors';
 
 // Defect (2026-07-17, live-confirmed): an invalid upstream key retried 11+
@@ -118,5 +119,22 @@ describe('indicatesUpstreamDown — terminal auth errors never trip the shared b
     expect(indicatesUpstreamDown(new UpstreamHttpError(503, 'down'))).toBe(true);
     expect(indicatesUpstreamDown(new NetworkError('ECONNRESET'))).toBe(true);
     expect(indicatesUpstreamDown(new TimeoutError())).toBe(true);
+  });
+});
+
+describe('isUnknownParameterRejection — an upstream refusing ONE parameter, not the request', () => {
+  const bedrockBody =
+    'undefined: The model returned the following errors: {"error":{"code":"unknown_parameter","message":"Unknown parameter: \'reasoning_effort\'.","param":"reasoning_effort","type":"invalid_request_error"}}';
+
+  test("Bedrock's OpenAI-shaped unknown_parameter for reasoning_effort is recognised", () => {
+    const err = new UpstreamHttpError(400, bedrockBody, 'amazon-bedrock');
+    expect(isUnknownParameterRejection(err, 'reasoning_effort')).toBe(true);
+    expect(isUnknownParameterRejection(err, 'temperature')).toBe(false);
+  });
+
+  test('any other 400, a 5xx, or a non-HTTP error is not', () => {
+    expect(isUnknownParameterRejection(new UpstreamHttpError(400, 'context window exceeded', 'p'), 'reasoning_effort')).toBe(false);
+    expect(isUnknownParameterRejection(new UpstreamHttpError(500, bedrockBody, 'p'), 'reasoning_effort')).toBe(false);
+    expect(isUnknownParameterRejection(new Error(bedrockBody), 'reasoning_effort')).toBe(false);
   });
 });

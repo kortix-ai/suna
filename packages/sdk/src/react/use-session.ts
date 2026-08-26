@@ -800,6 +800,8 @@ export interface UseSessionOptions {
 const DISABLED_CHAT_ENGINE_SYNC = {
   messages: [] as ReturnType<typeof useSessionSync>['messages'],
   status: { type: 'idle' } as ReturnType<typeof useSessionSync>['status'],
+  freshness: 'idle' as ReturnType<typeof useSessionSync>['freshness'],
+  retryTranscript: () => {},
   isBusy: false,
   isLoading: false,
   diffs: [] as ReturnType<typeof useSessionSync>['diffs'],
@@ -1030,6 +1032,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     kortixSessionScope: `${projectId}/${sessionId}`,
     networkEnabled: switched,
     working: working.state === 'working',
+    // The control plane holding a turn open keeps the transcript verification
+    // poll on even when the projection's answer is idle — the repair for a
+    // stale wire idle frame vetoing the open row while the SSE stream is dead
+    // (see UseSessionSyncOptions.serverHoldsTurn). Without it, that one wrong
+    // answer switched off the only read that could disprove it, and the
+    // transcript froze mid-turn until a reload.
+    serverHoldsTurn: working.serverOpenTurnToken !== null,
   });
   const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
   const runtimePhase = useRuntimePhase();
@@ -1426,6 +1435,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // live data
     messages,
     status: sync.status,
+    /** Transcript-read state (`idle|loading|fresh|stale|error`), for gating the
+     *  chat body: `loading`/`error` with no messages are a wait and a failure,
+     *  not an empty session. `retryTranscript` re-reads the tail. */
+    freshness: sync.freshness,
+    retryTranscript: sync.retryTranscript,
     questions,
     permissions,
     diffs: sync.diffs,

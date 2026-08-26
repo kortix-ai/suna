@@ -238,6 +238,13 @@ export interface WorkingStreamInput {
  * live spinner and text growing on screen, and a composer showing its send
  * arrow. Every observer had gone quiet; the only thing still speaking was the
  * content, and nothing was listening to it.
+ *
+ * Content reaches the tab two ways, and both stamp this: pushed (a streamed
+ * part off the SSE wire) and PULLED (a liveness-poll tail read whose hydrate
+ * shows the transcript moved with its tail still open — `sync-store.hydrate`).
+ * The pull path is what answers when the wire itself is the thing that died
+ * (essentia, 2026-08-26: stream black-holed mid-turn, stale idle frame vetoing
+ * the open turn row, transcript minutes behind).
  */
 export interface WorkingActivityInput {
   atMs: number;
@@ -435,9 +442,22 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     // A turn that is genuinely still running says so, and that is what returns
     // authority to the ledger: any newer frame is not idle, so `idleFrame` is
     // null on the next evaluation and the row decides again — immediately, with
-    // no window to tune. A runtime that goes silent instead is bounded by
-    // `STREAM_OBSERVATION_MAX_MS`, after which the frame is too stale to veto
-    // anything.
+    // no window to tune.
+    //
+    // "Says so" assumes the stream is delivering. When it is NOT — a
+    // black-holed SSE proxy answers 200 and never writes a byte, and the
+    // client heartbeat is the only detector (apps/api injects no keepalives)
+    // — this veto is deliberately NOT expired by `STREAM_OBSERVATION_MAX_MS`
+    // (a row still open past any time bound is more often a dropped
+    // `kind:"end"` relay than a live turn). The repair for the wrong case —
+    // a running turn behind a dead stream, prod 2026-08-26 — is EVIDENCE,
+    // not time: the transcript liveness poll stays on while the server holds
+    // a turn open (`livenessBusy`'s `serverHoldsTurn`), its runtime read
+    // stamps `sessionActivityAt` when the transcript moved with an open tail
+    // (`sync-store.hydrate`), and `activityAfterIdle` above then outranks
+    // this frame. Also note `started_at` is server clock while `atMs` is this
+    // tab's clock — skew can misclassify a NEW turn as ended, and the same
+    // evidence path is what recovers it.
     return true;
   };
 

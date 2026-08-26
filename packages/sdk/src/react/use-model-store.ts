@@ -112,13 +112,39 @@ function capSessionMap<V>(map: Record<string, V> | undefined): Record<string, V>
   return Object.fromEntries(kept.map((k) => [k, map[k]])) as Record<string, V>;
 }
 
+/**
+ * Guarantee the persisted store's shape no matter what localStorage holds.
+ * Proven live (Essentia 2026-08-26): a malformed `opencode-model-store-v1`
+ * value crashed every route with "a.user is not iterable" because consumers
+ * iterate `store.user` and `loadStore` returned `JSON.parse(raw)` unvalidated.
+ * Corrupt or legacy data degrades to defaults — it never throws downstream.
+ */
+export function sanitizeModelStore(raw: unknown): ModelStore {
+  const isObj = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (!isObj(raw)) return { user: [], recent: [], variant: {} };
+  const objArray = <T>(v: unknown): T[] =>
+    Array.isArray(v) ? (v.filter((e) => isObj(e)) as T[]) : [];
+  const out: ModelStore = {
+    user: objArray<UserEntry>(raw.user),
+    recent: objArray<ModelKey>(raw.recent),
+    variant: isObj(raw.variant) ? (raw.variant as ModelStore['variant']) : {},
+  };
+  if (isObj(raw.selectedModel)) out.selectedModel = raw.selectedModel as ModelStore['selectedModel'];
+  if (isObj(raw.sessionAgentName)) out.sessionAgentName = raw.sessionAgentName as ModelStore['sessionAgentName'];
+  if (typeof raw.lastAgentName === 'string') out.lastAgentName = raw.lastAgentName;
+  if (isObj(raw.sessionModel)) out.sessionModel = raw.sessionModel as ModelStore['sessionModel'];
+  if (isObj(raw.globalDefault)) out.globalDefault = raw.globalDefault as ModelStore['globalDefault'];
+  return out;
+}
+
 function loadStore(): ModelStore {
   if (typeof window === 'undefined') {
     return { user: [], recent: [], variant: {} };
   }
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return sanitizeModelStore(JSON.parse(raw));
   } catch {
     // ignore
   }

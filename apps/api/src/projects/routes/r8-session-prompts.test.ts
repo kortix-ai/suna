@@ -24,6 +24,7 @@ const WIRE_ID = 'msg_0198f3a1b2c4AbCdEfGhIjKlMn';
 type CommandRow = {
   commandId: string;
   commandType: string;
+  idempotencyKey: string | null;
   sessionId: string | null;
   status: string;
   attempts: number;
@@ -45,6 +46,7 @@ function row(overrides: Partial<CommandRow> = {}): CommandRow {
   return {
     commandId: PROMPT_ID,
     commandType: 'continue_session',
+    idempotencyKey: `prompt:${SESSION_ID}:q_1`,
     sessionId: SESSION_ID,
     status: 'queued',
     attempts: 0,
@@ -483,6 +485,7 @@ describe('GET .../prompts', () => {
         reason: null,
         text: 'say hi',
         attempts: 0,
+        runtime_retries: 0,
         last_error: null,
         created_at: '2026-08-18T00:00:00.000Z',
         available_at: '2026-08-18T00:00:00.000Z',
@@ -504,6 +507,30 @@ describe('GET .../prompts', () => {
       ['delivering', null],
       ['waiting', 'older_prompt_pending'],
     ]);
+  });
+
+  test('a row parked on a DOWN runtime reads `queued`, names the runtime, and counts its retries', async () => {
+    // Before: an unreachable box dead-lettered the prompt on its FIRST attempt
+    // and the row read `failed` — a manual retry offered for work the server was
+    // already going to do. It is queued, because it IS in line.
+    commandTable = [
+      row({
+        status: 'queued',
+        result: { delivery_blocked: 'runtime_unreachable', runtime_retries: 2 },
+        lastError: 'delivery outcome: unreachable',
+      }),
+    ];
+    const body = await list();
+    expect(body.prompts[0].state).toBe('queued');
+    expect(body.prompts[0].reason).toBe('runtime_unreachable');
+    expect(body.prompts[0].runtime_retries).toBe(2);
+  });
+
+  test('an ordinary row reports zero runtime retries', async () => {
+    commandTable = [row({ status: 'queued' })];
+    const body = await list();
+    expect((await list()).prompts[0].runtime_retries).toBe(0);
+    expect(body.prompts[0].reason).toBeNull();
   });
 
   test('a dead-lettered row reads `failed` and carries its error', async () => {
@@ -681,6 +708,7 @@ describe('POST .../prompts/:promptId/retry', () => {
     expect(commandTable[0].result).toEqual({ promoted: true });
     expect(commandTable[0].payload.remintOnDelivery).toBe(true);
     expect(commandTable[0].payload.wireMessageId).toBe(WIRE_ID);
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
   });
 
   test('404s a prompt that is not retryable', async () => {

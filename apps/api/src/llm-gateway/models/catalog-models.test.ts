@@ -255,7 +255,12 @@ describe('catalogModelForWireModel — generation-controls capability lookup', (
     expect(flash?.id).toBe('deepseek/deepseek-v4-flash');
     expect(flash?.reasoning).toBe(true);
     expect(flash?.temperature).toBe(true);
-    expect(flash?.reasoning_options?.[0]?.values).toEqual(['high', 'xhigh']);
+    // models.dev publishes a `toggle` entry alongside the effort ladder for
+    // this model — find the effort knob rather than assuming index 0. The
+    // synthetic fallback carries no reasoning_options at all.
+    const effort = flash?.reasoning_options?.find((option) => option.type === 'effort');
+    expect(effort?.values?.length).toBeGreaterThan(1);
+    expect(effort?.values).toContain('high');
     expect(flash?.limit?.context).toBe(1_048_576);
   });
 

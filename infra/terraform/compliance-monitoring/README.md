@@ -8,8 +8,11 @@ It manages:
 
 - WAF association for every current ALB in us-west-2, eu-west-2, and
   us-east-2.
-- Target response time, ELB 5xx, and unhealthy-host CloudWatch alarms for every
-  current ALB, with regional SNS actions (Drata DCF-86 / DCF-88).
+- ELB 5xx and unhealthy-host CloudWatch alarms for every current ALB, with
+  regional SNS actions (Drata DCF-86 / DCF-88). The reconciler adds a
+  zero-healthy-hosts alarm per target group. `TargetResponseTime` alarms are
+  retired: the gateway and API ALBs stream LLM and SSE responses, so their
+  average response time is minutes by design and the alarm only flapped.
 - CPU-utilization CloudWatch alarms for every running EC2 instance in the dev
   and production regions, discovered on every plan so replacement EKS workers
   remain covered (Drata DCF-86).
@@ -18,7 +21,9 @@ It manages:
   without waiting for another Terraform apply.
 - Regional Lambda reconcilers on a five-minute schedule, so Kubernetes-managed
   ALB creation and replacement receives all three required alarms without
-  waiting for another Terraform apply.
+  waiting for another Terraform apply. The same run deletes retired
+  `kortix-alb-*-target-response-time` alarms and the unmanaged
+  `compliance-*` ALB alarms left by the 2026-07-27 evidence pass.
 - Least-privilege SNS topic policies for EventBridge and CloudWatch delivery.
 - AWS Backup and EBS snapshot failure EventBridge rules and SNS targets
   (Drata DCF-99).
@@ -70,8 +75,9 @@ Both payloads must report `covered_instances == running_instances` and an empty
 ## Verify ALB alarm coverage
 
 Invoke the reconciler twice in each production-system region. The second
-invocation must report `covered_alarms == load_balancers * 3` and an empty
-`updated_alarms` list.
+invocation must report `covered_alarms == elb-5xx per ALB + unhealthy-hosts and
+zero-healthy-hosts per target group`, an empty `updated_alarms` list, and an
+empty `deleted_alarms` list.
 
 ```bash
 for region in us-west-2 eu-west-2 us-east-2; do

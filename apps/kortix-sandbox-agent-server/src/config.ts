@@ -18,6 +18,9 @@ const BoolFlag = z.preprocess((v) => {
   return s === '1' || s === 'true' || s === 'yes' || s === 'on'
 }, z.boolean())
 
+export const CompiledBootModeSchema = z.enum(['off', 'shadow', 'prefer', 'required'])
+export type CompiledBootMode = z.infer<typeof CompiledBootModeSchema>
+
 const Schema = z.object({
   KORTIX_SERVICE_PORT: z.coerce.number().int().positive().default(8000),
   KORTIX_OPENCODE_INTERNAL_PORT: z.coerce.number().int().positive().default(4096),
@@ -57,6 +60,7 @@ const Schema = z.object({
   KORTIX_GIT_DELTA_BUNDLE_BASE64: z.string().optional(),
   KORTIX_GIT_DELTA_PARENT_SHA: z.string().optional(),
   KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: z.string().optional(),
+  KORTIX_COMPILED_BOOT_MODE: CompiledBootModeSchema.default('off'),
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
@@ -122,6 +126,7 @@ export type Config = {
   gitDeltaBundleBase64?: string
   gitDeltaParentSha?: string
   gitDeltaParentCommitBase64?: string
+  compiledBootMode: CompiledBootMode
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
@@ -160,6 +165,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_GIT_DELTA_BUNDLE_BASE64: env.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     KORTIX_GIT_DELTA_PARENT_SHA: env.KORTIX_GIT_DELTA_PARENT_SHA,
     KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
+    KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
@@ -192,6 +198,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     gitDeltaBundleBase64: parsed.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     gitDeltaParentSha: parsed.KORTIX_GIT_DELTA_PARENT_SHA,
     gitDeltaParentCommitBase64: parsed.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
+    compiledBootMode: parsed.KORTIX_COMPILED_BOOT_MODE,
     sandboxToken: parsed.KORTIX_TOKEN,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,

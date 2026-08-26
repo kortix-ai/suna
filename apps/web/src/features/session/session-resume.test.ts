@@ -5,6 +5,7 @@ import {
   isAutoResuming,
   isRuntimeIdentityUnavailable,
   isSandboxResumable,
+  isWakeClassFailure,
 } from './session-resume';
 
 describe('isSandboxResumable', () => {
@@ -176,5 +177,110 @@ describe('isRuntimeIdentityUnavailable', () => {
         metadata: null as unknown as Record<string, unknown>,
       }),
     ).toBe(false);
+  });
+});
+
+describe('isWakeClassFailure', () => {
+  test('the 240s wake-lease verdict — the exact payload that painted the terminal card', () => {
+    expect(
+      isWakeClassFailure({
+        stage: 'failed',
+        reason: 'runtime_wake_failed',
+        sandbox: {
+          status: 'stopped',
+          external_id: 'sbx_1',
+          metadata: { stopReason: 'runtime_wake_failed' },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  test('the wake-retry cooldown payload', () => {
+    expect(
+      isWakeClassFailure({
+        stage: 'stopped',
+        reason: 'runtime_wake_cooldown',
+        sandbox: { status: 'stopped', external_id: 'sbx_1', metadata: {} },
+      }),
+    ).toBe(true);
+  });
+
+  test('a stale-wake PARK still counts, though the server left it `retriable`', () => {
+    // `preserveEstablishedRuntimeOnOpen`'s park branch answers stage `failed`
+    // with `retriable: true` and a reason that is NOT one of the wake strings —
+    // only the row's stopReason names the wake. Reading `retriable` here would
+    // have missed it and painted the "<session> is stopped" dead end instead.
+    expect(
+      isWakeClassFailure({
+        stage: 'failed',
+        reason: 'runtime_wake_stale',
+        sandbox: {
+          status: 'stopped',
+          external_id: 'sbx_1',
+          metadata: { stopReason: 'runtime_wake_failed' },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  test('a failed BOOT is the same class: a restart is what fixes it', () => {
+    expect(
+      isWakeClassFailure({
+        stage: 'failed',
+        reason: 'runtime_boot_failed',
+        sandbox: {
+          status: 'stopped',
+          external_id: 'sbx_1',
+          metadata: { stopReason: 'runtime_boot_failed' },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  test('a wake still in progress is NOT a failure', () => {
+    expect(
+      isWakeClassFailure({
+        stage: 'starting',
+        reason: 'runtime_waking',
+        sandbox: { status: 'stopped', external_id: 'sbx_1', metadata: {} },
+      }),
+    ).toBe(false);
+    expect(
+      isWakeClassFailure({
+        stage: 'ready',
+        reason: null,
+        sandbox: { status: 'active', external_id: 'sbx_1', metadata: {} },
+      }),
+    ).toBe(false);
+  });
+
+  test('a lost runtime is NOT wake-class — no restart can bring it back', () => {
+    expect(
+      isWakeClassFailure({
+        stage: 'failed',
+        reason: 'runtime_identity_unavailable',
+        sandbox: {
+          status: 'stopped',
+          external_id: 'sbx_1',
+          metadata: { runtimeIdentityState: 'unavailable', stopReason: 'runtime_wake_failed' },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  test('a non-wake terminal failure stays a dead end at once', () => {
+    // Capacity and git-auth failures are not fixed by restarting, so the ladder
+    // must never hold their card back.
+    expect(
+      isWakeClassFailure({
+        stage: 'failed',
+        reason: 'provider_capacity',
+        sandbox: { status: 'error', external_id: 'sbx_1', metadata: {} },
+      }),
+    ).toBe(false);
+  });
+
+  test('a session with no sandbox row at all is not a wake', () => {
+    expect(isWakeClassFailure({ stage: 'failed', reason: null, sandbox: null })).toBe(false);
   });
 });

@@ -240,7 +240,10 @@ afterAll(async () => {
   if (ctx) await setDemoEnterprise(ctx.accountId, priorDemoEnterprise);
 }, 30_000);
 
-async function seedPending(argsPreviewComplete = true): Promise<string> {
+async function seedPending(
+  argsPreviewComplete = true,
+  argsPreview: Record<string, unknown> | null = { repo: 'kortix-ai/suna' },
+): Promise<string> {
   if (!ctx) throw new Error('approval integration test has no project context');
   const [row] = await db
     .insert(connectorCalls)
@@ -254,7 +257,7 @@ async function seedPending(argsPreviewComplete = true): Promise<string> {
       risk: null,
       resolvedAt: null, // genuinely awaiting a decision
       resultSummary: {
-        args_preview: { repo: 'kortix-ai/suna' },
+        ...(argsPreview ? { args_preview: argsPreview } : {}),
         args_preview_complete: argsPreviewComplete,
       },
     })
@@ -560,14 +563,29 @@ describe('approvals inbox + resolution', () => {
     expect(automatedItem?.detail).toMatchObject({ args_preview_authorized: false });
   });
 
-  test('an incomplete parameter preview blocks approve but still permits deny', async () => {
+  test('a TRUNCATED parameter preview is approvable — the elision is visible', async () => {
     if (!ctx) return;
-    const execId = await seedPending(false);
+    // What the builder writes for a call carrying an attachment: the fields are
+    // legible, one value is described rather than copied, `complete` is false.
+    // This used to 409, leaving Deny as the only possible answer.
+    const execId = await seedPending(false, {
+      repo: 'kortix-ai/suna',
+      attachment: '[400 chars omitted]',
+    });
+    const approve = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+      decision: 'approve',
+    });
+    expect(approve.status).toBe(200);
+  });
+
+  test('a call with NO recorded parameters blocks approve but still permits deny', async () => {
+    if (!ctx) return;
+    const execId = await seedPending(false, null);
     const approve = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
       decision: 'approve',
     });
     expect(approve.status).toBe(409);
-    expect(await approve.json()).toMatchObject({ code: 'APPROVAL_PREVIEW_INCOMPLETE' });
+    expect(await approve.json()).toMatchObject({ code: 'APPROVAL_PREVIEW_UNAVAILABLE' });
 
     const deny = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
       decision: 'deny',
