@@ -17,9 +17,16 @@ describe('project Files sidebar entry', () => {
     // A button + router.push cannot be prefetched, so every click paid for the
     // RSC payload and the route chunk cold. Reverting to router.push silently
     // restores a 5-6s navigation; this test is the tripwire.
+    //
+    // `HoverPrefetchLink` IS a `next/link` — it only defers the prefetch from
+    // mount to hover/focus/touch, because prefetching on mount charged every
+    // session open a full dynamic render of /files nobody asked for (see
+    // sidebar-prefetch-contract.test.ts for the measured before/after). The
+    // guarantee this test protects — prefetched link, never router.push — is
+    // unchanged.
     const navItem = filesNavItemSource();
 
-    expect(navItem).toContain('<Link');
+    expect(navItem).toContain('<HoverPrefetchLink');
     // toContain('prefetch') alone is vacuous: `prefetch={false}` also contains
     // the substring "prefetch" and would pass, silently restoring the 5-6s
     // navigation this test exists to prevent. Require the bare/enabled form and
