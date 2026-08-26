@@ -15,6 +15,8 @@ import {
   normalizeAppName,
   normalizeBranding,
   sniffBrandingImage,
+  svgCarriesActiveContent,
+  svgRootFollowsPrologue,
 } from '../accounts/branding';
 
 // The entitlement read is injected (no `mock.module` — bun shares module mocks
@@ -65,6 +67,31 @@ describe('sniffBrandingImage — bytes decide, never the declared type', () => {
     ]) {
       expect(sniffBrandingImage(enc(svg))).toBeNull();
     }
+  });
+
+  test('entity-encoded payloads are decoded before the scan (Strix CWE-79)', () => {
+    for (const svg of [
+      '<svg><a href="&#106;avascript:alert(1)"><rect/></a></svg>',
+      '<svg><a href="&#x6A;avascript:alert(1)"><rect/></a></svg>',
+      '<svg>&#60;script&#62;alert(1)&#60;/script&#62;</svg>',
+      '<svg><foreignObject><body xmlns="http://www.w3.org/1999/xhtml">x</body></foreignObject></svg>',
+      '<svg><iframe src="https://x"/></svg>',
+      '<svg><a href="#"><animate attributeName="href" values="javascript:alert(1)"/></a></svg>',
+      '<svg><image href="data:text/html,&#60;script&#62;"/></svg>',
+    ]) {
+      expect(sniffBrandingImage(enc(svg))).toBeNull();
+    }
+    // Ordinary entity use stays legal.
+    expect(svgCarriesActiveContent('<svg><text>Tom &amp; Jerry &lt;3</text></svg>')).toBe(false);
+  });
+
+  test('a comment-flood prologue is scanned in linear time (CodeQL js/redos)', () => {
+    const flood = '<!--' + '--><!--'.repeat(20_000) + '-->';
+    const t0 = performance.now();
+    expect(svgRootFollowsPrologue(flood + '<svg/>')).toBe(true);
+    expect(svgRootFollowsPrologue(flood + '<div/>')).toBe(false);
+    expect(svgRootFollowsPrologue('<!--' + '--><!--'.repeat(20_000))).toBe(false);
+    expect(performance.now() - t0).toBeLessThan(500);
   });
 
   test('anything else is refused — HTML, text, a GIF, an empty body', () => {

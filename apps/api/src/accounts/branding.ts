@@ -160,18 +160,90 @@ export function sniffBrandingImage(bytes: Uint8Array): SniffedImage | null {
   if (b[0] === 0x00 && b[1] === 0x00 && b[2] === 0x01 && b[3] === 0x00) {
     return { contentType: 'image/x-icon', ext: 'ico' };
   }
-  // SVG: decode the head as UTF-8, skip BOM/whitespace/XML prolog/comments,
-  // and require an <svg root. Bounded scan — an SVG that buries its root
-  // element deeper than 4 KiB of preamble is not a logo.
-  const head = new TextDecoder('utf-8', { fatal: false })
-    .decode(b.subarray(0, Math.min(b.length, 4096)))
-    .replace(/^\uFEFF/, '');
-  if (/^\s*(<\?xml[^>]*\?>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s/>]/i.test(head)) {
-    const text = new TextDecoder('utf-8', { fatal: false }).decode(b);
-    if (/<script[\s>]|\bon[a-z]+\s*=|javascript:/i.test(text)) return null;
-    return { contentType: 'image/svg+xml', ext: 'svg' };
+  // SVG: decode the head as UTF-8, skip BOM/whitespace/XML prolog/comments/
+  // DOCTYPE with a LINEAR scan (a backtracking regex over `<!-- -->` runs
+  // is exponential — CodeQL js/redos), and require an <svg root. Bounded —
+  // an SVG that buries its root deeper than 4 KiB of preamble is not a logo.
+  const head = new TextDecoder('utf-8', { fatal: false }).decode(
+    b.subarray(0, Math.min(b.length, 4096)),
+  );
+  if (!svgRootFollowsPrologue(head)) return null;
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(b);
+  if (svgCarriesActiveContent(text)) return null;
+  return { contentType: 'image/svg+xml', ext: 'svg' };
+}
+
+/** Linear prologue skip: BOM, whitespace, `<?xml …?>`, `<!-- … -->` (any
+ *  number), `<!DOCTYPE …>`; true when what follows is an `<svg` root. */
+export function svgRootFollowsPrologue(head: string): boolean {
+  let i = head.charCodeAt(0) === 0xfeff ? 1 : 0;
+  const n = head.length;
+  for (;;) {
+    while (i < n && /\s/.test(head[i]!)) i++;
+    if (head.startsWith('<?xml', i)) {
+      const end = head.indexOf('?>', i + 5);
+      if (end === -1) return false;
+      i = end + 2;
+      continue;
+    }
+    if (head.startsWith('<!--', i)) {
+      const end = head.indexOf('-->', i + 4);
+      if (end === -1) return false;
+      i = end + 3;
+      continue;
+    }
+    if (head.startsWith('<!DOCTYPE', i) || head.startsWith('<!doctype', i)) {
+      const end = head.indexOf('>', i + 9);
+      if (end === -1) return false;
+      i = end + 1;
+      continue;
+    }
+    break;
   }
-  return null;
+  if (!head.startsWith('<svg', i) && !head.startsWith('<SVG', i)) return false;
+  const after = head[i + 4];
+  return after === undefined || /[\s/>]/.test(after);
+}
+
+/**
+ * Decode numeric (`&#60;` / `&#x3C;`) and the five XML named character
+ * references so an entity-encoded payload is scanned as what a parser would
+ * see (e.g. `href="&#106;avascript:…"` decodes to `javascript:` inside the
+ * attribute). Bounded: each reference is replaced once, never re-decoded.
+ */
+export function decodeXmlCharRefs(text: string): string {
+  const named: Record<string, string> = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" };
+  return text.replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|lt|gt|amp|quot|apos);/gi, (whole, ref: string) => {
+    const lower = ref.toLowerCase();
+    if (lower in named) return named[lower]!;
+    const code = lower.startsWith('#x') ? parseInt(lower.slice(2), 16) : parseInt(lower.slice(1), 10);
+    if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) return whole;
+    try {
+      return String.fromCodePoint(code);
+    } catch {
+      return whole;
+    }
+  });
+}
+
+/**
+ * Anything that can execute, embed, or fetch inside an SVG. The assets only
+ * ever render through `<img>` / `<link rel=icon>`, where none of this runs —
+ * but a public URL can be opened directly, so refuse it at upload. Scanned on
+ * the entity-DECODED text so `&#60;script&#62;`-style encodings do not slip
+ * past (Strix, CWE-79).
+ */
+export function svgCarriesActiveContent(raw: string): boolean {
+  const text = decodeXmlCharRefs(raw);
+  return (
+    /<script[\s>/]/i.test(text) ||
+    /\bon[a-z]+\s*=/i.test(text) ||
+    /javascript:|vbscript:/i.test(text) ||
+    /data:\s*text\/html/i.test(text) ||
+    /<(foreignObject|iframe|object|embed)[\s>/]/i.test(text) ||
+    // Animating `href` (SMIL) is how a static-looking SVG swaps in a live one.
+    /attributeName\s*=\s*["']?\s*(xlink:)?href/i.test(text)
+  );
 }
 
 /** `<account_id>/<kind>-<sha256:12>.<ext>` — content-addressed so a re-upload

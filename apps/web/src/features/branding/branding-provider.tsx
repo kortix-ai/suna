@@ -135,8 +135,10 @@ export function useAppName(): string {
 
 // ─── Document effect: favicon + title ───────────────────────────────────────
 
-const ORIG_HREF = 'data-kortix-orig-href';
-const ORIG_MEDIA = 'data-kortix-orig-media';
+/** What Next rendered for each icon link before we touched it, kept OFF the
+ *  DOM (a WeakMap, not data-attributes) so a restore never reads back a
+ *  value that anything else could have written into the document. */
+const originals = new WeakMap<HTMLLinkElement, { href: string; media: string | null }>();
 
 /**
  * Next resolves `metadata.icons` and `title` on the server, above auth — so the
@@ -174,9 +176,8 @@ function BrandingDocumentEffect({ branding }: { branding: AccountBranding | null
     // emits several icon links (light, dark-media, shortcut) and their order
     // is not a contract.
     const stash = (link: HTMLLinkElement) => {
-      if (link.hasAttribute(ORIG_HREF)) return;
-      link.setAttribute(ORIG_HREF, link.getAttribute('href') ?? '');
-      link.setAttribute(ORIG_MEDIA, link.getAttribute('media') ?? '');
+      if (originals.has(link)) return;
+      originals.set(link, { href: link.getAttribute('href') ?? '', media: link.getAttribute('media') });
     };
     const apply = (link: HTMLLinkElement, href: string | null) => {
       stash(link);
@@ -187,10 +188,10 @@ function BrandingDocumentEffect({ branding }: { branding: AccountBranding | null
         if (link.hasAttribute('media')) link.removeAttribute('media');
         return;
       }
-      const origHref = link.getAttribute(ORIG_HREF) ?? '';
-      const origMedia = link.getAttribute(ORIG_MEDIA) ?? '';
-      if (link.getAttribute('href') !== origHref) link.setAttribute('href', origHref);
-      if (origMedia) link.setAttribute('media', origMedia);
+      const orig = originals.get(link);
+      if (!orig) return;
+      if (link.getAttribute('href') !== orig.href) link.setAttribute('href', orig.href);
+      if (orig.media) link.setAttribute('media', orig.media);
       else link.removeAttribute('media');
     };
 
