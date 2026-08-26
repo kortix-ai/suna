@@ -25,6 +25,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  gatedRuntimeBootError,
   gatedRuntimeError,
   runtimeErrorPresentation,
   sessionErrorSurfaceReady,
@@ -123,6 +124,81 @@ describe('the page-level phase gate: a benign wake-race 503 never shows the erro
         }),
       ).toBe(false);
     }
+  });
+});
+
+// ============================================================================
+// RC-1 — the SECOND terminal seam: the boot/readiness error branch
+// (`if (!runtimeReady && runtimeBootError && replaceSession)` in page.tsx).
+// It reads the connection store's `runtimeError` (`runtimeBootError`), which on
+// a NEW session's cold boot arrives with `chatSessionId === null` — so
+// `replaceSession` is true and, ungated, the card fired mid-boot. Two fixes:
+//   (1) SDK `runtimeErrorFromHealth` keeps routine boot progress OUT of the
+//       field entirely, so on a normal boot it is null; and
+//   (2) `gatedRuntimeBootError` holds even a GENUINE boot error non-terminal
+//       until `/start` settles (`phase === 'error'`).
+// This models the page's exact composition of those exported functions.
+// ============================================================================
+describe('the boot-error branch is phase-gated too — no terminal card mid-boot', () => {
+  function wouldShowBootErrorCard(input: {
+    phase: 'starting' | 'ready' | 'error';
+    runtimeReady: boolean;
+    rawRuntimeBootError: unknown;
+    chatSessionId: string | null;
+  }): boolean {
+    const runtimeBootError = gatedRuntimeBootError({
+      phase: input.phase,
+      runtimeBootError: input.rawRuntimeBootError,
+    });
+    const runtimeError = gatedRuntimeError({ phase: input.phase, runtimeError: null });
+    const presentation = runtimeErrorPresentation({
+      chatSessionId: input.chatSessionId,
+      runtimeError,
+      runtimeBootError,
+    });
+    return !input.runtimeReady && Boolean(runtimeBootError) && presentation.replaceSession;
+  }
+
+  test('a genuine boot error on a NEW session while /start is in flight: NO card', () => {
+    expect(
+      wouldShowBootErrorCard({
+        phase: 'starting',
+        runtimeReady: false,
+        rawRuntimeBootError: 'daemon crashed at import',
+        chatSessionId: null,
+      }),
+    ).toBe(false);
+  });
+
+  test('the SAME boot error once /start settles to error: the card DOES show', () => {
+    expect(
+      wouldShowBootErrorCard({
+        phase: 'error',
+        runtimeReady: false,
+        rawRuntimeBootError: 'daemon crashed at import',
+        chatSessionId: null,
+      }),
+    ).toBe(true);
+  });
+
+  test('reverting the gate — reading the raw boot error, ignoring phase — WOULD show the card', () => {
+    // page.tsx before RC-1: `if (!runtimeReady && rawRuntimeBootError && replaceSession)`.
+    const raw = 'schema not ready';
+    const ungated = runtimeErrorPresentation({
+      chatSessionId: null,
+      runtimeError: null,
+      runtimeBootError: raw,
+    }).replaceSession;
+    expect(ungated).toBe(true);
+    // ...which disagrees with the gated (correct) decision for the boot window:
+    expect(
+      wouldShowBootErrorCard({
+        phase: 'starting',
+        runtimeReady: false,
+        rawRuntimeBootError: raw,
+        chatSessionId: null,
+      }),
+    ).not.toBe(ungated);
   });
 });
 

@@ -55,6 +55,7 @@ import {
   requeueForAdmission,
   resultFromExistingCommand,
   withNextDeliveryAttempt,
+  withRemintedWireId,
 } from './store';
 import type {
   PromptOverridesWire,
@@ -1213,7 +1214,7 @@ async function remintWireMessageId(
     await db
       .update(sessionLifecycleCommands)
       .set({
-        payload: sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveredMessageId: minted.id })}::jsonb`,
+        payload: withRemintedWireId(minted.id),
         updatedAt: new Date(),
       })
       .where(eq(sessionLifecycleCommands.commandId, row.commandId));
@@ -1345,9 +1346,7 @@ async function remintForRepair(
     await db
       .update(sessionLifecycleCommands)
       .set({
-        payload: withNextDeliveryAttempt(
-          sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveredMessageId: minted.id })}::jsonb`,
-        ),
+        payload: withNextDeliveryAttempt(withRemintedWireId(minted.id)),
         updatedAt: new Date(),
       })
       .where(eq(sessionLifecycleCommands.commandId, row.commandId));
@@ -1638,9 +1637,14 @@ export async function executeQueuedContinue(
    *  it, and the post-insert strand proof must not "repair" it to the top. */
   let underPlaced = false;
   if (payload.wireMessageId && (remintKnown || turnLive)) {
-    const deliveredIds = [payload.wireMessageId, payload.redeliveredMessageId].filter(
-      (id): id is string => typeof id === 'string' && id.length > 0,
-    );
+    const deliveredIds = [
+      payload.wireMessageId,
+      payload.redeliveredMessageId,
+      // EVERY id a re-mint placed this row under, not just the latest: a reply
+      // parented on an EARLIER re-minted id proves the prompt was answered just
+      // as well, and after two re-mints the scalar no longer holds that id.
+      ...(payload.redeliveredMessageIds ?? []),
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
     const transcriptPromise = readInboxTranscriptState(row, deliveredIds, {
       full: deliveryAttempt > 0 || redeliveries > 0,
     });

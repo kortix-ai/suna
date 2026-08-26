@@ -279,6 +279,22 @@ export async function reconcileForwardedPrompts(
       continue;
     }
 
+    // A turn that ENDED `unknown` is the SUPERSEDED case, and it is CONSUMED —
+    // not an orphan waiting for a redelivery. Box-reaper's terminal branch
+    // writes `unknown` when the daemon answered "no turn in flight" but could
+    // not classify it because a NEWER user message now owns the root; that
+    // prompt's answer is already on screen. The redelivery paths
+    // (`redeliverAbandonedPrompt`/`requeueAbandonedPrompt`) only ever run with
+    // `abandoned`/`runtime_gone`, and a genuinely orphaned row is flipped to
+    // `queued` — out of this scan — before it could reach here. So an `unknown`
+    // row STILL in the forwarded scan is proof the orphan branch declined it.
+    // Confirm it on the FIRST pass instead of stranding the badge as "Queued"
+    // until the max-age ceiling force-closes it ~10 min later.
+    if (turn?.state === 'ended' && turn.endReason === 'unknown') {
+      if (await deps.confirm(row.sessionId, ids[0])) out.confirmed += 1;
+      continue;
+    }
+
     // A ledger row still `delivering` is OpenCode HOLDING this message behind
     // the turn in front of it — the flagship mid-turn case, and the p99 turn
     // (~78 min, `sandbox-deadline-policy.ts`) is eight times this ceiling.
@@ -298,13 +314,13 @@ export async function reconcileForwardedPrompts(
     // force-closed rather than left to hang:
     //  - NO LEDGER ROW: the ledger write is best-effort, so its absence is not
     //    evidence of anything;
-    //  - a NEVER-RAN ending nobody came back for. `requeueAbandonedPrompt`
-    //    owns those rows and flips them to `queued` — which takes them out of
-    //    this scan — but it only fires when the daemon proves the prompt was
-    //    ORPHANED. A turn closed `unknown` because a newer prompt took the
-    //    root (the measured mid-turn case: the daemon's message-scoped probe
-    //    reads "a newer user message owns the root" as terminal) is never
-    //    redelivered, so waiting for that redelivery would wait for ever.
+    //  - an `abandoned`/`runtime_gone` ending nobody came back for.
+    //    `requeueAbandonedPrompt` owns those rows and flips them to `queued` —
+    //    which takes them out of this scan — but it only fires when the daemon
+    //    proves the prompt was ORPHANED. One that was ended with an orphan
+    //    reason yet never requeued (the daemon's proof never landed) would hang
+    //    otherwise. (`unknown` is handled above, on the first pass — it is the
+    //    superseded case, never an orphan.)
     if (await deps.confirm(row.sessionId, ids[0])) {
       out.forceClosed += 1;
       deps.logForceClosed(

@@ -38,6 +38,29 @@ export function withNextDeliveryAttempt(payload: SQL): SQL {
     to_jsonb(COALESCE((${sessionLifecycleCommands.payload}->>'deliveryAttempt')::int, 0) + 1))`;
 }
 
+/**
+ * Record a re-minted wire id WITHOUT losing the earlier ones.
+ *
+ * The scalar `redeliveredMessageId` stays the LATEST id — every floor read
+ * (`readDeliveredWireIdFloor`) and the already-answered guard want the newest.
+ * But a prompt can be re-minted more than once (it waits behind a live turn,
+ * then a strand re-places it), and OVERWRITING the scalar dropped the first
+ * re-minted id: a `session_turns` ledger row keyed on THAT id then matched no
+ * inbox row (`wireMessageIdMatches`), so the confirmation, the redelivery and
+ * the strand-reconcile all missed it and the row read `delivering` for ever.
+ *
+ * So the ids are APPENDED to `redeliveredMessageIds` as well — the array
+ * `wireMessageIdMatches` tests with `@>`, so ANY id the prompt was ever placed
+ * under names its row. Returns the new payload expression; compose it with
+ * `withNextDeliveryAttempt` when the write also advances the attempt counter.
+ */
+export function withRemintedWireId(id: string): SQL {
+  return sql`jsonb_set(
+    ${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveredMessageId: id })}::jsonb,
+    '{redeliveredMessageIds}',
+    coalesce(${sessionLifecycleCommands.payload}->'redeliveredMessageIds', '[]'::jsonb) || ${JSON.stringify([id])}::jsonb)`;
+}
+
 export function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
   return {
     body: command.body,
@@ -115,6 +138,15 @@ export interface QueuedContinueSessionPayload {
    * before the POST, so a crash between mint and delivery reuses one id.
    */
   redeliveredMessageId?: string;
+  /**
+   * EVERY id a re-mint has ever placed this row under, appended in order.
+   *
+   * `redeliveredMessageId` above is only the LATEST; a prompt re-minted twice
+   * keeps both here so a ledger row keyed on the FIRST still names its inbox
+   * row (`wireMessageIdMatches` tests membership with `@>`). Written by
+   * `withRemintedWireId`; absent on a row that never waited or re-delivered.
+   */
+  redeliveredMessageIds?: string[];
   /** How many times a PROVEN-abandoned delivery has been requeued. Capped by
    *  `MAX_PROMPT_REDELIVERIES`. */
   redeliveries?: number;

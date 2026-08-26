@@ -22,6 +22,17 @@ export interface OlderHistoryAutoloadState {
    * short. Absent counts as "not yet".
    */
   readerScrolledUp?: boolean;
+  /**
+   * The sentinel's re-arm latch. A pull disarms it; the sentinel leaving the
+   * `rootMargin` zone re-arms it (see `nextOlderAutoloadArm`).
+   *
+   * Without it, a pull that prepends 50 short turns without pushing the
+   * sentinel out of the 400px margin leaves it intersecting, so the observer
+   * re-fires immediately and CHAINS pulls in one paint — the "keeps fetching
+   * more and more" report. `undefined` counts as armed, so callers that do not
+   * track the latch keep the old behaviour.
+   */
+  armed?: boolean;
 }
 
 /**
@@ -60,6 +71,7 @@ export function olderAutoloadExhausted(state: {
  *  after a failure the transcript falls back to an explicit retry affordance. */
 export function shouldLoadOlderHistory(state: OlderHistoryAutoloadState): boolean {
   return (
+    state.armed !== false &&
     state.readerScrolledUp === true &&
     state.isIntersecting &&
     state.hasOlder &&
@@ -67,4 +79,24 @@ export function shouldLoadOlderHistory(state: OlderHistoryAutoloadState): boolea
     !state.lastPullFailed &&
     !olderAutoloadExhausted(state)
   );
+}
+
+/**
+ * The next re-arm state for the top sentinel, after an observer callback.
+ *
+ * A pull DISARMS the sentinel; it re-arms only once it has left the
+ * `rootMargin` zone (`isIntersecting === false`). So a prepend that lands short
+ * turns without pushing the sentinel out of view cannot chain a second pull —
+ * the reader has to scroll up again (moving the sentinel out and back into the
+ * zone) for the next automatic page. Pure, so the debounce is a test rather
+ * than a convention.
+ */
+export function nextOlderAutoloadArm(input: {
+  armed: boolean;
+  isIntersecting: boolean;
+  didPull: boolean;
+}): boolean {
+  if (input.didPull) return false;
+  if (!input.isIntersecting) return true;
+  return input.armed;
 }

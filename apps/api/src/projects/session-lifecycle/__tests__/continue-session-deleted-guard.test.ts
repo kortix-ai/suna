@@ -103,6 +103,8 @@ mock.module('../store', () => ({
   // the engine import fails outright. Nothing in this file drives a row through
   // it, so an identity pass-through is the whole of it.
   withNextDeliveryAttempt: (payload: unknown) => payload,
+  // Mirrors the real bound jsonb param so `persistedWireIds` can still read it.
+  withRemintedWireId: (id: string) => JSON.stringify({ redeliveredMessageId: id }),
   resultFromExistingCommand: () => {
     throw new Error('not expected in this test');
   },

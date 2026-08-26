@@ -8,6 +8,26 @@ export function gatedRuntimeError(input: {
 }
 
 /**
+ * The SAME phase gate for the connection store's boot/readiness error
+ * (`runtimeBootError`, `sandbox-connection-store.runtimeError`).
+ *
+ * A cold boot's routine 503 (`{status:'starting', reason:'schema not ready'}`)
+ * no longer lands in that field at all — the SDK's `runtimeErrorFromHealth`
+ * keeps only a genuine `boot_error` (RC-1). This is the second half of that
+ * fix: even a genuine boot error must not paint a terminal card while `/start`
+ * is still in flight. `derivePhase` holds `phase` at `'starting'` until
+ * `/start` settles or gives up (~61.5s worst case), so gating the boot error on
+ * `phase === 'error'` means it can only become terminal AFTER the server has
+ * had its say — never on a transient mid-boot blip.
+ */
+export function gatedRuntimeBootError<T>(input: {
+  phase: UseSessionResult['phase'];
+  runtimeBootError: T;
+}): T | null {
+  return input.phase === 'error' ? input.runtimeBootError : null;
+}
+
+/**
  * Runtime transport loss is local to the live layer when the conversation has
  * a resolved OpenCode identity. The cached transcript remains useful and must
  * not be replaced by a full-page error.

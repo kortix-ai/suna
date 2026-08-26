@@ -195,6 +195,20 @@ export function sessionComposerReadiness(input: {
       retryable: true,
     };
   }
+  if (input.connection === 'waking') {
+    // A PARKED / idle box: the control plane says the sandbox is not up, and
+    // nothing is actively booting — a genuine boot-stall is caught by `stalled`
+    // above, and the SDK no longer arms the stall clock for a parked box
+    // (`setOpenCodeHealth({ parked })`), so this never escalates to an infinite
+    // "taking longer than usual" spinner. The box resumes on the next SEND, so
+    // say exactly that: an honest idle state, not a "waking" spinner-lie over a
+    // session that is merely asleep (RC-3).
+    return {
+      ready: false,
+      notice: 'This session is idle — your next message starts it automatically and is delivered.',
+      retryable: false,
+    };
+  }
   // A wait is not a fault. `unknown` means nothing has answered; `connecting`
   // means the control plane says the box is UP and the runtime simply has not
   // reached us. Neither is the state this notice describes, and asserting it
