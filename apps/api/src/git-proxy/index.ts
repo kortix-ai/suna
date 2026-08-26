@@ -37,6 +37,17 @@ import { fetchUpstreamBuffered } from './upstream';
 import { makeOpenApiApp } from '../openapi';
 import { loadGitProject } from '../projects/lib/git';
 import { kickProjectWarmPrebake } from '../snapshots/builder';
+import { resolveFeatureFlag } from '../feature-flags/registry';
+import { featureDisabledBody } from '../feature-flags/gate';
+import {
+  buildCompiledPiRuntimeArtifact,
+  CompiledPiRuntimeSourceMovedError,
+} from './compiled-pi-runtime-artifact';
+import {
+  COMPILED_PI_RUNTIME_CONTENT_TYPE,
+  COMPILED_PI_RUNTIME_FORMAT,
+} from './compiled-pi-runtime';
+import { prebuildDefaultBranchPiRuntime } from './compiled-prebuild';
 import {
   COMPILED_CHECKOUT_CONTENT_TYPE,
   COMPILED_CHECKOUT_FORMAT,
@@ -192,13 +203,26 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
           typeof (auth.project.metadata as Record<string, unknown> | null)?.default_sandbox_provider === 'string'
             ? ((auth.project.metadata as Record<string, unknown>).default_sandbox_provider as string)
             : null;
-        const [compiledResult] = await Promise.allSettled([
-          config.KORTIX_COMPILED_BOOT_MODE !== 'off'
+        // The pi_worker flag also lifts the compiled-boot env gate for THIS
+        // project's opencode artifacts: dev runs with KORTIX_COMPILED_BOOT_MODE
+        // unset ('off'), and the harness/worker experiment needs both engines'
+        // artifacts warm per project without touching the environment. The env
+        // mode stays the platform-wide switch; the flag is the per-project one.
+        const piWorkerEnabled = resolveFeatureFlag(auth.project.metadata, 'pi_worker');
+        const [compiledResult, piResult] = await Promise.allSettled([
+          config.KORTIX_COMPILED_BOOT_MODE !== 'off' || piWorkerEnabled
             ? prebuildDefaultBranchArtifacts(
                 gitProject,
                 `${new URL(c.req.url).origin}/v1/git/${projectId}.git`,
               )
             : Promise.resolve(null),
+          // Compile-on-push for the pi worker runtime (harness/worker split
+          // experiment). Per-project opt-in; the metadata is already loaded by
+          // this push's auth, so the flag check costs nothing. Fire-and-forget
+          // like everything else in this block — the on-demand build inside
+          // GET /compiled-pi-runtime stays the correctness path for pushes
+          // that bypass this proxy (e.g. straight to a user's own GitHub).
+          piWorkerEnabled ? prebuildDefaultBranchPiRuntime(gitProject) : Promise.resolve(null),
           kickProjectWarmPrebake(gitProject, {
             accountId: auth.project.accountId,
             projectPin,
@@ -210,6 +234,12 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
             compiledResult.reason instanceof Error
               ? compiledResult.reason.message
               : compiledResult.reason,
+          );
+        }
+        if (piResult.status === 'rejected') {
+          console.warn(
+            `[git-proxy] compiled pi runtime prebuild skipped for ${projectId}:`,
+            piResult.reason instanceof Error ? piResult.reason.message : piResult.reason,
           );
         }
       } catch (err) {
@@ -398,6 +428,77 @@ gitProxyApp.openapi(
         error: error instanceof Error ? error.message : String(error),
       });
       return c.text('compiled runtime unavailable', 503);
+    }
+  },
+);
+
+gitProxyApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{project}/compiled-pi-runtime',
+    tags: ['git'],
+    summary: 'Download an exact compiled pi worker runtime for the harness/worker split',
+    request: {
+      params: projectParam,
+      query: z.object({
+        ref: z.string().min(1),
+        sha: z.string().regex(/^[0-9a-f]{40}$/),
+      }),
+    },
+    responses: {
+      200: {
+        description:
+          'Executable worker .mjs carrying the agent config compiled from kortix.yaml at the exact source SHA',
+        content: { [COMPILED_PI_RUNTIME_CONTENT_TYPE]: { schema: z.any() } },
+      },
+      400: { description: 'Invalid project id, ref, or source SHA' },
+      401: gitResponses[401],
+      403: { description: 'Forbidden, or the pi_worker feature flag is off for this project' },
+      404: gitResponses[404],
+      409: { description: 'The requested ref no longer points at the requested source SHA' },
+      503: { description: 'The compiled pi runtime could not be generated' },
+    },
+  }),
+  async (c) => {
+    const projectId = validProjectIdOrResponse(c, c.req.param('project'));
+    if (projectId instanceof Response) return projectId;
+    const auth = await authorize(c, projectId, 'read');
+    if (!auth.ok) {
+      if (auth.status === 401) return unauthorized(c, auth.message);
+      return c.text(auth.message, auth.status === 404 ? 404 : 403);
+    }
+    // Per-project opt-in: the artifact must not exist for a project that never
+    // asked for it, and the on-demand build below is exactly as gated as the
+    // push-time prebuild.
+    if (!resolveFeatureFlag(auth.project.metadata, 'pi_worker')) {
+      return c.json(featureDisabledBody('pi_worker'), 403);
+    }
+    const { ref, sha } = c.req.valid('query');
+    try {
+      const project = await loadGitProject({ row: auth.project });
+      const artifact = await buildCompiledPiRuntimeArtifact(project, ref, sha);
+      return new Response(Bun.file(artifact.path), {
+        status: 200,
+        headers: {
+          'cache-control': 'private, max-age=31536000, immutable',
+          'content-length': String(artifact.size),
+          'content-type': COMPILED_PI_RUNTIME_CONTENT_TYPE,
+          etag: `"sha256-${artifact.sha256}"`,
+          'x-kortix-artifact-format': COMPILED_PI_RUNTIME_FORMAT,
+          'x-kortix-artifact-sha256': artifact.sha256,
+          'x-kortix-artifact-source-sha': artifact.sourceSha,
+          'x-kortix-artifact-cache': artifact.cacheHit ? 'hit' : 'miss',
+        },
+      });
+    } catch (error) {
+      if (error instanceof CompiledPiRuntimeSourceMovedError) return c.text(error.message, 409);
+      console.warn('[git-proxy] compiled pi runtime unavailable', {
+        projectId,
+        ref,
+        sha,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return c.text('compiled pi runtime unavailable', 503);
     }
   },
 );

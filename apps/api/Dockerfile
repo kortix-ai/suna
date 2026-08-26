@@ -95,6 +95,26 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
        KORTIX_CLI_VERSION="${KORTIX_VERSION}+$(printf '%s' "${KORTIX_COMMIT}" | cut -c1-8)" \
        bash apps/cli/scripts/build.sh
 
+# ---- Pi Worker Runtime Stage ----
+# The generic pi worker runtime bundle for the harness/worker split experiment.
+# The API's compiled-boot pipeline (src/git-proxy/compiled-pi-runtime.ts)
+# prepends per-(project, sha) agent config to this file and serves the result
+# at GET /v1/git/{project}.git/compiled-pi-runtime. Dev builds it lazily with
+# Bun.build; this stage is the production source
+# (src/git-proxy/pi-worker-bundle.ts reads dist/worker-runtime.mjs).
+# Standalone bun package with its own bun.lock — deliberately outside the pnpm
+# workspace (see pnpm-workspace.yaml).
+# Bun 1.3 (not the base's 1.2): apps/kortix-worker/bun.lock is 1.3-format
+# (`configVersion`), and --frozen-lockfile must read it byte-for-byte.
+FROM --platform=$BUILDPLATFORM oven/bun:${SANDBOX_AGENT_BUN_VERSION}-slim AS pi-worker
+
+WORKDIR /repo/apps/kortix-worker
+COPY apps/kortix-worker/package.json apps/kortix-worker/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY apps/kortix-worker/ ./
+RUN bun build src/main.ts --target=node --format=esm --minify --outfile dist/worker-runtime.mjs \
+    && grep -q "kortix-worker starting" dist/worker-runtime.mjs
+
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
 FROM node:22-slim AS deps
@@ -245,6 +265,7 @@ COPY --from=sandbox-agent /repo/apps/kortix-sandbox-agent-server/dist/server.mjs
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix.version ./apps/cli/dist/kortix.version
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json
+COPY --from=pi-worker /repo/apps/kortix-worker/dist/worker-runtime.mjs ./apps/kortix-worker/dist/worker-runtime.mjs
 COPY --from=app-runtime /out/kortix-appd ./apps/kortix-app-runtime/dist/kortix-appd-linux-amd64
 COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-amd64
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
