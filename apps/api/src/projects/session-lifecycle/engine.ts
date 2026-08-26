@@ -2164,7 +2164,18 @@ function isProviderName(value: string | null): value is ProviderName {
  * commands even when their text matches exactly.
  */
 /**
- * The agent names THIS session's runtime reports, cached per sandbox.
+ * The roster cache key. The directory is part of it because `/agent` answers a
+ * DIFFERENT set per directory: a project-scoped agent exists only under the
+ * directory that defines it. Keying on `externalId` alone made one box's
+ * `/workspace` roster answer for every other directory on that box.
+ */
+export function runtimeAgentRosterCacheKey(externalId: string, directory: string): string {
+  return `${externalId}::${directory}`;
+}
+
+/**
+ * The agent names THIS session's runtime reports, cached per sandbox AND
+ * directory.
  *
  * Read through the same signed proxy endpoint every drain-side transcript read
  * uses, so it inherits the session's own authentication and needs no second
@@ -2175,12 +2186,16 @@ async function sessionRuntimeAgentRoster(
   externalId: string,
   callerSessionId: string,
   actorUserId: string,
+  /** The directory the prompt will be forwarded with. `/agent` answers a
+   *  different set per directory, so reading the roster for `/workspace` while
+   *  forwarding under another directory dropped valid project-scoped agents. */
+  directory: string,
 ): Promise<{ names: readonly string[] | null }> {
-  return runtimeAgentRoster(externalId, async () => {
+  return runtimeAgentRoster(runtimeAgentRosterCacheKey(externalId, directory), async () => {
     const resolved = await resolveSessionOpencodeEndpoint(callerSessionId, actorUserId);
     if (!resolved) return null;
     const res = await fetch(
-      `${resolved.endpoint.url}/agent?directory=${encodeURIComponent(WORKSPACE)}`,
+      `${resolved.endpoint.url}/agent?directory=${encodeURIComponent(directory)}`,
       {
         method: 'GET',
         headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
@@ -2223,7 +2238,14 @@ async function postPrompt(
   const deliverableAgent = resolveDeliverableAgent(
     overrides?.agent ?? null,
     overrides?.agent
-      ? await sessionRuntimeAgentRoster(externalId, callerSessionId, userId)
+      ? await sessionRuntimeAgentRoster(
+          externalId,
+          callerSessionId,
+          userId,
+          // Same directory expression the forward uses at the bottom of this
+          // function, so the roster read and the prompt forward always agree.
+          overrides?.directory || WORKSPACE,
+        )
       : { names: null },
   );
   if (deliverableAgent.dropped) {
