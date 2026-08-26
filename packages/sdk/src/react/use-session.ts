@@ -52,6 +52,7 @@ import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails } from '../core/turns/errors';
+import { startGiveUpExpiryAtMs } from './session-start-giveup';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
@@ -916,6 +917,56 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setStartGivenUp(
       hasStartGivenUp(start.data, start.error, startInconclusiveSinceRef.current, nowMs),
     );
+
+    // Once armed, the give-up budget used to flip only when a poll tick
+    // happened to re-run this effect — worst case ≈45s + waitMs + poll
+    // interval, ≈61.5s per the module doc above (`:170-178`). It now fires
+    // deterministically at 45s + 1ms via this timer: same mechanism, and
+    // the same reason, as the compaction cap below — the budget has to
+    // apply when NOTHING else re-renders.
+    //
+    // NOT covered: a `/start` whose very first fetch never settles leaves
+    // the ref null on this run (`nextInconclusiveSince` returns `current`
+    // while `isFetching`, so nothing is armed yet) — bounded by the client
+    // transport timeout, not this timer; the genuine unbounded hang is a
+    // separate, independently tracked defect in `core/http/api-client.ts`.
+    // The instant is computed from `startInconclusiveSinceRef.current` (just
+    // assigned above, so this is the freshest value there is) rather than
+    // from a piece of state, to match how the rest of this block reads the
+    // ref directly.
+    const expiryAtMs = startGiveUpExpiryAtMs({
+      inconclusiveSinceMs: startInconclusiveSinceRef.current,
+      budgetMs: START_INCONCLUSIVE_GIVE_UP_MS,
+    });
+    if (expiryAtMs === null) return;
+    const timer = setTimeout(
+      () => {
+        const fireNowMs = Date.now();
+        setStartGivenUp(
+          hasStartGivenUp(start.data, start.error, startInconclusiveSinceRef.current, fireNowMs),
+        );
+      },
+      Math.max(0, expiryAtMs - Date.now()) + 1,
+    );
+    // `clearTimeout` here is correct hygiene, but it is not what makes a
+    // session switch safe — the four deps can compare equal by `Object.is`
+    // across a switch (e.g. both sessions mid-fetch, no data, no error), in
+    // which case this effect does NOT re-run and the old timer stays live.
+    // Safety comes from a stronger fact instead: a timer can only exist when
+    // the run that armed it saw `!hasData && !hasError` (otherwise
+    // `nextInconclusiveSince` returns `null` and the early return above arms
+    // nothing). So for every live timer, the closed-over `start.data`/
+    // `start.error` are provably falsy, and `hasStartGivenUp`'s
+    // `if (data || error) return false` early-out can never be taken with
+    // stale values. At fire time the verdict reads the LIVE ref and a fresh
+    // `Date.now()` — `start.data`/`start.error` themselves stay closed over
+    // from the arming run, but since a timer only exists when that run saw
+    // them both falsy, they cannot change the outcome. A stale timer
+    // armed for session A firing during session B therefore writes B's own
+    // correct verdict, not a stale one. (One narrow gap: right after such an
+    // identical-deps switch, B has no timer of its own until a dep moves —
+    // not a hang, since the very next `isFetching` toggle re-arms it.)
+    return () => clearTimeout(timer);
   }, [startEnabled, start.data, start.error, start.isFetching]);
   // `startEnabled`/`start.isFetching`/`start.data`/`start.error` are read
   // FRESH here, on every render — never stored. Only `startGivenUp` comes
