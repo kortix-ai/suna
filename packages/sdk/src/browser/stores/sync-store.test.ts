@@ -483,6 +483,54 @@ describe("useSyncStore — applyEvent(session.error) patches the last assistant 
 		const assistant = useSyncStore.getState().messages.ses_4[0] as AssistantMessage;
 		expect((assistant.error as { data: { reason?: string } }).data.reason).toBeUndefined();
 	});
+
+	// A RETRYABLE provider error is not the end of a turn. OpenCode stamps
+	// `data.isRetryable === true` and keeps writing the SAME assistant message;
+	// apps/api reaches the same conclusion from the same event
+	// (`isTerminalTurnEnd`, sandbox-deadline-policy.ts:295). Flipping the status
+	// to idle here handed `endedByRuntime` an unbounded veto over the still-open
+	// ledger row, which is what removed the Stop button mid-turn (S7).
+	test("a retryable error does NOT flip the session to idle", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_retry", userMessage("msg_a"));
+		store.upsertMessage("ses_retry", assistantMessage("msg_b"));
+		store.setStatus("ses_retry", { type: "busy" } as never, "wire");
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_retry",
+				error: { name: "APIError", data: { message: "429", isRetryable: true } },
+			},
+		} as never);
+
+		// The status slot is untouched — the turn is still open.
+		expect(useSyncStore.getState().sessionStatus.ses_retry).toEqual({ type: "busy" });
+		// The error is still attached, so the UI can show the retry.
+		const assistant = useSyncStore
+			.getState()
+			.messages.ses_retry.find((m) => m.role === "assistant") as AssistantMessage;
+		expect((assistant.error as { data: { isRetryable: boolean } }).data.isRetryable).toBe(true);
+	});
+
+	test("a NON-retryable error still flips the session to idle", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_term", userMessage("msg_a"));
+		store.upsertMessage("ses_term", assistantMessage("msg_b"));
+		store.setStatus("ses_term", { type: "busy" } as never, "wire");
+
+		store.applyEvent({
+			id: "evt_2",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_term",
+				error: { name: "ProviderAuthError", data: { message: "bad key" } },
+			},
+		} as never);
+
+		expect(useSyncStore.getState().sessionStatus.ses_term).toEqual({ type: "idle" });
+	});
 });
 
 // T16 — the `session.error` stub's own creation comment claims
