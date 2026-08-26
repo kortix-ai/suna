@@ -12,6 +12,30 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-26 — session `session-ux-ws-k` (round 2) — the bare Bedrock id is healed at RESOLUTION time — DONE
+
+**Files:** `react/bedrock-invokable.ts` (NEW, internal — `healBedrockModelKey`)
+· `react/use-opencode-local.ts` (guard applied to `currentModelKey` AND
+`sendModelKey`; the fallback's "first model of provider" loop now iterates
+`autoSeedableModels`).
+
+**Why.** Round 1 fixed the catalog default and was merged (PR #6914,
+865223ebea), and the Essentia frontend bundle was proven new by content — yet
+a fresh native Bedrock workspace still preselected "Grok 4.6". The catalog
+default is only Priority 3 of the LAST source in this hook's chain
+(explicit > serverDefault > globalDefault > agent.model > fallback), and the
+explicit slot is browser-global: `agentScopedModelSelectionKey(mode, name)` is
+`` `${mode}:${name ?? ''}` `` (use-opencode-local.ts:226-231), and the
+project-home composer has no agent and no sessionId — so every native project
+in one browser shares the slot `native:`. One earlier wedged session pinned
+`xai.grok-4.6` there and every future workspace inherited it. Healing at the
+resolution seam covers that slot and every other source (recent,
+globalDefault, agent.model, config.model, first-model), and repairs
+already-pinned browsers with no migration.
+
+**Public surface: unchanged** — `bedrock-invokable.ts` is internal (not
+re-exported from `react/index`); both snapshots are untouched.
+
 ### 2026-08-26 — session `session-ux-ws-k` — a fresh Bedrock workspace never auto-seeds a bare in-region id — DONE
 
 **Files:** `react/provider-selection.ts` (`nativeProviderListFromCatalog`: the
