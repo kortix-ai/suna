@@ -49,6 +49,29 @@ There are **four environments**, each a separate encrypted file with its **own k
 | `pnpm dev:staging-env` | **staging** | `apps/api/.env.staging` | the **staging** stack — staging Supabase DB, test Stripe, staging keys (`staging-api.kortix.com`) | `DOTENV_PRIVATE_KEY_STAGING` |
 | `pnpm dev:prod-env`    | **prod**    | `apps/api/.env.prod`    | the **prod** stack — prod Supabase DB, **LIVE** Stripe, prod keys (`api.kortix.com`)              | `DOTENV_PRIVATE_KEY_PROD`    |
 
+### What each profile may contain (enforced by `pnpm test:envs`)
+
+- **`.env` (local)** is the only profile safe to hand to someone without
+  production clearance (trial hires, contractors before a background check).
+  Its DB is local Docker. It must not contain a credential that reaches
+  customer data. `scripts/secrets-envs-separation.py` fails `pnpm test:envs`
+  when any secret-classed key in `.env`, `.env.dev`, or `.env.staging` equals
+  its `.env.prod` value; `scripts/secrets-shared-with-prod.allowlist` lists the
+  remaining shared vendor keys with the reason and the rotation that removes
+  each line. Do not add to that file to make the test pass — split the
+  credential.
+- **`.env.dev` is NOT customer-data-free.** The `Kortix DEV` Supabase project
+  holds live signups from dev.kortix.com (2,793 users on 2026-08-26). Treat
+  dev like a production-adjacent environment for access decisions.
+- **`.env.prod`** is the owner-only record of every production credential;
+  AWS Secrets Manager mirrors it for the deployed stack. Dead-in-code keys
+  (Betterstack ClickHouse, JustAVPS) stay only in `.env.prod`.
+- Each profile owns its internal secrets (`INTERNAL_SERVICE_KEY`,
+  `API_KEY_SECRET`, `GATEWAY_INTERNAL_TOKEN`, `TUNNEL_SIGNING_SECRET`).
+  `INTERNAL_SERVICE_KEY` is injected into sandboxes at creation
+  (`apps/api/src/platform/sandbox-env.ts`), so the `.env.dev`/`.env.staging`
+  value must equal the deployed env's AWS SM value; rotate both together.
+
 - `pnpm dev` runs the **full local stack** (web + API + local Supabase + tunnel) via `scripts/dev-local.sh`.
 - `pnpm dev:dev-env` / `pnpm dev:staging-env` / `pnpm dev:prod-env` run the **API only**, locally, against the selected remote backend (`dotenvx run -f apps/api/.env.<environment> -- bun run --hot src/index.ts`). They do not start local Supabase.
 - ⚠️ `pnpm dev:prod-env` points your local API at **production** — DB writes and Stripe calls are **real**. Use deliberately.
@@ -85,7 +108,7 @@ This re-encrypts the file in place (value becomes `KEY=encrypted:…`). Then com
 | Task                                         | Command                                                                                                                                       |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Run local / dev / staging / prod             | `pnpm dev` · `pnpm dev:dev-env` · `pnpm dev:staging-env` · `pnpm dev:prod-env`                                                                |
-| Verify all 4 envs decrypt + are separated    | `pnpm test:envs`                                                                                                                              |
+| Verify all 4 envs decrypt + no non-prod secret equals prod | `pnpm test:envs` (allowlist: `scripts/secrets-shared-with-prod.allowlist`)                                                        |
 | Read a secret                                | `dotenvx get KEY -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`)                                                             |
 | Add / change a secret                        | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`), then commit                                          |
 | First time / new machine (non-prod profiles) | `dotenvx armor login` then, from each app directory, `for f in .env .env.dev .env.staging; do dotenvx armor pull --team kortix -f "$f"; done` |
