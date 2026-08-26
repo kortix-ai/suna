@@ -85,6 +85,13 @@ const INITIALIZE = `${JSON.stringify({
   params: {},
 })}\n`;
 
+const TOOLS_LIST = `${JSON.stringify({
+  jsonrpc: '2.0',
+  id: 2,
+  method: 'tools/list',
+  params: {},
+})}\n`;
+
 describe('sandbox daemon -> CLI MCP contract', () => {
   test('the argv the daemon registers names a real command', () => {
     const argv = daemonMcpArgv();
@@ -115,6 +122,44 @@ describe('sandbox daemon -> CLI MCP contract', () => {
     for (const line of lines) {
       expect(() => JSON.parse(line) as unknown).not.toThrow();
     }
+  });
+
+  test('managed connector tools prefer Composio and gate legacy Pipedream', async () => {
+    const result = await runMcp(daemonMcpArgv().slice(1), TOOLS_LIST);
+    expect(result.code).toBe(0);
+    const response = JSON.parse(result.stdout.trim());
+    const tools = response.result.tools as Array<any>;
+    const add = tools.find((tool) => tool.name === 'add_connector');
+    const connect = tools.find((tool) => tool.name === 'connect');
+    const finalize = tools.find((tool) => tool.name === 'finalize_connection');
+    expect(add.description).toContain('Composio is the default managed provider');
+    expect(add.inputSchema.properties.provider.enum[0]).toBe('composio');
+    expect(add.inputSchema.properties.provider.enum).toContain('pipedream');
+    expect(add.inputSchema.properties.allow_legacy_pipedream.type).toBe('boolean');
+    expect(connect.description).toContain('Composio');
+    expect(connect.description).not.toContain('Pipedream Quick Connect');
+    expect(finalize.description).toContain('persist its account binding');
+    expect(finalize.inputSchema.properties.connection_id.type).toBe('string');
+    expect(finalize.inputSchema.properties.request_id.type).toBe('string');
+  });
+
+  test('agent MCP rejects accidental Pipedream selection before any API call', async () => {
+    const request = `${JSON.stringify({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'add_connector',
+        arguments: { slug: 'gmail', provider: 'pipedream', app: 'gmail' },
+      },
+    })}\n`;
+    const result = await runMcp(daemonMcpArgv().slice(1), request);
+    expect(result.code).toBe(0);
+    const response = JSON.parse(result.stdout.trim());
+    expect(response.result.isError).toBe(true);
+    const body = JSON.parse(response.result.content[0].text);
+    expect(body.error).toContain('Pipedream is legacy rollback only');
+    expect(body.error).toContain('provider="composio"');
   });
 
   test('the singular spelling still fails loudly', async () => {

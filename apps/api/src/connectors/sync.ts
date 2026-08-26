@@ -51,6 +51,7 @@ import { listMcpTools, type FetchImpl } from './call';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
+  normalizeComposio,
   normalizeGraphql,
   normalizeHttp,
   normalizeMcp,
@@ -58,6 +59,7 @@ import {
   normalizePipedream,
   normalizePostmanCollection,
 } from './normalize';
+import { composioCatalogTools, composioConfigured } from './composio';
 import { pipedreamAppIcon, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import type { PolicyAction } from './policy';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
@@ -210,7 +212,12 @@ async function discoverConnectorAuthFromSource(
   draft: Record<string, unknown>,
 ): Promise<ConnectorAuthDiscovery> {
   const provider = typeof draft.provider === 'string' ? draft.provider.toLowerCase() : '';
-  if (provider === 'pipedream' || provider === 'channel' || provider === 'computer') {
+  if (
+    provider === 'pipedream' ||
+    provider === 'composio' ||
+    provider === 'channel' ||
+    provider === 'computer'
+  ) {
     return EMPTY_AUTH_DISCOVERY;
   }
   const spec = typeof draft.spec === 'string' ? draft.spec.trim() : '';
@@ -880,7 +887,11 @@ export async function materializeComputerConnectorProfile(input: {
 export async function resolveCatalog(
   project: GitBackedProject,
   spec: ConnectorSpec,
-  options: { credential?: string | null; mcpFetchImpl?: FetchImpl } = {},
+  options: {
+    credential?: string | null;
+    mcpFetchImpl?: FetchImpl;
+    composioCatalogTools?: typeof composioCatalogTools;
+  } = {},
 ): Promise<ResolvedCatalog> {
   try {
     switch (spec.provider) {
@@ -959,6 +970,15 @@ export async function resolveCatalog(
           server: null,
           iconUrl,
         };
+      }
+      case 'composio': {
+        if (!composioConfigured() || !spec.app) return { actions: [], server: null };
+        const tools = await (options.composioCatalogTools ?? composioCatalogTools)({
+          projectId: project.projectId,
+          connectorSlug: spec.slug,
+          toolkit: spec.app,
+        });
+        return { actions: normalizeComposio(tools, spec.app), server: null };
       }
       case 'channel': {
         // Fixed, local catalog — no network fetch. Server = the platform API base.

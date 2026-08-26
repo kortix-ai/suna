@@ -10,25 +10,23 @@ const source = readFileSync(fileURLToPath(new URL('./project-home.tsx', import.m
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('ProjectHome sidebar toggle', () => {
-  test('connects collapsed-toggle hover to the sidebar peek controller', () => {
-    expect(source).toContain('onPointerEnter={sidebarState ===');
-    expect(source).toContain('peekEnter');
-    expect(source).toContain('peekLeave');
+  // Neither the control nor its visibility is this view's decision any more.
+  // It used to inline both: `isMobileViewport || sidebarState !== 'expanded'`
+  // (true on the desktop shell too, so this `absolute top-2 left-2` button
+  // rendered on top of the macOS traffic lights next to the shell's own opener
+  // at x=72) plus its own copy of the button. `SidebarToggle` owns both —
+  // pinned in sidebar-toggle.test.ts and sidebar-opener.test.ts.
+  //
+  // `floating` is the placement this hero needs: there is no header row to sit
+  // in, so the opener positions itself over the wallpaper.
+  test('renders the shared opener, floating over the hero', () => {
+    expect(source).toContain('<SidebarToggle placement="floating" />');
   });
 
-  // Visibility is not this view's decision any more. It used to inline
-  // `isMobileViewport || sidebarState !== 'expanded'`, which is also true on
-  // the desktop shell — so this button, `absolute top-2 left-2`, rendered on
-  // top of the macOS traffic lights next to the shell's own opener at x=72.
-  // The rule (including that desktop clause) is pinned as a truth table in
-  // sidebar-opener.test.ts; here we only pin that the view defers to it.
-  test('visibility comes from the shared gate, not a local rule', () => {
-    const gate = source.slice(
-      source.indexOf('const showSidebarToggle ='),
-      source.indexOf(';', source.indexOf('const showSidebarToggle =')),
-    );
-    expect(gate).toContain('useShowPageSidebarOpener()');
-    expect(source).toContain('{showSidebarToggle && (');
+  test('keeps no opener of its own', () => {
+    expect(code).not.toContain('toggleSidebar');
+    expect(code).not.toContain('sidebarOpenerLabel');
+    expect(code).not.toContain('useShowPageSidebarOpener');
   });
 
   test('does not send the project default as an explicit session sandbox override', () => {

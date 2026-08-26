@@ -166,20 +166,26 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'llm_gateway',
     name: 'LLM Gateway',
     description:
-      'Route this project through the managed Kortix LLM gateway. Toggling it refreshes active sandboxes so provider mode follows the project setting.',
+      'Route this project through the managed Kortix LLM gateway (managed models, metering, budgets). Off, the sandbox runs native OpenCode model management: your provider API keys are injected as ordinary env vars and models are native provider/model refs. Toggling refreshes active sandboxes either way.',
     stability: 'experimental',
     // Master kill switch: when off, the feature disappears and every project
     // falls back to native OpenCode provider behavior.
     available: () => config.LLM_GATEWAY_ENABLED,
-    // Fleet rollout switch. Operators can default the gateway on for every
-    // project, while explicit project overrides still win and the master
+    // Fleet rollout switch, default ON (config.ts LLM_GATEWAY_DEFAULT_ENABLED).
+    // Turning the flag OFF per project is the first-class native path — the
+    // deliberate lever for deployments (e.g. Essentia) that bring their own
+    // keys end to end. Explicit project overrides always win, and the master
     // availability gate above remains the emergency kill switch.
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
     enforcement: 'behavioral',
     enforcementNote:
-      'Enablement decides KORTIX_LLM_* env injection at sandbox provision plus ' +
-      'the gated llm-catalog/model-picker routes; toggling propagates to active ' +
-      'sandboxes via propagateLlmGatewayModeToActiveSandboxes.',
+      'Enablement forks the whole model path: KORTIX_LLM_* env injection at ' +
+      'sandbox provision, provider-key secret delivery (withheld when on, ' +
+      'plaintext env when off — projects/secrets.ts materializeSecretDelivery), ' +
+      'gateway model validation vs native provider/model refs, the gated ' +
+      'llm-catalog/model-picker/model-defaults routes, and gateway title ' +
+      'generation. Toggling propagates to active sandboxes via ' +
+      'propagateLlmGatewayModeToActiveSandboxes.',
   },
   {
     key: 'review_center',

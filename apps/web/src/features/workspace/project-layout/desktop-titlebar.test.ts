@@ -277,13 +277,16 @@ describe('nothing re-hard-codes the band', () => {
 });
 
 /**
- * One panel, one opener. The project sidebar is `collapsible="offcanvas"`, so
- * five views grew their own "bring it back" control. On the desktop shell
- * `ProjectSheelLayout` draws the canonical one in the band; the view-level
- * copies are `absolute top-2 left-2`, which on macOS is on top of the traffic
- * lights. Every one of them must route its visibility through the shared gate.
+ * One panel, one opener — and now one COMPONENT.
+ *
+ * The project sidebar is `collapsible="offcanvas"`, so six views grew their own
+ * "bring it back" control. `sidebar-opener.ts` unified the visibility rule; the
+ * control itself stayed copy-pasted, drifted (four wrapped it in `Hint`, two did
+ * not), and left every headerless surface — the session boot loader, the
+ * terminal cards — with no opener at all. `SidebarToggle` is the single
+ * implementation. These views render it; they do not re-implement it.
  */
-describe('page-level sidebar openers all use the shared gate', () => {
+describe('page-level sidebar openers are all the one SidebarToggle', () => {
   const views = {
     'project-home.tsx': join(import.meta.dir, 'project-home.tsx'),
     'project-sessions-view.tsx': join(
@@ -302,24 +305,31 @@ describe('page-level sidebar openers all use the shared gate', () => {
       repoRoot,
       'apps/web/src/features/project-files/components/drive-header.tsx',
     ),
+    'apps-view.tsx': join(repoRoot, 'apps/web/src/features/apps/apps-view.tsx'),
+    // The route that had NO opener on any of its headerless surfaces, which is
+    // why the component exists. See HeaderlessSessionSurface.
+    'sessions/[sessionId]/page.tsx': join(
+      repoRoot,
+      'apps/web/src/app/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
+    ),
   };
 
   for (const [name, path] of Object.entries(views)) {
     const source = readFileSync(path, 'utf8');
 
-    test(`${name} calls useShowPageSidebarOpener`, () => {
-      expect(source).toContain('useShowPageSidebarOpener()');
+    test(`${name} renders the shared SidebarToggle`, () => {
+      expect(source).toContain("from '@/features/workspace/project-layout/sidebar-toggle'");
+      expect(source).toContain('<SidebarToggle');
     });
 
-    // The exact expressions each view used before, and the reason they all
-    // rendered on the desktop shell: neither says anything about the shell.
-    test(`${name} keeps no local visibility rule`, () => {
+    // A view that still calls `toggleSidebar` is drawing its own button again.
+    // That is how six of these drifted apart in the first place, and how the
+    // desktop shell ended up with two openers over the macOS traffic lights.
+    test(`${name} keeps no opener of its own`, () => {
       const code = codeOnly(source);
-      const localRules = [
-        /isMobile\w*\s*\|\|\s*\w*[sS]tate\s*!==\s*'expanded'/,
-        /!\w+\.isMobile\s*&&\s*\w+\.state\s*===\s*'expanded'/,
-      ].filter((rule) => rule.test(code));
-      expect(localRules.map(String)).toEqual([]);
+      expect(code).not.toContain('toggleSidebar');
+      expect(code).not.toContain('sidebarOpenerLabel');
+      expect(code).not.toContain('useShowPageSidebarOpener');
     });
   }
 

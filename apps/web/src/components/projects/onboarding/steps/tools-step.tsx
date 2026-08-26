@@ -30,9 +30,12 @@ import {
   proposeConnectorConnectionSlug,
   type EasyConnectApp,
 } from '@/features/workspace/customize/sections/connector-connection-form';
+import {
+  listConnectCatalogPage,
+  useConnectProviderStatus,
+} from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
 import { ConnectorConnectionModal } from '@/features/workspace/customize/sections/connector-connection-modal';
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
-import { listPipedreamApps } from '@kortix/sdk';
 
 import { ActionRow, StepShell } from '../step-shell';
 /** Slack has its own dedicated step, so keep it out of this list. */
@@ -54,14 +57,23 @@ export function ToolsStep({
   const [q, setQ] = useState('');
   const [selectedApp, setSelectedApp] = useState<EasyConnectApp | null>(null);
   const connect = useToolConnect(projectId, onConnected);
+  const connectStatus = useConnectProviderStatus(true);
+  const catalogProvider = connectStatus.provider ?? 'composio';
 
   const appsQuery = useInfiniteQuery({
     queryKey: ['onboarding-tools', projectId, q],
     queryFn: ({ pageParam }) =>
-      listPipedreamApps(projectId, q || undefined, pageParam as string | undefined),
+      listConnectCatalogPage({
+        projectId,
+        provider: catalogProvider,
+        q: q || undefined,
+        cursor: pageParam as string | undefined,
+        limit: 48,
+      }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 60_000,
+    enabled: connectStatus.state !== 'asking' && connectStatus.state !== 'absent',
   });
 
   const apps = (appsQuery.data?.pages ?? []).flatMap((p) =>
@@ -203,6 +215,7 @@ export function ToolsStep({
             {
               appSlug: selectedApp.slug,
               appName: selectedApp.name,
+              provider: selectedApp.provider,
               connectorName: connection.name,
               connectorSlug: connection.slug,
               authorizationStrategy: connection.authorizationStrategy,

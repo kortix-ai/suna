@@ -507,12 +507,58 @@ export function auditRelayToken(env: NodeJS.ProcessEnv): string | null {
   return (env.KORTIX_TOKEN || '').trim() || null;
 }
 
+/**
+ * Backoff after a rejected batch.
+ *
+ * A flat 1s retry is an amplifier, not a recovery. When the API rejects a batch
+ * because `kortix.audit_events` inserts are queued on that session's
+ * `audit_session_sequences` row lock, retrying one second later re-enters the
+ * same lock queue and keeps it alive — Essentia 2026-08-26 held that livelock
+ * for three hours (445 rejections, one roughly every 11s per stuck session,
+ * each costing the API a full 10s statement_timeout). Double the wait each
+ * time up to `maxRetryMs`, jitter it +/-25% so two sandboxes never
+ * resynchronize, and never undercut a `Retry-After` the server asked for.
+ */
+export function computeRetryDelay(input: {
+  retryMs: number;
+  maxRetryMs: number;
+  /** Consecutive failures INCLUDING the one being backed off from (1-based). */
+  failures: number;
+  /** A sample in [0, 1). */
+  jitter: number;
+  serverRetryAfterMs: number | null;
+}): number {
+  const exponential = Math.min(
+    input.retryMs * 2 ** Math.max(0, input.failures - 1),
+    input.maxRetryMs,
+  );
+  const jittered = Math.round(exponential * (0.75 + input.jitter * 0.5));
+  return Math.max(jittered, input.serverRetryAfterMs ?? 0);
+}
+
+/** Ceiling on the relay's exponential retry backoff. */
+export const MAX_RETRY_MS_DEFAULT = 30_000;
+
+/**
+ * A rejected batch can carry the server's own backoff. `main.ts` attaches
+ * `retryAfterMs` from the 503's `Retry-After` header; anything else backs off
+ * on the relay's own schedule.
+ */
+export function retryAfterMs(error: unknown): number | null {
+  if (!error || typeof error !== 'object') return null;
+  const value = (error as { retryAfterMs?: unknown }).retryAfterMs;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
 export function createAuditRelay(
   send: (events: OpenCodeAuditEvent[]) => Promise<void>,
   options: {
     batchSize?: number;
     flushMs?: number;
     retryMs?: number;
+    maxRetryMs?: number;
+    /** Injected for tests; production uses Math.random. */
+    jitter?: () => number;
     spoolPath?: string;
     maxSpoolBytes?: number;
   } = {},
@@ -520,6 +566,8 @@ export function createAuditRelay(
   const batchSize = options.batchSize ?? 50;
   const flushMs = options.flushMs ?? 500;
   const retryMs = options.retryMs ?? 1_000;
+  const maxRetryMs = options.maxRetryMs ?? MAX_RETRY_MS_DEFAULT;
+  const jitter = options.jitter ?? Math.random;
   const spoolPath = options.spoolPath?.trim() || null;
   const maxSpoolBytes = options.maxSpoolBytes ?? DEFAULT_MAX_SPOOL_BYTES;
   if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
@@ -605,6 +653,16 @@ export function createAuditRelay(
   let flushing: Promise<void> | null = null;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let consecutiveFailures = 0;
+
+  const retryDelay = (serverRetryAfterMs: number | null): number =>
+    computeRetryDelay({
+      retryMs,
+      maxRetryMs,
+      failures: consecutiveFailures,
+      jitter: jitter(),
+      serverRetryAfterMs,
+    });
 
   const schedule = (delay = flushMs) => {
     if (stopped || timer || queue.length === 0) return;
@@ -621,13 +679,20 @@ export function createAuditRelay(
     flushing = (async () => {
       try {
         await send(batch);
+        consecutiveFailures = 0;
         queue.splice(0, batch.length);
         persist();
       } catch (error) {
-        schedule(retryMs);
+        consecutiveFailures += 1;
+        schedule(retryDelay(retryAfterMs(error)));
         throw error;
       } finally {
         flushing = null;
+        // `schedule` is a no-op while a timer is already pending, so the
+        // backoff armed by the catch above survives this line. Without that,
+        // the `queue.length >= batchSize ? 0 : flushMs` fast path would cancel
+        // every backoff exactly when the spool is full — which is exactly when
+        // the server is overloaded.
         if (queue.length > 0) schedule(queue.length >= batchSize ? 0 : flushMs);
       }
     })();

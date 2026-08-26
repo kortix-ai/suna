@@ -1,14 +1,11 @@
 'use client';
 
-import { DiffView } from '@/components/diff/diff-view';
-import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
   DiagnosticsDisplay,
   getToolDiagnostics,
   isErrorOutput,
   partInput,
-  partMetadata,
   partOutput,
   partStatus,
   partStreamingInput,
@@ -23,14 +20,35 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import { useCallback, useContext, useMemo } from 'react';
 
+/**
+ * The stat the row reports beside the filename — a green `+42`, in the same
+ * DiffStat the edit row draws, so every file row counts its change the one
+ * way.
+ *
+ * Additions only, and honestly so: a write replaces whatever was there, and
+ * nothing client-side knows the old content (the runtime supplies no
+ * `filediff` for writes), so a deletions number would be an invention.
+ * DiffStat drops the `−0` on its own.
+ *
+ * It counts the STREAMING content, so the number climbs while the file is
+ * being written and settles on the final size — the closed row answers "how
+ * much did this write?" without being opened. Counted with `indexOf` rather
+ * than `split('\n')`: this runs on every streamed chunk of a file that can be
+ * tens of kilobytes, and splitting allocates an array of every line just to
+ * read its length.
+ */
+export function writeStat(content: string): { additions: number; deletions: number } | undefined {
+  if (!content) return undefined;
+  let lines = 1;
+  for (let i = content.indexOf('\n'); i !== -1; i = content.indexOf('\n', i + 1)) lines++;
+  return { additions: lines, deletions: 0 };
+}
+
 export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
   const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
@@ -46,6 +64,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     () => status === 'completed' && isErrorOutput(output),
     [status, output],
   );
+  const stat = useMemo(() => writeStat(content), [content]);
   // Unmemoised this ran on every frame of a COLLAPSED row: `partOutput` plus two
   // full-string `includes`, and — when the output carries `<file_diagnostics>` —
   // a global regex, a full split and a per-line regex on top.
@@ -66,9 +85,10 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       icon={<PencilSimpleIcon className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Write',
-        subtitle: isStalePending
-          ? undefined
-          : filename || (isStalePending ? 'Working...' : undefined),
+        subtitle: filename || undefined,
+        // No stat on a failed call: the numbers would describe a file that
+        // did not land.
+        stat: isError ? undefined : stat,
       }}
       onSubtitleClick={filePath ? handleSubtitleClick : undefined}
       defaultOpen={defaultOpen}
@@ -81,12 +101,11 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       ) : content ? (
         <ToolCodeCard code={content} language={ext} />
       ) : isStalePending ? (
+        // A stale part is DONE waiting — the run it belonged to is over. The
+        // shimmer this used to draw promised content that could never arrive,
+        // on every restored session, forever.
         <ToolResultCard bodyClassName="px-2 py-1.5">
-          <TextShimmer>
-            {tHardcodedUi.raw(
-              'componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent',
-            )}
-          </TextShimmer>
+          <span className="text-muted-foreground/60 text-xs">No content received</span>
         </ToolResultCard>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />
@@ -94,31 +113,3 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   );
 }
 ToolRegistry.register('write', WriteTool);
-
-interface PatchFileLite {
-  filePath?: string;
-  relativePath?: string;
-  type?: 'add' | 'update' | 'delete' | 'move';
-  patch?: string;
-  diff?: string;
-  before?: string;
-  after?: string;
-  additions?: number;
-  deletions?: number;
-  movePath?: string;
-}
-
-const PATCH_TYPE_STYLE: Record<
-  string,
-  { label: string; tone: 'success' | 'warning' | 'destructive' | 'info' }
-> = {
-  add: { label: 'Add', tone: 'success' },
-  update: { label: 'Edit', tone: 'warning' },
-  delete: { label: 'Delete', tone: 'destructive' },
-  move: { label: 'Move', tone: 'info' },
-};
-
-function RawPatchDiffView({ patch }: { patch: string; filename: string }) {
-  if (!patch) return null;
-  return <DiffView patch={patch} layout="unified" hideFileHeader />;
-}

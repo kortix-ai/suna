@@ -260,6 +260,9 @@ export type {
   SessionAudit,
   SessionTranscript,
   SessionTranscriptMessage,
+  SessionTranscriptSource,
+  SessionTranscriptSyncEnvelope,
+  SessionTranscriptSyncMessage,
   // Change requests / git
   ChangeRequest,
   ChangeRequestDiffResponse,

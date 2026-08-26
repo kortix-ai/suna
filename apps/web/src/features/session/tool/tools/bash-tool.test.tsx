@@ -7,7 +7,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { BashTool, bashRowTitle } from './bash-tool';
+import { BashTool, bashRowTitle, dedentCommand } from './bash-tool';
 
 // Regression guard for `code.slice is not a function`.
 //
@@ -601,6 +601,47 @@ describe('BashTool command card de-nests on the panel (gate finding 5, fourth ca
     // The de-nest drops edges the row card can redraw. This one separates the
     // command from what it printed, which nothing outside the card can say.
     expect(render('panel')).toContain('border-border/60 border-t');
+  });
+});
+
+// The card's `whitespace-pre-wrap` pane renders the command VERBATIM, so
+// incidental leading whitespace (a model quoting a command out of indented
+// YAML) drew the first line two characters deeper than its own wrapped
+// continuation — an inverse hanging indent the trigger row could not show,
+// because its `truncate` span collapses spaces under normal white-space.
+describe('dedentCommand — incidental indent never reaches the pane', () => {
+  test('a single indented line loses its leading spaces', () => {
+    expect(dedentCommand('  agent-browser open http://x/')).toBe('agent-browser open http://x/');
+  });
+
+  test('a multi-line script loses only the SHARED margin', () => {
+    expect(dedentCommand('  if true; then\n    echo hi\n  fi')).toBe(
+      'if true; then\n  echo hi\nfi',
+    );
+  });
+
+  test('a heredoc with its terminator at column 0 is untouched', () => {
+    // A non-`<<-` heredoc pins the common indent to 0 — dedent must be a
+    // no-op exactly where indentation is load-bearing.
+    const heredoc = 'cat <<EOF\n  indented body\nEOF';
+    expect(dedentCommand(heredoc)).toBe(heredoc);
+  });
+
+  test('blank lines neither block the dedent nor gain content', () => {
+    expect(dedentCommand('  a\n\n  b')).toBe('a\n\nb');
+  });
+
+  test('a trailing newline stops counting as a phantom extra line', () => {
+    expect(dedentCommand('ls -la\n')).toBe('ls -la');
+  });
+
+  test('the rendered card starts the command at the pane inset, not two characters in', () => {
+    const html = renderToStaticMarkup(
+      withProviders(<BashTool part={makePart('  echo hi', 'hi')} defaultOpen />),
+    );
+
+    expect(html).toContain('echo hi');
+    expect(html).not.toContain('  echo hi');
   });
 });
 

@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
+import { diffLines } from 'diff';
 import { useTranslations } from 'next-intl';
 import { useCallback, useContext, useMemo } from 'react';
 
@@ -68,6 +69,25 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const hasDiff = before !== '' || after !== '';
   const output = partOutput(part);
   const isError = status === 'completed' && isErrorOutput(output);
+  // Line counts for the row, from the same before/after the expanded diff
+  // renders — so the closed row already answers "how big was this edit?".
+  // Settled calls only: while an edit streams, `after` grows by the chunk, and
+  // re-diffing a whole file per chunk is per-frame work a collapsed row must
+  // not do. `maxEditLength` bails on pathological pairs (two rewritten
+  // 10k-line files) — no stat beats a stalled frame; the expanded DiffView
+  // still shows everything.
+  const diffCounts = useMemo(() => {
+    if (status !== 'completed' || !hasDiff) return undefined;
+    const changes = diffLines(before, after, { maxEditLength: 1000 });
+    if (!changes) return undefined;
+    let additions = 0;
+    let deletions = 0;
+    for (const change of changes) {
+      if (change.added) additions += change.count;
+      else if (change.removed) deletions += change.count;
+    }
+    return { additions, deletions };
+  }, [status, hasDiff, before, after]);
   // Selector, not the whole store: an unselected `useFilePreviewStore()` makes
   // every edit row a subscriber of `isOpen` / `filePath` / `lineNumber`, so
   // opening ONE preview re-rendered every edit row in the session.
@@ -81,9 +101,10 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       icon={<PencilSimpleIcon className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Editing',
-        subtitle: isStalePending
-          ? undefined
-          : filename || (isStalePending ? 'Working...' : undefined),
+        subtitle: filename || undefined,
+        // No stat on a failed call: the numbers would describe an edit that
+        // did not land.
+        stat: isError ? undefined : diffCounts,
       }}
       onSubtitleClick={filePath ? handleSubtitleClick : undefined}
       defaultOpen={defaultOpen}

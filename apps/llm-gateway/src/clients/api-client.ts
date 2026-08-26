@@ -177,6 +177,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       const result = await post<{ models: ModelCatalog }>('/internal/gateway/models', {
         principal,
         managedOnly: !!opts?.managedOnly,
+        ...(opts?.scope ? { scope: opts.scope } : {}),
       });
       return result.models ?? {};
     },

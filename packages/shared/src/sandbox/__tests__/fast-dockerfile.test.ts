@@ -23,7 +23,7 @@ describe('buildFastSandboxDockerfile', () => {
     const dockerfile = buildFastSandboxDockerfile(DEFAULT_OPTIONS);
 
 expect(dockerfile).toContain('FROM ubuntu:24.04');
-    expect(dockerfile).toContain('opencode-ai@1.18.19');
+    expect(dockerfile).toContain('opencode-ai@1.18.23');
     expect(dockerfile).toContain(
       "opencode_native=\"$(sed -n 's/^# cmd-shim-target=//p' \"$(command -v opencode)\" | tail -n 1)\"",
     );

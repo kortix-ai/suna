@@ -1,3 +1,4 @@
+import { applyInlineImageWindow, imageWindowFromEnv, isChatRequestPath } from './llm-image-window'
 import { logger } from './logger'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,6 +22,41 @@ import { logger } from './logger'
 // SCOPE: stateful warm-fork only (the caller gates it). Cold templates + Daytona
 // never start these proxies and keep their direct config unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * For a POST to a model endpoint with a JSON body: read it, apply the inline
+ * image window, and return the re-serialized body — or null to stream the
+ * request through untouched (not a model request, no window configured, not
+ * JSON, or a body this cannot parse: the upstream then answers as it would
+ * have anyway).
+ */
+async function windowModelRequestBody(req: Request, pathname: string, name: string): Promise<string | null> {
+  if (req.method !== 'POST' || !isChatRequestPath(pathname)) return null
+  const window = imageWindowFromEnv()
+  if (!window) return null
+  if (!(req.headers.get('content-type') ?? '').includes('application/json')) return null
+  let text: string
+  try {
+    text = await req.text()
+  } catch {
+    return null
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return text
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return text
+  const result = applyInlineImageWindow(parsed as Record<string, unknown>, window)
+  if (result.dropped === 0) return text
+  const out = JSON.stringify(parsed)
+  logger.info(`[${name}-proxy] image window: kept ${result.total - result.dropped} of ${result.total} inline images`, {
+    bytesBefore: Buffer.byteLength(text),
+    bytesAfter: Buffer.byteLength(out),
+  })
+  return out
+}
 
 type ProxyState = {
   /** The real upstream base, e.g. https://gateway-dev.kortix.com/v1/llm (LLM) or
@@ -91,6 +127,11 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
         hostname: '127.0.0.1',
         // Model streams can run minutes. 0 = no idle timeout.
         idleTimeout: 0,
+        // Bun's default body ceiling is 128 MiB. A vision-heavy turn can be
+        // larger than that BEFORE the window below shrinks it (Essentia
+        // 2026-08-25: 118 inline screenshots); the whole point of windowing
+        // here is that such a body never reaches the network, so accept it.
+        maxRequestBodySize: 2 * 1024 * 1024 * 1024,
         async fetch(req) {
           const upstream = state.upstreamBase
           const tok = state.token
@@ -111,16 +152,29 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
           headers.set('authorization', `Bearer ${tok}`)
 
           try {
+            // Model requests are windowed HERE, before they leave the sandbox
+            // (see llm-image-window.ts). Everything else streams through.
+            let body: RequestInit['body'] = req.body ?? undefined
+            const windowed = await windowModelRequestBody(req, inUrl.pathname, name)
+            if (windowed !== null) {
+              body = windowed
+              headers.set('content-length', String(Buffer.byteLength(windowed)))
+            }
             // duplex:'half' is required by Bun/undici when a request carries a
             // streaming body; valid at runtime even where the RequestInit type
             // omits it, so build + cast rather than inline.
-            const init: RequestInit & { duplex?: 'half' } = {
+            const init: RequestInit & { duplex?: 'half'; timeout?: false } = {
               method: req.method,
               headers,
-              body: req.body ?? undefined,
+              body,
               redirect: 'manual',
+              // Bun's fetch has a default 300 s IDLE timeout (measured on
+              // 1.3.14: `TimeoutError: The operation timed out.` at 300.0 s;
+              // a `signal` does not disable it, `timeout: false` does). The
+              // gateway owns every model-hop timeout; this proxy adds none.
+              timeout: false,
             }
-            if (req.body) init.duplex = 'half'
+            if (windowed === null && req.body) init.duplex = 'half'
             const upstreamRes = await fetch(target, init)
             const outHeaders = new Headers()
             upstreamRes.headers.forEach((v, k) => {

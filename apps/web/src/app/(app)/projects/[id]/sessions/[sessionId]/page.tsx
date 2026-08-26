@@ -28,6 +28,7 @@ import { SessionLayout } from '@/features/session/session-layout';
 import {
   canMountSessionChat,
   findInitialSessionPin,
+  gatedRuntimeBootError,
   gatedRuntimeError,
   runtimeErrorPresentation,
   sessionErrorSurfaceReady,
@@ -37,10 +38,15 @@ import {
   isAutoResuming,
   isRuntimeIdentityUnavailable,
   isSandboxResumable,
+  isWakeClassFailure,
 } from '@/features/session/session-resume';
 import { canPollSessionStart } from '@/features/session/session-start-gate';
-import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import {
+  SessionConnectingBanner,
+  SessionStartingLoader,
+} from '@/features/session/session-starting-loader';
+import {
+  resolveBootPresentation,
   resolveSessionOverlay,
   shouldForgetNewSessionHint,
   shouldMountSessionChat,
@@ -50,6 +56,7 @@ import {
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
@@ -75,6 +82,7 @@ import {
   listProjectSessions,
   sessionStartKey,
   updateProjectSession,
+  wakeProgressFingerprint,
 } from '@kortix/sdk';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
@@ -88,6 +96,7 @@ import {
   startSessionWithPrompt,
   useRuntimeConnectionStore,
   useSession,
+  useWakeEscalation,
 } from '@kortix/sdk/react';
 
 /**
@@ -288,24 +297,91 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       errorToast('Could not copy the prompt.');
     }
   };
-  // When THIS wake started. Stamped the first time we see a resumable box and
-  // cleared the moment it stops being one, so the window measures one wake
-  // rather than the age of the tab.
-  const [resumeStartedAt, setResumeStartedAt] = useState<number | null>(null);
-  useEffect(() => {
-    if (!sandboxResumable) {
-      setResumeStartedAt(null);
-      return;
-    }
-    setResumeStartedAt((at) => at ?? Date.now());
-  }, [sandboxResumable]);
-  const resumeElapsedMs = resumeStartedAt === null ? null : Date.now() - resumeStartedAt;
+  // ── The wake escalation ladder ────────────────────────────────────────────
+  // A wake budget must measure SILENCE, not elapsed time: a wake that is
+  // visibly advancing has not failed, however long it takes, and a wake that
+  // has gone quiet is not saved by waiting longer. `useWakeEscalation` owns
+  // that rule and the ladder that follows it — quiet `/start` retry, then the
+  // RESTART the user would have clicked, bounded — so the terminal card is
+  // what remains after everything has been tried, never the first response to
+  // a slow provider. See `core/session/wake-escalation.ts` for the incident.
+  //
+  // `runtimeReachable` is the DAEMON's answer, not the session row's. Observed
+  // on Essentia 2026-08-26: `/start` answered 202 and the row stayed `running`
+  // for 5+ minutes while the E2B resume had silently failed and the proxy
+  // answered `503 sandbox_not_ready`. `initialCheckDone` is what makes this
+  // real evidence — `useSession` optimistically seeds `healthy: true` the
+  // moment `stage: 'ready'` arrives, and that seed is exactly the claim the
+  // desync falsifies, so the latch must wait for a probe to have run.
+  const runtimeProbed = useRuntimeConnectionStore((s) => s.initialCheckDone);
+  const runtimeHealthy = useRuntimeConnectionStore((s) => s.healthy === true);
+  const runtimeConnectionStatus = useRuntimeConnectionStore((s) => s.status);
+  const runtimeVersion = useRuntimeConnectionStore((s) => s.openCodeVersion);
+  const runtimeProbeError = useRuntimeConnectionStore((s) => s.runtimeError);
+  const sandboxMetadata = (sandbox?.metadata as Record<string, unknown> | undefined) ?? {};
+  const wakeStopReason =
+    typeof sandboxMetadata.stopReason === 'string' ? sandboxMetadata.stopReason : null;
+  // Only an ESTABLISHED runtime is woken. A session whose first sandbox is
+  // still being built (`external_id` null, "Sandbox build running…") is not
+  // stuck — it is doing minutes of legitimate work with no client-visible
+  // signal, and restarting it would throw that build away.
+  const wakeLadderApplies =
+    !authLoading &&
+    !!user &&
+    !billingBlocked &&
+    !!sandbox?.external_id &&
+    !isRuntimeIdentityUnavailable(sandbox);
+  // The verdicts that used to paint a terminal card outright. There is no
+  // further progress to wait for in any of them — only a rung of the ladder
+  // left to try, which is precisely what the card denied the user. See
+  // `isWakeClassFailure` for why `retriable` is not part of the test.
+  const wakeServerGaveUp = isWakeClassFailure({
+    stage: session.stage,
+    reason: session.reason,
+    sandbox,
+  });
+  const wake = useWakeEscalation({
+    waking: wakeLadderApplies,
+    runtimeReachable: runtimeProbed && runtimeHealthy,
+    progress: wakeProgressFingerprint([
+      startStage,
+      session.reason,
+      sandbox?.status,
+      wakeStopReason,
+      typeof sandboxMetadata.runtimeWakeStartedAt === 'string'
+        ? sandboxMetadata.runtimeWakeStartedAt
+        : null,
+      session.opencodeSessionId,
+      runtimeConnectionStatus,
+      runtimeHealthy,
+      runtimeVersion,
+      runtimeProbeError,
+    ]),
+    serverGaveUp: wakeServerGaveUp,
+    onRetryStart: () => {
+      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
+    },
+    // Passed straight through: `useWakeEscalation` holds the callbacks in its
+    // own ref, so a rebuilt closure here cannot re-run its decision effect and
+    // fire one rung twice.
+    onRestart: handleRestart,
+  });
+  // THE progress-aware budget. Every consumer below reads time-since-CHANGE,
+  // never time-since-wake-started — the fixed clock this replaces expired
+  // mid-wake on a box that was seconds from ready (Essentia 29861dfa, box
+  // daemon logged `opencode ready` right after the budget ran out).
+  const wakeSilentMs = wake.msSinceProgress;
+  // A BOOLEAN, not the raw millisecond count, because this is an effect
+  // dependency: `wakeSilentMs` advances every second, and depending on it would
+  // tear down and re-arm the timer below on every tick — a backoff delay longer
+  // than one second could then never elapse, silently ending the resume loop
+  // after its first immediate attempt.
+  const wakeShowingProgress = wakeSilentMs < AUTO_RESUME_WINDOW_MS;
   useEffect(() => {
     if (!sandboxResumable) return;
-    if (resumeStartedAt !== null && Date.now() - resumeStartedAt >= AUTO_RESUME_WINDOW_MS) return;
+    if (!wakeShowingProgress) return;
     // First attempt fires immediately (match the refresh); back off after that,
-    // and keep re-asking for as long as the wake window allows. The budget is
-    // the WINDOW, not the attempt count — see `AUTO_RESUME_WINDOW_MS`.
+    // and keep re-asking for as long as the wake is still showing progress.
     const t = setTimeout(
       () => {
         setResumeAttempts((n) => n + 1);
@@ -314,10 +390,16 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       resumeAttempts === 0 ? 0 : Math.min(1500 * 2 ** Math.min(resumeAttempts - 1, 3), 8000),
     );
     return () => clearTimeout(t);
-  }, [sandboxResumable, resumeAttempts, resumeStartedAt, projectId, sessionId, queryClient]);
-  // Inside the wake window a resumable box is "waking", not "dead" — render the
-  // boot loader, never the dead-end card.
-  const autoResuming = isAutoResuming(sandbox, { elapsedMs: resumeElapsedMs });
+  }, [sandboxResumable, resumeAttempts, wakeShowingProgress, projectId, sessionId, queryClient]);
+  // While a resumable box is still SHOWING PROGRESS it is "waking", not "dead"
+  // — render the boot loader, never the dead-end card.
+  const autoResuming = isAutoResuming(sandbox, { elapsedMs: wakeSilentMs });
+  // The ladder still has rungs left for a wake the server has given up on. The
+  // dead-end card is what happens after it runs out, not instead of it. Scoped
+  // to the wake-class verdicts only: a git-auth or capacity failure is a real
+  // dead end that no amount of restarting fixes, and it must still say so at
+  // once.
+  const wakeLadderHolding = wakeServerGaveUp && !wake.exhausted;
 
   // Belt-and-suspenders: clear the legacy active-instance cookie once on mount for
   // this route so no later navigation can be hijacked onto a stale sandbox.
@@ -429,6 +511,31 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const hasTranscript = session.messages.length > 0 || sawTranscript;
   const surface = { newSessionHint: handoff.newSessionHint, hasTranscript };
   const overlay = resolveSessionOverlay({ ...surface, shellShowsFirstPrompt });
+  // WHICH overlay is settled above; this decides whether it may COVER the chat.
+  //
+  // It may not, once there is a transcript under it. The server-side transcript
+  // mirror (`GET …/transcript?shape=sync`, hydrated by the SDK with
+  // `source: 'cache'`) means a hibernated session paints its history on the
+  // first frame, so a full-screen "Connecting…" would now be hiding a readable
+  // conversation for the length of the wake — 5-240 s, the exact complaint.
+  // Boot status becomes a compact banner above the thread instead.
+  const bootPresentation = resolveBootPresentation({ overlay, hasTranscript });
+
+  // The overlay is DISMISSED for two reasons now, and both use the same 300ms
+  // crossfade the chat layer was already painted underneath: the chat reported
+  // ready, or the transcript arrived and boot status moved into the banner.
+  // Reusing the fade is deliberate — flipping the presentation with a hard
+  // unmount would swap an opaque panel for the thread in one frame.
+  const overlayDismissed = chatReady || bootPresentation === 'banner';
+  // Sibling of the `chatReady` unmount timer above, for the other dismissal
+  // reason. Same 350ms belt-and-braces: `transitionend` never fires in a
+  // backgrounded tab, nor under `prefers-reduced-motion` where the duration
+  // is 0.
+  useEffect(() => {
+    if (bootPresentation !== 'banner' || !loaderMounted) return;
+    const t = setTimeout(() => setLoaderMounted(false), 350);
+    return () => clearTimeout(t);
+  }, [bootPresentation, loaderMounted]);
 
   // Drop the local hint as soon as it has done its job OR been proven wrong.
   // This used to wait on `chatReady`, which the hint itself could withhold — so
@@ -585,11 +692,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const inner = (() => {
     if (sessionSwitchLoading) {
       return (
-        <SessionStartingLoader
-          stage={switchingToSessionId === sessionId ? startStage : 'starting'}
-          projectId={projectId}
-          sessionId={switchingToSessionId ?? sessionId}
-        />
+        <HeaderlessSessionSurface>
+          <SessionStartingLoader
+            stage={switchingToSessionId === sessionId ? startStage : 'starting'}
+            projectId={projectId}
+            sessionId={switchingToSessionId ?? sessionId}
+          />
+        </HeaderlessSessionSurface>
       );
     }
 
@@ -649,11 +758,38 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       );
     }
 
-    if (recoverableFailure) {
+    // The wake ladder is still working: a session with rungs left is not a dead
+    // end, and painting one is the exact defect this replaces — the card fired
+    // while the box was seconds from ready. The transcript mirror keeps
+    // rendering underneath when there is one (`showCachedTranscriptWhileDown`),
+    // so falling through here costs the user nothing.
+    if (wakeLadderHolding) {
+      if (!showCachedTranscriptWhileDown) {
+        return (
+          <HeaderlessSessionSurface>
+            <SessionStartingLoader
+              stage="starting"
+              projectId={projectId}
+              sessionId={sessionId}
+              note={wake.note}
+            />
+          </HeaderlessSessionSurface>
+        );
+      }
+    } else if (recoverableFailure) {
       return (
         <InlineSessionError
           title={recoverableFailure.title}
-          message={recoverableFailure.message}
+          // A dead end that cannot say what was already attempted invites the
+          // user to repeat it by hand. `wake.summary` names every rung the
+          // ladder used before giving up. It rides in the MESSAGE, not in
+          // `detail`: that slot is monospace, for provider ids and raw errors,
+          // and a sentence in it wraps mid-word.
+          message={
+            wake.summary
+              ? `${recoverableFailure.message} ${wake.summary}`
+              : recoverableFailure.message
+          }
           detail={restart.errorMessage ?? undefined}
           action={
             <ProviderFailureRecovery
@@ -739,7 +875,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       // dead-end, so the user just sees it come back (as a hard refresh would).
       if (autoResuming) {
         return (
-          <SessionStartingLoader stage="starting" projectId={projectId} sessionId={sessionId} />
+          <HeaderlessSessionSurface>
+            <SessionStartingLoader
+              stage="starting"
+              projectId={projectId}
+              sessionId={sessionId}
+              note={wake.note}
+            />
+          </HeaderlessSessionSurface>
         );
       }
       // Auto-resume exhausted (or genuinely un-resumable): give an in-place
@@ -821,7 +964,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
               // block — under it you would see the chat's own compact loader
               // through the gaps, two spinners deep.
               'bg-background absolute inset-0 flex flex-col transition-opacity duration-300 ease-out',
-              chatReady ? 'pointer-events-none opacity-0' : 'opacity-100',
+              overlayDismissed ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
           >
             {overlay === 'new-session-shell' ? (
@@ -833,13 +976,32 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                 onSubmit={() => setSubmittedOnShell(true)}
               />
             ) : (
-              <SessionStartingLoader
-                stage={authLoading || !user ? 'provisioning' : startStage}
-                projectId={projectId}
-                sessionId={sessionId}
-              />
+              <HeaderlessSessionSurface>
+                <SessionStartingLoader
+                  stage={authLoading || !user ? 'provisioning' : startStage}
+                  projectId={projectId}
+                  sessionId={sessionId}
+                  note={wake.note}
+                />
+              </HeaderlessSessionSurface>
             )}
           </div>
+        )}
+
+        {/* Boot status ABOVE the conversation, never in front of it. Mounted
+            only in the `banner` presentation — i.e. only when there is a
+            transcript underneath worth reading — and held until the runtime is
+            actually reachable, so the strip does not disappear the instant the
+            chat paints while the box is still coming up. What SENDING will do
+            during the wake is the composer's own notice; this says only which
+            phase the boot is in. */}
+        {bootPresentation === 'banner' && (startStage !== 'ready' || !chatReady) && (
+          <SessionConnectingBanner
+            stage={authLoading || !user ? 'provisioning' : startStage}
+            projectId={projectId}
+            sessionId={sessionId}
+            note={wake.note}
+          />
         )}
       </div>
     );
@@ -907,6 +1069,36 @@ function RestartSessionButton({
   );
 }
 
+/* ─── Headerless full-screen surfaces ──────────────────────────────────── */
+
+/**
+ * The sidebar opener for every surface on this route that has no header.
+ *
+ * `SessionSiteHeader` carries the opener, and it only renders once the chat
+ * (or the instant shell) mounts. Every state before or instead of that — the
+ * boot loader, the session-switch loader, the billing gate, and all five
+ * terminal cards — is a bare centred block. Collapse the sidebar, then open a
+ * session that is booting, stopped, or broken, and there was no control on
+ * screen to bring the panel back: the app's primary navigation surface was
+ * reachable only by reloading the page. That is the state a user is MOST
+ * likely to want to leave.
+ *
+ * `SidebarToggle` self-gates — it returns null with no sidebar context, on the
+ * Electron shell (which draws the canonical opener in the OS title-bar band),
+ * and while the panel is already docked open on desktop — so wrapping every
+ * such surface unconditionally cannot produce a second opener. `relative` is
+ * load-bearing: the toggle positions itself `absolute top-2 left-2` against
+ * the nearest positioned ancestor.
+ */
+function HeaderlessSessionSurface({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <SidebarToggle placement="floating" />
+      {children}
+    </div>
+  );
+}
+
 /* ─── Inline error card (used inside the project shell) ────────────────── */
 
 function InlineSessionError({
@@ -921,24 +1113,26 @@ function InlineSessionError({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center px-6">
-      <ErrorState
-        title={title}
-        description={message}
-        action={
-          detail || action ? (
-            <div className="flex max-w-sm flex-col items-center gap-3">
-              {detail ? (
-                <code className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-md border px-2 py-1 font-mono text-xs leading-relaxed break-all">
-                  {detail}
-                </code>
-              ) : null}
-              {action}
-            </div>
-          ) : undefined
-        }
-      />
-    </div>
+    <HeaderlessSessionSurface>
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+        <ErrorState
+          title={title}
+          description={message}
+          action={
+            detail || action ? (
+              <div className="flex max-w-sm flex-col items-center gap-3">
+                {detail ? (
+                  <code className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-md border px-2 py-1 font-mono text-xs leading-relaxed break-all">
+                    {detail}
+                  </code>
+                ) : null}
+                {action}
+              </div>
+            ) : undefined
+          }
+        />
+      </div>
+    </HeaderlessSessionSurface>
   );
 }
 
@@ -970,7 +1164,7 @@ function ActiveSessionChat({
   const runtimeReady = useRuntimeConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
   );
-  const runtimeBootError = useRuntimeConnectionStore((s) => s.runtimeError);
+  const rawRuntimeBootError = useRuntimeConnectionStore((s) => s.runtimeError);
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -990,6 +1184,15 @@ function ActiveSessionChat({
   const runtimeError = gatedRuntimeError({
     phase: sessionState.phase,
     runtimeError: sessionState.runtimeError,
+  });
+  // Same phase gate for the connection store's boot error: a genuine
+  // `boot_error` still may not paint a terminal card while `/start` is in
+  // flight (`phase === 'starting'`). Routine boot progress never reaches this
+  // field any more (SDK `runtimeErrorFromHealth`), so on a normal cold boot
+  // this is already null — this gate covers the real-failure case (RC-1).
+  const runtimeBootError = gatedRuntimeBootError({
+    phase: sessionState.phase,
+    runtimeBootError: rawRuntimeBootError,
   });
 
   const restart = useRestartProjectSession(projectId, sessionId);

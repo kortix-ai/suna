@@ -75,6 +75,15 @@ describe('maxProjectsForAccount — plan → project cap', () => {
     expect(await maxProjectsForAccount(nextAccount())).toBe(MAX_PROJECTS_PER_ACCOUNT);
   });
 
+  test('a just-upgraded account bypasses a cached free-tier quota answer', async () => {
+    const accountId = nextAccount();
+    currentTier = 'free';
+    expect(await maxProjectsForAccount(accountId)).toBe(FREE_TIER_PROJECT_LIMIT);
+
+    currentTier = 'pro';
+    expect(await maxProjectsForAccount(accountId)).toBe(MAX_PROJECTS_PER_ACCOUNT);
+  });
+
   test('legacy paid tier → MAX_PROJECTS_PER_ACCOUNT (any non-free tier is paid)', async () => {
     currentTier = 'tier_25_200';
     expect(await maxProjectsForAccount(nextAccount())).toBe(MAX_PROJECTS_PER_ACCOUNT);

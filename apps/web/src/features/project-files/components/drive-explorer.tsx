@@ -20,6 +20,7 @@ import { useFilesStore } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import {
   ClipboardIcon as Clipboard,
   FilePlusIcon as FilePlus,
@@ -27,9 +28,16 @@ import {
   FolderPlusIcon as FolderPlus,
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
-import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ElementType,
+  type ReactNode,
+} from 'react';
 import { useFileExplorerSource } from '../explorer-source';
 import { buildGitStatusMap } from '../hooks';
 import {
@@ -44,12 +52,7 @@ import {
 } from '../upload-batch';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
-import {
-  DRIVE_ACTION_ROW_CLASS,
-  DriveNewMenu,
-  DrivePathBar,
-  DriveViewMenu,
-} from './drive-toolbar';
+import { DRIVE_ACTION_ROW_CLASS, DriveNewMenu, DrivePathBar, DriveViewMenu } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileSearch } from './file-search';
@@ -84,7 +87,7 @@ export function DriveExplorer({
   embedded = false,
   shareContext,
   leading,
-  contentPanel,
+  listingAs,
   panels,
   children,
 }: {
@@ -96,17 +99,22 @@ export function DriveExplorer({
    */
   leading?: ReactNode;
   /**
-   * ARIA wiring for the listing region when `leading` is a tab strip. The
-   * tabs live in this component's row, so only this component can stamp the
-   * panel they control.
+   * Element type for the listing region.
+   *
+   * A tabbed host passes a `TabsContent` wrapper, so the listing IS the tab
+   * panel while its tab strip rides in `leading`. The row and the listing are
+   * siblings, which is the whole point: the panel never contains the tablist
+   * that controls it, and the host still gets one row instead of two.
    */
-  contentPanel?: { id: string; labelledBy: string };
+  listingAs?: ElementType<{ className?: string; children?: ReactNode }>;
   /** Rendered inside the relative content area (slide-in side panels). */
   panels?: ReactNode;
   /** Rendered at the root (portal dialogs owned by the wrapping surface). */
   children?: ReactNode;
 } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // Plain <div> unless a tabbed host claims the listing as its panel.
+  const ListingRegion = listingAs ?? 'div';
   const source = useFileExplorerSource();
   const { capabilities } = source;
   const canWrite = capabilities.write;
@@ -774,12 +782,7 @@ export function DriveExplorer({
         </div>
       )}
 
-      <div
-        className="relative min-h-0 flex-1"
-        id={contentPanel?.id}
-        role={contentPanel ? 'tabpanel' : undefined}
-        aria-labelledby={contentPanel?.labelledBy}
-      >
+      <ListingRegion className="relative min-h-0 flex-1">
         <div className="absolute inset-0 overflow-y-auto">
           {isLoading && showSkeleton && (
             <div className="animate-in fade-in-0 p-4 duration-200">
@@ -862,12 +865,7 @@ export function DriveExplorer({
               // the toolbar menu.
               action={
                 canWrite ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={handleUpload}
-                  >
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleUpload}>
                     <Upload className="size-3.5 shrink-0" />
                     Upload files
                   </Button>
@@ -943,7 +941,7 @@ export function DriveExplorer({
         </div>
 
         {panels}
-      </div>
+      </ListingRegion>
 
       {/* Drag & drop overlay */}
       {canWrite && isDragOverPage && (

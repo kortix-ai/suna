@@ -24,6 +24,8 @@ import { backfillChannelName } from "../../channels/slack/dispatch";
 import {
   isModelServableForAccount,
 } from "../../llm-gateway/resolution/default-model";
+import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
+import { validateNativeOpencodeModelRef } from "../lib/session-model-change";
 import {
   type ModelSource,
   chooseEffectiveAgent,
@@ -52,6 +54,10 @@ interface ModelResolutionCtx {
   projectId: string;
   modelDefaults: AccountModelDefaults;
   freeModelsOnly: boolean;
+  /** The project's `llm_gateway` flag. Off ⇒ native OpenCode owns model
+   *  resolution: an explicit pin reports verbatim and the gateway default
+   *  chain is not consulted. */
+  llmGatewayEnabled: boolean;
 }
 
 // Mirrors resolveEffectiveModel (default-model.ts) but batches the account
@@ -65,6 +71,13 @@ async function resolveBindingEffectiveModel(
   agentName: string,
   ctx: ModelResolutionCtx,
 ): Promise<{ model: string | null; source: ModelSource }> {
+  if (!ctx.llmGatewayEnabled) {
+    // Native mode: the pin is a native `provider/model` ref OpenCode resolves
+    // in the box; the gateway's servability probe and wire-model defaults do
+    // not apply. No pin ⇒ OpenCode's own default (reported as platform/null).
+    if (explicitModel) return { model: explicitModel, source: "explicit" };
+    return { model: null, source: "platform" };
+  }
   if (explicitModel) {
     const servable = await isModelServableForAccount({
       userId: ctx.userId,
@@ -153,6 +166,7 @@ projectsApp.openapi(
       projectId,
       modelDefaults: await getAccountModelDefaults(accountId, projectId),
       freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
+      llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
     };
     return c.json({
       projectDefaultAgent,
@@ -270,6 +284,17 @@ projectsApp.openapi(
             400,
           );
         }
+        // Same two-path gate as session create (lib/sessions.ts): gateway ON
+        // validates via the gateway resolver and stores `kortix/<wire>`;
+        // gateway OFF (native OpenCode) enforces the native `provider/model`
+        // shape and stores the ref verbatim.
+        if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+          const nativeShapeError = validateNativeOpencodeModelRef(trimmed);
+          if (nativeShapeError) {
+            return c.json({ error: nativeShapeError.message, code: "invalid_model" }, 400);
+          }
+          stored = trimmed;
+        } else {
         const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId as string));
         const servable = await isModelServableForAccount({
           userId: loaded.userId,
@@ -285,6 +310,7 @@ projectsApp.openapi(
           );
         }
         stored = toOpencodeModelRef(trimmed);
+        }
       }
       const ok = await setChannelModel(ctx, stored);
       if (!ok) return c.json({ error: "Not found" }, 404);
@@ -304,6 +330,7 @@ projectsApp.openapi(
       projectId,
       modelDefaults: await getAccountModelDefaults(accountId, projectId),
       freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
+      llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
     };
     return c.json(await serializeBinding(updated, projectDefaultAgentOf(loaded.row.metadata), modelCtx));
   },

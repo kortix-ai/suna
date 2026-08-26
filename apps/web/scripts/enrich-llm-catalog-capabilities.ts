@@ -92,6 +92,7 @@ interface ModelsDevModel {
   knowledge?: string;
   last_updated?: string;
   family?: string;
+  status?: string;
   modalities?: { input?: string[]; output?: string[] };
   limit?: { context?: number; input?: number; output?: number };
   cost?: ModelsDevCost;
@@ -201,6 +202,7 @@ function normalizeModel(modelKey: string, model: ModelsDevModel) {
     ...(typeof model.knowledge === 'string' ? { knowledge: model.knowledge } : {}),
     ...(typeof model.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
     ...(typeof model.family === 'string' ? { family: model.family } : {}),
+    ...(typeof model.status === 'string' ? { status: model.status } : {}),
     ...(modalities ? { modalities } : {}),
     ...(limit ? { limit } : {}),
     ...(cost ? { cost } : {}),

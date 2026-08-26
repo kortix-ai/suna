@@ -17,6 +17,8 @@ import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/cl
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
 import { useKortixRouteProjectId } from './route-project';
+import { autoSeedableModels } from '@kortix/llm-catalog';
+import { healBedrockModelKey } from './bedrock-invokable';
 import { normalizeProviderList } from './provider-selection';
 import { useModelStore, type ModelKey } from './use-model-store';
 
@@ -275,11 +277,17 @@ export function useOpenCodeLocal({
   defaultAgentName,
   resolveServerDefault,
 }: UseOpenCodeLocalOptions): OpenCodeLocal {
-  // ---- Flatten models from providers (shared with the chat input, so the
-  // gateway-only allowlist applies here too — native providers never leak in) ----
-  const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
-  const projectId = useKortixRouteProjectId();
+  // ---- Flatten models from providers (shared with the chat input). The
+  // filter follows the provider MODE: gateway mode keeps the kortix-only
+  // allowlist (native bypass providers never leak in); native mode
+  // (llm_gateway off) flattens OpenCode's own connected providers — that IS
+  // the catalog off-gateway. ----
   const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
+  const flatModels = useMemo<FlatModel[]>(
+    () => flattenModels(providers, { providerMode }),
+    [providers, providerMode],
+  );
+  const projectId = useKortixRouteProjectId();
 
   // ---- Model store (persisted: recent, variant, per-agent/session selection) ----
   const modelStore = useModelStore(flatModels);
@@ -440,8 +448,14 @@ export function useOpenCodeLocal({
           const key = { providerID: p.id, modelID: configured };
           if (isModelValid(key)) return key;
         }
-        for (const modelID of Object.keys(p.models)) {
-          const key = { providerID: p.id, modelID };
+        // `autoSeedableModels`, not the raw key order: on Bedrock the newest
+        // id is the BARE `xai.grok-4.6`, which Bedrock refuses for on-demand
+        // use. Auto-picking must never surface a bare id while the provider
+        // serves inference profiles. Inert for every other provider.
+        for (const model of autoSeedableModels(
+          Object.keys(p.models).map((modelID) => ({ id: modelID })),
+        )) {
+          const key = { providerID: p.id, modelID: model.id };
           if (isModelValid(key)) return key;
         }
       }
@@ -498,7 +512,13 @@ export function useOpenCodeLocal({
         () => (currentAgent?.model as ModelKey | undefined),
         () => fallbackModel,
       );
-    return resolved;
+    // EVERY source above can hand back a bare Bedrock in-region id — the
+    // explicit slot most of all, because it is browser-global rather than
+    // project-scoped (see `agentScopedModelSelectionKey`), so one wedged
+    // workspace pins the bare id for every future one. Bedrock answers a hard
+    // 400 for those and OpenCode retries forever, so heal here, at the single
+    // seam every source funnels through. No-op off Bedrock.
+    return healBedrockModelKey(resolved, flatModels);
   }, [
     explicitModelKey,
     serverDefaultKey,
@@ -507,14 +527,18 @@ export function useOpenCodeLocal({
     getFirstValidModel,
     isModelValid,
     fallbackModel,
+    flatModels,
   ]);
 
   // True when the user has not made an explicit pick.
   const onDefaultModel = !explicitModelKey;
 
+  // Healed as well as `currentModelKey`: `resolvePromptModel` can prefer the
+  // RAW explicit slot, and a chip that reads "Claude Opus 5" while the request
+  // carries `xai.grok-4.6` would be a lie that still wedges the turn.
   const sendModelKey = useMemo<ModelKey | undefined>(
-    () => resolvePromptModel(explicitModelKey, currentModelKey),
-    [explicitModelKey, currentModelKey],
+    () => healBedrockModelKey(resolvePromptModel(explicitModelKey, currentModelKey), flatModels),
+    [explicitModelKey, currentModelKey, flatModels],
   );
 
   const currentModel = useMemo<FlatModel | undefined>(

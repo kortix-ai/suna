@@ -23,17 +23,31 @@ function hydrateStatusBlock(): string {
 }
 
 describe('hydrateCore session-status snapshot', () => {
-  test('skips any session the live stream has already answered for', () => {
+  test('the fill decision routes through shouldSkipStatusFill with the slot stamp', () => {
+    // The WHICH-slots rule (fresh wire owns; stale wire and local do not) is
+    // unit-tested on the pure `shouldSkipStatusFill` in `helpers.test.ts` —
+    // this pin only asserts hydrateCore actually consults it, with the
+    // store's own arrival stamp rather than a component-minted one.
     const block = hydrateStatusBlock();
-    expect(block).toContain('if (useSyncStore.getState().sessionStatus[sessionID]) continue;');
+    expect(block).toContain('shouldSkipStatusFill({');
+    expect(block).toContain('origin: slotState.sessionStatusOrigin[sessionID]');
+    expect(block).toContain('stampedAtMs: slotState.sessionStatusAt[sessionID]');
   });
 
   test('the skip precedes the write, so a stale reading cannot land first', () => {
     const block = hydrateStatusBlock();
-    const guard = block.indexOf('sessionStatus[sessionID]) continue');
+    const guard = block.indexOf('shouldSkipStatusFill({');
     const write = block.indexOf('applySyncEvent(');
     expect(guard).toBeGreaterThan(-1);
     expect(write).toBeGreaterThan(guard);
+  });
+
+  test('the snapshot write is marked synthetic, so it lands with local origin', () => {
+    // A snapshot is a reading ABOUT the runtime taken at issue time, not the
+    // runtime speaking on the wire. Unmarked, its write would mint a
+    // wire-origin frame that `projectWorking` lets contradict an open turn.
+    const block = hydrateStatusBlock();
+    expect(block).toContain('synthetic: true');
   });
 
   test('the enumeration repair still runs — absence is not a per-session reading', () => {

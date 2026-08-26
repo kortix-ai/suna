@@ -33,7 +33,7 @@ import {
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
 import { shellExitCode, stripAnsi } from '@/ui';
-import { CodeSimpleIcon } from '@phosphor-icons/react';
+import { TerminalIcon } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
 
 /** The row title never runs past this; a trigger is one line, not a sentence. */
@@ -76,6 +76,38 @@ export function bashRowTitle(description: unknown, failed: boolean): string {
 }
 
 /**
+ * The command as the reader should see it: common indent stripped, blank
+ * edges dropped.
+ *
+ * Commands arrive with incidental leading whitespace — a model quoting a
+ * command out of indented YAML/JSON sends `  agent-browser open …`. The
+ * trigger row hid it (a `truncate` span collapses spaces under normal
+ * white-space), but the card's `whitespace-pre-wrap` pane rendered it
+ * verbatim, so the first line sat two characters deeper than its own wrapped
+ * continuation and the output below — an inverse hanging indent that read as
+ * broken padding.
+ *
+ * COMMON indent, not a per-line trim: a multi-line script keeps its internal
+ * structure, only the shared margin goes. Heredocs survive by construction — a
+ * non-`<<-` heredoc needs its terminator at column 0, which pins the common
+ * indent to 0 and makes this a no-op exactly where indentation is
+ * load-bearing. The trailing trim also stops a final `\n` from counting as a
+ * phantom `+1` line in the trigger.
+ */
+export function dedentCommand(raw: string): string {
+  const text = raw.replace(/^\n+/, '').trimEnd();
+  if (!text) return '';
+  const lines = text.split('\n');
+  let min = Infinity;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    min = Math.min(min, /^[ \t]*/.exec(line)![0].length);
+  }
+  if (!min || min === Infinity) return text;
+  return lines.map((line) => line.slice(min)).join('\n');
+}
+
+/**
  * The command, syntax-highlighted, with its output beneath a hairline.
  *
  * Replaces a simulated `kortix@host:~$` prompt. The prompt dressed the command
@@ -84,6 +116,13 @@ export function bashRowTitle(description: unknown, failed: boolean): string {
  * multi-line pipeline no structure at all. Highlighting spends that space on
  * the command instead, so a `curl … | python3 -c "…"` reads as the two stages
  * it is.
+ *
+ * The command pane carries the same `bg-muted/40` wash the service-preview
+ * header uses, so what was typed and what came back read as two zones without
+ * a word of labelling — the tint says "invocation", the plain surface below
+ * says "result". Inline only: on the panel the card has no frame to clip the
+ * tint against, and a square tinted block floating inside the row body's
+ * `px-3` gutter reads as a highlight, not a header.
  *
  * One frame, one type rhythm: `border bg-popover rounded-md` around content
  * panes that share a 12px inset and one `leading-relaxed` line height. That
@@ -134,24 +173,30 @@ function CommandBlock({
   const paneInset = pad || 'py-2';
 
   return (
-    <div className={cn('relative', frame)}>
-      <div data-scrollable className="max-h-64 overflow-auto">
-        <div className="relative">
-          <pre
-            className={cn(
-              'text-foreground/90 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none',
-              paneInset,
-              'pr-11',
-            )}
-          >
-            <HighlightedCode code={command} language="bash">
-              {command}
-            </HighlightedCode>
-          </pre>
-          <div className="absolute top-2 right-2">
-            <CopyButton code={command} className="text-muted-foreground/60 hover:text-foreground" />
-          </div>
-        </div>
+    // `overflow-hidden` clips the command pane's tint to the rounded frame;
+    // without it the wash pokes square corners past `rounded-md`.
+    <div className={cn('relative overflow-hidden', frame)}>
+      {/* The tint rides the scroller, not a wrapper, so no `class="relative"`
+          div lands between the card and `max-h-64` — the geometry tests locate
+          the card by exactly that prefix. */}
+      <div data-scrollable className={cn('max-h-64 overflow-auto', frame && 'bg-muted/40')}>
+        <pre
+          className={cn(
+            'text-foreground/90 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none',
+            paneInset,
+            'pr-11',
+          )}
+        >
+          <HighlightedCode code={command} language="bash">
+            {command}
+          </HighlightedCode>
+        </pre>
+      </div>
+      {/* Anchored to the CARD, not to a wrapper inside the scroller — inside,
+          it scrolled away with a long command while the output's stayed
+          pinned. */}
+      <div className="absolute top-2 right-2">
+        <CopyButton code={command} className="text-muted-foreground/60 hover:text-foreground" />
       </div>
 
       {(hasOutput || settled) && (
@@ -189,7 +234,9 @@ function CommandBlock({
       {failed && (
         <div
           className={cn(
-            'border-border/60 text-muted-foreground/70 border-t py-2 font-mono text-xs tabular-nums',
+            // `kortix-red`, matching the trigger's "Command failed": the strip
+            // is the card's own copy of the verdict, so the two agree in tone.
+            'border-border/60 text-kortix-red border-t py-2 font-mono text-xs tabular-nums',
             // Metadata about the card, not a third pane: it keeps the shorter
             // 8px vertical inset, and only the horizontal one is the surface's
             // to supply.
@@ -211,11 +258,18 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
   const indent = useToolIndent();
-  const command =
+  const rawCommand =
     (input.command as string) ||
     (metadata.command as string) ||
     (streamingInput.command as string) ||
     '';
+  // Everything downstream — card, preview, line count, copy — shows the
+  // dedented text, so the row and the pane can never disagree about where the
+  // command starts. No manual memo: a command is a short string, and wrapping
+  // this in `useMemo` made the React Compiler skip the whole component
+  // (`preserve-manual-memoization`) — a far worse trade than re-splitting a
+  // one-line string.
+  const command = dedentCommand(rawCommand);
   const strippedOutput = useMemo(() => (output ? stripAnsi(output) : ''), [output]);
 
   const sessionMeta = useMemo(() => parseSessionMetadataOutput(strippedOutput), [strippedOutput]);
@@ -261,7 +315,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<CodeSimpleIcon className="size-4 shrink-0" />}
+      icon={<TerminalIcon className="size-4 shrink-0" />}
       trigger={
         isStalePending ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">

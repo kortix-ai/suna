@@ -110,6 +110,35 @@ export function resolveSessionOverlay(
 }
 
 /**
+ * How the boot state is PRESENTED once the overlay's identity is settled.
+ *
+ * The two are different questions and collapsing them is what produced the
+ * complaint this exists for: opening a hibernated session showed a full-screen
+ * "Connecting…" for the whole wake (5-240 s) with the transcript hidden behind
+ * it — even though, with a server-side transcript mirror, the conversation is
+ * available on the first frame.
+ *
+ * The rule: an overlay may cover the chat only while there is nothing under it
+ * worth reading. The moment a transcript exists, boot status becomes a compact
+ * banner ABOVE the conversation instead of a wall in front of it. Sending is
+ * unaffected either way — the composer carries its own "waking, your message
+ * will be queued" notice, and a prompt submitted during a wake becomes a
+ * durable inbox row.
+ *
+ * `new-session-shell` is never demoted: it is a typing surface, not a status
+ * screen, and there is by definition no transcript under it.
+ */
+export type SessionBootPresentation = 'full-screen' | 'banner';
+
+export function resolveBootPresentation(input: {
+  overlay: SessionOverlay;
+  hasTranscript: boolean;
+}): SessionBootPresentation {
+  if (input.overlay !== 'boot-loader') return 'full-screen';
+  return input.hasTranscript ? 'banner' : 'full-screen';
+}
+
+/**
  * Should the local "brand new session" hint be forgotten?
  *
  * The hint used to be dropped only once the chat reported ready — which never

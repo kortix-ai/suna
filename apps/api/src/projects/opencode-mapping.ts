@@ -68,7 +68,10 @@ export async function sandboxOpencodeEndpoint(
 
 export type ListResult =
   | { ok: true; sessions: OpencodeSessionLite[] }
-  | { ok: false; reason: 'no_key' | 'not_ready' | 'unreachable' };
+  | { ok: false; reason: 'no_key' | 'not_ready' | 'unreachable'; bootPhase?: string };
+
+/** The daemon names its boot phase on every 503 — see the daemon's boot-phase.ts. */
+export const BOOT_PHASE_HEADER = 'x-kortix-boot-phase';
 
 /** List the sandbox's OpenCode sessions (server-side, via the signed proxy). */
 export async function listSandboxOpencodeSessions(
@@ -98,7 +101,10 @@ export async function listSandboxOpencodeSessions(
     );
     // 503 = daemon up but OpenCode/repo not ready yet — distinct from a hard
     // failure so callers can retry rather than treat it as "empty".
-    if (res.status === 503) return { ok: false, reason: 'not_ready' };
+    if (res.status === 503) {
+      const bootPhase = res.headers.get(BOOT_PHASE_HEADER)?.trim() || undefined;
+      return { ok: false, reason: 'not_ready', ...(bootPhase ? { bootPhase } : {}) };
+    }
     // A 401 here is NEVER transient and never the sandbox's fault: the daemon
     // rejects every non-`/kortix/*` path without a valid X-Kortix-User-Context,
     // and this call only carries one when `userId` was supplied. Folding that
@@ -132,6 +138,8 @@ export interface EnsureResult {
   changed: boolean;
   reason: EnsureReason;
   sessions?: OpencodeSessionLite[];
+  /** Daemon-reported boot phase behind a `not_ready` (opaque; compare for equality). */
+  bootPhase?: string;
 }
 
 /**
@@ -157,6 +165,7 @@ export async function ensureOpencodeSessionPin(input: {
       pin: currentPin,
       changed: false,
       reason: listed.reason === 'not_ready' ? 'not_ready' : 'unreachable',
+      ...(listed.bootPhase ? { bootPhase: listed.bootPhase } : {}),
     };
   }
 

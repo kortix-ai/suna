@@ -77,4 +77,76 @@ describe('resolveWorkingTurn', () => {
     expect(r.workingTurnId).toBe('b');
     expect(r.pendingTurnIds).toEqual([]);
   });
+  test('a prompt the SERVER still holds is never the working turn — it is queued', () => {
+    // MEASURED, local stack 2026-08-26 (session 65216cc6): two sends 700ms
+    // apart, the first not streaming yet, so the working projection decides
+    // from the INBOX and its `turnId` hint is null. Without the inbox fact the
+    // fallback made the second prompt the working turn — full opacity, no
+    // "Queued" label — while `GET .../prompts` listed it `waiting`.
+    const r = resolveWorkingTurn({
+      turns: [turn('old', 'done'), turn('p1'), turn('p2')],
+      hintMessageId: null,
+      unrunTurnIds: new Set(['p2']),
+    });
+    expect(r.workingTurnId).toBe('p1');
+    expect(r.pendingTurnIds).toEqual(['p2']);
+  });
+
+  test('EVERY pending turn held by the server: the indicator falls back, all read queued', () => {
+    const r = resolveWorkingTurn({
+      turns: [turn('old', 'done'), turn('p1'), turn('p2')],
+      hintMessageId: null,
+      unrunTurnIds: new Set(['p1', 'p2']),
+    });
+    expect(r.workingTurnId).toBe('old');
+    expect(r.pendingTurnIds).toEqual(['p1', 'p2']);
+  });
+
+  test('the inbox never overrides a turn that is visibly streaming', () => {
+    // Rule 1 outranks it: content on screen is the agent working there, even
+    // if a stale inbox read still lists the row.
+    const r = resolveWorkingTurn({
+      turns: [turn('old', 'done'), turn('p1', 'open')],
+      hintMessageId: null,
+      unrunTurnIds: new Set(['p1']),
+    });
+    expect(r.workingTurnId).toBe('p1');
+    expect(r.pendingTurnIds).toEqual([]);
+  });
+
+  test('the hint outranks the inbox — the server named the turn it opened', () => {
+    const r = resolveWorkingTurn({
+      turns: [turn('old', 'done'), turn('p1'), turn('p2')],
+      hintMessageId: 'p2',
+      unrunTurnIds: new Set(['p2']),
+    });
+    expect(r.workingTurnId).toBe('p2');
+    expect(r.pendingTurnIds).toEqual([]);
+  });
+});
+
+describe('resolveWorkingTurn — a transcript with no assistant content at all', () => {
+  const turn = (id: string) => ({
+    userMessage: { info: { id } },
+    assistantMessages: [] as ReadonlyArray<{ info: { time?: { completed?: number } } }>,
+  });
+
+  test('no turn is working when the server is holding every prompt', () => {
+    // `newestWithContent` is -1 here, so rule 4 has nothing to fall back to.
+    // It used to index `turns[-1]` and throw, which the error boundary turned
+    // into "Something went wrong" over the entire session view.
+    const turns = [turn('u1'), turn('u2'), turn('u3')];
+    const unrunTurnIds = new Set(['u1', 'u2', 'u3']);
+    expect(resolveWorkingTurn({ turns, hintMessageId: null, unrunTurnIds })).toEqual({
+      workingTurnId: null,
+      pendingTurnIds: ['u1', 'u2', 'u3'],
+    });
+  });
+
+  test('the newest unheld prompt is still the working turn', () => {
+    const turns = [turn('u1'), turn('u2')];
+    expect(
+      resolveWorkingTurn({ turns, hintMessageId: null, unrunTurnIds: new Set(['u2']) }),
+    ).toEqual({ workingTurnId: 'u1', pendingTurnIds: ['u2'] });
+  });
 });

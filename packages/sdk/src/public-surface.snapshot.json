@@ -31,9 +31,13 @@
     "SERVER_COMPACTION_REVALIDATE_MS",
     "SERVER_OBSERVATION_MAX_MS",
     "STREAM_OBSERVATION_MAX_MS",
+    "SandboxNotReadyError",
     "SessionNotReadyError",
     "SessionStartError",
     "TURN_END_LEDGER_LAG_MS",
+    "WAKE_ESCALATION_COOLDOWN_MS",
+    "WAKE_MAX_RESTARTS",
+    "WAKE_NO_PROGRESS_MS",
     "__getConfigResolver",
     "__setConfigResolver",
     "abortErrorReason",
@@ -43,6 +47,7 @@
     "activateConnection",
     "addGroupMembers",
     "addMarketplaceSource",
+    "advanceWakeEscalation",
     "allDescendantIds",
     "appendPreviewToken",
     "approveProjectAccessRequest",
@@ -104,6 +109,8 @@
     "connectEmail",
     "connectSlack",
     "connectionIsFaulted",
+    "connectorConnect",
+    "connectorFinalize",
     "convertPresentationToGoogleSlides",
     "convertRuntimePresentation",
     "copyFile",
@@ -375,6 +382,7 @@
     "getSessionPolicy",
     "getSessionPreviewCandidates",
     "getSessionTranscript",
+    "getSessionTranscriptSync",
     "getSessionTurn",
     "getShellModePart",
     "getSlackChannelFile",
@@ -411,6 +419,7 @@
     "humanizeToolName",
     "impersonationHeaders",
     "importSsoProviderFromMetadata",
+    "initialWakeEscalationState",
     "installTemplate",
     "invalidateTokenCache",
     "inviteAccountMember",
@@ -481,6 +490,7 @@
     "listChangeRequests",
     "listChannelBindings",
     "listColumns",
+    "listConnectToolkits",
     "listConnections",
     "listConnectorTools",
     "listConnectors",
@@ -548,6 +558,7 @@
     "listServiceAccountsApi",
     "listServiceTemplates",
     "listServices",
+    "listSessionConnectRequests",
     "listSessionCosts",
     "listSessionPrompts",
     "listSessionPublicShares",
@@ -799,6 +810,9 @@
     "validateReferralCode",
     "validateToken",
     "verifyGatewayProvider",
+    "wakeEscalationAttemptSummary",
+    "wakeEscalationNote",
+    "wakeProgressFingerprint",
     "workingExpiryAtMs",
     "writeFile"
   ],
@@ -974,8 +988,10 @@
     "resolvePromptModel",
     "restoreProjectName",
     "runPtyCommand",
+    "runtimeErrorFromHealth",
     "runtimeKeys",
     "safeParseJsonArray",
+    "sanitizeModelStore",
     "scopedModelSelectionKey",
     "seedGlobalDefaultFromServer",
     "sendAndRecover",
@@ -1157,6 +1173,7 @@
     "useProjectAgents",
     "useProjectApps",
     "useProjectConfig",
+    "useProjectModelPickerCatalog",
     "useProjectModels",
     "useProjectName",
     "useProjectSecrets",
@@ -1218,6 +1235,7 @@
     "useShareSession",
     "useSignupsByDate",
     "useStartKortixTask",
+    "useStaticFilePreview",
     "useStopImpersonation",
     "useSummarizeOpenCodeSession",
     "useSummarizeRuntimeSession",
@@ -1264,14 +1282,25 @@
     "useViewsByDate",
     "useVisibleAgents",
     "useVisitorStats",
+    "useWakeEscalation",
     "wireToModelKey",
     "workingPollMs",
     "writeLastSeen",
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
-  "./server": ["createScopedKortix", "forwardKortixRequest", "getScopedConfig", "runWithKortix"],
-  "./internal/sync-store": ["Binary", "ascendingId", "sameSessionStatus", "useSyncStore"],
+  "./server": [
+    "createScopedKortix",
+    "forwardKortixRequest",
+    "getScopedConfig",
+    "runWithKortix"
+  ],
+  "./internal/sync-store": [
+    "Binary",
+    "ascendingId",
+    "sameSessionStatus",
+    "useSyncStore"
+  ],
   "./internal/server-store": [
     "deriveSubdomainOpts",
     "getActiveDbSandboxId",
@@ -1294,7 +1323,9 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./internal/opencode-pending-store": ["useOpenCodePendingStore"],
+  "./internal/opencode-pending-store": [
+    "useOpenCodePendingStore"
+  ],
   "./internal/idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",
@@ -1452,6 +1483,8 @@
     "confirmCheckoutSession",
     "connectEmail",
     "connectSlack",
+    "connectorConnect",
+    "connectorFinalize",
     "convertPresentationToGoogleSlides",
     "costExportUrl",
     "createAccount",
@@ -1607,6 +1640,7 @@
     "getSessionPolicy",
     "getSessionPreviewCandidates",
     "getSessionTranscript",
+    "getSessionTranscriptSync",
     "getSessionTurn",
     "getSlackChannelFile",
     "getSlackInstallation",
@@ -1649,6 +1683,7 @@
     "listBillingTransactions",
     "listChangeRequests",
     "listChannelBindings",
+    "listConnectToolkits",
     "listConnections",
     "listConnectorTools",
     "listConnectors",
@@ -1699,6 +1734,7 @@
     "listSandboxShares",
     "listScimTokens",
     "listServiceAccountsApi",
+    "listSessionConnectRequests",
     "listSessionCosts",
     "listSessionPrompts",
     "listSessionPublicShares",
@@ -1846,8 +1882,15 @@
     "validateToken",
     "verifyGatewayProvider"
   ],
-  "./feature-flags": ["featureFlags", "parseFlagOverride"],
-  "./fresh-sessions": ["clearSessionFresh", "isSessionFresh", "markSessionFresh"],
+  "./feature-flags": [
+    "featureFlags",
+    "parseFlagOverride"
+  ],
+  "./fresh-sessions": [
+    "clearSessionFresh",
+    "isSessionFresh",
+    "markSessionFresh"
+  ],
   "./instance-routes": [
     "ACTIVE_INSTANCE_COOKIE",
     "INSTANCE_SCOPED_ROUTES",
@@ -1864,6 +1907,7 @@
     "toInstanceAwarePath"
   ],
   "./opencode-errors": [
+    "SandboxNotReadyError",
     "formatOpenCodeRuntimeError",
     "getOpenCodeConfigInvalidError",
     "isOpenCodeConfigInvalidError",
@@ -1945,7 +1989,11 @@
     "submitSecretSetupLink",
     "triggerSandboxUpdate"
   ],
-  "./event-stream": ["heartbeatGapEvent", "narrowChatEvent", "openEventStream"],
+  "./event-stream": [
+    "heartbeatGapEvent",
+    "narrowChatEvent",
+    "openEventStream"
+  ],
   "./files": [
     "SANDBOX_FS_ROOTS",
     "copyFile",
@@ -1981,6 +2029,10 @@
     "SERVER_OBSERVATION_MAX_MS",
     "STREAM_OBSERVATION_MAX_MS",
     "TURN_END_LEDGER_LAG_MS",
+    "WAKE_ESCALATION_COOLDOWN_MS",
+    "WAKE_MAX_RESTARTS",
+    "WAKE_NO_PROGRESS_MS",
+    "advanceWakeEscalation",
     "appendPreviewToken",
     "authorizePreviewUrl",
     "buildPresentationTemplateImageUrl",
@@ -2004,6 +2056,7 @@
     "getStaticFileHealthPath",
     "hasLocalhostUrls",
     "hasPreviewTarget",
+    "initialWakeEscalationState",
     "isAppRouteUrl",
     "isExternalUrl",
     "isInternalLocalhostUrl",
@@ -2027,6 +2080,9 @@
     "serverCompactionRevalidateAtMs",
     "stripTrailingSlashes",
     "toInternalUrl",
+    "wakeEscalationAttemptSummary",
+    "wakeEscalationNote",
+    "wakeProgressFingerprint",
     "workingExpiryAtMs"
   ],
   "./session/url": [
@@ -2134,7 +2190,12 @@
     "turnHasSteps",
     "unwrapError"
   ],
-  "./sync-store": ["Binary", "ascendingId", "sameSessionStatus", "useSyncStore"],
+  "./sync-store": [
+    "Binary",
+    "ascendingId",
+    "sameSessionStatus",
+    "useSyncStore"
+  ],
   "./server-store": [
     "deriveSubdomainOpts",
     "getActiveDbSandboxId",
@@ -2157,7 +2218,9 @@
     "setSandboxStatus",
     "useSandboxConnectionStore"
   ],
-  "./opencode-pending-store": ["useOpenCodePendingStore"],
+  "./opencode-pending-store": [
+    "useOpenCodePendingStore"
+  ],
   "./idb-sync-cache": [
     "clearSessionIDBCache",
     "deleteSessionFromIDB",

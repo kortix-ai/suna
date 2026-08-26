@@ -214,6 +214,14 @@ describe('web ECS migration', () => {
     );
   });
 
+  it('refuses to publish a release through a tag that points at another commit', () => {
+    const workflow = read('.github/workflows/deploy-prod.yml');
+    expect(workflow).toContain('refs/tags/v$V^{commit}');
+    expect(workflow).toContain('[ "$EXISTING" != "$GITHUB_SHA" ]');
+    expect(workflow).toContain('Refusing to reuse or move an immutable release tag.');
+    expect(workflow).toContain('target_commitish: ${{ github.sha }}');
+  });
+
   it('carries both Basic auth credentials and the Vercel SSO bypass in QA', () => {
     const config = read('tests/playwright.config.ts');
     expect(config).toContain('WEB_PROTECTION_PASSWORD');

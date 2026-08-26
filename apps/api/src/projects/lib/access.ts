@@ -211,6 +211,20 @@ export async function viewerManagerStanding(
   return probeManageCapability();
 }
 
+/**
+ * A soft-deleted session is gone for every runtime verb, exactly as it is for
+ * the read-by-id and the default list. `deleteSession` only stamps
+ * `metadata.deletedAt` (the row itself survives for `scope=project` tombstone
+ * inventory), so any route that loads a session by id and then acts on it must
+ * ask this first — `/start` and `/restart` used to skip it, answer
+ * `stage: "stopped"` / 202 on a deleted session, and leave the UI looping on a
+ * Restart button that could never work (essentia session b04a9911, 2026-08-24).
+ */
+export function sessionIsTombstoned(row: { metadata: unknown }): boolean {
+  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+  return typeof metadata.deletedAt === 'string';
+}
+
 export async function loadVisibleSession(
   loaded: {
     row: ProjectRow;

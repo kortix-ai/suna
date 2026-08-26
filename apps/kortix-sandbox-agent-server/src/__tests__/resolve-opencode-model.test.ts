@@ -91,6 +91,29 @@ describe('resolveOpencodeModel', () => {
     })
   })
 
+  // A pin stored while the gateway was ON can survive a live toggle to native
+  // mode. Nested refs unwrap; a bare managed id has no native provider and is
+  // dropped so OpenCode's own default applies — never a prompt against the
+  // nonexistent `kortix` provider.
+  test('native mode unwraps a stale kortix/<provider>/<model> pin', () => {
+    delete process.env.KORTIX_LLM_BASE_URL
+    delete process.env.KORTIX_LLM_PROXY_URL
+    process.env.KORTIX_OPENCODE_MODEL = 'kortix/anthropic/claude-sonnet-4-6'
+
+    expect(resolveOpencodeModel()).toEqual({
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet-4-6',
+    })
+  })
+
+  test('native mode drops a stale bare kortix/<managed-id> pin', () => {
+    delete process.env.KORTIX_LLM_BASE_URL
+    delete process.env.KORTIX_LLM_PROXY_URL
+    process.env.KORTIX_OPENCODE_MODEL = 'kortix/glm-5.2'
+
+    expect(resolveOpencodeModel()).toBeUndefined()
+  })
+
   // Regression guard for the agent-first compiler (compile-agent-config.ts):
   // the compiled agent map can now bake a default `model` onto an agent (or
   // the top-level config), but that's ONLY a fallback for when no explicit

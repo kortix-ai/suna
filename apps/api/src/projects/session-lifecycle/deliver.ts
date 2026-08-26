@@ -68,7 +68,11 @@ export async function deliverWithRetry(input: {
     await sleepFn(intervalMs);
     const healed = await input.reopen();
     if (!healed) return 'no-session';
-    if (healed.stage === 'failed' || healed.stage === 'stopped') return 'failed';
+    // NOT a delivery failure — the RUNTIME is down. `stopped` is a hibernated
+    // box, `failed` is a parked one; both come back, and this prompt has to
+    // still be here when they do. Returning `failed` here dead-lettered the
+    // user's message on its first attempt.
+    if (healed.stage === 'failed' || healed.stage === 'stopped') return 'unreachable';
     current = healed;
   }
 }

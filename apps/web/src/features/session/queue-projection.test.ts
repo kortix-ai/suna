@@ -86,6 +86,29 @@ describe('projectQueueRows', () => {
     expect(projection.queued).toEqual([]);
   });
 
+  test('a row whose CLIENT id is in the transcript leaves the strip — the id that survives re-mint AND reload', () => {
+    // `client_message_id` is the ONE id the host never re-mints and the reload
+    // preserves: `message_id` and `wire_message_id` are both OpenCode wire ids
+    // that the drain can re-mint out from under a stuck row, and across a hard
+    // refresh the store's in-memory `message_id`->bubble alias is gone. When a
+    // divergence leaves the transcript showing the answer under an id the row
+    // no longer reports, the client id is the stable anchor that still hides
+    // the row so the badge does not survive the refresh.
+    const projection = projectQueueRows({
+      prompts: [
+        prompt({
+          prompt_id: 'diverged',
+          client_message_id: 'q_stable',
+          message_id: 'msg_reminted_again',
+          wire_message_id: 'msg_first_remint',
+          state: 'delivering',
+        }),
+      ],
+      transcriptMessageIds: new Set(['q_stable']),
+    });
+    expect(projection.queued).toEqual([]);
+  });
+
   test('a HELD row in the transcript is NOT a queue row — the bubble carries its controls, but the hold is still reported', () => {
     // A stop-paused prompt IS in the transcript, unanswered and parked. Its
     // remove and "send now" live in the bubble's own meta row now

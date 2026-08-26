@@ -35,6 +35,66 @@ export { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
  */
 const OPENCODE_SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/
 
+/**
+ * How many of a root's NEWEST messages a turn probe reads.
+ *
+ * Every probe here used to list the whole root. A root that has run for hours
+ * is not a small list: on 2026-08-25 one Essentia session's list was 276.7 MB
+ * (base64 image parts inline in every assistant message), and parsing it did
+ * not fit the probe's budget. The daemon then answered `turn_in_flight: null`
+ * — "could not tell" — on every reaper visit for 2.5 hours after the turn had
+ * actually finished, the reaper drip-extended the box on that non-answer, and
+ * the session showed "working" until a human settled the ledger by hand.
+ *
+ * OpenCode's `GET /session/:id/message?limit=N` returns the newest N in
+ * chronological order (same tail as the full list; verified on 1.18.23). A
+ * probe only ever asks about the newest user prompt and the assistant
+ * messages after it, so a window is the whole question. Twelve leaves room
+ * for the step messages a busy agent turn writes after one prompt; a prompt
+ * older than the window is proved by fetching that one message by id.
+ */
+export const TURN_PROBE_WINDOW = 12
+/** Twenty newest messages can still be ~26 MB on an image-heavy root. */
+export const TURN_PROBE_TIMEOUT_MS = 20_000
+
+function recentMessagesUrl(baseUrl: string, workspace: string, sessionId: string): string {
+  return (
+    `${baseUrl}/session/${encodeURIComponent(sessionId)}/message` +
+    `?directory=${encodeURIComponent(workspace)}&limit=${TURN_PROBE_WINDOW}`
+  )
+}
+
+/**
+ * Does this message exist on the root? `null` when OpenCode could not be read.
+ *
+ * `GET /session/:id/message/:messageId` is ~400 bytes and answers 404
+ * `NotFoundError` for an unknown id (verified on 1.18.23); it is how a prompt
+ * older than the probe window is told apart from one that never arrived.
+ */
+async function opencodeMessageExists(
+  baseUrl: string,
+  workspace: string,
+  sessionId: string,
+  messageId: string,
+): Promise<boolean | null> {
+  try {
+    const res = await fetch(
+      `${baseUrl}/session/${encodeURIComponent(sessionId)}/message/${encodeURIComponent(messageId)}` +
+        `?directory=${encodeURIComponent(workspace)}`,
+      { signal: AbortSignal.timeout(5_000) },
+    )
+    if (res.status === 404) return false
+    if (!res.ok) return null
+    // Strict on purpose: OpenCode's SPA catch-all answers 200 text/html for a
+    // route it does not have, and a 200 that is not THIS message must not be
+    // read as "the prompt is on record".
+    const body = (await res.json().catch(() => null)) as { info?: { id?: unknown } } | null
+    return body?.info?.id === messageId ? true : null
+  } catch {
+    return null
+  }
+}
+
 export function readPinnedSessionId(): string | null {
   try {
     const id = readFileSync(OPENCODE_SESSION_PIN_PATH, 'utf8').trim()
@@ -90,10 +150,14 @@ export async function inspectOpencodeRoot(
     known: false,
   }
   try {
-    const res = await fetch(
-      `${baseUrl}/session/${encodeURIComponent(sessionId)}/message?directory=${encodeURIComponent(workspace)}`,
-      { signal: AbortSignal.timeout(5_000) },
-    )
+    // Newest TURN_PROBE_WINDOW messages only; see the constant for why the
+    // whole root is never listed here. Everything this inspection derives —
+    // the newest assistant message, the newest prompt, whether that prompt
+    // has an answer — lives at the tail. A window with assistant messages and
+    // no user message means the prompt is older than the window and answered.
+    const res = await fetch(recentMessagesUrl(baseUrl, workspace, sessionId), {
+      signal: AbortSignal.timeout(TURN_PROBE_TIMEOUT_MS),
+    })
     if (!res.ok) return unknown
     const msgs = (await res.json()) as Array<{
       info?: {
@@ -287,10 +351,9 @@ export async function observeOpencodeDelivery(
 ): Promise<OpencodeDeliveryObservation> {
   const unreadable: OpencodeDeliveryObservation = { inFlight: null, end: null }
   try {
-    const response = await fetch(
-      `${baseUrl}/session/${encodeURIComponent(rootSessionId)}/message?directory=${encodeURIComponent(workspace)}`,
-      { signal: AbortSignal.timeout(5_000) },
-    )
+    const response = await fetch(recentMessagesUrl(baseUrl, workspace, rootSessionId), {
+      signal: AbortSignal.timeout(TURN_PROBE_TIMEOUT_MS),
+    })
     if (!response.ok) return unreadable
     const messages = (await response.json()) as Array<{
       info?: {
@@ -308,9 +371,18 @@ export async function observeOpencodeDelivery(
     // The prompt is not in this root at all — it never landed, or opencode lost
     // it across a restart. The reaper asks only after the full delivery grace,
     // so this is a delivery that failed, not one still on the wire.
-    if (userIndex < 0) return { inFlight: false, end: 'abandoned' }
-
-    const after = messages.slice(userIndex + 1)
+    // Not in the window: either the prompt is older than the window (a busy
+    // turn wrote TURN_PROBE_WINDOW+ step messages after it — every message in
+    // the window is then "after" it) or it never reached this root. One cheap
+    // read by id tells them apart; only a proven absence is `abandoned`.
+    let after = messages
+    if (userIndex >= 0) {
+      after = messages.slice(userIndex + 1)
+    } else {
+      const exists = await opencodeMessageExists(baseUrl, workspace, rootSessionId, messageId)
+      if (exists === null) return unreadable
+      if (!exists) return { inFlight: false, end: 'abandoned' }
+    }
     const assistants = after.filter(
       (message) => message.info?.role === 'assistant' && message.info.parentID === messageId,
     )

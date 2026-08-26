@@ -56,8 +56,11 @@ export interface LlmProviderModel {
    * release_date when known (YYYY-MM-DD). Used to drive newest-first ordering.
    * The catalog generator already pre-sorts each provider's models by this
    * field; the field is exposed so the UI can render a "released X ago" hint.
+   * Optional to stay assignable from `@kortix/llm-catalog`'s `CatalogModel`
+   * (the live /llm-catalog/providers wire shape) — absent means unknown,
+   * exactly like null.
    */
-  released: string | null;
+  released?: string | null;
   /**
    * Capability + limit flags mirrored verbatim from models.dev — present on
    * both the baked seed (`catalog.generated.json`) and the live

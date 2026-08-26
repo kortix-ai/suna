@@ -21,7 +21,7 @@ const MermaidRenderer = lazy(() =>
 export interface MarkdownCodeProps {
   children?: React.ReactNode;
   className?: string;
-  /** Hides the copy button while tokens are still arriving. */
+  /** Pins the block's scroll to the newest lines while tokens are still arriving. */
   isStreaming?: boolean;
 }
 

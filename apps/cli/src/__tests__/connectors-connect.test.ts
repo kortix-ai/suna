@@ -37,12 +37,26 @@ beforeEach(() => {
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
     requests.push({ url: String(input), method: init?.method ?? 'GET', body });
     return new Response(
-      JSON.stringify({
-        url: 'https://app.test/connect/ksl_1',
-        slug: 'github',
-        app: 'github',
-        expires_at: '2026-08-05T23:00:00.000Z',
-      }),
+      JSON.stringify(
+        String(input).endsWith('/connect/finalize')
+          ? {
+              provider: 'composio',
+              connected: true,
+              accountId: 'ca_1',
+              connectionId: '11111111-1111-4111-8111-111111111111',
+              isNoAuth: false,
+            }
+          : {
+              provider: 'composio',
+              app: 'github',
+              connectUrl: 'https://connect.composio.test/auth_1',
+              connected: false,
+              isNoAuth: false,
+              sessionId: 'trs_1',
+              connectionId: '11111111-1111-4111-8111-111111111111',
+              requestId: 'auth_1',
+            },
+      ),
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
   }) as typeof fetch;
@@ -59,28 +73,62 @@ afterEach(() => {
 });
 
 describe('kortix connectors connect', () => {
-  test('always mints one auto-finalizing connection URL', async () => {
+  test('starts provider-neutral Composio authorization', async () => {
     const code = await runConnectors(['connect', 'github', '--json']);
 
     expect(code).toBe(0);
     expect(requests).toEqual([
       {
-        url: 'https://api.test/v1/projects/project-1/connect-requests',
+        url: 'https://api.test/v1/connectors/projects/project-1/connectors/github/connect',
         method: 'POST',
-        body: { slug: 'github' },
+        body: {},
       },
     ]);
     expect(JSON.parse(stdout)).toMatchObject({
-      url: 'https://app.test/connect/ksl_1',
+      url: 'https://connect.composio.test/auth_1',
       slug: 'github',
+      provider: 'composio',
+      connected: false,
+      connection_id: '11111111-1111-4111-8111-111111111111',
+      request_id: 'auth_1',
     });
   });
 
-  test('--expires configures the same connection request', async () => {
+  test('--expires remains accepted but cannot change the provider authorization request', async () => {
     const code = await runConnectors(['connect', 'github', '--expires', '45', '--json']);
 
     expect(code).toBe(0);
-    expect(requests[0]?.body).toEqual({ slug: 'github', expires_in_minutes: 45 });
+    expect(requests[0]?.body).toEqual({});
+  });
+
+  test('finalizes the exact provider authorization identity', async () => {
+    const code = await runConnectors([
+      'connect-finalize',
+      'github',
+      '--connection-id',
+      '11111111-1111-4111-8111-111111111111',
+      '--request-id',
+      'auth_1',
+      '--json',
+    ]);
+
+    expect(code).toBe(0);
+    expect(requests).toEqual([
+      {
+        url: 'https://api.test/v1/connectors/projects/project-1/connectors/github/connect/finalize',
+        method: 'POST',
+        body: {
+          connection_id: '11111111-1111-4111-8111-111111111111',
+          request_id: 'auth_1',
+        },
+      },
+    ]);
+    expect(JSON.parse(stdout)).toMatchObject({
+      provider: 'composio',
+      slug: 'github',
+      connected: true,
+      account_id: 'ca_1',
+    });
   });
 });
 
@@ -116,7 +164,11 @@ describe('kortix connectors show', () => {
 describe('kortix connectors connections', () => {
   test('lists canonical connections as JSON', async () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      requests.push({ url: String(input), method: init?.method ?? 'GET', body: undefined });
+      requests.push({
+        url: String(input),
+        method: init?.method ?? 'GET',
+        body: undefined,
+      });
       return new Response(
         JSON.stringify({
           connections: [
@@ -183,7 +235,11 @@ describe('kortix connectors connections', () => {
 
   test('lists the manage-gated roster through --all', async () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      requests.push({ url: String(input), method: init?.method ?? 'GET', body: undefined });
+      requests.push({
+        url: String(input),
+        method: init?.method ?? 'GET',
+        body: undefined,
+      });
       return Response.json({ connections: [] });
     }) as typeof fetch;
 
@@ -235,7 +291,9 @@ describe('kortix connectors connections', () => {
 
   test('updates credentials and every connection state action by id', async () => {
     const connectionId = '11111111-1111-4111-8111-111111111111';
-    expect(await runConnectors(['connections', 'credential', connectionId, 'secret-value'])).toBe(0);
+    expect(await runConnectors(['connections', 'credential', connectionId, 'secret-value'])).toBe(
+      0,
+    );
     expect(await runConnectors(['connections', 'revoke', connectionId])).toBe(0);
     expect(await runConnectors(['connections', 'activate', connectionId])).toBe(0);
     expect(await runConnectors(['connections', 'default', connectionId])).toBe(0);
@@ -268,7 +326,11 @@ describe('kortix connectors connections', () => {
     const connectionId = '11111111-1111-4111-8111-111111111111';
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
-      requests.push({ url: String(input), method: init?.method ?? 'GET', body });
+      requests.push({
+        url: String(input),
+        method: init?.method ?? 'GET',
+        body,
+      });
       const payload = String(input).endsWith('/connect/finalize')
         ? { connected: true, accountId: 'apn_1' }
         : { connectUrl: 'https://pipedream.test/connect', app: 'github' };

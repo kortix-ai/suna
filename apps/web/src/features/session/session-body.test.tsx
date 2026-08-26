@@ -176,3 +176,26 @@ describe('the first prompt is drawn by one component on both sides of the fade',
     expect(shellSource).toContain('<OptimisticTurn');
   });
 });
+
+describe('a readable transcript is never covered by the boot overlay', () => {
+  test('the presentation decision is made, and the banner is what replaces the wall', () => {
+    // THE COMPLAINT: opening a stopped/hibernated session showed a full-screen
+    // "Connecting…" for the whole wake (5-240 s) with no transcript, although
+    // every message existed. The server-side transcript mirror puts the thread
+    // on screen from the first frame, so the overlay must step aside.
+    expect(pageSource).toContain('resolveBootPresentation({ overlay, hasTranscript })');
+    expect(pageSource).toContain('<SessionConnectingBanner');
+  });
+
+  test('the overlay is dismissed by the banner flip through the SAME crossfade', () => {
+    // Not a hard unmount: the chat is already painted underneath, and swapping
+    // an opaque panel for the thread in one frame is the flash this route
+    // spent three fixes removing.
+    expect(pageSource).toContain(
+      "const overlayDismissed = chatReady || bootPresentation === 'banner';",
+    );
+    expect(pageSource).toContain(
+      "overlayDismissed ? 'pointer-events-none opacity-0' : 'opacity-100',",
+    );
+  });
+});

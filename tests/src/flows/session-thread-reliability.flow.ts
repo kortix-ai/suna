@@ -95,14 +95,17 @@ async function waitForSessionReady(
 
 async function bootSandbox(
   ctx: FlowContext,
-  opts?: { prompt?: string; readinessTimeoutMs?: number },
+  opts?: { prompt?: string; readinessTimeoutMs?: number; opencodeModel?: string },
 ): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
   // Inside a step so a boot failure records its `POST /start` polls — request
   // capture is AsyncLocalStorage-scoped to `ctx.step`. See the twin helper in
   // run-session-backlog.flow.ts for the run that proved this matters.
   return ctx.step('a fresh session boots to a ready runtime', async () => {
     const project = await ctx.fixtures.sharedSeededProject();
-    const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
+    const session = await ctx.fixtures.session(project, {
+      prompt: opts?.prompt ?? 'say hello',
+      opencodeModel: opts?.opencodeModel,
+    });
     const started = await waitForSessionReady(
       ctx,
       project.id,
@@ -465,17 +468,9 @@ flow(
   {
     domain: 'sessions',
     requires: ['funded', 'daytona'],
-    // Failed 5 consecutive release-gate runs with three DISTINCT root causes,
-    // each fixed in turn (budget sum > timeout; edge maintenance body
-    // unparseable by @ai-sdk/gateway, #6639; laundered-503 client behavior,
-    // #6628) — and run 32340323809 still failed on a TRUE origin 502 during
-    // stop→wake. That matches the documented pre-existing defect: turn husks
-    // survive stop→wake unfinalized (2/2 staging transcripts, see #6638's
-    // investigation), independent of this release candidate. Quarantined
-    // until the wake-path finalizer lands; un-quarantine in the PR that fixes
-    // it. Follow-ups tracked in the release-gate memory/report.
-    quarantine:
-      'stop→wake returns a true origin 502 mid-turn; turn husks survive wake unfinalized — pre-existing wake-path defect, tracked follow-up',
+    // This used to be quarantined after repeated true-origin failures during
+    // stop→wake. Keep it in the normal release gate now: the stop-time abort
+    // and boot-time orphan finalizer must prove the contract on every run.
     // 420_000 was smaller than the sum of the bounds this flow itself contains:
     // boot readiness 300_000 + OpenCode readiness 120_000 + stop-settle 60_000
     // + wake readiness (below) + assistant marker 240_000. The two readiness
@@ -490,7 +485,9 @@ flow(
     ],
   },
   async (ctx) => {
-    const { projectId, sessionId, sandboxId } = await bootSandbox(ctx);
+    const { projectId, sessionId, sandboxId } = await bootSandbox(ctx, {
+      opencodeModel: 'gpt-5.6-luna',
+    });
     const ocSessionId = await createOcConversation(ctx, sandboxId);
 
     const originalMarker = `SESS23_ORIGINAL_${Date.now()}`;
@@ -498,6 +495,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
+          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
           parts: [
             {
               type: 'text',
@@ -603,6 +601,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
+          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
           parts: [
             {
               type: 'text',

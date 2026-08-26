@@ -80,4 +80,20 @@ export async function reconcileProjectTriggerRuntime(
   return reconcileProjectTriggerRuntimeWithStore(projectId, specs, store);
 }
 
+/**
+ * Ensure every trigger visible in one manifest read has runtime state without
+ * deleting rows absent from that read. GET requests use this non-destructive
+ * form because another API task can briefly observe an older git checkout
+ * immediately after a manifest write. Treating that stale snapshot as
+ * authoritative used to delete the new trigger's runtime row and cascade its
+ * session-access grants back to the private default.
+ */
+export async function ensureProjectTriggerRuntime(
+  projectId: string,
+  specs: readonly GitTriggerSpec[],
+  store: TriggerRuntimeCatalogStore = databaseStore,
+): Promise<{ upserted: number; removed: number }> {
+  return reconcileProjectTriggerRuntimeWithStore(projectId, specs, store, { pruneStale: false });
+}
+
 export type { TriggerRuntimeCatalogStore } from './trigger-runtime-catalog-core';

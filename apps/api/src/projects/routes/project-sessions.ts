@@ -21,7 +21,7 @@ import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
-import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, resolveSessionOwnerIdentities, viewerManagerStanding } from '../lib/access';
+import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, resolveSessionOwnerIdentities, viewerManagerStanding, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
   UUID_V4_REGEX,
@@ -380,8 +380,7 @@ projectsApp.openapi(
   // the same predicate the list uses (session-inventory.ts: a STRING deletedAt
   // hides the row). `scope=project` on the LIST deliberately keeps tombstones
   // for managers; that path is untouched.
-  const deletedAt = (visible.row.metadata ?? {}) as Record<string, unknown>;
-  if (typeof deletedAt.deletedAt === 'string') return c.json({ error: 'Not found' }, 404);
+  if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
   const ownerEmail = visible.row.createdBy && !visible.isOwner
     ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
     : null;

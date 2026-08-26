@@ -47,7 +47,15 @@ import {
 export interface ConnectorDraft {
   slug: string;
   name?: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel';
+  provider:
+    | 'composio'
+    | 'pipedream'
+    | 'mcp'
+    | 'openapi'
+    | 'postman'
+    | 'graphql'
+    | 'http'
+    | 'channel';
   /** Refuse to update an existing slug. */
   create_only?: boolean;
   platform?: 'slack' | 'email';
@@ -100,7 +108,7 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
     entry.authorization_strategy = d.authorization_strategy;
   }
   // `shared` is the only mode and the implicit default — never emit `credential`.
-  if (d.provider === 'pipedream') {
+  if (d.provider === 'pipedream' || d.provider === 'composio') {
     if (d.app) entry.app = d.app;
     if (d.account) entry.account = d.account;
   } else if (d.provider === 'mcp') {

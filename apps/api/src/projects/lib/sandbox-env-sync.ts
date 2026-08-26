@@ -4,7 +4,7 @@ import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import type { ProviderName } from '../../platform/providers';
 import {
@@ -701,7 +701,7 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   lap('arm');
-  const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
+  const llmGatewayEnabled = await projectLlmGatewayEnabledById(args.projectId);
   lap('gateway-flag');
   const llmGatewayBaseUrl = llmGatewayEnabled
     ? llmGatewayBaseUrlForProvider(args.providerName)
@@ -1012,15 +1012,6 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
   }
 }
 
-async function resolveProjectLlmGatewayEnabled(projectId: string): Promise<boolean> {
-  const [project] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
-  return projectLlmGatewayEnabled(project?.metadata);
-}
-
 async function markSandboxLlmGatewayMode(
   sessionId: string,
   enabled: boolean,
@@ -1315,7 +1306,7 @@ export async function pushSessionScopeToSandbox(input: {
     const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
     if (!snapshot) return { applied: false, reason: 'no env snapshot' };
 
-    const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(input.projectId);
+    const llmGatewayEnabled = await projectLlmGatewayEnabledById(input.projectId);
     const { url, headers } = await resolveSandboxIngress(row.externalId, {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',

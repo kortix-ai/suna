@@ -37,7 +37,10 @@ interface CatalogEntryFields {
  */
 export type CatalogEntry =
   | (CatalogEntryFields & { source: 'discover'; connector: DiscoverConnector })
-  | (CatalogEntryFields & { source: 'easy-connect'; app: PipedreamApp })
+  | (CatalogEntryFields & {
+      source: 'easy-connect';
+      app: PipedreamApp & { provider?: 'composio' | 'pipedream' };
+    })
   | (CatalogEntryFields & { source: 'computer' });
 
 /** Native platform provider. The tunnel fleet is its account directory. */
@@ -69,7 +72,9 @@ export function catalogEntryFromDiscover(connector: DiscoverConnector): CatalogE
   };
 }
 
-export function catalogEntryFromEasyConnect(app: PipedreamApp): CatalogEntry {
+export function catalogEntryFromEasyConnect(
+  app: PipedreamApp & { provider?: 'composio' | 'pipedream' },
+): CatalogEntry {
   return {
     source: 'easy-connect',
     app,
@@ -166,7 +171,13 @@ export { POPULAR_SECTION };
  */
 export function catalogSections(
   entries: readonly CatalogEntry[],
-  opts: { popularCap: number },
+  opts: {
+    popularCap: number;
+    /** Key sections by the catalogue's own category slug rather than the curated
+     *  bucket. Set for any source whose sections are opened by asking the server
+     *  for that key — see `sectionKeysForEntry`. */
+    rawCategoryKeys?: boolean;
+  },
 ): Array<{ category: string; items: CatalogEntry[] }> {
   const ranked = entries
     .filter((entry) => entry.popularity !== null)
@@ -180,7 +191,9 @@ export function catalogSections(
   //
   // Popular is deliberately left alone. It is already ordered, by `popularity`,
   // and re-sorting it by picks would replace a real ranking with a guess.
-  const sections = groupIntoSections(entries, (entry) => entry.categories).map((section) => ({
+  const sections = groupIntoSections(entries, (entry) => entry.categories, {
+    raw: opts.rawCategoryKeys,
+  }).map((section) => ({
     category: section.category,
     items: sortByPicks(section.category, section.items),
   }));

@@ -28,6 +28,7 @@ import {
   releaseMessageRehydrate,
   reserveMessageRehydrate,
   resolveClientEvictionUrl,
+  shouldSkipStatusFill,
 } from './helpers';
 import { sessionsNeedingRehydrate } from './rehydrate-targets';
 import { createStreamRevival } from './stream-revival';
@@ -246,12 +247,34 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
             // value; the correction for a session that went idle unseen is
             // `reconcileMissingBusySessions` below, which reads ABSENCE from the
             // complete list rather than a per-session reading.
-            if (useSyncStore.getState().sessionStatus[sessionID]) continue;
+            //
+            // Only a FRESH wire frame owns the slot (`shouldSkipStatusFill`).
+            // A `'local'` value is the tab's own fabrication (the missing-busy
+            // sweep, a synthetic abort) and never blocks — letting it block
+            // made a fabrication self-sustaining. A STALE wire frame no longer
+            // blocks either: this fill runs on reconnect, a reconnect happens
+            // because a stream died, and a dead stream's last frame — a wire
+            // idle vetoing the open `/turn` row while a long tool call moves
+            // no transcript — is exactly what this read exists to correct
+            // (prod, 2026-08-26).
+            const slotState = useSyncStore.getState();
+            if (
+              shouldSkipStatusFill({
+                hasSlot: !!slotState.sessionStatus[sessionID],
+                origin: slotState.sessionStatusOrigin[sessionID],
+                stampedAtMs: slotState.sessionStatusAt[sessionID],
+                nowMs: Date.now(),
+              })
+            )
+              continue;
             // Locally-synthesized event (this is a REST poll, not an SSE
             // frame) — omits the `id` field every real `Event` union member
-            // carries, hence the assertion.
+            // carries, hence the assertion. `synthetic: true` marks its write
+            // `'local'`: a snapshot is a reading ABOUT the runtime taken at
+            // issue time, not the runtime speaking on the wire.
             applySyncEvent({
               type: 'session.status',
+              synthetic: true,
               properties: { sessionID, status },
             } as unknown as OpenCodeSdkEvent);
           }

@@ -104,8 +104,8 @@ describe('readiness means the session API answers', () => {
       SRC.indexOf('function scheduleReadinessProbe()'),
       SRC.indexOf('\n  return {', SRC.indexOf('function scheduleReadinessProbe()')),
     );
-    expect(probe).toContain('const probedPort = activePort');
-    expect(probe).toContain('if (probedPort !== activePort)');
+    expect(probe).toContain('const probedPort = livePort()');
+    expect(probe).toContain('if (probedPort !== livePort())');
   });
 });
 
@@ -126,7 +126,7 @@ describe('the port pair', () => {
 
   test('chooses the idle half relative to the current active port', () => {
     const body = candidateBody();
-    expect(body).toContain('activePort === currentCfg.opencodeInternalPort');
+    expect(body).toContain('livePort() === currentCfg.opencodeInternalPort');
     expect(body).toContain('currentCfg.opencodeStandbyPort');
   });
 });

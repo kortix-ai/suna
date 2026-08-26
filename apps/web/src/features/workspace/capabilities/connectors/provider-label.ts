@@ -15,9 +15,26 @@ import type { AdminConnector } from '@kortix/sdk';
  * deliberate: when `connectors-view.tsx` is retired, this module does not move.
  */
 export function providerLabel(p: AdminConnector['provider']): string {
-  if (p === 'pipedream') return 'App';
+  if (isManagedConnectorProvider(p)) return 'App';
   if (p === 'channel') return 'Channel';
   if (p === 'computer') return 'Computer Tunnel';
   if (p === 'postman') return 'Postman';
   return p.toUpperCase();
+}
+
+/** Providers whose accounts are authorized through the normalized Connect Link gateway. */
+export function isManagedConnectorProvider(p: AdminConnector['provider']): boolean {
+  return p === 'composio' || p === 'pipedream';
+}
+
+/** Whether a Composio connection has completed provider authorization. */
+export function composioConnectionIsAuthorized(
+  metadata: Record<string, unknown> | null | undefined,
+): boolean {
+  if (metadata?.provider !== 'composio') return false;
+  const sessionId = metadata.session_id;
+  if (typeof sessionId !== 'string' || sessionId.trim().length === 0) return false;
+  if (metadata.is_no_auth === true) return true;
+  const accountId = metadata.connected_account_id;
+  return typeof accountId === 'string' && accountId.trim().length > 0;
 }

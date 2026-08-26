@@ -7,8 +7,9 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { Progress } from '@/components/ui/progress';
-import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_DOT, STATUS_TEXT, type StatusTone } from '@/components/ui/status';
+
+import { ContextRing } from './context-ring';
 import { cn } from '@/lib/utils';
 import type { MessageWithParts } from '@kortix/sdk/react';
 
@@ -232,7 +233,14 @@ const BREAKDOWN_ROWS = [
   { key: 'reasoning', labelKey: 'labelReasoning' },
 ] as const satisfies ReadonlyArray<{ key: keyof ContextBreakdown; labelKey: string }>;
 
-function ContextUsageCard({
+/**
+ * Exported for the `/` palette: the "Show context" row's detail pane renders
+ * this exact card (`menus/slash-menu.tsx`), so hovering the row shows the same
+ * three-tier read as hovering the toolbar ring — one card, two openings, no
+ * drift. The palette passes `interactive={false}` because its pane already
+ * owns a "Use" button that opens the modal.
+ */
+export function ContextUsageCard({
   breakdown,
   limit,
   ratio,
@@ -379,7 +387,6 @@ export function TokenProgress({
   if (contextTokens === 0 && !onContextClick) return null;
 
   const tone = contextTone(ratio);
-  const color = STATUS_TEXT[tone];
   const percent = Math.round(ratio * 100);
   // Screen readers get the reading, not just the band — "Getting full" alone
   // omits the one number a sighted user gets from the arc.
@@ -407,11 +414,10 @@ export function TokenProgress({
               onContextClick?.();
             }}
           >
-            <ProgressRing
-              value={percent}
-              className="size-[1.05rem]"
-              progressClassName={color}
-            />
+            {/* The shared ring (`context-ring.tsx`) — the `/` palette's
+                "Show context" row draws the same component, so the two
+                surfaces cannot drift apart in fill or tone. */}
+            <ContextRing percent={percent} tone={tone} className="size-[1.05rem]" />
           </Button>
         </span>
       </HoverCardTrigger>

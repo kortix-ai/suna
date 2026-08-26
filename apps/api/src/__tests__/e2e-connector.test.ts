@@ -583,6 +583,31 @@ describe('admin routes', () => {
     expect((await res.json()).authDiscovery).toBeUndefined();
   });
 
+  test('new Pipedream connectors require explicit human-approved legacy rollback', async () => {
+    const rejected = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ slug: 'gmail', provider: 'pipedream', app: 'gmail' }),
+    });
+    expect(rejected.status).toBe(400);
+    expect((await rejected.json()).error).toContain('legacy rollback only');
+    expect(world.connectorDrafts).toHaveLength(0);
+
+    const approved = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        slug: 'gmail',
+        provider: 'pipedream',
+        app: 'gmail',
+        allow_legacy_pipedream: true,
+      }),
+    });
+    expect(approved.status).toBe(200);
+    expect(world.connectorDrafts).toHaveLength(1);
+    expect(world.connectorDrafts[0]).not.toHaveProperty('allow_legacy_pipedream');
+  });
+
   test('returns a create-only slug conflict without changing the response envelope', async () => {
     world.connectorCreateError = {
       error: 'Connector slug "hubspot" already exists',
@@ -593,7 +618,7 @@ describe('admin routes', () => {
       headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
       body: JSON.stringify({
         slug: 'hubspot',
-        provider: 'pipedream',
+        provider: 'composio',
         app: 'hubspot',
         create_only: true,
       }),
@@ -617,7 +642,7 @@ describe('admin routes', () => {
       headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
       body: JSON.stringify({
         slug: 'hubspot',
-        provider: 'pipedream',
+        provider: 'composio',
         app: 'hubspot',
         create_only: true,
       }),
@@ -633,7 +658,7 @@ describe('admin routes', () => {
       headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
       body: JSON.stringify({
         slug: 'hubspot',
-        provider: 'pipedream',
+        provider: 'composio',
         app: 'hubspot',
         create_only: 'true',
       }),

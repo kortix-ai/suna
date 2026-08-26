@@ -8,6 +8,10 @@ import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
 import { settleOpenSandboxTurns } from './sandbox-turn-lifecycle';
 import type { StopReason } from './stop-reason';
+import {
+  STAMPED_RUNTIME_FAILURE_STOP_REASONS,
+  runtimeStartFailurePatch,
+} from './session-lifecycle/runtime-wake-fence';
 
 export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
 /** Stable alert key. Better Stack / Sentry rules match on this, not on prose. */
@@ -290,17 +294,32 @@ export function parkMetadataPatch(
   reason: string,
   stopReason: StopReason,
   now: Date,
+  /**
+   * The row's CURRENT metadata, for the consecutive-failure accounting below.
+   * Optional so the pure park semantics stay testable without a row.
+   */
+  metadata?: Record<string, unknown> | null,
 ): Record<string, unknown> {
   return {
     stopReason,
     stoppedAt: now.toISOString(),
     runtimeParkReason: reason,
+    providerStopPendingAt: now.toISOString(),
+    // A park for a FAILED start is a cooldown, not a gravestone. Without this
+    // clock `stoppedWakeResult` had nothing to expire, so a `runtime_boot_failed`
+    // stamp replayed `stage:"failed"` on every open for as long as the row
+    // lived — 10+ hours on Essentia session 9c8749ac, 2026-08-26, without one
+    // provider call. The counter is what escalates the cooldown and eventually
+    // earns a terminal card that NAMES the attempts.
+    ...((STAMPED_RUNTIME_FAILURE_STOP_REASONS as readonly string[]).includes(stopReason)
+      ? runtimeStartFailurePatch(metadata, now)
+      : {}),
   };
 }
 
 type ParkableRuntimeRow = Pick<
   typeof sessionSandboxes.$inferSelect,
-  'sandboxId' | 'sessionId' | 'externalId' | 'metadata' | 'provider'
+  'sandboxId' | 'sessionId' | 'externalId' | 'metadata' | 'provider' | 'updatedAt'
 >;
 
 /**
@@ -323,23 +342,6 @@ export async function parkEstablishedRuntime(
   }
   const externalId = row.externalId;
 
-  await endComputeSession(row.sandboxId).catch((err) =>
-    console.warn(
-      `[runtime-identity] failed to close compute for ${row.sandboxId} while parking ${externalId}:`,
-      err,
-    ),
-  );
-  // try/catch, not .catch(): getProvider() throws synchronously for a
-  // disabled provider, and a park must survive that too.
-  try {
-    await getProvider(row.provider as ProviderName).stop(externalId);
-  } catch (err) {
-    console.warn(
-      `[runtime-identity] provider stop failed while parking ${externalId}:`,
-      err instanceof Error ? err.message : err,
-    );
-  }
-
   const metadata = {
     ...((row.metadata as Record<string, unknown> | null) ?? {}),
   };
@@ -347,10 +349,14 @@ export async function parkEstablishedRuntime(
   delete metadata.runtimeRecoveryLeaseId;
   delete metadata.runtimeRecoveryLeaseAt;
   delete metadata.runtimeRecoveryLeaseExpiresAtMs;
-  Object.assign(metadata, parkMetadataPatch(reason, stopReason, now));
+  Object.assign(
+    metadata,
+    parkMetadataPatch(reason, stopReason, now, (row.metadata as Record<string, unknown>) ?? null),
+  );
 
+  let parked: typeof sessionSandboxes.$inferSelect | null = null;
   try {
-    return await db.transaction(async (tx) => {
+    parked = await db.transaction(async (tx) => {
       const [liveSession] = await tx
         .update(projectSessions)
         .set({ status: 'stopped', error: null, updatedAt: now })
@@ -364,21 +370,48 @@ export async function parkEstablishedRuntime(
           and(
             eq(sessionSandboxes.sandboxId, row.sandboxId),
             eq(sessionSandboxes.externalId, externalId),
+            eq(sessionSandboxes.status, 'active'),
+            // A readiness request can outlive the wake it inspected. The wake
+            // rewrites this row before starting the provider. No provider or
+            // billing side effect is allowed unless this exact snapshot wins.
+            eq(sessionSandboxes.updatedAt, row.updatedAt),
           ),
         )
         .returning();
       if (!parkedRow) throw new RuntimeIdentityCasLostError();
-      // Same reason as the preserve path above: the provider box was stopped a
-      // few lines up, so a turn that was open ended with the runtime, and a
-      // `stopped` row can never be settled token by token again. The provider
-      // box being ALREADY off is also why this settle is savepoint-bounded.
+      // A turn that was open ended with this runtime. The settle remains
+      // savepoint-bounded so an observation-table failure cannot abort the
+      // lifecycle claim this transaction now owns.
       await settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone');
+
+      // Keep the row lock through the provider pause. A concurrent restart
+      // cannot start the same runtime between our CAS and this stop.
+      let providerStopped = false;
+      try {
+        await getProvider(row.provider as ProviderName).stop(externalId);
+        providerStopped = true;
+      } catch (err) {
+        console.warn(
+          `[runtime-identity] provider stop failed while parking ${externalId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+      if (providerStopped) {
+        await endComputeSession(row.sandboxId).catch((err) =>
+          console.warn(
+            `[runtime-identity] failed to close compute for ${row.sandboxId} while parking ${externalId}:`,
+            err,
+          ),
+        );
+      }
       return parkedRow;
     });
   } catch (err) {
     if (err instanceof RuntimeIdentityCasLostError) return null;
     throw err;
   }
+
+  return parked;
 }
 
 /**

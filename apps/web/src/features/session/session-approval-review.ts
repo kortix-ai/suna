@@ -75,7 +75,11 @@ export function approvalRequestFromAction(
     risk: action.risk,
     requestedAt: action.at,
     argsPreview: approvalArgsPreview(action),
-    reviewComplete: !pending || !summary || summary.args_preview_complete === true,
+    // `!summary` used to count as complete, so a pending row that recorded
+    // NOTHING offered an Approve button the server answers with 409
+    // (`APPROVAL_PREVIEW_UNAVAILABLE`) — the client and the gate disagreed. A
+    // pending row is complete only when it says so.
+    reviewComplete: !pending || summary?.args_preview_complete === true,
     resolution: decision === 'approve' || decision === 'deny' ? decision : null,
     pending,
     status: action.status,

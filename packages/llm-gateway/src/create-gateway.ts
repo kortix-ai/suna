@@ -90,7 +90,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       if (!hooks.listModels) return jsonResponse({ models: {} });
       const models = await hooks.listModels(principal, opts);
       logger.info(
-        `[gateway] models ${Object.keys(models).length}${opts?.managedOnly ? ' (managed only)' : ''} ` +
+        `[gateway] models ${Object.keys(models).length}${opts?.managedOnly ? ' (managed only)' : opts?.scope === 'picker' ? ' (picker)' : ''} ` +
           `for acct=${principal.accountId.slice(0, 8)}`,
       );
       return jsonResponse({ models });

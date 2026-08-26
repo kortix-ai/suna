@@ -316,10 +316,14 @@ mock.module('../platform/services/provider-balancer', () => ({
   selectProvider: async () => 'daytona',
 }));
 
+const mockedProjectLlmGatewayEnabled = (metadata: unknown) =>
+  (metadata as { experimental?: { llm_gateway?: unknown } } | null)?.experimental
+    ?.llm_gateway === true;
 mock.module('../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (metadata: unknown) =>
-    (metadata as { experimental?: { llm_gateway?: unknown } } | null)?.experimental
-      ?.llm_gateway === true,
+  projectLlmGatewayEnabled: mockedProjectLlmGatewayEnabled,
+  // The by-id variant (secrets delivery, title generation) resolves against
+  // the same fixture row this suite mutates per test.
+  projectLlmGatewayEnabledById: async () => mockedProjectLlmGatewayEnabled(projectRow.metadata),
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -1342,6 +1346,10 @@ describe('git-backed triggers — runtime fire paths', () => {
   });
 
   test('manual fire applies the trigger-level model override to the session', async () => {
+    // A bare managed id is a GATEWAY ref — this path only exists with the
+    // project's llm_gateway flag on (native mode requires `provider/model`
+    // and rejects bare ids at create).
+    projectRow.metadata = { experimental: { llm_gateway: true } };
     seedManifest(cronEntry({
       slug: 'daily',
       name: 'Daily',

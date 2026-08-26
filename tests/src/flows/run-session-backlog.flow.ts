@@ -2,7 +2,7 @@
  * Agent-run + session happy-path backlog.
  *
  * Maps 1:1 to spec IDs: RUN-1..8, SESS-2, SESS-3, SESS-9, SESS-12, FILE-8, FILE-9,
- * GOLD-1, CHN-6, SESS-10.
+ * GOLD-1, CHN-6, SESS-10, CONN-26.
  *
  * REALITY: every flow here needs a REAL booted Daytona sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
@@ -365,6 +365,148 @@ async function waitForAssistantOutput(
     },
   );
 }
+
+// ─── CONN-26: a real agent selects Composio for Gmail ─────────────────────────
+flow(
+  'CONN-26',
+  {
+    domain: 'connectors',
+    requires: ['funded', 'daytona', 'managedGit'],
+    serial: true,
+    timeoutMs: 720_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/connectors/projects/:projectId/connectors',
+      'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ managedGit: true });
+    const session = await ctx.fixtures.session(project, {
+      prompt: 'Reply with the single word READY. Do not call any tools.',
+    });
+
+    let sandboxId = '';
+    await ctx.step('a fresh remote session boots to a ready Daytona runtime', async () => {
+      const started = await waitForSessionReady(ctx, project.id, session.id, 360_000);
+      sandboxId = String(started?.sandbox?.external_id ?? started?.sandbox?.externalId ?? '');
+      if (!sandboxId) throw new Error(`session ${session.id} became ready without a sandbox id`);
+    });
+
+    const ocId = await createOcConversation(ctx, sandboxId);
+    await ctx.step('GPT-5.6 Luna receives the real Gmail connector request', async () => {
+      const prompted = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
+          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
+          parts: [
+            {
+              type: 'text',
+              text:
+                'Use the Kortix connector tools now. Add Gmail with the default managed provider and start authorization. Never use Pipedream or any legacy provider. Do not complete OAuth, read mail, or send mail. Stop after you give me the authorization link and ask me to open it.',
+            },
+          ],
+        });
+      prompted.status([200, 202, 204]);
+    });
+
+    let messages: any[] = [];
+    await ctx.step('the agent calls the connector tools and asks the user to authorize', async () => {
+      messages = await waitFor(
+        async () => {
+          const response = await ctx.client
+            .as(ctx.P.OWNER)
+            .get(ocPath(sandboxId, `/session/${ocId}/message`));
+          return response.statusCode === 200 ? response.json<any[]>() : [];
+        },
+        {
+          until: (rows) => {
+            const parts = rows.flatMap((message: any) =>
+              Array.isArray(message?.parts) ? message.parts : [],
+            );
+            const calledAdd = parts.some((part: any) => {
+              const tool = String(part?.tool ?? part?.toolName ?? part?.name ?? '');
+              return part?.type === 'tool' && /add[_ -]?connector/i.test(tool);
+            });
+            const assistantText = rows
+              .filter((message: any) => message?.info?.role === 'assistant')
+              .flatMap((message: any) => (Array.isArray(message?.parts) ? message.parts : []))
+              .filter((part: any) => part?.type === 'text' && typeof part?.text === 'string')
+              .map((part: any) => part.text)
+              .join('\n');
+            return (
+              calledAdd &&
+              assistantText.includes('connect.composio.dev') &&
+              /open|authorize|connect/i.test(assistantText)
+            );
+          },
+          timeoutMs: 300_000,
+          intervalMs: 4_000,
+          description: `Composio Gmail authorization request from agent session ${ocId}`,
+          retryOnError: isKe2eRetryableError,
+        },
+      );
+    });
+
+    await ctx.step('no connector tool call attempted the legacy Pipedream escape hatch', async () => {
+      const toolParts = messages
+        .flatMap((message: any) => (Array.isArray(message?.parts) ? message.parts : []))
+        .filter((part: any) => part?.type === 'tool');
+      const addCalls = toolParts.filter((part: any) =>
+        /add[_ -]?connector/i.test(String(part?.tool ?? part?.toolName ?? part?.name ?? '')),
+      );
+      if (addCalls.length === 0) throw new Error('agent emitted no add-connector tool call');
+      for (const part of toolParts) {
+        const input = part?.state?.input ?? part?.input ?? {};
+        if (input?.provider === 'pipedream' || input?.allow_legacy_pipedream === true) {
+          throw new Error('agent attempted the legacy Pipedream provider');
+        }
+      }
+      for (const part of addCalls) {
+        const input = part?.state?.input ?? part?.input ?? {};
+        if (input?.provider !== undefined && input.provider !== 'composio') {
+          throw new Error(`agent selected unexpected managed provider ${String(input.provider)}`);
+        }
+      }
+    });
+
+    await ctx.step('project readback proves the agent persisted Gmail through Composio', async () => {
+      const listed = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/connectors', {
+          params: { projectId: project.id },
+        });
+      listed.status(200);
+      const body = listed.json<any>();
+      const rows = Array.isArray(body) ? body : (body?.connectors ?? []);
+      const gmail = rows.find(
+        (row: any) =>
+          row?.provider === 'composio' &&
+          (String(row?.slug ?? '').toLowerCase().includes('gmail') ||
+            String(row?.name ?? '').toLowerCase().includes('gmail')),
+      );
+      if (!gmail?.slug) throw new Error('project connector list omitted agent-created Gmail');
+      if (
+        rows.some(
+          (row: any) =>
+            row?.provider === 'pipedream' &&
+            (String(row?.slug ?? '').toLowerCase().includes('gmail') ||
+              String(row?.name ?? '').toLowerCase().includes('gmail')),
+        )
+      ) {
+        throw new Error('project persisted a Pipedream-backed Gmail connector');
+      }
+
+      const config = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/connectors/:slug/config', {
+          params: { projectId: project.id, slug: gmail.slug },
+        });
+      config.status(200).body().has('$.provider', 'composio').has('$.app', 'gmail');
+    });
+  },
+);
 
 // ─── RUN-1: create an OpenCode conversation through the proxy ─────────────────
 // POST /p/<sbx>/8000/session → { id }.  (proxy path is not a manifest route)

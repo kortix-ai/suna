@@ -46,6 +46,10 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import { Close } from '@/features/icon/icons/close';
 import { foldKey } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
+import {
+  composioConnectionIsAuthorized,
+  isManagedConnectorProvider,
+} from '@/features/workspace/capabilities/connectors/provider-label';
 import { ConnectorAccounts } from './connector-accounts';
 import { ConnectorSettings } from './connector-settings';
 import { CONNECTOR_TAB_LABEL, type ConnectorTab, connectorTabs } from './connector-tabs';
@@ -173,11 +177,11 @@ function ConnectorModalBody({
   onChanged: () => void;
   onRemoved: () => void;
 }) {
+  const isManagedProvider = isManagedConnectorProvider(connector.provider);
   const isPipedream = connector.provider === 'pipedream';
   const isChannel = connector.provider === 'channel';
   const isComputer = connector.provider === 'computer';
   const usesProjectAuthorization = connector.authorizationStrategy === 'project';
-  const connected = usesProjectAuthorization && connector.secretSet;
   const displayName = connectorDisplayName(connector);
 
   const tabs = connectorTabs(connector, { canWrite });
@@ -198,6 +202,11 @@ function ConnectorModalBody({
   const myPrivateConnection = connectionsQuery.data?.connections.find(
     (p) => p.connector_alias === connector.slug && p.owner_type === 'member',
   );
+  const selectedConnection = usesProjectAuthorization ? projectConnection : myPrivateConnection;
+  const connected =
+    connector.provider === 'composio'
+      ? composioConnectionIsAuthorized(selectedConnection?.metadata)
+      : usesProjectAuthorization && connector.secretSet;
 
   const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
 
@@ -268,11 +277,12 @@ function ConnectorModalBody({
 
   const showConnectCta =
     canWrite &&
-    Boolean(connector.authSecret) &&
+    (isManagedProvider || Boolean(connector.authSecret)) &&
     !connected &&
     !isChannel &&
     usesProjectAuthorization;
-  const showReconnectCta = canWrite && Boolean(connector.authSecret) && connected && !isChannel;
+  const showReconnectCta =
+    canWrite && (isManagedProvider || Boolean(connector.authSecret)) && connected && !isChannel;
 
   return (
     <>
@@ -303,19 +313,19 @@ function ConnectorModalBody({
               <Button
                 size="sm"
                 className="gap-1.5 active:scale-[0.96]"
-                onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
-                disabled={strategyUpdating || (isPipedream && reconnect.isPending)}
+                onClick={() => (isManagedProvider ? reconnect.mutate() : setCredOpen(true))}
+                disabled={strategyUpdating || (isManagedProvider && reconnect.isPending)}
               >
-                {isPipedream && reconnect.isPending ? (
+                {isManagedProvider && reconnect.isPending ? (
                   <Loading className="size-4 shrink-0" />
                 ) : (
                   <PlusIcon className="size-4 shrink-0" weight="bold" />
                 )}
-                {isPipedream ? 'Connect' : 'Add credential'}
+                {isManagedProvider ? 'Connect' : 'Add credential'}
               </Button>
             ) : null}
             {showReconnectCta ? (
-              isPipedream ? (
+              isManagedProvider ? (
                 <Button
                   size="sm"
                   variant="outline"

@@ -108,3 +108,94 @@ describe('verified reload process promotion', () => {
     expect((await fetch(`${supervisor.getInternalUrl()}/session`)).status).toBe(200)
   }, 20_000)
 })
+
+describe('the live port is a property of the process, never a variable beside it', () => {
+  // Essentia 2026-08-25: the daemon reported `starting` + `opencode_port: 4096`
+  // for two hours while its own child (pid 2423) served on 4097. `activePort`
+  // had drifted from the process. Now every reader asks the process.
+  function fakeOpencode(): { workspace: string; configDir: string; binary: string } {
+    const workspace = join(root, 'workspace')
+    const configDir = join(root, 'config')
+    const binary = join(root, 'opencode')
+    mkdirSync(workspace)
+    mkdirSync(configDir)
+    writeFileSync(
+      binary,
+      '#!/usr/bin/env bun\nconst port = Number(Bun.argv[Bun.argv.indexOf("--port") + 1])\nBun.serve({ port, hostname: "127.0.0.1", fetch: () => Response.json([]) })\n',
+    )
+    chmodSync(binary, 0o755)
+    return { workspace, configDir, binary }
+  }
+
+  test('reconfigure() with a foreign port pair cannot move the daemon off the port its child serves', async () => {
+    const { workspace, configDir, binary } = fakeOpencode()
+    const primary = reservePort()
+    const standby = reservePort()
+    const cfg = {
+      workspace,
+      projectTarget: workspace,
+      opencodeInternalPort: primary,
+      opencodeStandbyPort: standby,
+      gitUserName: 'Kortix Agent',
+      gitUserEmail: 'agent@kortix.ai',
+    } as Config
+    supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
+      binaryPathOverride: binary,
+      configPathOverride: join(root, 'runtime-config.json'),
+    })
+    await supervisor.start()
+    expect(await waitForOpencodeReady(supervisor, workspace)).toBe(true)
+
+    const swapped = await supervisor.reloadVerified()
+    expect(swapped.outcome).toBe('swapped')
+    expect(supervisor.getActivePort()).toBe(standby)
+
+    // The only code path that rewrites the port variable without touching the
+    // process: a config whose pair does not contain the live port.
+    supervisor.reconfigure({ ...cfg, opencodeStandbyPort: reservePort() } as Config, configDir)
+
+    expect(supervisor.getActivePort()).toBe(standby)
+    expect(supervisor.getInternalUrl()).toBe(`http://127.0.0.1:${standby}`)
+    expect((await fetch(`${supervisor.getInternalUrl()}/session`)).status).toBe(200)
+    // reconfigure() marks `starting` until the next probe; the probe asks the
+    // process's real port, so it comes back `ok` on its own.
+    await waitFor(() => supervisor?.getState() === 'ok', 5_000)
+  }, 20_000)
+
+  test('a candidate half that already answers is declined, never "proven" by the incumbent', async () => {
+    const { workspace, configDir, binary } = fakeOpencode()
+    const primary = reservePort()
+    const standby = reservePort()
+    const cfg = {
+      workspace,
+      projectTarget: workspace,
+      opencodeInternalPort: primary,
+      opencodeStandbyPort: standby,
+      gitUserName: 'Kortix Agent',
+      gitUserEmail: 'agent@kortix.ai',
+    } as Config
+    supervisor = createOpencodeSupervisor(cfg, configDir, undefined, {
+      binaryPathOverride: binary,
+      configPathOverride: join(root, 'runtime-config.json'),
+    })
+    await supervisor.start()
+    expect(await waitForOpencodeReady(supervisor, workspace)).toBe(true)
+    const livePid = supervisor.getPid()
+
+    // Something else is already serving the session API on the idle half —
+    // the shape a drifted port pair produces (`opencode serve --port <busy>`
+    // exits at once with ServeError, so a candidate there is dead on arrival).
+    const squatter = Bun.serve({ port: standby, hostname: '127.0.0.1', fetch: () => Response.json([]) })
+    try {
+      const result = await supervisor.reloadVerified()
+      expect(result.outcome).toBe('kept-old')
+      if (result.outcome !== 'kept-old') throw new Error('unreachable')
+      expect(result.reason).toContain('already answers')
+      expect(supervisor.getPid()).toBe(livePid)
+      expect(processExists(livePid as number)).toBe(true)
+      expect(supervisor.getActivePort()).toBe(primary)
+    } finally {
+      squatter.stop(true)
+    }
+  }, 20_000)
+})

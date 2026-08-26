@@ -6,11 +6,16 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { RunResult } from "./result";
+import { scrubValue } from "./scrub";
 
 export function writeResults(result: RunResult, jsonPath: string, htmlPath: string): void {
+  // Both files are uploaded as public workflow artifacts. Scrub by shape here,
+  // after every capture-time key mask, so no path into the tree can carry a
+  // token out (see scrub.ts).
+  const safe = scrubValue(result);
   mkdirSync(dirname(jsonPath), { recursive: true });
-  writeFileSync(jsonPath, JSON.stringify(result, null, 2));
-  writeFileSync(htmlPath, renderHtml(result));
+  writeFileSync(jsonPath, JSON.stringify(safe, null, 2));
+  writeFileSync(htmlPath, renderHtml(safe));
 }
 
 /** Compact GitHub step-summary markdown (flow-ID matrix). */

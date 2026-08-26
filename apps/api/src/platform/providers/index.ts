@@ -241,6 +241,11 @@ export function effectiveAppMachine(
 export interface SandboxProvider {
   readonly name: ProviderName;
   readonly provisioning: ProvisioningTraits;
+  /**
+   * How long the shared proxy may cache one resolved ingress. Omit for the
+   * default cache. Use zero when the provider owns a shorter credential cache.
+   */
+  readonly ingressCacheTtlMs?: number;
   /** Absent means the provider enforces the whole App machine specification. */
   readonly appMachineSupport?: AppMachineSupport;
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;

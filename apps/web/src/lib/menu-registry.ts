@@ -57,9 +57,8 @@ import {
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
+  TerminalIcon as Terminal,
   TextAlignLeftIcon as TextAlignLeft,
-  TerminalWindowIcon as Terminal,
-  TerminalWindowIcon as TerminalSquare,
   TrayIcon as Tray,
   UserPlusIcon as UserPlus,
   UsersIcon as UsersSolid,
@@ -85,12 +84,7 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
  */
 export type MenuItemKind =
-  | 'navigate'
-  | 'action'
-  | 'settings'
-  | 'theme'
-  | 'wallpaper'
-  | 'sandboxService';
+  'navigate' | 'action' | 'settings' | 'theme' | 'wallpaper' | 'sandboxService';
 
 export type SettingsTabId =
   | 'general'
@@ -239,7 +233,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'open-terminal',
     label: 'Open Terminal',
-    icon: TerminalSquare,
+    icon: Terminal,
     group: 'actions',
     showIn: ['commandPalette'],
     kind: 'action',
@@ -752,7 +746,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'new-terminal',
     label: 'Terminal',
-    icon: TerminalSquare,
+    icon: Terminal,
     group: 'quickActions',
     subGroup: 'tools',
     showIn: ['rightSidebar'],
@@ -1191,20 +1185,18 @@ export const menuRegistry: MenuItemDef[] = [
   // WALLPAPERS — derived from the appearance-tab list; typing a wallpaper's
   // name (Dither, Grain, Silk, …) in the palette applies it directly.
   // ──────────────────────────────────────────────────────────────────────────
-  ...WALLPAPERS.map(
-    (wp): MenuItemDef => ({
-      id: `wallpaper-${wp.id}`,
-      label: `Appearance · ${wp.name}`,
-      icon: WallpaperIcon,
-      group: 'wallpaper',
-      showIn: ['commandPalette'],
-      kind: 'wallpaper',
-      wallpaperValue: wp.id,
-      keywords: `wallpaper wallpapers background appearance ${wp.id}${
-        wp.type === 'shader' ? ' shader shaders animated' : ''
-      }`,
-    }),
-  ),
+  ...WALLPAPERS.map((wp): MenuItemDef => ({
+    id: `wallpaper-${wp.id}`,
+    label: `Appearance · ${wp.name}`,
+    icon: WallpaperIcon,
+    group: 'wallpaper',
+    showIn: ['commandPalette'],
+    kind: 'wallpaper',
+    wallpaperValue: wp.id,
+    keywords: `wallpaper wallpapers background appearance ${wp.id}${
+      wp.type === 'shader' ? ' shader shaders animated' : ''
+    }`,
+  })),
 
   // ──────────────────────────────────────────────────────────────────────────
   // VIEW

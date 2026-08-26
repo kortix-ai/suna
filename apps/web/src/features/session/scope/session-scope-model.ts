@@ -253,6 +253,28 @@ export function createNewSessionScopeDraft(
   return draft;
 }
 
+/**
+ * Is this replacement exactly the state a FRESH session is born with?
+ *
+ * A just-created (or warm, never-prompted) session starts as: secrets
+ * `null` (inherit the grant), no connector-binding override, no required
+ * connectors. The overrides toolbar auto-initializes a draft in that same
+ * shape for every new-session composer — untouched or not — so every send
+ * used to pay a scope read + write whose only effect was re-writing the
+ * defaults. Measured on dev 2026-08-24: GET 0.8s + PUT 2.3s, serial, between
+ * warm-claim and /start, on every untouched send.
+ *
+ * `createScopedSession` asks this with a replacement built WITHOUT a previous
+ * scope, which is exactly the session-creation situation: the previous scope
+ * IS the fresh default, so a replacement that matches it replaces nothing.
+ */
+export function scopeReplacementIsFreshDefault(replacement: SessionScopeInput): boolean {
+  if (Object.hasOwn(replacement, 'connector_bindings')) return false;
+  if (Object.hasOwn(replacement, 'secrets') && replacement.secrets !== null) return false;
+  if ((replacement.require_connectors ?? []).length > 0) return false;
+  return true;
+}
+
 export function buildSessionScopeReplacement(
   draft: SessionScopeDraft,
   previousScope?: SessionScope,

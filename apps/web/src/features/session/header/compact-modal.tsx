@@ -10,9 +10,8 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { loadingToast } from '@/components/ui/toast';
+import { errorToast } from '@/components/ui/toast';
 import { useSummarizeRuntimeSession } from '@kortix/sdk/react';
-import { StackIcon as Layers } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
 
@@ -38,10 +37,12 @@ export function CompactModal({
     onCompactStart?.();
     onOpenChange(false);
 
-    void loadingToast('Compacting session...', () => summarize.mutateAsync({ sessionId }), {
-      success: 'Session compacted successfully',
-      showErrorToast: true,
-      error: (error) => (error instanceof Error ? error.message : 'Failed to compact session'),
+    // No loading/success toast: the transcript's own CompactionCard is the
+    // progress surface (it mounts optimistically and streams the summary).
+    // Only a failure still needs a voice — the card cannot say why the HTTP
+    // call itself never reached the runtime.
+    summarize.mutateAsync({ sessionId }).catch((error: unknown) => {
+      errorToast(error instanceof Error ? error.message : 'Failed to compact session');
     });
   }, [sessionId, summarize, onOpenChange, onCompactStart]);
 
@@ -59,7 +60,7 @@ export function CompactModal({
           </ModalDescription>
         </ModalHeader>
         <ModalBody>
-          <div className="bg-muted/50 border-border/40 text-muted-foreground space-y-1.5 rounded-2xl border px-3 py-2.5 text-sm">
+          <div className="text-muted-foreground space-y-1.5 text-sm">
             <p>
               {tHardcodedUi.raw(
                 'componentsSessionCompactDialog.line56JsxTextWhatHappensDuringCompaction',
@@ -84,7 +85,7 @@ export function CompactModal({
             </ul>
           </div>
         </ModalBody>
-        <ModalFooter className="gap-2">
+        <ModalFooter>
           <Button
             variant="outline-ghost"
             size="sm"
@@ -94,7 +95,6 @@ export function CompactModal({
             Cancel
           </Button>
           <Button size="sm" className="w-full sm:w-auto" onClick={handleCompact}>
-            <Layers className="size-3.5" />
             Compact
           </Button>
         </ModalFooter>

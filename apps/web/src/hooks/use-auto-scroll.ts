@@ -27,13 +27,25 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * the same frame it commits, a streaming answer keeps its tail in view, and a
  * transient block that collapses and re-expands the room cannot leave the turn
  * stranded mid-screen (the re-expansion is just another layout change).
- * `follow` becomes false only on READER intent — a wheel/touch/keyboard scroll
- * up, or a scrollbar drag that leaves the end — and true again when the reader
+ * `follow` becomes false on READER intent — a wheel/touch/keyboard scroll up,
+ * or a scrollbar drag that leaves the end — and true again when the reader
  * comes back to the end (drag, wheel, chevron, End key) or sends. Intent is
  * read from the INPUT event, and keys are read on `document`: the transcript
  * is not focusable, so a key that scrolls it is never delivered to it.
- * Programmatic scrolls never count as intent. Nothing here reads "is the session working": if the
- * reader is at the end and something appears, they see it.
+ * Nothing here reads "is the session working": if the reader is at the end and
+ * something appears, they see it.
+ *
+ * It also becomes false for a scroll AWAY from the end that this hook did not
+ * make and that no layout change explains — `shouldReleaseFollow`. The rule is
+ * "never fight a scroll we did not make": find-in-page, `scrollIntoView`, the
+ * minimap and a test driver all move the viewport without an input event, and
+ * following through one of those puts the reader straight back at the end
+ * ~16ms later. That is what "I scroll up and it throws me back down" is when
+ * no wheel was involved (measured: `scrollTop = 0` on a 12,976px transcript
+ * was undone to 12,256px within one frame). Our own writes are tagged, and a
+ * scroll whose `scrollHeight`/`clientHeight` changed in the same breath is a
+ * CLAMP, never intent — that distinction is why this cannot resurrect the old
+ * "a composer resize killed follow" bug.
  *
  * Direct DOM writes only (`spacer.style.height`, `el.scrollTop`) — never React
  * state on the hot path. The one piece of state is the chevron.
@@ -53,6 +65,9 @@ export const AT_END_PX = 4;
 /** How far from the end (in px of CONTENT, the room excluded) the chevron
  *  appears once the reader has left the end. */
 export const CHEVRON_PX = 120;
+/** How long after one of our own `scrollTop` writes a `scroll` event still
+ *  counts as ours — one frame's slack, since the event lands later. */
+export const OWN_SCROLL_MS = 80;
 
 /** Pure: is the reader at the end? */
 export function isAtEnd(distanceFromEnd: number): boolean {
@@ -62,6 +77,34 @@ export function isAtEnd(distanceFromEnd: number): boolean {
 /** Pure: does the chevron show for a reader who is NOT following? */
 export function chevronVisible(distanceFromContentEnd: number): boolean {
   return distanceFromContentEnd > CHEVRON_PX;
+}
+
+/**
+ * Pure: does a `scroll` event mean the viewport left the end for good?
+ *
+ * Three gates, and every one of them exists because of a real regression:
+ *
+ * - `ours` — this hook writes `scrollTop` itself on every settle. Reading our
+ *   own write as "the reader left" would drop follow the instant it started.
+ * - `geometryChanged` — the browser clamps `scrollTop` when the content
+ *   shrinks or the viewport grows, and that arrives as a scroll event with no
+ *   reader behind it (a composer growing by 24px was the one that used to kill
+ *   follow mid-send). A scroll event whose `scrollHeight`/`clientHeight` moved
+ *   since the previous one is that clamp, not intent.
+ * - `distanceFromEnd` — a scroll that is still AT the end changes nothing.
+ *
+ * What is left is a viewport that someone else moved away from the end while
+ * the layout stood still: find-in-page, an anchor jump, the minimap, an
+ * assistive tool, a test driver. Follow yields to it.
+ */
+export function shouldReleaseFollow(input: {
+  following: boolean;
+  ours: boolean;
+  geometryChanged: boolean;
+  distanceFromEnd: number;
+}): boolean {
+  if (!input.following || input.ours || input.geometryChanged) return false;
+  return !isAtEnd(input.distanceFromEnd);
 }
 
 export type ScrollKeyIntent = 'up' | 'down' | 'end' | null;
@@ -200,6 +243,15 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
    *  down so they do not cut it short; the glide is followed by one instant
    *  settle for whatever streamed in the meantime. */
   const smoothUntilRef = useRef(0);
+  /** Until when a `scroll` event is OUR OWN write rather than something that
+   *  moved the viewport out from under us (`shouldReleaseFollow`). A window,
+   *  not a boolean: a `scrollTop` write is delivered as an event on a LATER
+   *  frame, and a smooth glide keeps emitting them for its whole duration. */
+  const ownScrollUntilRef = useRef(0);
+  const markOwnScroll = useCallback((ms: number) => {
+    ownScrollUntilRef.current = Math.max(ownScrollUntilRef.current, performance.now() + ms);
+  }, []);
+
   /** The one bit, with its reason, mirrored onto the scroll element as
    *  `data-follow` / `data-follow-why` — readable by e2e assertions and by a
    *  human in devtools, so "why did it stop following?" is never a guess. */
@@ -268,6 +320,7 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
     // follow, and a glide there would lag the text.
     if (anchorChanged && distance > 80) {
       smoothUntilRef.current = now + SMOOTH_GLIDE_MS;
+      markOwnScroll(SMOOTH_GLIDE_MS + 80);
       el.scrollTo({ top: end, behavior: 'smooth' });
       window.setTimeout(() => {
         smoothUntilRef.current = 0;
@@ -275,8 +328,11 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
       }, SMOOTH_GLIDE_MS + 40);
       return;
     }
-    if (distance > 0.5) el.scrollTop = end;
-  }, [sizeRoom]);
+    if (distance > 0.5) {
+      markOwnScroll(OWN_SCROLL_MS);
+      el.scrollTop = end;
+    }
+  }, [sizeRoom, markOwnScroll]);
   const settleRef = useRef<(() => void) | null>(null);
   settleRef.current = settle;
 
@@ -290,14 +346,18 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
       const end = el.scrollHeight - el.clientHeight;
       if (behavior === 'smooth') {
         smoothUntilRef.current = performance.now() + SMOOTH_GLIDE_MS;
+        markOwnScroll(SMOOTH_GLIDE_MS + 80);
         el.scrollTo({ top: end, behavior: 'smooth' });
         window.setTimeout(() => {
           smoothUntilRef.current = 0;
           settleRef.current?.();
         }, SMOOTH_GLIDE_MS + 40);
-      } else el.scrollTop = end;
+      } else {
+        markOwnScroll(OWN_SCROLL_MS);
+        el.scrollTop = end;
+      }
     },
-    [sizeRoom, setFollow],
+    [sizeRoom, setFollow, markOwnScroll],
   );
 
   const scrollToBottom = useCallback(() => goToEnd('auto'), [goToEnd]);
@@ -306,8 +366,11 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
   const startAtTop = useCallback(() => {
     const el = scrollRef.current;
     setFollow(false, 'start-at-top');
-    if (el) el.scrollTop = 0;
-  }, [setFollow]);
+    if (el) {
+      markOwnScroll(OWN_SCROLL_MS);
+      el.scrollTop = 0;
+    }
+  }, [setFollow, markOwnScroll]);
 
   // ── Layout observers: content + viewport → settle ──────────────────────
   useEffect(() => {
@@ -430,10 +493,27 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
     // send committed). This listener only re-arms follow when the reader has
     // come back to the end, and keeps the chevron honest.
     let lastTop = el.scrollTop;
+    let lastScrollHeight = el.scrollHeight;
+    let lastClientHeight = el.clientHeight;
     const onScroll = () => {
       const top = el.scrollTop;
       const movedTowardEnd = top >= lastTop;
+      const geometryChanged =
+        el.scrollHeight !== lastScrollHeight || el.clientHeight !== lastClientHeight;
       lastTop = top;
+      lastScrollHeight = el.scrollHeight;
+      lastClientHeight = el.clientHeight;
+      // Never fight a scroll we did not make. See `shouldReleaseFollow`.
+      if (
+        shouldReleaseFollow({
+          following: followRef.current,
+          ours: performance.now() < ownScrollUntilRef.current,
+          geometryChanged,
+          distanceFromEnd: distanceFromEnd(el),
+        })
+      ) {
+        setFollow(false, 'scroll-away');
+      }
       // Re-arm only when the viewport ARRIVED at the end moving toward it.
       // Direction matters: the browser animates a keyboard scroll, and its
       // first frame off the end is 2-3px — inside AT_END_PX. A direction-blind
@@ -461,7 +541,7 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
       document.removeEventListener('keydown', onKeyDown, { capture: true });
       el.removeEventListener('scroll', onScroll);
     };
-  }, [goToEnd, hasContent, setFollow]);
+  }, [goToEnd, hasContent, setFollow, markOwnScroll]);
 
   return {
     scrollRef,

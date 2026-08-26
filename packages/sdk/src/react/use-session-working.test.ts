@@ -12,6 +12,7 @@ import {
   WORKING_POLL_IDLE_MS,
   buildWorkingInputs,
   workingPollMs,
+  streamObservationStamp,
   streamTurnPhase,
 } from './use-session-working';
 
@@ -147,12 +148,34 @@ describe('buildWorkingInputs', () => {
         nowMs: T0,
       }).stream;
 
-    expect(at({ type: 'busy' })).toEqual({ type: 'busy', atMs: T0 });
-    expect(at({ type: 'retry' })).toEqual({ type: 'retry', atMs: T0 });
-    expect(at({ type: 'idle' })).toEqual({ type: 'idle', atMs: T0 });
+    // `origin: 'wire'` is the default: an unmarked frame is the runtime's own,
+    // and only `sessionStatusOrigin` (threaded via `statusOrigin`) demotes one
+    // to `'local'`.
+    expect(at({ type: 'busy' })).toEqual({ type: 'busy', origin: 'wire', atMs: T0 });
+    expect(at({ type: 'retry' })).toEqual({ type: 'retry', origin: 'wire', atMs: T0 });
+    expect(at({ type: 'idle' })).toEqual({ type: 'idle', origin: 'wire', atMs: T0 });
     // No status frame observed at all is NOT an idle frame — silence is not
     // an observation, and treating it as one is how a live turn got unmasked.
     expect(at(undefined)).toBeNull();
+  });
+
+  test('a local origin is threaded through to the stream input', () => {
+    // The fabricators (`markSessionIdleLocally`, `clearSession`, the hydrate
+    // snapshot) write `'local'` into `sessionStatusOrigin`; the hook passes it
+    // here, and `projectWorking` then refuses to let the frame contradict the
+    // server's open turn. Dropping the field on this seam would silently
+    // restore the fabricated-idle veto.
+    const inputs = buildWorkingInputs({
+      turn: undefined,
+      inbox: undefined,
+      status: { type: 'idle' } as never,
+      statusAtMs: T0,
+      statusOrigin: 'local',
+      optimistic: null,
+      nowMs: T0,
+    });
+
+    expect(inputs.stream).toEqual({ type: 'idle', origin: 'local', atMs: T0 });
   });
 
   test('the stop receipt is passed through, so a doomed turn stops deciding', () => {
@@ -287,6 +310,33 @@ describe('an equal-valued status rewrite is not a new observation', () => {
  *
  * What IS news is the turn boundary, and that is a change of PHASE.
  */
+/**
+ * Where a status frame's freshness stamp comes from.
+ *
+ * The hook used to stamp `Date.now()` at the moment ITS effect observed the
+ * slot. On a remount — navigate away and back, a route-level remount — the
+ * observation state resets and the effect re-stamps whatever the store still
+ * holds, so a dead stream's last idle frame came back looking brand new and
+ * vetoed the open `/turn` row for another full freshness window. The store now
+ * records when the frame actually LANDED (`sessionStatusAt`), and that stamp —
+ * never the observation instant — is the frame's age. The fallback exists only
+ * for a slot written before the stamp slice existed (test fixtures, mixed
+ * versions); it preserves the old behavior there.
+ */
+describe('streamObservationStamp', () => {
+  test('the store stamp is the observation instant when it exists', () => {
+    expect(streamObservationStamp(12_345, 99_999)).toBe(12_345);
+  });
+
+  test('without a store stamp, the observer clock fills in (old behavior)', () => {
+    expect(streamObservationStamp(undefined, 99_999)).toBe(99_999);
+  });
+
+  test('a zero store stamp is not "missing"', () => {
+    expect(streamObservationStamp(0, 99_999)).toBe(0);
+  });
+});
+
 describe('streamTurnPhase', () => {
   test('busy and retry are one phase — the turn is running either way', () => {
     expect(streamTurnPhase({ type: 'busy' } as SessionStatus)).toBe('active');

@@ -394,10 +394,13 @@ kortix self-host env set MANAGED_GIT_PROVIDER=github MANAGED_GIT_GITHUB_TOKEN=..
 # email and auth email (magic link, signup confirmation, password reset).
 kortix self-host env set EMAIL_URL=smtp://user:pass@smtp.example.com:587
 
-# Pipedream connectors (optional)
-kortix self-host env set CONNECTOR_AUTH_PROVIDER=pipedream PIPEDREAM_CLIENT_ID=... \
-  PIPEDREAM_CLIENT_SECRET=... PIPEDREAM_PROJECT_ID=...
+# Composio connectors (optional)
+kortix self-host env set CONNECTOR_AUTH_PROVIDER=composio COMPOSIO_API_KEY=...
 ```
+
+Existing Pipedream deployments remain supported as a rollback path. Configure
+all three legacy credentials with `CONNECTOR_AUTH_PROVIDER=pipedream` only when
+rolling back from Composio.
 
 `kortix self-host env ls` lists every key (secrets masked); `kortix self-host
 doctor` validates the rendered Compose config without applying anything.

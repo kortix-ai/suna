@@ -35,8 +35,9 @@
 import {
   ApprovalDecisionActions,
   type ApprovalDecisionValue,
-  ApprovalIncompleteNotice,
   ApprovalParameters,
+  ApprovalUnreviewableNotice,
+  approvalReviewable,
 } from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -172,7 +173,12 @@ export function SessionApprovalNotice({
   return (
     <div
       className={cn(
-        'bg-popover mb-2 overflow-hidden rounded-md border',
+        // `w-full`, or the composer's `items-center` strip shrinks this card to
+        // its CONTENT width — so the notice was as wide as whatever tool name
+        // happened to be pending, and looked broken at random. Same reason the
+        // reply bar and `QuestionPrompt` carry it (see composer.tsx). Vertical
+        // spacing belongs to that strip's `gap-2`, not to a margin here.
+        'bg-popover w-full overflow-hidden rounded-md border',
         pendingCount > 0 ? 'border-kortix-orange/25' : 'border-border',
       )}
     >
@@ -199,6 +205,11 @@ export function SessionApprovalNotice({
           const request = approvalRequestFromAction(action, decision === null);
           const open = expanded === executionId;
           const reviewComplete = request.reviewComplete !== false;
+          // NOT the same test. A shortened value is still a reviewable one —
+          // see `approvalReviewable`. Only a call with nothing to show loses
+          // the Approve button, and it loses the button rather than wearing a
+          // disabled one.
+          const reviewable = approvalReviewable(request.argsPreview, request.reviewComplete);
 
           return (
             <li key={executionId}>
@@ -284,13 +295,13 @@ export function SessionApprovalNotice({
                       argsPreview={request.argsPreview}
                       reviewComplete={reviewComplete}
                     />
-                    {!reviewComplete ? <ApprovalIncompleteNotice dense /> : null}
+                    {decision === null && !reviewable ? <ApprovalUnreviewableNotice dense /> : null}
                     {decision === null ? (
                       <ApprovalDecisionActions
                         dense
                         onDecision={(next) => onDecide(executionId, next)}
                         busyDecision={busy[executionId] ?? null}
-                        approveDisabled={!reviewComplete}
+                        approvable={reviewable}
                       />
                     ) : null}
                   </div>

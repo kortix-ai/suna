@@ -515,6 +515,7 @@ describe('MCP face', () => {
         'describe',
         'call',
         'connect',
+        'finalize_connection',
         'request_secret',
         'secret_call',
         'add_connector',

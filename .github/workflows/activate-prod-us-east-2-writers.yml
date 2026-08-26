@@ -27,7 +27,7 @@ permissions:
 jobs:
   writers:
     name: Apply guarded US writer state
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 30
     environment: prod-use2-shadow
     env:

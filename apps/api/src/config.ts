@@ -426,10 +426,15 @@ const envSchema = z.object({
   // Fleet default for projects with no explicit per-project override. Defaults
   // ON: wherever the gateway is available (master switch above), the managed
   // gateway is the default routing mechanism and every project inherits it
-  // unless it explicitly opts out. The master switch still wins —
-  // LLM_GATEWAY_ENABLED=false forces native OpenCode for everyone regardless of
-  // this value — and an operator can set LLM_GATEWAY_DEFAULT_ENABLED=false to
-  // opt a whole environment back to native-by-default.
+  // unless it explicitly opts out. Turning the per-project flag OFF is a
+  // fully supported first-class path (native OpenCode provider management:
+  // provider keys injected into the sandbox env, native `provider/model`
+  // refs, no gateway URL in the box) — the deliberate lever for deployments
+  // like Essentia that want their own keys end to end. The master switch
+  // still wins — LLM_GATEWAY_ENABLED=false forces native OpenCode for
+  // everyone regardless of this value — and an operator can set
+  // LLM_GATEWAY_DEFAULT_ENABLED=false to opt a whole environment back to
+  // native-by-default.
   LLM_GATEWAY_DEFAULT_ENABLED: optBoolTrue,
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
@@ -623,6 +628,9 @@ const envSchema = z.object({
   PIPEDREAM_PROJECT_ID: optStr,
   PIPEDREAM_ENVIRONMENT: optStrDefault('production'),
   PIPEDREAM_WEBHOOK_SECRET: optStr,
+
+  // ── Composio Connect (optional — powers provider-neutral connector connect) ─
+  COMPOSIO_API_KEY: optStr,
   // Optional: required only when importing a public Postman workspace URL.
   // Exported collection JSON and Postman-managed Git repositories need no key.
   POSTMAN_API_KEY: optStr,
@@ -1041,6 +1049,9 @@ export const config = {
   PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
   PIPEDREAM_ENVIRONMENT: env.PIPEDREAM_ENVIRONMENT,
   PIPEDREAM_WEBHOOK_SECRET: env.PIPEDREAM_WEBHOOK_SECRET,
+
+  // ─── Composio Connect (Connector connect provider) ─────────────────────────
+  COMPOSIO_API_KEY: env.COMPOSIO_API_KEY,
   POSTMAN_API_KEY: env.POSTMAN_API_KEY,
 
   // ─── Search Providers ──────────────────────────────────────────────────────

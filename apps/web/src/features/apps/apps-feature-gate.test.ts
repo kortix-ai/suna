@@ -110,10 +110,13 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
   expect(view).not.toContain('CustomizeSectionWrapper');
   expect(view).not.toContain('showSidebarToggleButton');
 
-  // One sidebar-opener rule for every view, in flow — never a second copy
-  // absolutely positioned at top-2 left-2 over the macOS traffic lights.
-  expect(view).toContain('useShowPageSidebarOpener');
-  expect(view).toContain('sidebarOpenerLabel(sidebar)');
+  // One sidebar opener for every view — the shared `SidebarToggle`, in flow,
+  // never a second copy absolutely positioned at top-2 left-2 over the macOS
+  // traffic lights. The rule and the control are both pinned in
+  // workspace/project-layout/sidebar-toggle.test.ts.
+  expect(view).toContain('<SidebarToggle />');
+  expect(view).not.toContain('sidebarOpenerLabel');
+  expect(view).not.toContain('placement="floating"');
   expect(view).not.toContain('absolute top-2 left-2');
 
   // The bar pins only because this box has a definite height; every ancestor

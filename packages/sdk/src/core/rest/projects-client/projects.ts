@@ -1,5 +1,6 @@
 // Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
+import type { CatalogModel } from '@kortix/llm-catalog';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import type { SandboxProviderName } from '../platform-client/types';
 import {
@@ -467,6 +468,15 @@ export async function getProjectModelPicker(projectId: string, options?: ApiClie
   );
 }
 
+/**
+ * One MODEL row from the live catalog — the route serves the full
+ * `@kortix/llm-catalog` `CatalogModel` shape verbatim
+ * (runtimeModelCatalog.snapshot()), so the wire type IS that shared type:
+ * a hand-rolled twin here is exactly the drift the catalog package exists to
+ * prevent.
+ */
+export type ProjectLlmCatalogProviderModel = CatalogModel;
+
 /** One provider row from the live, server-refreshed models.dev catalog. */
 export interface ProjectLlmCatalogProvider {
   id: string;
@@ -475,7 +485,7 @@ export interface ProjectLlmCatalogProvider {
   doc?: string | null;
   api?: string | null;
   npm?: string | null;
-  models: Array<{ id: string; name: string; released: string | null }>;
+  models: Array<ProjectLlmCatalogProviderModel>;
 }
 
 export interface ProjectLlmCatalogProvidersResponse {

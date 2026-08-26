@@ -150,6 +150,26 @@ export function isQuickLlmTab(tab: string): tab is QuickLlmTab {
 }
 
 /**
+ * The tabs a NATIVE project (llm_gateway flag off) gets — key intake only.
+ *
+ * Off-gateway there is no managed catalog, no model-defaults chain, no
+ * gateway key/routing/costs/logs: OpenCode in the sandbox owns models, and
+ * the provider keys entered here reach it as plain env vars. Same slice
+ * discipline as `QUICK_LLM_TABS`: a subset of `LLM_TABS`, never a second
+ * list.
+ */
+export type NativeLlmTab = 'providers' | 'custom';
+
+export const NATIVE_LLM_TABS: LlmTabEntry[] = LLM_TABS.filter((t) =>
+  (['providers', 'custom'] as string[]).includes(t.id),
+);
+
+/** True when `tab` exists for a native (gateway-off) project. */
+export function isNativeLlmTab(tab: string): tab is NativeLlmTab {
+  return NATIVE_LLM_TABS.some((t) => t.id === tab);
+}
+
+/**
  * The legacy Customize overlay's `llm-*` `CustomizeSection` ids. The new
  * Settings overlay's `SettingsTab` union has no equivalent — every one of
  * these collapses into the single `models` tab at the redirect
@@ -343,11 +363,23 @@ export function LlmSections({
   );
 }
 
-export function LlmManagementView({ projectId }: { projectId: string }) {
+export function LlmManagementView({
+  projectId,
+  llmGatewayEnabled = true,
+}: {
+  projectId: string;
+  /**
+   * The project's `llm_gateway` flag. Off ⇒ the page is the NATIVE key-intake
+   * surface: Providers + Custom only, no project-default picker, no gateway
+   * administration tabs (their routes 404 `llm_gateway_disabled`).
+   */
+  llmGatewayEnabled?: boolean;
+}) {
   const { isOpen: open, activeTab: section } = useSettingsNav();
   const [tab, setTab] = useState<LlmTab>(
     () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? 'providers',
   );
+  const effectiveTab: LlmTab = llmGatewayEnabled ? tab : isNativeLlmTab(tab) ? tab : 'providers';
 
   // A role with the LLM section's READ leaf (project.read) but not
   // project.write sees the gateway read-only: logs/overview/spend stay
@@ -372,14 +404,21 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
            puts its one page-level control in. It is NOT in the `filters` row
            beside the tabs: a bordered dropdown opposite a filled pill strip
            reads as a second tab strip, and the row that has to look identical
-           to Connectors / Agents / Skills is exactly that one. */
-        canWrite ? <ProjectDefaultPicker projectId={projectId} /> : undefined
+           to Connectors / Agents / Skills is exactly that one.
+           Native mode has no model-defaults chain, so no picker at all. */
+        canWrite && llmGatewayEnabled ? <ProjectDefaultPicker projectId={projectId} /> : undefined
       }
-      filters={<LlmTabStrip value={tab} onValueChange={(v) => setTab(v as LlmTab)} />}
+      filters={
+        <LlmTabStrip
+          value={effectiveTab}
+          tabs={llmGatewayEnabled ? undefined : NATIVE_LLM_TABS}
+          onValueChange={(v) => setTab(v as LlmTab)}
+        />
+      }
     >
       <LlmSections
         projectId={projectId}
-        tab={tab}
+        tab={effectiveTab}
         onTabChange={setTab}
         canWrite={canWrite}
         enabled={open}

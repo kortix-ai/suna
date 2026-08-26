@@ -105,16 +105,16 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.19" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.23" \\
     && command -v opencode \\
     && opencode --version \\
     && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
     && test -x "$opencode_native" \\
     && test "$(wc -c < "$opencode_native")" -gt 50000000 \\
-    && test "$("$opencode_native" --version)" = "1.18.19" \\
+    && test "$("$opencode_native" --version)" = "1.18.23" \\
     && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\
     && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
-    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.19"
+    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.23"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup
@@ -139,7 +139,7 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.19","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.23","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
     && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
@@ -289,16 +289,16 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.19" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.23" \\
     && command -v opencode \\
     && opencode --version \\
     && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
     && test -x "$opencode_native" \\
     && test "$(wc -c < "$opencode_native")" -gt 50000000 \\
-    && test "$("$opencode_native" --version)" = "1.18.19" \\
+    && test "$("$opencode_native" --version)" = "1.18.23" \\
     && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\
     && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
-    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.19"
+    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.23"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup
@@ -323,7 +323,7 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.19","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.23","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
     && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
@@ -474,16 +474,16 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.19" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.23" \\
     && command -v opencode \\
     && opencode --version \\
     && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \\
     && test -x "$opencode_native" \\
     && test "$(wc -c < "$opencode_native")" -gt 50000000 \\
-    && test "$("$opencode_native" --version)" = "1.18.19" \\
+    && test "$("$opencode_native" --version)" = "1.18.23" \\
     && ln -sfn "$opencode_native" /opt/kortix/opencode.current \\
     && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \\
-    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.19"
+    && test "$(/usr/local/bin/opencode-kortix --version)" = "1.18.23"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup
@@ -508,7 +508,7 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.19","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.23","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
     && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\

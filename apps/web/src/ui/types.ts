@@ -88,6 +88,12 @@ export interface TriggerTitle {
   title: string;
   subtitle?: string;
   args?: string[];
+  /**
+   * Line-count summary rendered beside the subtitle as `+N −N` (DiffStat on
+   * web). Plain data, not a node — this folder is framework-free, and the
+   * numbers mean the same thing on every surface.
+   */
+  stat?: { additions: number; deletions: number };
 }
 
 /** A file entry in an apply_patch tool part's metadata. */

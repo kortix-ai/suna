@@ -633,7 +633,7 @@ to see the full enum.
   How to get a credential you don't have — an API key, or an app connected —
   by minting a short-lived **setup link** and surfacing the URL, instead of
   punting the human to the dashboard or asking them to paste a raw key. Covers
-  the two link kinds (secret intake / Pipedream Quick Connect), how to mint each
+  the two link kinds (secret intake / Composio connect), how to mint each
   (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
   `kortix connectors connect` CLI), what the human sees
   (web modal vs Slack link), how to verify it

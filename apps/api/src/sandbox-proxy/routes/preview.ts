@@ -50,6 +50,11 @@ import {
   wakeSandbox,
 } from '../backend';
 import {
+  recordSseStreamEnd,
+  shouldBypassIngressCache,
+  trackSseBytes,
+} from '../sse-stall';
+import {
   DEFAULT_AGENT_SENTINEL,
   type PrePromptEnvSyncDeps,
   bodyWithoutPromptAgent,
@@ -1136,11 +1141,26 @@ export async function forwardToSandbox(
   // have no evidence about the box.
   let lastAttemptHop: ProxyHop = 'provider_ingress';
 
+  // The one SSE endpoint proxied per sandbox. Its streams get a byte-counting
+  // passthrough (below), and a previous stream that answered 200 without EVER
+  // writing a byte — the stale-cached-ingress signature, which produces no
+  // error status and therefore never invalidated anything — costs the next
+  // connect its cache entry, so it re-resolves instead of re-dialling the
+  // same dead address for the rest of the 5-minute TTL. See `sse-stall.ts`.
+  const isSseEventStreamRequest = method === 'GET' && remainingPath.endsWith('/global/event');
+  const sseStallKey = `${sandboxId}:${port}`;
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
       lastAttemptHop = 'provider_ingress';
+      if (isSseEventStreamRequest && attempt === 0 && shouldBypassIngressCache(sseStallKey)) {
+        console.warn(
+          `[PREVIEW] previous /global/event stream for ${sandboxId}:${port} delivered 0 bytes — re-resolving ingress`,
+        );
+        invalidatePreviewLink(sandboxId, port);
+      }
       const ingress = await resolveSandboxIngress(record, ingressRequest);
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
@@ -1603,6 +1623,21 @@ export async function forwardToSandbox(
           statusText: upstream.statusText,
           headers: respHeaders,
         });
+      }
+
+      // SSE gets the byte-counting passthrough (chunks untouched, backpressure
+      // preserved): a stream that ends having delivered ZERO bytes marks this
+      // sandbox so the next connect re-resolves ingress — see `sse-stall.ts`.
+      if (isSseEventStreamRequest && upstream.ok && upstream.body) {
+        respHeaders.delete('content-length');
+        return new Response(
+          trackSseBytes(upstream.body, (bytes) => recordSseStreamEnd(sseStallKey, bytes)),
+          {
+            status: upstream.status,
+            statusText: upstream.statusText,
+            headers: respHeaders,
+          },
+        );
       }
 
       return new Response(upstream.body, {

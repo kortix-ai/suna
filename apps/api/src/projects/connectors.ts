@@ -39,8 +39,10 @@ import { createHash } from 'node:crypto';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTHORIZATION_STRATEGIES,
+  CONNECTOR_PROVIDERS,
   RESERVED_SLUG_PROVIDERS,
   SLUG_RE,
+  type ConnectorProvider as ManifestConnectorProvider,
   parseConnectorHeaders,
 } from '@kortix/manifest-schema';
 import {
@@ -51,23 +53,9 @@ import {
 import { isValidSecretName } from './secrets';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 
-export type ConnectorProvider =
-  | 'pipedream'
-  | 'mcp'
-  | 'openapi'
-  | 'postman'
-  | 'graphql'
-  | 'http'
-  | 'channel'
-  | 'computer';
+export type ConnectorProvider = ManifestConnectorProvider | 'computer';
 const PROVIDERS: readonly ConnectorProvider[] = [
-  'pipedream',
-  'mcp',
-  'openapi',
-  'postman',
-  'graphql',
-  'http',
-  'channel',
+  ...CONNECTOR_PROVIDERS,
   'computer',
 ];
 export type ConnectorAuthorizationStrategy = (typeof CONNECTOR_AUTHORIZATION_STRATEGIES)[number];
@@ -180,7 +168,7 @@ export interface ConnectorSpec {
    *  action defaults to require_approval unless an explicit policy opens it. */
   sensitive: boolean;
   // ── provider-specific ──
-  /** pipedream: app slug (`gmail`, `slack`). */
+  /** pipedream: app slug; composio: toolkit slug (`gmail`, `slack`). */
   app: string | null;
   /** pipedream: named connected-account binding. */
   account: string | null;
@@ -312,7 +300,7 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
   // `shared` is the only mode and the implicit default for every provider —
   // never emit `credential` (mirrors how `sensitive: false` is omitted).
   // Provider-specific keys — only emit what carries information.
-  if (spec.provider === 'pipedream') {
+  if (spec.provider === 'pipedream' || spec.provider === 'composio') {
     if (spec.app) entry.app = spec.app;
     if (spec.account) entry.account = spec.account;
   } else if (spec.provider === 'mcp') {
@@ -535,6 +523,7 @@ function parseConnectorEntry(
       authAuto:
         (row.auth === undefined || row.auth === null) &&
         provider !== 'pipedream' &&
+        provider !== 'composio' &&
         provider !== 'channel' &&
         provider !== 'computer',
       policies: policiesParsed.value,
@@ -551,10 +540,10 @@ function parseProviderFields(
 ): { ok: true; value: Omit<ConnectorSpec, 'auth' | 'headers' | 'policies'> } | ParseErr {
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
-  if (provider === 'pipedream') {
+  if (provider === 'pipedream' || provider === 'composio') {
     const app = str(row.app);
     if (!app)
-      return err(slug, 'provider="pipedream" requires `app` (the Pipedream app slug)', filename);
+      return err(slug, `provider="${provider}" requires \`app\` (the ${provider} app slug)`, filename);
     // account defaults to the slug — names the connected-account binding.
     const account = str(row.account) ?? slug;
     return { ok: true, value: { ...base, app, account } };
@@ -641,10 +630,10 @@ function parseAuth(
       filename,
     );
   }
-  if (provider === 'pipedream' && type !== 'none') {
+  if ((provider === 'pipedream' || provider === 'composio') && type !== 'none') {
     return err(
       slug,
-      'provider="pipedream" authenticates via its connected account — omit [connectors.auth]',
+      `provider="${provider}" authenticates via its connected account — omit [connectors.auth]`,
       filename,
     );
   }
@@ -723,10 +712,10 @@ function parseHeaders(
   // Platform-called providers never build the raw HTTP request themselves, so
   // a header table there would be silently dropped — reject it loudly instead
   // (mirrors how `auth` is rejected for the same two providers).
-  if (provider === 'pipedream') {
+  if (provider === 'pipedream' || provider === 'composio') {
     return err(
       slug,
-      'provider="pipedream" calls run through Pipedream — `headers` is not supported',
+      `provider="${provider}" calls run through ${provider} — \`headers\` is not supported`,
       filename,
     );
   }

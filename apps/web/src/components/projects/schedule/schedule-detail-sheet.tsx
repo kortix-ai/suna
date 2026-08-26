@@ -60,8 +60,9 @@ import {
   qk,
   useRuntimeProviders,
   useVisibleAgents,
-  wireToModelKey,
+  useFeatureFlag,
 } from '@kortix/sdk/react';
+import { storedModelRefToKey } from '@/lib/llm-gateway';
 import {
   CaretDownIcon,
   DotsThreeIcon,
@@ -743,7 +744,13 @@ function AgentPanel({
   const agents = useVisibleAgents({ projectId });
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
-  const selectedModel = trigger.model ? wireToModelKey(trigger.model) : null;
+  // Mode-aware read-back: a native (gateway-off) trigger pin is
+  // `provider/model` and must not be forced under the synthetic `kortix`
+  // provider, or the selector shows "unset" beside a pinned trigger.
+  const llmGatewayFlag = useFeatureFlag(projectId, 'llm_gateway');
+  const selectedModel = trigger.model
+    ? storedModelRefToKey(trigger.model, llmGatewayFlag.enabled === true)
+    : null;
 
   const saveAgent = useMutation({
     mutationFn: (agent: string) => updateProjectTrigger(projectId, trigger.slug, { agent }),

@@ -5,6 +5,7 @@ import {
   resolveSessionOverlay,
   shouldForgetNewSessionHint,
   shouldMountSessionChat,
+  resolveBootPresentation,
 } from './session-surface';
 
 describe('isNewSessionSurface', () => {
@@ -163,5 +164,31 @@ describe('shouldForgetNewSessionHint', () => {
     expect(
       shouldForgetNewSessionHint({ chatReady: false, hasTranscript: false, submitted: true }),
     ).toBe(true);
+  });
+});
+
+describe('resolveBootPresentation', () => {
+  test('a boot with a transcript under it becomes a banner, not a wall', () => {
+    // THE COMPLAINT: opening a hibernated session showed a full-screen
+    // "Connecting…" for the whole wake with no transcript, although the
+    // messages existed. With a server-side mirror they are on screen from the
+    // first frame, so the boot status has to move out of their way.
+    expect(resolveBootPresentation({ overlay: 'boot-loader', hasTranscript: true })).toBe('banner');
+  });
+
+  test('a boot with nothing under it stays full-screen', () => {
+    expect(resolveBootPresentation({ overlay: 'boot-loader', hasTranscript: false })).toBe(
+      'full-screen',
+    );
+  });
+
+  test('the new-session shell is never demoted to a banner', () => {
+    // It is a typing surface, not a status screen, and there is by definition
+    // no transcript under it to reveal.
+    for (const hasTranscript of [true, false]) {
+      expect(resolveBootPresentation({ overlay: 'new-session-shell', hasTranscript })).toBe(
+        'full-screen',
+      );
+    }
   });
 });

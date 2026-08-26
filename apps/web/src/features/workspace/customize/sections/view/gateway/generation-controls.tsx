@@ -1,21 +1,18 @@
-'use client';
-
 /**
- * Per-model generation-parameter controls (reasoning effort, temperature,
- * top_p, max output tokens) — capability-gated off the live catalog, never
- * hardcoded per model. Mounted by the routing section's project-default
- * config. (It was shared with the Playground's per-model tuning until that
- * tab was deleted; this file is unaffected.)
+ * Per-model generation controls (reasoning effort, temperature, top_p, max
+ * output tokens) for the Gateway → Routing "Generation defaults" panel.
  *
  * *** CAPABILITY DATA SOURCE ***
- * `catalogModelForGateway` mirrors apps/api's `catalogModelForWireModel`
- * (models/catalog-models.ts) but reads the WEB-side catalog —
- * `LLM_PROVIDER_BY_ID` (apps/web/src/lib/llm-providers.ts), which is the
- * baked snapshot until `applyLiveLlmProviderCatalog` pushes the live,
- * hourly-refreshed catalog over it. Same underlying models.dev data, no
- * extra network round trip — every field this component reads
- * (reasoning_options, temperature, limit.output) was threaded onto
- * `LlmProviderModel` in that module for exactly this purpose.
+ * Every control is gated on the model's record from the project's
+ * `/model-picker` response (`GatewayCatalogModel`: `reasoning_options`,
+ * `temperature`, `limit.output`) via `@kortix/llm-catalog`'s
+ * `generationControlCapabilities` — the exact function the gateway's own
+ * request clamp runs, so the panel offers precisely what a request may carry.
+ * The record comes from the API's hourly-refreshed live catalog, with managed
+ * ids already resolved through their pricingRef server-side. There is no
+ * web-side catalog lookup here any more: the baked seed it used to read was
+ * hand-regenerated and sat 38 days stale (#6879), hiding controls for every
+ * model newer than it.
  */
 
 import { WarningIcon as AlertTriangle } from '@phosphor-icons/react';
@@ -31,55 +28,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
-import { LLM_PROVIDER_BY_ID, type LlmProviderModel } from '@/lib/llm-providers';
-import {
-  generationControlCapabilities,
-  getManagedModel,
-  pricingRefLookupCandidates,
-} from '@kortix/llm-catalog';
-import type { GatewayModelGenerationConfig } from '@kortix/sdk';
+import { generationControlCapabilities } from '@kortix/llm-catalog';
+import type { GatewayCatalogModel, GatewayModelGenerationConfig } from '@kortix/sdk';
 
-/** See the module doc comment — this is the client-side mirror of
- *  apps/api's `catalogModelForWireModel`. Kept in lockstep deliberately:
- *  same precedence (codex/<id> → openai/<id>, provider/model, managed
- *  bare id via pricingRef), same permissive fallback for
- *  a managed model models.dev doesn't carry under its own id. */
-export function catalogModelForGateway(wireModel: string): LlmProviderModel | undefined {
-  if (wireModel.startsWith('codex/')) {
-    const id = wireModel.slice('codex/'.length);
-    return LLM_PROVIDER_BY_ID.get('openai')?.models.find((m) => m.id === id);
-  }
-  const slash = wireModel.indexOf('/');
-  if (slash > 0) {
-    const providerId = wireModel.slice(0, slash);
-    const modelId = wireModel.slice(slash + 1);
-    return LLM_PROVIDER_BY_ID.get(providerId)?.models.find((m) => m.id === modelId);
-  }
-  const managed = getManagedModel(wireModel);
-  if (managed) {
-    // Try dot/dash id variants (see `pricingRefLookupCandidates`) so a
-    // dotted-vs-dashed slip in `pricingRef` degrades gracefully instead of
-    // silently losing real capability data.
-    for (const ref of pricingRefLookupCandidates(managed.pricingRef)) {
-      const refSlash = ref.indexOf('/');
-      if (refSlash <= 0) continue;
-      const byRef = LLM_PROVIDER_BY_ID.get(ref.slice(0, refSlash))?.models.find(
-        (m) => m.id === ref.slice(refSlash + 1),
-      );
-      if (byRef) return byRef;
-    }
-    return {
-      id: managed.id,
-      name: managed.name,
-      released: null,
-      reasoning: true,
-      tool_call: true,
-      temperature: true,
-      limit: managed.limit,
-    };
-  }
-  return undefined;
-}
 
 const EMPTY_CONFIG: GatewayModelGenerationConfig = {};
 
@@ -92,17 +43,30 @@ const EMPTY_CONFIG: GatewayModelGenerationConfig = {};
  */
 export function GenerationControlsPanel({
   model,
+  catalogModel,
   value,
   onChange,
   disabled,
 }: {
   model: string;
+  /**
+   * The model's record from the project's `/model-picker` response — the
+   * API's live catalog (managed ids already resolved through their
+   * pricingRef server-side). This is the ONLY capability source: the web's
+   * baked catalog seed was hand-regenerated and sat 38 days stale, hiding
+   * every control for models newer than it (#6879). Absent → no controls.
+   */
+  catalogModel: GatewayCatalogModel | undefined;
   value: GatewayModelGenerationConfig | undefined;
   onChange: (next: GatewayModelGenerationConfig) => void;
   disabled?: boolean;
 }) {
-  const catalogModel = useMemo(() => catalogModelForGateway(model), [model]);
-  const caps = useMemo(() => generationControlCapabilities(catalogModel), [catalogModel]);
+  // `GatewayCatalogModel` is keyed by wire id and carries no `id` field of its
+  // own; `CatalogModel` wants one — stamp the wire id on.
+  const caps = useMemo(
+    () => generationControlCapabilities(catalogModel ? { id: model, ...catalogModel } : undefined),
+    [catalogModel, model],
+  );
   const config = value ?? EMPTY_CONFIG;
 
   const hasAnyControl =

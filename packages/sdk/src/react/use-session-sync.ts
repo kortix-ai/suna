@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
   getSessionCacheOwnership,
@@ -15,6 +15,11 @@ import {
   resetSessionSyncControllersForSession,
   retainSessionSyncController,
 } from '../browser/session-sync/session-sync-registry';
+import {
+  loadSessionTranscriptMirror,
+  mirrorMessagesForHydrate,
+  shouldHydrateFromMirror,
+} from '../browser/session-sync/server-transcript-mirror';
 import { transcriptIsFragment } from '../core/session-sync/fragment';
 import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
@@ -67,6 +72,23 @@ interface UseSessionSyncOptions {
    * slot decides, as before.
    */
   working?: boolean;
+  /**
+   * The control plane is holding a turn open for this session
+   * (`useSessionWorking().serverOpenTurnToken !== null`), even when the
+   * projection's ANSWER is idle.
+   *
+   * This is the poll's escape from a chicken-and-egg the projection alone
+   * cannot break: a stale wire idle frame (a dead SSE stream's last word)
+   * vetoes the server's open turn row, the projection answers idle, and
+   * `working: false` switches off the very tail read whose evidence — the
+   * runtime still producing output — would prove the veto wrong. Keeping the
+   * poll on while the server holds a turn open lets that evidence arrive
+   * (`hydrate` stamps `sessionActivityAt` when a runtime read shows the
+   * transcript moved mid-turn), and the projection's content-first rule does
+   * the rest. Costs one bounded tail read per interval, only while the
+   * disagreement lasts; never touches the public `isBusy`.
+   */
+  serverHoldsTurn?: boolean;
 }
 
 /**
@@ -105,13 +127,17 @@ export function livenessBusy(input: {
   runtimeHealthy?: boolean;
   working: boolean | undefined;
   streamBusy: boolean;
+  /** See {@link UseSessionSyncOptions.serverHoldsTurn}: the control plane still
+   *  holds a turn open, which keeps the verification poll on even when the
+   *  projection answers idle (a stale wire idle frame can veto the row). */
+  serverHoldsTurn?: boolean;
 }): boolean {
   if (!input.networkEnabled) return false;
-  return sessionSyncBusy(input);
+  return sessionSyncBusy(input) || input.serverHoldsTurn === true;
 }
 
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
-  const { kortixSessionScope, networkEnabled = true, working } = options;
+  const { kortixSessionScope, networkEnabled = true, working, serverHoldsTurn } = options;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
   const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
   const cacheOwnerScope = resolveSessionCacheOwnerScope(runtimeScope, kortixSessionScope);
@@ -152,6 +178,53 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     );
     useSyncStore.getState().clearSession(sessionId);
   }, [cacheOwnerScope, runtimeScope, sessionId]);
+
+  // FIRST PAINT FROM THE SERVER'S MIRROR — deliberately NOT gated on
+  // `networkEnabled`, `runtimeHealthy`, or `runtimeScope`.
+  //
+  // That is the whole point. Every other read in this hook waits for the box;
+  // opening a hibernated session therefore showed a full-screen loader with no
+  // transcript for the length of the wake (measured 5-240 s) although every
+  // message existed. This read asks the CONTROL PLANE, which is up, for the
+  // copy it wrote at the last turn end.
+  //
+  // It is not the disk mirror returning. That one was deleted because its
+  // freshness test read the transcript's SHAPE and a Stop moves none of it, so
+  // a stopped thread painted as still running. This payload carries OpenCode's
+  // `info` VERBATIM — `time.completed` and `error` included — and the server
+  // writes it BECAUSE a turn ended, so there is no client-side freshness test
+  // left to get wrong. `shouldHydrateFromMirror` additionally refuses a mirror
+  // captured from a different OpenCode root, which the scope-keyed disk cache
+  // could not check.
+  //
+  // Painted with `source: 'cache'`, so the store's existing settle rule owns
+  // reconciliation: the first runtime read confirms every id it contains and
+  // drops any it covers but lacks. Nothing here needs the settle rule changed.
+  useEffect(() => {
+    if (!canQueryOpenCodeSession(sessionId) || !kortixSessionScope) return;
+    // Already have the thread (a warm remount, or the runtime beat us): the
+    // live read outranks a snapshot and must never be overwritten by one.
+    if ((useSyncStore.getState().messages[sessionId]?.length ?? 0) > 0) return;
+    const abort = new AbortController();
+    void loadSessionTranscriptMirror({
+      kortixSessionScope,
+      signal: abort.signal,
+    }).then((envelope) => {
+      if (abort.signal.aborted || !envelope) return;
+      const state = useSyncStore.getState();
+      if (
+        !shouldHydrateFromMirror({
+          envelope,
+          runtimeSessionId: sessionId,
+          hasMessages: (state.messages[sessionId]?.length ?? 0) > 0,
+        })
+      ) {
+        return;
+      }
+      state.hydrate(sessionId, mirrorMessagesForHydrate(envelope), { source: 'cache' });
+    });
+    return () => abort.abort();
+  }, [kortixSessionScope, sessionId]);
 
   // NO DISK PAINT. The transcript renders from the runtime and from this tab's
   // own optimistic writes — nothing else.
@@ -279,13 +352,24 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
 
   useEffect(() => {
-    controller.setBusy(livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy }));
-  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working]);
+    controller.setBusy(
+      livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
+    );
+  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn]);
+
+  // Re-read the tail on demand. The transcript body renders this behind its
+  // "couldn't load" state so `freshness === 'error'` is recoverable without a
+  // page reload or a full sandbox restart — it just asks the controller to
+  // reconcile again, which is the same read the mount and the poll do.
+  const retryTranscript = useCallback(() => {
+    void controller.reconcile('manual');
+  }, [controller]);
 
   return {
     messages,
     status,
     freshness: sync.freshness,
+    retryTranscript,
     isBusy,
     isLoading,
     hasOlder: sync.hasOlder,

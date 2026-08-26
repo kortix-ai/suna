@@ -23,3 +23,4 @@ export * from './presentation';
 export * from './connection';
 export * from './working';
 export * from './compaction';
+export * from './wake-escalation';

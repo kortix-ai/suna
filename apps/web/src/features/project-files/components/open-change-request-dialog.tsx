@@ -1,8 +1,14 @@
 'use client';
 
+import {
+  Alert,
+  AlertContent,
+  AlertDescription,
+  AlertMedia,
+  AlertTitle,
+} from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -25,7 +31,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import type { ProjectBranch, ProjectSession } from '@kortix/sdk';
-import { StackIcon as Layers } from '@phosphor-icons/react';
+import { StackIcon as Layers, WarningIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBranches } from '../hooks/use-branches';
@@ -229,16 +235,23 @@ export function OpenChangeRequestDialog({
         {hasOnlyDefaultBranch ? (
           <>
             <ModalBody className="space-y-3 pt-0">
-              <InfoBanner
-                tone="warning"
-                title={tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsOpenChangeRequestDialog.line246JsxAttrTitleNoNonDefaultVersionsYet',
-                )}
-              >
-                {tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsOpenChangeRequestDialog.line247JsxTextStartASessionEachSessionLivesOnIts',
-                )}
-              </InfoBanner>
+              <Alert variant="warning">
+                <AlertMedia>
+                  <WarningIcon className="size-4" />
+                </AlertMedia>
+                <AlertContent>
+                  <AlertTitle>
+                    {tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsOpenChangeRequestDialog.line246JsxAttrTitleNoNonDefaultVersionsYet',
+                    )}
+                  </AlertTitle>
+                  <AlertDescription>
+                    {tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsOpenChangeRequestDialog.line247JsxTextStartASessionEachSessionLivesOnIts',
+                    )}
+                  </AlertDescription>
+                </AlertContent>
+              </Alert>
             </ModalBody>
             <ModalFooter className="sm:justify-end">
               <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)}>
@@ -342,11 +355,20 @@ export function OpenChangeRequestDialog({
                 />
               )}
               {!sessionMode && headRef && baseRef && headRef === baseRef && (
-                <InfoBanner tone="warning">
-                  {tHardcodedUi.raw(
-                    'featuresProjectFilesComponentsOpenChangeRequestDialog.line354JsxTextPickTwoDifferentVersionsYouCanAposT',
-                  )}
-                </InfoBanner>
+                // One sentence, so it is a description and not a title:
+                // `AlertTitle` is `line-clamp-1` and would eat the second half.
+                <Alert variant="warning">
+                  <AlertMedia>
+                    <WarningIcon className="size-4" />
+                  </AlertMedia>
+                  <AlertContent>
+                    <AlertDescription>
+                      {tHardcodedUi.raw(
+                        'featuresProjectFilesComponentsOpenChangeRequestDialog.line354JsxTextPickTwoDifferentVersionsYouCanAposT',
+                      )}
+                    </AlertDescription>
+                  </AlertContent>
+                </Alert>
               )}
 
               <div className="space-y-1.5">
