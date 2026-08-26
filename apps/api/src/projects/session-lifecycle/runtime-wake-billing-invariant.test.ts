@@ -136,7 +136,7 @@ describe('the retry ladder cannot manufacture an active row', () => {
     };
     for (const ms of [0, 60_000, 130_000, 40 * 60_000]) {
       const state = stampedRuntimeFailureState(stamped, at(ms));
-      expect(['retry', 'cooling_down', 'terminal']).toContain(state);
+      expect(['retry', 'cooling_down', 'terminal']).toContain(state ?? 'null-state');
     }
   });
 

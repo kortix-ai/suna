@@ -3005,3 +3005,52 @@ cooldown ladder), `session-lifecycle/runtime-wake-billing-invariant.test.ts`
 (the 2026-08-17 mid-turn park and the compute-close exemption stay intact),
 `session-lifecycle/stopped-observation-followup.test.ts` (bounded confirmation),
 `session-lifecycle/start-envelope.test.ts` (one envelope per open state).
+
+### A retry class is a claim about the FAILURE, not about the call that returned it (2026-08-26)
+
+**When:** writing or reviewing any `retryable = <outcome> === …` line on a
+delivery/queue path. `executeQueuedContinue` derived retryability from one
+outcome value, and every producer of that value — a stopped box, a parked
+session, a dead resolved target — was a DOWN RUNTIME, not a bad message. A
+queued prompt delivered while its box was unreachable went `dead_lettered` on
+attempt 1 (`state:failed, attempts:1, last_error:"delivery outcome: failed"`)
+and was never re-tried when the box returned minutes later. Rule: **name the
+unreachable-runtime class separately from the refusal class, keep the work
+queued with a runtime-scaled backoff, spend no dead-letter budget on it, and
+re-arm it on the event you are actually waiting for.** *Enforcer:*
+`deliver.test.ts` (stopped/parked → `unreachable`, missing → `no-session`) and
+`runtime-unreachable-park.test.ts` (bounded budget, backoff ladder, fresh
+idempotency key, Stop survives as a hold).
+
+### A provider's "resume" is not a promise that your processes come back (2026-08-26)
+
+**When:** using any pause/resume sandbox lifecycle that persists the filesystem
+only. E2B's `lifecycle.autoResume` requires a MEMORY snapshot; with
+`keepMemory:false` the SDK documents the box as cold-booting and needing an
+explicit `connect()`, and Kortix sets no template `startCmd` — so apps/api is
+the only thing that starts the runtime. Resumes that came back with a dead
+process tree burned the full 190 s health wait and handed back an unreachable
+box; only a human restart (a NEW sandbox) healed it. Rule: **after a resume,
+prove the daemon answers on a short bound; if it does not AND no supervisor
+process is alive, clear the stale lock, relaunch once, re-verify, and log the
+workaround under one greppable string so its rate is countable.** Never `rm` a
+flock'd lock while a live holder exists — that does not free the lock, it lets a
+second daemon win a different inode. *Enforcer:* `e2b.test.ts` — dead resume is
+revived and re-verified, a healthy resume touches nothing, a merely-slow resume
+is never double-started.
+
+### An image is a cache; a boot that blocks on building one has confused it for the truth (2026-08-26)
+
+**When:** touching `ensureSandboxImage` or any boot-path call that can reach a
+provider build. Every `self-host update` bumps the runtime fingerprint and
+starts a template rebuild (14 m 11 s measured); session starts inside that
+window sat in `provisioning` for 10–34 minutes, polling the in-flight build for
+up to 12 minutes or building inline. The daemon converges on the deploy's
+runtime assets at boot and on every resume, so a box booted from the previous
+ready image serves the same CLI, skills and OpenCode pin. Rule: **a session boot
+serves the last image its template lineage actually shipped and lets the new one
+bake behind it; only a genuinely FIRST build may block.** Bound the fallback to
+the same lineage, same provider, recent — convergence does not rebuild the base
+rootfs. *Enforcer:* `last-ready-image.test.ts` (predecessor served while the new
+identity builds; first build still blocks) and `e2b.test.ts` (a resume never
+consults a template at all).
