@@ -13,9 +13,30 @@ All API and web profiles belong to the single Armor organization **`kortix`**.
 Always pass `--team kortix` when pushing or pulling. Never rely on the CLI's
 personal-team default.
 
-Production uses the same organization and access token as non-production.
-Keep production pulls as a separate, explicit command. This is an operational
-guardrail, not an authorization boundary.
+Access is scoped **per member, per armored key** (Dotenvx Armor FGAC, Business
+plan; one armored key == one `.env*` file). Since 2026-08-26 the two PROD keys
+(`apps/api/.env.prod`, `apps/web/.env.prod`) are granted to the **owner only**.
+Every other member (admin or member role) has all `.env`, `.env.dev`, and
+`.env.staging` keys. Armor refuses a non-owner `dotenvx run -f .env.prod`
+(`PERMISSION_DENIED` on CLI 2.x); that is the intended boundary, not a broken login.
+
+Manage access with `dotenvx curl` (CLI >= 2.18):
+
+```sh
+dotenvx curl "https://armor.dotenvx.com/api/teams/kortix/members"          # member ids + roles
+dotenvx curl "https://armor.dotenvx.com/api/armor/keypairs?per=100"        # keys, named per file
+dotenvx curl "https://armor.dotenvx.com/api/teams/kortix/members/<id>/keypairs/<public_key>/grant"  --request POST
+dotenvx curl "https://armor.dotenvx.com/api/teams/kortix/members/<id>/keypairs/<public_key>/revoke" --request POST
+dotenvx curl "https://armor.dotenvx.com/api/logs?team=kortix&events=keypair/access&keypair=<public_key>"  # who decrypted it
+```
+
+Use the `/api/teams/kortix/...` routes: the PROD public keys also exist in the
+leftover `kortix-ai-prod` team, so the bare `/api/armor/keypairs/...` routes
+return `DOTENVX_TEAM_REQUIRED`. There is no read endpoint for the access
+matrix; read it in the web UI (`Keypair › Team` tab) or infer it from
+`/api/logs`. A grant/revoke takes effect on the next `dotenvx run`; it cannot
+retract a private key already pulled into a local `.env.keys` — rotate the
+keypair for that.
 
 ## The four environments (local-run secrets)
 
@@ -68,7 +89,7 @@ This re-encrypts the file in place (value becomes `KEY=encrypted:…`). Then com
 | Read a secret                                | `dotenvx get KEY -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`)                                                             |
 | Add / change a secret                        | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`), then commit                                          |
 | First time / new machine (non-prod profiles) | `dotenvx armor login` then, from each app directory, `for f in .env .env.dev .env.staging; do dotenvx armor pull --team kortix -f "$f"; done` |
-| Pull prod (explicitly)                       | From each app directory: `dotenvx armor pull --team kortix -f .env.prod`                                                                      |
+| Run against prod (owner only)                | `pnpm dev:prod-env` — decrypts through Armor at run time; do **not** `armor pull -f .env.prod` into `.env.keys`                             |
 | Share a NEW profile / rotated key            | Push every profile with `--team kortix`                                                                                                       |
 | Remove a key from the cloud                  | `dotenvx armor down --team kortix -f <file>`                                                                                                  |
 
