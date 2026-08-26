@@ -115,22 +115,22 @@ resource "aws_wafv2_web_acl_association" "euw2" {
   web_acl_arn  = data.aws_wafv2_web_acl.euw2.arn
 }
 
-resource "aws_cloudwatch_metric_alarm" "usw2_target_response_time" {
-  for_each            = local.usw2_albs
-  alarm_name          = "kortix-alb-${each.value.name}-target-response-time"
-  alarm_description   = "SOC2 DCF-86: ALB target response time is elevated"
-  namespace           = "AWS/ApplicationELB"
-  metric_name         = "TargetResponseTime"
-  dimensions          = { LoadBalancer = each.value.dimension }
-  statistic           = "Average"
-  period              = 300
-  evaluation_periods  = 2
-  datapoints_to_alarm = 2
-  threshold           = 2
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [data.aws_sns_topic.usw2_alerts.arn]
-  tags                = local.alarm_tags
+# TargetResponseTime alarms are retired (2026-08-26). The gateway ALB streams
+# LLM completions and the API ALB holds SSE streams, so a 6-11 s average
+# response time is normal traffic. The alarm flapped every 5-10 minutes and sent
+# ~300 SNS emails in one day with zero real incidents. elb-5xx, unhealthy-hosts,
+# and zero-healthy-hosts keep DCF-86 availability coverage.
+#
+# `removed` forgets the alarms from state without a Terraform destroy, so the
+# automatic apply on main passes its no-delete guard. The ALB alarm reconciler
+# (functions/alb_alarm_reconciler.py, RETIRED_ALARM_SUFFIXES) deletes the live
+# alarms — including the per-target-group variants Terraform never managed —
+# within one five-minute schedule tick.
+removed {
+  from = aws_cloudwatch_metric_alarm.usw2_target_response_time
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "usw2_elb_5xx" {
@@ -169,23 +169,11 @@ resource "aws_cloudwatch_metric_alarm" "usw2_unhealthy_hosts" {
   tags                = local.alarm_tags
 }
 
-resource "aws_cloudwatch_metric_alarm" "euw2_target_response_time" {
-  provider            = aws.euw2
-  for_each            = local.euw2_albs
-  alarm_name          = "kortix-alb-${each.value.name}-target-response-time"
-  alarm_description   = "SOC2 DCF-86: ALB target response time is elevated"
-  namespace           = "AWS/ApplicationELB"
-  metric_name         = "TargetResponseTime"
-  dimensions          = { LoadBalancer = each.value.dimension }
-  statistic           = "Average"
-  period              = 300
-  evaluation_periods  = 2
-  datapoints_to_alarm = 2
-  threshold           = 2
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [data.aws_sns_topic.euw2_alerts.arn]
-  tags                = local.alarm_tags
+removed {
+  from = aws_cloudwatch_metric_alarm.euw2_target_response_time
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "euw2_elb_5xx" {

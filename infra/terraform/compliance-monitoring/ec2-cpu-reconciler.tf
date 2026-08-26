@@ -51,12 +51,29 @@ data "aws_iam_policy_document" "ec2_cpu_reconciler" {
   }
 
   statement {
-    sid     = "ReconcileDcf86AlbAlarms"
-    actions = ["cloudwatch:PutMetricAlarm", "cloudwatch:TagResource"]
+    sid = "ReconcileDcf86AlbAlarms"
+    actions = [
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:TagResource",
+      "cloudwatch:DeleteAlarms",
+    ]
     resources = [
       "arn:aws:cloudwatch:us-west-2:${local.account_id}:alarm:kortix-alb-*",
       "arn:aws:cloudwatch:eu-west-2:${local.account_id}:alarm:kortix-alb-*",
       "arn:aws:cloudwatch:us-east-2:${local.account_id}:alarm:kortix-alb-*",
+    ]
+  }
+
+  # Hand-made compliance-* ALB alarms from the 2026-07-27 evidence pass
+  # duplicate the kortix-alb-* set. The ALB reconciler deletes the ones in the
+  # AWS/ApplicationELB namespace; it never touches compliance-*-cpu-high.
+  statement {
+    sid     = "RetireLegacyComplianceAlbAlarms"
+    actions = ["cloudwatch:DeleteAlarms"]
+    resources = [
+      "arn:aws:cloudwatch:us-west-2:${local.account_id}:alarm:compliance-*",
+      "arn:aws:cloudwatch:eu-west-2:${local.account_id}:alarm:compliance-*",
+      "arn:aws:cloudwatch:us-east-2:${local.account_id}:alarm:compliance-*",
     ]
   }
 
