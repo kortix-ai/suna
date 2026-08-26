@@ -28,6 +28,7 @@ import { SessionLayout } from '@/features/session/session-layout';
 import {
   canMountSessionChat,
   findInitialSessionPin,
+  gatedRuntimeBootError,
   gatedRuntimeError,
   runtimeErrorPresentation,
   sessionErrorSurfaceReady,
@@ -1009,7 +1010,7 @@ function ActiveSessionChat({
   const runtimeReady = useRuntimeConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
   );
-  const runtimeBootError = useRuntimeConnectionStore((s) => s.runtimeError);
+  const rawRuntimeBootError = useRuntimeConnectionStore((s) => s.runtimeError);
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -1029,6 +1030,15 @@ function ActiveSessionChat({
   const runtimeError = gatedRuntimeError({
     phase: sessionState.phase,
     runtimeError: sessionState.runtimeError,
+  });
+  // Same phase gate for the connection store's boot error: a genuine
+  // `boot_error` still may not paint a terminal card while `/start` is in
+  // flight (`phase === 'starting'`). Routine boot progress never reaches this
+  // field any more (SDK `runtimeErrorFromHealth`), so on a normal cold boot
+  // this is already null — this gate covers the real-failure case (RC-1).
+  const runtimeBootError = gatedRuntimeBootError({
+    phase: sessionState.phase,
+    runtimeBootError: rawRuntimeBootError,
   });
 
   const restart = useRestartProjectSession(projectId, sessionId);
