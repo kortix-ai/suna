@@ -60,9 +60,12 @@ There are **four environments**, each a separate encrypted file with its **own k
   remaining shared vendor keys with the reason and the rotation that removes
   each line. Do not add to that file to make the test pass — split the
   credential.
-- **`.env.dev` is NOT customer-data-free.** The `Kortix DEV` Supabase project
-  holds live signups from dev.kortix.com (2,793 users on 2026-08-26). Treat
-  dev like a production-adjacent environment for access decisions.
+- **`.env.dev`**: the `Kortix DEV` Supabase project holds signups from
+  dev.kortix.com (2,793 users on 2026-08-26). The owner classifies them as
+  synthetic test accounts, so dev is not customer data. It is still not safe
+  for people without production clearance until every prod-shared vendor key
+  in `scripts/secrets-shared-with-prod.allowlist` is split (dev/staging carry
+  the prod AWS IAM user, Daytona key, and Pipedream client today).
 - **`.env.prod`** is the owner-only record of every production credential;
   AWS Secrets Manager mirrors it for the deployed stack. Dead-in-code keys
   (Betterstack ClickHouse, JustAVPS) stay only in `.env.prod`.

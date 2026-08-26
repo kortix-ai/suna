@@ -2908,8 +2908,10 @@ had.
    scoped to one environment.
 5. A per-key access control (Armor FGAC) only works after the split above.
    Do the split first, then restrict the prod keypair.
-6. `.env.dev` is not customer-data-free: the dev Supabase project holds live
-   signups. Only `.env` qualifies for people without production clearance.
+6. Classify each environment's data explicitly. The dev Supabase project
+   holds 2.7k signups that the owner classifies as synthetic; that decision
+   is recorded, not assumed. Until the shared vendor keys are split, only
+   `.env` qualifies for people without production clearance.
 
 *Automation:* `pnpm test:envs` runs `scripts/secrets-envs-separation.py`,
 which fails on any unlisted non-prod secret that equals its prod value;
