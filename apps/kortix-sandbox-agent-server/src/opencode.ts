@@ -74,6 +74,16 @@ const READY_TIMEOUT_MS = 20_000
 // by proc.on('exit'); after ready we only need an occasional liveness ping, so
 // drop to a 5s interval (~50x fewer probes → idle opencode falls to ~2% of a core).
 const READY_LIVENESS_MS = 5_000
+// Liveness hysteresis. A single failed liveness probe used to downgrade
+// `ok -> starting`, and proxy.ts then 503s every opencode-bound request
+// ("opencode not ready") while state !== 'ok'. A BUSY but healthy opencode
+// (mid-heavy-turn) can miss one 2 s `/session` probe and get gated off while
+// it is actively serving. So an `ok` session only downgrades after
+// READY_LIVENESS_DOWNGRADE_THRESHOLD consecutive failures (a real wedge), and
+// re-probes faster (READY_LIVENESS_RECHECK_MS) once a probe starts failing so
+// both recovery and a genuine wedge are detected quickly.
+const READY_LIVENESS_DOWNGRADE_THRESHOLD = 3
+const READY_LIVENESS_RECHECK_MS = 2_000
 
 export const OPENCODE_HOME = homedir()
 const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
@@ -1614,7 +1624,47 @@ async function resolveOpencodeCwd(cfg: Config): Promise<string> {
   return cfg.workspace
 }
 
-type OpencodeState = 'starting' | 'ok' | 'down'
+export type OpencodeState = 'starting' | 'ok' | 'down'
+
+export interface LivenessDecisionInput {
+  /** The supervisor's current opencode state. */
+  state: OpencodeState
+  /** Did THIS liveness probe get a healthy answer from opencode? */
+  ready: boolean
+  /** Consecutive failed liveness probes so far (only meaningful while `ok`). */
+  consecutiveFailures: number
+  /** Downgrade `ok -> starting` only on the Nth consecutive failure. */
+  threshold: number
+}
+
+export interface LivenessDecision {
+  state: OpencodeState
+  consecutiveFailures: number
+  /** True on the transition that actually gated opencode off — for logging. */
+  downgraded: boolean
+}
+
+/**
+ * Decide the next opencode state from one liveness-probe result, with
+ * hysteresis. Pure + deterministic — see opencode-liveness-hysteresis.test.ts.
+ *
+ * - a ready probe is always `ok` and clears the failure count;
+ * - an `ok` session TOLERATES failures below `threshold` (stays `ok`), and
+ *   downgrades to `starting` only on the Nth consecutive failure;
+ * - any other non-ready state resolves to `starting` (unchanged from the
+ *   pre-hysteresis behaviour), with the counter reset.
+ */
+export function nextLivenessState(input: LivenessDecisionInput): LivenessDecision {
+  if (input.ready) return { state: 'ok', consecutiveFailures: 0, downgraded: false }
+  if (input.state === 'ok') {
+    const consecutiveFailures = input.consecutiveFailures + 1
+    if (consecutiveFailures >= input.threshold) {
+      return { state: 'starting', consecutiveFailures, downgraded: true }
+    }
+    return { state: 'ok', consecutiveFailures, downgraded: false }
+  }
+  return { state: 'starting', consecutiveFailures: 0, downgraded: false }
+}
 
 export type Opencode = {
   prefetchBinary(): Promise<boolean>
@@ -1712,6 +1762,8 @@ export function createOpencodeSupervisor(
   let stopping = false
   let restartDelayMs = 500
   let state: OpencodeState = 'starting'
+  /** Consecutive failed liveness probes while `ok` (see nextLivenessState). */
+  let livenessFailures = 0
   let readinessTimer: ReturnType<typeof setTimeout> | null = null
   let firstReadyResponseReported = false
   let readyResponseProcess: ChildProcess | null = null
@@ -2271,7 +2323,15 @@ export function createOpencodeSupervisor(
     if (stopping) return
     // Poll fast until ready (quick boot detection), then slow to a liveness ping.
     // The forever-100ms poll cost ~55% of a core per idle sandbox (READY_LIVENESS_MS).
-    const interval = state === 'ok' ? READY_LIVENESS_MS : READY_POLL_MS
+    // Once ok, probe slowly (liveness). But the moment a liveness probe starts
+    // failing, re-probe faster so a real wedge downgrades quickly AND a busy
+    // opencode's recovery is seen quickly — without ever gating it off on one blip.
+    const interval =
+      state === 'ok'
+        ? livenessFailures > 0
+          ? READY_LIVENESS_RECHECK_MS
+          : READY_LIVENESS_MS
+        : READY_POLL_MS
     readinessTimer = setTimeout(async () => {
       if (stopping) return
       const probedPort = livePort()
@@ -2287,10 +2347,28 @@ export function createOpencodeSupervisor(
         return
       }
       if (ready) {
+        if (livenessFailures > 0) {
+          logger.info('[opencode] liveness recovered', { afterFailures: livenessFailures })
+        }
         if (probedChild) reportReadyResponse(probedChild)
+        livenessFailures = 0
         markReady()
-      } else if (state !== 'starting') {
-        state = 'starting'
+      } else {
+        const decision = nextLivenessState({
+          state,
+          ready: false,
+          consecutiveFailures: livenessFailures,
+          threshold: READY_LIVENESS_DOWNGRADE_THRESHOLD,
+        })
+        livenessFailures = decision.consecutiveFailures
+        if (decision.downgraded) {
+          logger.warn('[opencode] liveness failed repeatedly; marking not-ready', {
+            consecutiveFailures: livenessFailures,
+            threshold: READY_LIVENESS_DOWNGRADE_THRESHOLD,
+            port: probedPort,
+          })
+        }
+        state = decision.state
       }
       scheduleReadinessProbe()
     }, interval)
