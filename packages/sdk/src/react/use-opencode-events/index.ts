@@ -34,6 +34,7 @@ import { sessionsNeedingRehydrate } from './rehydrate-targets';
 import { createStreamRevival } from './stream-revival';
 import { useEventStreamRefs } from './use-event-stream-refs';
 import { openEventStream } from '../../core/stream/event-stream';
+import { isRuntimeLivenessEvent } from '../../core/stream/keepalive';
 
 /**
  * Connects to OpenCode's SSE event stream via the SDK and
@@ -337,10 +338,17 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
         revival.park();
       },
       onEvent: (event) => {
-        // Every delivered frame is live proof the runtime is reachable — it
-        // vetoes concurrent health-probe failures (a loaded box can miss the
-        // probe deadline mid-turn). See shouldIgnoreProbeFailure.
-        noteRuntimeEvidence();
+        // A delivered frame vetoes concurrent health-probe failures (a loaded
+        // box can miss the probe deadline mid-turn) — but only when it is
+        // proof the RUNTIME answered, not just that the path to it is warm.
+        // `kortix.keepalive` is minted by the sandbox daemon one hop above
+        // opencode (see `sse-keepalive.ts`) at a 20s cadence; counting it
+        // here would veto a probe failure ~3/4 of the time even while
+        // opencode itself is wedged, hiding a genuinely dead runtime behind
+        // a healthy path. See shouldIgnoreProbeFailure.
+        if (isRuntimeLivenessEvent(event)) {
+          noteRuntimeEvidence();
+        }
         noteSessionSyncEvent(event);
         handleEvent(event);
       },

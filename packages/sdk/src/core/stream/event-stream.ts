@@ -20,7 +20,6 @@
 import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
 import { logger } from '../http/logger';
-import { isRuntimeLivenessEvent } from './keepalive';
 
 /**
  * The event union this stream dispatches. Re-exported (unchanged shape) from
@@ -142,14 +141,18 @@ export interface EventStreamHandle {
 const COALESCE_FLUSH_MS = 16;
 const YIELD_INTERVAL_MS = 8;
 /**
- * Idle watchdog budget for an ESTABLISHED stream. The server currently emits
- * NO idle keepalive frames, so a healthy-but-quiet session produces genuinely
- * long silent stretches — a budget below the real idle gap makes the watchdog
- * kill perfectly healthy connections on a timer (the old 15s value guaranteed
- * a kill every 15s of quiet, by design). 60s keeps the watchdog able to catch
- * genuinely dead sockets while tolerating normal idle. When the server ships
- * `: keepalive` comment frames this can come back down toward 2× the
- * keepalive cadence. Configurable per-stream via
+ * Idle watchdog budget for an ESTABLISHED stream. opencode itself emits NO
+ * idle frames, but since 2026-08-26 the sandbox daemon injects a typed
+ * `kortix.keepalive` frame every 20s from one hop above opencode (see
+ * `apps/kortix-sandbox-agent-server/src/sse-keepalive.ts`), and this reader
+ * counts it as liveness like any other frame — deliberately: it resets this
+ * watchdog and proves only that the PATH (proxy → daemon → client) is still
+ * open, so the watchdog firing means the path itself died, a true positive
+ * worth an immediate reconnect. A budget below the real idle gap makes the
+ * watchdog kill perfectly healthy connections on a timer (the old 15s value
+ * guaranteed a kill every 15s of quiet, by design). 60s keeps the watchdog
+ * able to catch a genuinely dead path — 3 missed keepalive cycles — while
+ * tolerating normal idle. Configurable per-stream via
  * `OpenEventStreamOptions.heartbeatTimeoutMs`.
  */
 const HEARTBEAT_MS = 60_000;
@@ -459,19 +462,13 @@ function createLiveStream(
           if (outcome.kind === 'error') throw outcome.error;
           if (outcome.result.done) break;
 
+          streamHadEvents = true;
+          resetHeartbeat();
           const raw = outcome.result.value as any;
           const e = (
             raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
           ) as OpenCodeEvent;
-          // Liveness is stamped AFTER the frame is identified, not before. A
-          // daemon keepalive arrives from a hop above opencode; counting it
-          // reset the 60s heartbeat and refreshed `lastStreamActivityTime` via
-          // `flush()`, so a wedged runtime behind a live TCP stream was
-          // invisible to both detectors. Dropping it here also keeps it out of
-          // the queue, so `flush()` never stamps for it either.
-          if (!isRuntimeLivenessEvent(e)) continue;
-          streamHadEvents = true;
-          resetHeartbeat();
+          if (!e?.type) continue;
 
           const ck = getCoalesceKey(e);
           if (ck) {

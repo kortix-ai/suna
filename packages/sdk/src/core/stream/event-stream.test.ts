@@ -8,8 +8,11 @@ import {
 } from './event-stream';
 
 // Mirrors event-stream.ts's default idle-watchdog budget (raised from 15s —
-// the server emits no idle keepalives, so a 15s budget killed healthy idle
-// sessions on a timer by design; see the HEARTBEAT_MS comment there).
+// opencode itself emits no idle frames, so a 15s budget killed healthy idle
+// sessions on a timer by design). Since 2026-08-26 the sandbox daemon injects
+// a `kortix.keepalive` frame every 20s and this reader counts it as liveness
+// on purpose, holding the watchdog open across normal idle; see the
+// HEARTBEAT_MS comment in event-stream.ts.
 const HEARTBEAT_MS = 60_000;
 
 function sessionStatus(sessionID: string, statusType: string): OpenCodeEvent {
@@ -846,6 +849,46 @@ describe('openEventStream idle-disconnect backoff (reconnect-storm fix)', () => 
     await clock.advance(1);
     await tick();
     expect(abortedSignals[0]).toBe(true);
+
+    handle.close();
+  });
+
+  // Regression guard: a "daemon keepalive should not reset the heartbeat"
+  // fix once shipped and was reverted (see git history on this file around
+  // 2026-08-27). That fix was correct in isolation but wrong for the system:
+  // opencode itself never emits idle frames, so without the keepalive
+  // resetting this watchdog, EVERY idle session or >60s-silent tool call
+  // would force a reconnect + full message re-hydrate every 60s. The daemon
+  // keepalive resetting this watchdog is deliberate (see
+  // `apps/kortix-sandbox-agent-server/src/sse-keepalive.ts`): while
+  // keepalives flow, the watchdog firing means the PATH died, a true
+  // positive worth reconnecting for. Pinning both directions here so nobody
+  // repeats the "undo the deliberate reset" mistake.
+  test('a daemon keepalive resets the heartbeat watchdog — the path stays open across normal idle', async () => {
+    const clock = createFakeClock();
+    const { client, channels, attempts } = createConnectableClient();
+
+    const handle = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    expect(attempts()).toBe(1);
+
+    // Keepalives arrive every 20s (SSE_KEEPALIVE_INTERVAL_MS in
+    // sse-keepalive.ts), well under the 60s budget. Push four of them,
+    // spanning 80s of wall time with NO real opencode event in between, and
+    // assert the watchdog never fires: each keepalive resets the 60s clock,
+    // so the path never goes quiet for the watchdog's own budget.
+    for (let i = 0; i < 4; i++) {
+      channels[0].push({ type: 'kortix.keepalive' });
+      await tick();
+      await clock.advance(20_000);
+    }
+    expect(attempts()).toBe(1);
+
+    // Now keepalives stop (the daemon died, or the path itself broke): 60s
+    // of TRUE silence must still trip the watchdog exactly as before.
+    await clock.advance(HEARTBEAT_MS);
+    await tick();
+    expect(attempts()).toBe(2);
 
     handle.close();
   });
