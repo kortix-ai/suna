@@ -590,6 +590,10 @@ export async function reapAndReconcileSandboxes(
               externalId: row.externalId,
               provider: row.provider,
               turns: turns.length,
+              // Was the daemon ASKED this pass, or is this a backed-off drip?
+              // Without this the log cannot tell 20 s drips from 20 s probes.
+              probed: backedOffProbes === 0,
+              backoffMs: probeBackoff.get(row.sandboxId)?.backoffMs ?? null,
               deadlineAt: row.deadlineAt.toISOString(),
               extended,
             });
