@@ -100,6 +100,30 @@ describe('createCorsMiddleware', () => {
     expect(response.headers.get(PROXY_HOP_HEADER)).toBe('daemon');
   });
 
+  // The daemon stamps structured boot progress on every 503 via
+  // `X-Kortix-Boot-Phase` (proxy.ts:313, `bootPhaseLabel`) -- the one
+  // structured readiness field that survives the sandbox-proxy hop. A
+  // response header absent from Access-Control-Expose-Headers is invisible
+  // to browser JS, the exact failure mode already fixed above for
+  // X-Kortix-Proxy-Hop and X-Kortix-Upstream-Status. Drive the real
+  // middleware over a real response and prove the browser can read it.
+  test('the boot-phase header is exposed to a cross-origin caller', async () => {
+    const app = new Hono();
+    app.use('*', createCorsMiddleware({ internalEnvironment: 'dev', extraOrigins: [] }));
+    app.get('/v1/p/box/8000/kortix/health', (context) => {
+      context.header('X-Kortix-Boot-Phase', 'installing-deps');
+      return context.json({ ok: false }, 503);
+    });
+
+    const response = await app.request('/v1/p/box/8000/kortix/health', {
+      headers: { Origin: 'https://dev.kortix.com' },
+    });
+
+    const exposed = response.headers.get('access-control-expose-headers')?.toLowerCase() ?? '';
+    expect(exposed).toContain('x-kortix-boot-phase');
+    expect(response.headers.get('X-Kortix-Boot-Phase')).toBe('installing-deps');
+  });
+
   test('an unknown production origin receives no CORS authorization', async () => {
     const app = new Hono();
     app.use(

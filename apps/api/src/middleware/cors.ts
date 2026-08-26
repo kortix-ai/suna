@@ -83,6 +83,10 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       // null, and every failure is unattributed again.
       'X-Kortix-Proxy-Hop',
       'X-Kortix-Upstream-Status',
+      // The daemon's structured boot progress (`bootPhaseLabel`, proxy.ts:313).
+      // Without this the browser cannot read it, which is why every client
+      // classifies readiness by matching the English error body instead.
+      'X-Kortix-Boot-Phase',
     ],
     credentials: true,
     maxAge: 600,
