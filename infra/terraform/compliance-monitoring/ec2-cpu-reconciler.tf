@@ -30,12 +30,13 @@ resource "aws_iam_role" "ec2_cpu_reconciler" {
 }
 
 data "aws_iam_policy_document" "ec2_cpu_reconciler" {
-  # checkov:skip=CKV_AWS_356: DescribeInstances, DescribeLoadBalancers, DescribeAlarms, and X-Ray telemetry APIs do not support resource-level permissions; alarm writes remain ARN-scoped below.
+  # checkov:skip=CKV_AWS_356: DescribeInstances, DescribeLoadBalancers, DescribeTargetGroups, DescribeAlarms, and X-Ray telemetry APIs do not support resource-level permissions; alarm writes remain ARN-scoped below.
   statement {
     sid = "DiscoverInfrastructureAndAlarms"
     actions = [
       "ec2:DescribeInstances",
       "elasticloadbalancing:DescribeLoadBalancers",
+      "elasticloadbalancing:DescribeTargetGroups",
       "cloudwatch:DescribeAlarms",
     ]
     resources = ["*"]
