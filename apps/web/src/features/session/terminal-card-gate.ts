@@ -22,7 +22,7 @@ export function shouldPaintTerminalCard(input: {
 }): boolean {
   if (!input.hasFailure) return false;
   if (input.activelyStarting) return false;
-  if (input.retriable !== false) return false;
+  if (input.retriable) return false;
   return true;
 }
 

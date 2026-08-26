@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { shouldPaintFatalCard, shouldPaintTerminalCard } from './terminal-card-gate';
 
 describe('shouldPaintTerminalCard', () => {
@@ -134,5 +136,63 @@ describe('the five /start producer shapes, bound to their real call site', () =>
     // stage:'failed', retriable:false, actively_starting:false, no `failure`.
     // Real page: `isRuntimeIdentityUnavailable` renders its own card first.
     expect(shouldPaintFatalCard({ stage: 'failed' })).toBe(true);
+  });
+});
+
+/**
+ * The two functions above are tested as pure functions only, everywhere else
+ * in this file. Nothing asserted that `page.tsx` actually calls them — delete
+ * `shouldPaintFatalCard({ stage: session.stage })` from the `fatal` verdict
+ * and it reverts to `sandbox.status ∈ {error,stopped}` alone, which is the
+ * exact bug this gate exists to prevent (a wake cooldown's terminal card
+ * painting over `stage:'starting'`), and every OTHER test in this file stays
+ * green because they all call the gate functions directly.
+ */
+const pageSource = readFileSync(
+  fileURLToPath(
+    new URL(
+      '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
+      import.meta.url,
+    ),
+  ),
+  'utf8',
+);
+
+function between(source: string, start: string, end: string): string {
+  const from = source.indexOf(start);
+  expect(from, `anchor not found: ${start}`).toBeGreaterThan(-1);
+  const to = source.indexOf(end, from + start.length);
+  expect(to, `anchor not found after ${start}: ${end}`).toBeGreaterThan(from);
+  return source.slice(from, to);
+}
+
+describe('page.tsx actually calls the gates above', () => {
+  test('`fatal` calls shouldPaintFatalCard({ stage: session.stage })', () => {
+    const fatalBlock = between(
+      pageSource,
+      'const fatal =',
+      'const runtimeIdentityUnavailable',
+    );
+    expect(fatalBlock).toContain('shouldPaintFatalCard({ stage: session.stage });');
+  });
+
+  test('the recoverableFailure `session.failure` branch calls shouldPaintTerminalCard', () => {
+    const recoverableBlock = between(
+      pageSource,
+      'const recoverableFailure = (() => {',
+      "if (sandbox?.status === 'error')",
+    );
+    expect(recoverableBlock).toContain('session.failure &&');
+    expect(recoverableBlock).toContain('shouldPaintTerminalCard({');
+  });
+
+  // The park shape (`preserveEstablishedRuntimeOnOpen`'s park branch) answers
+  // `stage:'failed', retriable:true` for a box nothing is driving any more.
+  // `session-resume.ts:107-124` documents `retriable` as "deliberately NOT
+  // read" for this exact reason -- re-threading it into `shouldPaintFatalCard`
+  // would suppress the only Restart affordance the user has left.
+  test('NEGATIVE: shouldPaintFatalCard is never passed `retriable`', () => {
+    const fatalCall = between(pageSource, 'shouldPaintFatalCard({', '});');
+    expect(fatalCall).not.toContain('retriable');
   });
 });

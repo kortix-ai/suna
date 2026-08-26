@@ -599,6 +599,18 @@ export class SessionSyncController {
     // from, so the retry replayed the identical walk. `onPage` existed for
     // exactly this and was never passed.
     return this.loadCompleteTurn(firstPage, 'older', 'manual', before, (messagesSoFar) => {
+      // `rememberUserMessages` mutates the instance-level `knownUserMessageIds`
+      // Set (below), and `onPage` fires on a rejection too (the catch in
+      // `loadCompleteTurn`, right before it rethrows). So a walk that fails
+      // partway permanently records the user-message ids from every page read
+      // so far. On the retry, `loadCompleteTurn` seeds its local
+      // `knownUserMessageIds` from this now-larger instance Set, which can
+      // already satisfy the termination condition ("some assistant has a
+      // `parentID` not in `knownUserMessageIds`") from `firstPage` alone — the
+      // retry's `while` loop never runs, and `nextCursor` advances by one page
+      // instead of walking the rest of the turn. Accepted: the pages already
+      // landed in the store on the failed attempt via this same callback,
+      // which is the fix this method exists for.
       this.rememberUserMessages(messagesSoFar);
       this.options.hydrate(messagesSoFar);
     });
