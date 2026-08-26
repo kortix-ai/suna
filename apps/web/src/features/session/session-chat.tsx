@@ -92,6 +92,7 @@ import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/sessio
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
 import { SessionBusyIndicator } from './session-busy-indicator';
+import { resolveEffectiveBusy } from './session-chat-busy';
 import { SessionTurnMeta } from './session-turn-meta';
 import {
   sessionTurnDurationMs,
@@ -2559,7 +2560,11 @@ export function SessionChat({
   // so a lost `session.compacted` frame stops pinning the composer at
   // `OPTIMISTIC_COMPACTION_MAX_MS` instead of for the lifetime of the tab, and
   // a compaction started by a second device is visible here at all.
-  const effectiveBusy = isServerBusy || isOptimisticCompacting;
+  const effectiveBusy = resolveEffectiveBusy({
+    isServerBusy,
+    isOptimisticCompacting,
+    hasRetryingAssistant,
+  });
 
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
