@@ -77,6 +77,7 @@ export const ADMIN_OVERRIDE_KEYS = [
   'scim',
   'rbac',
   'auditAccess',
+  'branding',
   'managedModels',
 ] as const;
 

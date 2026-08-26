@@ -51,7 +51,7 @@ describe('enterprise_entitled — contracted cloud Enterprise override', () => {
     expect(await accountHasEntitlement('acct', 'rbac')).toBe(true);
     expect(await accountHasEntitlement('acct', 'auditAccess')).toBe(true);
     const ent = await getAccountEntitlements('acct');
-    expect(ent).toEqual({ sso: true, scim: true, rbac: true, auditAccess: true });
+    expect(ent).toEqual({ sso: true, scim: true, rbac: true, auditAccess: true, branding: true });
   });
 
   test('flag on → every entitlement unlocked even when billing tier is free', async () => {
@@ -112,7 +112,7 @@ describe('enterprise_entitled resolution order vs license / demo / tier', () => 
     enterpriseLicenseAvailable = true;
     fakeRow = null;
     const ent = await getAccountEntitlements('acct');
-    expect(ent).toEqual({ sso: true, scim: true, rbac: true, auditAccess: true });
+    expect(ent).toEqual({ sso: true, scim: true, rbac: true, auditAccess: true, branding: true });
   });
 
   test('license off, flag on, demo off, tier per_seat → flag wins (entitlements on)', async () => {

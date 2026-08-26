@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 623,
+  "count": 628,
   "routes": [
     {
       "method": "GET",
@@ -217,6 +217,26 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/branding"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/branding"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/branding"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/branding/assets/:kind"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/branding/assets/:kind"
     },
     {
       "method": "GET",

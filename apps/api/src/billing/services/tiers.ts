@@ -217,8 +217,20 @@ export function getComputeDescription(serverType: string): string {
 // deletes stay ungated so a downgraded account can still see and unwind what
 // it already has — existing grants keep resolving in the IAM engine.
 // See TierEntitlements in ../../types.
-const SELF_SERVE: TierEntitlements = { sso: false, scim: false, rbac: false, auditAccess: false };
-const ALL_ENTERPRISE: TierEntitlements = { sso: true, scim: true, rbac: true, auditAccess: true };
+const SELF_SERVE: TierEntitlements = {
+  sso: false,
+  scim: false,
+  rbac: false,
+  auditAccess: false,
+  branding: false,
+};
+const ALL_ENTERPRISE: TierEntitlements = {
+  sso: true,
+  scim: true,
+  rbac: true,
+  auditAccess: true,
+  branding: true,
+};
 
 const TIERS: Record<string, TierConfig> = {
   none: {

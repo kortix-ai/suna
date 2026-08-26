@@ -172,6 +172,8 @@ export interface AccountState {
       scim: boolean;
       rbac: boolean;
       auditAccess: boolean;
+      /** Organization branding — own logo / icon / favicon / product name. */
+      branding: boolean;
     };
   };
   /** True when a self-host operator's ENTERPRISE_LICENSE_AVAILABLE env var

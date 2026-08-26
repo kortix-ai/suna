@@ -1670,6 +1670,11 @@ const OVERRIDE_ENTITLEMENT_ROWS: {
     description: "Read access to the account's own audit trail.",
   },
   {
+    key: 'branding',
+    title: 'Organization branding',
+    description: 'Own logo, icon, favicon, and product name for every member.',
+  },
+  {
     key: 'managedModels',
     title: 'Managed models entitlement',
     description:

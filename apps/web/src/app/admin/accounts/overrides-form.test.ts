@@ -20,6 +20,7 @@ const EMPTY: OverridesDraft = {
   scim: 'inherit',
   rbac: 'inherit',
   auditAccess: 'inherit',
+  branding: 'inherit',
   managedModels: 'inherit',
   maxConcurrentSessions: '',
   computeRateMultiplier: '',

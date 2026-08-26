@@ -114,6 +114,7 @@ for (const key of TIER_KEYS) {
         scim: record.entitlements.scim,
         rbac: record.entitlements.rbac,
         auditAccess: record.entitlements.auditAccess,
+        branding: record.entitlements.branding,
       }).toEqual(expected);
     });
 
