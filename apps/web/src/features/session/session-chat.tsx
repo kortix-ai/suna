@@ -236,6 +236,7 @@ import {
   sessionComposerReadiness,
 } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
+import { useHeldOlderLoading } from './session-older-loading';
 import { resolveSessionContentState } from './session-load-state';
 import {
   nextOlderAutoloadArm,
@@ -2920,6 +2921,9 @@ export function SessionChat({
   // in the turn anchor — capture where the topmost visible turn sits, restore
   // it after the prepended turns render, and the viewport never jumps.
   const [olderPullFailed, setOlderPullFailed] = useState(false);
+  // The row the reader actually sees while a page is in flight — the live flag
+  // held long enough to be read (`session-older-loading.ts`).
+  const showOlderLoading = useHeldOlderLoading(isLoadingOlder);
   // Pages the SENTINEL has pulled. An explicit pull never counts — see
   // `OLDER_AUTOLOAD_MAX_PAGES` for why the automatic path is the one bounded.
   const [autoLoadedPages, setAutoLoadedPages] = useState(0);
@@ -3218,9 +3222,22 @@ export function SessionChat({
   const optimisticOriginOf = useSessionStateStore((state) => state.optimisticOriginOf);
   // WHICH turn carries the shimmer, and which user bubbles are still queued at
   // the agent. Not "the last one" any more — see `resolveWorkingTurn`.
+  // Turns the SERVER still holds in its inbox — see `resolveWorkingTurn`'s
+  // `unrunTurnIds`. Keyed by every id a bubble can be on screen under, because
+  // the drain re-mints `message_id` while the tab still paints `wire_message_id`.
+  const unrunTurnIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const prompt of promptInbox.prompts) {
+      if (prompt.state !== 'queued' && prompt.state !== 'waiting' && prompt.state !== 'delivering')
+        continue;
+      if (prompt.message_id) ids.add(prompt.message_id);
+      if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
+    }
+    return ids;
+  }, [promptInbox.prompts]);
   const workingTurn = useMemo(
-    () => resolveWorkingTurn({ turns, hintMessageId: working.turnId }),
-    [turns, working.turnId],
+    () => resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds }),
+    [turns, working.turnId, unrunTurnIds],
   );
   const pendingTurnIds = useMemo(() => new Set(workingTurn.pendingTurnIds), [workingTurn]);
   /**
@@ -4954,8 +4971,20 @@ export function SessionChat({
                         Sits above the spinner so it clears the viewport as
                         soon as the prepended turns render. */}
                       <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
-                      {isLoadingOlder && <Loading />}
-                      {!isLoadingOlder &&
+                      {/* A named state, not a bare spinner: the transcript is
+                          about to grow upward and the reader is owed the
+                          reason. Held for OLDER_LOADING_MIN_MS so a fast pull
+                          reads as a sentence instead of a flash. */}
+                      {showOlderLoading && (
+                        <div
+                          role="status"
+                          className="text-muted-foreground flex items-center gap-2 py-1 text-xs"
+                        >
+                          <Loading className="size-3.5 shrink-0" />
+                          Loading older messages
+                        </div>
+                      )}
+                      {!showOlderLoading &&
                         !olderPullFailed &&
                         olderAutoloadExhausted({ hasOlder, autoLoadedPages }) && (
                           <Button
@@ -4967,7 +4996,7 @@ export function SessionChat({
                             Load older messages
                           </Button>
                         )}
-                      {olderPullFailed && !isLoadingOlder && (
+                      {olderPullFailed && !showOlderLoading && (
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground text-xs">
                             Couldn&apos;t load older messages.

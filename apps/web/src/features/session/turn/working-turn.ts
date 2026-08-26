@@ -57,6 +57,16 @@ export function resolveWorkingTurn(input: {
   /** `WorkingProjection.turnId` — the server's or the receipt's answer for
    *  which prompt opened the running turn. Often null (triggers, `/` commands). */
   hintMessageId: string | null | undefined;
+  /**
+   * User message ids whose prompt the SERVER still holds in its inbox —
+   * `queued`, `waiting`, or `delivering`. Each is a turn the agent provably has
+   * not reached, so none of them may be chosen as the working turn by the
+   * transcript-only fallback below.
+   *
+   * Optional: a caller with no inbox (a sub-session, a test) gets the old
+   * transcript-only answer.
+   */
+  unrunTurnIds?: ReadonlySet<string>;
 }): WorkingTurnResolution {
   const { turns } = input;
   if (turns.length === 0) return { workingTurnId: null, pendingTurnIds: [] };
@@ -91,6 +101,32 @@ export function resolveWorkingTurn(input: {
     if (idx >= 0) return pick(newestWithContent + 1 + idx);
   }
 
-  if (pendingIds.length > 0) return pick(turns.length - 1);
+  // Rule 3, with the one fact the transcript cannot hold: the SERVER still has
+  // this prompt in its inbox, so the agent provably has not reached it.
+  //
+  // Picking the newest pending turn is right when the transcript is all we
+  // have — OpenCode parents its next step to the latest user message. It is
+  // WRONG for a prompt the control plane is still holding: `GET .../prompts`
+  // lists it `queued` / `waiting (older_prompt_pending)` / `delivering`, which
+  // is the server saying, in as many words, that it has not run yet.
+  //
+  // MEASURED, local stack 2026-08-26 (session 65216cc6): two sends 700ms
+  // apart, the first not yet streaming. `GET .../prompts` reported the second
+  // `queued`, then `waiting: older_prompt_pending`, then `delivering` — while
+  // the transcript rendered it at full opacity with no "Queued" label, because
+  // it had been made the WORKING turn here. The working projection's hint is
+  // null in that window (the inbox, not the ledger, is what decides `working`
+  // right after a send — `projectWorking`), so nothing else could correct it.
+  //
+  // Skipping the held ones only moves the shimmer; it never hides a turn. When
+  // every pending turn is held, the working indicator falls back to the newest
+  // turn with content (rule 4) and all of them read as queued — which is
+  // exactly the state the server is describing.
+  const unrun = input.unrunTurnIds;
+  if (pendingIds.length > 0) {
+    for (let i = turns.length - 1; i > newestWithContent; i--) {
+      if (!unrun?.has(turns[i].userMessage.info.id)) return pick(i);
+    }
+  }
   return pick(newestWithContent);
 }

@@ -5,6 +5,7 @@ import {
   type ForwardedPromptRow,
   INBOX_FORWARD_CONFIRM_GRACE_MS,
   INBOX_FORWARD_CONFIRM_MAX_MS,
+  INBOX_FORWARD_ORPHAN_MAX_MS,
   confirmInboxPromptConsumed,
   reconcileForwardedPrompts,
 } from './consumption';
@@ -351,6 +352,46 @@ describe('reconcileForwardedPrompts', () => {
       expect(confirmed).toEqual([]);
       expect(errors).toEqual([]);
     }
+  });
+
+  test('an orphan ending PAST its own bound is force-closed — the sticky "Queued" badge', async () => {
+    // The other half of the rule above. `requeueAbandonedPrompt` acts on these
+    // reasons in the same reaping cycle that produced the terminal evidence, so
+    // a row still forwarded well past that cycle is one the redelivery
+    // DECLINED. Left alone it kept reading `delivering`, which
+    // `countLiveInboxPrompts` counts as live work: the composer held Stop with
+    // nothing running and the bubble kept its "Queued" badge, both across a
+    // hard refresh (measured, session 65216cc6 — see the constant's note).
+    for (const endReason of ['abandoned', 'runtime_gone']) {
+      const { deps, confirmed, errors } = harness(
+        [forwardedRow({ updatedAt: aged(INBOX_FORWARD_ORPHAN_MAX_MS + 1_000) })],
+        { msg_a: { state: 'ended', endReason } },
+      );
+      expect(await reconcileForwardedPrompts(now, deps)).toEqual({
+        scanned: 1,
+        confirmed: 0,
+        forceClosed: 1,
+      });
+      expect(confirmed).toEqual(['cmd-1']);
+      expect(errors[0].context).toMatchObject({ ledger_end_reason: endReason });
+    }
+  });
+
+  test('the orphan bound is far below the no-ledger-row ceiling — an ending is evidence, an absence is not', async () => {
+    expect(INBOX_FORWARD_ORPHAN_MAX_MS).toBeLessThan(INBOX_FORWARD_CONFIRM_MAX_MS);
+    // A turn still OPEN past the orphan bound is untouched: only an ENDING
+    // counts, and `delivering` is OpenCode holding the message behind the turn
+    // in front of it.
+    const { deps, confirmed } = harness(
+      [forwardedRow({ updatedAt: aged(INBOX_FORWARD_ORPHAN_MAX_MS + 1_000) })],
+      { msg_a: { state: 'delivering', endReason: null } },
+    );
+    expect(await reconcileForwardedPrompts(now, deps)).toEqual({
+      scanned: 1,
+      confirmed: 0,
+      forceClosed: 0,
+    });
+    expect(confirmed).toEqual([]);
   });
 
   test('NO ledger row at all is force-closed past the ceiling, and logged', async () => {
