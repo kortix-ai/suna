@@ -3,9 +3,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  MAX_RETRY_MS_DEFAULT,
   type OpenCodeAuditEvent,
   auditRelayToken,
+  computeRetryDelay,
   createAuditRelay,
+  retryAfterMs,
   sanitizeOpenCodeEvent,
 } from '../opencode-audit-relay';
 
@@ -421,5 +424,74 @@ describe('OpenCode canonical audit relay', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * Essentia 2026-08-26: the API returned 500 [57014] to this relay 445 times in
+ * 3 hours because every audit insert for one session queues on that session's
+ * `audit_session_sequences` row lock. The relay's flat 1s retry re-entered the
+ * lock queue every ~11s and kept the convoy alive.
+ */
+describe('audit relay backoff', () => {
+  const base = {
+    retryMs: 1_000,
+    maxRetryMs: MAX_RETRY_MS_DEFAULT,
+    jitter: 0.5,
+    serverRetryAfterMs: null,
+  };
+
+  test('doubles the wait for each consecutive rejection', () => {
+    // jitter 0.5 => multiplier exactly 1.0, so these are the raw steps.
+    expect([1, 2, 3, 4, 5].map((failures) => computeRetryDelay({ ...base, failures }))).toEqual([
+      1_000, 2_000, 4_000, 8_000, 16_000,
+    ]);
+  });
+
+  test('caps the wait so a recovered API is picked up promptly', () => {
+    expect(computeRetryDelay({ ...base, failures: 20 })).toBe(MAX_RETRY_MS_DEFAULT);
+    expect(computeRetryDelay({ ...base, failures: 200 })).toBe(MAX_RETRY_MS_DEFAULT);
+  });
+
+  test('jitters +/-25% so two sandboxes never resynchronize their retries', () => {
+    expect(computeRetryDelay({ ...base, failures: 3, jitter: 0 })).toBe(3_000);
+    expect(computeRetryDelay({ ...base, failures: 3, jitter: 0.999 })).toBe(4_998);
+  });
+
+  test("never undercuts the server's Retry-After", () => {
+    // The 503 the API now returns for a contended session sequence lock.
+    expect(computeRetryDelay({ ...base, failures: 1, serverRetryAfterMs: 5_000 })).toBe(5_000);
+    // ...but a longer self-imposed backoff wins over a short server hint.
+    expect(computeRetryDelay({ ...base, failures: 6, serverRetryAfterMs: 5_000 })).toBe(30_000);
+  });
+
+  test('reads Retry-After only off an error that carries it', () => {
+    expect(retryAfterMs(Object.assign(new Error('503'), { retryAfterMs: 5_000 }))).toBe(5_000);
+    expect(retryAfterMs(new Error('503'))).toBeNull();
+    expect(retryAfterMs(Object.assign(new Error('503'), { retryAfterMs: -1 }))).toBeNull();
+    expect(retryAfterMs(null)).toBeNull();
+  });
+
+  test('a recovered batch resets the ladder', async () => {
+    const attempts: number[] = [];
+    let now = Date.now();
+    let fail = true;
+    const relay = createAuditRelay(
+      async () => {
+        attempts.push(Date.now() - now);
+        if (fail) throw new Error('audit batch rejected: 503');
+      },
+      { batchSize: 1, flushMs: 5, retryMs: 5, maxRetryMs: 40, jitter: () => 0.5 },
+    );
+    relay.enqueue({ type: 'session.idle', properties: { info: { id: 'ses_a' } } });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const failedAttempts = attempts.length;
+    expect(failedAttempts).toBeGreaterThan(1);
+
+    fail = false;
+    now = Date.now();
+    await relay.stop();
+    // The queue drains once the server recovers; nothing was dropped.
+    expect(attempts.length).toBeGreaterThan(failedAttempts);
   });
 });

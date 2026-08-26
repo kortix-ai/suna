@@ -416,4 +416,86 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
     );
     expect(deliveries.rows).toEqual([{ count: '0' }]);
   });
+
+  /**
+   * The Essentia audit convoy (2026-08-26).
+   *
+   * `audit_prepare_event` allocates the per-session sequence and hash-chain
+   * head out of `kortix.audit_session_sequences`, and PostgreSQL holds that row
+   * lock until the inserting transaction COMMITs. Serializing one session is
+   * the append-only chain's price. Serializing DIFFERENT sessions is not, and
+   * a blocked writer must not burn a whole statement_timeout finding out.
+   *
+   * Live evidence this pins: POST .../audit/events returned 500 [57014] 445
+   * times in 3 hours, each at ~10s, with `insert into "kortix"."audit_events"`
+   * blocking other `insert into "kortix"."audit_events"` in chained pids.
+   */
+  describe('per-session sequence lock scope', () => {
+    const HOLD_SESSION = 'a7300000-0000-4000-a000-0000000000c1';
+    const OTHER_SESSION = 'a7300000-0000-4000-a000-0000000000c2';
+
+    async function connect(): Promise<pg.Client> {
+      const c = new pg.Client({ connectionString: databaseUrl });
+      await c.connect();
+      return c;
+    }
+
+    function insert(c: pg.Client, sessionId: string, recordId: string) {
+      return c.query(
+        `INSERT INTO kortix.audit_events
+           (account_id, project_id, session_id, action, resource_type,
+            source_ledger, source_record_id, phase, authoritative_source)
+         VALUES ($1, $2, $3, 'test.lock-scope', 'project_session',
+                 'audit_v2_lock_scope', $4, 'completed', 'system')`,
+        [ACCOUNT, PROJECT, sessionId, recordId],
+      );
+    }
+
+    afterAll(async () => {
+      if (!client) return;
+      await client.query(`SET kortix.audit_maintenance = 'on'`);
+      await client.query(`DELETE FROM kortix.audit_events WHERE session_id = ANY($1::text[])`, [
+        [HOLD_SESSION, OTHER_SESSION],
+      ]);
+      await client.query(
+        `DELETE FROM kortix.audit_session_sequences WHERE session_id = ANY($1::text[])`,
+        [[HOLD_SESSION, OTHER_SESSION]],
+      );
+      await client.query(`SET kortix.audit_maintenance = 'off'`);
+    });
+
+    test('an uncommitted writer blocks only its own session, and lock_timeout bounds the wait', async () => {
+      const holder = await connect();
+      const waiter = await connect();
+      try {
+        await holder.query('BEGIN');
+        await insert(holder, HOLD_SESSION, 'holder');
+
+        // A different session takes a different row lock: no wait at all. This
+        // is why the API's flush must never put two sessions in one statement.
+        await waiter.query(`SET lock_timeout = '2500ms'`);
+        const otherStartedAt = Date.now();
+        await insert(waiter, OTHER_SESSION, 'other');
+        expect(Date.now() - otherStartedAt).toBeLessThan(2_000);
+
+        // The SAME session waits, and fails with 55P03 (lock_not_available) at
+        // the lock budget instead of riding the 10s statement_timeout to 57014.
+        const blockedStartedAt = Date.now();
+        let code: string | null = null;
+        try {
+          await insert(waiter, HOLD_SESSION, 'blocked');
+        } catch (error) {
+          code = (error as { code?: string }).code ?? null;
+        }
+        const blockedMs = Date.now() - blockedStartedAt;
+        expect(code).toBe('55P03');
+        expect(blockedMs).toBeGreaterThanOrEqual(2_000);
+        expect(blockedMs).toBeLessThan(9_000);
+      } finally {
+        await holder.query('ROLLBACK').catch(() => {});
+        await holder.end();
+        await waiter.end();
+      }
+    }, 30_000);
+  });
 });

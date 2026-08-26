@@ -633,7 +633,14 @@ async function startSessionRuntime(
       )
       if (!response.ok) {
         const body = await response.text().catch(() => '')
-        throw new Error(`audit batch rejected: ${response.status} ${body.slice(0, 200)}`)
+        const error = new Error(
+          `audit batch rejected: ${response.status} ${body.slice(0, 200)}`,
+        ) as Error & { retryAfterMs?: number }
+        // 503 + Retry-After is the API telling us this session's audit sequence
+        // lock is contended. Honour it instead of hammering the convoy.
+        const retryAfter = Number.parseInt(response.headers.get('retry-after') ?? '', 10)
+        if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = retryAfter * 1_000
+        throw error
       }
     },
     { spoolPath: resolveOpenCodeAuditSpoolPath(process.env) },
