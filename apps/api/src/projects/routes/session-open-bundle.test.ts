@@ -265,7 +265,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     const body = (await response.json()) as Record<string, any>;
     // UNKNOWN, not idle: `{ turns: [] }` here would be the exact defect the
     // bundle exists to remove — a default rendered as an answer.
-    expect(body.turn).toEqual({ known: false, reason: 'turn read exploded' });
+    expect(body.turn).toEqual({ known: false, reason: 'leg_failed' });
     expect(body.turn.turns).toBeUndefined();
     // Everything else still arrives.
     expect(body.queue.known).toBe(true);
@@ -277,7 +277,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
       throw new Error('mirror unavailable');
     };
     const body = (await (await openBundle()).json()) as Record<string, any>;
-    expect(body.transcript).toEqual({ known: false, reason: 'mirror unavailable' });
+    expect(body.transcript).toEqual({ known: false, reason: 'leg_failed' });
     expect(body.transcript.messages).toBeUndefined();
   });
 
