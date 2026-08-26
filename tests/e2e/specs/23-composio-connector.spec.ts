@@ -262,7 +262,18 @@ test.describe("23 — Composio managed connector", () => {
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
 
-  test("a fresh Gmail Connect Link uses Composio managed auth and Google serves sign-in", async ({
+  // @quarantine: this journey calls `test.skip(!providers.includes("composio"))`
+  // when the live `/connectors/connect-status` does not report composio. Under
+  // the strict browser reporter (E2E_REQUIRE_ALL_BROWSER=1) any runtime skip
+  // other than the tagged 17-oauth journey fails the whole shard — so this
+  // deployment-conditional skip red-lit browser shard 3 of the v0.13.6 gate
+  // (run 33002502228) even though its four siblings passed. It is the browser
+  // twin of CONN-26 (both added 2026-08-24, 5b070ebb18) and, like CONN-26, has
+  // never cleared a deployed gate. Tag it so the gate EXCLUDES it (an
+  // authorized outcome) instead of counting a runtime skip as unauthorized.
+  // Un-quarantine only in the PR whose staging dry run of tests-release.yml is
+  // green with this journey enabled.
+  test("a fresh Gmail Connect Link uses Composio managed auth and Google serves sign-in", { tag: "@quarantine" }, async ({
     page,
     request,
   }) => {
