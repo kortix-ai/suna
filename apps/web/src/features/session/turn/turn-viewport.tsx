@@ -26,6 +26,9 @@ import { useEffect, useRef, useState } from 'react';
  * while I scroll back"). So the stand-in is the turn's own measured height,
  * written per turn, and no turn is contained before it has one.
  *
+ * RULE 3 — no containment below `TURN_MIN_CONTAIN_PX`. See its own comment:
+ * a turn skipped at a near-zero stand-in can never come back.
+ *
  * RULE 2 — no containment for an EMPTY turn, ever. A zero-height element can
  * never intersect the viewport, so `content-visibility: auto` classifies it as
  * "not relevant" and SKIPS it — permanently — and a skipped element stands in
@@ -43,39 +46,65 @@ import { useEffect, useRef, useState } from 'react';
 export type TurnMeasureState = 'unmeasured' | 'empty' | 'measured';
 
 /**
- * The wrapper's full class list for a given measure state. Pure and DOM-free
- * so both rules above have tests that can fail:
+ * The smallest stand-in a turn may be skipped at — RULE 3.
  *
- * - `unmeasured` → caller classes only (no containment yet — RULE 1).
- * - `empty`      → no containment (RULE 2), and `mt-0` AFTER the caller's
- *                  classes so tailwind-merge drops the caller's `mt-*`.
- * - `measured`   → containment. The intrinsic size is NOT a class: it is this
- *                  turn's own measured height, so it is an inline style
- *                  (`turnIntrinsicSize`).
+ * `content-visibility: auto` decides relevance from the box the element
+ * OCCUPIES, and while skipped that box is the stand-in size. So a turn skipped
+ * at a few pixels can never grow back into the viewport on its own: it is too
+ * short to intersect, so it is never laid out, so its stand-in is never
+ * corrected — the reader gets a run of invisible turns and a scroll container
+ * with no extent. That is RULE 2's oscillation with the flip removed, and a
+ * height-driven stand-in can reach it where the old flat 600px guess could not
+ * (600px always intersected eventually).
+ *
+ * 48px is below every real turn measured on live threads (101px for a one-line
+ * exchange, 138-503px typical) and above the pixel range where skipping saves
+ * anything: laying out a sub-48px turn costs nothing worth this failure mode.
  */
-export function turnViewportClassName(state: TurnMeasureState, className?: string): string {
-  return cn(
-    state === 'measured' && '[content-visibility:auto]',
-    className,
-    state === 'empty' && 'mt-0',
-  );
-}
+export const TURN_MIN_CONTAIN_PX = 48;
 
 /**
- * The stand-in size a skipped turn reports — RULE 1, as a pure value.
+ * The stand-in size a skipped turn reports — RULES 1 and 3, as a pure value.
  *
  * `auto` keeps the browser's last-remembered size in charge once it has one;
  * the length after it is the fallback for every frame before that, and it is
  * this turn's own last measured height rather than a shared guess. Undefined
- * whenever the turn must not be contained at all, so the style and the class
- * can never disagree.
+ * whenever the turn must not be contained at all — including a measurement too
+ * short to be a credible box, which is the case a stand-in can never recover
+ * from.
  */
 export function turnIntrinsicSize(
   state: TurnMeasureState,
   measuredHeight: number,
 ): string | undefined {
-  if (state !== 'measured' || !(measuredHeight > 0)) return undefined;
+  if (state !== 'measured') return undefined;
+  if (!(measuredHeight >= TURN_MIN_CONTAIN_PX)) return undefined;
   return `auto ${Math.round(measuredHeight)}px`;
+}
+
+/**
+ * The wrapper's full class list. Pure and DOM-free so every rule above has a
+ * test that can fail:
+ *
+ * - `unmeasured` → caller classes only (no containment yet — RULE 1).
+ * - `empty`      → no containment (RULE 2), and `mt-0` AFTER the caller's
+ *                  classes so tailwind-merge drops the caller's `mt-*`.
+ * - `measured`   → containment, but ONLY when it has a stand-in to be skipped
+ *                  at (RULE 3). The size itself is an inline style, so the
+ *                  class is driven by `turnIntrinsicSize` rather than by the
+ *                  state: that is what makes "contained" and "has a stand-in"
+ *                  the same fact instead of two that can disagree.
+ */
+export function turnViewportClassName(
+  state: TurnMeasureState,
+  className?: string,
+  measuredHeight = 0,
+): string {
+  return cn(
+    turnIntrinsicSize(state, measuredHeight) !== undefined && '[content-visibility:auto]',
+    className,
+    state === 'empty' && 'mt-0',
+  );
 }
 
 /**
@@ -194,7 +223,7 @@ export function TurnViewport({
     <div
       ref={ref}
       data-turn-id={turnId}
-      className={turnViewportClassName(state, className)}
+      className={turnViewportClassName(state, className, height)}
       style={containIntrinsicSize ? { containIntrinsicSize } : undefined}
     >
       {children}
