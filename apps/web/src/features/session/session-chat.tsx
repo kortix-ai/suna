@@ -5354,10 +5354,9 @@ export function SessionChat({
               // decides whether a `/` command may be dispatched, and a fade
               // timer that has already lapsed would let one abort a live turn.
               // `effectiveBusy` folds in optimistic compaction (not a turn, so
-              // not in `working`), and `hasRetryingAssistant` covers the
-              // window where a retryable provider error keeps the turn alive
-              // with no busy frame to show for it.
-              sessionWorking={effectiveBusy || hasRetryingAssistant}
+              // not in `working`) and the retrying-turn predicate, so this
+              // site reads one value instead of re-OR-ing a term onto it.
+              sessionWorking={effectiveBusy}
               // Gates `/` COMMANDS only. A prompt typed at a sleeping box is
               // an inbox row and goes out when the box answers; a command has
               // no row, and `runCommand` swallows it silently until the
