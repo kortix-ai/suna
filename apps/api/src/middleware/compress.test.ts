@@ -4,7 +4,12 @@ import { Hono } from 'hono';
 import {
   COMPRESSION_MIN_BYTES,
   compressResponse,
+<<<<<<< HEAD
   compressedStream,
+||||||| f208d37244
+=======
+  compressionAvailable,
+>>>>>>> origin/main
   compressionCandidate,
   negotiateEncoding,
 } from './compress';
@@ -240,6 +245,7 @@ describe('compressResponse', () => {
     expect(text).toBe(bigJson);
   });
 });
+<<<<<<< HEAD
 
 /**
  * The runtime image (`oven/bun:1.2-slim`) has no `CompressionStream`; local Bun
@@ -273,3 +279,60 @@ describe('compressedStream zlib fallback (Bun 1.2 image has no CompressionStream
     expect(text).toBe(bigJson);
   });
 });
+||||||| f208d37244
+=======
+
+// ─── Fail-open when the runtime cannot compress ──────────────────────────────
+//
+// The API image pins Bun 1.2 (`apps/api/Dockerfile` BUN_VERSION), which has no
+// `CompressionStream`; laptops and CI run Bun 1.3, which does. The first deploy
+// threw `ReferenceError: CompressionStream is not defined` AFTER peeking the
+// body, so on dev every response of 1 KiB or more answered 500 while `/health`
+// (small) stayed green. These pin the only acceptable behaviour without the
+// API: the body is passed through byte-identical, uncompressed, status intact.
+describe('compressResponse without CompressionStream (Bun 1.2 image)', () => {
+  const g = globalThis as { CompressionStream?: unknown };
+
+  function withoutCompressionStream<T>(run: () => Promise<T>): Promise<T> {
+    const saved = g.CompressionStream;
+    delete g.CompressionStream;
+    return run().finally(() => {
+      g.CompressionStream = saved;
+    });
+  }
+
+  test('compressionAvailable() reports the global, live', async () => {
+    expect(compressionAvailable()).toBe(true);
+    await withoutCompressionStream(async () => {
+      expect(compressionAvailable()).toBe(false);
+    });
+    expect(compressionAvailable()).toBe(true);
+  });
+
+  test('a large JSON GET with accept-encoding: gzip is served raw, 200, byte-identical', async () => {
+    await withoutCompressionStream(async () => {
+      const res = await app().request('/big.json', { headers: { 'accept-encoding': 'gzip' } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-encoding')).toBeNull();
+      expect(await res.text()).toBe(bigJson);
+    });
+  });
+
+  test('a constructor that throws after the peek still yields the same bytes, uncompressed', async () => {
+    const saved = g.CompressionStream;
+    g.CompressionStream = class {
+      constructor() {
+        throw new TypeError('simulated: unsupported encoding');
+      }
+    };
+    try {
+      const res = await app().request('/big.json', { headers: { 'accept-encoding': 'gzip' } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-encoding')).toBeNull();
+      expect(await res.text()).toBe(bigJson);
+    } finally {
+      g.CompressionStream = saved;
+    }
+  });
+});
+>>>>>>> origin/main
