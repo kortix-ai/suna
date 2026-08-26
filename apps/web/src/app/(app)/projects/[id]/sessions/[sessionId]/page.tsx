@@ -56,7 +56,7 @@ import {
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
-import { shouldPaintTerminalCard } from '@/features/session/terminal-card-gate';
+import { shouldPaintFatalCard, shouldPaintTerminalCard } from '@/features/session/terminal-card-gate';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
@@ -554,24 +554,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     !!user &&
     !!sandbox &&
     (sandbox.status === 'error' || sandbox.status === 'stopped') &&
-    // `retriable` is NOT read here, deliberately -- unlike the `session.failure`
-    // gate below. A stale-wake PARK (`preserveEstablishedRuntimeOnOpen`'s park
-    // branch, apps/api/src/projects/routes/shared.ts:941-952) answers
-    // `stage:'failed'` with `retriable:true`: the box is genuinely dead and
-    // nothing is driving it, but the server still says "polling can make
-    // progress" because the WAKE LADDER, not this raw poll, is what retries it.
-    // Trusting `retriable` here would suppress the "<session> is stopped /
-    // Restart session" card for exactly that payload, with no poll, no
-    // auto-resume, and no ladder rung left to recover the user (see
-    // `session-resume.ts:107-124`, `session-resume.test.ts:208-223`).
-    // `activelyStarting` alone is `false` on every terminal shape and `true`
-    // only while a wake is genuinely in flight, so pass a fixed `false` here
-    // instead of threading `retriable` through.
-    shouldPaintTerminalCard({
-      hasFailure: true,
-      retriable: false,
-      activelyStarting: session.activelyStarting,
-    });
+    // See `shouldPaintFatalCard` for why `retriable` is never read here and
+    // `stage` is checked before `activelyStarting` -- a stale-wake PARK
+    // (retriable:true) must still paint, and a wake-retry cooldown
+    // (stage:'starting', activelyStarting:false, still polling) must not.
+    shouldPaintFatalCard({ stage: session.stage, activelyStarting: session.activelyStarting });
   // A preserved-unavailable identity is `status: 'stopped'` + an `external_id`,
   // so it satisfies `fatal` above and used to render the ordinary "restart it"
   // card. It needs its own terminal branch — see the render below.
