@@ -549,28 +549,80 @@ export interface UserIdentity {
  * callers drop "shadow" members — rows that point at a non-existent user, which
  * would otherwise render as a raw UUID in member lists.
  */
+/**
+ * One identity lookup = one HTTPS round trip to the Supabase auth admin API
+ * (`auth.admin.getUserById`), and there is no batch form of it.
+ *
+ * That made this a network N+1 on the session-list hot path: `GET
+ * /:projectId/sessions` resolves every distinct `created_by` in the project, so
+ * a project with a human owner plus a few trigger/service actors paid one auth
+ * round trip PER OWNER, on every one of the ~6 list fetches a single session
+ * open issues (measured on the Essentia corpus, 2026-08-26). The rest of the
+ * endpoint is four indexed queries totalling under 3 ms; these calls were the
+ * only unbounded work in it.
+ *
+ * A user's email and display name are effectively static, so the lookup is
+ * memoized per uid. Two results are deliberately NOT cached:
+ *
+ *   - `exists: false` — a just-created user (invite accepted, SSO JIT) must
+ *     resolve on the next request, not one TTL later.
+ *   - the transient-failure fallback — caching it would pin a network hiccup
+ *     for a whole TTL window across every caller.
+ */
+const USER_IDENTITY_TTL_MS = 60_000;
+
+/**
+ * Which identity answers are safe to keep for a TTL window.
+ *
+ * Exported because it is the whole correctness argument for caching an auth
+ * lookup, and `ttlMemo` is bypassed under `bun test` — testing it through the
+ * memo would assert nothing.
+ */
+export function userIdentityIsCacheable(
+  value: UserIdentity & { transient?: boolean },
+): boolean {
+  return value.exists && !value.transient;
+}
+
+const userIdentityMemo = ttlMemo({
+  ttlMs: USER_IDENTITY_TTL_MS,
+  keyFn: (uid: string) => uid,
+  // Only a POSITIVE, non-degraded answer is worth keeping. `transient` marks
+  // the catch-branch fallback so it is distinguishable from a real lookup that
+  // legitimately returned no email.
+  shouldCache: userIdentityIsCacheable,
+  loader: async (uid: string): Promise<UserIdentity & { transient?: boolean }> => {
+    try {
+      const { data } = await getSupabase().auth.admin.getUserById(uid);
+      // A completed call with no user object = the id is not a real user.
+      const user = data?.user ?? null;
+      const metadata = user?.user_metadata as Record<string, unknown> | undefined;
+      const displayName =
+        typeof metadata?.name === 'string'
+          ? metadata.name
+          : typeof metadata?.full_name === 'string'
+            ? metadata.full_name
+            : null;
+      return { email: user?.email ?? null, displayName, exists: !!user };
+    } catch {
+      // Transient (network/5xx) — assume the user exists; don't hide them.
+      return { email: null, displayName: null, exists: true, transient: true };
+    }
+  },
+});
+
+/** Drop a user's cached identity — call after a profile/email write. */
+export function invalidateUserIdentity(userId: string): void {
+  userIdentityMemo.invalidate(userId);
+}
+
 export async function resolveUserIdentities(userIds: string[]): Promise<Map<string, UserIdentity>> {
   const result = new Map<string, UserIdentity>();
   if (userIds.length === 0) return result;
-  const supabase = getSupabase();
   await Promise.all(
-    userIds.map(async (uid) => {
-      try {
-        const { data } = await supabase.auth.admin.getUserById(uid);
-        // A completed call with no user object = the id is not a real user.
-        const user = data?.user ?? null;
-        const metadata = user?.user_metadata as Record<string, unknown> | undefined;
-        const displayName =
-          typeof metadata?.name === 'string'
-            ? metadata.name
-            : typeof metadata?.full_name === 'string'
-              ? metadata.full_name
-              : null;
-        result.set(uid, { email: user?.email ?? null, displayName, exists: !!user });
-      } catch {
-        // Transient (network/5xx) — assume the user exists; don't hide them.
-        result.set(uid, { email: null, displayName: null, exists: true });
-      }
+    [...new Set(userIds)].map(async (uid) => {
+      const { transient: _transient, ...identity } = await userIdentityMemo(uid);
+      result.set(uid, identity);
     }),
   );
   return result;

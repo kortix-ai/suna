@@ -1,4 +1,5 @@
 import { stripInlineAttachmentBytes } from '../inline-attachments';
+import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -1385,17 +1386,24 @@ export async function forwardToSandbox(
           );
         }
         if (nonReplayableWrite) promptDeliveryMayHaveReachedUpstream = true;
-        upstream = await fetch(targetUrl, {
-          method,
-          headers,
-          body: requestBody,
-          redirect: 'manual',
-          signal: attemptController.signal,
-          // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
-          // not in the lib RequestInit type.
-          decompress: false,
-          duplex: 'half',
-        } as RequestInit);
+        // Timed, so the response carries `Server-Timing: up;dur=…, api;dur=…`.
+        // A HAR of a session open otherwise shows one opaque number for a
+        // proxied read and no way to tell the sandbox hop from this API's own
+        // work — which is exactly what blocked attributing the ~1.7 s on
+        // `/p/<ext>/8000/agent`. Retries accumulate.
+        upstream = await timeUpstream(() =>
+          fetch(targetUrl, {
+            method,
+            headers,
+            body: requestBody,
+            redirect: 'manual',
+            signal: attemptController.signal,
+            // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
+            // not in the lib RequestInit type.
+            decompress: false,
+            duplex: 'half',
+          } as RequestInit),
+        );
       } finally {
         clearTimeout(connectTimer);
       }

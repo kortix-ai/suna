@@ -6,9 +6,7 @@
 import {
   SESSION_SHARING_OWNER_ONLY_ERROR,
   SHARING_SELF_LOCKOUT_ERROR,
-  loadSessionGrants,
   parseSharingIntent,
-  resolveShareSubject,
   sessionIntentToVisibility,
   setSessionSharing,
   sharingChangeKeepsEditorAccess,
@@ -19,9 +17,9 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, inArray, or } from 'drizzle-orm';
-import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, resolveSessionOwnerIdentities, viewerManagerStanding, sessionIsTombstoned } from '../lib/access';
+import { projectSessions } from '@kortix/db';
+import { and, eq, or } from 'drizzle-orm';
+import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
   UUID_V4_REGEX,
@@ -36,7 +34,8 @@ import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 import { createSession, deleteSession } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
+import type { ProjectSessionListScope } from '../lib/session-inventory';
+import { loadProjectSessionInventory } from '../lib/session-list';
 
 const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'deletedAt',
@@ -242,10 +241,13 @@ projectsApp.openapi(
       },
     responses: {
         200: json(z.array(SessionSchema), 'Sessions'),
+        // The list is polled; a repeat with a matching If-None-Match ends here
+        // with no body. Declared so the OpenAPI contract matches what ships.
+        304: { description: 'Not modified — the ETag still matches' },
         ...errors(400, 403, 404),
     },
   }),
-  async (c) => {
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const scope = (c.req.valid('query').scope ?? 'visible') as ProjectSessionListScope;
 
@@ -253,45 +255,14 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const rows = await db
-    .select()
-    .from(projectSessions)
-    .where(
-      and(
-        eq(projectSessions.projectId, projectId),
-        eq(projectSessions.accountId, loaded.row.accountId),
-      ),
-    )
-    .orderBy(desc(projectSessions.updatedAt));
-
-  const runtimeRows = rows.length
-    ? await db
-        .select({ sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
-        .from(sessionSandboxes)
-        .where(
-          and(
-            eq(sessionSandboxes.projectId, projectId),
-            eq(sessionSandboxes.accountId, loaded.row.accountId),
-              inArray(
-                sessionSandboxes.sessionId,
-                rows.map((row) => row.sessionId),
-              ),
-          ),
-        )
-    : [];
-  const runtimeStatusBySession = new Map(runtimeRows.map((row) => [row.sessionId, row.status]));
-
-  const subject = await resolveShareSubject(loaded.userId);
-  // Manager standing must be derived exactly as the lifecycle routes derive it
-  // (loadVisibleSession): a session-bound agent credential never inherits the
-  // launching user's `manage` role. Computing it from the role alone made every
-  // list row report `can_manage_lifecycle: true` to a credential whose DELETE
-  // would then 403 — the two answers must come from one predicate.
-  const boundCredentialSessionId = callerKortixSessionId(c);
-  const canManageProject = await viewerManagerStanding(
-    loaded.effectiveRole,
-    boundCredentialSessionId,
-    () =>
+  const inventory = await loadProjectSessionInventory({
+    projectId,
+    accountId: loaded.row.accountId,
+    userId: loaded.userId,
+    effectiveRole: loaded.effectiveRole,
+    scope,
+    boundCredentialSessionId: callerKortixSessionId(c),
+    probeManageCapability: () =>
       projectCapabilityAllowed(
         c,
         loaded.userId,
@@ -299,50 +270,47 @@ projectsApp.openapi(
         projectId,
         'project.members.manage',
       ),
-  );
-  const grantsBySession = await loadSessionGrants(
-    rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
-  );
-  const selected = selectSessionRowsForViewer({
-    rows,
-    scope,
-    canManageProject,
-    subject,
-    grantsBySession,
-    runtimeStatusBySession,
-    callerSessionId: boundCredentialSessionId,
-    boundCredentialSessionId,
   });
-  if (!selected.authorized) {
+  if (!inventory.authorized) {
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
   }
 
-  const ownerIds = selected.items
-    .map((item) => item.row.createdBy)
-    .filter((ownerId): ownerId is string => Boolean(ownerId));
-  const ownerIdentities = await resolveSessionOwnerIdentities(ownerIds, loaded.row.accountId);
+  const body = inventory.items.map((item) => {
+    const row = item.row;
+    const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
+    return serializeSession(row, {
+      grants: inventory.grantsBySession.get(row.sessionId) ?? [],
+      viewerId: loaded.userId,
+      canManageProject: inventory.canManageProject,
+      // Only a RESOLVED service account counts as machine-owned. 'unknown'
+      // (a stale principal) keeps the session owner-only — fail closed.
+      ownerIsMachine: !row.createdBy || owner?.type === 'service_account',
+      ownerEmail: owner?.email ?? null,
+      ownerName: owner?.name ?? null,
+      ownerType: owner?.type ?? (row.createdBy ? 'unknown' : null),
+      canAccess: item.canAccess,
+      runtimeStatus: item.runtimeStatus,
+      deletedAt: item.deletedAt,
+      deletedBy: item.deletedBy,
+      // The inventory listing drops the write-only heavy metadata keys. The
+      // single-session read below still returns metadata whole.
+      trimListMetadata: true,
+    });
+  });
 
-  return c.json(
-    selected.items.map((item) => {
-      const row = item.row;
-      const owner = row.createdBy ? ownerIdentities.get(row.createdBy) : null;
-      return serializeSession(row, {
-        grants: grantsBySession.get(row.sessionId) ?? [],
-        viewerId: loaded.userId,
-        canManageProject,
-        // Only a RESOLVED service account counts as machine-owned. 'unknown'
-        // (a stale principal) keeps the session owner-only — fail closed.
-        ownerIsMachine: !row.createdBy || owner?.type === 'service_account',
-        ownerEmail: owner?.email ?? null,
-        ownerName: owner?.name ?? null,
-        ownerType: owner?.type ?? (row.createdBy ? 'unknown' : null),
-        canAccess: item.canAccess,
-        runtimeStatus: item.runtimeStatus,
-        deletedAt: item.deletedAt,
-        deletedBy: item.deletedBy,
-      });
-    }),
-  );
+  // The sidebar re-fetches this list several times per session open (six in the
+  // measured Essentia corpus, 2026-08-26) and the answer is usually byte-identical
+  // between them. A weak ETag lets those repeats end as a 304 with no body.
+  // `no-cache` — not `no-store` — is what makes a client revalidate rather than
+  // serve a stale inventory: the response is private and always re-validated,
+  // it just does not have to be re-transferred.
+  const serialized = JSON.stringify(body);
+  const etag = `W/"${Bun.hash(serialized).toString(36)}-${body.length}"`;
+  c.header('Cache-Control', 'private, no-cache');
+  c.header('ETag', etag);
+  if (c.req.header('if-none-match') === etag) return c.body(null, 304);
+  c.header('Content-Type', 'application/json');
+  return c.body(serialized, 200);
 },
 );
 

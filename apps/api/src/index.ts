@@ -73,6 +73,8 @@ import { mountLlmGateway } from './llm-gateway/wire';
 import { marketplaceApp } from './marketplace';
 import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { createCorsMiddleware } from './middleware/cors';
+import { compressResponse } from './middleware/compress';
+import { upstreamTiming } from './middleware/upstream-timing';
 import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
 import { oauthApp } from './oauth';
 import { opsApp } from './ops';
@@ -244,6 +246,14 @@ app.use('*', async (c, next) => {
 
 // === Global Middleware ===
 
+// Response compression. Mounted at the OUTSIDE of the chain so it sees the
+// final response of every route, including the ones the middleware below
+// rewrites. Only a NAMED compressible content type is ever compressed, which
+// keeps it away from SSE, the sandbox proxy's streams, the secret relay, the
+// LLM gateway and git pack transfer; the size floor is applied by peeking one
+// kilobyte of the body, never by buffering it. See middleware/compress.ts.
+app.use('*', compressResponse);
+
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
   ? process.env.CORS_ALLOWED_ORIGINS.split(',')
       .map((s) => s.trim())
@@ -291,6 +301,11 @@ app.use('*', async (c, next) => {
     c.req.header('traceparent'),
   );
 });
+
+// Per-request cost attribution (`Server-Timing: up;dur=…, api;dur=…`). Mounted
+// INSIDE the request-context middleware above, because it reads the
+// AsyncLocalStorage scope that one creates. See middleware/upstream-timing.ts.
+app.use('*', upstreamTiming);
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
 app.use('*', logger());
