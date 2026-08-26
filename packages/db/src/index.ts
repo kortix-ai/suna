@@ -81,6 +81,7 @@ export {
   sessionTurns,
   sessionTranscriptMirrors,
   sessionTranscriptMessages,
+  sessionRuntimeProjections,
   providerEvents,
   sandboxes,
   sandboxMembers,

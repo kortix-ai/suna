@@ -2006,6 +2006,74 @@ export const sessionTranscriptMessages = kortixSchema.table(
 );
 
 /**
+ * The RUNTIME PROJECTION — the daemon's `/kortix/opencode/state` document,
+ * stored server-side so a session open answers "which agents, which commands,
+ * what config, what is pending" from Postgres instead of from the box.
+ *
+ * WHY. WS-V measured the seven proxied reads this replaces at ~3.3 MB and
+ * ~1.4 s EACH across the edge hop — ~9.8 s serial on a session open, paid
+ * before the composer can arm. The daemon already projects all seven into one
+ * ~8.7 KB document (0.9 KB gzipped). Storing it here takes the box off the
+ * read path entirely: a STOPPED session answers from this row with zero
+ * sandbox hops, which is the whole point.
+ *
+ * IT IS A CACHE OF A FACT, NOT A FACT. One row per Kortix session, no history,
+ * last write wins. Nothing may be *decided* from this row that the live
+ * runtime would answer differently — which is why every identity the live read
+ * would produce travels WITH the projection (`opencode_session_id`,
+ * `opencode_version`, `agent_config_etag`) and the serving side refuses to
+ * present a projection whose identity no longer matches. That is
+ * `session-transcript-mirror.ts`'s ghost rule (a cached record whose id the
+ * live read will not also produce is a ghost) applied to config state.
+ *
+ * `epoch` + `seq` are the daemon's stream cursor AT CAPTURE TIME. A client
+ * seeded from this row opens `/stream?epoch=&since=` at exactly that point, so
+ * seeding and streaming cannot disagree about what has already been applied.
+ */
+export const sessionRuntimeProjections = kortixSchema.table(
+  'session_runtime_projections',
+  {
+    sessionId: text('session_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    /** The sandbox that produced it. Names the winner when a warm fork adopts. */
+    externalId: text('external_id').notNull(),
+    // ── identity (the freshness check reads these, never the jsonb) ──────────
+    opencodeSessionId: text('opencode_session_id'),
+    opencodeVersion: text('opencode_version'),
+    agentConfigEtag: text('agent_config_etag'),
+    daemonBuild: bigint('daemon_build', { mode: 'number' }),
+    /** Daemon boot id. `seq` is meaningless outside it. */
+    epoch: text('epoch'),
+    /** Daemon stream watermark at capture — the client's starting cursor. */
+    seq: bigint('seq', { mode: 'number' }),
+    /** OpenCode's OWN durable cursor per aggregate (`event_sequence.seq`). */
+    headSeq: jsonb('head_seq').$type<Record<string, number>>(),
+    /** sha256 of the canonically serialized projection. A repeat push is a no-op. */
+    projectionEtag: text('projection_etag').notNull(),
+    /** The `/kortix/opencode/state` document, verbatim. */
+    projection: jsonb('projection').$type<Record<string, unknown>>().notNull(),
+    /** Who wrote this row: the daemon pushed it, or the API pulled it through. */
+    source: text('source').notNull(),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Named explicitly: the drizzle-derived name
+    // (`..._session_id_project_sessions_session_id_fk`) exceeds Postgres's
+    // 63-byte identifier limit and would be silently truncated. Same trap the
+    // transcript-mirror tables document.
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'session_runtime_projections_session_fk',
+    }).onDelete('cascade'),
+    index('session_runtime_projections_project_idx').on(table.projectId),
+  ],
+);
+
+/**
  * Provider analytics — an append-only telemetry log, one row per terminal
  * provisioning/migration outcome. Written fire-and-forget from the provision
  * path (the `provisionTimeline` is already computed, so capture is ~free) and

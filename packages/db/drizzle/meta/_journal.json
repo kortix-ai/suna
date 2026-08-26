@@ -442,6 +442,13 @@
       "when": 1787776100814,
       "tag": "20260826202820_sign_in_with_kortix_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1787784911209,
+      "tag": "20260826225511_session_runtime_projections",
+      "breakpoints": true
     }
   ]
 }

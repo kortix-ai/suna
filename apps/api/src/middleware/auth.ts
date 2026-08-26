@@ -331,7 +331,13 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     // re-checks the token against `project_monitor_boxes` (sandbox id ∧
     // project ∧ account ∧ live status) — a monitor box has no
     // `session_sandboxes` row, so it authenticates against that table only.
-    path.endsWith('/monitors/ingest');
+    path.endsWith('/monitors/ingest') ||
+    // The daemon pushes its OWN session's runtime projection (the
+    // `/kortix/opencode/state` document) so the control plane can serve it
+    // without a sandbox hop. Write-only, about the caller's own session, and
+    // the handler re-checks the token's sandbox against `session_sandboxes`
+    // (sandbox id -> session -> account) before it stores anything.
+    path.endsWith('/runtime-projection');
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {

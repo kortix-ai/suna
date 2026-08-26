@@ -33,6 +33,7 @@ import './routes/warm-sessions';
 import './routes/project-sessions';
 import './routes/session-transcripts';
 import './routes/session-open-bundle';
+import './routes/session-stream';
 import './routes/project-audit';
 import './routes/approvals';
 import './routes/resource-grants';

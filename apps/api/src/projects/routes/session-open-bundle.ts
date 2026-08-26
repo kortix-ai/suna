@@ -57,6 +57,8 @@ import { UUID_V4_REGEX, parseBoundedPositiveInt } from '../lib/serializers';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
 import { readSessionTurnState } from '../lib/session-turn-read';
+import { readRuntimeLeg } from '../lib/session-runtime-projection';
+import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
 
 /** Same ceiling `GET .../prompts` uses. The inbox is a queue, not a log. */
@@ -140,7 +142,7 @@ projectsApp.openapi(
     // it arrives together, and one leg failing must degrade that leg, not the
     // paint. Nothing here touches the sandbox, so nothing here can be held up
     // by a box that is asleep.
-    const [turn, queue, transcript, models] = await Promise.allSettled([
+    const [turn, queue, transcript, models, runtime] = await Promise.allSettled([
       readSessionTurnState(sessionId),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       transcriptLimit.value === 0
@@ -176,10 +178,30 @@ projectsApp.openapi(
             };
           })()
         : Promise.resolve(null),
+      // = the daemon's `/kortix/opencode/state`, served from Postgres. This is
+      // the leg that lets a STOPPED session answer "which agents, which
+      // commands, what model" — it is a DB read like every other leg here, and
+      // it does not touch the sandbox even when the box is up.
+      readRuntimeLeg(sessionId),
     ]);
 
     const prompts =
       queue.status === 'fulfilled' ? queue.value.map(serializePrompt) : [];
+
+    // A projection this open could not serve is worth fetching for the NEXT
+    // one. Fire-and-forget, never awaited, and `scheduleRuntimeProjectionRefresh`
+    // itself refuses to go near a sandbox whose row is not already `active` —
+    // so the route's invariant is intact: this RESPONSE never waits on a box,
+    // and nothing here can wake one, extend its deadline, or slow a stopped
+    // session's open.
+    if (runtime.status === 'fulfilled' && !runtime.value.known) {
+      scheduleRuntimeProjectionRefresh({
+        sessionId,
+        projectId,
+        accountId: loaded.row.accountId as string,
+        userId,
+      });
+    }
 
     return c.json({
       // ONE clock for the whole envelope. Every sub-object is a snapshot at this
@@ -251,6 +273,14 @@ projectsApp.openapi(
             ? { known: false as const, reason: 'llm_gateway_disabled' }
             : { known: true as const, ...models.value }
           : failed(models.reason),
+
+      // = the daemon's `/kortix/opencode/state`, from the runtime-projection
+      // store. `known: false` with `reason` when there is no projection, when
+      // its identity no longer matches the session's OpenCode pin, or when a
+      // RUNNING box's projection has aged past the max — never an empty agent
+      // roster presented as fact.
+      runtime:
+        runtime.status === 'fulfilled' ? runtime.value : failed(runtime.reason),
     });
   },
 );

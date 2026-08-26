@@ -12,6 +12,53 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-27 — session `session-ux` (WS-Z2) — the Kortix Runtime API, API half: stream fronting + runtime projection — DONE (SDK part is ADDITIVE ONLY)
+
+**Files (SDK):** `core/rest/projects-client/session-stream.ts` (NEW — the URL
+builder, the composite-cursor codec, and `readSessionStream`, a framework-free
+async iterator over the multiplexed SSE) · `core/rest/projects-client/sessions.ts`
+(`SessionOpenBundleRuntime` + `SessionRuntimeIdentity`, and the `runtime` leg on
+`SessionOpenBundle`) · `core/rest/projects-client/index.ts` (barrel) ·
+`platform/auth-core.ts` (`isStreamingRequest` now also exempts
+`/sessions/:sid/stream` from the 30 s fetch deadline — a never-ending stream
+would otherwise die on schedule). Tests beside each.
+**Public surface: additive only** — 8 value names + 26 type names, zero renames,
+zero removals; both snapshots regenerated and the diff contains no `-` lines.
+
+**Server (out of SDK scope, listed so the next session knows what exists):**
+`GET /v1/projects/:pid/sessions/:sid/stream` multiplexes the sandbox daemon's
+sequenced events (channel `runtime`, the daemon's `seq`/`epoch` forwarded
+VERBATIM) with the API's own control snapshots (channel `control`, a separate
+`cseq`/`cepoch` id-space). `POST /v1/platform/runtime-projection` is the
+daemon's push sink, and `open-bundle` grew a `runtime` leg served from
+`kortix.session_runtime_projections`.
+
+**What the controller cutover (next session) can now build on:**
+`readSessionStream(projectId, sessionId, {cursor, signal, onCursor})` yields
+typed frames and reports the position after every frame that advanced one.
+`bundle.runtime.epoch` + `bundle.runtime.seq` are the cursor to open the stream
+with, so seeding and streaming cannot disagree about what is already applied.
+
+**The rules that must not be broken by the cutover:**
+1. **Never mix the cursors.** `seq` belongs to the daemon inside its boot
+   `epoch`; `cseq` belongs to this API process inside `cepoch`. `sessionStreamPath`
+   already refuses to send half a cursor; a store that merges them re-creates
+   exactly the silent-gap failure the split exists to prevent.
+2. **`kortix.hello` / `kortix.resync` / `kortix.heartbeat` carry no `seq`** and
+   must not advance the cursor. `readSessionStream` already enforces this.
+3. **A `kortix.resync` means refetch, not guess** — `GET /kortix/opencode/state`
+   (or the bundle's `runtime` leg) then the newest transcript page.
+4. **Control frames are SNAPSHOTS, not deltas.** A later frame supersedes an
+   earlier one, so a missed control frame costs latency and never correctness.
+5. `runtime.payload` is OpenCode's `properties` verbatim — the existing reducer
+   applies unchanged.
+
+**Not done here, deliberately:** the session controller cutover, and the deletion
+of the 2 s permission/question self-heal polls and the 30 s tail-verify. Those
+are the next session's task and are what makes this change net-negative.
+
+---
+
 ### 2026-08-26 — session `session-ux` (WS-U) — ONE session-open read: the open bundle + polling discipline — DONE
 
 **Files (SDK):** `core/rest/projects-client/sessions.ts` (`getSessionOpenBundle`

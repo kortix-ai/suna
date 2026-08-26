@@ -913,8 +913,8 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
-// Auth for the ONE platform route that needs an identity. Scoped to this exact
-// path, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
+// Auth for the platform routes that need an identity. Scoped to these exact
+// paths, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
 // github-app setup callbacks are deliberately unauthenticated and would break.
 //
 // Without this the route was unreachable. `auth` from openapi/index.ts is
@@ -925,6 +925,12 @@ app.route('/v1/account', accountDeletionApp); // account deletion status/request
 // supabaseAuth is the middleware carrying the sandbox-token path allowlist
 // (middleware/auth.ts), which already lists `/boot-timeline`.
 app.use('/v1/platform/boot-timeline', supabaseAuth);
+// Same wiring, same reason, for the daemon's runtime-projection push. A route
+// mounted without this is not "insecure" — it is UNREACHABLE, answering 403 to
+// every fire-and-forget push, in silence. That is the exact defect
+// `__tests__/unit-boot-timeline-auth-mount.test.ts` exists to pin, and it now
+// pins this route too.
+app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects

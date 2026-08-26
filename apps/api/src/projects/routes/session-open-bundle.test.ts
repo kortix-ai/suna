@@ -28,6 +28,8 @@ let turnLeg: () => Promise<unknown>;
 let queueLeg: () => Promise<unknown[]>;
 let transcriptLeg: (limit: number) => Promise<unknown>;
 let modelsLeg: () => Promise<Record<string, unknown>>;
+let runtimeLeg: () => Promise<Record<string, unknown>>;
+let refreshCalls: Array<Record<string, unknown>> = [];
 let legCalls: string[] = [];
 let transcriptLimits: number[] = [];
 let gatewayEnabled = true;
@@ -70,6 +72,17 @@ mock.module('../lib/session-transcript', () => ({
 }));
 mock.module('../lib/session-prompt-view', () => ({
   serializePrompt: (row: Record<string, unknown>) => row,
+}));
+mock.module('../lib/session-runtime-projection', () => ({
+  readRuntimeLeg: async () => {
+    legCalls.push('runtime');
+    return runtimeLeg();
+  },
+}));
+mock.module('../lib/session-runtime-projection-refresh', () => ({
+  scheduleRuntimeProjectionRefresh: (target: Record<string, unknown>) => {
+    refreshCalls.push(target);
+  },
 }));
 mock.module('../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: () => gatewayEnabled,
@@ -124,6 +137,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     loadProjectCalls = [];
     capabilityCalls = [];
     legCalls = [];
+    refreshCalls = [];
     transcriptLimits = [];
     gatewayEnabled = true;
     loadedProject = {
@@ -155,6 +169,24 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
       messages: [{ info: { id: 'msg_1' }, parts: [] }],
     });
     modelsLeg = async () => ({ account: 'a', agents: {}, projects: { [PROJECT_ID]: 'p' } });
+    runtimeLeg = async () => ({
+      known: true,
+      fresh: true,
+      source: 'daemon_push',
+      captured_at: '2026-08-26T22:43:49.919Z',
+      age_ms: 1_000,
+      runtime_running: true,
+      epoch: 'bmtaokkdb0piayh',
+      seq: 41,
+      identity: {
+        opencode_session_id: 'ses_root',
+        opencode_version: '1.18.23',
+        daemon_build: 1756240000,
+        agent_config_etag: 'ff8a8b4f',
+        head_seq: { ses_root: 2016 },
+      },
+      state: { agents: { known: true, value: [{ name: 'build' }] } },
+    });
   });
 
   test('rejects a non-UUID session id with 400 before any read', async () => {
@@ -202,7 +234,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     const response = await openBundle();
     expect(response.status).toBe(200);
     const body = (await response.json()) as Record<string, any>;
-    expect(legCalls.sort()).toEqual(['models', 'queue', 'transcript', 'turn']);
+    expect(legCalls.sort()).toEqual(['models', 'queue', 'runtime', 'transcript', 'turn']);
     expect(body.observed_at).toMatch(ISO_UTC_MS);
     expect(body.session).toEqual({ session_id: SESSION_ID });
     expect(body.turn).toEqual({
@@ -293,5 +325,77 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     (visibleSession as any).row.baseRef = 'feature/x';
     const body = (await (await openBundle()).json()) as Record<string, any>;
     expect(body.config.base_ref).toBe('feature/x');
+  });
+
+  /**
+   * The `runtime` leg — the reason a STOPPED session can answer
+   * "which agents, which commands, what model" at all.
+   */
+  describe('the runtime leg', () => {
+    test('a fresh projection is served with its cursor, and no refresh is scheduled', async () => {
+      const response = await openBundle();
+      const body = (await response.json()) as Record<string, any>;
+      expect(body.runtime).toMatchObject({
+        known: true,
+        fresh: true,
+        epoch: 'bmtaokkdb0piayh',
+        seq: 41,
+      });
+      // `epoch` + `seq` are exactly what the client hands to
+      // `stream?epoch=&since=`, so seeding and streaming cannot disagree about
+      // what has already been applied.
+      expect(body.runtime.state.agents.value).toEqual([{ name: 'build' }]);
+      expect(refreshCalls).toEqual([]);
+    });
+
+    test('it is read ONCE, alongside the other legs', async () => {
+      await openBundle();
+      expect(legCalls.filter((leg) => leg === 'runtime')).toHaveLength(1);
+    });
+
+    test('no projection is `known:false` with a reason — never an empty agent list', async () => {
+      runtimeLeg = async () => ({ known: false, reason: 'no_projection' });
+      const response = await openBundle();
+      const body = (await response.json()) as Record<string, any>;
+      expect(response.status).toBe(200);
+      expect(body.runtime).toEqual({ known: false, reason: 'no_projection' });
+      // Nothing that looks like an answer leaked in beside the refusal.
+      expect(body.runtime.state).toBeUndefined();
+    });
+
+    test('a leg the store could not answer schedules a BACKGROUND refresh for next time', async () => {
+      runtimeLeg = async () => ({ known: false, reason: 'stale' });
+      await openBundle();
+      expect(refreshCalls).toEqual([
+        { sessionId: SESSION_ID, projectId: PROJECT_ID, accountId: ACCOUNT_ID, userId: USER_ID },
+      ]);
+    });
+
+    test('a THROWING runtime leg degrades that leg only, with a stable code', async () => {
+      runtimeLeg = async () => {
+        throw new Error('relation "session_runtime_projections" does not exist');
+      };
+      const response = await openBundle();
+      const body = (await response.json()) as Record<string, any>;
+      expect(response.status).toBe(200);
+      expect(body.runtime).toEqual({ known: false, reason: 'leg_failed' });
+      // The raw Postgres text must not reach a caller with project `read`.
+      expect(JSON.stringify(body)).not.toContain('session_runtime_projections');
+      // Every other leg still answered.
+      expect(body.turn.known).toBe(true);
+      expect(body.queue.known).toBe(true);
+      expect(body.transcript.known).toBe(true);
+    });
+
+    test('the runtime leg never blocks the response on a sandbox', async () => {
+      // The leg is a DB read and the refresh is fire-and-forget, so a bundle for
+      // a session whose box is asleep answers on the control plane's clock. A
+      // refresh that took a second would show up here as a second of latency.
+      runtimeLeg = async () => ({ known: false, reason: 'no_projection' });
+      const started = Date.now();
+      const response = await openBundle();
+      expect(response.status).toBe(200);
+      expect(Date.now() - started).toBeLessThan(1_000);
+    });
   });
 });

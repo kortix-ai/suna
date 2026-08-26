@@ -37,6 +37,16 @@ describe('boot-timeline is actually reachable', () => {
     expect(use).toBeLessThan(route);
   });
 
+  test('the runtime-projection push is mounted the same way, before the router', () => {
+    // Second route on the same pattern: the daemon fire-and-forgets this push
+    // too, so an unmounted middleware would be silent 403s and an empty
+    // projection store rather than a visible failure.
+    const use = index.indexOf("app.use('/v1/platform/runtime-projection', supabaseAuth)");
+    const route = index.indexOf("app.route('/v1/platform', platformApp)");
+    expect(use).toBeGreaterThan(-1);
+    expect(use).toBeLessThan(route);
+  });
+
   test('the whole platform sub-app is NOT blanket-authenticated', () => {
     // `/sandbox/version` and the github-app setup callbacks are deliberately
     // public; a wildcard mount would break them.
