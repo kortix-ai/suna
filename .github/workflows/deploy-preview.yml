@@ -434,7 +434,9 @@ jobs:
         if: always()
         with:
           name: preview-results-pr-${{ needs.authorize.outputs.pr_number }}-${{ needs.authorize.outputs.sha }}
-          path: tests/test-results/**
+          path: |
+            tests/test-results/**
+            !tests/test-results/deployment-bypass-state.json
           if-no-files-found: warn
           retention-days: 14
       - name: Fail when deployment or tests failed

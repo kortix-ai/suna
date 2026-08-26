@@ -137,6 +137,8 @@ jobs:
         if: always() && (inputs.mode == 'full' || inputs.mode == matrix.mode)
         with:
           name: ${{ inputs.artifact-name }}-${{ matrix.lane }}
-          path: tests/test-results/**
+          path: |
+            tests/test-results/**
+            !tests/test-results/deployment-bypass-state.json
           if-no-files-found: warn
           retention-days: ${{ inputs.retention-days }}
