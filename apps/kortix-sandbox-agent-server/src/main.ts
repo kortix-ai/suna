@@ -740,19 +740,7 @@ async function startSessionRuntime(
     // backstop for any residual gap.
     const loop = startOpencodeEventLoop(opencode, cfg, eventHandlers)
     loopStarted = true
-    await maybeCreateInitialOpencodeSession(
-      opencode,
-      bootState,
-      bootMark,
-      loop.connected,
-      markOpencodeListening,
-    ).catch(
-      (err) => {
-        bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
-        logger.warn('[boot] initial opencode session setup failed', err)
-      },
-    )
-    if (bootState.initialOpenCodeSessionId) {
+    const finalizeInitialSession = async () => {
       await reconcileInitialTurnAcceptance()
       opencode.markReady()
       bootMark('opencode-ready')
@@ -764,8 +752,45 @@ async function startSessionRuntime(
       // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
       relayBootTimelineToApi(bootState.timeline)
       scheduleRuntimeAssetsReconcile(cfg)
+    }
+    await maybeCreateInitialOpencodeSession(
+      opencode,
+      bootState,
+      bootMark,
+      loop.connected,
+      markOpencodeListening,
+    ).catch((err) => {
+      bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
+      logger.warn('[boot] initial opencode session setup failed', err)
+    })
+    const attemptInitialSession = () =>
+      maybeCreateInitialOpencodeSession(
+        opencode,
+        bootState,
+        bootMark,
+        loop.connected,
+        markOpencodeListening,
+      ).catch((err) => {
+        bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
+        logger.warn('[boot] initial opencode session setup failed', err)
+      })
+    if (bootState.initialOpenCodeSessionId) {
+      await finalizeInitialSession()
       return
     }
+    // NOT established — a `defer` (opencode slow to answer, prior root pinned)
+    // or a claim/setup failure. Until 2026-08-26 this was a dead end: nothing
+    // ever retried, `runtimeReady` stayed false forever, the proxy 503'd every
+    // request `initial_opencode_session_pending`, and the session spun "Waking
+    // the agent" until a human clicked Restart (Essentia ef9f344b, 10+ min).
+    // The runtime is unusable without the root, so retry until established —
+    // bounded interval, detached so the rest of boot (readiness probe, event
+    // loop fallback below) proceeds and the box stays observable meanwhile.
+    void retryUntilInitialSessionEstablished({
+      attempt: attemptInitialSession,
+      established: () => bootState.initialOpenCodeSessionId !== null,
+      finalize: finalizeInitialSession,
+    })
   }
   const ready = await waitForOpencodeReady(opencode, cfg.projectTarget, markOpencodeListening)
   if (ready) {
@@ -1244,6 +1269,42 @@ async function runWarmSeedMode(
 // `maybeCreateInitialOpencodeSession` already ran to a delivery decision on
 // this box before, so an empty transcript behind an existing pin means
 // truncation, not "never delivered". See the `priorPin` check below.
+/** Retry delay for the initial-session claim: 5s, 10s, …, capped at 30s. */
+export function initialSessionRetryDelayMs(attempt: number): number {
+  return Math.min(5_000 * Math.max(attempt, 1), 30_000)
+}
+
+/**
+ * Re-run the initial-session setup until the root is established, then run
+ * `finalize` exactly once. `maybeCreateInitialOpencodeSession` is idempotent
+ * (it re-resolves the pinned root and keeps deferring while opencode has not
+ * answered), so retrying is safe; without the root the runtime can never turn
+ * ready, so the loop has no attempt cap — only a capped interval. Exported for
+ * tests; see initial-session-retry.test.ts.
+ */
+export async function retryUntilInitialSessionEstablished(input: {
+  attempt: () => Promise<unknown>
+  established: () => boolean
+  finalize: () => Promise<void>
+  delayMs?: (attempt: number) => number
+  sleep?: (ms: number) => Promise<void>
+  /** Tests only: stop after this many attempts. */
+  maxAttempts?: number
+}): Promise<boolean> {
+  const delayMs = input.delayMs ?? initialSessionRetryDelayMs
+  const sleep = input.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
+  for (let attempt = 1; input.maxAttempts === undefined || attempt <= input.maxAttempts; attempt++) {
+    await sleep(delayMs(attempt))
+    if (input.established()) break
+    logger.warn('[boot] initial opencode session still pending; retrying', { attempt })
+    await input.attempt()
+    if (input.established()) break
+  }
+  if (!input.established()) return false
+  await input.finalize()
+  return true
+}
+
 async function maybeCreateInitialOpencodeSession(
   opencode: Opencode,
   bootState: SandboxBootState,
