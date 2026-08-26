@@ -199,8 +199,8 @@ const NAV_GROUPS: Array<{
   {
     items: [
       { id: 'settings', label: 'Settings', icon: CogOne },
-      // Organization branding (Enterprise): the account's own logo, icon, and
-      // favicon (light + dark) for every member. Sits with the other
+      // Organization branding (Enterprise): the account's own logo, icon,
+      // favicon (light + dark), and product name for every member. Sits with the other
       // "how is this account configured" items, not under Access.
       { id: 'branding', label: 'Branding', icon: PaintBrush },
       { id: 'git', label: 'Git', icon: GitBranch },
@@ -257,7 +257,7 @@ const PANE_META: Partial<Record<AccountSection, { title: string; description: st
   settings: { title: 'Settings', description: 'Name and security for this account.' },
   branding: {
     title: 'Branding',
-    description: 'Your logo, icon, and favicon for everyone in this account.',
+    description: 'Your logo, icon, favicon, and product name for everyone in this account.',
   },
 };
 

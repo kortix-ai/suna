@@ -45,6 +45,7 @@ export function accountDisplayName(
  *  no longer carries the `branding` entitlement. */
 export const EffectiveBrandingSchema = z
   .object({
+    app_name: z.string().nullable(),
     logo_url: z.string().nullable(),
     icon_url: z.string().nullable(),
     favicon_url: z.string().nullable(),

@@ -2,7 +2,8 @@
 //
 // An account can replace the Kortix marks its members see in the web app: the
 // wide brandmark (`logo`), the square symbol (`icon`), and the browser-tab
-// icon (`favicon`), each with an optional dark-scheme variant (`*_dark`).
+// icon (`favicon`), each with an optional dark-scheme variant (`*_dark`), plus
+// the product name shown in place of "Kortix" (`app_name`).
 // Everything lives in ONE jsonb column, `accounts.branding`, and every URL in
 // it is API-owned: uploads come through this module and land in the public
 // `branding` Storage bucket under `<account_id>/<kind>-<sha256:12>.<ext>`.
@@ -10,7 +11,7 @@
 // storage origin, and nothing needs URL validation downstream.
 //
 // Gating, in the same shape as the other enterprise surfaces (audit, SSO):
-//   - writes (`POST …/assets/:kind`) need `account.write` AND the
+//   - writes (`PUT`, `POST …/assets/:kind`) need `account.write` AND the
 //     `branding` entitlement — `requireEntitlement` 402s otherwise;
 //   - reads and the two removal routes stay ungated (permission only) so a
 //     downgraded account can still see and unwind what it set;
@@ -30,12 +31,13 @@ import { config } from '../config';
 import { db } from '../shared/db';
 import { rewriteStorageOrigin } from '../shared/storage-url';
 import { getSupabase } from '../shared/supabase';
-import { AccountIdParam, accountsRouter, getMembership } from './core/app';
+import { AccountIdParam, accountsRouter, getMembership, readBody } from './core/app';
 import { auditIam, requireEntitlement } from './iam/helpers';
 
 export const BRANDING_BUCKET = 'branding';
 /** Same ceiling the bucket enforces (`storage.buckets.file_size_limit`). */
 export const MAX_BRANDING_ASSET_BYTES = 1024 * 1024;
+export const MAX_APP_NAME_LENGTH = 60;
 
 /** Three marks × two color schemes. The `_dark` kinds are optional variants
  *  that fall back to their light counterpart wherever they are unset. */
@@ -62,6 +64,7 @@ const ASSET_URL_KEY: Record<BrandingAssetKind, keyof AccountBrandingRecord> = {
 
 export const AccountBrandingSchema = z
   .object({
+    app_name: z.string().nullable(),
     logo_url: z.string().nullable(),
     icon_url: z.string().nullable(),
     favicon_url: z.string().nullable(),
@@ -91,6 +94,7 @@ const AssetKindParam = z.object({
 export function normalizeBranding(record: AccountBrandingRecord | null | undefined): AccountBranding {
   const str = (v: unknown) => (typeof v === 'string' && v.length > 0 ? v : null);
   return {
+    app_name: str(record?.app_name),
     logo_url: str(record?.logo_url),
     icon_url: str(record?.icon_url),
     favicon_url: str(record?.favicon_url),
@@ -229,6 +233,24 @@ async function writeBranding(accountId: string, next: AccountBrandingRecord): Pr
   return normalizeBranding(row?.branding);
 }
 
+/** Every character a product name may not contain: C0/C1 controls. */
+export function normalizeAppName(
+  raw: unknown,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw === null || raw === undefined) return { ok: true, value: null };
+  if (typeof raw !== 'string') return { ok: false, error: 'app_name must be a string or null' };
+  const value = raw.replace(/\s+/g, ' ').trim();
+  if (value.length === 0) return { ok: true, value: null };
+  if (value.length > MAX_APP_NAME_LENGTH) {
+    return { ok: false, error: `app_name is too long (max ${MAX_APP_NAME_LENGTH} characters)` };
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f-\x9f]/.test(value)) {
+    return { ok: false, error: 'app_name contains control characters' };
+  }
+  return { ok: true, value };
+}
+
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
 export function registerBrandingRoutes(): void {
@@ -259,6 +281,62 @@ export function registerBrandingRoutes(): void {
         branding: normalizeBranding(row.branding),
         entitled: await accountHasEntitlement(accountId, 'branding'),
       });
+    },
+  );
+
+  // PUT — the text half (`app_name`). Asset URLs are never accepted here.
+  // Same gate as an upload: `account.write` + the `branding` entitlement.
+  accountsRouter.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{accountId}/branding',
+      tags: ['accounts'],
+      summary: 'Update organization branding (product name)',
+      ...auth,
+      request: {
+        params: AccountIdParam,
+        body: {
+          content: {
+            'application/json': {
+              schema: z.object({
+                app_name: z.string().max(MAX_APP_NAME_LENGTH).nullable().optional(),
+              }),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(AccountBrandingStateSchema, 'Updated branding'),
+        ...errors(400, 401, 402, 403, 404),
+      },
+    }),
+    async (c: any) => {
+      const userId = c.get('userId') as string;
+      const accountId = c.req.param('accountId');
+      if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+      const denied = await requireEntitlement(c, accountId, 'branding');
+      if (denied) return denied;
+
+      const body = await readBody(c);
+      if (!('app_name' in body)) return c.json({ error: 'app_name is required' }, 400);
+      const parsed = normalizeAppName(body.app_name);
+      if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+
+      const row = await loadBrandingRow(accountId);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      const before = normalizeBranding(row.branding);
+      const after = await writeBranding(accountId, { ...before, app_name: parsed.value });
+
+      await auditIam(c, {
+        accountId,
+        action: 'account.branding.update',
+        resourceType: 'account',
+        resourceId: accountId,
+        before: { app_name: before.app_name },
+        after: { app_name: after.app_name },
+      });
+      return c.json({ branding: after, entitled: true });
     },
   );
 

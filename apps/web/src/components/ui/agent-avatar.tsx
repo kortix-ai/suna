@@ -48,7 +48,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
               ? (branding.icon_dark_url ?? branding.icon_url)
               : '/kortix-symbol.svg'
           }
-          alt="Kortix"
+          alt={branding?.app_name ?? 'Kortix'}
           className={cn(
             'shrink-0 object-contain',
             // The Kortix symbol is black-on-transparent and inverts onto the

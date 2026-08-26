@@ -15,13 +15,13 @@ tracked, and it is not forgotten just because it isn't scheduled.
 ### 2026-08-26 — session `org-branding` — organization branding (Enterprise `branding` entitlement) — DONE
 
 Additive REST surface in `core/rest/projects-client/accounts.ts`: `getAccountBranding`,
-`uploadAccountBrandingAsset` (multipart via `backendApi.upload`; kinds `logo|icon|favicon` ×
+`updateAccountBranding` (`app_name`), `uploadAccountBrandingAsset` (multipart via `backendApi.upload`; kinds `logo|icon|favicon` ×
 light/`_dark`), `removeAccountBrandingAsset`, `resetAccountBranding`; types `AccountBranding`
-(six nullable URLs), `AccountBrandingAssetKind`, `AccountBrandingState` (root-barrel re-exports);
+(`app_name` + six nullable URLs), `AccountBrandingAssetKind`, `AccountBrandingState` (root-barrel re-exports);
 `KortixAccount.branding` / `AccountDetail.branding` (effective branding the API attaches);
 `AccountState.tier.entitlements.branding`; `ADMIN_OVERRIDE_KEYS` += `branding`. Facade:
-`kortix.accounts.branding.{get,uploadAsset,removeAsset,reset}`. TDD:
-`accounts-branding.test.ts` (6 cases, RED first — missing exports — then GREEN). Host:
+`kortix.accounts.branding.{get,update,uploadAsset,removeAsset,reset}`. TDD:
+`accounts-branding.test.ts` (8 cases, RED first — missing exports — then GREEN). Host:
 `apps/web` `BrandingProvider` renders from the `['accounts']` query it already holds.
 
 ### 2026-08-26 — session `session-ux` (WS-R) — stop-release: a re-minted prompt's echo must find ITS OWN bubble — DONE

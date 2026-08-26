@@ -69,10 +69,10 @@ const FEATURE_COPY: Record<
   branding: {
     title: 'Branding is an Enterprise feature',
     blurb:
-      'Put your own logo, icon, and favicon on the app for everyone in this account — Kortix becomes your tool.',
+      'Put your own logo, icon, favicon, and product name on the app for everyone in this account — Kortix becomes your tool.',
     points: [
       'Your brandmark in the header and on every loading screen',
-      'Your favicon in the browser tab, with a dark-mode variant',
+      'Your favicon and product name in the browser tab, with dark-mode variants',
       'Members see your brand from the moment they sign in',
     ],
   },

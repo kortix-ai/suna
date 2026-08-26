@@ -2,6 +2,7 @@
 //
 // Wire contract pinned here:
 //   GET    /accounts/:id/branding               → { branding, entitled }
+//   PUT    /accounts/:id/branding  {app_name}   → { branding, entitled }
 //   POST   /accounts/:id/branding/assets/:kind  → multipart `file`, no JSON
 //   DELETE /accounts/:id/branding/assets/:kind  → { branding, entitled }
 //   DELETE /accounts/:id/branding               → { branding, entitled }
@@ -14,6 +15,7 @@ import {
   listAccounts,
   removeAccountBrandingAsset,
   resetAccountBranding,
+  updateAccountBranding,
   uploadAccountBrandingAsset,
 } from './accounts';
 
@@ -52,6 +54,7 @@ const last = () => calls[calls.length - 1]!;
 
 const STATE = {
   branding: {
+    app_name: 'Acme Copilot',
     logo_url: 'http://s/storage/v1/object/public/branding/acc-1/logo-abc.svg',
     icon_url: null,
     favicon_url: null,
@@ -70,6 +73,21 @@ test('getAccountBranding → GET /accounts/:id/branding, returns stored record +
   expect(state.entitled).toBe(true);
   expect(state.branding.logo_url).toContain('/branding/acc-1/logo-abc.svg');
   expect(state.branding.icon_url).toBeNull();
+});
+
+test('updateAccountBranding → PUT with exactly { app_name }', async () => {
+  nextResponse = { status: 200, body: STATE };
+  await updateAccountBranding('acc-1', { app_name: 'Acme Copilot' });
+  expect(last().url).toBe('http://test.local/accounts/acc-1/branding');
+  expect(last().method).toBe('PUT');
+  expect(JSON.parse(String(last().body))).toEqual({ app_name: 'Acme Copilot' });
+});
+
+test('updateAccountBranding accepts null to clear the name', async () => {
+  nextResponse = { status: 200, body: { ...STATE, branding: { ...STATE.branding, app_name: null } } };
+  const state = await updateAccountBranding('acc-1', { app_name: null });
+  expect(JSON.parse(String(last().body))).toEqual({ app_name: null });
+  expect(state.branding.app_name).toBeNull();
 });
 
 test('uploadAccountBrandingAsset → multipart POST to /assets/:kind with the file under `file`', async () => {
@@ -107,6 +125,7 @@ test('resetAccountBranding → DELETE /accounts/:id/branding', async () => {
     status: 200,
     body: {
       branding: {
+        app_name: null,
         logo_url: null,
         icon_url: null,
         favicon_url: null,

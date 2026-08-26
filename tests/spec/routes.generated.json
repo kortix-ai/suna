@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 605,
+  "count": 606,
   "routes": [
     {
       "method": "GET",
@@ -220,6 +220,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/branding"
+    },
+    {
+      "method": "PUT",
       "path": "/v1/accounts/:accountId/branding"
     },
     {

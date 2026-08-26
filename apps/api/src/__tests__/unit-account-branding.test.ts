@@ -4,13 +4,15 @@
 // (tests/src/flows/accounts.flow.ts). What is pinned here is everything a
 // handler decides WITHOUT the network: which bytes count as an image (and
 // which SVGs are refused), how the stored jsonb normalizes to the wire shape,
-// when serving falls back to Kortix, and the content-addressed object name.
+// when serving falls back to Kortix, the content-addressed object name, and
+// the product-name rules.
 import { describe, expect, test } from 'bun:test';
 import {
   brandingObjectPath,
   brandingObjectPathFromUrl,
   effectiveBranding,
   isBrandingEmpty,
+  normalizeAppName,
   normalizeBranding,
   sniffBrandingImage,
 } from '../accounts/branding';
@@ -76,6 +78,7 @@ describe('sniffBrandingImage — bytes decide, never the declared type', () => {
 describe('normalizeBranding / isBrandingEmpty', () => {
   test('fills every slot with null and drops empty strings', () => {
     expect(normalizeBranding(undefined)).toEqual({
+      app_name: null,
       logo_url: null,
       icon_url: null,
       favicon_url: null,
@@ -83,7 +86,8 @@ describe('normalizeBranding / isBrandingEmpty', () => {
       icon_dark_url: null,
       favicon_dark_url: null,
     });
-    expect(normalizeBranding({ icon_url: '', logo_url: 'http://x/l.svg' })).toEqual({
+    expect(normalizeBranding({ app_name: '', logo_url: 'http://x/l.svg' })).toEqual({
+      app_name: null,
       logo_url: 'http://x/l.svg',
       icon_url: null,
       favicon_url: null,
@@ -109,6 +113,7 @@ describe('effectiveBranding — what members are SERVED', () => {
   test('stored + entitled → the record', async () => {
     entitled = true;
     expect(await effectiveBranding('acc', { logo_url: 'http://x/l.svg' }, check)).toEqual({
+      app_name: null,
       logo_url: 'http://x/l.svg',
       icon_url: null,
       favicon_url: null,
@@ -151,5 +156,24 @@ describe('object naming', () => {
     expect(brandingObjectPathFromUrl('https://evil.example/logo.svg')).toBeNull();
     expect(brandingObjectPathFromUrl(null)).toBeNull();
     expect(brandingObjectPathFromUrl('')).toBeNull();
+  });
+});
+
+describe('normalizeAppName', () => {
+  test('null / empty / whitespace clear the name', () => {
+    expect(normalizeAppName(null)).toEqual({ ok: true, value: null });
+    expect(normalizeAppName('')).toEqual({ ok: true, value: null });
+    expect(normalizeAppName('   ')).toEqual({ ok: true, value: null });
+  });
+
+  test('collapses whitespace and trims', () => {
+    expect(normalizeAppName('  Acme   Copilot ')).toEqual({ ok: true, value: 'Acme Copilot' });
+  });
+
+  test('refuses non-strings, over-long names, and control characters', () => {
+    expect(normalizeAppName(42).ok).toBe(false);
+    expect(normalizeAppName('x'.repeat(61)).ok).toBe(false);
+    expect(normalizeAppName(`Acme${String.fromCharCode(0)}`).ok).toBe(false);
+    expect(normalizeAppName('x'.repeat(60)).ok).toBe(true);
   });
 });

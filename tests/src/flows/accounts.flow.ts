@@ -863,6 +863,7 @@ flow(
     domain: 'accounts',
     routes: [
       'GET /v1/accounts/:accountId/branding',
+      'PUT /v1/accounts/:accountId/branding',
       'POST /v1/accounts/:accountId/branding/assets/:kind',
       'DELETE /v1/accounts/:accountId/branding/assets/:kind',
       'DELETE /v1/accounts/:accountId/branding',
@@ -877,6 +878,7 @@ flow(
       r.status(200)
         .body()
         .has('$.entitled', false)
+        .has('$.branding.app_name', null)
         .has('$.branding.logo_url', null)
         .has('$.branding.icon_url', null)
         .has('$.branding.favicon_url', null)
@@ -895,6 +897,13 @@ flow(
       if (row.branding !== null && row.branding !== undefined) {
         throw new Error(`expected branding null, got ${JSON.stringify(row.branding)}`);
       }
+    });
+
+    await ctx.step('PUT app_name without the entitlement → 402 entitlement_required', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put('/v1/accounts/:accountId/branding', { app_name: 'Acme Copilot' }, { params });
+      r.status(402).body().has('$.code', 'entitlement_required').has('$.entitlement', 'branding');
     });
 
     await ctx.step('POST asset without the entitlement → 402 (before any body is read)', async () => {

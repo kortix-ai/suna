@@ -3,8 +3,9 @@
 /**
  * Organization branding — the `?tab=branding` pane of `/accounts/[id]`.
  *
- * Enterprise `branding` entitlement. Three marks (brandmark, symbol, favicon),
- * each with a light image and an optional dark variant. Every upload goes to
+ * Enterprise `branding` entitlement. A product name, and three marks
+ * (brandmark, symbol, favicon), each with a light image and an optional dark
+ * variant. Every upload goes to
  * the API (`POST /accounts/:id/branding/assets/:kind`), which sniffs the bytes
  * and owns the URL — this pane never chooses where an image lives. After every
  * write the `['accounts']` query is invalidated, which is what
@@ -21,6 +22,7 @@ import {
   getAccountBranding,
   removeAccountBrandingAsset,
   resetAccountBranding,
+  updateAccountBranding,
   uploadAccountBrandingAsset,
   type AccountBranding,
   type AccountBrandingAssetKind,
@@ -28,11 +30,12 @@ import {
 } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
-import { useRef, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
+import { Input } from '@/components/ui/input';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -40,6 +43,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
+const MAX_APP_NAME_LENGTH = 60;
 const MAX_ASSET_BYTES = 1024 * 1024;
 const ACCEPT = 'image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,.ico,.svg';
 
@@ -113,6 +117,24 @@ export function BrandingTab({ accountId, canManage }: { accountId: string; canMa
     <div className="space-y-10">
       <section className="space-y-4">
         <div className="space-y-1">
+          <Label>Product name</Label>
+          <p className="text-muted-foreground text-xs">
+            Replaces “Kortix” in the browser tab title.
+          </p>
+        </div>
+        <AppNameCard
+          // Keyed on the saved value: a save (or a reset) remounts the form
+          // with fresh state instead of syncing it through an effect.
+          key={branding.app_name ?? ''}
+          accountId={accountId}
+          value={branding.app_name}
+          canManage={canManage}
+          onSaved={settle}
+        />
+      </section>
+
+      <section className="space-y-4">
+        <div className="space-y-1">
           <Label>Marks</Label>
           <p className="text-muted-foreground text-xs">
             Uploaded images replace the Kortix marks for every member of this account. The dark
@@ -139,6 +161,68 @@ export function BrandingTab({ accountId, canManage }: { accountId: string; canMa
         <ResetRow accountId={accountId} disabled={!canManage || isDefault} onSettled={settle} />
       </section>
     </div>
+  );
+}
+
+// ─── Product name ───────────────────────────────────────────────────────────
+
+function AppNameCard({
+  accountId,
+  value,
+  canManage,
+  onSaved,
+}: {
+  accountId: string;
+  value: string | null;
+  canManage: boolean;
+  onSaved: (state: AccountBrandingState) => void;
+}) {
+  const [name, setName] = useState(value ?? '');
+
+  const mutation = useMutation({
+    mutationFn: (next: string | null) => updateAccountBranding(accountId, { app_name: next }),
+    onSuccess: (state) => {
+      successToast(state.branding.app_name ? 'Product name saved' : 'Product name cleared');
+      onSaved(state);
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to save the product name'),
+  });
+
+  const trimmed = name.trim();
+  const canSubmit =
+    canManage && trimmed !== (value ?? '') && trimmed.length <= MAX_APP_NAME_LENGTH;
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSubmit) return;
+    mutation.mutate(trimmed.length > 0 ? trimmed : null);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-popover rounded-md border">
+      <div className="space-y-1.5 px-4 py-5">
+        <Label htmlFor="branding-app-name">Name</Label>
+        <Input
+          id="branding-app-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Kortix"
+          disabled={!canManage || mutation.isPending}
+          maxLength={MAX_APP_NAME_LENGTH}
+          className="max-w-md"
+          autoComplete="off"
+        />
+        <p className="text-muted-foreground text-xs">
+          Leave empty to keep “Kortix”. Up to {MAX_APP_NAME_LENGTH} characters.
+        </p>
+      </div>
+      <div className="border-border flex items-center justify-end border-t px-4 py-3">
+        <Button type="submit" size="sm" disabled={!canSubmit || mutation.isPending}>
+          {mutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+          Save
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -365,7 +449,7 @@ function ResetRow({
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-foreground text-sm font-medium">Reset to Kortix</p>
-            <p className="text-muted-foreground text-xs">Removes every uploaded mark.</p>
+            <p className="text-muted-foreground text-xs">Removes every uploaded mark and the product name.</p>
           </div>
           <Button
             type="button"
@@ -382,7 +466,7 @@ function ResetRow({
         open={confirming}
         onOpenChange={setConfirming}
         title="Reset branding?"
-        description="Every member of this account will see the Kortix logo, icon, and favicon again. Uploaded images are deleted."
+        description="Every member of this account will see the Kortix logo, icon, favicon, and name again. Uploaded images are deleted."
         confirmLabel="Reset"
         confirmVariant="destructive"
         isPending={mutation.isPending}

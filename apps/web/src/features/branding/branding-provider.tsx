@@ -5,7 +5,7 @@
  *
  * An Enterprise account can replace the Kortix marks its members see: the wide
  * brandmark, the square symbol, and the browser-tab icon — each with an
- * optional dark-scheme variant.
+ * optional dark-scheme variant — plus the product name in the tab title.
  * The API decides what a member is SERVED (`KortixAccount.branding` on
  * `GET /accounts` — the stored record while the account is entitled, `null`
  * otherwise), so this provider does exactly two things:
@@ -18,7 +18,7 @@
  * (`useEnsureSelectedAccount`, `AccountSwitcher`, `UserMenu`, …), so branding
  * costs no extra request. It renders nothing itself; `KortixLogo` swaps its
  * SVG for the org marks, and `BrandingDocumentEffect` (below) swaps the tab
- * icon once the account resolves. Before that — and on every
+ * icon and title once the account resolves. Before that — and on every
  * unauthenticated surface — the app is Kortix, by design: there is no account
  * to be branded as until someone signs in.
  */
@@ -28,6 +28,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
+import { siteMetadata } from '@/lib/site-metadata';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 /** Set by an account-scoped surface (the project shell, the account hub) so
@@ -100,6 +101,7 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
     if (!b) return null;
     // Normalize once so consumers can rely on every slot being present.
     return {
+      app_name: b.app_name ?? null,
       logo_url: b.logo_url ?? null,
       icon_url: b.icon_url ?? null,
       favicon_url: b.favicon_url ?? null,
@@ -125,17 +127,31 @@ export function useBranding(): AccountBranding | null {
   return useContext(BrandingContext);
 }
 
+/** The product name to show in place of "Kortix". */
+export function useAppName(): string {
+  return useBranding()?.app_name ?? 'Kortix';
+}
 
-// ─── Document effect: favicon ───────────────────────────────────────────────
+
+// ─── Document effect: favicon + title ───────────────────────────────────────
 
 const ORIG_HREF = 'data-kortix-orig-href';
 const ORIG_MEDIA = 'data-kortix-orig-media';
 
 /**
- * Next resolves `metadata.icons` on the server, above auth — so the org favicon
- * is applied client-side once the account is known. Cold load shows the Kortix
- * tab for the first paint; that is the accepted v1 trade-off (host-based
- * tenancy would be the way to remove it).
+ * Next resolves `metadata.icons` and `title` on the server, above auth — so the
+ * org favicon and name are applied client-side once the account is known. Cold
+ * load shows the Kortix tab for the first paint; that is the accepted v1
+ * trade-off (host-based tenancy would be the way to remove it).
+ *
+ * Title: Next writes `<title>` on every navigation from the route's metadata:
+ * the site default (`Kortix – The AI Command Center for Your Company`) on
+ * routes with no title of their own, `<page> | Kortix` elsewhere. A
+ * `MutationObserver` on `<head>` rewrites whatever Next just wrote, so the
+ * swap survives navigation without touching every page's metadata: the site
+ * default collapses to the org name alone (its tagline is Kortix's, not
+ * theirs); anything else has the literal "Kortix" token replaced. It only
+ * writes when the result differs — no loops, no clobbering page titles.
  */
 const DARK_ICON_ATTR = 'data-kortix-dark-icon';
 
@@ -147,6 +163,7 @@ function BrandingDocumentEffect({ branding }: { branding: AccountBranding | null
     ? (branding?.favicon_dark_url ?? branding?.icon_dark_url ?? null)
     : null;
   const appleHref = branding?.icon_url ?? branding?.favicon_url ?? null;
+  const appName = branding?.app_name ?? null;
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -223,6 +240,20 @@ function BrandingDocumentEffect({ branding }: { branding: AccountBranding | null
     return () => observer.disconnect();
   }, [iconHref, iconDarkHref, appleHref]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined' || !appName) return;
+    const rewrite = () => {
+      const current = document.title;
+      if (!current.includes('Kortix')) return;
+      const next =
+        current === siteMetadata.title ? appName : current.replace(/\bKortix\b/g, appName);
+      if (next !== current) document.title = next;
+    };
+    rewrite();
+    const observer = new MutationObserver(rewrite);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [appName]);
 
   return null;
 }

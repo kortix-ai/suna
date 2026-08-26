@@ -1672,7 +1672,7 @@ const OVERRIDE_ENTITLEMENT_ROWS: {
   {
     key: 'branding',
     title: 'Organization branding',
-    description: 'Own logo, icon, and favicon for every member.',
+    description: 'Own logo, icon, favicon, and product name for every member.',
   },
   {
     key: 'managedModels',

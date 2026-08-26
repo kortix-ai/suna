@@ -17,6 +17,8 @@ import {
  * Kortix mark for that slot.
  */
 export interface AccountBranding {
+  /** Product name shown in place of "Kortix" (document title). */
+  app_name: string | null;
   /** Wide brandmark (symbol + wordmark) — replaces the `brandmark` logo variant. */
   logo_url: string | null;
   /** Square symbol — replaces the `icon` logo variant. */
@@ -200,6 +202,20 @@ export async function getAccountBranding(accountId: string) {
   return unwrap(await backendApi.get<AccountBrandingState>(`/accounts/${accountId}/branding`));
 }
 
+
+/**
+ * Set (or clear with `null`) the product name. `account.write` + the
+ * `branding` entitlement — a non-entitled account gets a 402
+ * `entitlement_required`, which the host surfaces as the Enterprise upsell.
+ */
+export async function updateAccountBranding(
+  accountId: string,
+  input: { app_name: string | null },
+) {
+  return unwrap(
+    await backendApi.put<AccountBrandingState>(`/accounts/${accountId}/branding`, input),
+  );
+}
 
 /**
  * Upload one mark. The API sniffs the bytes (PNG / JPEG / WebP / SVG / ICO,

@@ -52,7 +52,7 @@ export function KortixLogo({
       : (branding?.logo_dark_url ?? branding?.icon_dark_url);
 
   if (lightSrc) {
-    const alt = 'Home';
+    const alt = branding?.app_name ?? 'Home';
     const imgStyle =
       variant === 'icon'
         ? { width: `${size}px`, height: `${size}px`, ...style }
