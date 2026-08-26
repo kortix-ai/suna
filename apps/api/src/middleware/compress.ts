@@ -65,6 +65,22 @@ import type { Context, Next } from 'hono';
 export const COMPRESSION_MIN_BYTES = 1024;
 
 /**
+ * Whether THIS runtime can compress at all. `CompressionStream` is a Web API
+ * that Bun 1.2 (the API image's pinned major, `apps/api/Dockerfile`
+ * `BUN_VERSION`) does not implement, while Bun 1.3 — every laptop and CI lane
+ * — does. Checked per call, not once at import, so a test can remove the
+ * global and prove the fail-open path; the cost is one property read.
+ *
+ * Fail OPEN: without the API the middleware must not touch the body. The
+ * first deploy of this file threw `ReferenceError: CompressionStream is not
+ * defined` AFTER peeking the body, so on dev every response of 1 KiB or more
+ * answered 500 while `/health` stayed green (2026-08-26 22:41 → 2026-08-27).
+ */
+export function compressionAvailable(): boolean {
+  return typeof (globalThis as { CompressionStream?: unknown }).CompressionStream === 'function';
+}
+
+/**
  * Content types worth compressing.
  *
  * `text/event-stream` and `application/x-ndjson` are deliberately absent: they
@@ -253,6 +269,7 @@ export async function compressResponse(c: Context, next: Next): Promise<void> {
   // `Vary: Origin`, dropping the `Accept-Encoding` this middleware had added.)
   appendVaryAcceptEncoding(res.headers);
   if (!encoding) return;
+  if (!compressionAvailable()) return;
 
   const reader = (res.body as ReadableStream<Uint8Array>).getReader();
   let peek: Peek;
@@ -278,21 +295,40 @@ export async function compressResponse(c: Context, next: Next): Promise<void> {
     return;
   }
 
+  // The body has been partially consumed by the peek, so from here on the
+  // ONLY correct outcomes are "compressed" or "the same bytes, re-streamed".
+  // A throw would surface as a 500 for a response that was perfectly fine.
+  let transform: ReadableWritablePair<Uint8Array, Uint8Array> | null = null;
+  try {
+    transform = new CompressionStream(encoding) as unknown as ReadableWritablePair<
+      Uint8Array,
+      Uint8Array
+    >;
+  } catch (err) {
+    console.warn('[compress] CompressionStream unavailable — sending uncompressed', {
+      encoding,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  const passthrough = restream(peek.chunks, reader);
+  if (!transform) {
+    // Uncompressed re-stream: the original length (when declared) still holds.
+    c.res = new Response(passthrough, { status: res.status, statusText: res.statusText, headers });
+    return;
+  }
+
   headers.set('content-encoding', encoding);
   // The compressed length is unknown until the stream ends, so any declared
   // length must go: keeping it would describe the wrong number of bytes and the
   // client would truncate or hang. Bun frames the response as chunked instead.
   headers.delete('content-length');
 
-  c.res = new Response(
-    restream(peek.chunks, reader).pipeThrough(
-      new CompressionStream(encoding) as unknown as ReadableWritablePair<
-        Uint8Array,
-        Uint8Array
-      >,
-    ),
-    { status: res.status, statusText: res.statusText, headers },
-  );
+  c.res = new Response(passthrough.pipeThrough(transform), {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
 }
 
 /** Add `Accept-Encoding` to `Vary` without dropping what is already there. */
