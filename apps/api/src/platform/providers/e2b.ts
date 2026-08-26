@@ -31,14 +31,25 @@ const E2B_RUNTIME_BACKSTOP_MS = configuredTimeoutMs(
   60_000,
 );
 const KORTIX_ENTRYPOINT = '/usr/local/bin/kortix-entrypoint';
-const KORTIX_ENTRYPOINT_COMMAND = `exec flock -n /run/kortix-entrypoint.lock ${KORTIX_ENTRYPOINT}`;
+const KORTIX_ENTRYPOINT_LOCK = '/run/kortix-entrypoint.lock';
+const KORTIX_ENTRYPOINT_COMMAND = `exec flock -n ${KORTIX_ENTRYPOINT_LOCK} ${KORTIX_ENTRYPOINT}`;
 const RUNTIME_ENV_PATH = '/etc/kortix/runtime-env.json';
 const RUNTIME_ENV_ENVELOPE = 'kortix-e2b-runtime-env-v1';
 const RUNTIME_ENV_TAG_LENGTH = 16;
-const KORTIX_HEALTH_WAIT =
-  'for attempt in $(seq 1 180); do ' +
+const kortixHealthWait = (attempts: number): string =>
+  `for attempt in $(seq 1 ${attempts}); do ` +
   'if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8000/kortix/health >/dev/null; then exit 0; fi; ' +
   'sleep 1; done; exit 1';
+const KORTIX_HEALTH_WAIT = kortixHealthWait(180);
+/**
+ * How long a RESUMED box may stay unreachable before the dead-process-tree
+ * workaround below fires. Long enough for an ordinary cold boot from disk to
+ * bind port 8000 (measured ~0.5 s to runtime bootstrap on a healthy resume,
+ * 11.6 s worst case with an OpenCode init), short enough that a dead resume
+ * costs seconds instead of the caller's whole wake budget.
+ */
+const KORTIX_RESUME_HEALTH_PROBE_ATTEMPTS = 15;
+const KORTIX_RESUME_HEALTH_PROBE = kortixHealthWait(KORTIX_RESUME_HEALTH_PROBE_ATTEMPTS);
 const KORTIX_APPD = '/kortix/bin/kortix-appd';
 const KORTIX_APPD_COMMAND = `exec flock -n /run/kortix-appd.lock ${KORTIX_APPD}`;
 const KORTIX_APPD_HEALTH_WAIT =
@@ -281,29 +292,103 @@ function requirePrivateTrafficToken(sandbox: E2BSandbox): string {
   return sandbox.trafficAccessToken;
 }
 
-async function ensureKortixEntrypoint(
+async function kortixEntrypointIsRunning(sandbox: E2BSandbox): Promise<boolean> {
+  const processes = await sandbox.commands.list({ requestTimeoutMs: 10_000 });
+  return processes.some((process) =>
+    `${process.cmd} ${process.args.join(' ')}`.includes(KORTIX_ENTRYPOINT),
+  );
+}
+
+async function launchKortixEntrypoint(
   sandbox: E2BSandbox,
   envs?: Record<string, string>,
 ): Promise<void> {
-  const processes = await sandbox.commands.list({ requestTimeoutMs: 10_000 });
-  const alreadyRunning = processes.some((process) =>
-    `${process.cmd} ${process.args.join(' ')}`.includes(KORTIX_ENTRYPOINT),
-  );
-  if (!alreadyRunning) {
-    // The guest lock is the cross-process/cross-replica authority. Two API
-    // replicas can both miss commands.list() during the first few milliseconds
-    // of a cold boot; only one is allowed to own the long-lived daemon.
-    await sandbox.commands.run(KORTIX_ENTRYPOINT_COMMAND, {
-      background: true,
+  // The guest lock is the cross-process/cross-replica authority. Two API
+  // replicas can both miss commands.list() during the first few milliseconds
+  // of a cold boot; only one is allowed to own the long-lived daemon.
+  await sandbox.commands.run(KORTIX_ENTRYPOINT_COMMAND, {
+    background: true,
+    user: 'root',
+    ...(envs ? { envs } : {}),
+    // E2B applies timeoutMs to the total lifetime of a background command;
+    // its default is 60s and our former 20s value deterministically killed
+    // the Kortix daemon after boot. Zero is the SDK's documented no-timeout
+    // value. The sandbox lifecycle/reaper remains the authority that stops it.
+    timeoutMs: 0,
+  });
+}
+
+async function kortixHealthy(
+  sandbox: E2BSandbox,
+  envs: Record<string, string> | undefined,
+  command: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  try {
+    await sandbox.commands.run(command, {
       user: 'root',
       ...(envs ? { envs } : {}),
-      // E2B applies timeoutMs to the total lifetime of a background command;
-      // its default is 60s and our former 20s value deterministically killed
-      // the Kortix daemon after boot. Zero is the SDK's documented no-timeout
-      // value. The sandbox lifecycle/reaper remains the authority that stops it.
-      timeoutMs: 0,
+      timeoutMs,
     });
+    return true;
+  } catch {
+    return false;
   }
+}
+
+/**
+ * Bring the Kortix daemon up on a box and prove it answers.
+ *
+ * `reviveOnStall` is the RESUME path's extra guarantee. E2B's filesystem-only
+ * pause has no autostart contract to lean on: `lifecycle.autoResume` requires a
+ * MEMORY snapshot (`keepMemory: true`), and the E2B SDK documents a
+ * filesystem-only snapshot as one that "cold-boots" and "must be resumed
+ * explicitly via connect()". Kortix sets no template `startCmd` either, so
+ * apps/api is the ONLY thing that starts the runtime after a resume — and a
+ * resume that leaves the process tree dead (observed on Essentia box
+ * `igu3qpz1ctv0pg2agda1x`: `/opt/kortix/logs/daemon.log` gained no boot entries
+ * after the pause) used to spin the caller for the full 190 s health wait and
+ * then hand back an unreachable box. Only a human restart — a NEW sandbox —
+ * healed it.
+ *
+ * So on a resume the health answer is probed on a SHORT bound first. If the box
+ * is unreachable AND no entrypoint process is alive, the stale lock is cleared
+ * and the entrypoint relaunched exactly once, then the normal wait re-verifies.
+ * The process-liveness precondition is what keeps this from ever double-starting
+ * a daemon that is merely slow: `rm -f` on a flock'd path does not release the
+ * live holder's lock, it just lets the next `flock -n` win a different inode.
+ */
+async function ensureKortixEntrypoint(
+  sandbox: E2BSandbox,
+  envs?: Record<string, string>,
+  opts?: { reviveOnStall?: boolean },
+): Promise<void> {
+  if (!(await kortixEntrypointIsRunning(sandbox))) await launchKortixEntrypoint(sandbox, envs);
+
+  if (opts?.reviveOnStall) {
+    const reachable = await kortixHealthy(
+      sandbox,
+      envs,
+      KORTIX_RESUME_HEALTH_PROBE,
+      (KORTIX_RESUME_HEALTH_PROBE_ATTEMPTS + 10) * 1_000,
+    );
+    // Reachable already: the resume worked. Skip the long wait — it would only
+    // re-ask a question this probe just answered.
+    if (reachable) return;
+    if (!(await kortixEntrypointIsRunning(sandbox))) {
+      console.error(
+        `[e2b] dead resume workaround: sandbox ${sandbox.sandboxId} came back from a ` +
+          `filesystem-only pause with no kortix-entrypoint process and no health answer after ` +
+          `${KORTIX_RESUME_HEALTH_PROBE_ATTEMPTS}s — clearing ${KORTIX_ENTRYPOINT_LOCK} and relaunching`,
+      );
+      await sandbox.commands.run(`rm -f ${KORTIX_ENTRYPOINT_LOCK}`, {
+        user: 'root',
+        timeoutMs: 10_000,
+      });
+      await launchKortixEntrypoint(sandbox, envs);
+    }
+  }
+
   await sandbox.commands.run(KORTIX_HEALTH_WAIT, {
     user: 'root',
     ...(envs ? { envs } : {}),
@@ -453,7 +538,9 @@ export class E2BProvider implements SandboxProvider {
       // Kortix runtime invariant independent of provider startup behavior.
       const envVars = await loadRuntimeEnv(sandbox);
       if (envVars.KORTIX_WORKLOAD_TYPE === 'app') await ensureAppEntrypoint(sandbox, envVars);
-      else await ensureKortixEntrypoint(sandbox, envVars);
+      // RESUME, not create: this is the path that has to survive a provider
+      // resume which brings the VM back with a dead process tree.
+      else await ensureKortixEntrypoint(sandbox, envVars, { reviveOnStall: true });
       if (statusCacheGeneration.get(externalId) === generation) {
         runningStatusCache.set(externalId, Date.now());
         connectedSandboxCachedAt.set(externalId, this.now());

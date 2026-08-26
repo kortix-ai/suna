@@ -161,6 +161,11 @@ mock.module('../store', () => ({
   enqueueContinueSessionCommand: async () => {
     throw new Error('not expected');
   },
+  // The delivery path parks a prompt whose RUNTIME was down instead of
+  // dead-lettering it. Present so the module mock stays complete.
+  MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
+  parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
+  reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (commandId: string, message: string) => {
     failedCalls.push({ commandId, message });
   },

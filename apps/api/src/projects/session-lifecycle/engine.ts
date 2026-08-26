@@ -48,11 +48,13 @@ import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
 import { type DeliveryTarget, deliverWithRetry } from './deliver';
 import {
+  MAX_RUNTIME_UNREACHABLE_RETRIES,
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
   enqueueContinueSessionCommand,
   markCommandFailed,
+  parkPromptForUnreachableRuntime,
   markCommandForwarded,
   promoteNextInboxRow,
   markCommandQueued,
@@ -406,7 +408,11 @@ export async function continueSession(
     .limit(1);
 
   if (!session) return 'no-session';
-  if (session.status === 'failed') return 'failed';
+  // A parked session is a parked RUNTIME (`runtime_boot_failed` /
+  // `runtime_wake_failed` stamp it), not a bad prompt. It is deliberately not
+  // auto-restarted — see the 2026-08-24 learning — but the prompt waits for the
+  // restart instead of being destroyed by it.
+  if (session.status === 'failed') return 'unreachable';
   // deleteSession() stamps metadata.deletedAt and leaves the row 'stopped' —
   // the same status a normal hibernate uses. Without this check a queued
   // follow-up (Slack reply, scheduled trigger, etc.) would revive a session
@@ -509,7 +515,8 @@ export async function continueSession(
       tl?.mark('open-ready');
       break;
     }
-    if (opened.stage === 'failed' || opened.stage === 'stopped') return 'failed';
+    // Runtime down, prompt fine. See `deliverWithRetry`'s identical branch.
+    if (opened.stage === 'failed' || opened.stage === 'stopped') return 'unreachable';
     if (Date.now() >= deadline) {
       console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
         sessionId,
@@ -1859,6 +1866,24 @@ export async function executeQueuedContinue(
       return 'succeeded';
     }
     tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
+    // 'unreachable' = the RUNTIME was down. The prompt is fine; it waits for the
+    // box on its own (long) ladder and is re-armed the moment a wake confirms
+    // the runtime is back. Bounded — a spent budget falls through to the
+    // dead-letter below, which is what puts the retry button in front of the user.
+    if (delivery === 'unreachable') {
+      const parked = await parkPromptForUnreachableRuntime(
+        row.commandId,
+        `delivery outcome: ${delivery}`,
+        { sessionId: row.sessionId },
+      );
+      if (parked.parked) return 'queued';
+      await markCommandFailed(
+        row.commandId,
+        `runtime unreachable after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
+        { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
+      );
+      return 'failed';
+    }
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';

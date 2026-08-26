@@ -554,6 +554,94 @@ describe('E2B provider lifecycle', () => {
     ]);
   });
 
+  // E2B's filesystem-only pause has no autostart contract: `lifecycle.autoResume`
+  // needs a MEMORY snapshot, and Kortix sets no template `startCmd`. So apps/api
+  // is the ONLY thing that starts the runtime after a resume — and a resume that
+  // brings the VM back with a DEAD process tree (Essentia box
+  // igu3qpz1ctv0pg2agda1x: no new boot lines in /opt/kortix/logs/daemon.log after
+  // the pause) used to burn the caller's whole wake budget on the 190 s health
+  // wait and hand back an unreachable box. Only a human restart healed it.
+  function reviveBox(id: string, opts: { healthy: boolean; entrypointAlive?: boolean }) {
+    const box = fakeSandbox(id);
+    const baseRun = box.commands.run;
+    box.commands.list = (async () =>
+      opts.entrypointAlive ? aliveEntrypointProcess() : []) as typeof box.commands.list;
+    box.commands.run = async (command: string, runOpts: Record<string, unknown>) => {
+      await baseRun(command, runOpts);
+      // The SHORT resume probe only. The 180-attempt wait is the re-verify.
+      if (command.includes('seq 1 15') && !opts.healthy) throw new Error('exit code 1');
+      return { exitCode: 0 };
+    };
+    return box;
+  }
+  const aliveEntrypointProcess = () => [
+    { cmd: '/usr/local/bin/kortix-entrypoint', args: [] as string[] },
+  ];
+
+  test('a resume that left the process tree DEAD is revived, then re-verified', async () => {
+    const box = reviveBox('sb-dead-resume', { healthy: false });
+    connectFactory = () => box;
+
+    await new E2BProvider().start('sb-dead-resume');
+
+    const commands = box.runs.map((run) => run.command);
+    expect(commands).toEqual([
+      expect.stringContaining('flock -n /run/kortix-entrypoint.lock'),
+      expect.stringContaining('seq 1 15'),
+      // The stale lock is what stops `flock -n` from ever taking the daemon back.
+      'rm -f /run/kortix-entrypoint.lock',
+      expect.stringContaining('flock -n /run/kortix-entrypoint.lock'),
+      // Re-verified: the revive is not trusted, it is proven.
+      expect.stringContaining('seq 1 180'),
+    ]);
+  });
+
+  test('a healthy resume touches nothing and skips the long wait', async () => {
+    const box = reviveBox('sb-live-resume', { healthy: true });
+    connectFactory = () => box;
+
+    await new E2BProvider().start('sb-live-resume');
+
+    const commands = box.runs.map((run) => run.command);
+    expect(commands.some((command) => command.startsWith('rm -f'))).toBe(false);
+    expect(commands.filter((c) => c.includes('kortix-entrypoint') && c.includes('flock'))).toHaveLength(1);
+    expect(commands).toEqual([
+      expect.stringContaining('flock -n /run/kortix-entrypoint.lock'),
+      expect.stringContaining('seq 1 15'),
+    ]);
+  });
+
+  test('a resume that is merely SLOW is never double-started', async () => {
+    // The entrypoint is alive, it just has not bound port 8000 yet. Removing the
+    // lock here would not release the live holder's flock — it would let a second
+    // daemon win a different inode.
+    const box = reviveBox('sb-slow-resume', { healthy: false, entrypointAlive: true });
+    connectFactory = () => box;
+
+    await new E2BProvider().start('sb-slow-resume');
+
+    const commands = box.runs.map((run) => run.command);
+    expect(commands.some((command) => command.startsWith('rm -f'))).toBe(false);
+    expect(commands.filter((command) => command.includes('flock -n'))).toHaveLength(0);
+    expect(commands).toEqual([
+      expect.stringContaining('seq 1 15'),
+      expect.stringContaining('seq 1 180'),
+    ]);
+  });
+
+  test('a resume never consults a template or an image build', async () => {
+    connectFactory = () => fakeSandbox('sb-no-image');
+
+    await new E2BProvider().start('sb-no-image');
+
+    // A RESUME wakes a powered-down VM whose disk already holds the image. It
+    // must never touch the snapshot builder: `self-host update` rebuilds took
+    // 14m11s on Essentia and a resume that waited on one was the 10-34 minute
+    // `open-session:starting` stall.
+    expect(createdTemplate).toBeUndefined();
+    expect(createdOpts).toBeUndefined();
+  });
+
   test('overlapping cold-resume calls share one provider start operation', async () => {
     const resumed = fakeSandbox('sb-concurrent-resume');
     let releaseConnect!: () => void;

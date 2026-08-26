@@ -25,6 +25,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
 import { type PromptRedelivery, requeueAbandonedPrompt } from './redelivery';
+import { reArmRuntimeBlockedPrompts } from './store';
 
 export interface LostTurn {
   token: string;
@@ -34,6 +35,10 @@ export interface LostTurn {
 
 export interface RuntimeRestartRecoveryDeps {
   settleLostTurns: (sandboxId: string) => Promise<LostTurn[]>;
+  /** Make prompts this session parked on a DOWN runtime due now. */
+  reArmBlockedPrompts: (sessionId: string) => Promise<number>;
+  /** Drain the queue now rather than waiting out the scheduler's next tick. */
+  kickDrain: () => void;
   requeue: (input: {
     sessionId: string;
     wireMessageId: string | null;
@@ -47,6 +52,8 @@ export interface RuntimeRestartRecoveryDeps {
 export interface RuntimeRestartRecoveryResult {
   lost: LostTurn[];
   redeliveries: Array<{ token: string; outcome: PromptRedelivery | 'error' }>;
+  /** Prompts re-armed because the runtime is reachable again. */
+  reArmed: number;
 }
 
 /**
@@ -85,6 +92,19 @@ export async function settleTurnsLostToRuntimeRestart(sandboxId: string): Promis
 
 const liveDeps: RuntimeRestartRecoveryDeps = {
   settleLostTurns: settleTurnsLostToRuntimeRestart,
+  reArmBlockedPrompts: (sessionId) => reArmRuntimeBlockedPrompts(sessionId),
+  // Fire-and-forget: the drain re-checks every claim itself, so a kick that
+  // loses a race is a no-op and a lost kick falls back to the scheduler tick.
+  //
+  // DYNAMIC import on purpose. `sandbox-proxy/backend.ts` imports this module,
+  // and pulling the whole engine into that graph statically drags every module
+  // the engine touches into tests that only mock part of it — two suites broke
+  // on a partially-mocked `shared/daytona` / `projects/git` the moment the
+  // static edge existed. Nothing here needs the engine before this call.
+  kickDrain: () =>
+    void import('./engine')
+      .then((m) => m.drainSessionLifecycleQueue({ limit: 5 }))
+      .catch(() => undefined),
   requeue: (input) => requeueAbandonedPrompt(input),
   log: (message, meta) => console.log(message, meta),
 };
@@ -123,5 +143,22 @@ export async function recoverTurnsAfterRuntimeRestart(
       hold: input.hold ?? false,
     });
   }
-  return { lost, redeliveries };
+  // THE RUNTIME IS BACK. Every caller of this function has just observed a
+  // runtime become reachable again — a confirmed wake, or the proxy finding a
+  // restarted box. That is the event a prompt parked on an unreachable runtime
+  // has been waiting for, so it goes out now instead of on its backoff ladder.
+  // Independent of `lost`: a box can come back with nothing to settle and still
+  // owe the user the message they sent while it was down.
+  let reArmed = 0;
+  try {
+    reArmed = await deps.reArmBlockedPrompts(input.sessionId);
+    if (reArmed > 0) deps.kickDrain();
+  } catch (err) {
+    deps.log?.('[runtime-restart] re-arming runtime-blocked prompts failed', {
+      sandboxId: input.sandboxId,
+      sessionId: input.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return { lost, redeliveries, reArmed };
 }

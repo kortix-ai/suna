@@ -56,6 +56,11 @@ import {
   type SandboxTemplateProvider,
   type SandboxTemplateProviderCoverage,
 } from './provider-coverage';
+import {
+  type ReadyImage,
+  lastReadyImageCandidates,
+  readyImageHistory,
+} from './last-ready-image';
 import { canServeLastKnownGoodRuntime } from './runtime-freshness';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 
@@ -304,6 +309,58 @@ export function perProjectWarmEligible(
 }
 
 /**
+ * The first image of this template lineage the provider still holds ACTIVE, or
+ * null when there is none — a genuinely first build, which must block.
+ *
+ * Read failures are answered `null`, never an exception: this is an
+ * OPTIMISATION on the boot path, and a provider hiccup here must fall through
+ * to the ordinary build path rather than fail the boot.
+ */
+export async function findServableLastReadyImage(
+  provider: Pick<SandboxProviderAdapter, 'getSnapshotState' | 'findFirstActiveSnapshot'>,
+  input: {
+    project: Pick<GitBackedProject, 'projectId'>;
+    template: Pick<
+      ResolvedTemplate,
+      'slug' | 'isShared' | 'providerSnapshotName' | 'contentHash'
+    >;
+    identity: Pick<TemplateIdentity, 'snapshotName'>;
+    buildProvider: string;
+    /** Injected in tests; the live reader hits `project_snapshot_builds`. */
+    readHistory?: typeof readyImageHistory;
+  },
+): Promise<ReadyImage | null> {
+  const { template, identity } = input;
+  try {
+    const history = await (input.readHistory ?? readyImageHistory)({
+      projectId: input.project.projectId,
+      slug: template.slug,
+      provider: input.buildProvider,
+      isShared: !!template.isShared,
+    }).catch(() => [] as ReadyImage[]);
+    const candidates = lastReadyImageCandidates({
+      recordedSnapshotName: template.providerSnapshotName,
+      recordedContentHash: template.contentHash,
+      history,
+      identitySnapshotName: identity.snapshotName,
+    });
+    if (candidates.length === 0) return null;
+    const activeName = await findFirstActiveSnapshot(
+      provider,
+      candidates.map((candidate) => candidate.snapshotName),
+    );
+    if (!activeName) return null;
+    return candidates.find((candidate) => candidate.snapshotName === activeName) ?? null;
+  } catch (err) {
+    console.warn(
+      `[snapshots] last-ready-image lookup failed for ${template.slug} (falling through to build):`,
+      err,
+    );
+    return null;
+  }
+}
+
+/**
  * Make sure a provider-side snapshot exists for `(project, slug)` and return
  * its name. Builds inline if the provider doesn't have it yet.
  */
@@ -451,41 +508,50 @@ export async function ensureSandboxImage(
     );
   }
 
-  // ─── Graceful background rebuild (hot path only) ──────────────────────────
-  // The computed identity drifted from what we last built — typically because
-  // a runtime/CLI source change bumped the fingerprint (constant in active
-  // local dev; once per release in prod). A session must NEVER block on a full
-  // image rebuild. If the previously-built snapshot is still usable, boot off
-  // it immediately and rebuild the new identity in the background; the next
-  // session to boot after that lands picks it up via the trust-the-row fast
-  // path above. Pre-builds and explicit manual/CR builds skip this and build
-  // inline, since their whole job is to produce the new image up front.
-  if (
-    canServeLastKnownGoodRuntime({
-      source: opts.source ?? 'session-start',
-    }) &&
-    template.providerSnapshotName &&
-    template.providerSnapshotName !== identity.snapshotName
-  ) {
-    const lastGood = await provider.getSnapshotState(template.providerSnapshotName);
-    if (lastGood === 'active') {
-      kickBackgroundRebuild(project, {
-        slug: opts.slug,
-        accountId: opts.accountId,
-        provider: buildProvider,
-        snapshotName: identity.snapshotName,
-      });
+  // ─── Never block a session boot on an image build ─────────────────────────
+  // The identity this boot wants is not ready: it drifted (a runtime/CLI source
+  // change bumped the fingerprint — constant in active local dev, once per
+  // release in prod, and on EVERY `self-host update`), or it is being built
+  // right now by someone else. Either way a session must NEVER wait for a full
+  // image build: 14-minute builds turned session starts into 10–34 minutes of
+  // `provisioning` on Essentia 2026-08-26.
+  //
+  // So boot off the last image this template lineage actually shipped and let
+  // the new one bake behind us. The runtime assets the deploy actually changed
+  // converge at boot (see last-ready-image.ts for why that is safe and where it
+  // stops being safe). Pre-builds and explicit manual/CR builds skip this and
+  // build inline — producing the new image IS their job.
+  if (canServeLastKnownGoodRuntime({ source: opts.source ?? 'session-start' })) {
+    const servable = await findServableLastReadyImage(provider, {
+      project,
+      template,
+      identity,
+      buildProvider,
+    });
+    if (servable) {
+      // A build already in flight for this identity needs no second trigger;
+      // `waitForProviderBuild`'s cross-replica dedupe exists precisely so we do
+      // not issue a conflicting same-name build.
+      if (state !== 'building') {
+        kickBackgroundRebuild(project, {
+          slug: opts.slug,
+          accountId: opts.accountId,
+          provider: buildProvider,
+          snapshotName: identity.snapshotName,
+        });
+      }
       console.log(
-        `[snapshots] ${template.slug}: identity drifted to ${identity.snapshotName}; ` +
-        `booting last-known-good ${template.providerSnapshotName} and rebuilding in background`,
+        `[snapshots] ${template.slug}: ${identity.snapshotName} is ${state}; ` +
+        `booting last ready image ${servable.snapshotName} instead of waiting for the build ` +
+        `(rebuild ${state === 'building' ? 'already in flight' : 'kicked in background'})`,
       );
       return prepareSnapshotForReuse(
         provider,
-        template.providerSnapshotName,
+        servable.snapshotName,
         {
-          snapshotName: template.providerSnapshotName,
+          snapshotName: servable.snapshotName,
           slug: template.slug,
-          contentHash: template.contentHash ?? identity.contentHash,
+          contentHash: servable.contentHash ?? identity.contentHash,
           built: false,
           isDefault: !!template.isShared,
         },

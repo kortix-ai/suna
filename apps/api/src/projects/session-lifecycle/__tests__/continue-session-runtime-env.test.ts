@@ -118,6 +118,11 @@ mock.module('../store', () => ({
   },
   claimDueLifecycleCommands: async () => [],
   enqueueContinueSessionCommand: async () => {},
+  // The delivery path parks a prompt whose RUNTIME was down instead of
+  // dead-lettering it. Present so the module mock stays complete.
+  MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
+  parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
+  reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async () => {},
   markCommandQueued: async () => {},
   // Delivery of a row that carries a wire id closes through this now — see
