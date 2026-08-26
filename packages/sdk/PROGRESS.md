@@ -1119,3 +1119,16 @@ the same measurement showed idle→working→idle with a 15.1s false-busy leg.
 2402 pass / 2 skip / 0 fail · `smoke:install` — see below.
 
 ---
+
+### 2026-08-26 — session `session-ux-orchestrator` — corrupt model-store localStorage can no longer brick the app — DONE
+
+**Files:** `react/use-model-store.ts` (new exported `sanitizeModelStore(raw)`;
+`loadStore` runs every parsed value through it). Proven live on Essentia
+2026-08-26: a malformed `opencode-model-store-v1` value crashed EVERY route with
+the full-screen "Something went wrong — a.user is not iterable" card, because
+consumers iterate `store.user` and `loadStore` returned `JSON.parse(raw)`
+unvalidated. Corrupt/legacy data now degrades to defaults field-by-field
+(arrays filtered to objects, wrong-typed fields dropped, valid fields kept).
+RED first: `react/model-store-sanitize.test.ts` (5 tests / 16 expects) written
+against the missing export, then green. Public surface: additive module export
+only; package entry points unchanged.
