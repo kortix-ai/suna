@@ -39,3 +39,62 @@ describe('shouldPaintTerminalCard', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * The five `/start` shapes a `stopped`/`failed`-classified session can arrive
+ * as (Fix round 1 review), bound to the two real page.tsx call sites rather
+ * than tested as bare (retriable, activelyStarting) pairs.
+ *
+ * Rows 2 and 3 populate `session.failure` and are owned by `recoverableFailure`
+ * (page.tsx ~695), which reads the real `retriable`. Rows 1 and 4 never
+ * populate `failure` and are owned by `fatal` (page.tsx ~552), which reads a
+ * HARDCODED `retriable: false` -- never the real value -- because row 4 (park)
+ * proves `retriable` cannot be trusted there: `preserveEstablishedRuntimeOnOpen`'s
+ * park branch (apps/api/src/projects/routes/shared.ts:941-952) answers
+ * `stage:'failed', retriable:true` for a box nothing is driving any more, and
+ * reading `retriable` at that site would suppress its "<session> is stopped /
+ * Restart session" card with no poll, no auto-resume, and no ladder rung left
+ * to recover the user. Row 5 (preserve-unavailable) never reaches either call
+ * site in the real page -- it has its own unconditional
+ * `isRuntimeIdentityUnavailable` branch -- included here only to pin that
+ * `shouldPaintTerminalCard` would also call it terminal if it ever did.
+ */
+describe('the five /start producer shapes, bound to their real call site', () => {
+  test('#1 runtime_waking (shared.ts:755-763) -- owned by `fatal`: no card', () => {
+    // stage:'starting', retriable:true, actively_starting:true, no `failure`.
+    expect(
+      shouldPaintTerminalCard({ hasFailure: true, retriable: false, activelyStarting: true }),
+    ).toBe(false);
+  });
+
+  test('#2 wake cooldown (shared.ts:805-826) -- owned by `recoverableFailure`: no card, the reported bug', () => {
+    // stage:'starting', retriable:true, actively_starting:false, `failure` set.
+    expect(
+      shouldPaintTerminalCard({ hasFailure: true, retriable: true, activelyStarting: false }),
+    ).toBe(false);
+  });
+
+  test('#3 stamped-terminal (shared.ts:828-841) -- owned by `recoverableFailure`: card paints', () => {
+    // stage:'failed', retriable:false, actively_starting:false, `failure` set.
+    expect(
+      shouldPaintTerminalCard({ hasFailure: true, retriable: false, activelyStarting: false }),
+    ).toBe(true);
+  });
+
+  test('#4 park (shared.ts:941-952) -- owned by `fatal`: card paints despite retriable:true', () => {
+    // stage:'failed', retriable:TRUE, actively_starting:false, no `failure`.
+    // `fatal` hardcodes retriable:false at its call site -- it never reads the
+    // real (misleading) value -- which is exactly why this still paints.
+    expect(
+      shouldPaintTerminalCard({ hasFailure: true, retriable: false, activelyStarting: false }),
+    ).toBe(true);
+  });
+
+  test('#5 preserve-unavailable (shared.ts:953-962) -- would paint if it reached the gate', () => {
+    // stage:'failed', retriable:false, actively_starting:false, no `failure`.
+    // Real page: `isRuntimeIdentityUnavailable` renders its own card first.
+    expect(
+      shouldPaintTerminalCard({ hasFailure: true, retriable: false, activelyStarting: false }),
+    ).toBe(true);
+  });
+});

@@ -554,9 +554,22 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     !!user &&
     !!sandbox &&
     (sandbox.status === 'error' || sandbox.status === 'stopped') &&
+    // `retriable` is NOT read here, deliberately -- unlike the `session.failure`
+    // gate below. A stale-wake PARK (`preserveEstablishedRuntimeOnOpen`'s park
+    // branch, apps/api/src/projects/routes/shared.ts:941-952) answers
+    // `stage:'failed'` with `retriable:true`: the box is genuinely dead and
+    // nothing is driving it, but the server still says "polling can make
+    // progress" because the WAKE LADDER, not this raw poll, is what retries it.
+    // Trusting `retriable` here would suppress the "<session> is stopped /
+    // Restart session" card for exactly that payload, with no poll, no
+    // auto-resume, and no ladder rung left to recover the user (see
+    // `session-resume.ts:107-124`, `session-resume.test.ts:208-223`).
+    // `activelyStarting` alone is `false` on every terminal shape and `true`
+    // only while a wake is genuinely in flight, so pass a fixed `false` here
+    // instead of threading `retriable` through.
     shouldPaintTerminalCard({
       hasFailure: true,
-      retriable: session.retriable,
+      retriable: false,
       activelyStarting: session.activelyStarting,
     });
   // A preserved-unavailable identity is `status: 'stopped'` + an `external_id`,
@@ -585,7 +598,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // as a hard provisioning failure. See session-terminal-state.ts.
   const terminalState = {
     stage: session.stage ?? null,
-    retriable: session.retriable,
+    // `SessionTerminalState.retriable` is a strict boolean; an unanswered
+    // `/start` (`session.retriable === null`) coerces to `false` here only,
+    // matching this hook's pre-existing behavior -- `shouldPaintTerminalCard`
+    // is where "unknown" gets its own (withhold) branch.
+    retriable: session.retriable ?? false,
     hasStartError: !!session.startError,
     sandboxStatus: sandbox?.status,
   };
