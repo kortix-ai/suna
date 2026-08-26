@@ -1,7 +1,11 @@
 {
   "generatedAt": "static",
-  "count": 602,
+  "count": 622,
   "routes": [
+    {
+      "method": "GET",
+      "path": "/.well-known/oauth-authorization-server"
+    },
     {
       "method": "GET",
       "path": "/health"
@@ -309,6 +313,30 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/iam/mfa-required/preview"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients/:clientId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients/:clientId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients/:clientId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret"
     },
     {
       "method": "GET",
@@ -625,6 +653,50 @@
     {
       "method": "POST",
       "path": "/v1/auth/logout"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/oauth/exchange"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/password/reset"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/password/update"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/refresh"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-in/magic-link"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-in/oauth"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-in/password"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-out"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/signup"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/auth/user"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/verify-otp"
     },
     {
       "method": "GET",
@@ -1020,6 +1092,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/oauth/.well-known/oauth-authorization-server"
+    },
+    {
+      "method": "GET",
       "path": "/v1/oauth/authorize"
     },
     {
@@ -1029,6 +1105,10 @@
     {
       "method": "GET",
       "path": "/v1/oauth/authorize/consent/:requestId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/oauth/revoke"
     },
     {
       "method": "POST",
