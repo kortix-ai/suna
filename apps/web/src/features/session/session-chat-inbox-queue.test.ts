@@ -217,7 +217,18 @@ describe('a `/` command is REFUSED mid-turn, not queued', () => {
   test('the refusal reads server turn authority, not the 300 ms busy fade', () => {
     // `isBusy` is a fade timer for the busy indicator: it lapses between
     // agentic steps, which is exactly when a command would land mid-turn.
-    expect(chat).toContain('sessionWorking={effectiveBusy || hasRetryingAssistant}');
+    //
+    // REWRITTEN when the redundant OR was removed (55ee4e2981):
+    // `sessionWorking={effectiveBusy || hasRetryingAssistant}` collapsed to
+    // `sessionWorking={effectiveBusy}` because `effectiveBusy` is now built by
+    // `resolveEffectiveBusy({ isServerBusy, isOptimisticCompacting,
+    // hasRetryingAssistant })` — the retry predicate already folds into it, so
+    // the composer reads one value instead of re-ORing a term it already
+    // contains. The invariant this test actually guards was never asserted
+    // directly: the negative below is it — the refusal must NOT read the
+    // faded `isBusy`, so this test fails if someone points the composer at it.
+    expect(chat).toContain('sessionWorking={effectiveBusy}');
+    expect(chat).not.toContain('sessionWorking={isBusy}');
   });
 
   test('a PROMPT is never refused for being mid-turn — the server orders it', () => {

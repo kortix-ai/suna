@@ -144,8 +144,24 @@ describe('the composer reads ONE working answer', () => {
     // retryable provider error keeps the SAME assistant message being written
     // with no busy frame to show for it. It now feeds the composer's
     // `sessionWorking`, which is what refuses the command.
+    //
+    // REWRITTEN again when the redundant OR was removed (55ee4e2981):
+    // `sessionWorking={effectiveBusy || hasRetryingAssistant}` collapsed to
+    // `sessionWorking={effectiveBusy}` because `effectiveBusy` is now built by
+    // `resolveEffectiveBusy({ isServerBusy, isOptimisticCompacting,
+    // hasRetryingAssistant })` — the retry predicate already folds into it, so
+    // the composer reads one value instead of re-ORing a term it already
+    // contains. Pin BOTH links of the chain so this test can still fail if
+    // either is severed: the retry predicate must flow into the
+    // `resolveEffectiveBusy` call, and the composer must read `effectiveBusy`.
     expect(chat).toContain('hasRetryingAssistantTurn(messages)');
-    expect(chat).toContain('sessionWorking={effectiveBusy || hasRetryingAssistant}');
+    const busyResolution = between(
+      chat,
+      'const effectiveBusy = resolveEffectiveBusy({',
+      '});',
+    );
+    expect(busyResolution).toContain('hasRetryingAssistant');
+    expect(chat).toContain('sessionWorking={effectiveBusy}');
   });
 });
 
