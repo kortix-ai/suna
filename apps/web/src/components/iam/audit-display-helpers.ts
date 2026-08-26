@@ -178,6 +178,9 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/openapi.json': 'Viewed OpenAPI specification',
   'GET /v1/billing/account-state': 'Viewed billing status',
   'GET /v1/billing/account-state/minimal': 'Viewed billing summary',
+  // One aggregated GET replacing the session-open boot chorus (round-7 perf).
+  // The auto-labeller reads "open-bundle" as a bare noun, so name it.
+  'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle': 'Opened session (bundled reads)',
   'GET /v1/usage/cost-by-project': 'Viewed project cost rollup',
   'GET /v1/usage/cost-summary': 'Viewed cost summary',
   'POST /internal/gateway/billing': 'Processed gateway billing',
