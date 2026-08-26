@@ -136,6 +136,8 @@ export {
   tunnelAuditLogsRelations,
   // OAuth2 Provider
   oauthClients,
+  oauthAuthorizationRequests,
+  oauthConsents,
   oauthAuthorizationCodes,
   oauthAccessTokens,
   oauthRefreshTokens,

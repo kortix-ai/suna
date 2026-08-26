@@ -81,8 +81,12 @@ export interface AuthVariables {
   userId: string;
   userEmail: string;
   accountId?: string;
-  authType?: 'supabase' | 'pat' | 'apiKey' | 'service_account';
+  authType?: 'supabase' | 'pat' | 'apiKey' | 'service_account' | 'oauth';
   apiKeyType?: 'user' | 'sandbox';
+  /** Sign in with Kortix: the OAuth client the `kortix_oat_` token was minted for. */
+  oauthClientId?: string;
+  /** Sign in with Kortix: scopes granted to the token (`profile`, `email`, `kortix`). */
+  oauthScopes?: string[];
   keyId?: string;
   sandboxId?: string;
   /** Set for project-scoped CLI PATs — enforced against the URL :projectId. */

@@ -1,0 +1,20 @@
+{
+  "name": "pi-worker-spike",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "dependencies": {
+    "@daytonaio/sdk": "^0.207.0",
+    "@earendil-works/pi-agent-core": "^0.84.3",
+    "@earendil-works/pi-ai": "^0.84.3",
+    "@types/ws": "^8.18.1",
+    "typebox": "^1.3.7",
+    "ws": "^8.21.3"
+  },
+  "scripts": {
+    "kx": "bun bin/kx.ts",
+    "build": "bun build src/worker.ts --target=node --format=esm --minify --outfile dist/worker.mjs && bun build src/stub-environment.ts --target=node --format=esm --minify --outfile dist/environment.mjs && bun build src/store-service.ts --target=node --format=esm --minify --outfile dist/store.mjs && bun build src/rpc-transport.ts --target=node --format=esm --outfile dist/rpc-transport.mjs",
+    "proof": "bun test/proof.ts && bun test/proof-s04.ts && bun test/proof-s05.ts",
+    "gate:rpc": "bun bench/rpc-tax.ts"
+  }
+}

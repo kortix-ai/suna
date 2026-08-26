@@ -159,3 +159,17 @@ export * from './use-project-name';
 export * from './use-project-session';
 export * from './invalidate-project';
 export * from './use-feature-flag';
+
+// "Sign in with Kortix" — the browser half of `createKortixAuth`
+// (`@kortix/sdk/server`): the viewer hook and the sign-in link.
+export {
+  useKortixViewer,
+  fetchKortixViewer,
+  SignInWithKortix,
+  kortixSignInHref,
+  kortixSignOutHref,
+  KORTIX_AUTH_DEFAULT_BASE_PATH,
+  type KortixViewerInfo,
+  type KortixViewerState,
+  type SignInWithKortixProps,
+} from './sign-in-with-kortix';

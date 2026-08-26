@@ -26,6 +26,7 @@ export * from './channels';
 export * from './gateway';
 export * from './referrals';
 export * from './iam';
+export * from './oauth-clients';
 export * from './assignments';
 export * from './account-lifecycle';
 export * from './admin-providers';

@@ -56,7 +56,10 @@ describe('native test-lane workflow', () => {
 
   test('uploads results after the worker returns', () => {
     expect(testWorkflow).toContain('actions/upload-artifact@v7');
-    expect(testWorkflow).toContain('path: tests/test-results/**');
+    // The upload path is a multi-line block since the bypass-state exclusion
+    // landed: `path: |` then the glob, then `!…/deployment-bypass-state.json`.
+    expect(testWorkflow).toMatch(/path: \|\s*\n\s*tests\/test-results\/\*\*/);
+    expect(testWorkflow).toContain('!tests/test-results/deployment-bypass-state.json');
     expect(testWorkflow).toContain('if: always()');
   });
 

@@ -2500,15 +2500,86 @@ export const accountTokens = kortixSchema.table(
 
 // ─── OAuth2 Provider ──────────────────────────────────────────────────────
 
-export const oauthClients = kortixSchema.table('oauth_clients', {
-  clientId: uuid('client_id').defaultRandom().primaryKey(),
-  clientSecretHash: varchar('client_secret_hash', { length: 128 }).notNull(),
-  name: varchar('name', { length: 255 }).notNull(),
-  redirectUris: jsonb('redirect_uris').default([]).$type<string[]>(),
-  scopes: jsonb('scopes').default([]).$type<string[]>(),
-  active: boolean('active').default(true).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const oauthClients = kortixSchema.table(
+  'oauth_clients',
+  {
+    clientId: uuid('client_id').defaultRandom().primaryKey(),
+    clientSecretHash: varchar('client_secret_hash', { length: 128 }).notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    redirectUris: jsonb('redirect_uris').default([]).$type<string[]>(),
+    scopes: jsonb('scopes').default([]).$type<string[]>(),
+    active: boolean('active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Sign in with Kortix (2026-08-26): a client is registered by an account
+    // (self-serve, `/accounts/{id}/iam/oauth-clients`). Null = a legacy
+    // platform-level row inserted by hand before registration existed.
+    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by'),
+    description: text('description'),
+    // `confidential` presents client_secret at /token; `public` (a browser /
+    // native app that cannot keep a secret) relies on PKCE alone.
+    clientType: varchar('client_type', { length: 16 }).default('confidential').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_oauth_clients_account').on(table.accountId)],
+);
+
+/**
+ * A pending `/oauth/authorize` request, between the redirect to the consent
+ * screen and the user's decision. Was an in-process Map: lost on restart and
+ * invisible to a sibling replica. The request id is a capability, so only its
+ * hash is stored.
+ */
+export const oauthAuthorizationRequests = kortixSchema.table(
+  'oauth_authorization_requests',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    requestIdHash: varchar('request_id_hash', { length: 128 }).notNull(),
+    clientId: uuid('client_id').notNull(),
+    redirectUri: text('redirect_uri').notNull(),
+    scopes: jsonb('scopes').default([]).$type<string[]>().notNull(),
+    state: text('state').default('').notNull(),
+    codeChallenge: text('code_challenge').notNull(),
+    codeChallengeMethod: varchar('code_challenge_method', { length: 10 }).default('S256').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_oauth_auth_requests_hash').on(table.requestIdHash),
+    index('idx_oauth_auth_requests_expires').on(table.expiresAt),
+    // Explicit name: drizzle's default exceeds Postgres's 63-byte identifier cap.
+    foreignKey({
+      columns: [table.clientId],
+      foreignColumns: [oauthClients.clientId],
+      name: 'oauth_auth_requests_client_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
+/**
+ * Remembered consent: the user approved this client for these scopes once, so
+ * a later `/oauth/authorize` for a subset of them completes without the Allow
+ * screen. Deleting the row (or the client) asks again.
+ */
+export const oauthConsents = kortixSchema.table(
+  'oauth_consents',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').notNull(),
+    clientId: uuid('client_id').notNull(),
+    scopes: jsonb('scopes').default([]).$type<string[]>().notNull(),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_oauth_consents_user_client').on(table.userId, table.clientId),
+    foreignKey({
+      columns: [table.clientId],
+      foreignColumns: [oauthClients.clientId],
+      name: 'oauth_consents_client_fk',
+    }).onDelete('cascade'),
+  ],
+);
 
 export const oauthAuthorizationCodes = kortixSchema.table(
   'oauth_authorization_codes',

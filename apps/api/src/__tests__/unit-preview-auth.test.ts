@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realCrypto from '../shared/crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realPreviewOwnership from '../shared/preview-ownership';
@@ -47,6 +48,9 @@ mock.module('../repositories/api-keys', () => ({
 }));
 
 mock.module('../shared/crypto', () => ({
+  // Spread the real module: mock.module replaces it WHOLESALE, and the auth
+  // middleware now reaches shared/crypto through oauth/token-hash too.
+  ...realCrypto,
   // Constants
   KEY_PREFIX: 'kortix_',
   KEY_PREFIX_PAT: 'kortix_pat_',
