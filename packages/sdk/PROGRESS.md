@@ -12,6 +12,33 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-26 — session `session-ux` (WS-R) — stop-release: a re-minted prompt's echo must find ITS OWN bubble — DONE
+
+**Files:** `browser/stores/sync-store.ts` (`registerOptimisticEcho` follows the
+alias chain) · `browser/stores/sync-store.test.ts` (one new case). **Public
+surface: unchanged** — same signature, same semantics, strictly more of the
+calls the host already makes now take effect.
+
+**Why.** User report (2026-08-26): a prompt queued mid-turn, then Stop, then
+the queued prompt delivers — and the transcript shows the user bubble twice.
+The host (`apps/web/src/features/session/session-chat.tsx:2749`) registers the
+alias from the id the inbox ROW reports as the prompt's origin
+(`wire_message_id` — the id this tab minted and painted). That id stops being
+optimistic at the FIRST echo, and the drain re-mints on every later delivery:
+a Stop takes the runtime copy back out (`message.removed` →
+`reclaimRemovedMessage` re-marks the ECHO optimistic), then the release
+re-mints again. `registerOptimisticEcho` refused every registration after the
+first because its `optimisticID` argument was no longer optimistic, so the
+re-delivery's echo matched no alias. With one send in flight the ordinal
+fallback still guessed right; with two it correctly refuses to guess, and the
+echo was DROPPED — each prompt stayed on screen as a bubble nothing would ever
+confirm. Fix: when the named id is not optimistic, follow
+`optimisticEchoes` to the id that IS on screen and register from there.
+
+**Gates:** `pnpm --filter @kortix/sdk typecheck` clean · `bun run test` 2644
+pass 0 fail across 176 files · `smoke:install` pass. New test fails on the
+parent commit (echoes land as `msg_fwd*`, not `msg_rel*`).
+
 ### 2026-08-26 — session `session-random-pause` — transcript freeze mid-turn: unbreakable repair loop — DONE
 
 **Files:** `react/use-session-sync.ts` (`livenessBusy` + `UseSessionSyncOptions`

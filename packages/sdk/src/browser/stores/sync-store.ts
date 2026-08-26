@@ -1492,9 +1492,25 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	},
 
 	registerOptimisticEcho: (sessionID, optimisticID, echoID) => {
-		if (!isOptimistic(sessionID, optimisticID)) return;
 		if (optimisticID === echoID) return;
-		recordOptimisticEcho(sessionID, optimisticID, echoID);
+		// The caller always names the id the ROW reports as this prompt's origin
+		// — its `wire_message_id`, the id this tab minted and painted. That id
+		// stops being optimistic the moment the FIRST echo supersedes it, and
+		// after a Stop takes the prompt back out of the runtime the bubble on
+		// screen is that echo (`reclaimRemovedMessage` re-marks it optimistic),
+		// not the wire id. Registering against the wire id alone therefore did
+		// nothing on every second and later re-mint, and the drain re-mints on
+		// every one of them: the re-delivery's echo then matched no alias, and
+		// with more than one send in flight the ordinal fallback correctly
+		// refuses to guess — so the echo was dropped and the prompt stayed on
+		// screen as a bubble nothing would ever confirm.
+		//
+		// Follow the chain to the id that IS on screen and register from there.
+		const live = isOptimistic(sessionID, optimisticID)
+			? optimisticID
+			: optimisticEchoes.get(sessionID)?.get(optimisticID);
+		if (!live || live === echoID || !isOptimistic(sessionID, live)) return;
+		recordOptimisticEcho(sessionID, live, echoID);
 	},
 
 	reclaimRemovedMessage: (sessionID, messageID) => {
