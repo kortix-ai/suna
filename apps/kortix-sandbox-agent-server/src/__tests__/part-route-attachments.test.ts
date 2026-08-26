@@ -96,3 +96,38 @@ describe('GET /kortix/part/:s/:m/:p', () => {
     expect(nope.status).toBe(404)
   })
 })
+
+describe('offloaded attachment read through OpenCode (marker stripped by its schema)', () => {
+  test('the placeholder URL + attachment id resolve the sidecar; a placeholder with no sidecar falls back to its own bytes', async () => {
+    const sidecarDir = join(root, 'attachments')
+    const { mkdirSync } = await import('node:fs')
+    mkdirSync(sidecarDir, { recursive: true })
+    writeFileSync(join(sidecarDir, 'prt_byid'), PNG)
+    const message = {
+      info: { id: 'msg_1' },
+      parts: [
+        {
+          type: 'tool',
+          id: 'prt_tool',
+          state: {
+            attachments: [
+              // What OpenCode returns for an offloaded row: placeholder URL, NO kortix field.
+              { type: 'file', id: 'prt_byid', mime: 'image/png', url: OFFLOAD_PLACEHOLDER_URL },
+              { type: 'file', id: 'prt_nosidecar', mime: 'image/png', url: OFFLOAD_PLACEHOLDER_URL },
+            ],
+          },
+        },
+      ],
+    }
+    server = Bun.serve({ port: 0, fetch: () => Response.json(message) })
+    const app = createPartRouter(fakeOpencode(server.port as number), { sidecarDir })
+
+    const byId = await app.request('http://d/ses/msg_1/prt_byid')
+    expect(byId.status).toBe(200)
+    expect(Buffer.from(await byId.arrayBuffer()).equals(PNG)).toBe(true)
+
+    const fallback = await app.request('http://d/ses/msg_1/prt_nosidecar')
+    expect(fallback.status).toBe(200)
+    expect(Buffer.from(await fallback.arrayBuffer()).byteLength).toBe(68) // the 1×1 placeholder itself
+  })
+})

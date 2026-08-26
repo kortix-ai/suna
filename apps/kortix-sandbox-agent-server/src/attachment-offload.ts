@@ -124,6 +124,14 @@ export function decodeDataUrl(url: string): { mime: string | null; bytes: Buffer
   }
 }
 
+/** True for the 1×1 placeholder the offload leaves in a row. OpenCode's read path
+ *  drops unknown JSON fields, so the `kortix` marker never survives a read
+ *  through its API — the placeholder URL itself is the runtime signal, and the
+ *  sidecar path is deterministic from the attachment id. */
+export function isOffloadPlaceholder(url: unknown): boolean {
+  return url === OFFLOAD_PLACEHOLDER_URL
+}
+
 export function sidecarPathFor(sidecarDir: string, attachmentId: string): string {
   // Attachment ids are OpenCode-minted (`prt_…`); refuse anything that could
   // walk out of the directory.

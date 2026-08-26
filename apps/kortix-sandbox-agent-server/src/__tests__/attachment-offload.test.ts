@@ -269,3 +269,24 @@ describe('runAttachmentOffloadPass', () => {
     expect(out[0].parts[0].state.attachments[0].url).toBe('/kortix/part/s/msg_1/prt_att')
   })
 })
+
+describe('what survives a read through OpenCode', () => {
+  test('the stripper turns a bare placeholder URL (no kortix marker) into an on-demand ref', () => {
+    const result = stripInlineAttachmentBytes(
+      [
+        {
+          info: { id: 'msg_1' },
+          parts: [
+            {
+              type: 'tool',
+              state: { attachments: [{ type: 'file', id: 'prt_att', mime: 'image/png', url: OFFLOAD_PLACEHOLDER_URL }] },
+            },
+          ],
+        },
+      ],
+      (m, p) => `/kortix/part/s/${m}/${p}`,
+    )
+    expect(result.stripped).toBe(1)
+    expect((result.value as any)[0].parts[0].state.attachments[0].url).toBe('/kortix/part/s/msg_1/prt_att')
+  })
+})

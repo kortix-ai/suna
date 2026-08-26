@@ -16,7 +16,8 @@
 import { Hono } from 'hono'
 import { readFileSync } from 'node:fs'
 import type { AttachmentLike } from '../attachment-offload'
-import { inlineAttachmentsOf } from '../attachment-offload'
+import { inlineAttachmentsOf, isOffloadPlaceholder, sidecarPathFor } from '../attachment-offload'
+import { existsSync } from 'node:fs'
 import { logger } from '../logger'
 import type { Opencode } from '../opencode'
 
@@ -45,7 +46,7 @@ function bytesResponse(bytes: Buffer, mime: string, etag: string): Response {
   })
 }
 
-export function createPartRouter(opencode: Opencode): Hono {
+export function createPartRouter(opencode: Opencode, opts: { sidecarDir: string | null } = { sidecarDir: null }): Hono {
   const app = new Hono()
 
   app.get('/:sessionID/:messageID/:partID', async (c) => {
@@ -73,13 +74,21 @@ export function createPartRouter(opencode: Opencode): Hono {
     if (!part || typeof part.url !== 'string') {
       return c.json({ error: 'part not found' }, 404)
     }
-    if (part.kortix?.offloaded) {
+    // Offloaded (attachment-offload.ts): the marker when the row came straight
+    // from the daemon, the placeholder URL when it came through OpenCode (which
+    // drops unknown fields). The sidecar path is deterministic from the id.
+    const sidecar = part.kortix?.offloaded
+      ? part.kortix.sidecar
+      : isOffloadPlaceholder(part.url) && opts.sidecarDir
+        ? sidecarPathFor(opts.sidecarDir, partID)
+        : null
+    if (sidecar && (part.kortix?.offloaded || existsSync(sidecar))) {
       try {
-        const bytes = readFileSync(part.kortix.sidecar)
-        return bytesResponse(bytes, part.kortix.mime || part.mime || 'application/octet-stream', etag)
+        const bytes = readFileSync(sidecar)
+        return bytesResponse(bytes, part.kortix?.mime || part.mime || 'application/octet-stream', etag)
       } catch (err) {
-        logger.error('[part] offloaded sidecar unreadable', { sidecar: part.kortix.sidecar, err: (err as Error).message })
-        return c.json({ error: 'attachment bytes missing', sidecar: part.kortix.sidecar }, 410)
+        logger.error('[part] offloaded sidecar unreadable', { sidecar, err: (err as Error).message })
+        return c.json({ error: 'attachment bytes missing', sidecar }, 410)
       }
     }
     const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(part.url)

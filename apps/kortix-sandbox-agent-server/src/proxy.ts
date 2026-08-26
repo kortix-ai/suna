@@ -197,7 +197,7 @@ export function buildOpencodeApp(
   kortixRouter.route('/pty', ptyRouter)
   kortixRouter.route('/pty/', ptyRouter)
   // /kortix/part — attachment bytes on demand; see routes/part.ts.
-  const partRouter = createPartRouter(opencode)
+  const partRouter = createPartRouter(opencode, { sidecarDir: defaultSidecarDir(OPENCODE_HOME) })
   kortixRouter.route('/part', partRouter)
   kortixRouter.route('/part/', partRouter)
   // /kortix/logs — the daemon's own log file + OpenCode's; see routes/logs.ts.
