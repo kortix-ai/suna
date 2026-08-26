@@ -38,6 +38,7 @@ import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
 import { KeyRulesCard } from '@/components/iam/key-rules-card';
+import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { RolesTab } from '@/components/iam/roles-tab';
@@ -763,6 +764,11 @@ export default function AccountSettingsPage() {
             {activeSection === 'tokens' && canWriteAccount ? (
               <div className="space-y-10">
                 <ApiKeysSection accountId={account.account_id} canManage={canWriteAccount} />
+                {/* OAuth apps — "Sign in with Kortix" clients. A client secret
+                    is a credential the account issues to a machine, so it
+                    sits with the other machine credentials and under the same
+                    `token.*` permissions. */}
+                <OAuthAppsCard accountId={account.account_id} canManage={canWriteAccount} />
                 <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
               </div>
             ) : null}

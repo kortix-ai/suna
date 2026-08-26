@@ -2,7 +2,7 @@
 
 import { CheckIcon as Check } from '@phosphor-icons/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -24,6 +24,8 @@ import {
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   profile: 'View your account information',
+  email: 'View your email address',
+  kortix: 'Act on your behalf in Kortix — projects, sessions, files and everything your role allows',
   'machines:read': 'View your project session sandboxes',
 };
 
@@ -44,9 +46,23 @@ function OAuthConsent() {
   const [consentRequest, setConsentRequest] = useState<{
     clientName: string;
     scopes: string[];
+    /**
+     * The user already granted this client these scopes (`oauth_consents`).
+     * The Allow screen is skipped: the load effect approves and redirects on
+     * its own, and this page shows the pending screen meanwhile.
+     */
+    remembered: boolean;
   } | null>(null);
 
   const requestId = searchParams.get('request_id') || '';
+  /**
+   * One load (and, when remembered, one approval) per request id. The effect
+   * below re-runs whenever `user` changes identity — the auth provider hands
+   * out a fresh object after its own /user refresh — and a second run would
+   * re-read a request the first run already consumed (400) while the first
+   * run's cleanup had told it to drop the redirect. Seen live 2026-08-26.
+   */
+  const startedFor = useRef<string | null>(null);
   const clientName = consentRequest?.clientName || 'Unknown App';
   const scopes = consentRequest?.scopes || [];
 
@@ -61,6 +77,8 @@ function OAuthConsent() {
 
   useEffect(() => {
     if (isLoading || !user || !requestId) return;
+    if (startedFor.current === requestId) return;
+    startedFor.current = requestId;
     let cancelled = false;
 
     async function loadConsentRequest() {
@@ -81,15 +99,41 @@ function OAuthConsent() {
           backendUrl,
           accessToken: session.access_token,
         });
-        if (!cancelled) {
-          setConsentRequest({
-            clientName: data.client_name || 'Unknown App',
-            scopes: Array.isArray(data.scopes)
-              ? data.scopes.filter((scope: unknown): scope is string => typeof scope === 'string')
-              : String(data.scope || '')
-                  .split(' ')
-                  .filter(Boolean),
-          });
+        if (cancelled) return;
+        const remembered = data.remembered === true;
+        setConsentRequest({
+          clientName: data.client_name || 'Unknown App',
+          scopes: Array.isArray(data.scopes)
+            ? data.scopes.filter((scope: unknown): scope is string => typeof scope === 'string')
+            : String(data.scope || '')
+                .split(' ')
+                .filter(Boolean),
+          remembered,
+        });
+        if (!remembered) return;
+
+        // Remembered consent: approve straight away and send the user back.
+        // A failure here falls through to the normal Allow/Deny screen with
+        // the error strip, so the person can still decide by hand.
+        try {
+          const approved = await submitOAuthConsent(
+            { requestId, approved: true },
+            { backendUrl, accessToken: session.access_token },
+          );
+          // The request is consumed at this point: the ONLY correct outcome is
+          // the redirect, whether or not this effect instance was cleaned up.
+          if (approved.redirect_uri) {
+            window.location.href = approved.redirect_uri;
+            return;
+          }
+          if (cancelled) return;
+          throw new Error('The authorization did not return a redirect.');
+        } catch (err) {
+          if (cancelled) return;
+          setError(
+            err instanceof Error && err.message ? err.message : 'Network error. Please try again.',
+          );
+          setConsentRequest((prev) => (prev ? { ...prev, remembered: false } : prev));
         }
       } catch {
         if (!cancelled) setError('Network error. Please try again.');
@@ -153,6 +197,12 @@ function OAuthConsent() {
     if (error) {
       return <AuthStatusScreen title="Authorization request unavailable" description={error} />;
     }
+    return <AuthPendingScreen />;
+  }
+
+  // Remembered consent is being submitted — nothing to decide, so no Allow
+  // screen. `remembered` flips back to false if that submit fails.
+  if (consentRequest.remembered) {
     return <AuthPendingScreen />;
   }
 

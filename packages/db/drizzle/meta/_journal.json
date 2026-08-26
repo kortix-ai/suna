@@ -439,8 +439,15 @@
     {
       "idx": 62,
       "version": "7",
-      "when": 1787779564084,
-      "tag": "20260826212604_account_branding",
+      "when": 1787776100814,
+      "tag": "20260826202820_sign_in_with_kortix_oauth",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1787783303187,
+      "tag": "20260826222823_account_branding_snapshot",
       "breakpoints": true
     }
   ]

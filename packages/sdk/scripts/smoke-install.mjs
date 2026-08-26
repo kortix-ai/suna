@@ -101,11 +101,12 @@ try {
     join(workdir, 'smoke.mjs'),
     [
       "import { createKortix, ApiError, classifyTurn, getSessionCostRecord, listSessionCosts } from '@kortix/sdk';",
-      "import { createScopedKortix } from '@kortix/sdk/server';",
+      "import { createScopedKortix, createKortixAuth } from '@kortix/sdk/server';",
       "import { createExecutorClient, ExecutorClient, ExecutorError } from '@kortix/executor-sdk';",
       "if (typeof createKortix !== 'function') throw new Error('createKortix is not a function');",
       "if (typeof classifyTurn !== 'function') throw new Error('classifyTurn is not a function');",
       "if (typeof createScopedKortix !== 'function') throw new Error('createScopedKortix missing');",
+      "if (typeof createKortixAuth !== 'function') throw new Error('createKortixAuth missing');",
       "if (typeof getSessionCostRecord !== 'function') throw new Error('getSessionCostRecord missing');",
       "if (typeof listSessionCosts !== 'function') throw new Error('listSessionCosts missing');",
       "if (!(new ApiError('x') instanceof Error)) throw new Error('ApiError is not an Error');",
