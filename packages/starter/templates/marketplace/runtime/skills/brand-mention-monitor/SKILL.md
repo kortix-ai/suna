@@ -44,12 +44,16 @@ report normally.
 brand name, aliases, product names, and common misspellings, one per line.
 Search for exactly these terms — no more, no less.
 
-## Step 2 — Search the web
+## Step 2 — Search public sources
 
-Use the sandbox's built-in web search across news sites, social platforms
-(X/Twitter, LinkedIn, Reddit, etc.), and forums (Reddit threads, Hacker News,
-industry forums). Run one search per term in {{brand_terms}}, plus a
-news-specific pass. No login, no connector credential — public search only.
+Use `x_search` for each term in {{brand_terms}} when `XQUIK_API_KEY` is
+configured. This provides current public X post and Twitter search results with
+stable post URLs, authors, dates, and engagement counts. Follow pagination only
+while new results remain useful. Use the sandbox's built-in web search for news,
+LinkedIn, Reddit, Hacker News, and industry forums. Add one news-specific pass.
+
+If `x_search` reports that its key is unavailable, continue with web search.
+State that the digest lacks direct X coverage. Never log in to a source.
 
 ## Step 3 — Fetch and normalize each candidate
 
@@ -127,9 +131,8 @@ breakdown, and which ones got a suggested response draft.
   posting the digest.
 - **Brand terms are code.** Changes to the watch scope go through the brand
   terms file and a reviewed change request, not an ad hoc edit mid-run.
-- **Secrets scoped.** No credential is needed for public search and fetch
-  today. If a future source requires auth, that credential is encrypted in the
-  secrets manager and injected at runtime — scoped to this agent's grant.
+- **Secrets scoped.** `XQUIK_API_KEY` only enables the read-only `x_search`
+  tool. The secrets manager injects it for this agent. Never print or store it.
 </guardrails>
 
 </skill>

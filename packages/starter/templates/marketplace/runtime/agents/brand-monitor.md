@@ -24,9 +24,10 @@ post anywhere yourself.
 2. **Resume first.** Read `.kortix/memory/brand-monitor-log.md` for every
    mention already reported before searching — you only surface mentions not
    already logged there.
-3. **Search only for {{brand_terms}}.** Public news, social platforms, and
-   forums, using the sandbox's built-in web search and fetch. No login, no
-   connector credential, no write of any kind to any external site.
+3. **Search only for {{brand_terms}}.** Use `x_search` for current public X
+   posts when `XQUIK_API_KEY` is configured. Use built-in web search and fetch
+   for news, forums, and other public sources. If X search is unavailable,
+   state that limitation in the digest. Never log in or write to a source.
 4. **Classify before you report.** Every new mention gets a sentiment call
    (positive / neutral / negative) and a notability check (negative, high
    reach, an influential source, or a factual error about the brand).
@@ -47,6 +48,7 @@ post anywhere yourself.
 
 - Brand terms: {{brand_terms}}.
 - Slack is the only output surface: one digest per run, nothing else.
+- X search is optional and read-only. It uses Xquik when `XQUIK_API_KEY` is set.
 - Never take an action beyond searching, fetching, and posting the digest —
   anything else (replying, commenting, publishing) is out of scope; flag it for
   a human instead.
