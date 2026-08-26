@@ -12,6 +12,57 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-26 — session `session-ux` (WS-U) — ONE session-open read: the open bundle + polling discipline — DONE
+
+**Files (SDK):** `core/rest/projects-client/sessions.ts` (`getSessionOpenBundle`
++ 7 types) · `core/session/open-bundle.ts` (NEW — the coalescer + the pure leg
+projections) · `core/session/poll-owner.ts` (NEW — one cadence per session
+fact) · `react/use-poll-owner.ts` (NEW) · `react/use-session.ts` (starts the
+bundle in a LAYOUT effect; the title ladder now arms ONCE per session) ·
+`react/use-session-working.ts` (`readSessionTurnObservation` claims the bundle;
+the `/turn` interval is owned) · `react/use-session-prompts.ts` (same for the
+inbox) · `browser/session-sync/server-transcript-mirror.ts` (the hydrate rides
+the bundle's mirror) · `react/session-title-sync.ts` +
+`react/use-opencode-events/helpers.ts` (both narrowed off the `sessionsScope`
+prefix). Tests beside each. **Public surface: additive only** — 8 names
+(`getSessionOpenBundle` + `SessionOpenBundle*`), no rename, no removal; both
+snapshots regenerated.
+
+**Server:** `GET /v1/projects/:projectId/sessions/:sessionId/open-bundle`
+(`apps/api/src/projects/routes/session-open-bundle.ts`, NEW) answers the session
+row, the turn, the prompt queue, the transcript mirror, the config essentials
+and the model defaults from ONE auth + visibility resolution and one
+`Promise.allSettled`. Control plane only — no sandbox hop, so a stopped session
+answers as fast as a running one, and `/start` stays the only call that wakes
+anything. The turn read and the prompt wire view were EXTRACTED from `r8.ts`
+(`lib/session-turn-read.ts`, `lib/session-prompt-view.ts`) so both readers share
+one projection instead of two.
+
+**Why.** Measured on a real deployment (20 session opens, 2026-08-26):
+`GET .../turn` 6.0/open, `GET /sessions` 5.8/open, `/audit` 3.9/open,
+`/prompts` 1.4/open, each 0.3-2.3 s at the median — the client asked six
+questions in series before it could paint. Three causes, all fixed: (1) no
+aggregate read existed; (2) `refetchInterval` is scheduled PER OBSERVER and
+three hooks mount `/turn` on a session route; (3) `sessionPrompts` and
+`sessionTurn` nest under `qk.project.session`, so the title ladder's
+`sessionsScope` refetch re-issued four endpoints per pass, up to seven passes.
+
+**The rule the bundle must not break:** every leg is tri-state. `known: false`
+projects to `null`, which sends the consumer to its own endpoint — never to the
+NEGATIVE answer. An idle turn, an empty queue and an empty thread are all
+claims, and only a source that could have known may make one.
+
+**Verified in the real browser** (worktree stack, 3 runs each, request counts
+from the network layer): in the first 10 s of a session open, `/turn` 2 → 0,
+`/prompts` 3 → 0, `/transcript` 1 → 0, replaced by ONE `/open-bundle`.
+Time-to-composer median 3425 ms → 2176 ms. Live parity asserted against the
+five endpoints the bundle replaces: turn, queue, transcript, models and the
+session row all compare equal in the same second.
+
+**Gates:** `typecheck` clean (package + examples) · `bun run test` 2680 pass /
+0 fail across 178 files · `smoke:install` pass · `apps/api` `bash
+scripts/test.sh` 8545 pass / 0 fail · route-coverage gate passed.
+
 ### 2026-08-26 — session `session-ux` (WS-R) — stop-release: a re-minted prompt's echo must find ITS OWN bubble — DONE
 
 **Files:** `browser/stores/sync-store.ts` (`registerOptimisticEcho` follows the

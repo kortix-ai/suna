@@ -192,6 +192,7 @@ flow(
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
     ],
   },
   async (ctx) => {
@@ -233,6 +234,81 @@ flow(
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status(404);
+    });
+
+    await ctx.step('Session open bundle answers every leg in ONE round trip', async () => {
+      // The bundle is what a session view opens with: one call replacing the
+      // session row + /turn + /prompts + /transcript + /model-defaults. Two
+      // claims are asserted here because both are contract, not detail:
+      // (1) every sub-object is TRI-STATE (`known`), so a degraded leg reads
+      // as unknown and never as an empty queue or an idle turn; and
+      // (2) the turn leg is the SAME projection `GET .../turn` serves, so the
+      // two reads can never disagree about whether the session is working.
+      const session = await ctx.fixtures.session(project);
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      response.status(200);
+      const body = response.json<{
+        observed_at: string;
+        session: { session_id: string };
+        turn: { known: boolean; turns?: unknown[] };
+        queue: { known: boolean; prompts?: unknown[]; held?: boolean };
+        transcript: { known: boolean };
+        config: { known: boolean; llm_gateway_enabled: boolean };
+        models: { known: boolean };
+      }>();
+      for (const leg of ['turn', 'queue', 'transcript', 'config', 'models'] as const) {
+        if (typeof body[leg]?.known !== 'boolean') {
+          throw new Error(`${leg} must carry a boolean 'known', got ${JSON.stringify(body[leg])}`);
+        }
+      }
+      if (body.session.session_id !== session.id) {
+        throw new Error(`bundle answered for the wrong session: ${body.session.session_id}`);
+      }
+      if (!/^\d{4}-\d{2}-\d{2}T/.test(body.observed_at)) {
+        throw new Error(`observed_at must stamp the envelope, got ${body.observed_at}`);
+      }
+      if (body.turn.known !== true || (body.turn.turns ?? null)?.length !== 0) {
+        throw new Error(`a fresh session must read as a KNOWN idle turn: ${JSON.stringify(body.turn)}`);
+      }
+      if (body.queue.known !== true || (body.queue.prompts ?? null)?.length !== 0) {
+        throw new Error(`a fresh session must read as a KNOWN empty queue: ${JSON.stringify(body.queue)}`);
+      }
+      const single = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      single.status(200);
+      const singleBody = single.json<{ turns: unknown[]; last_ended?: unknown }>();
+      const { known: _known, ...bundleTurn } = body.turn as Record<string, unknown>;
+      if (JSON.stringify(bundleTurn) !== JSON.stringify(singleBody)) {
+        throw new Error(
+          `bundle turn must equal GET /turn: ${JSON.stringify(bundleTurn)} vs ${JSON.stringify(singleBody)}`,
+        );
+      }
+    });
+
+    await ctx.step('Session open bundle returns 404 for an unknown session', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status(404);
+    });
+
+    await ctx.step('Session open bundle refuses an anonymous caller', async () => {
+      // It carries the transcript and the prompt queue — session CONTENT.
+      const response = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status([401, 403, 404]);
     });
 
     await ctx.step('Session turn read refuses an anonymous caller', async () => {

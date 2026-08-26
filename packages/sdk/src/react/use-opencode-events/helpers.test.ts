@@ -97,12 +97,20 @@ describe('refetchKortixSessionMirrors', () => {
   // project-scoped family for every project. Scoping to the route's project
   // (what the SSE connection is actually about) is the correct reach — see
   // the function's doc comment in `helpers.ts`.
-  test('refetches the sessions-family prefix for the given project only', () => {
+  test('refetches the LIST family for the given project only', () => {
     const { client, calls } = fakeQueryClient();
     refetchKortixSessionMirrors(client, 'proj_1');
+    // The title/tree MIRROR is what this event is about, so the reach is the
+    // list family — not the whole `sessionsScope` prefix, which also covers
+    // `sessionTurn` and `sessionPrompts` (see `query-keys.ts`). Every
+    // `session.created` and every title-changing `session.updated` used to
+    // re-issue `/turn` and `/prompts` with it.
     expect(calls).toEqual([
-      { queryKey: qk.project.sessionsScope('proj_1'), type: 'active' },
+      { queryKey: [...qk.project.sessionsScope('proj_1'), 'list'], type: 'active' },
     ]);
+    const touched = JSON.stringify(calls);
+    expect(touched).not.toContain('"turn"');
+    expect(touched).not.toContain('"prompts"');
   });
 
   test('does nothing outside a project route (projectId null)', () => {

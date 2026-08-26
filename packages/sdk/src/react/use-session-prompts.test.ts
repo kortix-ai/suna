@@ -1,7 +1,8 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { configureKortix } from '../core/http/config';
 import { INBOX_OBSERVATION_MAX_MS } from '../core/session/working';
+import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
 import type { SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
   applyOptimisticPrompt,
@@ -334,5 +335,76 @@ describe('readSessionPromptsInbox', () => {
       stub.restore();
       configureKortix({ backendUrl: '', getToken: async () => null });
     }
+  });
+});
+
+// ── The session-open bundle seam ────────────────────────────────────────────
+
+describe('readSessionPromptsInbox and the open bundle', () => {
+  beforeEach(() => {
+    // An earlier case deliberately misconfigures the client to prove the
+    // unconfigured path; re-arm here rather than depend on file order.
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+  });
+
+  function mockFetch(body: (url: string) => unknown) {
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (url: unknown) => {
+      urls.push(String(url));
+      return new Response(JSON.stringify(body(String(url))), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    return urls;
+  }
+
+  function bundle(queue: unknown) {
+    return {
+      observed_at: '2026-08-26T12:00:00.000Z',
+      session: { session_id: 'S1' },
+      turn: { known: true, turns: [] },
+      queue,
+      transcript: { known: true, requested: false },
+      config: { known: true },
+      models: { known: false, reason: 'llm_gateway_disabled' },
+    };
+  }
+
+  test('answers from the open bundle without touching /prompts', async () => {
+    resetSessionOpenBundles();
+    const row = { prompt_id: 'p1', state: 'queued', text: 'hi' };
+    const urls = mockFetch(() => bundle({ known: true, prompts: [row], held: false }));
+    openSessionBundle('P1', 'S1');
+    const prompts = await readSessionPromptsInbox('P1', 'S1', undefined);
+    expect(urls.filter((u) => u.endsWith('/prompts'))).toHaveLength(0);
+    expect(prompts).toEqual([row] as never);
+  });
+
+  test('the bundled rows still feed the working projection', async () => {
+    resetSessionOpenBundles();
+    useSessionWorkingStore.getState().clearSession('S1');
+    mockFetch(() =>
+      bundle({ known: true, prompts: [{ prompt_id: 'p1', state: 'queued' }], held: false }),
+    );
+    openSessionBundle('P1', 'S1');
+    await readSessionPromptsInbox('P1', 'S1', undefined);
+    // The inbox observation is what keeps the composer showing Stop while a
+    // prompt is durable but not yet a turn. Serving the list from the bundle
+    // must not skip it.
+    expect(useSessionWorkingStore.getState().inbox.S1?.pending).toBe(1);
+  });
+
+  test('falls back to /prompts when the bundle could not read the inbox', async () => {
+    resetSessionOpenBundles();
+    const urls = mockFetch((url) =>
+      url.includes('open-bundle')
+        ? bundle({ known: false, reason: 'inbox read failed' })
+        : { prompts: [{ prompt_id: 'p9', state: 'queued' }] },
+    );
+    openSessionBundle('P1', 'S1');
+    const prompts = await readSessionPromptsInbox('P1', 'S1', undefined);
+    expect(urls.some((u) => u.endsWith('/prompts'))).toBe(true);
+    expect(prompts[0]?.prompt_id).toBe('p9');
   });
 });
