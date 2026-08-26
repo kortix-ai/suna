@@ -103,6 +103,8 @@ jobs:
         if: always()
         with:
           name: tests-browser-nightly-quarantine
-          path: tests/test-results/**
+          path: |
+            tests/test-results/**
+            !tests/test-results/deployment-bypass-state.json
           if-no-files-found: warn
           retention-days: 30

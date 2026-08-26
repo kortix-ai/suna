@@ -252,7 +252,9 @@ jobs:
         if: always()
         with:
           name: tests-release-api-shard-${{ matrix.shard }}
-          path: tests/test-results/**
+          path: |
+            tests/test-results/**
+            !tests/test-results/deployment-bypass-state.json
           if-no-files-found: warn
           retention-days: 90
 
@@ -346,7 +348,9 @@ jobs:
         if: always()
         with:
           name: tests-release-browser-shard-${{ matrix.shard }}
-          path: tests/test-results/**
+          path: |
+            tests/test-results/**
+            !tests/test-results/deployment-bypass-state.json
           if-no-files-found: warn
           retention-days: 90
 
