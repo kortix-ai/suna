@@ -73,7 +73,11 @@ const TRANSCRIPT_MAX = 200;
 /** Attach `known: false` and a reason to a leg that threw, so a degraded
  *  bundle is still an honest one. */
 function failed(error: unknown): { known: false; reason: string } {
-  return { known: false, reason: error instanceof Error ? error.message : String(error) };
+  // Never surface raw error text to callers (a Postgres error would leak its
+  // message to anyone with project read). Log it; return a stable code — the
+  // tri-state contract only needs "this leg is unknown", not why.
+  console.warn('[open-bundle] leg failed:', error instanceof Error ? error.message : String(error));
+  return { known: false, reason: 'leg_failed' };
 }
 
 projectsApp.openapi(
