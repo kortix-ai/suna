@@ -251,7 +251,7 @@ export function compressedStream(
   }
   const zlib = encoding === 'gzip' ? createGzip() : createDeflate();
   return Readable.toWeb(
-    Readable.fromWeb(body as Parameters<typeof Readable.fromWeb>[0]).pipe(zlib),
+    Readable.fromWeb(body as unknown as Parameters<typeof Readable.fromWeb>[0]).pipe(zlib),
   ) as unknown as ReadableStream<Uint8Array>;
 }
 
