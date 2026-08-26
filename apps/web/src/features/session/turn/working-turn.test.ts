@@ -124,3 +124,29 @@ describe('resolveWorkingTurn', () => {
     expect(r.pendingTurnIds).toEqual([]);
   });
 });
+
+describe('resolveWorkingTurn — a transcript with no assistant content at all', () => {
+  const turn = (id: string) => ({
+    userMessage: { info: { id } },
+    assistantMessages: [] as ReadonlyArray<{ info: { time?: { completed?: number } } }>,
+  });
+
+  test('no turn is working when the server is holding every prompt', () => {
+    // `newestWithContent` is -1 here, so rule 4 has nothing to fall back to.
+    // It used to index `turns[-1]` and throw, which the error boundary turned
+    // into "Something went wrong" over the entire session view.
+    const turns = [turn('u1'), turn('u2'), turn('u3')];
+    const unrunTurnIds = new Set(['u1', 'u2', 'u3']);
+    expect(resolveWorkingTurn({ turns, hintMessageId: null, unrunTurnIds })).toEqual({
+      workingTurnId: null,
+      pendingTurnIds: ['u1', 'u2', 'u3'],
+    });
+  });
+
+  test('the newest unheld prompt is still the working turn', () => {
+    const turns = [turn('u1'), turn('u2')];
+    expect(
+      resolveWorkingTurn({ turns, hintMessageId: null, unrunTurnIds: new Set(['u2']) }),
+    ).toEqual({ workingTurnId: 'u1', pendingTurnIds: ['u2'] });
+  });
+});

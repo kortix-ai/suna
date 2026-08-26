@@ -33,7 +33,9 @@
  *     the next one has not opened yet — the indicator stays put instead of
  *     flickering).
  *
- * `null` only for an empty transcript.
+ * `null` for an empty transcript — and for a transcript with no assistant
+ * content at all whose every prompt the server is still holding: there is no
+ * turn the agent is on, only pending ones.
  */
 
 interface TurnLike {
@@ -128,5 +130,14 @@ export function resolveWorkingTurn(input: {
       if (!unrun?.has(turns[i].userMessage.info.id)) return pick(i);
     }
   }
+  // Rule 4 has no turn to fall back to when NOTHING in the transcript has
+  // assistant content and the server is holding every prompt: there is no
+  // "newest turn with content". Nothing is working, and every turn is pending
+  // — which is exactly what the inbox is saying. `pick(-1)` read `turns[-1]`
+  // and threw `Cannot read properties of undefined (reading 'userMessage')`,
+  // which the error boundary turned into "Something went wrong" over the whole
+  // session view (observed on a real thread whose tail page was all unanswered
+  // prompts).
+  if (newestWithContent < 0) return { workingTurnId: null, pendingTurnIds: pendingIds };
   return pick(newestWithContent);
 }
