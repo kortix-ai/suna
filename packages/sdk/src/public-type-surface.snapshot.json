@@ -1263,6 +1263,7 @@
     "SandboxCreateProgress",
     "SandboxInfo",
     "SandboxLifecycle",
+    "SandboxNotReadyError",
     "SandboxProjectMember",
     "SandboxProjectMembersResponse",
     "SandboxProviderName",
@@ -3438,6 +3439,7 @@
     "resolvePromptModel",
     "restoreProjectName",
     "runPtyCommand",
+    "runtimeErrorFromHealth",
     "runtimeKeys",
     "safeParseJsonArray",
     "scopedModelSelectionKey",
@@ -6429,6 +6431,7 @@
   "./opencode-errors": [
     "OpenCodeConfigInvalidError",
     "OpenCodeConfigIssue",
+    "SandboxNotReadyError",
     "formatOpenCodeRuntimeError",
     "getOpenCodeConfigInvalidError",
     "isOpenCodeConfigInvalidError",

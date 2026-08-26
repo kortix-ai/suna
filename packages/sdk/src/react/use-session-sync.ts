@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
   getSessionCacheOwnership,
@@ -282,10 +282,19 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     controller.setBusy(livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy }));
   }, [controller, streamBusy, networkEnabled, runtimeHealthy, working]);
 
+  // Re-read the tail on demand. The transcript body renders this behind its
+  // "couldn't load" state so `freshness === 'error'` is recoverable without a
+  // page reload or a full sandbox restart — it just asks the controller to
+  // reconcile again, which is the same read the mount and the poll do.
+  const retryTranscript = useCallback(() => {
+    void controller.reconcile('manual');
+  }, [controller]);
+
   return {
     messages,
     status,
     freshness: sync.freshness,
+    retryTranscript,
     isBusy,
     isLoading,
     hasOlder: sync.hasOlder,

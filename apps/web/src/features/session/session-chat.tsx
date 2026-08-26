@@ -24,6 +24,8 @@ import {
   CaretDownIcon as ChevronDown,
   ArrowSquareOutIcon as ExternalLink,
   StackIcon as Layers,
+  PauseIcon,
+  PlayIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
@@ -235,7 +237,11 @@ import {
 } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
-import { olderAutoloadExhausted, shouldLoadOlderHistory } from './session-older-autoload';
+import {
+  nextOlderAutoloadArm,
+  olderAutoloadExhausted,
+  shouldLoadOlderHistory,
+} from './session-older-autoload';
 import { useReadinessSettling } from './use-readiness-settling';
 
 // ============================================================================
@@ -2129,6 +2135,12 @@ export function SessionChat({
   const {
     messages: syncMessages,
     isLoading: syncMessagesLoading,
+    // Transcript-read state. `loading` with no messages is a WAIT (the box may
+    // be waking — the SDK keeps retrying), `error` with no messages is a
+    // failure that needs a retry affordance. Neither is an empty session: a
+    // swallowed 503 used to render exactly that, blank and "complete".
+    freshness: transcriptFreshness,
+    retryTranscript,
     hasOlder,
     isLoadingOlder,
     loadOlder,
@@ -2706,8 +2718,21 @@ export function SessionChat({
       const origin = store.optimisticOriginOf(sessionId, message.info.id);
       if (origin) ids.add(origin);
     }
+    // A prompt whose wire/echo id is already on screen also contributes its
+    // client_message_id — the one id stable across a re-mint AND a reload — so
+    // the queue projection's client-id hide clause is live even when the
+    // transcript only knows the re-minted id (the sticky-"Queued" reload case).
+    for (const prompt of promptInbox.prompts) {
+      if (!prompt.client_message_id) continue;
+      if (
+        (prompt.message_id && ids.has(prompt.message_id)) ||
+        (prompt.wire_message_id && ids.has(prompt.wire_message_id))
+      ) {
+        ids.add(prompt.client_message_id);
+      }
+    }
     return ids;
-  }, [messages, sessionId]);
+  }, [messages, sessionId, promptInbox.prompts]);
   // Inbox rows keyed by the transcript id they will confirm under — the
   // original wire id AND, after a re-mint, the echo — so a pending bubble can
   // find its own row for remove / send-now / retry.
@@ -2748,6 +2773,17 @@ export function SessionChat({
   // A row the server has CLAIMED is on the wire; locking it against
   // edit/remove/reorder is the same rule as before.
   const queueInFlightIds = queueRows.inFlightIds;
+
+  // How many prompts the Stop hold is currently pausing. The per-row Resume is
+  // a hover-only icon on each held bubble; this count backs the persistent
+  // composer-level "Queue paused — Resume" banner, which is the one control the
+  // user can always see while the queue is stopped. A FAILED row is not paused
+  // by the hold, so it does not count.
+  const heldQueueCount = useMemo(
+    () =>
+      promptInbox.prompts.filter((p) => p.reason === 'held' && p.state !== 'failed').length,
+    [promptInbox.prompts],
+  );
 
   // Removing used to be a local-store delete with an undo toast that restored
   // the entry into that store. The row is durable now, so a removal is a real
@@ -2887,9 +2923,18 @@ export function SessionChat({
   // Pages the SENTINEL has pulled. An explicit pull never counts — see
   // `OLDER_AUTOLOAD_MAX_PAGES` for why the automatic path is the one bounded.
   const [autoLoadedPages, setAutoLoadedPages] = useState(0);
+  // The sentinel's re-arm latch (`nextOlderAutoloadArm`). A pull disarms it;
+  // it re-arms only once the sentinel has LEFT the 400px rootMargin zone. A
+  // prepend of short/collapsed turns that fails to push the sentinel out of
+  // the zone used to re-fire the observer immediately and chain pulls in one
+  // paint — while the rAF anchor-restore of pull N raced the capture of pull
+  // N+1, which is the jump behind "keeps fetching". A ref, not state: arming
+  // must not re-create the observer.
+  const olderAutoloadArmedRef = useRef(true);
   useEffect(() => {
     setOlderPullFailed(false);
     setAutoLoadedPages(0);
+    olderAutoloadArmedRef.current = true;
   }, [sessionId]);
   const handleLoadOlder = useCallback(async () => {
     const node = scrollRef.current;
@@ -2912,16 +2957,22 @@ export function SessionChat({
     if (!node || !hasOlder) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (
-          shouldLoadOlderHistory({
-            isIntersecting: !!entry?.isIntersecting,
-            hasOlder,
-            isLoadingOlder,
-            lastPullFailed: olderPullFailed,
-            autoLoadedPages,
-            readerScrolledUp: readerScrolledUpRef.current,
-          })
-        ) {
+        const isIntersecting = !!entry?.isIntersecting;
+        const didPull = shouldLoadOlderHistory({
+          isIntersecting,
+          hasOlder,
+          isLoadingOlder,
+          lastPullFailed: olderPullFailed,
+          autoLoadedPages,
+          readerScrolledUp: readerScrolledUpRef.current,
+          armed: olderAutoloadArmedRef.current,
+        });
+        olderAutoloadArmedRef.current = nextOlderAutoloadArm({
+          armed: olderAutoloadArmedRef.current,
+          isIntersecting,
+          didPull,
+        });
+        if (didPull) {
           setAutoLoadedPages((pages) => pages + 1);
           void handleLoadOlder();
         }
@@ -4007,7 +4058,16 @@ export function SessionChat({
         // Caught, never rethrown: a failed hold must not also cost the user
         // their abort. The cost of that path is the one this ordering removes —
         // a stopped prompt can still come back a reaper pass later.
+        //
+        // SURFACED, not swallowed. A failed hold means the queue is NOT paused,
+        // so a prompt the user pressed Stop to get ahead of can still be
+        // delivered a reaper pass later — silently. The user has to know the
+        // stop did not also pause the queue, and that pressing Stop again (or
+        // Resume/Send-now) is how they recover.
         console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
+        errorToast('Stopped, but the queue could not be paused', {
+          description: 'Queued prompts may still send. Press Stop again to pause them.',
+        });
       }),
       new Promise((resolve) => setTimeout(resolve, STOP_HOLD_DEADLINE_MS)),
     ]);
@@ -4018,6 +4078,22 @@ export function SessionChat({
     issueSessionCancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, abortSession, issueSessionCancel, promptInbox.hold]);
+
+  // Release the Stop hold for the WHOLE queue at once — the composer-level
+  // counterpart to the per-row "send now". `hold(false)` un-pauses every held
+  // row on the server (shared across tabs); the next scheduler tick delivers
+  // them in order. A failed release is surfaced, not swallowed: the user has to
+  // know the queue is still paused. (Kept OUT of `handleQueueSendNow`, which
+  // must never touch the hold — see `session-chat-inbox-queue.test.ts`.)
+  const handleResumeQueue = useCallback(async () => {
+    try {
+      await promptInbox.hold(false);
+    } catch (error) {
+      console.warn('[session-chat] failed to release the prompt inbox hold', error);
+      errorToast('Could not resume the queue', { description: 'Try again in a moment.' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promptInbox.hold]);
 
   /**
    * The per-row action: end the current turn if one is running, then send that
@@ -4488,6 +4564,29 @@ export function SessionChat({
   const chatInputSlot = useMemo(
     () => (
       <>
+        {/* Queue paused by a Stop hold. The per-row Resume is a hover-only icon
+            on each held bubble; this is the ONE control that is always visible
+            while the queue is stopped, so the paused state is never a surprise
+            and recovery is one click. Self-hides when nothing is held. */}
+        {queueRows.held && heldQueueCount > 0 ? (
+          <div className="border-border bg-muted/40 mb-2 flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+            <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-sm">
+              <PauseIcon weight="fill" className="size-4 shrink-0" />
+              <span className="truncate">
+                Queue paused — {heldQueueCount} {heldQueueCount === 1 ? 'prompt' : 'prompts'} waiting
+              </span>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              onClick={() => void handleResumeQueue()}
+            >
+              <PlayIcon weight="fill" className="size-3.5" />
+              Resume
+            </Button>
+          </div>
+        ) : null}
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
@@ -4529,6 +4628,9 @@ export function SessionChat({
       handleQuestionReply,
       handleQuestionReject,
       handleQuestionActionChange,
+      queueRows.held,
+      heldQueueCount,
+      handleResumeQueue,
     ],
   );
 
@@ -4692,6 +4794,27 @@ export function SessionChat({
   // ProjectSessionRuntimeConnection, so as soon as the runtime is ready
   // isDataLoading flips and the full shell renders in one shot.
   if (isDataLoading) {
+    // A transcript read that genuinely FAILED (not a waking box — the SDK keeps
+    // those on `loading` and retries them itself) gets an explicit retry, not
+    // an eternal loader. Only with nothing to paint: once any message is on
+    // screen, staleness is repaired in the background instead.
+    if (transcriptFreshness === 'error' && !hasMessages) {
+      return (
+        <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
+          <div
+            className="flex flex-1 flex-col items-center justify-center gap-3 p-6"
+            data-testid="session-transcript-error"
+          >
+            <p className="text-muted-foreground text-sm">
+              Couldn&apos;t load this conversation.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => retryTranscript()}>
+              Retry
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
         {/* `projectId`/`sessionId` are what arm the loader's restart offer

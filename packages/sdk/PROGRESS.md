@@ -12,6 +12,75 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-26 — session `session-ux-ws-b` — a 503 is never an empty transcript + read cancellation — DONE
+
+**Files:** `core/http/opencode-errors.ts` (NEW `SandboxNotReadyError` class; its
+message always matches `isSandboxNotReadyError`) ·
+`browser/session-sync/session-sync-registry.ts` (`readSessionMessagePage`
+CLASSIFIES the resolved result — 503/not-ready body → `SandboxNotReadyError`,
+other `error`/≥400 → real throw, only a genuine 2xx returns a page; threads an
+optional `AbortSignal` into `client.session.messages`) ·
+`core/session-sync/session-sync-controller.ts` (`loadPage` gains an optional
+`signal` param; one controller-lifetime `AbortController` aborted in
+`destroy()`; `loadTail` catch classifies — abort → no-op, not-ready →
+freshness `loading` + backoff retry (existing 1s→15s cap), real error →
+`error`; the framework-free HTTP loader throws `SandboxNotReadyError` on 503
+and forwards the signal) · `react/use-session-sync.ts` (+`retryTranscript`) ·
+`react/use-session.ts` (forwards `freshness` + `retryTranscript`). Host:
+`apps/web` session-chat gates the empty transcript on freshness (error →
+retry card, loading → loader) and the older-load sentinel re-arms only after
+leaving the rootMargin zone (`nextOlderAutoloadArm`).
+**Public surface: additive only** — `SandboxNotReadyError` (both snapshots
+regenerated; diff shows additions only) and two new fields on published hook
+returns.
+
+**Why.** FINDINGS-B: the generated OpenCode client RESOLVES with `{ error }`
+on non-2xx, and `readSessionMessagePage` read `result.data ?? []` — a
+cold-boot 503 became a success-looking empty page, `hydrate([])`, freshness
+`'fresh'`, and the thread rendered blank-and-complete with no retry. Also: no
+cancellation (a superseded read could hydrate a navigated-away store), and a
+short-turn prepend could chain older-pulls in one paint.
+
+**Gates:** `npx tsc --noEmit` clean (sdk, exit 0) · `bun test --isolate src`
+**2562 pass / 0 fail** across 172 files (session baseline 2547/172; +9 tests
+here, +6 from concurrent WS-A) · `pnpm run smoke:install` passed · both
+surface snapshots regenerated, diff additive-only · apps/web: targeted
+session tests 19 pass / 0 fail, eslint 0 errors on touched files, `tsc`
+noise limited to the known `@types/bun` `test.each` files.
+
+---
+
+### 2026-08-26 — session `session-ux` (WS-A) — routine boot progress is not a runtime error; parked box does not arm the stall clock — DONE
+
+**Files:** `src/react/use-runtime-reconnect.ts` (+ `runtimeErrorFromHealth`: only a
+genuine `boot_error` becomes `store.runtimeError`; the routine boot
+`reason`/`message` — e.g. `{status:'starting', reason:'schema not ready'}` — is
+progress, never an error. The `booting` branch now distinguishes a PARKED box —
+`hop === 'control_plane'`, the platform answered from the session row without
+dialling the box — from a genuinely booting one: parked does not report
+`connected` and does not arm the stall clock) ·
+`src/browser/stores/sandbox-connection-store.ts` (`setOpenCodeHealth` gains an
+optional `options?: { parked?: boolean }` 4th param — additive, existing callers
+unchanged; parked clears/never arms `bootingSinceAt`) · tests in
+`use-runtime-reconnect.test.ts` (RED first, then GREEN).
+**Public surface: additive** — one new export (`runtimeErrorFromHealth`) and one
+optional trailing param on `setOpenCodeHealth`; no renames, no removals.
+Snapshots regenerated (the diff also picked up `SandboxNotReadyError` from
+concurrent WS-B work in the same worktree).
+
+**Why.** RC-1/RC-3 of the session-ux runtime-status pass: the boot `reason`
+string landed in `runtimeError` and the web route painted a terminal "OpenCode
+runtime is not ready" card during every normal cold boot; a parked (idle)
+sandbox's control-plane 503 armed `bootingSinceAt`, so after 45s the composer
+latched "Still waking… taking longer than usual" forever over a box that only
+resumes on the next send.
+
+**Gates:** `tsc --noEmit` (main + examples) clean · `bun test
+src/react/use-runtime-reconnect.test.ts` 46 pass 0 fail · surface snapshot
+tests pass after regen · smoke:install run recorded in the session report.
+
+---
+
 ### 2026-08-25 — session `effort-unify` — gateway picker carries variants + raw picker hook — DONE
 
 **Files:** `src/react/provider-selection.ts` (`projectLlmCatalogToProviderList`
