@@ -20,6 +20,7 @@
 import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
 import { logger } from '../http/logger';
+import { isRuntimeLivenessEvent } from './keepalive';
 
 /**
  * The event union this stream dispatches. Re-exported (unchanged shape) from
@@ -458,13 +459,19 @@ function createLiveStream(
           if (outcome.kind === 'error') throw outcome.error;
           if (outcome.result.done) break;
 
-          streamHadEvents = true;
-          resetHeartbeat();
           const raw = outcome.result.value as any;
           const e = (
             raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
           ) as OpenCodeEvent;
-          if (!e?.type) continue;
+          // Liveness is stamped AFTER the frame is identified, not before. A
+          // daemon keepalive arrives from a hop above opencode; counting it
+          // reset the 60s heartbeat and refreshed `lastStreamActivityTime` via
+          // `flush()`, so a wedged runtime behind a live TCP stream was
+          // invisible to both detectors. Dropping it here also keeps it out of
+          // the queue, so `flush()` never stamps for it either.
+          if (!isRuntimeLivenessEvent(e)) continue;
+          streamHadEvents = true;
+          resetHeartbeat();
 
           const ck = getCoalesceKey(e);
           if (ck) {
