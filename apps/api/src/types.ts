@@ -142,6 +142,15 @@ export interface TierEntitlements {
    * export, or stream them out.
    */
   auditAccess: boolean;
+  /**
+   * Organization branding: replace the Kortix logo, icon, and favicon (light
+   * + dark) with the account's own for every member of the account
+   * (`accounts.branding`, written only through `/accounts/:id/branding*`).
+   * Reads and the reset/remove routes stay ungated so a downgraded account can
+   * still see and unwind what it set; the API stops SERVING the branding to
+   * members the moment the entitlement lapses.
+   */
+  branding: boolean;
 }
 
 export interface TierConfig {

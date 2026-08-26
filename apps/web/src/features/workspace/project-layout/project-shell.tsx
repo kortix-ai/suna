@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
+import { useBrandingScope } from '@/features/branding/branding-provider';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
@@ -131,6 +132,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // — the same resolution every account-scoped surface uses. Feeds the
   // `?customize=` redirect below, which can name an account-scoped section.
   const shellAccountId = useSettingsAccountId(projectDetail?.project?.account_id);
+  // An open project brands as ITS account (Enterprise branding), even when the
+  // switcher's selected account is another one. Clears on unmount.
+  useBrandingScope(projectDetail?.project?.account_id);
 
   useEffect(() => {
     // Old bookmarks/links carry `?customize=<legacy-section-id>`. Files,

@@ -40,6 +40,21 @@ export function accountDisplayName(
 
 // ─── Shared response/request schemas (power the Scalar docs) ────────────────
 
+/** Organization branding as members SEE it (see ../branding.ts). Absent or
+ *  null = default Kortix marks — either nothing is set or the account's plan
+ *  no longer carries the `branding` entitlement. */
+export const EffectiveBrandingSchema = z
+  .object({
+    logo_url: z.string().nullable(),
+    icon_url: z.string().nullable(),
+    favicon_url: z.string().nullable(),
+    logo_dark_url: z.string().nullable(),
+    icon_dark_url: z.string().nullable(),
+    favicon_dark_url: z.string().nullable(),
+  })
+  .nullable()
+  .optional();
+
 export const AccountSummarySchema = z
   .object({
     account_id: z.string(),
@@ -49,6 +64,7 @@ export const AccountSummarySchema = z
     updated_at: z.string(),
     account_role: z.string().optional(),
     is_primary_owner: z.boolean().optional(),
+    branding: EffectiveBrandingSchema,
   })
   .openapi('AccountSummary');
 
@@ -61,6 +77,7 @@ export const AccountDetailSchema = z
     role: z.string(),
     /** Account-wide MFA enforcement flag — drives the members-list MFA badges. */
     mfa_required: z.boolean().optional(),
+    branding: EffectiveBrandingSchema,
     created_at: z.string(),
     updated_at: z.string(),
   })

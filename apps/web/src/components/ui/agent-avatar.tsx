@@ -3,6 +3,7 @@
 import { RobotIcon } from '@phosphor-icons/react';
 import React from 'react';
 
+import { useBranding } from '@/features/branding/branding-provider';
 import { cn } from '@/lib/utils';
 
 interface AgentAvatarProps {
@@ -17,6 +18,9 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   size = 16,
   className = '',
 }) => {
+  // The default agent wears the platform mark — which is the org's own symbol
+  // when the account is branded (Enterprise `branding`), else the Kortix one.
+  const branding = useBranding();
   const borderRadius = Math.min(size * 0.4, 16);
   const borderRadiusStyle = { borderRadius: `${borderRadius}px` };
 
@@ -37,11 +41,33 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/kortix-symbol.svg"
+          // The tile is zinc-900 in light mode and zinc-100 in dark mode, so
+          // the mark that reads on it is the OPPOSITE scheme's variant.
+          src={
+            branding?.icon_url
+              ? (branding.icon_dark_url ?? branding.icon_url)
+              : '/kortix-symbol.svg'
+          }
           alt="Kortix"
-          className="shrink-0 invert dark:invert-0"
+          className={cn(
+            'shrink-0 object-contain',
+            // The Kortix symbol is black-on-transparent and inverts onto the
+            // dark tile; an uploaded mark keeps its own colors.
+            !branding?.icon_url && 'invert dark:invert-0',
+            branding?.icon_dark_url && 'dark:hidden',
+          )}
           style={{ width: `${size * 0.5}px`, height: `${size * 0.5}px` }}
         />
+        {branding?.icon_url && branding.icon_dark_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={branding.icon_url}
+            alt=""
+            aria-hidden
+            className="hidden shrink-0 object-contain dark:block"
+            style={{ width: `${size * 0.5}px`, height: `${size * 0.5}px` }}
+          />
+        ) : null}
       </div>
     );
   }

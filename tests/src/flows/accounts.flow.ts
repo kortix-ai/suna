@@ -849,3 +849,100 @@ flow(
     });
   },
 );
+
+// ─── Organization branding (Enterprise `branding` entitlement) ───────────
+//
+// The local profile has no Enterprise tier, so the WRITE routes answer 402
+// `entitlement_required` here — which is itself the contract: a self-serve
+// account must never be able to brand the app. Reads and the two removal
+// routes are permission-only and must work for a downgraded account.
+
+flow(
+  'ACCT-BRAND-1',
+  {
+    domain: 'accounts',
+    routes: [
+      'GET /v1/accounts/:accountId/branding',
+      'POST /v1/accounts/:accountId/branding/assets/:kind',
+      'DELETE /v1/accounts/:accountId/branding/assets/:kind',
+      'DELETE /v1/accounts/:accountId/branding',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const params = { accountId: team.id };
+
+    await ctx.step('GET → 200 empty record, entitled=false on a self-serve account', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/branding', { params });
+      r.status(200)
+        .body()
+        .has('$.entitled', false)
+        .has('$.branding.logo_url', null)
+        .has('$.branding.icon_url', null)
+        .has('$.branding.favicon_url', null)
+        .has('$.branding.logo_dark_url', null)
+        .has('$.branding.icon_dark_url', null)
+        .has('$.branding.favicon_dark_url', null);
+    });
+
+    await ctx.step('GET /accounts list carries branding=null for the team', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
+      r.status(200);
+      const row = r.json<Array<{ account_id: string; branding?: unknown }>>().find(
+        (a) => a.account_id === team.id,
+      );
+      if (!row) throw new Error('team account missing from list');
+      if (row.branding !== null && row.branding !== undefined) {
+        throw new Error(`expected branding null, got ${JSON.stringify(row.branding)}`);
+      }
+    });
+
+    await ctx.step('POST asset without the entitlement → 402 (before any body is read)', async () => {
+      const form = new FormData();
+      form.append('file', new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0])]), 'logo.png');
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .request('POST', '/v1/accounts/:accountId/branding/assets/logo', { params, body: form });
+      r.status(402).body().has('$.code', 'entitlement_required');
+    });
+
+    await ctx.step('POST dark variant without the entitlement → 402 (same gate)', async () => {
+      const form = new FormData();
+      form.append('file', new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])]), 'dark.png');
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .request('POST', '/v1/accounts/:accountId/branding/assets/logo_dark', { params, body: form });
+      r.status(402).body().has('$.code', 'entitlement_required');
+    });
+
+    await ctx.step('POST asset with an unknown kind → 400 (param enum)', async () => {
+      const form = new FormData();
+      form.append('file', new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])]), 'x.png');
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .request('POST', '/v1/accounts/:accountId/branding/assets/banner', { params, body: form });
+      r.status([400, 402]);
+    });
+
+    await ctx.step('DELETE asset is permission-only → 200 even without the entitlement', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/accounts/:accountId/branding/assets/logo', { params });
+      r.status(200).body().has('$.branding.logo_url', null).has('$.entitled', false);
+    });
+
+    await ctx.step('DELETE branding (reset) is permission-only → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/branding', { params });
+      r.status(200).body().has('$.branding.logo_url', null).has('$.branding.logo_dark_url', null);
+    });
+
+    await ctx.step('NONMEMBER → 403; ANON → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get('/v1/accounts/:accountId/branding', { params });
+      r.status(403);
+      const a = await ctx.client.as(ctx.P.ANON).get('/v1/accounts/:accountId/branding', { params });
+      a.status(401);
+    });
+  },
+);

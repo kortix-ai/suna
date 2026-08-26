@@ -182,9 +182,29 @@ export const accounts = kortixSchema.table('accounts', {
   /** When set, PATs not used in this many days are auto-revoked on
    *  next validate. NULL = no idle gate. Units: days. */
   patIdleRevokeDays: integer('pat_idle_revoke_days'),
+  /** Organization branding (enterprise `branding` entitlement): the Storage
+   *  URLs of the logo / icon / favicon (light + optional dark) that replace
+   *  the Kortix marks for this account's members. `{}` = default Kortix branding. The
+   *  API owns every URL here (uploads go through
+   *  `POST /accounts/:id/branding/assets/:kind`); clients never write one. */
+  branding: jsonb('branding').default({}).notNull().$type<AccountBrandingRecord>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** Shape of `accounts.branding`. Every key optional; absent == default Kortix. */
+export interface AccountBrandingRecord {
+  /** Wide brandmark (symbol + wordmark). Replaces the `brandmark` logo variant. */
+  logo_url?: string | null;
+  /** Square mark. Replaces the `icon` logo variant and the apple-touch icon. */
+  icon_url?: string | null;
+  /** Browser-tab icon. Falls back to `icon_url` when absent. */
+  favicon_url?: string | null;
+  /** Dark-scheme variants. Each falls back to its light counterpart. */
+  logo_dark_url?: string | null;
+  icon_dark_url?: string | null;
+  favicon_dark_url?: string | null;
+}
 
 export const accountMembers = kortixSchema.table(
   'account_members',

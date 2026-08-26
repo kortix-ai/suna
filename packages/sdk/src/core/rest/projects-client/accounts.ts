@@ -10,12 +10,54 @@ import {
   unwrap,
 } from './shared';
 
+/**
+ * Organization branding (Enterprise `branding` entitlement). Every URL is
+ * API-owned — it points into the public `branding` Storage bucket and is
+ * written only by `uploadAccountBrandingAsset`. `null` on a field = default
+ * Kortix mark for that slot.
+ */
+export interface AccountBranding {
+  /** Wide brandmark (symbol + wordmark) — replaces the `brandmark` logo variant. */
+  logo_url: string | null;
+  /** Square symbol — replaces the `icon` logo variant. */
+  icon_url: string | null;
+  /** Browser-tab icon. Hosts fall back to `icon_url` when this is null. */
+  favicon_url: string | null;
+  /** Dark-scheme variants — optional; each falls back to its light
+   *  counterpart. In-app marks follow the app theme; the favicon follows the
+   *  OS scheme (`prefers-color-scheme`). */
+  logo_dark_url: string | null;
+  icon_dark_url: string | null;
+  favicon_dark_url: string | null;
+}
+
+/** One of the uploadable marks: three slots × light/dark. */
+export type AccountBrandingAssetKind =
+  | 'logo'
+  | 'icon'
+  | 'favicon'
+  | 'logo_dark'
+  | 'icon_dark'
+  | 'favicon_dark';
+
+/** `GET /accounts/:id/branding` — the STORED record plus whether the plan
+ *  currently allows it. Settings surfaces read this; rendering surfaces read
+ *  `KortixAccount.branding` (the effective value) instead. */
+export interface AccountBrandingState {
+  branding: AccountBranding;
+  entitled: boolean;
+}
+
 export interface KortixAccount {
   account_id: string;
   name: string;
   slug?: string;
   account_role?: string;
   is_primary_owner?: boolean;
+  /** Effective branding for members: the stored record when the account is
+   *  entitled, `null`/absent otherwise (nothing set, or the entitlement has
+   *  lapsed — the API decides, hosts just render). */
+  branding?: AccountBranding | null;
 }
 
 export interface AccountDetail {
@@ -26,6 +68,8 @@ export interface AccountDetail {
   role: AccountRole;
   /** Account-wide MFA enforcement is on — drives the members-list MFA badges. */
   mfa_required?: boolean;
+  /** Effective branding — same semantics as `KortixAccount.branding`. */
+  branding?: AccountBranding | null;
   created_at: string;
   updated_at: string;
 }
@@ -147,6 +191,52 @@ export async function getAccount(accountId: string) {
 
 export async function updateAccountName(accountId: string, name: string) {
   return unwrap(await backendApi.patch<AccountDetail>(`/accounts/${accountId}`, { name }));
+}
+
+// ─── Organization branding ──────────────────────────────────────────────────
+
+/** Stored branding + entitlement state. Any member may read it. */
+export async function getAccountBranding(accountId: string) {
+  return unwrap(await backendApi.get<AccountBrandingState>(`/accounts/${accountId}/branding`));
+}
+
+
+/**
+ * Upload one mark. The API sniffs the bytes (PNG / JPEG / WebP / SVG / ICO,
+ * ≤ 1 MiB), stores it content-addressed in the public `branding` bucket, and
+ * returns the new record — the URL is never chosen by the client.
+ */
+export async function uploadAccountBrandingAsset(
+  accountId: string,
+  kind: AccountBrandingAssetKind,
+  file: Blob,
+  filename?: string,
+) {
+  const form = new FormData();
+  form.append('file', file, filename ?? (file instanceof File ? file.name : kind));
+  return unwrap(
+    await backendApi.upload<AccountBrandingState>(
+      `/accounts/${accountId}/branding/assets/${kind}`,
+      form,
+    ),
+  );
+}
+
+/** Remove one mark (permission only — always possible, entitled or not). */
+export async function removeAccountBrandingAsset(
+  accountId: string,
+  kind: AccountBrandingAssetKind,
+) {
+  return unwrap(
+    await backendApi.delete<AccountBrandingState>(
+      `/accounts/${accountId}/branding/assets/${kind}`,
+    ),
+  );
+}
+
+/** Reset every mark and the name to Kortix defaults (permission only). */
+export async function resetAccountBranding(accountId: string) {
+  return unwrap(await backendApi.delete<AccountBrandingState>(`/accounts/${accountId}/branding`));
 }
 
 export async function listAccountMembers(accountId: string) {

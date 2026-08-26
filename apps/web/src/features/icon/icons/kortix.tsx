@@ -1,8 +1,48 @@
 'use client';
 
+import { useBranding } from '@/features/branding/branding-provider';
 import { cn } from '@/lib/utils';
 
+/**
+ * The Kortix symbol as a semantic icon (`size-4`, `currentColor`).
+ *
+ * Organization branding: when the active account carries its own square mark
+ * (`icon_url`, Enterprise `branding` entitlement) this renders that image in
+ * the same box — with the dark variant toggled by the theme class when one is
+ * set — so every "this is your agent / platform" glyph follows the brand,
+ * not just the header. Marketing surfaces sit outside any account and keep
+ * the Kortix symbol.
+ */
 export const Kortix = ({ className }: { className?: string }) => {
+  const branding = useBranding();
+  const light = branding?.icon_url ?? null;
+  const dark = branding?.icon_dark_url ?? null;
+
+  if (light) {
+    return (
+      <>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={light}
+          alt=""
+          aria-hidden
+          draggable={false}
+          className={cn('size-4 shrink-0 select-none object-contain', dark && 'dark:hidden', className)}
+        />
+        {dark ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={dark}
+            alt=""
+            aria-hidden
+            draggable={false}
+            className={cn('hidden size-4 shrink-0 select-none object-contain dark:block', className)}
+          />
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <svg
       width="30"

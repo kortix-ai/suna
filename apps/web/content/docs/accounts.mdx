@@ -108,6 +108,21 @@ The catalog is data, not a hardcoded list. Each permission carries its `action`,
 
 The write routes choose the permission they require from what you are granting: `project.members.manage` for a project role or an object assignment, `member.update` for an account role, `policy.create` for a custom role. You cannot side-step a ceiling by picking a different route.
 
+## Branding
+
+An Enterprise account can put its own brand on the app for every member: a wide logo, a square icon, and a favicon, each with an optional dark-mode variant. Open **Account → Branding** (`/accounts/{accountId}?tab=branding`). Uploads accept PNG, JPEG, WebP, SVG, and ICO up to 1 MB; the icon stands in for a missing logo, the favicon falls back to the icon, and a missing dark variant falls back to the light image. In-app marks follow the app theme; the favicon follows the operating system's color scheme.
+
+Branding follows the account, not the browser: inside a project, members see the brand of the account that owns the project. Sign-in pages, emails, and public share pages stay Kortix, because there is no account to brand until someone is signed in. When the Enterprise entitlement lapses, members see Kortix again — nothing is deleted, and the account can remove what it uploaded at any time.
+
+| Method + path | Does |
+|---|---|
+| `GET /v1/accounts/{accountId}/branding` | The stored record and whether the plan allows it. |
+| `POST /v1/accounts/{accountId}/branding/assets/{kind}` | Upload one image as multipart `file`. `kind` is `logo`, `icon`, `favicon`, or their `_dark` variants. Needs `account.write` and the `branding` entitlement (`402 entitlement_required` otherwise). |
+| `DELETE /v1/accounts/{accountId}/branding/assets/{kind}` | Remove one image. `account.write` only. |
+| `DELETE /v1/accounts/{accountId}/branding` | Reset everything to Kortix. `account.write` only. |
+
+`GET /v1/accounts` carries each account's effective `branding` — the record while entitled, `null` otherwise — so a client renders from one request it already makes. In the SDK: `kortix.accounts.branding.{get, uploadAsset, removeAsset, reset}`.
+
 ## Switching accounts
 
 If you belong to more than one account, switch between them from the account switcher. Each account keeps its own projects, members, and settings.
