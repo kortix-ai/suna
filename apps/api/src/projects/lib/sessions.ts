@@ -69,7 +69,7 @@ import {
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { withProjectGitAuth } from './git';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
-import { resolveSessionProvider } from './provider-precedence';
+import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
   ACTIVE_SESSION_STATUSES,
@@ -1325,8 +1325,10 @@ export async function createProjectSession(input: {
       },
     };
   }
-  const providerName: SandboxProviderName =
-    'provider' in picked ? (picked.provider as SandboxProviderName) : await selectProvider();
+  const providerLocked = sessionProviderIsLocked(picked);
+  const providerName: SandboxProviderName = providerLocked
+    ? (picked as { provider: string }).provider as SandboxProviderName
+    : await selectProvider();
 
   const callbackUnreachable =
     sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
@@ -1749,6 +1751,7 @@ export async function createProjectSession(input: {
         agentName,
         allowProjectImage: projectImageAllowedForSession(agentName, workspaceMode),
         provider: providerName,
+        providerLocked,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
         initialTurn,
         extraEnvVars,

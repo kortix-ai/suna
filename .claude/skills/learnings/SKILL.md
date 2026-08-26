@@ -21,6 +21,45 @@ linked, not inlined.
 
 ## Register
 
+### A provider handed to the provisioner is a PREFERENCE, not a lock (2026-08-26)
+
+**When:** passing a sandbox provider into `provisionSessionSandbox`, or reading
+one back to decide whether failover may run. Only an explicit `body.provider`,
+an enabled per-project pin, or a restart on an existing box locks the runtime.
+The weighted balancer's pick must stay unlocked, or admin-gated failover is dead
+code for every session that never asked for a provider by name. *Incident:*
+`platform_settings.provider_fallback` was ON in prod, yet 654 sessions died on a
+provider at capacity in one hour with ZERO handoffs recorded in
+`session_sandboxes` — `createProjectSession` forwarded the balancer's pick and
+the provisioner read any provider as explicit. *Enforcer:*
+`apps/api/src/projects/lib/sessions.provider-failover-wiring.test.ts` fails if
+either end stops honoring `providerLocked`.
+
+### Jitter every fleet cron; identical manifests share an expression (2026-08-26)
+
+**When:** scheduling any cron a project starter, template, or marketplace clone
+ships. Every project that copied the manifest inherits the same expression and
+fires on the same millisecond. Offset each trigger deterministically by
+`(project_id, slug)` — deterministic because the catalog writes `next_fire_at`
+and the claim sweep recomputes it, and a random offset makes them disagree.
+*Incident:* 756 projects inherited `0 0 3 * * *`; the 03:00 hour took 779
+provisions and failed 654 (346 `capacity`) while every other hour that day ran
+100% healthy at 6-28 provisions. *Enforcer:*
+`apps/api/src/projects/trigger-schedule.jitter.test.ts` asserts 766 keys spread
+across the window instead of stacking.
+
+### Disabling a starter default does not disarm the fleet already built from it (2026-08-26)
+
+**When:** fixing runaway automation by editing `packages/starter/templates/`.
+That edit only changes what NEW projects receive. Trigger rows are reconciled
+from each project's OWN repo manifest, so every project created while the
+default was enabled keeps firing. Ship the template fix AND a remediation for
+the existing population in the same change, and say which one you verified.
+*Incident:* PR #6806 disabled the 03:00 harness reflector on 2026-08-23 and
+reached prod in v0.13.5; three nights later 766 projects still fired it and 654
+sessions failed. Growth stopped at the fix; the standing population did not.
+*Enforcer:* none — this is a review question, not a lint.
+
 ### Size sandbox memory from measured peak RSS, not nominal workload size (2026-08-24)
 
 **When:** assigning a sandbox template to image-heavy, document-heavy, or long-context agents.

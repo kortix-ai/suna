@@ -94,7 +94,13 @@ export async function claimDueScheduleSlots(input: {
     // Coalesce missed recurring slots into one execution. After downtime, one
     // catch-up run is queued and the catalog advances to the first future slot.
     // This prevents a restart from producing an unbounded execution storm.
-    const nextFireAt = spec.runAt ? null : nextTriggerScheduleSlot(spec, input.now);
+    // Same jitter key the catalog used — the offset MUST match or the sweep
+    // would disagree with the stored slot and double-fire or skip.
+    const nextFireAt = spec.runAt
+      ? null
+      : nextTriggerScheduleSlot(spec, input.now, {
+          jitterKey: `${candidate.projectId}:${candidate.slug}`,
+        });
     return db.transaction(async (tx) => {
       // Advance first. If the manifest was reconciled or another scheduler
       // claimed this slot after candidate selection, the CAS fails and no

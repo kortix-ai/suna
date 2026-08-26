@@ -17,6 +17,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 import { db } from '../../shared/db';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
+import { nextFailoverProvider } from '../../projects/lib/provider-precedence';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
@@ -295,6 +296,14 @@ export async function provisionSessionSandbox(opts: {
    *  'default' when omitted (legacy callers). */
   agentName?: string;
   provider?: ProviderName;
+  /**
+   * Is `provider` a HARD requirement (explicit request, project pin, or an
+   * existing box restarting on its own runtime) or merely the weighted
+   * balancer's pick? Omitted ⇒ locked whenever `provider` is set, which keeps
+   * every legacy caller's behavior unchanged. Callers that pass the BALANCER's
+   * choice must pass `false`, or one-shot failover can never run for them.
+   */
+  providerLocked?: boolean;
   serverType?: string;
   location?: string;
   metadata?: Record<string, unknown>;
@@ -334,7 +343,7 @@ export async function provisionSessionSandbox(opts: {
   beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
-  const providerWasExplicitlySelected = opts.provider !== undefined;
+  const providerWasExplicitlySelected = opts.providerLocked ?? opts.provider !== undefined;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
@@ -1016,8 +1025,14 @@ export async function provisionSessionSandbox(opts: {
       // only — a running box is never migrated here. The new provider re-resolves
       // its own image (the snapshot is provider-specific), so we clear all image
       // state and re-enter the loop.
-      if (!providerWasExplicitlySelected && !fallbackAttempted && providerFallbackSetting().enabled) {
-        const next = config.ALLOWED_SANDBOX_PROVIDERS.find((p) => p !== providerName);
+      {
+        const next = nextFailoverProvider({
+          providerLocked: providerWasExplicitlySelected,
+          fallbackAttempted,
+          fallbackEnabled: providerFallbackSetting().enabled,
+          current: providerName,
+          allowed: config.ALLOWED_SANDBOX_PROVIDERS,
+        }) as ProviderName | null;
         if (next) {
           fallbackAttempted = true;
           console.warn(
