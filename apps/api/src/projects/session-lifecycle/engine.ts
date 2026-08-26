@@ -14,6 +14,11 @@ import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
+import {
+  parseRuntimeAgentNames,
+  resolveDeliverableAgent,
+  runtimeAgentRoster,
+} from './agent-availability';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
@@ -2123,6 +2128,35 @@ function isProviderName(value: string | null): value is ProviderName {
  * every time — see `continueSession`), and is DISTINCT across different
  * commands even when their text matches exactly.
  */
+/**
+ * The agent names THIS session's runtime reports, cached per sandbox.
+ *
+ * Read through the same signed proxy endpoint every drain-side transcript read
+ * uses, so it inherits the session's own authentication and needs no second
+ * credential path. Only called when a prompt actually names an agent — a send
+ * with no pick costs nothing.
+ */
+async function sessionRuntimeAgentRoster(
+  externalId: string,
+  callerSessionId: string,
+  actorUserId: string,
+): Promise<{ names: readonly string[] | null }> {
+  return runtimeAgentRoster(externalId, async () => {
+    const resolved = await resolveSessionOpencodeEndpoint(callerSessionId, actorUserId);
+    if (!resolved) return null;
+    const res = await fetch(
+      `${resolved.endpoint.url}/agent?directory=${encodeURIComponent(WORKSPACE)}`,
+      {
+        method: 'GET',
+        headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    if (!res.ok) return null;
+    return parseRuntimeAgentNames(await res.json().catch(() => null));
+  });
+}
+
 async function postPrompt(
   externalId: string,
   opencodeSessionId: string,
@@ -2144,11 +2178,30 @@ async function postPrompt(
   const parts: PromptPartWire[] =
     prompt?.parts && prompt.parts.length > 0 ? prompt.parts : [{ type: 'text', text }];
   const overrides = prompt?.overrides;
+  // THE AGENT THE RUNTIME CAN ACTUALLY RUN — see `agent-availability.ts`.
+  //
+  // `prompt_async` answers 204 for an agent it does not have and then never
+  // runs the turn, so forwarding an unknown name is the delivery loop reading
+  // "delivered", retiring the inbox row, and the user's message ceasing to
+  // exist. Dropping the name instead runs the prompt under the runtime's own
+  // default, exactly as a send with no pick always has.
+  const deliverableAgent = resolveDeliverableAgent(
+    overrides?.agent ?? null,
+    overrides?.agent
+      ? await sessionRuntimeAgentRoster(externalId, callerSessionId, userId)
+      : { names: null },
+  );
+  if (deliverableAgent.dropped) {
+    logger.warn('[session-lifecycle] dropped an agent the runtime does not have', {
+      session_id: callerSessionId,
+      requested_agent: overrides?.agent,
+    });
+  }
   const body = new TextEncoder().encode(
     JSON.stringify({
       ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),
       parts,
-      ...(overrides?.agent ? { agent: overrides.agent } : {}),
+      ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
       ...(overrides?.model ? { model: overrides.model } : {}),
       ...(overrides?.variant ? { variant: overrides.variant } : {}),
     }),
