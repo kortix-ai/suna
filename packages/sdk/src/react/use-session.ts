@@ -1518,14 +1518,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     sandbox,
     /** True once the runtime is switched in and ready (equivalent to phase==='ready'). */
     switched,
-    /**
-     * Whether polling /start again can still make progress (false = terminal,
-     * null = no /start answer yet -- e.g. a malformed or legacy cached
-     * payload). Coercing absence to `false` here would assume the worst for a
-     * state the server never actually answered; callers that need a strict
-     * boolean coerce explicitly at their own read site.
-     */
-    retriable: startData ? (startData.retriable ?? null) : null,
+    /** Whether polling /start again can still make progress (false = terminal). */
+    retriable: startData?.retriable ?? false,
     /** Is a provider operation running for this session right now, per the
      *  latest /start's `boot.actively_starting`? `false` while a `starting`
      *  stage is only waiting out a retry cooldown, not driving the box. */

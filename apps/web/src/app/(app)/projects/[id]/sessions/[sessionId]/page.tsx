@@ -554,11 +554,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     !!user &&
     !!sandbox &&
     (sandbox.status === 'error' || sandbox.status === 'stopped') &&
-    // See `shouldPaintFatalCard` for why `retriable` is never read here and
-    // `stage` is checked before `activelyStarting` -- a stale-wake PARK
-    // (retriable:true) must still paint, and a wake-retry cooldown
-    // (stage:'starting', activelyStarting:false, still polling) must not.
-    shouldPaintFatalCard({ stage: session.stage, activelyStarting: session.activelyStarting });
+    // See `shouldPaintFatalCard`: gates on `stage` ALONE -- neither `retriable`
+    // (a stale-wake PARK answers `stage:'failed', retriable:true` and must
+    // still paint) nor `activelyStarting` (`stage:'failed'` is reachable with
+    // `actively_starting:true` via a detached wake-fence race, and nothing
+    // else polls or re-invalidates a `failed` session to recover the user).
+    shouldPaintFatalCard({ stage: session.stage });
   // A preserved-unavailable identity is `status: 'stopped'` + an `external_id`,
   // so it satisfies `fatal` above and used to render the ordinary "restart it"
   // card. It needs its own terminal branch — see the render below.
@@ -585,11 +586,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // as a hard provisioning failure. See session-terminal-state.ts.
   const terminalState = {
     stage: session.stage ?? null,
-    // `SessionTerminalState.retriable` is a strict boolean; an unanswered
-    // `/start` (`session.retriable === null`) coerces to `false` here only,
-    // matching this hook's pre-existing behavior -- `shouldPaintTerminalCard`
-    // is where "unknown" gets its own (withhold) branch.
-    retriable: session.retriable ?? false,
+    retriable: session.retriable,
     hasStartError: !!session.startError,
     sandboxStatus: sandbox?.status,
   };

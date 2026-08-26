@@ -31,43 +31,47 @@ describe('shouldPaintTerminalCard', () => {
     ).toBe(false);
   });
 
-  // I2: absence is not negation. An unknown `retriable` is not proof of
-  // "not retriable"; withhold the card until the owner has answered.
-  test('an unknown retriable withholds the card', () => {
-    expect(
-      shouldPaintTerminalCard({ hasFailure: true, retriable: null, activelyStarting: false }),
-    ).toBe(false);
-  });
+  // I2 lives at the `stage` boundary, not here. `SessionStartResult.retriable`
+  // is a required boolean on the wire (`session-sandbox.ts:64`); every real
+  // caller either has an actual `/start` answer or has nothing to gate. See
+  // `shouldPaintFatalCard`'s doc comment for where "not yet known" (`stage`
+  // `provisioning`/`starting`) is genuinely enforced.
 });
 
 describe('shouldPaintFatalCard', () => {
-  // Fix round 2: `stage:'starting'` is not a terminal state, whatever the
-  // sandbox row says. `sandbox.status` stays `'stopped'` throughout BOTH an
-  // active wake AND its retry cooldown, and `activelyStarting` is `false` for
-  // BOTH the cooldown and a genuinely abandoned park -- it cannot tell them
-  // apart. Only `stage` can, so it is checked first, before `activelyStarting`.
-  test('starting + actively starting: withheld (wake in flight)', () => {
-    expect(shouldPaintFatalCard({ stage: 'starting', activelyStarting: true })).toBe(false);
+  // `stage:'starting'` is not a terminal state, whatever the sandbox row
+  // says: `sandbox.status` stays `'stopped'` throughout BOTH an active wake
+  // AND its retry cooldown. `stage` alone separates the two shapes that must
+  // be withheld from the three that must paint.
+  test('starting: withheld -- still polling, the server retries on its own', () => {
+    expect(shouldPaintFatalCard({ stage: 'starting' })).toBe(false);
   });
 
-  // THE FIX. A wake-retry cooldown answers stage:'starting', retriable:true,
-  // activelyStarting:false. `retriable` is never read here (see below), so
-  // `stage` alone must withhold it -- this is the reported bug.
-  test('starting + not actively starting (wake-retry cooldown): withheld', () => {
-    expect(shouldPaintFatalCard({ stage: 'starting', activelyStarting: false })).toBe(false);
+  test('failed: paints -- the server is done trying', () => {
+    expect(shouldPaintFatalCard({ stage: 'failed' })).toBe(true);
   });
 
-  test('failed + not actively starting: paints', () => {
-    expect(shouldPaintFatalCard({ stage: 'failed', activelyStarting: false })).toBe(true);
+  // `stage:'failed'` is reachable with `actively_starting:true` -- the second
+  // `stoppedWakeResult` call site (`shared.ts:1089`) can yield it via a
+  // detached wake-fence race the server code itself documents
+  // (`shared.ts:1070-1076`). `shouldPaintFatalCard` has no `activelyStarting`
+  // parameter to read, so it cannot be tempted to withhold here -- correctly:
+  // `shouldPollSessionStart` does not poll `stage:'failed'`, `isSandboxResumable`
+  // excludes the wake-class stop reasons so nothing re-invalidates the query,
+  // and the wake ladder only holds until it exhausts. Withholding the card for
+  // a `failed` stage strands the user with no card AND no poll -- a terminal
+  // stage is terminal regardless of any in-flight flag.
+  test('failed: paints even where a detached wake-fence race would report actively_starting:true', () => {
+    expect(shouldPaintFatalCard({ stage: 'failed' })).toBe(true);
   });
 
-  // `retriable` is not a parameter of this function at all -- a stale-wake
-  // PARK (`preserveEstablishedRuntimeOnOpen`'s park branch,
+  // `retriable` is not a parameter either. A stale-wake PARK
+  // (`preserveEstablishedRuntimeOnOpen`'s park branch,
   // apps/api/src/projects/routes/shared.ts:941-952) answers `stage:'failed'`
   // with `retriable:true` for a box nothing is driving any more; there is no
   // way to accidentally thread that value back in and suppress this card.
-  test('failed + actively starting: withheld (an in-place recovery claim)', () => {
-    expect(shouldPaintFatalCard({ stage: 'failed', activelyStarting: true })).toBe(false);
+  test('failed: paints despite what a hypothetical retriable:true would suggest', () => {
+    expect(shouldPaintFatalCard({ stage: 'failed' })).toBe(true);
   });
 });
 
@@ -79,23 +83,23 @@ describe('shouldPaintFatalCard', () => {
  * Rows 2 and 3 populate `session.failure` and are decided by
  * `recoverableFailure` (page.tsx ~684), which reads the real `retriable`.
  * Rows 1, 4 and 5 never populate `failure` and are decided by `fatal`
- * (page.tsx ~552, `shouldPaintFatalCard`), which never reads `retriable` at
- * all -- row 4 (park) proves it cannot be trusted there.
+ * (page.tsx ~552, `shouldPaintFatalCard`), which reads `stage` ONLY -- neither
+ * `retriable` (row 4, park, proves it cannot be trusted) nor `activelyStarting`
+ * (row 3's second `stoppedWakeResult` call site can report `actively_starting:
+ * true` on a genuinely `failed` stage, and a terminal stage must still paint).
  *
  * Row 2 is decided by BOTH in sequence: `recoverableFailure`'s `session.failure`
  * branch withholds it first (retriable:true); once the wake ladder is also
  * exhausted, `recoverableFailure` still returns null (no OTHER branch of it
  * matches -- `sandbox.status` is `'stopped'` not `'error'`, and the sandbox
- * row is non-null) so control falls through to `fatal`. Before round 2,
- * `fatal` independently re-evaluated to TRUE there (same `activelyStarting:
- * false` as park), repainting a dead end over a session `/start` was still
- * retrying -- that fallthrough is the actual reported bug, and pinning ONLY
- * the `recoverableFailure` verdict for row 2 (as round 1 did) missed it.
+ * row is non-null) so control falls through to `fatal`, which withholds it
+ * again on `stage:'starting'` alone -- the actual reported bug, and pinning
+ * ONLY the `recoverableFailure` verdict for row 2 (as round 1 did) missed it.
  */
 describe('the five /start producer shapes, bound to their real call site', () => {
   test('#1 runtime_waking (shared.ts:755-763) -- owned by `fatal`: no card', () => {
     // stage:'starting', retriable:true, actively_starting:true, no `failure`.
-    expect(shouldPaintFatalCard({ stage: 'starting', activelyStarting: true })).toBe(false);
+    expect(shouldPaintFatalCard({ stage: 'starting' })).toBe(false);
   });
 
   test('#2 wake cooldown (shared.ts:805-826) -- `recoverableFailure` withholds it', () => {
@@ -107,10 +111,9 @@ describe('the five /start producer shapes, bound to their real call site', () =>
 
   test('#2 wake cooldown, AFTER the ladder exhausts -- `fatal` also withholds it (the fix)', () => {
     // Same shape as above, evaluated at the `fatal` call site once
-    // `recoverableFailure` has already returned null. `activelyStarting` is
-    // `false` here, identical to #4 -- only `stage:'starting'` (still polling,
-    // the server retries on its own) tells them apart.
-    expect(shouldPaintFatalCard({ stage: 'starting', activelyStarting: false })).toBe(false);
+    // `recoverableFailure` has already returned null. `stage:'starting'`
+    // (still polling, the server retries on its own) withholds it.
+    expect(shouldPaintFatalCard({ stage: 'starting' })).toBe(false);
   });
 
   test('#3 stamped-terminal (shared.ts:828-841) -- owned by `recoverableFailure`: card paints', () => {
@@ -124,12 +127,12 @@ describe('the five /start producer shapes, bound to their real call site', () =>
     // stage:'failed', retriable:TRUE, actively_starting:false, no `failure`.
     // `shouldPaintFatalCard` has no `retriable` parameter to misread -- which
     // is exactly why this still paints.
-    expect(shouldPaintFatalCard({ stage: 'failed', activelyStarting: false })).toBe(true);
+    expect(shouldPaintFatalCard({ stage: 'failed' })).toBe(true);
   });
 
   test('#5 preserve-unavailable (shared.ts:953-962) -- would paint if it reached `fatal`', () => {
     // stage:'failed', retriable:false, actively_starting:false, no `failure`.
     // Real page: `isRuntimeIdentityUnavailable` renders its own card first.
-    expect(shouldPaintFatalCard({ stage: 'failed', activelyStarting: false })).toBe(true);
+    expect(shouldPaintFatalCard({ stage: 'failed' })).toBe(true);
   });
 });
