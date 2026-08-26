@@ -1,8 +1,10 @@
 'use client';
 
+import { ThemeToggle } from '@/components/home/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
+import { Github } from '@/features/icon/icons/github';
 import { cn } from '@/lib/utils';
 import {
   SidebarSimpleIcon as PanelLeftIcon,
@@ -118,6 +120,45 @@ export function DocsCollapsedControls() {
           </Button>
         )}
       </ButtonGroup>
+    </div>
+  );
+}
+
+/**
+ * The sidebar's bottom row: one link out, and the theme control.
+ *
+ * It lives in `sidebar.footer` rather than in fumadocs' `links` +
+ * `themeSwitch` slots, and that is the whole fix. Those slots render into a
+ * container whose classes are hardcoded in the package —
+ * `flex items-center border bg-fd-secondary/50 p-0.5 rounded-lg`
+ * (`fumadocs-ui/dist/layouts/docs/slots/sidebar.js`) — so the bar arrived as a
+ * bordered, tinted pill with a filled segmented control inside it: four
+ * surfaces stacked at the quietest corner of the page, and no prop to turn any
+ * of them off. Emptying both slots lets the package's own `empty:hidden` drop
+ * that container, and this row takes its place. The same `footer` node is what
+ * the mobile drawer renders, so the two surfaces cannot drift.
+ *
+ * `Github` is the app's own brand mark (`features/icon/icons/github.tsx`), the
+ * one `docs-page-actions.tsx` already uses — not phosphor's `GithubLogoIcon`,
+ * so one GitHub glyph appears across the docs. It is a client component, which
+ * is why this row is one too; a server layout may RENDER it, it just cannot
+ * call into it.
+ */
+export function DocsSidebarFooter() {
+  return (
+    <div className="text-muted-foreground flex w-full items-center justify-between">
+      <a
+        href="https://github.com/kortix-ai/suna"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Kortix on GitHub"
+        // Sized and toned exactly like a theme segment, so the row reads as
+        // one strip of icons rather than a link beside a control.
+        className="hover:text-foreground inline-flex size-7 items-center justify-center rounded-md transition-colors duration-150 ease-out"
+      >
+        <Github className="size-4" />
+      </a>
+      <ThemeToggle className="hover:bg-card ml-auto rounded-sm" />
     </div>
   );
 }

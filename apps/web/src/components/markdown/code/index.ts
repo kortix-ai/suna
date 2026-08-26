@@ -11,5 +11,9 @@
 export { childrenToText } from './children-text';
 export { CodeBlock, CodeHighlight, HighlightedCode } from './code-block';
 export { CopyOverlay } from './copy-overlay';
-export { ClickableInlineCode, INLINE_CODE } from './inline-code';
+export { ClickableInlineCode } from './inline-code';
+// From the server-safe module, not through the client one: re-exporting a
+// plain function out of a `'use client'` file hands a server consumer a client
+// reference, which throws the moment it is CALLED. See `inline-chip.tsx`.
+export { HexColorCode, INLINE_CODE, isHexColor } from './inline-chip';
 export { MarkdownCode } from './markdown-code';

@@ -29,7 +29,11 @@ import {
   ArrowRightIcon as ArrowRightBase,
   ArrowClockwiseIcon as ArrowsClockwiseBase,
   AtIcon as AtBase,
+  AtomIcon as AtomBase,
+  BookOpenIcon as BookOpenBase,
+  BrainIcon as BrainBase,
   BroadcastIcon as BroadcastBase,
+  BrowserIcon as BrowserBase,
   BugIcon as BugBase,
   CalculatorIcon as CalculatorBase,
   CalendarDotsIcon as CalendarDotsBase,
@@ -39,14 +43,18 @@ import {
   ChartBarIcon as ChartBarBase,
   ChartLineIcon as ChartLineBase,
   ChatsIcon as ChatsBase,
-  CheckCircleIcon as CheckCircleBase,
   CheckIcon as CheckBase,
+  CheckCircleIcon as CheckCircleBase,
   ClipboardTextIcon as ClipboardTextBase,
   CloudIcon as CloudBase,
+  CodeIcon as CodeBase,
   CoffeeIcon as CoffeeBase,
+  CpuIcon as CpuBase,
   CreditCardIcon as CreditCardBase,
+  CubeIcon as CubeBase,
   CurrencyCircleDollarIcon as CurrencyCircleDollarBase,
   DatabaseIcon as DatabaseBase,
+  DesktopIcon as DesktopBase,
   DeviceMobileIcon as DeviceMobileBase,
   EnvelopeIcon as EnvelopeBase,
   FileLockIcon as FileLockBase,
@@ -57,6 +65,7 @@ import {
   FlaskIcon as FlaskBase,
   FunnelIcon as FunnelBase,
   GaugeIcon as GaugeBase,
+  GitBranchIcon as GitBranchBase,
   GitMergeIcon as GitMergeBase,
   GitPullRequestIcon as GitPullRequestBase,
   GithubLogoIcon as GithubLogoBase,
@@ -69,10 +78,12 @@ import {
   PaperPlaneTiltIcon as PaperPlaneTiltBase,
   PathIcon as PathBase,
   PhoneCallIcon as PhoneCallBase,
+  PlugsConnectedIcon as PlugsConnectedBase,
   PresentationIcon as PresentationBase,
   QuestionIcon as QuestionBase,
   ReceiptIcon as ReceiptBase,
   RepeatIcon as RepeatBase,
+  RobotIcon as RobotBase,
   RocketIcon as RocketBase,
   ScalesIcon as ScalesBase,
   ScrollIcon as ScrollBase,
@@ -93,8 +104,8 @@ import {
   UserPlusIcon as UserPlusBase,
   UsersIcon as UsersBase,
   WalletIcon as WalletBase,
-  WindowsLogoIcon as WindowsLogoBase,
   WarningIcon as WarningBase,
+  WindowsLogoIcon as WindowsLogoBase,
   WrenchIcon as WrenchBase,
 } from '@phosphor-icons/react/dist/ssr';
 
@@ -113,6 +124,17 @@ export const ArrowLeftIcon = withDefaultWeight(ArrowLeftBase);
 export const ArrowRightIcon = withDefaultWeight(ArrowRightBase);
 export const ArrowClockwiseIcon = withDefaultWeight(ArrowsClockwiseBase);
 export const AtIcon = withDefaultWeight(AtBase);
+export const AtomIcon = withDefaultWeight(AtomBase);
+export const BookOpenIcon = withDefaultWeight(BookOpenBase);
+export const BrainIcon = withDefaultWeight(BrainBase);
+export const BrowserIcon = withDefaultWeight(BrowserBase);
+export const CodeIcon = withDefaultWeight(CodeBase);
+export const CpuIcon = withDefaultWeight(CpuBase);
+export const CubeIcon = withDefaultWeight(CubeBase);
+export const DesktopIcon = withDefaultWeight(DesktopBase);
+export const GitBranchIcon = withDefaultWeight(GitBranchBase);
+export const PlugsConnectedIcon = withDefaultWeight(PlugsConnectedBase);
+export const RobotIcon = withDefaultWeight(RobotBase);
 export const BroadcastIcon = withDefaultWeight(BroadcastBase);
 export const BugIcon = withDefaultWeight(BugBase);
 export const CalculatorIcon = withDefaultWeight(CalculatorBase);

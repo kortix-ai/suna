@@ -255,7 +255,7 @@ export function highlightAsync(
 }
 
 export const SHIKI_RESET = cn(
-  'text-sm font-mono leading-[1.65] whitespace-pre',
+  'text-sm font-mono leading-[1.65] whitespace-pre tracking-tight',
   '[&_pre]:contents [&_code]:contents',
   '[&_.line]:m-0 [&_.line]:p-0 [&_.line]:border-none [&_.line]:outline-none [&_.line]:shadow-none',
 );

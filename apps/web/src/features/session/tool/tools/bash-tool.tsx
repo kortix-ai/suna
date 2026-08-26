@@ -14,6 +14,7 @@ import {
   useToolCardFrame,
   useToolCardPad,
   useToolIndent,
+  useToolOpen,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -76,32 +77,45 @@ export function bashRowTitle(description: unknown, failed: boolean): string {
 }
 
 /**
- * The command as the reader should see it: common indent stripped, blank
+ * The command as the reader should see it: leading indent stripped, blank
  * edges dropped.
  *
  * Commands arrive with incidental leading whitespace — a model quoting a
  * command out of indented YAML/JSON sends `  agent-browser open …`. The
- * trigger row hid it (a `truncate` span collapses spaces under normal
- * white-space), but the card's `whitespace-pre-wrap` pane rendered it
- * verbatim, so the first line sat two characters deeper than its own wrapped
- * continuation and the output below — an inverse hanging indent that read as
+ * trigger row hides it (a `truncate` span collapses spaces under normal
+ * white-space), but the card's `whitespace-pre-wrap` pane renders it verbatim,
+ * so the first line sits two characters deeper than its own wrapped
+ * continuation and the output below — an inverse hanging indent that reads as
  * broken padding.
  *
- * COMMON indent, not a per-line trim: a multi-line script keeps its internal
- * structure, only the shared margin goes. Heredocs survive by construction — a
- * non-`<<-` heredoc needs its terminator at column 0, which pins the common
- * indent to 0 and makes this a no-op exactly where indentation is
- * load-bearing. The trailing trim also stops a final `\n` from counting as a
+ * Two rules, because a one-line command and a script are different documents:
+ *
+ * - **One line has no structure to protect**, so every leading blank is noise
+ *   and all of it goes. This is the case a common-indent rule cannot be
+ *   trusted with alone: it only strips what it can MEASURE, and the measure
+ *   used to be `[ \t]` — so a command indented with a non-breaking space (or
+ *   any other Unicode space; agents paste these out of rendered docs and
+ *   spreadsheets) kept its indent and drew exactly the misalignment above.
+ * - **A script keeps its shape**: the COMMON indent goes, never a per-line
+ *   trim, so nesting survives. Heredocs survive by construction — a non-`<<-`
+ *   heredoc needs its terminator at column 0, which pins the common indent to
+ *   0 and makes this a no-op exactly where indentation is load-bearing.
+ *
+ * `[^\S\r\n]` is "whitespace that is not a line break", so both rules count
+ * every horizontal space character the Unicode table has, not just the two on
+ * a US keyboard. The trailing trim also stops a final `\n` from counting as a
  * phantom `+1` line in the trigger.
  */
 export function dedentCommand(raw: string): string {
-  const text = raw.replace(/^\n+/, '').trimEnd();
+  const text = raw.replace(/^[\r\n]+/, '').trimEnd();
   if (!text) return '';
   const lines = text.split('\n');
+  // One line: strip the lot. `trimEnd` above already took the other end.
+  if (lines.length === 1) return lines[0].replace(/^[^\S\r\n]+/, '');
   let min = Infinity;
   for (const line of lines) {
     if (!line.trim()) continue;
-    min = Math.min(min, /^[ \t]*/.exec(line)![0].length);
+    min = Math.min(min, /^[^\S\r\n]*/.exec(line)![0].length);
   }
   if (!min || min === Infinity) return text;
   return lines.map((line) => line.slice(min)).join('\n');
@@ -250,6 +264,97 @@ function CommandBlock({
   );
 }
 
+/**
+ * The words on the trigger row.
+ *
+ * Its own component, not inline JSX in {@link BashTool}, because
+ * `useToolOpen()` only answers truthfully where the trigger is RENDERED —
+ * inside `BasicTool`'s provider. Called from `BashTool`'s body it would read
+ * the context default and never change.
+ *
+ * Open, the row drops the command. The card directly beneath is already
+ * showing that exact text — highlighted, whole, with its own copy button — so
+ * the trigger's one line was spending itself on the only thing the reader
+ * cannot be missing, in a truncated copy that disagreed with the full one for
+ * every command longer than the row. What survives is the part the card does
+ * not repeat: the description, or the failure verdict.
+ *
+ * Closed, that line is the only evidence of what ran, so it stays exactly as
+ * it was — preview, `+N` line count, and the full command as the native
+ * tooltip.
+ */
+function BashTrigger({
+  title,
+  failed,
+  command,
+  commandPreview,
+  extraLines,
+  live,
+}: {
+  title: string;
+  failed: boolean;
+  command: string;
+  commandPreview: string;
+  extraLines: number;
+  /** The call is still running under a live stream. */
+  live: boolean;
+}) {
+  const open = useToolOpen();
+
+  if (live) {
+    return (
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+        {open ? (
+          // The shimmer moves to the label: mid-flight the row still has to
+          // read as in-progress, and with the command gone there is nothing
+          // else left on it to carry the motion.
+          <TextShimmer duration={1} spread={2} className="min-w-0 truncate text-xs">
+            Running command
+          </TextShimmer>
+        ) : (
+          <>
+            <span className="text-foreground shrink-0 text-xs">Running command</span>
+            <TextShimmer
+              duration={1}
+              spread={2}
+              className="text-muted-foreground min-w-0 truncate font-mono text-xs"
+            >
+              {commandPreview}
+            </TextShimmer>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+      <span
+        className="flex min-w-0 shrink-0 items-center gap-2 text-xs"
+        // Redundant once the card spells the command out below.
+        title={open ? undefined : command}
+      >
+        {/* `truncate`, not `shrink-0`: a description title is a sentence, and
+            on a narrow row a rigid one would be clipped mid-word by the
+            trigger's `overflow-hidden` instead of ending in an ellipsis. */}
+        <span className={cn('min-w-0 truncate', failed ? 'text-kortix-red' : 'text-foreground')}>
+          {title}
+        </span>
+        {!open && (
+          <>
+            <span className="text-muted-foreground/60 min-w-0 truncate font-mono">
+              {commandPreview}
+            </span>
+            {extraLines > 0 && (
+              <span className="text-muted-foreground/40 shrink-0 tabular-nums">+{extraLines}</span>
+            )}
+          </>
+        )}
+      </span>
+    </div>
+  );
+}
+
 export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
@@ -324,40 +429,14 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             </TextShimmer>
           </div>
         ) : commandPreview ? (
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-            {running && status !== 'completed' && status !== 'error' ? (
-              <>
-                <span className="text-foreground shrink-0 text-xs">Running command</span>
-                <TextShimmer
-                  duration={1}
-                  spread={2}
-                  className="text-muted-foreground min-w-0 truncate font-mono text-xs"
-                >
-                  {commandPreview}
-                </TextShimmer>
-              </>
-            ) : (
-              <span className="flex min-w-0 shrink-0 items-center gap-2 text-xs" title={command}>
-                {/* `truncate`, not `shrink-0`: a description title is a
-                    sentence, and on a narrow row a rigid one would be clipped
-                    mid-word by the trigger's `overflow-hidden` instead of
-                    ending in an ellipsis. */}
-                <span
-                  className={cn('min-w-0 truncate', failed ? 'text-kortix-red' : 'text-foreground')}
-                >
-                  {title}
-                </span>
-                <span className="text-muted-foreground/60 min-w-0 truncate font-mono">
-                  {commandPreview}
-                </span>
-                {extraLines > 0 && (
-                  <span className="text-muted-foreground/40 shrink-0 tabular-nums">
-                    +{extraLines}
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
+          <BashTrigger
+            title={title}
+            failed={failed}
+            command={command}
+            commandPreview={commandPreview}
+            extraLines={extraLines}
+            live={running && status !== 'completed' && status !== 'error'}
+          />
         ) : null
       }
       defaultOpen={defaultOpen}

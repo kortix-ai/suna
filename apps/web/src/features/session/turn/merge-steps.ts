@@ -33,7 +33,22 @@ import { groupSteps, type Step } from '../action-panel/shared/group-steps';
 import type { StepTier } from './step-label';
 
 export type BurstStep =
-  | { kind: 'thought'; key: string; texts: string[]; running: boolean }
+  | {
+      kind: 'thought';
+      key: string;
+      texts: string[];
+      running: boolean;
+      /**
+       * How long the whole run of reasoning took, in ms — first fragment's
+       * `time.start` to the last one's `time.end`.
+       *
+       * Undefined when either end is missing (a live thought has no end yet,
+       * and some providers send no timing at all), so the row can tell "not
+       * timed" apart from "took no time" and fall back to the bare label
+       * rather than printing a zero.
+       */
+      durationMs?: number;
+    }
   | { kind: 'part'; key: string; part: Part }
   | { kind: 'group'; key: string; step: Step };
 
@@ -59,16 +74,31 @@ export function mergeBurstSteps(
   tierOf: (part: Part) => StepTier,
 ): BurstStep[] {
   const steps: BurstStep[] = [];
-  let pending: { key: string; texts: string[]; running: boolean } | null = null;
+  let pending: {
+    key: string;
+    texts: string[];
+    running: boolean;
+    startedAt?: number;
+    endedAt?: number;
+  } | null = null;
   let tools: ToolPart[] = [];
 
   const flushThought = () => {
     if (pending && pending.texts.length > 0) {
+      // FIRST start to LAST end: the fragments of one thought are one stretch
+      // of thinking, and the row that merges them reports the stretch. A sum of
+      // per-fragment durations would silently drop the gaps between them.
+      const { startedAt, endedAt } = pending;
+      const durationMs =
+        typeof startedAt === 'number' && typeof endedAt === 'number' && endedAt > startedAt
+          ? endedAt - startedAt
+          : undefined;
       steps.push({
         kind: 'thought',
         key: pending.key,
         texts: pending.texts,
         running: pending.running,
+        durationMs,
       });
     }
     pending = null;
@@ -108,6 +138,13 @@ export function mergeBurstSteps(
       flushTools();
       if (!pending) pending = { key: `thought-${part.id}`, texts: [], running: false };
       pending.texts.push(text);
+      const time = (part as { time?: { start?: number; end?: number } }).time;
+      if (pending.startedAt === undefined && typeof time?.start === 'number') {
+        pending.startedAt = time.start;
+      }
+      // The LAST fragment's end is the run's end, for the same reason it
+      // decides `running` below: an earlier fragment closes as the next opens.
+      pending.endedAt = typeof time?.end === 'number' && time.end > 0 ? time.end : undefined;
       // The LAST fragment decides. Fragments arrive one at a time and each
       // closes as the next opens, so an early `time.end` says nothing about
       // whether the run as a whole is still being written.

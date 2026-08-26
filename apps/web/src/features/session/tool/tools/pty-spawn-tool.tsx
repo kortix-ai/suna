@@ -44,7 +44,18 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
   return (
     <BasicTool
       icon={<Terminal className="size-3.5 shrink-0" />}
-      trigger={{ title: 'Started terminal', subtitle: title || command }}
+      trigger={{
+        title: 'Started terminal',
+        subtitle: title || command,
+        // Only when the subtitle IS the command. The card below prints the
+        // command under a `$`, so open, the row would say it twice — and the
+        // trigger's copy is the truncated one, so a long invocation disagrees
+        // with the full text directly beneath it. When the model supplied a
+        // `Title`, the subtitle is that name, the card never repeats it, and
+        // it stays. Same rule as `bash`: the row keeps what the card does not
+        // say.
+        hideSubtitleWhenOpen: !title,
+      }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
@@ -68,8 +79,6 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
                 {processStatus && (
                   <Badge
                     variant={processStatus === 'running' ? 'success' : 'muted'}
-                    size="sm"
-                    className="gap-1"
                   >
                     {processStatus === 'running' && <StatusDot tone="success" pulse />}
                     {processStatus}

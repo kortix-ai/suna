@@ -267,7 +267,6 @@ function ActivityFileChipStepImpl({
           <ActivityStep
             key={part.id}
             part={part}
-            bare
             sessionId={sessionId}
             running={running}
             disableNavigation={disableNavigation}
