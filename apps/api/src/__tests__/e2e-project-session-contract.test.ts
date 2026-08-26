@@ -1390,21 +1390,28 @@ describe('project session API contract', () => {
       { method: 'POST' },
     );
     expect(response.status).toBe(200);
+    // The cooldown is NOT a terminal answer: the server itself re-attempts once
+    // it lapses, so the honest stage is `starting` and `retriable` is true.
+    // It says WHICH check failed and WHEN it will try again.
     expect(await response.json()).toMatchObject({
-      stage: 'stopped',
-      retriable: false,
+      stage: 'starting',
+      retriable: true,
       reason: 'runtime_wake_cooldown',
+      action: 'cooling_down',
+      boot: { phase: 'resuming', actively_starting: false },
       sandbox: { status: 'stopped' },
       failure: {
         category: 'sandbox-provider',
         retryable: true,
+        evidence: { check: 'start_failed', attempts: 1 },
       },
     });
+    // …and the cooldown still holds the provider off: exactly one start.
     expect(providerStartCalls).toBe(1);
-
+    expect(failureMetadata.runtimeStartFailureCount).toBe(1);
   });
 
-  test('an expired runtime wake failure requires an explicit restart', async () => {
+  test('an expired wake cooldown RE-ATTEMPTS on the next /start — no restart needed', async () => {
     sessionRow = { ...sessionRow!, status: 'stopped', error: null };
     sessionSandboxRows = [
       {
@@ -1429,6 +1436,9 @@ describe('project session API contract', () => {
       },
     ];
 
+    // Essentia 2026-08-26: this gate used to answer `false` for ever, so the
+    // stamp could only be cleared by a human pressing Restart (sessions
+    // e06ad0c4 and 9c8749ac). Past the cooldown it is permission to try again.
     expect(
       await resumeStoppedSandbox({
         sandboxId: SESSION_ID,
@@ -1438,7 +1448,9 @@ describe('project session API contract', () => {
         externalId: 'platinum-expired-wake-failure',
         metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
       }),
-    ).toBe(false);
+    ).toBe(true);
+    await flushUntil(() => providerStartCalls > 0);
+    expect(providerStartCalls).toBe(1);
 
     const response = await createApp().request(
       `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
@@ -1446,12 +1458,11 @@ describe('project session API contract', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      stage: 'failed',
-      retriable: false,
-      reason: 'runtime_wake_failed',
-    });
-    expect(providerStartCalls).toBe(0);
+    // The re-attempt is a live wake, not a replayed stamp.
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.stage).toBe('starting');
+    expect(body.retriable).toBe(true);
+    expect(body.reason).not.toBe('runtime_wake_failed');
   });
 
   test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
@@ -3432,16 +3443,24 @@ describe('project session API contract', () => {
     expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
     expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
 
+    // The park stamps a retry clock, so the immediate re-poll is a COOLDOWN,
+    // not the 10-hour `stage:"failed"` replay session 9c8749ac lived in.
+    expect(typeof parkedMetadata.runtimeStartRetryAfterAt).toBe('string');
+    expect(parkedMetadata.runtimeStartFailureCount).toBe(1);
+
     const retry = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(retry.status).toBe(200);
     expect(await retry.json()).toMatchObject({
-      stage: 'failed',
-      retriable: false,
-      reason: 'runtime_unreachable_timeout',
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_wake_cooldown',
+      action: 'cooling_down',
       sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
+      failure: { retryable: true, evidence: { attempts: 1 } },
     });
+    // The cooldown is what holds the provider off — not a permanent verdict.
     expect(providerStartCalls).toBe(0);
   });
 

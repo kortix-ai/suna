@@ -20,6 +20,20 @@ export const RUNTIME_READINESS_CLOCK_KEYS = [
  */
 export const STALE_OPENCODE_BOOT_HARD_MS = 10 * 60 * 1000;
 
+/**
+ * Keys an explicit in-place restart clears on top of the readiness clocks: the
+ * automatic retry accounting and the stop reason that would otherwise be
+ * replayed as a verdict about the new attempt.
+ */
+const RUNTIME_RESTART_CLEARED_KEYS = [
+  'runtimeStartFailureCount',
+  'runtimeStartFailedAt',
+  'runtimeStartRetryAfterAt',
+  'runtimeWakeRetryAfterAt',
+  'runtimeWakeProgressAt',
+  'stopReason',
+] as const;
+
 function parseTimestampMs(value: unknown): number | null {
   if (typeof value !== 'string') return null;
   const parsed = Date.parse(value);
@@ -32,6 +46,11 @@ export function prepareInPlaceRestartMetadata(
 ): RuntimeReadinessMetadata {
   const next = { ...(metadata ?? {}) };
   for (const key of RUNTIME_READINESS_CLOCK_KEYS) delete next[key];
+  // A human pressing Restart is an explicit "start this episode over": the
+  // consecutive-failure accounting that escalates the automatic retry cooldown
+  // (runtime-wake-fence.ts) resets with it, and no stale stop reason survives
+  // to be replayed as a verdict about the new attempt.
+  for (const key of RUNTIME_RESTART_CLEARED_KEYS) delete next[key];
   return {
     ...next,
     runtimeWakeStartedAt: now.toISOString(),
