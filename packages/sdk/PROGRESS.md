@@ -1132,3 +1132,61 @@ unvalidated. Corrupt/legacy data now degrades to defaults field-by-field
 RED first: `react/model-store-sanitize.test.ts` (5 tests / 16 expects) written
 against the missing export, then green. Public surface: additive module export
 only; package entry points unchanged.
+
+---
+
+### 2026-08-26 — session `WS-M` — a slow wake escalates instead of dead-ending — DONE
+
+**Files:** `core/session/wake-escalation.ts` (new, pure) + its test ·
+`react/use-wake-escalation.ts` (new, thin glue) · barrels
+`core/session/index.ts`, `react/opencode.ts` · both public-surface snapshots.
+
+**The defect.** The wake budget was FIXED, not progress-aware. The server's
+`RUNTIME_WAKE_LEASE_MS` (240s) expires, maintenance stamps
+`stopReason: 'runtime_wake_failed'`, and every later `/start` short-circuits to
+a terminal payload — "The session runtime did not become reachable. Restart the
+session to try again." Measured on Essentia (box `inqwpv4a1cc1kynlg46k8`,
+2026-08-26): that card painted while the box was seconds from ready — its daemon
+logged `opencode ready` at 06:10:02, right after the budget expired. The card
+offered no auto-recovery, and the human fix was always one click of Restart.
+Two more recurrences followed, both during a post-deploy image rebuild.
+
+**The two rules.** (1) A budget measures SILENCE, not elapsed time: any change
+to the progress fingerprint resets the clock, so a visibly-advancing wake never
+expires, and only `WAKE_NO_PROGRESS_MS` (75s) of zero observable change
+escalates. (2) Escalate through the ladder the human uses — quiet `/start`
+retry, then RESTART, bounded by `WAKE_MAX_RESTARTS` (2), `WAKE_ESCALATION_
+COOLDOWN_MS` (20s) apart — and only then show a terminal card that NAMES what
+was tried (`wakeEscalationAttemptSummary`). Blanket restart-by-default was
+rejected: it destroys ~1.9s warm resumes.
+
+`runtimeReachable` is a separate input from `waking` because the session row is
+not proof: on Essentia the same day `/start` answered and the row stayed
+`running` for 5+ minutes while the E2B resume had silently failed and the proxy
+answered `503 sandbox_not_ready`. The wake ends when the DAEMON answers, and
+that latches — a box that drops mid-session is `useRuntimeReconnect`'s job, not
+this ladder's.
+
+**RED first:** `core/session/wake-escalation.test.ts` written against the
+missing module (23 tests / 94 expects), then green. Two tests exist only because
+designing the browser proof exposed real holes: `useRestartProjectSession` seeds
+`{stage:'provisioning', sandbox:null}` on every restart, so `waking:false` had
+to PAUSE the ladder rather than clear it — clearing made `WAKE_MAX_RESTARTS`
+bound nothing and turned the ladder into a restart loop.
+
+**Verified in the real UI** (Playwright, worktree stack, `/start` + `/restart`
+stubbed at the network boundary with the exact 240s-lease payload): 5/5 — no
+terminal card while rungs remain; the on-screen notes are literally
+`Still waking — retrying the runtime (attempt 2)` /
+`… restarting the runtime (attempt 3)` / `(attempt 4)`; 2 automatic
+`POST /restart`; the card returns at exhaustion carrying "Tried: re-issuing the
+wake, then restarting the session twice."; and 0 further restarts for 30s after.
+The transcript mirror renders underneath throughout.
+
+**Public surface:** additive only — 15 names on `.`, 3 on `./react`. No entry
+point added, no rename. Both snapshots regenerated; the same regeneration also
+picked up `sanitizeModelStore`, which the entry above added without recording
+(the snapshot tests were already red on this branch before this change).
+
+**Gates:** `typecheck` clean · `bun test --isolate src` 2621 pass / 0 fail ·
+`smoke:install` pass.

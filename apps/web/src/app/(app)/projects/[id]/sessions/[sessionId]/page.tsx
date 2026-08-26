@@ -38,6 +38,7 @@ import {
   isAutoResuming,
   isRuntimeIdentityUnavailable,
   isSandboxResumable,
+  isWakeClassFailure,
 } from '@/features/session/session-resume';
 import { canPollSessionStart } from '@/features/session/session-start-gate';
 import {
@@ -81,6 +82,7 @@ import {
   listProjectSessions,
   sessionStartKey,
   updateProjectSession,
+  wakeProgressFingerprint,
 } from '@kortix/sdk';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
@@ -94,6 +96,7 @@ import {
   startSessionWithPrompt,
   useRuntimeConnectionStore,
   useSession,
+  useWakeEscalation,
 } from '@kortix/sdk/react';
 
 /**
@@ -294,24 +297,91 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       errorToast('Could not copy the prompt.');
     }
   };
-  // When THIS wake started. Stamped the first time we see a resumable box and
-  // cleared the moment it stops being one, so the window measures one wake
-  // rather than the age of the tab.
-  const [resumeStartedAt, setResumeStartedAt] = useState<number | null>(null);
-  useEffect(() => {
-    if (!sandboxResumable) {
-      setResumeStartedAt(null);
-      return;
-    }
-    setResumeStartedAt((at) => at ?? Date.now());
-  }, [sandboxResumable]);
-  const resumeElapsedMs = resumeStartedAt === null ? null : Date.now() - resumeStartedAt;
+  // ── The wake escalation ladder ────────────────────────────────────────────
+  // A wake budget must measure SILENCE, not elapsed time: a wake that is
+  // visibly advancing has not failed, however long it takes, and a wake that
+  // has gone quiet is not saved by waiting longer. `useWakeEscalation` owns
+  // that rule and the ladder that follows it — quiet `/start` retry, then the
+  // RESTART the user would have clicked, bounded — so the terminal card is
+  // what remains after everything has been tried, never the first response to
+  // a slow provider. See `core/session/wake-escalation.ts` for the incident.
+  //
+  // `runtimeReachable` is the DAEMON's answer, not the session row's. Observed
+  // on Essentia 2026-08-26: `/start` answered 202 and the row stayed `running`
+  // for 5+ minutes while the E2B resume had silently failed and the proxy
+  // answered `503 sandbox_not_ready`. `initialCheckDone` is what makes this
+  // real evidence — `useSession` optimistically seeds `healthy: true` the
+  // moment `stage: 'ready'` arrives, and that seed is exactly the claim the
+  // desync falsifies, so the latch must wait for a probe to have run.
+  const runtimeProbed = useRuntimeConnectionStore((s) => s.initialCheckDone);
+  const runtimeHealthy = useRuntimeConnectionStore((s) => s.healthy === true);
+  const runtimeConnectionStatus = useRuntimeConnectionStore((s) => s.status);
+  const runtimeVersion = useRuntimeConnectionStore((s) => s.openCodeVersion);
+  const runtimeProbeError = useRuntimeConnectionStore((s) => s.runtimeError);
+  const sandboxMetadata = (sandbox?.metadata as Record<string, unknown> | undefined) ?? {};
+  const wakeStopReason =
+    typeof sandboxMetadata.stopReason === 'string' ? sandboxMetadata.stopReason : null;
+  // Only an ESTABLISHED runtime is woken. A session whose first sandbox is
+  // still being built (`external_id` null, "Sandbox build running…") is not
+  // stuck — it is doing minutes of legitimate work with no client-visible
+  // signal, and restarting it would throw that build away.
+  const wakeLadderApplies =
+    !authLoading &&
+    !!user &&
+    !billingBlocked &&
+    !!sandbox?.external_id &&
+    !isRuntimeIdentityUnavailable(sandbox);
+  // The verdicts that used to paint a terminal card outright. There is no
+  // further progress to wait for in any of them — only a rung of the ladder
+  // left to try, which is precisely what the card denied the user. See
+  // `isWakeClassFailure` for why `retriable` is not part of the test.
+  const wakeServerGaveUp = isWakeClassFailure({
+    stage: session.stage,
+    reason: session.reason,
+    sandbox,
+  });
+  const wake = useWakeEscalation({
+    waking: wakeLadderApplies,
+    runtimeReachable: runtimeProbed && runtimeHealthy,
+    progress: wakeProgressFingerprint([
+      startStage,
+      session.reason,
+      sandbox?.status,
+      wakeStopReason,
+      typeof sandboxMetadata.runtimeWakeStartedAt === 'string'
+        ? sandboxMetadata.runtimeWakeStartedAt
+        : null,
+      session.opencodeSessionId,
+      runtimeConnectionStatus,
+      runtimeHealthy,
+      runtimeVersion,
+      runtimeProbeError,
+    ]),
+    serverGaveUp: wakeServerGaveUp,
+    onRetryStart: () => {
+      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
+    },
+    // Passed straight through: `useWakeEscalation` holds the callbacks in its
+    // own ref, so a rebuilt closure here cannot re-run its decision effect and
+    // fire one rung twice.
+    onRestart: handleRestart,
+  });
+  // THE progress-aware budget. Every consumer below reads time-since-CHANGE,
+  // never time-since-wake-started — the fixed clock this replaces expired
+  // mid-wake on a box that was seconds from ready (Essentia 29861dfa, box
+  // daemon logged `opencode ready` right after the budget ran out).
+  const wakeSilentMs = wake.msSinceProgress;
+  // A BOOLEAN, not the raw millisecond count, because this is an effect
+  // dependency: `wakeSilentMs` advances every second, and depending on it would
+  // tear down and re-arm the timer below on every tick — a backoff delay longer
+  // than one second could then never elapse, silently ending the resume loop
+  // after its first immediate attempt.
+  const wakeShowingProgress = wakeSilentMs < AUTO_RESUME_WINDOW_MS;
   useEffect(() => {
     if (!sandboxResumable) return;
-    if (resumeStartedAt !== null && Date.now() - resumeStartedAt >= AUTO_RESUME_WINDOW_MS) return;
+    if (!wakeShowingProgress) return;
     // First attempt fires immediately (match the refresh); back off after that,
-    // and keep re-asking for as long as the wake window allows. The budget is
-    // the WINDOW, not the attempt count — see `AUTO_RESUME_WINDOW_MS`.
+    // and keep re-asking for as long as the wake is still showing progress.
     const t = setTimeout(
       () => {
         setResumeAttempts((n) => n + 1);
@@ -320,10 +390,16 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       resumeAttempts === 0 ? 0 : Math.min(1500 * 2 ** Math.min(resumeAttempts - 1, 3), 8000),
     );
     return () => clearTimeout(t);
-  }, [sandboxResumable, resumeAttempts, resumeStartedAt, projectId, sessionId, queryClient]);
-  // Inside the wake window a resumable box is "waking", not "dead" — render the
-  // boot loader, never the dead-end card.
-  const autoResuming = isAutoResuming(sandbox, { elapsedMs: resumeElapsedMs });
+  }, [sandboxResumable, resumeAttempts, wakeShowingProgress, projectId, sessionId, queryClient]);
+  // While a resumable box is still SHOWING PROGRESS it is "waking", not "dead"
+  // — render the boot loader, never the dead-end card.
+  const autoResuming = isAutoResuming(sandbox, { elapsedMs: wakeSilentMs });
+  // The ladder still has rungs left for a wake the server has given up on. The
+  // dead-end card is what happens after it runs out, not instead of it. Scoped
+  // to the wake-class verdicts only: a git-auth or capacity failure is a real
+  // dead end that no amount of restarting fixes, and it must still say so at
+  // once.
+  const wakeLadderHolding = wakeServerGaveUp && !wake.exhausted;
 
   // Belt-and-suspenders: clear the legacy active-instance cookie once on mount for
   // this route so no later navigation can be hijacked onto a stale sandbox.
@@ -682,11 +758,38 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       );
     }
 
-    if (recoverableFailure) {
+    // The wake ladder is still working: a session with rungs left is not a dead
+    // end, and painting one is the exact defect this replaces — the card fired
+    // while the box was seconds from ready. The transcript mirror keeps
+    // rendering underneath when there is one (`showCachedTranscriptWhileDown`),
+    // so falling through here costs the user nothing.
+    if (wakeLadderHolding) {
+      if (!showCachedTranscriptWhileDown) {
+        return (
+          <HeaderlessSessionSurface>
+            <SessionStartingLoader
+              stage="starting"
+              projectId={projectId}
+              sessionId={sessionId}
+              note={wake.note}
+            />
+          </HeaderlessSessionSurface>
+        );
+      }
+    } else if (recoverableFailure) {
       return (
         <InlineSessionError
           title={recoverableFailure.title}
-          message={recoverableFailure.message}
+          // A dead end that cannot say what was already attempted invites the
+          // user to repeat it by hand. `wake.summary` names every rung the
+          // ladder used before giving up. It rides in the MESSAGE, not in
+          // `detail`: that slot is monospace, for provider ids and raw errors,
+          // and a sentence in it wraps mid-word.
+          message={
+            wake.summary
+              ? `${recoverableFailure.message} ${wake.summary}`
+              : recoverableFailure.message
+          }
           detail={restart.errorMessage ?? undefined}
           action={
             <ProviderFailureRecovery
@@ -773,7 +876,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       if (autoResuming) {
         return (
           <HeaderlessSessionSurface>
-            <SessionStartingLoader stage="starting" projectId={projectId} sessionId={sessionId} />
+            <SessionStartingLoader
+              stage="starting"
+              projectId={projectId}
+              sessionId={sessionId}
+              note={wake.note}
+            />
           </HeaderlessSessionSurface>
         );
       }
@@ -873,6 +981,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                   stage={authLoading || !user ? 'provisioning' : startStage}
                   projectId={projectId}
                   sessionId={sessionId}
+                  note={wake.note}
                 />
               </HeaderlessSessionSurface>
             )}
@@ -891,6 +1000,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             stage={authLoading || !user ? 'provisioning' : startStage}
             projectId={projectId}
             sessionId={sessionId}
+            note={wake.note}
           />
         )}
       </div>

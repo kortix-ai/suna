@@ -280,6 +280,11 @@ function StepGlyph({ done, current }: { done: boolean; current: boolean }) {
  */
 function BootCompactMessage({
   active,
+  /** Overrides the headline while the wake escalation ladder is working (see
+   *  `wakeEscalationNote` in `@kortix/sdk`). The DESCRIPTION stays the step's
+   *  own — "Starting the runtime and loading your tools" is still exactly what
+   *  is happening; only the headline needs to admit it is a second attempt. */
+  note,
   /** Rendered inside the TEXT column, beneath the message. Anything the caller
    *  wants aligned to the copy rather than to the spinner belongs here — the
    *  restart offer used to sit outside this block behind a `md:ml-7` offset
@@ -288,10 +293,12 @@ function BootCompactMessage({
   footer,
 }: {
   active: number;
+  note?: string | null;
   footer?: React.ReactNode;
 }) {
   const reduce = useReducedMotion();
   const step = STEPS[Math.min(active, STEPS.length - 1)];
+  const headline = note ?? step.label;
   return (
     // Row at EVERY width. Stacking the spinner above the copy on small screens
     // bought nothing — a 20px glyph and a 2-line message coexist happily at
@@ -314,13 +321,13 @@ function BootCompactMessage({
         <div className="min-h-13" aria-live="polite">
           <AnimatePresence initial={false} mode="wait">
             <m.div
-              key={step.label}
+              key={headline}
               initial={{ opacity: 0, y: reduce ? 0 : 4 }}
               animate={{ opacity: 1, y: 0, transition: MESSAGE_IN }}
               exit={{ opacity: 0, y: reduce ? 0 : -4, transition: MESSAGE_OUT }}
             >
               <h2 className="text-foreground text-lg font-medium tracking-tight text-balance">
-                {step.label}
+                {headline}
               </h2>
               <p className="text-muted-foreground mt-1 text-sm text-pretty">{step.description}</p>
             </m.div>
@@ -399,10 +406,13 @@ function BootStepList({ active }: { active: number }) {
  * everything else — at 15s the sentence changes under the user's eyes, and a
  * hard cut there looks like a glitch rather than an update.
  */
-function BootHint({ slow }: { slow: boolean }) {
-  const copy = slow
-    ? 'A cold start can take a little longer.'
-    : 'This usually takes a few seconds.';
+function BootHint({ slow, note }: { slow: boolean; note?: string | null }) {
+  // A note means the wake ladder has intervened. "This usually takes a few
+  // seconds" is no longer true at that point, and saying it anyway is the
+  // dishonesty this whole surface exists to remove.
+  const copy =
+    note ??
+    (slow ? 'A cold start can take a little longer.' : 'This usually takes a few seconds.');
   return (
     <span className="relative flex min-h-4 items-center">
       <AnimatePresence initial={false} mode="popLayout">
@@ -518,12 +528,17 @@ export function SessionStartingLoader({
   /** Layout. Defaults to `compact` (spinner + headline + description card);
    *  pass `stepper` for the full checklist + progress rail. */
   variant = 'compact',
+  /** Honest one-liner from the wake escalation ladder ("Still waking —
+   *  retrying the runtime (attempt 2)"), or null on an ordinary first wake.
+   *  Built by `wakeEscalationNote` in `@kortix/sdk`; the host never writes it. */
+  note,
 }: {
   stage?: SessionStartStage;
   delayMs?: number;
   projectId?: string;
   sessionId?: string;
   variant?: BootStepVariant;
+  note?: string | null;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -581,6 +596,7 @@ export function SessionStartingLoader({
               a message that has no second child. */}
           <BootCompactMessage
             active={active}
+            note={note}
             footer={
               <RestartFallback
                 show={stuck && canRestart}
@@ -633,7 +649,7 @@ export function SessionStartingLoader({
         <BootStepList active={active} />
 
         <div className="flex w-full flex-col items-start gap-4">
-          <BootHint slow={slow} />
+          <BootHint slow={slow} note={note} />
           <RestartFallback
             show={stuck && canRestart}
             pending={restartMutation.isPending}
@@ -669,11 +685,16 @@ export function SessionConnectingBanner({
   projectId,
   sessionId,
   className,
+  /** See {@link SessionStartingLoader}'s `note`. Replaces the phase label,
+   *  because "Waking the agent" stops being the whole truth the moment the
+   *  ladder has had to intervene. */
+  note,
 }: {
   stage?: SessionStartStage;
   projectId?: string;
   sessionId?: string;
   className?: string;
+  note?: string | null;
 }) {
   const queryClient = useQueryClient();
   const { active, now } = useBootProgress(stage);
@@ -710,7 +731,7 @@ export function SessionConnectingBanner({
     >
       <div className="bg-background/85 text-muted-foreground flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-xs shadow-xs backdrop-blur-sm">
         <Loading variant="spokes" className="size-3.5 shrink-0 text-current" />
-        <span className="truncate">{step.label}</span>
+        <span className="truncate">{note ?? step.label}</span>
         {stuck && canRestart ? (
           <Button
             type="button"
