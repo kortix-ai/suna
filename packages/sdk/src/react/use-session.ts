@@ -1520,6 +1520,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     switched,
     /** Whether polling /start again can still make progress (false = terminal). */
     retriable: startData?.retriable ?? false,
+    /** Is a provider operation running for this session right now, per the
+     *  latest /start's `boot.actively_starting`? `false` while a `starting`
+     *  stage is only waiting out a retry cooldown, not driving the box. */
+    activelyStarting: startData?.boot?.actively_starting ?? false,
     /** Terminal /start failure, for hosts to render instead of spinning forever. */
     startError,
     /** Typed provider-neutral terminal provisioning failure. */

@@ -56,6 +56,7 @@ import {
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
+import { shouldPaintTerminalCard } from '@/features/session/terminal-card-gate';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
@@ -552,7 +553,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     !authLoading &&
     !!user &&
     !!sandbox &&
-    (sandbox.status === 'error' || sandbox.status === 'stopped');
+    (sandbox.status === 'error' || sandbox.status === 'stopped') &&
+    shouldPaintTerminalCard({
+      hasFailure: true,
+      retriable: session.retriable,
+      activelyStarting: session.activelyStarting,
+    });
   // A preserved-unavailable identity is `status: 'stopped'` + an `external_id`,
   // so it satisfies `fatal` above and used to render the ordinary "restart it"
   // card. It needs its own terminal branch — see the render below.
@@ -662,7 +668,21 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const recoverableFailure = (() => {
     if (sessionMissing) return null;
     const metadata = (sandbox?.metadata as Record<string, unknown>) ?? {};
-    if (session.failure) {
+    // `session.failure` is the ONE branch here the server can answer while
+    // still retrying — e.g. `{stage:'starting', retriable:true,
+    // failure:{...}}` for a wake cooldown. Gate it on `retriable`/
+    // `activelyStarting`; the other branches below (`sandbox.status ===
+    // 'error'`, `unmaterializedFailure`, `session.startError`) are already
+    // hard-terminal signals (`isUnmaterializedSessionFailure` already reads
+    // `retriable` itself) and stay as they are.
+    if (
+      session.failure &&
+      shouldPaintTerminalCard({
+        hasFailure: true,
+        retriable: session.retriable,
+        activelyStarting: session.activelyStarting,
+      })
+    ) {
       return provisioningFailurePresentation(
         {
           ...metadata,
