@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import {
   COMPRESSION_MIN_BYTES,
   compressResponse,
+  compressedStream,
   compressionCandidate,
   negotiateEncoding,
 } from './compress';
@@ -233,6 +234,39 @@ describe('compressResponse', () => {
     expect(res.headers.get('content-encoding')).toBe('deflate');
     const text = await new Response(
       new Blob([await res.arrayBuffer()])
+        .stream()
+        .pipeThrough(new DecompressionStream('deflate')),
+    ).text();
+    expect(text).toBe(bigJson);
+  });
+});
+
+/**
+ * The runtime image (`oven/bun:1.2-slim`) has no `CompressionStream`; local Bun
+ * 1.3 does. The middleware must compress on BOTH. `useNative: false` forces the
+ * `node:zlib` path the image actually takes — the exact path that 500'd every
+ * compressible response on Essentia (2026-08-26) before the fallback existed.
+ */
+describe('compressedStream zlib fallback (Bun 1.2 image has no CompressionStream)', () => {
+  const source = () =>
+    new Blob([bigJson]).stream() as ReadableStream<Uint8Array>;
+
+  test('gzip via node:zlib round-trips and carries the gzip magic bytes', async () => {
+    const buffer = await new Response(
+      compressedStream('gzip', source(), false),
+    ).arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    expect([bytes[0], bytes[1]]).toEqual([0x1f, 0x8b]);
+    expect(buffer.byteLength).toBeLessThan(bigJson.length / 4);
+    expect(await inflate(buffer)).toBe(bigJson);
+  });
+
+  test('deflate via node:zlib round-trips', async () => {
+    const buffer = await new Response(
+      compressedStream('deflate', source(), false),
+    ).arrayBuffer();
+    const text = await new Response(
+      new Blob([buffer])
         .stream()
         .pipeThrough(new DecompressionStream('deflate')),
     ).text();

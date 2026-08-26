@@ -53,6 +53,8 @@
  */
 
 import type { Context, Next } from 'hono';
+import { Readable } from 'node:stream';
+import { createDeflate, createGzip } from 'node:zlib';
 
 /**
  * The smallest body worth compressing, and the exact number of bytes this
@@ -222,6 +224,37 @@ function restream(
   });
 }
 
+
+/**
+ * Bun < 1.3 — the `oven/bun:1.2-slim` runtime image — does not define
+ * `CompressionStream`. Calling it there turned every compressible response into
+ * a 500 (`ReferenceError: CompressionStream is not defined`; Essentia,
+ * 2026-08-26), while local Bun 1.3.14 has it, so every local test passed.
+ * Feature-detect once and fall back to `node:zlib`, which streams on every Bun
+ * this repo runs.
+ */
+const HAS_NATIVE_COMPRESSION_STREAM = typeof CompressionStream !== 'undefined';
+
+/** `body` piped through the requested encoding, on native or zlib plumbing. */
+export function compressedStream(
+  encoding: 'gzip' | 'deflate',
+  body: ReadableStream<Uint8Array>,
+  useNative: boolean = HAS_NATIVE_COMPRESSION_STREAM,
+): ReadableStream<Uint8Array> {
+  if (useNative) {
+    return body.pipeThrough(
+      new CompressionStream(encoding) as unknown as ReadableWritablePair<
+        Uint8Array,
+        Uint8Array
+      >,
+    );
+  }
+  const zlib = encoding === 'gzip' ? createGzip() : createDeflate();
+  return Readable.toWeb(
+    Readable.fromWeb(body as Parameters<typeof Readable.fromWeb>[0]).pipe(zlib),
+  ) as unknown as ReadableStream<Uint8Array>;
+}
+
 /**
  * Compress eligible responses. Mount once, globally, at the OUTSIDE of the
  * middleware chain so it sees the final response of every route.
@@ -284,15 +317,11 @@ export async function compressResponse(c: Context, next: Next): Promise<void> {
   // client would truncate or hang. Bun frames the response as chunked instead.
   headers.delete('content-length');
 
-  c.res = new Response(
-    restream(peek.chunks, reader).pipeThrough(
-      new CompressionStream(encoding) as unknown as ReadableWritablePair<
-        Uint8Array,
-        Uint8Array
-      >,
-    ),
-    { status: res.status, statusText: res.statusText, headers },
-  );
+  c.res = new Response(compressedStream(encoding, restream(peek.chunks, reader)), {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
 }
 
 /** Add `Accept-Encoding` to `Vary` without dropping what is already there. */
