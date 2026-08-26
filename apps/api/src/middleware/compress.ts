@@ -249,21 +249,28 @@ function restream(
  * Feature-detect once and fall back to `node:zlib`, which streams on every Bun
  * this repo runs.
  */
-const HAS_NATIVE_COMPRESSION_STREAM = typeof CompressionStream !== 'undefined';
-
 /** `body` piped through the requested encoding, on native or zlib plumbing. */
 export function compressedStream(
   encoding: 'gzip' | 'deflate',
   body: ReadableStream<Uint8Array>,
-  useNative: boolean = HAS_NATIVE_COMPRESSION_STREAM,
+  useNative: boolean = compressionAvailable(),
 ): ReadableStream<Uint8Array> {
   if (useNative) {
-    return body.pipeThrough(
-      new CompressionStream(encoding) as unknown as ReadableWritablePair<
-        Uint8Array,
-        Uint8Array
-      >,
-    );
+    try {
+      return body.pipeThrough(
+        new CompressionStream(encoding) as unknown as ReadableWritablePair<
+          Uint8Array,
+          Uint8Array
+        >,
+      );
+    } catch (err) {
+      // Present but broken (or an encoding it does not implement): fall through
+      // to zlib rather than 500 a response that was perfectly fine.
+      console.warn('[compress] CompressionStream failed — using node:zlib', {
+        encoding,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
   const zlib = encoding === 'gzip' ? createGzip() : createDeflate();
   return Readable.toWeb(
@@ -302,7 +309,6 @@ export async function compressResponse(c: Context, next: Next): Promise<void> {
   // `Vary: Origin`, dropping the `Accept-Encoding` this middleware had added.)
   appendVaryAcceptEncoding(res.headers);
   if (!encoding) return;
-  if (!compressionAvailable()) return;
 
   const reader = (res.body as ReadableStream<Uint8Array>).getReader();
   let peek: Peek;
@@ -329,57 +335,20 @@ export async function compressResponse(c: Context, next: Next): Promise<void> {
   }
 
   // The body has been partially consumed by the peek, so from here on the
-  // ONLY correct outcomes are "compressed" or "the same bytes, re-streamed".
-  // A throw would surface as a 500 for a response that was perfectly fine.
-  let transform: ReadableWritablePair<Uint8Array, Uint8Array> | null = null;
-  try {
-    transform = new CompressionStream(encoding) as unknown as ReadableWritablePair<
-      Uint8Array,
-      Uint8Array
-    >;
-  } catch (err) {
-    console.warn('[compress] CompressionStream unavailable — sending uncompressed', {
-      encoding,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  const passthrough = restream(peek.chunks, reader);
-  if (!transform) {
-    // Uncompressed re-stream: the original length (when declared) still holds.
-    c.res = new Response(passthrough, { status: res.status, statusText: res.statusText, headers });
-    return;
-  }
-
+  // ONLY correct outcome is "compressed": `compressedStream` uses the native
+  // CompressionStream when the runtime has one and node:zlib when it does not
+  // (the Bun 1.2 runtime image), and never throws for a healthy response.
   headers.set('content-encoding', encoding);
   // The compressed length is unknown until the stream ends, so any declared
   // length must go: keeping it would describe the wrong number of bytes and the
   // client would truncate or hang. Bun frames the response as chunked instead.
   headers.delete('content-length');
 
-<<<<<<< HEAD
   c.res = new Response(compressedStream(encoding, restream(peek.chunks, reader)), {
     status: res.status,
     statusText: res.statusText,
     headers,
   });
-||||||| f208d37244
-  c.res = new Response(
-    restream(peek.chunks, reader).pipeThrough(
-      new CompressionStream(encoding) as unknown as ReadableWritablePair<
-        Uint8Array,
-        Uint8Array
-      >,
-    ),
-    { status: res.status, statusText: res.statusText, headers },
-  );
-=======
-  c.res = new Response(passthrough.pipeThrough(transform), {
-    status: res.status,
-    statusText: res.statusText,
-    headers,
-  });
->>>>>>> origin/main
 }
 
 /** Add `Accept-Encoding` to `Vary` without dropping what is already there. */
