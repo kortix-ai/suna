@@ -63,6 +63,7 @@ import {
   UserPlusIcon as UserPlus,
   UsersIcon as UsersSolid,
   ImagesSquareIcon as WallpaperIcon,
+  PaintBrushIcon as PaintBrush,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -1117,6 +1118,19 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/accounts/{accountId}?tab=identity',
     keywords: 'identity sso saml oidc scim login provider single sign on directory',
+  },
+  {
+    id: 'account-branding',
+    label: 'Account · Branding',
+    icon: PaintBrush,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // Enterprise `branding` entitlement pane (#6947). The row stays ungated
+    // like its enterprise siblings (roles, identity): the pane itself explains
+    // the entitlement.
+    href: '/accounts/{accountId}?tab=branding',
+    keywords: 'branding logo icon favicon product name app name white label whitelabel theme identity',
   },
   {
     id: 'account-audit',
