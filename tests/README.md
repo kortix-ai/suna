@@ -52,35 +52,28 @@ tests/test-results/local/benchmark-<timestamp>.json
 The file contains the Git SHA, total duration, lane duration, command, and exit
 code.
 
-## Sandbox CI workers
+## CI lanes
 
 GitHub Actions uses `.github/workflows/tests.yml` for local-profile PR tests.
 `tests-pr.yml` calls it once for pull requests into `main` or `staging`. Full
-mode starts four warm workers in parallel. Core and package workers run
-`pnpm test` and `pnpm test -- --packages-only`. Two browser workers run shards
-`1/2` and `2/2` through `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`.
-Set `provider` to `auto`, `platinum`, or `daytona`. Automatic PR tests use
-Daytona directly to avoid Platinum restore latency. Manual runs can select
-either provider or `auto`. Auto tries Platinum first. It falls back to Daytona
-only when Platinum infrastructure throws. A non-zero test exit returns directly
-and does not trigger fallback. Each worker has a unique sandbox run ID and
-artifact. The four workers are the parallel equivalent of `pnpm test -- --full`.
-Each local browser shard uses one Playwright worker in CI. Two or more workers
-can exhaust the 12 GiB Daytona guest while Next.js compiles cold routes. A
-disposable worker prestarts Supabase so the root runner reuses it and sandbox
-deletion replaces the local Supabase teardown.
-Deployed staging browser runs also set two workers explicitly.
-Platinum warm restore readiness is capped at 2 minutes. A missing marker or
-unreachable guest after that cap is an infrastructure error and triggers auto
-fallback. A sandbox reported as `via=cold-boot` gets 45 minutes to prepare the
-warm image. This cold preparation budget does not weaken the restore cap.
+mode runs four lanes in parallel, each natively on one Blacksmith runner
+(`CI_RUNNER_L`, 8 vCPU / 32 GB — see `docs/runbooks/ci-runners.md`). Core and
+package lanes run `pnpm test` and `pnpm test -- --packages-only`. Two browser
+lanes run shards `1/2` and `2/2` through
+`pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The four lanes are
+the parallel equivalent of `pnpm test -- --full`. Each lane checks out the exact
+pull-request head SHA, runs `pnpm install --frozen-lockfile`, and invokes the
+unchanged root command; browser lanes also install Chromium and prestart
+Supabase so the root runner reuses it. Blacksmith caches the pnpm store, the
+Chromium download, and every pulled Docker image (the Supabase images) across
+runs, so a lane is warm after its first run on a new lockfile.
 
-Both providers use a content-addressed warm image. The image name includes the
-`pnpm-lock.yaml` hash. Both images contain pinned Node, Bun, pnpm, Docker,
-Chromium, linked `node_modules`, a warm checkout, and pre-pulled Supabase images.
-Each worker fetches the requested ref, verifies the exact SHA, runs an offline
-lockfile install, starts nested Docker, and invokes the unchanged root command.
-Both runners stream logs, download `tests/test-results`, and delete the worker.
+Until 2026-08-26 each lane ran inside a Platinum or Daytona cloud sandbox with
+a content-addressed warm image; the runner was a thin orchestrator. That path
+was removed after the provider chain failed on its own (Platinum restore
+timeouts, then a Daytona guest whose kernel could not mount overlay2) on about
+every third lane. Pull-request previews below still use a sandbox: they need a
+long-lived public HTTPS origin.
 
 ## Pull request preview sandboxes
 

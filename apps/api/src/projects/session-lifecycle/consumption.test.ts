@@ -5,6 +5,7 @@ import {
   type ForwardedPromptRow,
   INBOX_FORWARD_CONFIRM_GRACE_MS,
   INBOX_FORWARD_CONFIRM_MAX_MS,
+  INBOX_FORWARD_ORPHAN_MAX_MS,
   confirmInboxPromptConsumed,
   reconcileForwardedPrompts,
 } from './consumption';
@@ -310,22 +311,87 @@ describe('reconcileForwardedPrompts', () => {
     expect(confirmed).toEqual([]);
   });
 
-  test('a never-ran ending nobody came back for is force-closed at the ceiling', async () => {
-    // The reaper only redelivers when the daemon proves a prompt was ORPHANED.
-    // A turn closed `unknown` because a newer prompt took the root (the
-    // measured mid-turn case) is never redelivered, so waiting for
-    // `requeueAbandonedPrompt` forever would strand the row as `delivering`.
+  test('an `unknown` ending is the SUPERSEDED case — confirmed on the first pass, not the ceiling', async () => {
+    // The reaper redelivers ONLY when the daemon proves a prompt ORPHANED, and
+    // it does that with `abandoned`/`runtime_gone` — never `unknown`. Box-reaper
+    // writes `unknown` for the OTHER terminal: the daemon answered "no turn in
+    // flight" but could not classify it because a NEWER user message now owns
+    // the root. That prompt's answer is already on screen, and no path will ever
+    // requeue it, so an `unknown` row still in the forwarded scan is proof the
+    // orphan branch declined it. Confirm it AT ONCE — waiting for the ceiling
+    // stranded the badge as "Queued" for up to `INBOX_FORWARD_CONFIRM_MAX_MS`.
     const { deps, confirmed, errors } = harness(
-      [forwardedRow({ updatedAt: aged(INBOX_FORWARD_CONFIRM_MAX_MS + 1_000) })],
+      [forwardedRow({ updatedAt: aged(60_000) })],
       { msg_a: { state: 'ended', endReason: 'unknown' } },
     );
     expect(await reconcileForwardedPrompts(now, deps)).toEqual({
       scanned: 1,
-      confirmed: 0,
-      forceClosed: 1,
+      confirmed: 1,
+      forceClosed: 0,
     });
     expect(confirmed).toEqual(['cmd-1']);
-    expect(errors).toHaveLength(1);
+    // A healthy supersede, not a lost prompt: closing it raises no error log.
+    expect(errors).toEqual([]);
+  });
+
+  test('`abandoned`/`runtime_gone` still WAIT for the requeue — they are the orphan reasons', async () => {
+    // These are exactly the reasons `requeueAbandonedPrompt` flips to `queued`,
+    // which takes the row out of this scan. Confirming one early would race the
+    // redelivery and close a prompt that is about to be sent again, so an
+    // orphan reason is left alone until the ceiling force-closes it.
+    for (const endReason of ['abandoned', 'runtime_gone']) {
+      const { deps, confirmed, errors } = harness(
+        [forwardedRow({ updatedAt: aged(60_000) })],
+        { msg_a: { state: 'ended', endReason } },
+      );
+      expect(await reconcileForwardedPrompts(now, deps)).toEqual({
+        scanned: 1,
+        confirmed: 0,
+        forceClosed: 0,
+      });
+      expect(confirmed).toEqual([]);
+      expect(errors).toEqual([]);
+    }
+  });
+
+  test('an orphan ending PAST its own bound is force-closed — the sticky "Queued" badge', async () => {
+    // The other half of the rule above. `requeueAbandonedPrompt` acts on these
+    // reasons in the same reaping cycle that produced the terminal evidence, so
+    // a row still forwarded well past that cycle is one the redelivery
+    // DECLINED. Left alone it kept reading `delivering`, which
+    // `countLiveInboxPrompts` counts as live work: the composer held Stop with
+    // nothing running and the bubble kept its "Queued" badge, both across a
+    // hard refresh (measured, session 65216cc6 — see the constant's note).
+    for (const endReason of ['abandoned', 'runtime_gone']) {
+      const { deps, confirmed, errors } = harness(
+        [forwardedRow({ updatedAt: aged(INBOX_FORWARD_ORPHAN_MAX_MS + 1_000) })],
+        { msg_a: { state: 'ended', endReason } },
+      );
+      expect(await reconcileForwardedPrompts(now, deps)).toEqual({
+        scanned: 1,
+        confirmed: 0,
+        forceClosed: 1,
+      });
+      expect(confirmed).toEqual(['cmd-1']);
+      expect(errors[0].context).toMatchObject({ ledger_end_reason: endReason });
+    }
+  });
+
+  test('the orphan bound is far below the no-ledger-row ceiling — an ending is evidence, an absence is not', async () => {
+    expect(INBOX_FORWARD_ORPHAN_MAX_MS).toBeLessThan(INBOX_FORWARD_CONFIRM_MAX_MS);
+    // A turn still OPEN past the orphan bound is untouched: only an ENDING
+    // counts, and `delivering` is OpenCode holding the message behind the turn
+    // in front of it.
+    const { deps, confirmed } = harness(
+      [forwardedRow({ updatedAt: aged(INBOX_FORWARD_ORPHAN_MAX_MS + 1_000) })],
+      { msg_a: { state: 'delivering', endReason: null } },
+    );
+    expect(await reconcileForwardedPrompts(now, deps)).toEqual({
+      scanned: 1,
+      confirmed: 0,
+      forceClosed: 0,
+    });
+    expect(confirmed).toEqual([]);
   });
 
   test('NO ledger row at all is force-closed past the ceiling, and logged', async () => {

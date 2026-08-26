@@ -104,6 +104,7 @@ import { isUniqueViolation } from '../../shared/postgres-errors';
 import { continueSession, drainSessionLifecycleQueue } from '../session-lifecycle';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
+import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import {
   getOpenQuestion,
   recordPendingQuestion,
@@ -2723,6 +2724,19 @@ projectsApp.openapi(
             err instanceof Error ? err.message : err,
           ),
         );
+      }
+      // THE TURN ENDED, SO THE TRANSCRIPT IS FINAL — mirror it.
+      //
+      // This is the one instant the deleted client-side mirror could not
+      // observe (its freshness test read the transcript's SHAPE, and a STOP
+      // moves none of that), which is why the SERVER writes the copy here
+      // rather than the browser writing it on a timer. The box is definitionally
+      // reachable — it just relayed — and both halves of the turn are settled.
+      // Fire-and-forget beside the reconcile above: a mirror write must never be
+      // able to fail a turn-end report, and `captureSessionTranscriptMirror`
+      // never throws.
+      if (!childSession) {
+        void captureSessionTranscriptMirror(sessionId);
       }
       // THE TURN ENDED — the session's next queued prompt is admissible NOW.
       // Fire-and-forget: the drain re-runs admission itself, and a lost kick

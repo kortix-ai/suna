@@ -1882,6 +1882,130 @@ export const sessionTurns = kortixSchema.table(
 );
 
 /**
+ * Durable transcript mirror — the server-side copy of a session's message
+ * envelope, so the control plane can answer "what was said in this session"
+ * for a session whose sandbox is STOPPED.
+ *
+ * Why it exists. `buildSessionTranscriptDigest` proxies the box's OpenCode
+ * endpoint, so it answers `unavailable` for every non-running session. Opening
+ * a hibernated session therefore showed a full-screen "Connecting…" for the
+ * whole wake (5-240 s) with an empty transcript, although every message
+ * existed. The browser-side IndexedDB mirror that used to cover this was
+ * deleted because its freshness test could not see a turn ENDING, so it painted
+ * a stale thread as live. This mirror inverts that: the SERVER writes it
+ * BECAUSE a turn ended (`turn-stream` kind `end`/`turn_end`, routes/r4.ts), so
+ * freshness is a property of the write, not a client-side guess.
+ *
+ * Identity is the whole point. Rows are keyed by the OpenCode message id — the
+ * SAME id the live sync store sees when the box answers — so a client can
+ * hydrate from the mirror with `source: 'cache'` and let the live read SETTLE
+ * each message by id instead of duplicating it. A mirror without ids would
+ * reproduce the ghost-message failure that got the last one deleted.
+ *
+ * Attachment BYTES are never stored: a file part is reduced to
+ * `{filename, mime}`, exactly as the live digest does. That is the 2026-08-24
+ * "7-19 MB transcript" incident's rule, and it is enforced by the writer.
+ */
+export const sessionTranscriptMirrors = kortixSchema.table(
+  'session_transcript_mirrors',
+  {
+    // Deleting the session must delete its transcript copy: unlike
+    // `session_turns` (routing telemetry that deliberately outlives its
+    // session), every row here is USER CONTENT.
+    sessionId: text('session_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    // The OpenCode root the captured messages belong to. A re-pin (a restarted
+    // box adopting a different root) makes the previous rows unreachable, so
+    // the writer clears them when this changes.
+    opencodeSessionId: text('opencode_session_id'),
+    // TRUE only when a capture proved it had seen the session's FIRST message
+    // (the box returned fewer messages than the capture window). This is the
+    // single bit `complete` is derived from; it is never assumed. Retention
+    // pruning clears it, because pruning is exactly "the head is gone now".
+    headComplete: boolean('head_complete').default(false).notNull(),
+    // When the newest successful capture ran. The client reads it to know how
+    // far behind the mirror can be, and never to decide whether to render.
+    capturedAt: timestamp('captured_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Named explicitly: the drizzle-derived name
+    // (`..._session_id_project_sessions_session_id_fk`) exceeds Postgres's
+    // 63-byte identifier limit and would be silently truncated.
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'session_transcript_mirrors_session_fk',
+    }).onDelete('cascade'),
+    index('session_transcript_mirrors_project_idx').on(table.projectId),
+  ],
+);
+
+/**
+ * One mirrored message.
+ *
+ * `(session_id, message_id)` is the identity the live sync store settles
+ * against — never a synthesized key.
+ *
+ * `info` is OpenCode's message envelope VERBATIM. That is deliberate and it is
+ * the correction to the deleted client mirror: its freshness test read the
+ * transcript's SHAPE (message count, part count, tail id), and the two things
+ * that end a turn move none of them — `time.completed` stamped on the tail
+ * message, and the `error` an abort stamps. A STOP appends no part at all, so a
+ * stopped thread cold-painted as still running and every message under it
+ * dimmed to "Queued". Storing `info` whole means the client reads the MESSAGE,
+ * which is the acceptance criterion written into `use-session-sync.ts`.
+ *
+ * `parts` is the part array with the two unbounded fields removed: a tool
+ * part's `state.input`/`state.output`, and a file part's `url` (base64 data
+ * URLs are what made transcript bodies 7-19 MB). Everything a transcript needs
+ * to render — text, reasoning, tool names and statuses, file names and types,
+ * step boundaries — is kept.
+ */
+export const sessionTranscriptMessages = kortixSchema.table(
+  'session_transcript_messages',
+  {
+    sessionId: text('session_id').notNull(),
+    // The OpenCode message id (`msg_...`), verbatim.
+    messageId: text('message_id').notNull(),
+    // `info.parentID` — the turn linkage OpenCode itself records (which user
+    // message a step was parented on). Null on messages that carry none.
+    parentMessageId: text('parent_message_id'),
+    opencodeSessionId: text('opencode_session_id'),
+    role: text('role').notNull(),
+    // Denormalized out of `info` so ordering and retention are index reads.
+    // Order is (message_created_at, message_id) — the order OpenCode's own
+    // `MessageV2.page()` uses, so the mirror and the live read never disagree
+    // about sequence.
+    messageCreatedAt: timestamp('message_created_at', { withTimezone: true }),
+    // The turn-ended bit, denormalized for the same reason. Never inferred.
+    messageCompletedAt: timestamp('message_completed_at', { withTimezone: true }),
+    info: jsonb('info').$type<Record<string, unknown>>().notNull(),
+    parts: jsonb('parts').default([]).$type<unknown[]>().notNull(),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.sessionId, table.messageId],
+      name: 'session_transcript_messages_pkey',
+    }),
+    // Named explicitly — see the sibling FK above for why.
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [sessionTranscriptMirrors.sessionId],
+      name: 'session_transcript_messages_mirror_fk',
+    }).onDelete('cascade'),
+    index('session_transcript_messages_order_idx').on(
+      table.sessionId,
+      table.messageCreatedAt,
+      table.messageId,
+    ),
+  ],
+);
+
+/**
  * Provider analytics — an append-only telemetry log, one row per terminal
  * provisioning/migration outcome. Written fire-and-forget from the provision
  * path (the `provisionTimeline` is already computed, so capture is ~free) and

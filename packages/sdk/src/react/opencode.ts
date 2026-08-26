@@ -199,6 +199,11 @@ export {
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
 export { useRuntimeBootStalled, RUNTIME_BOOT_STALL_MS } from './use-runtime-boot-stalled';
 export {
+  useWakeEscalation,
+  type UseWakeEscalationInput,
+  type WakeEscalationView,
+} from './use-wake-escalation';
+export {
   useQuestionSelfHeal,
   hasRunningQuestionTool,
   type UseQuestionSelfHealOptions,

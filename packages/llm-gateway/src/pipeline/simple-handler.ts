@@ -1,3 +1,4 @@
+import { upstreamFetch } from '../upstream-fetch';
 import type {
   AuthedPrincipal,
   AuthorizeResult,
@@ -390,7 +391,10 @@ export async function handleChatCompletions(
   const streaming = body.stream === true;
   if (streaming) body.stream_options = { include_usage: true };
   const dispatchFetch = withUpstreamHeadersTimeout(
-    fetchImpl ?? ((input, init) => globalThis.fetch(input, init)),
+    // upstreamFetch, never bare globalThis.fetch: Bun's default 300 s idle
+    // timeout would end a silent `max`-effort reasoning stretch with
+    // `TimeoutError: The operation timed out.` (see upstream-fetch.ts).
+    fetchImpl ?? upstreamFetch,
     upstreamHeadersTimeoutMs(body, descriptor, streaming),
   );
   // The descriptor actually served — swapped for its inference-profile twin

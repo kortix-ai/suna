@@ -1,4 +1,6 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
+import { SandboxNotReadyError, isSandboxNotReadyError } from '../http/opencode-errors';
+import { isAbortError } from '../http/abort-error';
 
 /**
  * Messages per bounded read — the newest-first window a session opens with,
@@ -130,7 +132,17 @@ export interface SessionSyncTelemetryEvent {
 
 export interface SessionSyncControllerOptions {
   sessionId: string;
-  loadPage: (request: { limit: number; before?: string }) => Promise<SessionSyncPage>;
+  /**
+   * Read one bounded page. `signal` is the controller's own — aborted on
+   * `destroy()` (a scope reset destroys the controller), so a page loader that
+   * forwards it into `fetch` cancels a read the tab has navigated away from,
+   * and a superseded read can never hydrate the store. Passing it is optional;
+   * a loader that ignores it still works, it just cannot be cancelled.
+   */
+  loadPage: (
+    request: { limit: number; before?: string },
+    signal?: AbortSignal,
+  ) => Promise<SessionSyncPage>;
   /**
    * @deprecated Never called. The liveness poll no longer reads status: `GET
    * .../turn` is the status authority, and this controller's own `setBusy` is
@@ -197,15 +209,24 @@ export function createHttpSessionSyncPageLoader(
 ): SessionSyncControllerOptions['loadPage'] {
   const fetchImpl: SessionSyncFetch = options.fetch ?? globalThis.fetch;
   const baseUrl = options.baseUrl.replace(/\/$/, '');
-  return async ({ limit, before }) => {
+  return async ({ limit, before }, signal) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (before) query.set('before', before);
     const token = await options.getToken?.();
     const response = await fetchImpl(
       `${baseUrl}/session/${encodeURIComponent(options.sessionId)}/message?${query}`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        ...(signal ? { signal } : {}),
+      },
     );
     if (!response.ok) {
+      // A 503 from the sandbox proxy is the box waking, not a failure — throw
+      // the retryable, "loading" error so the controller keeps polling instead
+      // of painting an error state over a session that is about to load.
+      if (response.status === 503) {
+        throw new SandboxNotReadyError(`session ${response.status}`);
+      }
       throw new Error(`Session synchronization failed: ${response.status}`);
     }
     return {
@@ -318,6 +339,13 @@ export class SessionSyncController {
   private lastActivityAt: number;
   private listeners = new Set<() => void>();
   private destroyed = false;
+  /**
+   * One controller-lifetime signal, threaded into every read. A scope reset
+   * (registry `resetSessionSyncControllersForSession`) or unmount destroys this
+   * controller, `destroy()` aborts this, and the in-flight read cancels — so a
+   * navigated-away or superseded read frees its socket and can never hydrate.
+   */
+  private readonly abortController = new AbortController();
 
   constructor(options: SessionSyncControllerOptions) {
     this.options = options;
@@ -343,8 +371,14 @@ export class SessionSyncController {
   reconcile(reason: SessionSyncReason = 'manual'): Promise<void> {
     if (this.destroyed) return Promise.resolve();
     if (this.tailRequest) return this.tailRequest;
+    // `loading` covers the first read AND a not-ready retry, so a waking box
+    // does not flip to `stale` between attempts; a session that already has a
+    // fresh transcript revalidates as `stale`.
     this.update({
-      freshness: this.snapshot.freshness === 'idle' ? 'loading' : 'stale',
+      freshness:
+        this.snapshot.freshness === 'idle' || this.snapshot.freshness === 'loading'
+          ? 'loading'
+          : 'stale',
     });
     this.tailRequest = this.loadTail(reason).finally(() => {
       this.tailRequest = undefined;
@@ -423,6 +457,9 @@ export class SessionSyncController {
       this.cancelTimer(this.tailRetryTimer);
       this.tailRetryTimer = undefined;
     }
+    // Cancel any in-flight read so it frees its socket and cannot hydrate a
+    // controller that is being torn down.
+    this.abortController.abort();
     this.listeners.clear();
   }
 
@@ -476,9 +513,17 @@ export class SessionSyncController {
       // about the session. A failed read is not a fact about anything.
       this.options.markLoaded();
       this.retryAttempt = 0;
-    } catch {
+    } catch (error) {
       if (this.destroyed) return;
-      this.update({ freshness: 'error' });
+      // A superseded/cancelled read is not a failure and never hydrates — it
+      // must not paint an error over a live transcript, and it must not retry.
+      if (isAbortError(error) || this.abortController.signal.aborted) return;
+      // A sandbox that is still waking is a RETRYABLE, "loading" state, not a
+      // fault: the box may come up any second, so keep polling and keep the UI
+      // on its loader. Only a genuine failure earns `error`. NEVER an
+      // empty-`fresh` — `markLoaded` above ran only on success, so a failed
+      // read never records the session as an empty transcript.
+      this.update({ freshness: isSandboxNotReadyError(error) ? 'loading' : 'error' });
       this.scheduleTailRetry(reason);
     }
   }
@@ -515,12 +560,15 @@ export class SessionSyncController {
   ): Promise<SessionSyncPage> {
     const startedAt = this.scheduler.now();
     try {
-      const page = await this.options.loadPage({
-        // The tail is what someone is waiting for; an older page is what they
-        // asked for. Different budgets — see SESSION_SYNC_TAIL_PAGE_SIZE.
-        limit: operation === 'tail' ? SESSION_SYNC_TAIL_PAGE_SIZE : SESSION_SYNC_PAGE_SIZE,
-        ...(before ? { before } : {}),
-      });
+      const page = await this.options.loadPage(
+        {
+          // The tail is what someone is waiting for; an older page is what they
+          // asked for. Different budgets — see SESSION_SYNC_TAIL_PAGE_SIZE.
+          limit: operation === 'tail' ? SESSION_SYNC_TAIL_PAGE_SIZE : SESSION_SYNC_PAGE_SIZE,
+          ...(before ? { before } : {}),
+        },
+        this.abortController.signal,
+      );
       this.options.onTelemetry?.({
         operation,
         reason,

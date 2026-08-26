@@ -121,3 +121,61 @@ export function defaultEnabledModelIds(
 
   return enabled;
 }
+
+/**
+ * The candidates an AUTO-SELECTED default may be drawn from.
+ *
+ * `bedrockInferenceProfileRank` breaks a release-date TIE between a bare
+ * Bedrock id and its `global.`/`us.` twin. That is not enough on its own:
+ * models.dev does not publish which Bedrock families have an inference
+ * profile, and the newest Bedrock model in the 2026-08-25 catalog —
+ * `xai.grok-4.6` (2026-08-12) — ships with NO twin at all. It therefore won
+ * "newest" outright and every fresh Bedrock-BYOK workspace auto-selected an
+ * id Bedrock refuses ("Invocation of model ID xai.grok-4.6 with on-demand
+ * throughput isn't supported. Retry your request with the ID or ARN of an
+ * inference profile"), then looped "Retrying in Ns" forever. Proven live on
+ * the Essentia self-host 2026-08-26.
+ *
+ * Rule: when a set carries ANY inference-profile id, its bare ids are not
+ * auto-selectable. An inference profile is always invokable; a bare id may
+ * not be, and nothing in the catalog says which. Bare ids stay LISTED and
+ * pickable — a human can still choose one — but nothing chooses one FOR the
+ * user. A set with no profile ids at all (every non-Bedrock provider) is
+ * returned unchanged, so this is inert outside Bedrock.
+ */
+export function autoSeedableModels<T extends { id: string }>(models: T[]): T[] {
+  if (!models.some((model) => bedrockInferenceProfileRank(model.id) > 0)) return models;
+  return models.filter((model) => bedrockInferenceProfileRank(model.id) > 0);
+}
+
+/**
+ * The model a surface should AUTO-SELECT for a provider when the user has
+ * chosen nothing: the newest auto-selectable model (see `autoSeedableModels`),
+ * with the Bedrock inference profile winning a release-date tie
+ * (`global.` > regional > bare) and catalog order breaking a full tie.
+ *
+ * One implementation for both default paths — the gateway's `providerFlagship`
+ * (apps/api) and the native pre-runtime picker's per-provider `default`
+ * (packages/sdk) — because two copies of "which model do we pick for you" is
+ * exactly how they drifted apart before.
+ */
+export function autoSeedDefaultModel<T extends { id: string; released?: string | null }>(
+  models: T[],
+): T | undefined {
+  let best: T | undefined;
+  for (const model of autoSeedableModels(models)) {
+    if (!best) {
+      best = model;
+      continue;
+    }
+    const byDate = (model.released ?? '').localeCompare(best.released ?? '');
+    if (byDate > 0) best = model;
+    else if (
+      byDate === 0 &&
+      bedrockInferenceProfileRank(model.id) > bedrockInferenceProfileRank(best.id)
+    ) {
+      best = model;
+    }
+  }
+  return best;
+}

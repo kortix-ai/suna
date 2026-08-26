@@ -3,6 +3,7 @@ import { appRuntimes, projectSessions, sandboxComputeSessions, sessionSandboxes 
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
+import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
@@ -494,6 +495,7 @@ beforeEach(() => {
   promptRedeliveries = [];
   clearedTurnReasons = [];
   unconfirmedTurnDrips = [];
+  __resetProbeBackoffForTests();
   ledgerSettleStatements = [];
   huskFinalizeCalls = [];
   huskOutcomeBySandbox = {};
@@ -1788,6 +1790,42 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(activeTurnRenewalCalls).toEqual([]);
     expect(r.stopped).toBe(0);
     expect(r.lifecycleRenewed).toBe(1);
+  });
+
+  // ═══ THE PROBE ITSELF WAS THE LOAD ═══
+  // Essentia 2026-08-25 (session 9df2a873): two API replicas re-asked one box
+  // 345 times in an hour after `unknown`; every ask made OpenCode serialise
+  // its 140 MB transcript, and the kernel OOM-killed it mid-turn. An unknown
+  // answer now backs the PROBE off (20 s → 5 min) while the drip still runs.
+  test('REGRESSION: after an unknown answer the box is not re-probed until its back-off elapses', async () => {
+    candidates = [unknownTurnCandidate(NOW.getTime() - 10 * 60_000)];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['mute-token'] = 'unknown';
+
+    await reapAndReconcileSandboxes(NOW);
+    expect(turnObservationCalls).toHaveLength(1);
+    expect(unconfirmedTurnDrips).toEqual(['sb-1']);
+
+    // 10 s later: still inside the 20 s back-off — dripped, NOT probed.
+    unconfirmedTurnDrips = [];
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 10_000));
+    expect(turnObservationCalls).toHaveLength(1);
+    expect(unconfirmedTurnDrips).toEqual(['sb-1']);
+
+    // 25 s later: back-off elapsed — probed again; still unknown → back-off doubles to 40 s.
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 25_000));
+    expect(turnObservationCalls).toHaveLength(2);
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 55_000));
+    expect(turnObservationCalls).toHaveLength(2);
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 70_000));
+    expect(turnObservationCalls).toHaveLength(3);
+
+    // A readable answer clears it: the next pass probes at once.
+    turnObservationByToken['mute-token'] = 'active';
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 200_000));
+    expect(turnObservationCalls).toHaveLength(4);
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 201_000));
+    expect(turnObservationCalls).toHaveLength(5);
   });
 
   // ═══ THE BILLED DEAD TIME THIS CLOSES ═══

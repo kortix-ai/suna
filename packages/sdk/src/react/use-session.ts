@@ -800,6 +800,8 @@ export interface UseSessionOptions {
 const DISABLED_CHAT_ENGINE_SYNC = {
   messages: [] as ReturnType<typeof useSessionSync>['messages'],
   status: { type: 'idle' } as ReturnType<typeof useSessionSync>['status'],
+  freshness: 'idle' as ReturnType<typeof useSessionSync>['freshness'],
+  retryTranscript: () => {},
   isBusy: false,
   isLoading: false,
   diffs: [] as ReturnType<typeof useSessionSync>['diffs'],
@@ -1433,6 +1435,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // live data
     messages,
     status: sync.status,
+    /** Transcript-read state (`idle|loading|fresh|stale|error`), for gating the
+     *  chat body: `loading`/`error` with no messages are a wait and a failure,
+     *  not an empty session. `retryTranscript` re-reads the tail. */
+    freshness: sync.freshness,
+    retryTranscript: sync.retryTranscript,
     questions,
     permissions,
     diffs: sync.diffs,

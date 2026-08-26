@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
+import { SandboxNotReadyError } from '../http/opencode-errors';
 import {
   SESSION_SYNC_PAGE_SIZE,
   SESSION_SYNC_TAIL_PAGE_SIZE,
@@ -1082,5 +1083,142 @@ describe('SessionSyncController', () => {
 
     expect(requests.every((request) => request.limit === SESSION_SYNC_TAIL_PAGE_SIZE)).toBe(true);
     controller.destroy();
+  });
+});
+
+/**
+ * The sandbox-not-ready path (FINDINGS-B fix #2). A read that fails because the
+ * box is still waking is a RETRYABLE, "loading" state — never an error, never
+ * an empty-`fresh`. The controller keeps polling with backoff until the box
+ * comes up, then lands `fresh` with the real transcript.
+ */
+describe('SessionSyncController — sandbox-not-ready classification', () => {
+  test('a not-ready read stays loading and retries, then lands fresh with messages', async () => {
+    const clock = createScheduler();
+    let attempts = 0;
+    let loaded = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        attempts += 1;
+        if (attempts < 3) throw new SandboxNotReadyError('sandbox not ready (status: starting)');
+        return messagePage([{ id: 'user-1', role: 'user' }]);
+      },
+      hydrate: () => {},
+      markLoaded: () => {
+        loaded += 1;
+      },
+      scheduler: clock.scheduler,
+    });
+    const seen: string[] = [];
+    controller.subscribe(() => seen.push(controller.getSnapshot().freshness));
+
+    await controller.reconcile('initial');
+    // Waking, not failed: loading, and the session was NOT recorded as loaded.
+    expect(attempts).toBe(1);
+    expect(controller.getSnapshot().freshness).toBe('loading');
+    expect(loaded).toBe(0);
+
+    for (let i = 0; i < 6 && attempts < 3; i += 1) {
+      clock.advance(30_000);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(attempts).toBe(3);
+    expect(controller.getSnapshot().freshness).toBe('fresh');
+    expect(loaded).toBe(1);
+    // It never flashed an error and never claimed a fresh-but-empty transcript
+    // while the box was waking.
+    expect(seen).not.toContain('error');
+  });
+
+  test('a real error is marked error, not loading', async () => {
+    const clock = createScheduler();
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        throw new Error('internal server error');
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+    });
+
+    await controller.reconcile('initial');
+    expect(controller.getSnapshot().freshness).toBe('error');
+    controller.destroy();
+  });
+});
+
+/**
+ * Cancellation (FINDINGS-B fix #4). `destroy()` — reached by a scope reset or
+ * unmount — aborts the controller's signal, so the in-flight read cancels and
+ * a late-resolving, superseded read can never hydrate a torn-down controller.
+ */
+describe('SessionSyncController — abort on destroy', () => {
+  test('destroy aborts the in-flight read and never hydrates after it resolves', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    let resolvePage!: (value: SessionSyncPage) => void;
+    const pending = new Promise<SessionSyncPage>((resolve) => {
+      resolvePage = resolve;
+    });
+    const hydrated: string[][] = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: (_request, signal) => {
+        capturedSignal = signal;
+        return pending;
+      },
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+    });
+
+    const request = controller.reconcile('initial');
+    controller.destroy();
+    expect(capturedSignal?.aborted).toBe(true);
+
+    resolvePage(messagePage([{ id: 'user-1', role: 'user' }]));
+    await request;
+
+    expect(hydrated).toEqual([]);
+  });
+});
+
+/**
+ * The turn-completion walk is bounded (FINDINGS-B fix #5). An assistant whose
+ * parent user message never appears — a compacted or removed prompt — used to
+ * drive the walk through the entire session. It now stops at the page cap and
+ * keeps older history reachable (`hasOlder`) instead of draining it.
+ */
+describe('SessionSyncController — bounded turn walk', () => {
+  test('an unresolvable parent stops at the page cap and keeps older reachable', async () => {
+    const requests: Array<{ limit: number; before?: string }> = [];
+    let olderCursor = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        if (!request.before) return page(['tail'], 'cursor-0');
+        olderCursor += 1;
+        return messagePage(
+          [{ id: `assistant-${olderCursor}`, role: 'assistant', parentID: 'user-never' }],
+          `cursor-${olderCursor}`,
+        );
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+
+    await controller.start();
+    await controller.loadOlder();
+
+    const olderReads = requests.filter((request) => request.before).length;
+    // The first older page plus at most MAX_TURN_BACKFILL_PAGES walked pages —
+    // bounded, not the whole session.
+    expect(olderReads).toBeLessThanOrEqual(MAX_TURN_BACKFILL_PAGES + 1);
+    expect(olderReads).toBe(MAX_TURN_BACKFILL_PAGES + 1);
+    // The cursor survives, so the rest of history is reachable rather than
+    // drained on this one pull.
+    expect(controller.getSnapshot().hasOlder).toBe(true);
   });
 });

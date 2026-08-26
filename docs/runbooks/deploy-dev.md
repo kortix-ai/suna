@@ -84,3 +84,10 @@ dev's.
 - `.github/workflows/deploy-dev.yml` — the workflow itself.
 - `kortix-release` skill — how prod releases work (promote, not dispatch).
 - `learnings` skill — the concurrency and frontend-skip incidents behind this design.
+
+## Runners
+
+Every Linux job in this workflow runs on Blacksmith through the
+`${{ vars.CI_RUNNER_* || '<label>' }}` expression. Tiers, the kill switch to
+GitHub-hosted runners, the Docker layer cache, and how to read queue time:
+`docs/runbooks/ci-runners.md`.

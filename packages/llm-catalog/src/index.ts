@@ -4,6 +4,8 @@ export {
   DEFAULT_ENABLEMENT_WINDOW_MONTHS,
   defaultEnabledModelIds,
   type EnablementCandidate,
+  autoSeedDefaultModel,
+  autoSeedableModels,
   bedrockInferenceProfileRank,
 } from './enablement';
 

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   type EnablementCandidate,
+  autoSeedDefaultModel,
+  autoSeedableModels,
   bedrockInferenceProfileRank,
   defaultEnabledModelIds,
 } from './enablement';
@@ -113,5 +115,68 @@ describe('Bedrock inference profiles win a family tie', () => {
     expect(bedrockInferenceProfileRank('apac.anthropic.claude-sonnet-5')).toBe(1);
     expect(bedrockInferenceProfileRank('openai.gpt-5.6-sol')).toBe(0);
     expect(bedrockInferenceProfileRank('zai.glm-5')).toBe(0);
+  });
+});
+
+// ── Auto-seeding a default: the twin tie-break is NOT enough ────────────────
+//
+// Proven live on the Essentia self-host 2026-08-26: a brand-new workspace with
+// Bedrock BYOK creds (native path, llm_gateway off) auto-selected
+// `xai.grok-4.6` — the NEWEST Bedrock model in the 2026-08-25 catalog and the
+// one Bedrock family that ships with NO `global.`/`us.` twin at all. Bedrock
+// answered "Invocation of model ID xai.grok-4.6 with on-demand throughput
+// isn't supported" and the session looped "Retrying in Ns" forever. A
+// release-date tie-break (bedrockInferenceProfileRank) cannot save this case:
+// there is no twin to tie with.
+describe('autoSeedDefaultModel — never auto-seeds a bare Bedrock id', () => {
+  test('the real regression: newest bare id with NO twin loses to the newest profile', () => {
+    const picked = autoSeedDefaultModel([
+      { id: 'xai.grok-4.6', released: '2026-08-12' },
+      { id: 'anthropic.claude-opus-5', released: '2026-07-24' },
+      { id: 'us.anthropic.claude-opus-5', released: '2026-07-24' },
+      { id: 'global.anthropic.claude-opus-5', released: '2026-07-24' },
+    ]);
+    expect(picked?.id).toBe('global.anthropic.claude-opus-5');
+  });
+
+  test('a bare id with a twin loses to its twin', () => {
+    const picked = autoSeedDefaultModel([
+      { id: 'openai.gpt-5.6-luna', released: '2026-07-09' },
+      { id: 'global.openai.gpt-5.6-luna', released: '2026-07-09' },
+    ]);
+    expect(picked?.id).toBe('global.openai.gpt-5.6-luna');
+  });
+
+  test('global. beats a regional profile on a release tie', () => {
+    const picked = autoSeedDefaultModel([
+      { id: 'us.anthropic.claude-fable-5', released: '2026-06-09' },
+      { id: 'global.anthropic.claude-fable-5', released: '2026-06-09' },
+    ]);
+    expect(picked?.id).toBe('global.anthropic.claude-fable-5');
+  });
+
+  test('a provider with no profile ids at all is untouched — newest wins', () => {
+    const picked = autoSeedDefaultModel([
+      { id: 'claude-sonnet-4-6', released: '2026-05-01' },
+      { id: 'claude-opus-4-8', released: '2026-07-01' },
+    ]);
+    expect(picked?.id).toBe('claude-opus-4-8');
+  });
+
+  test('undated models still resolve (first candidate) and an empty set is undefined', () => {
+    expect(autoSeedDefaultModel([{ id: 'a' }, { id: 'b' }])?.id).toBe('a');
+    expect(autoSeedDefaultModel([])).toBeUndefined();
+  });
+
+  test('autoSeedableModels drops bare ids only when a profile id exists', () => {
+    expect(
+      autoSeedableModels([{ id: 'xai.grok-4.6' }, { id: 'global.anthropic.claude-opus-5' }]).map(
+        (m) => m.id,
+      ),
+    ).toEqual(['global.anthropic.claude-opus-5']);
+    expect(autoSeedableModels([{ id: 'xai.grok-4.6' }, { id: 'anthropic.claude-opus-5' }]).map((m) => m.id)).toEqual([
+      'xai.grok-4.6',
+      'anthropic.claude-opus-5',
+    ]);
   });
 });

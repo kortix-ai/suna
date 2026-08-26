@@ -14,6 +14,7 @@ import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { ConnectorIntake } from './connector-intake';
 import { SecretIntakeForm } from './secret-intake-form';
+import { onSetupLinkModalClose } from './setup-link-close-finalize';
 import { setupLinkChipLabel, type SetupLinkKind } from './util';
 
 function textOf(node: React.ReactNode): string {
@@ -42,6 +43,16 @@ export function SetupLinkButton({
 }) {
   const [open, setOpen] = useState(false);
   const Icon = kind === 'secret' ? KeyRound : Plug;
+
+  /**
+   * Closing the modal settles the connect. See `onSetupLinkModalClose` — the
+   * rule lives there so it is testable without a DOM.
+   */
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    void onSetupLinkModalClose({ open: next, kind, token });
+  };
+
   const label = setupLinkChipLabel(
     textOf(children),
     token,
@@ -57,7 +68,7 @@ export function SetupLinkButton({
         <span className="truncate">{label}</span>
       </Button>
 
-      <Modal open={open} onOpenChange={setOpen}>
+      <Modal open={open} onOpenChange={handleOpenChange}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
             <ModalTitle>{kind === 'secret' ? 'Add a project secret' : 'Connect an app'}</ModalTitle>

@@ -73,7 +73,7 @@ jobs:
   # release: the shards still run, and the next run sweeps again.
   sweep-before:
     name: sweep stale test accounts
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     continue-on-error: true
     steps:
@@ -112,7 +112,7 @@ jobs:
     # failed, or was cancelled by its own cap — its result must never gate the
     # release (see the note on sweep-before).
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     # A ceiling that turns a hang into a readable failure — never a throttle.
     #
     # Run 32240074477 killed all four API shards on the 40-minute cap at once
@@ -236,7 +236,14 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
+          # grep, never rg: GitHub's ubuntu images ship no ripgrep, and with the
+          # tool missing under `2>/dev/null` this guard passed on nothing from
+          # its first run until 2026-08-25, when Blacksmith images (which ship
+          # rg) ran it for real. Pattern = GUARD_PATTERN_SOURCE in
+          # tests/src/core/scrub.ts; the runner scrubs the same shapes before
+          # writing results.json / report.html.
+          pattern='kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.'
+          if [ -d tests/test-results ] && grep -rEIl "$pattern" tests/test-results; then
             echo "::error::A test artifact contains a secret-shaped value."
             exit 1
           fi
@@ -254,7 +261,7 @@ jobs:
     name: deployed browser shard
     needs: sweep-before
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -323,7 +330,14 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
+          # grep, never rg: GitHub's ubuntu images ship no ripgrep, and with the
+          # tool missing under `2>/dev/null` this guard passed on nothing from
+          # its first run until 2026-08-25, when Blacksmith images (which ship
+          # rg) ran it for real. Pattern = GUARD_PATTERN_SOURCE in
+          # tests/src/core/scrub.ts; the runner scrubs the same shapes before
+          # writing results.json / report.html.
+          pattern='kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.'
+          if [ -d tests/test-results ] && grep -rEIl "$pattern" tests/test-results; then
             echo "::error::A test artifact contains a secret-shaped value."
             exit 1
           fi
@@ -343,7 +357,7 @@ jobs:
     name: sweep this run's test accounts
     needs: [api, browser]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     continue-on-error: true
     steps:
@@ -371,7 +385,7 @@ jobs:
     name: full suite + quality gates
     needs: [api, browser]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 5
     steps:
       - name: Require every deployed shard to pass

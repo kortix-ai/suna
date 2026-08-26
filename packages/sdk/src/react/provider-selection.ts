@@ -1,6 +1,8 @@
 import {
   CATALOG,
   type ProviderAuthRequirement,
+  autoSeedDefaultModel,
+  bedrockInferenceProfileRank,
   isProviderAuthSatisfied,
   providerAuthRequirement,
   generationControlCapabilities,
@@ -322,13 +324,22 @@ export function nativeProviderListFromCatalog(
     .sort((a, b) => providerRank(a.id) - providerRank(b.id))
     .map((provider) => {
       // Newest first: the picker's visual order and the "first model" fallback
-      // both read insertion order.
-      const models = [...provider.models].sort((a, b) =>
-        (b.released ?? '').localeCompare(a.released ?? ''),
+      // both read insertion order. On a release-date tie a Bedrock inference
+      // profile sorts ahead of its bare in-region twin — the bare id is the
+      // one Bedrock refuses with "on-demand throughput isn't supported".
+      const models = [...provider.models].sort(
+        (a, b) =>
+          (b.released ?? '').localeCompare(a.released ?? '') ||
+          bedrockInferenceProfileRank(b.id) - bedrockInferenceProfileRank(a.id),
       );
       const ids = new Set(models.map((model) => model.id));
+      // `autoSeedDefaultModel` (not `models[0]`) is the data-driven fallback:
+      // it drops the bare Bedrock ids whenever the provider serves inference
+      // profiles, so a fresh Bedrock-BYOK workspace can never be auto-seeded
+      // with an id Bedrock rejects. See its doc comment for the live incident.
       const flagship =
         (NATIVE_FLAGSHIP_CANDIDATES[provider.id] ?? []).find((candidate) => ids.has(candidate)) ??
+        autoSeedDefaultModel(models)?.id ??
         models[0]?.id;
       if (flagship) defaults[provider.id] = flagship;
       return {

@@ -163,11 +163,16 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
             // duplex:'half' is required by Bun/undici when a request carries a
             // streaming body; valid at runtime even where the RequestInit type
             // omits it, so build + cast rather than inline.
-            const init: RequestInit & { duplex?: 'half' } = {
+            const init: RequestInit & { duplex?: 'half'; timeout?: false } = {
               method: req.method,
               headers,
               body,
               redirect: 'manual',
+              // Bun's fetch has a default 300 s IDLE timeout (measured on
+              // 1.3.14: `TimeoutError: The operation timed out.` at 300.0 s;
+              // a `signal` does not disable it, `timeout: false` does). The
+              // gateway owns every model-hop timeout; this proxy adds none.
+              timeout: false,
             }
             if (windowed === null && req.body) init.duplex = 'half'
             const upstreamRes = await fetch(target, init)

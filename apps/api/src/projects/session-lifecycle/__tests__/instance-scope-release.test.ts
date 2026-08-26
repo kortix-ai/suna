@@ -128,6 +128,8 @@ mock.module('../store', () => ({
     succeededCalls.push(commandId);
   },
   withNextDeliveryAttempt: (payload: unknown) => payload,
+  // Mirrors the real bound jsonb param so `persistedWireIds` can still read it.
+  withRemintedWireId: (id: string) => JSON.stringify({ redeliveredMessageId: id }),
   resultFromExistingCommand: () => {
     throw new Error('not expected');
   },

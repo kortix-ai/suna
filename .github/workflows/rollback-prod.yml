@@ -62,7 +62,7 @@ permissions:
 jobs:
   rollback:
     name: Roll prod back to the target version
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Checkout prod (full history + tags)
         uses: actions/checkout@v7

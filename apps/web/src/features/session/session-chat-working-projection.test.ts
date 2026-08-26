@@ -173,7 +173,7 @@ describe('the turn card reads the same working answer', () => {
     expect(chat).toContain('resolveLastTurnWorking({');
     expect(chat).toContain('isChildSession');
     expect(chat).toContain('sessionWorking={lastTurnWorking}');
-    expect(chat).toContain('resolveWorkingTurn({ turns, hintMessageId: working.turnId })');
+    expect(chat).toContain('resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds })');
   });
 
   test('retry copy keeps the raw frame — the projection does not carry the reason', () => {

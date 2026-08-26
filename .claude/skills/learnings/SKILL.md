@@ -21,6 +21,77 @@ linked, not inlined.
 
 ## Register
 
+### A CI lane that runs inside a third-party sandbox inherits that provider's availability, and a fallback nobody exercises is not a fallback (2026-08-26)
+
+**When:** deciding where a test lane executes, or adding a provider fallback
+to any CI path. The PR gate ran each lane inside a Platinum sandbox with
+`auto` fallback to Daytona. On 2026-08-25 Platinum restores timed out for ~an
+hour; every lane that fell back landed on a Daytona guest whose kernel
+(6.18.15) could not mount overlay2, so `dockerd` never started and the lane
+exited 3 — on runs 32905168237, 32906337979, 32908378870 and all three
+attempts of 32909110032. The fallback had never been exercised under load;
+it added a second provider's failure modes instead of removing the first's.
+The runner (8 vCPU / 32 GB, Docker, cached pnpm store and Docker images)
+could run the lane itself: core 2m16s and browser 4m30s natively versus ~5 min
+each through the sandbox. Rule: **run a lane on the runner unless the lane
+needs something the runner cannot provide (a public origin, a specific
+kernel, GPU); if a lane must use a provider, rehearse the fallback path
+weekly or delete it.** PR #6906 removed the sandbox-worker path for the PR
+gate; `deploy-preview.yml` keeps a sandbox only because a preview needs a
+public HTTPS origin.
+*Enforcer:* `tests/unit/sandbox-workflow.test.ts` "has no cloud-sandbox
+worker path left" fails if `tests.yml` or `tests-pr.yml` names a provider
+again.
+
+### A guard that tolerates its own tool being absent guards nothing (2026-08-25)
+
+**When:** writing any CI step of the form `if <tool> <pattern> … 2>/dev/null; then fail`.
+If the tool is missing, the command fails, `2>/dev/null` hides why, the `if` reads
+false, and the step prints its success line. Use a tool every runner image ships
+(`grep`), or probe for it (`command -v rg || exit 2`) BEFORE the check; and pin
+the pattern in one place the producer also uses (`GUARD_PATTERN_SOURCE` in
+`tests/src/core/scrub.ts`), so the writer scrubs exactly what the guard greps.
+*Incident:* `Guard test artifacts against secrets` in tests.yml / tests-release.yml /
+tests-browser-nightly.yml called `rg`, which GitHub's ubuntu-24.04 image does not
+ship. It reported "No secret-shaped values found." on every run since it was
+written. The first Blacksmith run (image ships rg) failed it: 32 secret-shaped
+values — 8 `kortix_pat_*`, `kortix_sa_*`, setup-link `{accountId,nonce,exp}`
+tokens — inside the 73 MB `results.json` + `report.html` uploaded as PUBLIC
+workflow artifacts on every PR (tokens of an ephemeral local stack; the
+release gate would have uploaded STAGING tokens the same way). Fixed in the
+Blacksmith follow-up PR: write-time shape scrub in `report.ts` (proven 32 → 0
+on the real artifact) + grep-based guard.
+*Enforcer:* `tests/unit/scrub-secret-shapes.test.ts` — scrubber vs guard
+pattern parity, `writeResults` output passes the guard, and every guard step
+uses `grep -rEIl "$pattern"` with the shared pattern, never `rg`.
+
+### A runner label is a tested contract, and a third-party runner pool is a deploy dependency (2026-08-25)
+
+**When:** changing any `runs-on` / matrix `runner:` in `.github/workflows/`,
+including an auto-generated PR (Blacksmith's Migration Wizard, Dependabot).
+Two rules. (1) Run the workflow-pinning unit lane before merging —
+`pnpm --dir tests test:unit` — because `tests/unit/*-workflow.test.ts` pin
+runner labels, cache directives and step order as source text; a label
+rewrite that touches nothing else still turns `main` red. (2) Never commit a
+bare runner label. Every Linux `runs-on` is
+`${{ vars.CI_RUNNER_<tier> || '<blacksmith label>' }}` so a repository
+variable can move a tier back to GitHub-hosted without a PR — a PR cannot fix a
+runner outage, its checks need runners. Off-Blacksmith the Docker actions
+fall back (cold) instead of failing. Runbook: `docs/runbooks/ci-runners.md`.
+*Incident:* PR #6901 (wizard, 125 label rewrites) merged at 22:00 UTC with its
+`warm core worker` check red on 3 `image-build-speed-workflow.test.ts`
+assertions (`ubuntu-24.04-arm` pinned) and three amd64 matrix legs left on
+`ubuntu-latest`; in the following hour Deploy Dev jobs waited 14 s – 6 min in
+`queued` for a Blacksmith runner while ≤3 ran. No prod impact.
+*Enforcer:* `image-build-speed-workflow.test.ts` "every Linux job keeps the
+Blacksmith runner kill switch" rejects any bare label in any workflow.
+*Addendum (same day):* a vendor's cache claim is not a measurement. Five
+consecutive builds of one `cache-key` on Blacksmith's sticky-disk builder
+reused 0 layers (`WORKDIR /app` re-executed) while the registry cache reused
+34–45 on the same Dockerfile; `grep -c ' CACHED'` on the build log is the only
+proof of a warm build. Keep `cache-from`/`cache-to: type=registry` until a
+re-measurement shows the sticky disk hitting (PR #6905).
+
 ### Size sandbox memory from measured peak RSS, not nominal workload size (2026-08-24)
 
 **When:** assigning a sandbox template to image-heavy, document-heavy, or long-context agents.
@@ -2691,3 +2762,161 @@ side.
 
 *Incident:* no prod outage — caught on local dev, but the identical code
 paths ship to prod, where every /compact would have 503'd the same way.
+
+## A turn probe never lists the whole root — the list is unbounded, the budget is not
+
+*Incident (2026-08-25, Essentia sessions 9c8749ac and 9df2a873):* the reaper
+asks the daemon `GET /kortix/health?turn=1&turn_session_id&turn_message_id`
+and acts on `turn_in_flight`. The daemon answered it by fetching the root's
+ENTIRE OpenCode message list inside a 5 s budget. On 9c8749ac that list was
+276.7 MB (inline base64 image parts; `?limit=20` alone was 26 MB). The read
+never fit, the daemon answered `turn_in_flight: null` ("could not tell") on
+every visit, the reaper drip-extended the box on that non-answer for 2.5 h
+after OpenCode had finished the turn (`exiting loop` 21:00:18Z, probe still
+null at 22:10Z), and the session rendered "working" until the ledger row was
+settled by hand.
+
+**Rules.**
+1. `observeOpencodeDelivery` / `inspectOpencodeRoot` read the newest
+   `TURN_PROBE_WINDOW` (12) messages via `?limit=` — the newest N in
+   chronological order (verified on OpenCode 1.18.23) — with a 20 s budget.
+   A prompt older than the window is proved by `GET /session/:id/message/:id`
+   (~400 bytes; 404 `NotFoundError` when absent). Only a proven absence is
+   `abandoned`; a failed by-id read stays `null`.
+2. Any new daemon read of a session transcript states its bound in the
+   request. Roots grow for hours; "the list" is never small.
+3. The live opencode port is a property of the PROCESS (`childPorts`,
+   `livePort()` in opencode.ts), never a variable beside it. Same box, same
+   day: the daemon reported `starting` on 4096 for 2 h while its own child
+   (pid 2423) served on 4097 — every prompt 503'd and no turn end was ever
+   observed. The verified reload (two opencodes, promote the proven one) is
+   by design; a bookkeeping variable that can drift from the process is not.
+   The verifier also declines when the candidate half already answers: the
+   incumbent would otherwise "prove" a candidate that died on EADDRINUSE and
+   promotion would kill the only opencode the box has.
+4. The daemon log is on the box: every logger line also lands in
+   `KORTIX_DAEMON_LOG_FILE` (default `/opt/kortix/logs/daemon.log`, rotated at
+   32 MiB to `.1`), readable with `GET /kortix/logs?source=daemon|opencode|all&tail=N`
+   through the sandbox proxy (`/v1/p/<external_id>/8000/kortix/logs`). A
+   daemon whose only log is a stream nobody keeps cannot be debugged after
+   the fact — that is why this entry says "unproven".
+5. Box telemetry is on record: `[resources]` every 60 s and on every OpenCode
+   state change (memory, cgroup limit + oom_kill counter, load, disk on
+   /workspace + /opt/kortix + /tmp, daemon + opencode RSS, duplicate
+   `opencode serve` pids), `[resources] pressure` when a threshold is
+   crossed, and `GET /kortix/diag` returns state + resources + runtime
+   report + both log tails in one document. Ask the box before guessing.
+
+*Cost of the old probe, measured (2026-08-25 23:12Z, session 9df2a873):* the
+reaper visited that box 345 times in one hour; every visit made OpenCode
+JSON-serialise its 140 MB root (~48 GB of serialisation per hour) for an
+answer that never fit the budget. OpenCode reached 6.48 GB RSS on an 8 GB
+box and the kernel OOM-killed it mid-turn (`dmesg`: `Killed process 1506
+(opencode.exe) anon-rss:6484532kB`). An unbounded probe is not only blind,
+it is a memory attack on the process it probes.
+
+*Automation:* `orphaned-turn-finalize.test.ts` ("turn probes read a bounded
+window, never the whole root"); the stub fetch there serves `?limit=` and
+`/message/:id` the way 1.18.23 does.
+
+## Bun's fetch has a hidden 300 s idle timeout — every model hop opts out
+
+*Incident (2026-08-25 22:04Z, Essentia session 9c27242e):* a turn on
+`codex/gpt-5.6-sol` at reasoning effort `max` died after 273.8 s with
+`{"message":"The operation timed out.","code":"upstream_timeout"}`. Nothing in
+this repo sets a 300 s timer; the gateway's own budgets are 90 s / 5 min for
+response headers and 90 min for body inactivity. Measured on Bun 1.3.14 the
+same night: `fetch` throws `TimeoutError: The operation timed out.` at 300.0 s
+when the socket is idle (no headers, or headers then silence); a stream that
+drips a byte every 60 s lives past 420 s; a caller `signal` does NOT disable
+it; `timeout: false` (or `0`) does. The provider was still thinking.
+
+**Rules.**
+1. Every fetch on the model path passes `timeout: false`: gateway → provider
+   (`upstreamFetch`, `packages/llm-gateway/src/upstream-fetch.ts`, used by
+   both `callUpstream` and the AI-SDK transport), API relay → gateway
+   (`apps/api/src/llm-gateway/wire.ts`), box llm-proxy → API
+   (`kortix-sandbox-agent-server/src/llm-proxy.ts`). The gateway's explicit
+   timeouts are the only ones on that path.
+2. A timeout you did not write is still yours to know about. When an error
+   message is not in the repo, measure the runtime before blaming the
+   provider: `bun-idle.ts` (headers-then-silence, no-headers, drip, option
+   variants) took 12 minutes and settled it.
+
+*Automation:* `packages/llm-gateway/src/upstream-fetch.test.ts` (option is
+forwarded; Bun accepts it on a real request).
+
+## Image bytes never live in the transcript; memory is guarded before the kernel; an unknown probe backs off
+
+*Incident (2026-08-25 23:12Z, Essentia session 9df2a873):* the kernel OOM-killed
+OpenCode at 6.48 GB RSS on an 8 GB box (`dmesg`: `Killed process 1506
+(opencode.exe) anon-rss:6484532kB`), mid-turn, leaving an empty assistant
+husk. Two forces met: the transcript held 275 MB of base64 tool screenshots in
+`part.state.attachments[].url` (352 of 538 tool parts) which every LLM step
+and every list re-serialised, and the reaper re-probed the box 345 times in
+one hour after `unknown` (two replicas, 20 s cadence), each probe forcing a
+full-transcript serialisation. OpenCode's own compaction clears old tool
+output text and stops SENDING old attachments, but never removes bytes from
+storage (`session/compaction.ts`, `message-v2.ts`); there is no native
+"store a path instead" for tool attachments (`tool/read.ts` writes `data:`).
+
+**Rules.**
+1. `attachment-offload.ts` (daemon): when idle, attachments older than the
+   newest 12 per session (and every one OpenCode marked `compacted`) move
+   to `~/.local/share/kortix/attachments/<id>`; the row keeps a 1×1 PNG
+   `data:` placeholder (valid for OpenCode's model conversion, the AI SDK,
+   the media-extraction path) plus `kortix:{offloaded,sidecar,bytes,mime}`.
+   Optimistic UPDATE on `time_updated`; never the newest message; never
+   during a turn. Verified on 1.18.23: OpenCode serves the rewritten row on
+   the next read (7 ms UPDATE, no restart). `/kortix/part` serves sidecar
+   bytes and searches nested `state.attachments` (tool screenshots 404'd
+   before).
+2. Memory guard (`resources.ts`): ≥80 % box/cgroup memory → 10 s sampling;
+   ≥92 % with a turn in flight → `POST /session/:id/abort`, turn-stream
+   `kind:end status:error error_name:SandboxMemoryGuard` with the numbers,
+   then an offload pass. One action per crossing; re-armed below 80 %.
+   `KORTIX_MEMORY_GUARD_PCT` overrides.
+3. Reaper (`box-reaper.ts`): an `unknown` observation backs the PROBE off
+   per sandbox (20 s → 5 min, per replica); the drip still extends.
+   `probeBackoff` clears on the first readable answer.
+
+*Automation:* `attachment-offload.test.ts` (real bun:sqlite fixture in the
+1.18.23 row shape, optimistic-skip race), `part-route-attachments.test.ts`,
+`resources.test.ts` ("memory guard"), `sandbox-reaper.test.ts` ("not
+re-probed until its back-off elapses").
+
+## A non-prod secrets profile must never hold a production-reaching credential
+
+Found 2026-08-26 while scoping Dotenvx Armor access. `apps/api/.env` — the
+local profile every Armor member decrypts daily — carried 22 secrets
+byte-identical to `apps/api/.env.prod`. One of them, `SUPABASE_MGMT_TOKEN`,
+was a personal Supabase management token that executed SQL on the Kortix
+PROD project (`POST /v1/projects/<ref>/database/query` → 201) and was used
+nowhere in the repository. Restricting the PROD keypair to the owner had
+protected nothing, because the same credentials lived in the file everyone
+had.
+
+**Rules.**
+1. Classify a profile by what its credentials can reach, not by which
+   database URL it names. A local DB with production vendor keys is a
+   production profile.
+2. A secret-classed key in `.env`, `.env.dev`, or `.env.staging` must not
+   equal its `.env.prod` value. Every exception is a listed debt with the
+   rotation that removes it.
+3. Delete a credential the code never reads. A dead key is pure exposure.
+4. Personal tokens never belong in a shared profile. Use a service credential
+   scoped to one environment.
+5. A per-key access control (Armor FGAC) only works after the split above.
+   Do the split first, then restrict the prod keypair.
+6. Classify each environment's data explicitly. The dev Supabase project
+   holds 2.7k signups that the owner classifies as synthetic; that decision
+   is recorded, not assumed. Until the shared vendor keys are split, only
+   `.env` qualifies for people without production clearance.
+
+*Automation:* `pnpm test:envs` runs `scripts/secrets-envs-separation.py`,
+which fails on any unlisted non-prod secret that equals its prod value;
+`scripts/secrets-shared-with-prod.allowlist` is the tracked exception list.
+
+*Incident:* no known misuse. The Armor audit log shows the PROD keypairs were
+decrypted by 4 members and 1 former member before the restriction; the shared
+vendor credentials remain to be rotated per the allowlist (PR #6910).
