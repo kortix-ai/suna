@@ -36,6 +36,7 @@ import {
 	type SessionTranscriptSyncEnvelope,
 	getSessionTranscriptSync,
 } from "../../core/rest/projects-client/sessions";
+import { claimOpenBundle, takeOpenBundleTranscript } from "../../core/session/open-bundle";
 
 /** How many mirrored messages a first paint asks for. Matches the sync
  *  controller's own initial tail, so the mirror and the read that replaces it
@@ -127,6 +128,19 @@ export async function loadSessionTranscriptMirror(input: {
 }): Promise<SessionTranscriptSyncEnvelope | null> {
 	const scope = parseKortixSessionScope(input.kortixSessionScope);
 	if (!scope) return null;
+	// The SESSION-OPEN BUNDLE fetches this mirror in the same round trip that
+	// answers the turn and the queue. This hydrate runs at MOUNT, while that
+	// read is still in flight, so it waits for the read it is riding rather
+	// than starting a second one — the wait costs nothing (the bundle is
+	// already on the wire) and saves a full transcript request per open.
+	//
+	// The stash is ONE-SHOT: this is the only reader allowed to paint a
+	// snapshot, and a second paint over a store the runtime has already filled
+	// is how a transcript grows ghosts.
+	const claimed = claimOpenBundle(scope.projectId, scope.sessionId);
+	if (claimed) await claimed;
+	const stashed = takeOpenBundleTranscript(scope.projectId, scope.sessionId);
+	if (stashed) return stashed;
 	try {
 		return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
 			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,

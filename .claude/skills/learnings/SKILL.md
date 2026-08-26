@@ -21,6 +21,32 @@ linked, not inlined.
 
 ## Register
 
+### A React effect keyed on a provider-issued object must cache its work by id, never bail — and only the deployed page proves it (2026-08-26)
+
+**When:** an effect does one-shot async work (a consent read + approve, an
+exchange, anything consumed server-side) and its deps include an object the
+auth/data provider re-issues (`user`, `session`). The re-run cancels run #1
+via cleanup; a "started already" guard then makes run #2 bail, and the page
+holds its loading state forever. Cache the PROMISE per id and let whichever
+run is current apply it; a redirect after a consumed request fires
+unconditionally.
+*Incident:* Sign in with Kortix consent page (#6945) spun forever on
+dev.kortix.com for a fresh client while `/v1/oauth/authorize/consent/:id`
+answered 200; local Chromium never re-issued `user` in that window, so the
+local run passed. Fixed in #6949 the same evening; dev only.
+*Enforcer:* none — the rule is: drive the deployed page for any auth flow.
+
+### The dev edge WAF 403s any query string carrying a bare `localhost` / `127.0.0.1` host (2026-08-26)
+
+**When:** pointing a locally-running app at `dev-api.kortix.com` with a
+`redirect_uri`, `callback`, or `return_to` on `localhost`. Cloudflare answers
+403 before the API sees the request (cf-ray, no `x-kortix-*` headers). Use a
+`*.localhost` name (`demo.localhost:8792` — browsers resolve it to loopback
+and the OAuth registry accepts the suffix).
+*Near-miss:* the dev sign-in demo hit 403 on `/v1/oauth/authorize`; read as an
+API regression until curl with `app.example.test` returned the API's own 400.
+*Enforcer:* none — docs note in `/docs/sdk/sign-in` is the TODO.
+
 ### `github-release` needs the npm publishes, so an npm-publish failure silently strips the tag, Release, changelog, and VERSION sync from a shipped prod deploy (2026-08-26)
 
 **When:** touching `scripts/publish-npm-package.sh`, the deploy-prod publish

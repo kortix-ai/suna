@@ -19,7 +19,9 @@ import {
   projectWorking,
   workingExpiryAtMs,
 } from '../core/session/working';
+import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import { qk } from './query-keys';
+import { usePollOwner } from './use-poll-owner';
 
 /**
  * The ONE answer to "is this session working?", and where the answer came from.
@@ -160,6 +162,43 @@ export function streamObservationStamp(
   return storeStampMs ?? nowMs;
 }
 
+/**
+ * ONE reading of "which turns are open", for the `/turn` query.
+ *
+ * It claims the SESSION-OPEN BUNDLE first. Three hooks mount this query on a
+ * session route (`useSession`, the composer, the session panel) and the open
+ * path reads it before anything else can, which measured as up to 6 `/turn`
+ * requests inside a single open. A claim only succeeds while an open bundle is
+ * in flight or seconds old, so the burst collapses to one server answer and
+ * every poll after it still goes to the endpoint.
+ *
+ * A claim that answers `null` — no bundle, a failed bundle, or a bundle whose
+ * turn leg was `known: false` — falls through to `GET .../turn`. UNKNOWN is not
+ * idle: the fallback must ASK, never assume.
+ *
+ * Exported because this package has no hook-render harness: the reads and pure
+ * predicates ARE the test surface for effect-gated logic.
+ */
+export async function readSessionTurnObservation(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionTurnObservation> {
+  const claimed = claimOpenBundle(projectId, sessionId);
+  if (claimed) {
+    const bundle = await claimed;
+    const turn = bundle ? openBundleTurn(bundle) : null;
+    // The stamp is the bundle's `observed_at` — the instant the SERVER took the
+    // reading — never arrival, for the same reason the direct read below stamps
+    // before the request and not after it.
+    if (turn) return { turns: turn.turns, last_ended: turn.last_ended, atMs: turn.atMs };
+  }
+  // Stamped BEFORE the request. An answer is only as fresh as the moment
+  // it was asked, and a slow proxy hop must not make a stale read look new.
+  const atMs = Date.now();
+  const status = await getSessionTurn(projectId, sessionId);
+  return { turns: status.turns ?? [], last_ended: status.last_ended, atMs };
+}
+
 export function useSessionWorking(
   projectId: string,
   sessionId: string,
@@ -259,17 +298,21 @@ export function useSessionWorking(
   const project = (turn: SessionTurnObservation | undefined, nowMs: number): WorkingProjection =>
     projectWorking(inputsFor(turn, nowMs));
 
+  const pollOwner = usePollOwner(`turn:${projectId}/${sessionId}`, canRead);
+
   const query = useQuery({
     queryKey: qk.project.sessionTurn(projectId, sessionId),
     enabled: canRead,
-    queryFn: async (): Promise<SessionTurnObservation> => {
-      // Stamped BEFORE the request. An answer is only as fresh as the moment
-      // it was asked, and a slow proxy hop must not make a stale read look new.
-      const atMs = Date.now();
-      const status = await getSessionTurn(projectId, sessionId);
-      return { turns: status.turns ?? [], last_ended: status.last_ended, atMs };
-    },
-    refetchInterval: (query) => workingPollMs(project(query.state.data, Date.now())),
+    queryFn: () => readSessionTurnObservation(projectId, sessionId),
+    // ONE timer per session, however many components mount this hook.
+    // `refetchInterval` is scheduled per OBSERVER: three mount points on a
+    // session route (this hook is called by `useSession`, the composer and the
+    // session panel) ran three timers against one cache entry and polled the
+    // session at three times its declared cadence — measured as 6 `/turn`
+    // reads inside one 25 s open. Non-owners read the same entry the owner
+    // refreshes, so nobody sees a staler answer; only the scheduling moved.
+    refetchInterval: (query) =>
+      pollOwner ? workingPollMs(project(query.state.data, Date.now())) : false,
     // Coming back to a tab is the moment a turn that started (or ended) while
     // it was hidden has to be on screen.
     refetchOnWindowFocus: true,

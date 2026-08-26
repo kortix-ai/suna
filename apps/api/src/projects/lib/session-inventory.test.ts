@@ -364,3 +364,70 @@ describe('backend credential session isolation', () => {
     expect(selected.items.every((item) => item.canAccess)).toBe(true);
   });
 });
+
+/**
+ * The runtime-status lookup used to be filtered by `inArray(sessionId, rows)`
+ * on top of an (accountId, projectId) predicate that already scopes it to this
+ * project. Dropping the redundant filter is what lets that query run
+ * CONCURRENTLY with the sessions read instead of after it
+ * (projects/lib/session-list.ts). It is only safe because the map is consumed
+ * strictly by per-row lookup — pin that.
+ */
+describe('runtime status map tolerates a superset', () => {
+  test('an entry for a session that is not in the list changes nothing', () => {
+    const kept = row('kept', { status: 'running' });
+
+    const withExact = selectSessionRowsForViewer({
+      rows: [kept],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      grantsBySession: new Map(),
+      runtimeStatusBySession: new Map([['kept', 'active' as const]]),
+    });
+
+    const withSuperset = selectSessionRowsForViewer({
+      rows: [kept],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      grantsBySession: new Map(),
+      runtimeStatusBySession: new Map([
+        ['kept', 'active' as const],
+        // A sandbox row for a session this viewer never sees (another owner's
+        // private session, or one soft-deleted out of the listing).
+        ['not-in-this-list', 'stopped' as const],
+        ['also-not-here', 'error' as const],
+      ]),
+    });
+
+    expect(withSuperset.items.map((item) => item.row.sessionId)).toEqual(
+      withExact.items.map((item) => item.row.sessionId),
+    );
+    expect(withSuperset.items.map((item) => item.runtimeStatus)).toEqual(
+      withExact.items.map((item) => item.runtimeStatus),
+    );
+  });
+
+  test('a row with no runtime entry still reports null, not a neighbour status', () => {
+    const orphan = row('orphan', { status: 'running' });
+
+    const selected = selectSessionRowsForViewer({
+      rows: [orphan],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      grantsBySession: new Map(),
+      runtimeStatusBySession: new Map([['someone-else', 'active' as const]]),
+    });
+
+    expect(selected.items).toHaveLength(1);
+    expect(selected.items[0]!.runtimeStatus).toBeNull();
+  });
+});

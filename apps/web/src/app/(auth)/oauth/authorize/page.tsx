@@ -37,6 +37,58 @@ export default function OAuthConsentPage() {
   );
 }
 
+type ConsentRequestView = { clientName: string; scopes: string[]; remembered: boolean };
+type ConsentLoadResult =
+  | { kind: 'consent'; request: ConsentRequestView }
+  | { kind: 'redirecting' }
+  | { kind: 'error'; message: string; request?: ConsentRequestView };
+
+/** Read the pending request; when the consent is remembered, approve it and redirect. */
+async function loadAndMaybeApprove(requestId: string): Promise<ConsentLoadResult> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) return { kind: 'error', message: 'Session expired. Please sign in again.' };
+  const backendUrl = getEnv().BACKEND_URL || '';
+  let data;
+  try {
+    data = await getOAuthConsentRequest(requestId, { backendUrl, accessToken: session.access_token });
+  } catch {
+    return { kind: 'error', message: 'Network error. Please try again.' };
+  }
+  const request: ConsentRequestView = {
+    clientName: data.client_name || 'Unknown App',
+    scopes: Array.isArray(data.scopes)
+      ? data.scopes.filter((scope: unknown): scope is string => typeof scope === 'string')
+      : String(data.scope || '')
+          .split(' ')
+          .filter(Boolean),
+    remembered: data.remembered === true,
+  };
+  if (!request.remembered) return { kind: 'consent', request };
+
+  // Remembered consent: approve straight away and send the user back. A
+  // failure falls through to the normal Allow/Deny screen with the error strip.
+  try {
+    const approved = await submitOAuthConsent(
+      { requestId, approved: true },
+      { backendUrl, accessToken: session.access_token },
+    );
+    if (approved.redirect_uri) {
+      window.location.href = approved.redirect_uri;
+      return { kind: 'redirecting' };
+    }
+    return { kind: 'error', message: 'The authorization did not return a redirect.', request: { ...request, remembered: false } };
+  } catch (err) {
+    return {
+      kind: 'error',
+      message: err instanceof Error && err.message ? err.message : 'Network error. Please try again.',
+      request: { ...request, remembered: false },
+    };
+  }
+}
+
 function OAuthConsent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -55,16 +107,25 @@ function OAuthConsent() {
   } | null>(null);
 
   const requestId = searchParams.get('request_id') || '';
-  /**
-   * One load (and, when remembered, one approval) per request id. The effect
-   * below re-runs whenever `user` changes identity — the auth provider hands
-   * out a fresh object after its own /user refresh — and a second run would
-   * re-read a request the first run already consumed (400) while the first
-   * run's cleanup had told it to drop the redirect. Seen live 2026-08-26.
-   */
-  const startedFor = useRef<string | null>(null);
   const clientName = consentRequest?.clientName || 'Unknown App';
   const scopes = consentRequest?.scopes || [];
+
+  /**
+   * ONE load (and, when remembered, one approval) per request id, shared by
+   * every run of the effect below. The effect re-runs whenever the auth
+   * provider hands out a fresh `user` object (it does, right after its own
+   * /user refresh). Two earlier shapes both failed live on 2026-08-26:
+   *
+   *  - no guard: run #2 re-read a request run #1 had already consumed (400),
+   *    and run #1's cleanup had told it to drop the redirect;
+   *  - a bail-out guard: run #1 was cancelled by the re-run and dropped its
+   *    result, run #2 bailed on the guard — the page spun forever.
+   *
+   * So the WORK is cached per request id, and whichever run is still current
+   * when it settles applies the result. A remembered consent redirects from
+   * inside the shared work, unconditionally — the request is consumed by then.
+   */
+  const loadRef = useRef<{ requestId: string; promise: Promise<ConsentLoadResult> } | null>(null);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -77,71 +138,21 @@ function OAuthConsent() {
 
   useEffect(() => {
     if (isLoading || !user || !requestId) return;
-    if (startedFor.current === requestId) return;
-    startedFor.current = requestId;
     let cancelled = false;
-
-    async function loadConsentRequest() {
-      setError(null);
-      setConsentRequest(null);
-      try {
-        const supabase = createClient();
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session?.access_token) {
-          setError('Session expired. Please sign in again.');
-          return;
-        }
-
-        const backendUrl = getEnv().BACKEND_URL || '';
-        const data = await getOAuthConsentRequest(requestId, {
-          backendUrl,
-          accessToken: session.access_token,
-        });
-        if (cancelled) return;
-        const remembered = data.remembered === true;
-        setConsentRequest({
-          clientName: data.client_name || 'Unknown App',
-          scopes: Array.isArray(data.scopes)
-            ? data.scopes.filter((scope: unknown): scope is string => typeof scope === 'string')
-            : String(data.scope || '')
-                .split(' ')
-                .filter(Boolean),
-          remembered,
-        });
-        if (!remembered) return;
-
-        // Remembered consent: approve straight away and send the user back.
-        // A failure here falls through to the normal Allow/Deny screen with
-        // the error strip, so the person can still decide by hand.
-        try {
-          const approved = await submitOAuthConsent(
-            { requestId, approved: true },
-            { backendUrl, accessToken: session.access_token },
-          );
-          // The request is consumed at this point: the ONLY correct outcome is
-          // the redirect, whether or not this effect instance was cleaned up.
-          if (approved.redirect_uri) {
-            window.location.href = approved.redirect_uri;
-            return;
-          }
-          if (cancelled) return;
-          throw new Error('The authorization did not return a redirect.');
-        } catch (err) {
-          if (cancelled) return;
-          setError(
-            err instanceof Error && err.message ? err.message : 'Network error. Please try again.',
-          );
-          setConsentRequest((prev) => (prev ? { ...prev, remembered: false } : prev));
-        }
-      } catch {
-        if (!cancelled) setError('Network error. Please try again.');
-      }
+    if (loadRef.current?.requestId !== requestId) {
+      loadRef.current = { requestId, promise: loadAndMaybeApprove(requestId) };
     }
-
-    loadConsentRequest();
-
+    loadRef.current.promise.then((result) => {
+      if (cancelled) return;
+      if (result.kind === 'redirecting') return; // the browser is leaving
+      if (result.kind === 'error') {
+        setError(result.message);
+        setConsentRequest(result.request ?? null);
+        return;
+      }
+      setError(null);
+      setConsentRequest(result.request);
+    });
     return () => {
       cancelled = true;
     };
