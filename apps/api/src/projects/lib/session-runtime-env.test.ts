@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildSessionRuntimeEnv } from './session-runtime-env';
+import { auditRelayEnvPassthrough, buildSessionRuntimeEnv } from './session-runtime-env';
 
 const BASE_INPUT = {
   projectId: 'proj-1',
@@ -280,5 +280,30 @@ describe('buildSessionRuntimeEnv — OpenCode executable prefetch', () => {
 
     expect(env.KORTIX_OPENCODE_BINARY_PREFETCH).toBe('1');
     expect(env).not.toHaveProperty('KORTIX_REPO_URL');
+  });
+});
+
+describe('audit relay emission knobs', () => {
+  test('forwards nothing when the operator set nothing', () => {
+    expect(auditRelayEnvPassthrough({})).toEqual({});
+    expect(buildSessionRuntimeEnv(BASE_INPUT)).not.toHaveProperty('KORTIX_AUDIT_RELAY_BATCH_SIZE');
+  });
+
+  test('forwards each knob the operator set, including an empty drop list', () => {
+    expect(
+      auditRelayEnvPassthrough({
+        KORTIX_AUDIT_RELAY_BATCH_SIZE: '100',
+        KORTIX_AUDIT_RELAY_FLUSH_MS: '5000',
+        // An empty list means "drop nothing" — a real setting, not an absence.
+        KORTIX_AUDIT_RELAY_DROP_TYPES: '',
+        KORTIX_AUDIT_RELAY_COALESCE: '0',
+        KORTIX_UNRELATED: 'x',
+      }),
+    ).toEqual({
+      KORTIX_AUDIT_RELAY_BATCH_SIZE: '100',
+      KORTIX_AUDIT_RELAY_FLUSH_MS: '5000',
+      KORTIX_AUDIT_RELAY_DROP_TYPES: '',
+      KORTIX_AUDIT_RELAY_COALESCE: '0',
+    });
   });
 });
