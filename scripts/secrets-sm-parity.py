@@ -93,11 +93,14 @@ def compare(env: str):
     s = {**s, **ecs_values(env)}  # task-definition plain env wins over the blob, as in ECS
     s = {k: v for k, v in s.items() if v != ""}  # an empty SM value is satisfied by absence
     quar = {**excluded(), **(quarantined() if env != "prod" else {})}
-    held = sorted(k for k in s if k in quar)  # deliberately absent from the shared file
+    held = sorted(k for k in s if k in quar)  # deliberately absent from the file
+    # A held-back key that is nevertheless in the file breaks the invariant the
+    # allowlists exist to enforce, whether it arrived by hand or predates them.
+    leaked = sorted(k for k in quar if k in f)
     missing = sorted(k for k in s if k not in f and k not in quar)
     differ = sorted(k for k in s if k in f and f[k] != s[k] and k not in quar)
-    extra = sorted(k for k in f if k not in s)
-    return f, s, missing, differ, extra, held
+    extra = sorted(k for k in f if k not in s and k not in quar)
+    return f, s, missing, differ, extra, held, leaked
 
 
 def check(envs) -> int:
@@ -105,12 +108,13 @@ def check(envs) -> int:
     failed = False
     quar = {**quarantined(), **excluded()}
     for env in envs:
-        f, s, missing, differ, extra, held = compare(env)
+        f, s, missing, differ, extra, held, leaked = compare(env)
         unlisted_extra = [k for k in extra if k not in allow]
-        ok = not missing and not differ and not unlisted_extra
+        ok = not missing and not differ and not unlisted_extra and not leaked
         failed |= not ok
-        print(f"{'✓' if ok else '✗'} {env:8} file={len(f)} sm={len(s)} identical={len(s) - len(missing) - len(differ) - len(held)} missing-in-file={len(missing)} differ={len(differ)} file-only={len(extra)} (unlisted {len(unlisted_extra)}) quarantined={len(held)}")
+        print(f"{'✓' if ok else '✗'} {env:8} file={len(f)} sm={len(s)} identical={len(s) - len(missing) - len(differ) - len(held)} missing-in-file={len(missing)} differ={len(differ)} file-only={len(extra)} (unlisted {len(unlisted_extra)}) quarantined={len(held)} leaked={len(leaked)}")
         for k in held: print(f"    quarantined     : {k} — {quar[k]}")
+        for k in leaked: print(f"    MUST NOT be in apps/api/.env.{env} (allowlisted as held-back): {k} — {quar[k]}")
         for k in missing: print(f"    missing in file : {k}")
         for k in differ:  print(f"    differs         : {k}")
         for k in unlisted_extra: print(f"    file-only, not in scripts/secrets-file-only.allowlist : {k}")
@@ -119,8 +123,12 @@ def check(envs) -> int:
 
 def pull(envs) -> int:
     for env in envs:
-        f, s, missing, differ, extra, held = compare(env)
+        f, s, missing, differ, extra, held, leaked = compare(env)
         target = ROOT / f"apps/api/.env.{env}"
+        if leaked:
+            for k in leaked:
+                print(f"{env:8} refusing to pull: {k} is held back but present in apps/api/.env.{env}; remove that line first")
+            return check(envs)
         for k in missing + differ:
             r = subprocess.run([DX, "set", k, s[k], "-f", str(target)], capture_output=True, text=True, env=CLEAN_ENV)
             if r.returncode:
