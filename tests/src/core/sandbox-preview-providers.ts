@@ -68,6 +68,13 @@ export interface SandboxPreviewDeploymentInput {
   branchEnv?: string;
   /** Run the full suite inside the environment after it comes up. Default true. */
   runTests?: boolean;
+  /**
+   * The stable origin the environment is reached at, when an operator fronts it
+   * with a proxy. The stack is configured with this rather than with the
+   * provider's own hostname; the provider hostname stays the proxy's target.
+   * Unset for a PR preview, which is reached at its provider origin.
+   */
+  publicOrigin?: string;
 }
 
 interface PlatinumSandboxPage {
@@ -249,7 +256,12 @@ export async function deployPlatinumPreview(
       });
       previewUrl = exposed.url;
     }
-    const origin = validatedPreviewUrl(previewUrl);
+    const sandboxOrigin = validatedPreviewUrl(previewUrl);
+    // The stack is CONFIGURED with the origin people actually visit: it ends up
+    // in SITE_URL, API_EXTERNAL_URL, CORS_ALLOWED_ORIGINS, the Supabase redirect
+    // allowlist and the frontend's own public URLs. Point those at the sandbox
+    // while the browser is on the stable name and every auth redirect leaves it.
+    const origin = input.publicOrigin ? validatedPreviewUrl(input.publicOrigin) : sandboxOrigin;
     await execPlatinum(api, sandboxId, ['bash', '-lc', 'mkdir -p /workspace/kortix-preview']);
     await api.write(
       `${sandboxId}:/workspace/kortix-preview/runtime-secrets.json`,
@@ -302,6 +314,7 @@ export async function deployPlatinumPreview(
       exitCode,
       sandboxId,
       previewUrl: origin,
+      sandboxOrigin,
     };
     await downloadPlatinumArtifacts(api, sandboxId, input.root).catch((error) => {
       console.warn(`[sandbox-preview] Platinum result download failed: ${String(error)}`);
@@ -451,6 +464,9 @@ export async function deployDaytonaPreview(
       exitCode,
       sandboxId: sandbox.id,
       previewUrl: origin,
+      // Daytona serves PR previews only (a branch environment is refused
+      // above), and a PR preview IS its provider origin.
+      sandboxOrigin: origin,
     };
     await downloadDaytonaArtifacts(api, sandbox, input.root).catch((error) => {
       console.warn(`[sandbox-preview] Daytona result download failed: ${String(error)}`);

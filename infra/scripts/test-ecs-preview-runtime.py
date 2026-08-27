@@ -277,6 +277,17 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         self.assertIn("preview origin must be an HTTPS origin without a path", PREVIEW_STACK)
         for path, source in PREVIEW_SOURCES.items():
             self.assertNotIn("kortix.com", source, f"{path} must not pin a Kortix hostname")
+        # An operator MAY front an environment with a stable name, but it arrives
+        # as configuration (PREVIEW_PUBLIC_ORIGIN) and is validated like any
+        # other origin — the sources above still name no host of their own.
+        self.assertIn("PREVIEW_PUBLIC_ORIGIN", PREVIEW_CLI)
+        self.assertIn(
+            "const origin = input.publicOrigin ? validatedPreviewUrl(input.publicOrigin) : sandboxOrigin;",
+            PREVIEW_PROVIDERS,
+        )
+        # The provider origin is always reported, because whatever serves the
+        # stable name has to be told which sandbox to send traffic to.
+        self.assertIn("sandboxOrigin,", PREVIEW_PROVIDERS)
 
     def test_only_the_edge_port_is_published_and_the_gateway_stays_internal(self):
         # OLD: LLM_GATEWAY_PROXY_TARGET http://127.0.0.1:8090, an API container

@@ -116,8 +116,15 @@ if (action === 'deploy') {
   // proves nothing the stack health check has not, so it is off by default
   // there. PREVIEW_RUN_TESTS=1 forces it back on for a deliberate full run.
   const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;
+  // PREVIEW_PUBLIC_ORIGIN is the stable name a proxy serves the environment at.
+  // The stack is configured with it; the provider's own hostname stays the
+  // proxy's target and comes back as `sandboxOrigin`. It is supplied by the
+  // caller, never hardcoded here — a preview origin is provider-issued unless
+  // an operator deliberately fronts it.
+  const publicOrigin = process.env.PREVIEW_PUBLIC_ORIGIN?.trim() || undefined;
   const deployment: SandboxPreviewDeploymentInput = {
     ...(branchEnv ? { branchEnv } : {}),
+    ...(publicOrigin ? { publicOrigin } : {}),
     runTests,
     repository,
     ref: value('PREVIEW_REF', sha),

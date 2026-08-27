@@ -78,6 +78,26 @@ describe('provider-neutral preview lifecycle', () => {
     }
   });
 
+  it('health-checks the stack locally, never through the public name', () => {
+    // The public name is served by a proxy that is only re-pointed at this
+    // sandbox AFTER the deploy returns. Checking through it would deadlock the
+    // first deploy, and on later ones would be answered by the PREVIOUS
+    // sandbox — reporting success for a stack that never came up.
+    const script = buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker',
+      sha: 'a'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://pi.example.test',
+      runTests: false,
+    });
+    expect(script).toContain('HEALTH=http://127.0.0.1:8080/v1/health');
+    expect(script).not.toContain('https://pi.example.test/v1/health');
+    // The stack is still CONFIGURED with the public origin — that is what ends
+    // up in SITE_URL, the redirect allowlist and the frontend's own URLs.
+    expect(script).toContain("PREVIEW_ORIGIN='https://pi.example.test'");
+  });
+
   it('keeps branch environments out of the nightly sweep', () => {
     // A branch environment has no pull request to close, so the reconciler must
     // never see it as stale. It is excluded by OWNER, not by an expiry date.

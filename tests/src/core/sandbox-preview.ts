@@ -11,7 +11,13 @@ export interface SandboxPreviewResult {
   provider: 'platinum' | 'daytona';
   exitCode: number;
   sandboxId?: string;
+  /** Where people go. The stable name when there is one, else `sandboxOrigin`. */
   previewUrl?: string;
+  /**
+   * The provider-issued origin, always. A stable name is served by a proxy that
+   * has to be told where to send traffic, and this is what it is told.
+   */
+  sandboxOrigin?: string;
 }
 
 export function previewLockfileHash(value: string): string {
@@ -130,14 +136,21 @@ for stack_attempt in 1 2; do
   sleep 10
 done
 
+# Ask the edge container directly rather than through the public name. What is
+# being proven here is that THIS stack came up on THIS commit, and a stable
+# public name is served by a proxy that is only re-pointed at this sandbox after
+# the deploy returns — so going out through it would deadlock the first deploy
+# and, on later ones, would answer from the PREVIOUS sandbox. The public path is
+# proven separately, by the workflow, once the proxy has been pointed.
+HEALTH=http://127.0.0.1:8080/v1/health
 for _ in $(seq 1 60); do
-  health="$(curl -fsS --max-time 5 ${shellQuote(`${origin.origin}/v1/health`)} 2>/dev/null || true)"
+  health="$(curl -fsS --max-time 5 "$HEALTH" 2>/dev/null || true)"
   if printf '%s' "$health" | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .environment == "preview" and .commit == $sha' >/dev/null; then
     break
   fi
   sleep 2
 done
-curl -fsS --max-time 10 ${shellQuote(`${origin.origin}/v1/health`)} | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .environment == "preview" and .commit == $sha' >/dev/null
+curl -fsS --max-time 10 "$HEALTH" | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .environment == "preview" and .commit == $sha' >/dev/null
 
 ${
     input.runTests === false

@@ -41,6 +41,10 @@ permissions:
 
 env:
   BRANCH_ENV: pi-worker
+  # The name this environment is reached at, the way dev.kortix.com is for dev.
+  # Served by the kortix-pi-router Worker (infra/cloudflare/workers/pi-router),
+  # which is re-pointed at the current sandbox on every deploy.
+  PUBLIC_ORIGIN: https://pi.kortix.com
 
 jobs:
   build-api:
@@ -211,6 +215,11 @@ jobs:
           # and proves nothing the stack health check does not. Run it from the
           # Actions tab with "Run the full suite" when you actually want it.
           PREVIEW_RUN_TESTS: ${{ inputs.run_tests && '1' || '0' }}
+          # The stack is CONFIGURED with the stable name, not the sandbox's own
+          # hostname — SITE_URL, API_EXTERNAL_URL, the Supabase redirect
+          # allowlist, CORS and the frontend's public URLs all come from it, so
+          # pointing them anywhere else makes every auth redirect leave the name.
+          PREVIEW_PUBLIC_ORIGIN: ${{ env.PUBLIC_ORIGIN }}
           PREVIEW_PR_NUMBER: '6998'
           PREVIEW_REPOSITORY: ${{ github.repository }}
           PREVIEW_REF: ${{ github.ref }}
@@ -239,6 +248,19 @@ jobs:
         # what decides. Real infrastructure failures still land there, because
         # they leave nothing serving.
         run: bun tests/bin/sandbox-preview.ts deploy || echo "SUITE_FAILED=1" >> "$GITHUB_ENV"
+      - name: Point pi.kortix.com at this sandbox
+        # The sandbox id — and so its own hostname — changes whenever the box is
+        # rebuilt. Re-publishing the Worker on every deploy means the stable name
+        # follows it without anyone editing DNS.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          target="$(jq -r '.sandboxOrigin // empty' tests/test-results/preview/deployment.json)"
+          [ -n "$target" ] || { echo "::error::the deploy reported no sandbox origin to point at"; exit 1; }
+          echo "pointing ${PUBLIC_ORIGIN} -> ${target}"
+          npx --yes wrangler@4 deploy --var "TARGET_ORIGIN:${target}"
+        working-directory: infra/cloudflare/workers/pi-router
       - name: Prove the environment is serving this commit
         run: |
           set -euo pipefail
@@ -246,6 +268,11 @@ jobs:
           result=tests/test-results/preview/deployment.json
           url="$(jq -r '.previewUrl // empty' "$result" 2>/dev/null || true)"
           [ -n "$url" ] || { echo "::error::the deploy produced no environment URL ($result)"; exit 1; }
+          # Cloudflare needs a moment to roll a freshly published Worker out.
+          for _ in $(seq 1 20); do
+            curl -fsS --max-time 15 "${url}/v1/health" >/dev/null 2>&1 && break
+            sleep 6
+          done
           served="$(curl -fsS --max-time 30 "${url}/v1/health" | jq -r '.commit // empty')"
           [ "$served" = "$GITHUB_SHA" ] || {
             echo "::error::${url} serves commit ${served:-<none>}, expected ${GITHUB_SHA}"
@@ -259,7 +286,8 @@ jobs:
             echo "- **Tests:** ${url}/_tests/"
             echo "- **Commit:** \`${GITHUB_SHA}\` (confirmed by /v1/health)"
             echo ""
-            echo "This sandbox is persistent — the URL does not change between deploys."
+            echo "The name is stable: it survives a redeploy AND a rebuild of the sandbox."
+            echo "Sandbox behind it: \`$(jq -r '.sandboxOrigin // "?"' "$result")\`"
             if [ -n "${SUITE_FAILED:-}" ]; then
               echo ""
               echo "> Some flows failed. The environment is up — see the test report."
