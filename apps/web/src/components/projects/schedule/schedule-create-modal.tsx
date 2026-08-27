@@ -229,7 +229,14 @@ export function ScheduleCreateModal({
         secretEnv =
           normalizeSecretName(secretName) ||
           `WEBHOOK_${slug.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}_SECRET`;
-        await upsertProjectSecret(projectId, { name: secretEnv, value: signingKey.trim() });
+        // Webhook secrets must be delivered as broker to the connector
+        // consumer to pass trigger validation.
+        await upsertProjectSecret(projectId, {
+          name: secretEnv,
+          value: signingKey.trim(),
+          strategy: 'broker',
+          consumer: 'connector',
+        });
       }
 
       const filter = rowsToConditions(conditions);

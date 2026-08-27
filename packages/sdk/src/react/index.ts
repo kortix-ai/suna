@@ -171,3 +171,9 @@ export {
   type KortixViewerState,
   type SignInWithKortixProps,
 } from './sign-in-with-kortix';
+
+// Kortix Apps — the viewer of a Kortix-hosted App (no login of its own).
+export {
+  useKortixAppViewer,
+  type KortixAppViewerState,
+} from './use-kortix-app-viewer';

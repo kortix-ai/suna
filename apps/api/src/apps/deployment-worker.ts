@@ -17,6 +17,7 @@ import { db } from '../shared/db';
 import { listResolvedProjectSecrets } from '../projects/secrets';
 import { downloadAppArtifact, extractAppArchive } from './artifacts';
 import { resolveAppRuntimeEnvironment } from './environment';
+import { APP_VIEWER_SECRET_ENV, appViewerSecret } from './viewer';
 import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
 import { AppBudgetExceededError } from './budget';
@@ -459,7 +460,14 @@ export async function driveAppDeployment(
         name: `app-${context.app.routeKey}-v${context.deployment.version}`,
         snapshotName,
         machine: requestedMachine,
-        envVars: runtimeEnvironment.env,
+        // The App verifies `x-kortix-app-viewer` with this. Derived per App, so
+        // it is not the platform secret and rotating the platform secret rotates
+        // every App's. `KORTIX_*` is reserved from user-supplied env, so this
+        // cannot be shadowed by a manifest value.
+        envVars: {
+          ...runtimeEnvironment.env,
+          [APP_VIEWER_SECRET_ENV]: appViewerSecret(context.app.appId),
+        },
       });
       runtimeExternalId = handle.externalId;
       const now = new Date();

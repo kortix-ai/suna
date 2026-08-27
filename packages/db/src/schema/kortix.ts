@@ -1,4 +1,5 @@
 import { relations, sql } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   bigint,
   boolean,
@@ -2604,6 +2605,13 @@ export const oauthClients = kortixSchema.table(
     // (self-serve, `/accounts/{id}/iam/oauth-clients`). Null = a legacy
     // platform-level row inserted by hand before registration existed.
     accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /**
+     * Set for the IMPLICIT client of a Kortix App (2026-08-27). A Kortix-hosted
+     * App never runs the redirect flow — the Apps gate already authenticated
+     * the viewer, so it mints tokens through this row directly. One row per
+     * App; deleting the App revokes every token it ever minted (cascade).
+     */
+    appId: uuid('app_id').references((): AnyPgColumn => apps.appId, { onDelete: 'cascade' }),
     createdBy: uuid('created_by'),
     description: text('description'),
     // `confidential` presents client_secret at /token; `public` (a browser /
@@ -2611,7 +2619,10 @@ export const oauthClients = kortixSchema.table(
     clientType: varchar('client_type', { length: 16 }).default('confidential').notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('idx_oauth_clients_account').on(table.accountId)],
+  (table) => [
+    index('idx_oauth_clients_account').on(table.accountId),
+    uniqueIndex('idx_oauth_clients_app').on(table.appId),
+  ],
 );
 
 /**
@@ -3517,6 +3528,21 @@ export const apps = kortixSchema.table(
     memoryGb: integer('memory_gb').default(2).notNull(),
     diskGb: integer('disk_gb').default(10).notNull(),
     idleTimeoutSeconds: integer('idle_timeout_seconds').default(300).notNull(),
+    /**
+     * What the Apps gate hands this App about the person looking at it.
+     *
+     * `identity` (default) — a signed viewer header on every request plus a
+     * `profile email` token from `/_kortix/viewer`: the App knows WHO the
+     * viewer is and can authorize its own data on that, but the token opens
+     * nothing else on the Kortix API.
+     * `api` — the same, with the `kortix` scope: the App acts AS the viewer on
+     * the Kortix API (their projects, their sessions, their role). Opt in per
+     * App; the viewer's own IAM role is still the ceiling.
+     * `off` — no identity is shared at all (the pre-2026-08-27 behaviour).
+     */
+    viewerTokenScope: varchar('viewer_token_scope', { length: 16 })
+      .default('identity')
+      .notNull(),
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
@@ -3537,6 +3563,10 @@ export const apps = kortixSchema.table(
     check('apps_memory_check', sql`${table.memoryGb} BETWEEN 1 AND 512`),
     check('apps_disk_check', sql`${table.diskGb} BETWEEN 1 AND 2048`),
     check('apps_idle_timeout_check', sql`${table.idleTimeoutSeconds} BETWEEN 120 AND 86400`),
+    check(
+      'apps_viewer_token_scope_check',
+      sql`${table.viewerTokenScope} IN ('off', 'identity', 'api')`,
+    ),
     check('apps_budget_check', sql`${table.monthlyBudgetUsd} >= 0`),
     uniqueIndex('apps_project_slug_live_unique')
       .on(table.projectId, table.slug)

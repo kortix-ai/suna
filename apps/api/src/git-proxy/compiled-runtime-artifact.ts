@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { manifestCandidatePaths, parseManifestText } from "@kortix/manifest-schema";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveCompiledAgentConfigForSession } from "../projects/lib/compile-agent-config";
 import { validateRef, validateSha } from "../projects/git-ref";
-import { refreshMirror, runGit, runGitCapture, spawn } from "../projects/git/mirror";
+import { refreshMirror, runGit, spawn } from "../projects/git/mirror";
+import { resolveOpencodeConfigDirAtSha } from "../projects/git/opencode-config-dir";
 import type { GitBackedProject } from "../projects/git/types";
 import {
   getCompiledAgentBundle,
@@ -38,7 +38,6 @@ interface CachedRuntimeMetadata {
 
 const builds = new Map<string, Promise<StoredCompiledRuntimeArtifact>>();
 const MANIFEST_MARKER = "// kortix-manifest-base64url:";
-const DEFAULT_OPENCODE_CONFIG_DIR = ".kortix/opencode";
 const MAX_OPENCODE_CONFIG_ARCHIVE_BYTES = 4 * 1024 * 1024;
 
 export class CompiledRuntimeSourceMovedError extends Error {
@@ -104,44 +103,6 @@ async function assertExactSource(
   if (actualSha !== sourceSha)
     throw new CompiledRuntimeSourceMovedError(sourceSha, actualSha);
   return mirror;
-}
-
-function safeConfigDir(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().replace(/\/+$/, "");
-  if (!trimmed || trimmed.startsWith("/") || trimmed.startsWith("-")) return null;
-  if (
-    trimmed
-      .split("/")
-      .some((part) => !part || part === "." || part === ".." || !/^[\w .-]+$/.test(part))
-  ) return null;
-  return trimmed;
-}
-
-async function resolveOpencodeConfigDirAtSha(
-  mirror: string,
-  project: GitBackedProject,
-  sourceSha: string,
-): Promise<string | null> {
-  let configDir = DEFAULT_OPENCODE_CONFIG_DIR;
-  for (const candidate of manifestCandidatePaths(project.manifestPath)) {
-    const manifest = await runGitCapture(["show", `${sourceSha}:${candidate.path}`], mirror);
-    if (manifest.exitCode !== 0) continue;
-    const parsed = parseManifestText(manifest.stdout, candidate.format);
-    const opencode = parsed.opencode;
-    if (opencode && typeof opencode === "object" && !Array.isArray(opencode)) {
-      configDir = safeConfigDir((opencode as Record<string, unknown>).config_dir) ?? configDir;
-    }
-    break;
-  }
-  for (const filename of ["opencode.jsonc", "opencode.json"]) {
-    const exists = await runGitCapture(
-      ["cat-file", "-e", `${sourceSha}:${configDir}/${filename}`],
-      mirror,
-    );
-    if (exists.exitCode === 0) return configDir;
-  }
-  return null;
 }
 
 async function archiveOpencodeConfig(

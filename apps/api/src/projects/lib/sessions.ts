@@ -8,7 +8,7 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
+import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -49,7 +49,7 @@ import {
   sandboxFromLoadedAgents,
   workspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch } from '../git';
+import { createRemoteSessionBranch , resolveCommitSha } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { validateNativeOpencodeModelRef } from './session-model-change';
@@ -64,6 +64,7 @@ import {
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import {
   resolveCompiledAgentConfigForSession,
+  resolveManifestRuntime,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
@@ -440,6 +441,10 @@ export async function buildSessionSandboxEnvVars(input: {
   gitDeltaParentSha?: string;
   /** Raw parent commit object used when the provider changed only commit metadata. */
   gitDeltaParentCommitBase64?: string;
+  /** The delta exceeds the env cap; the daemon downloads it with one GET. */
+  gitDeltaBundleRemote?: boolean;
+  /** OpenCode config dir at `baseSha`; lets the daemon spawn OpenCode pre-checkout. */
+  opencodeConfigDir?: string | null;
   /** Project git context, so the running agent's `secrets` grant in `agents:`
    *  can be resolved and applied by IDENTIFIER — secrets the agent isn't
    *  granted are dropped from the injected env (a prompt-injected agent then
@@ -661,6 +666,8 @@ export async function buildSessionSandboxEnvVars(input: {
       gitDeltaBundleBase64: input.gitDeltaBundleBase64,
       gitDeltaParentSha: input.gitDeltaParentSha,
       gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
+      gitDeltaBundleRemote: input.gitDeltaBundleRemote,
+      opencodeConfigDir: input.opencodeConfigDir,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -1344,7 +1351,37 @@ export async function createProjectSession(input: {
   // Validate the requested sandbox template up front so the user gets a clean
   // 400 instead of an async session-failed if they typed a slug that doesn't
   // exist. The platform default is always valid.
-  if (!platformMetaAgent && sandboxSlug && sandboxSlug !== DEFAULT_SANDBOX_SLUG) {
+  // Harness/worker split: with the project's pi_worker flag on AND the manifest
+  // declaring `runtime: pi`, the session boots the shared pi worker image and
+  // its compiled runtime artifact instead of the OpenCode stack. Both gates or
+  // nothing — the flag alone only compiles artifacts, the manifest alone is
+  // inert, and any resolution failure falls back to the OpenCode path.
+  let piWorkerBoot = false;
+  let piWorkerSha: string | null = null;
+  if (!platformMetaAgent && resolveFeatureFlag(project.metadata, 'pi_worker')) {
+    try {
+      const authedProject = await withProjectGitAuth(project);
+      const runtime = await resolveManifestRuntime(authedProject, baseRef);
+      if (runtime === 'pi') {
+        const ref = (baseRef ?? '').trim() || project.defaultBranch;
+        piWorkerSha = await resolveCommitSha(authedProject, ref);
+        piWorkerBoot = true;
+        sandboxSlug = PI_WORKER_SANDBOX_SLUG;
+      }
+    } catch (err) {
+      console.warn(
+        `[sessions] pi worker resolution failed for ${projectId}; booting OpenCode path:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  if (
+    !platformMetaAgent &&
+    sandboxSlug &&
+    sandboxSlug !== DEFAULT_SANDBOX_SLUG &&
+    sandboxSlug !== PI_WORKER_SANDBOX_SLUG
+  ) {
     try {
       await resolveTemplate(
         {
@@ -1652,8 +1689,14 @@ export async function createProjectSession(input: {
       // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
       // with gitAuth (folded into the env-build chain, not awaited inline).
       let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
+      // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
+      // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
+      // OpenCode before the checkout. Bounded by the 2 s race below; a miss
+      // just means the daemon's fetch fallback. Deliberately NOT tied to
+      // KORTIX_FAST_COLD_BOOT_ENABLED (the image/rootfs experiment), which
+      // deploy-dev pins to an explicit `false`.
       const fastBootGitHintPromise =
-        config.KORTIX_FAST_COLD_BOOT_ENABLED || config.KORTIX_COMPILED_BOOT_MODE !== 'off'
+        config.KORTIX_FAST_GIT_BOOT_ENABLED
         ? Promise.race([
             projectWithGitAuthPromise
               .then((projectWithGitAuth) =>
@@ -1719,8 +1762,10 @@ export async function createProjectSession(input: {
             freshSession: true,
             baseSha: fastBootGitHint?.baseSha,
             gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
+            gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
             gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
             gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
+            opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             workspaceMode,
@@ -1785,12 +1830,32 @@ export async function createProjectSession(input: {
         projectId,
         userId,
         agentName,
-        allowProjectImage: projectImageAllowedForSession(agentName, workspaceMode),
-        provider: providerName,
-        providerLocked,
-        metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
+        allowProjectImage: piWorkerBoot
+          ? false
+          : projectImageAllowedForSession(agentName, workspaceMode),
+        // v0 pins the worker to Daytona: the entrypoint override in
+        // ensurePiWorkerImage is only exercised there so far. Lift once the
+        // other adapters' entrypoint handling is verified.
+        provider: piWorkerBoot ? 'daytona' : providerName,
+        providerLocked: piWorkerBoot ? true : providerLocked,
+        metadata: {
+          session_id: sessionId,
+          project_id: projectId,
+          ...(piWorkerBoot ? { pi_worker_boot: true } : {}),
+          ...(input.metadata ?? {}),
+        },
         initialTurn,
-        extraEnvVars,
+        extraEnvVars:
+          piWorkerBoot && piWorkerSha
+            ? {
+                ...extraEnvVars,
+                // The worker's entrypoint composes the artifact URL from these
+                // plus KORTIX_API_URL/KORTIX_PROJECT_ID/KORTIX_TOKEN it
+                // already receives.
+                KORTIX_PI_RUNTIME_REF: (baseRef ?? '').trim() || project.defaultBranch,
+                KORTIX_PI_RUNTIME_SHA: piWorkerSha,
+              }
+            : extraEnvVars,
         projectMetadata: project.metadata,
         gitProject: {
           projectId,

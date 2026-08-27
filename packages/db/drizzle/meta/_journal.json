@@ -456,6 +456,13 @@
       "when": 1787784911209,
       "tag": "20260826225511_session_runtime_projections",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1787834239997,
+      "tag": "20260827123719_app_viewer_token",
+      "breakpoints": true
     }
   ]
 }

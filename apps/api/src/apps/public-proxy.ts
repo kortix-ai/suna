@@ -24,6 +24,15 @@ import {
   verifyEdgeSignedRequest,
 } from '../shared/edge-signature';
 import {
+  APP_VIEWER_HEADER,
+  APP_VIEWER_TOKEN_HEADER,
+  appViewerSecret,
+  encodeAppViewerContext,
+  mintAppViewerToken,
+  normalizeViewerTokenScope,
+  resolveAppViewerIdentity,
+} from './viewer';
+import {
   appAccessCookie,
   appAccessCookieName,
   appAccessibleToUser,
@@ -473,6 +482,147 @@ async function kortixCredentialUser(request: Request): Promise<AppBearerPrincipa
   return null;
 }
 
+/**
+ * The user id behind the gate's browser session, or null.
+ *
+ * Reads the SAME cookie `authorizeAppRequest` just validated, so it is one
+ * HMAC verification and no database work. `password` mode carries no identity
+ * by construction (the secret is the password, not a person), and a `public`
+ * App has no session at all — both answer null.
+ */
+export function resolveAppViewerUserId(
+  request: Request,
+  url: URL,
+  app: Pick<AppAccessRow, 'appId' | 'accessMode' | 'accessRevision'>,
+): string | null {
+  if (app.accessMode === 'public' || app.accessMode === 'password') return null;
+  const localHttp = url.protocol === 'http:' && url.hostname.endsWith('.apps.localhost');
+  const raw = cookieValue(request, appAccessCookieName(localHttp));
+  if (!raw) return null;
+  const payload = verifyAppAccessToken(raw, app.appId, appAccessSecret());
+  if (!payload || payload.kind !== 'kortix' || payload.revision !== app.accessRevision) return null;
+  return payload.userId ?? null;
+}
+
+export interface AppViewerHeaders {
+  /** Signed identity — always present when a viewer is signed in. */
+  context: string;
+  /** The viewer's App-scoped Kortix token. Only for `viewer_token_scope: 'api'`. */
+  token: string | null;
+}
+
+/**
+ * What the container is told about this request's viewer: a signed identity,
+ * and — for an `api`-scoped App — the token to act as them with. Null when the
+ * App shares nothing (`off`) or nobody is signed in.
+ *
+ * The token mint is cached in-process per (App, viewer), so this costs one
+ * `Map` lookup on the hot path after the first request of each hour.
+ */
+export async function appViewerContextHeader(
+  request: Request,
+  url: URL,
+  app: AppAccessRow & { accountId: string; name?: string; viewerTokenScope?: string | null },
+): Promise<AppViewerHeaders | null> {
+  const scope = normalizeViewerTokenScope(app.viewerTokenScope);
+  if (scope === 'off') return null;
+  const userId = resolveAppViewerUserId(request, url, app);
+  if (!userId) return null;
+  const [identity, minted] = await Promise.all([
+    resolveAppViewerIdentity(userId),
+    scope === 'api'
+      ? mintAppViewerToken(
+          {
+            appId: app.appId,
+            accountId: app.accountId,
+            name: app.name ?? 'Kortix App',
+            viewerTokenScope: scope,
+          },
+          userId,
+        ).catch((error) => {
+          // An App must not go dark because a token could not be minted: the
+          // identity header still lands and the App can still authorize its own
+          // data. `/_kortix/viewer` surfaces the failure when it is asked.
+          console.warn(`[apps] viewer token mint failed for ${app.appId}:`, error);
+          return null;
+        })
+      : Promise.resolve(null),
+  ]);
+  return {
+    context: encodeAppViewerContext(
+      {
+        appId: app.appId,
+        userId,
+        email: identity.email,
+        groupIds: identity.groupIds,
+        accountId: app.accountId,
+        accessMode: app.accessMode,
+      },
+      appViewerSecret(app.appId),
+    ),
+    token: minted?.accessToken ?? null,
+  };
+}
+
+/** `GET /_kortix/viewer` — the App asks the gate who is looking, and for a token to act with. */
+export async function appViewerEndpointResponse(
+  request: Request,
+  url: URL,
+  app: AppAccessRow & { accountId: string; name: string; viewerTokenScope?: string | null },
+): Promise<Response> {
+  const noStore = { 'cache-control': 'no-store' };
+  const scope = normalizeViewerTokenScope(app.viewerTokenScope);
+  if (scope === 'off') {
+    return Response.json(
+      { error: 'viewer_disabled', error_description: 'This App does not receive viewer identity.' },
+      { status: 404, headers: noStore },
+    );
+  }
+  let userId = resolveAppViewerUserId(request, url, app);
+  if (!userId && app.accessMode !== 'password') {
+    // A server-side caller inside the App can present its own Kortix credential
+    // instead of a browser cookie. It still has to pass the App's access policy.
+    const principal = await kortixCredentialUser(request);
+    if (principal && (await appAccessibleToUser(app, principal.userId, principal.actingTokenId))) {
+      userId = principal.userId;
+    }
+  }
+  if (!userId) {
+    return Response.json(
+      {
+        error: 'no_viewer_identity',
+        error_description:
+          app.accessMode === 'public' || app.accessMode === 'password'
+            ? `A ${app.accessMode} App has no signed-in Kortix viewer.`
+            : 'No Kortix session on this request.',
+        access_mode: app.accessMode,
+      },
+      { status: 401, headers: noStore },
+    );
+  }
+  const [identity, minted] = await Promise.all([
+    resolveAppViewerIdentity(userId),
+    mintAppViewerToken(
+      { appId: app.appId, accountId: app.accountId, name: app.name, viewerTokenScope: scope },
+      userId,
+    ),
+  ]);
+  return Response.json(
+    {
+      app_id: app.appId,
+      access_mode: app.accessMode,
+      account_id: app.accountId,
+      user_id: userId,
+      email: identity.email,
+      group_ids: identity.groupIds,
+      scopes: minted?.scopes ?? [],
+      access_token: minted?.accessToken ?? null,
+      expires_at: minted?.expiresAt.toISOString() ?? null,
+    },
+    { headers: noStore },
+  );
+}
+
 export async function authorizeAppRequest(
   request: Request,
   url: URL,
@@ -828,13 +978,26 @@ export async function ensureAppRuntimeRunning(
   }
 }
 
-export function appUpstreamHeaders(request: Request, providerHeaders: Record<string, string>, publicHost: string): Headers {
+export function appUpstreamHeaders(
+  request: Request,
+  providerHeaders: Record<string, string>,
+  publicHost: string,
+  viewer?: AppViewerHeaders | null,
+): Headers {
   const headers = new Headers(request.headers);
   for (const name of [
     'host', 'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
     'te', 'trailer', 'transfer-encoding', 'upgrade',
     EDGE_HOST_HEADER, EDGE_TIMESTAMP_HEADER, EDGE_SIGNATURE_HEADER,
+    // Deleted unconditionally, THEN set from what the gate resolved: a client
+    // must never be able to hand the App an identity of its own choosing.
+    APP_VIEWER_HEADER,
+    APP_VIEWER_TOKEN_HEADER,
   ]) headers.delete(name);
+  if (viewer) {
+    headers.set(APP_VIEWER_HEADER, viewer.context);
+    if (viewer.token) headers.set(APP_VIEWER_TOKEN_HEADER, viewer.token);
+  }
   headers.set('x-kortix-app-host', publicHost);
   headers.set('x-forwarded-host', publicHost);
   headers.set('x-forwarded-proto', 'https');
@@ -882,6 +1045,12 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   if (!state) return Response.json({ error: 'App not found' }, { status: 404 });
   const accessResponse = await authorizeAppRequest(request, url, state.app);
   if (accessResponse) return accessResponse;
+  // Answered by the gate itself, before any runtime work: reading who you are
+  // must never wake a sleeping sandbox.
+  if (url.pathname === '/_kortix/viewer') {
+    return appViewerEndpointResponse(request, url, state.app);
+  }
+  const viewer = await appViewerContextHeader(request, url, state.app);
   if (
     !state.app.activeDeploymentId ||
     state.deployment?.deploymentId !== state.app.activeDeploymentId ||
@@ -932,7 +1101,7 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
     const upstreamUrl = `${ingress.url.replace(/\/$/, '')}${url.pathname}${url.search}`;
     return fetch(upstreamUrl, {
       method: request.method,
-      headers: appUpstreamHeaders(request, ingress.headers, matched.publicHost),
+      headers: appUpstreamHeaders(request, ingress.headers, matched.publicHost, viewer),
       body: replayableRequest ? undefined : request.body,
       redirect: 'manual',
       duplex: 'half',

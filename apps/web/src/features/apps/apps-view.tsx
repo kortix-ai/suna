@@ -48,6 +48,7 @@ import {
   type AppAccessConfig,
   type AppAccessMode,
   type AppDeployment,
+  type AppViewerTokenScope,
 } from '@kortix/sdk';
 import { useAppAccess, useAppDeployments, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
 import {
@@ -176,6 +177,36 @@ const ACCESS_COPY: Record<AppAccessMode, { label: string; desc: string }> = {
   public: { label: 'Public', desc: 'Anyone with the URL' },
   password: { label: 'Password', desc: 'Anyone with the App password' },
 };
+
+/**
+ * What a Kortix-hosted App learns about the person looking at it.
+ *
+ * Ordered the same way `ACCESS_COPY` is — least shared first — so the two
+ * pickers in the same modal read as one ladder rather than two dialects. The
+ * default is `identity`, which sits in the middle on purpose: an App that
+ * greets you by name needs no login of its own, and one that acts as you on the
+ * Kortix API is a deliberate step further.
+ */
+const VIEWER_SCOPE_COPY: Record<AppViewerTokenScope, { label: string; desc: string }> = {
+  off: { label: 'Shares nothing', desc: 'The App never learns who opened it' },
+  identity: {
+    label: 'Knows who is signed in',
+    desc: "The App sees the viewer's Kortix id, email and groups",
+  },
+  api: {
+    label: 'Acts as them in Kortix',
+    desc: 'Also calls the Kortix API, limited by their own role',
+  },
+};
+
+/**
+ * Access modes that have no signed-in Kortix viewer to describe.
+ *
+ * A public App is opened by strangers and a password App by whoever holds the
+ * password — neither carries a Kortix identity, so there is nothing to share
+ * and the field is left untouched on save.
+ */
+const ANONYMOUS_MODES: readonly AppAccessMode[] = ['public', 'password'];
 
 /**
  * A shell command, shown as the thing you would actually type.
@@ -1160,8 +1191,13 @@ function AppAccessForm({
   const [memberIds, setMemberIds] = useState<string[]>(policy.member_ids);
   const [groupIds, setGroupIds] = useState<string[]>(policy.group_ids);
   const [password, setPassword] = useState('');
+  const [viewerScope, setViewerScope] = useState<AppViewerTokenScope>(policy.viewer_token_scope);
   const incomplete = mode === 'restricted' && memberIds.length + groupIds.length === 0;
   const passwordMissing = mode === 'password' && !password && !policy.password_configured;
+  // Public and password Apps are opened without signing in to Kortix, so there
+  // is no viewer identity to share — the control goes away and the field stays
+  // as it is on the server rather than being written to a meaningless value.
+  const hasSignedInViewer = !ANONYMOUS_MODES.includes(mode);
 
   const save = async () => {
     try {
@@ -1169,6 +1205,7 @@ function AppAccessForm({
         mode,
         ...(mode === 'restricted' ? { member_ids: memberIds, group_ids: groupIds } : {}),
         ...(mode === 'password' && password ? { password } : {}),
+        ...(hasSignedInViewer ? { viewer_token_scope: viewerScope } : {}),
       });
       successToast('App access updated');
       onSaved();
@@ -1225,6 +1262,32 @@ function AppAccessForm({
             />
           </div>
         ) : null}
+        <div className="space-y-2">
+          <Label id="app-viewer-identity-label">Viewer identity</Label>
+          {hasSignedInViewer ? (
+            <RadioGroup
+              aria-labelledby="app-viewer-identity-label"
+              value={viewerScope}
+              onValueChange={(value) => setViewerScope(value as AppViewerTokenScope)}
+              className="space-y-2"
+            >
+              {(Object.keys(VIEWER_SCOPE_COPY) as AppViewerTokenScope[]).map((value) => (
+                <ShareOption
+                  key={value}
+                  value={value}
+                  label={VIEWER_SCOPE_COPY[value].label}
+                  desc={VIEWER_SCOPE_COPY[value].desc}
+                />
+              ))}
+            </RadioGroup>
+          ) : (
+            <p className="text-muted-foreground text-xs">
+              {mode === 'public'
+                ? 'A public App has no signed-in Kortix viewer.'
+                : 'A password-protected App has no signed-in Kortix viewer.'}
+            </p>
+          )}
+        </div>
       </ModalBody>
       <ModalFooter className="sm:justify-between">
         <Button variant="outline-ghost" size="sm" onClick={onSaved} disabled={update.isPending}>

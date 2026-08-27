@@ -49,6 +49,7 @@ import {
 import { DEFAULT_SANDBOX_SLUG } from './dockerfile-layer';
 import { classifySnapshotError } from './error-classify';
 import type { WarmRepoContext } from './build-context';
+import { PI_WORKER_ENTRYPOINT, piWorkerImageFingerprint } from './build-context';
 import {
   enabledTemplateBuildProviders,
   observeTemplateProviderCoverage,
@@ -180,7 +181,7 @@ export interface EnsureSandboxImageResult {
   isDefault: boolean;
   /** The runtime is standard, but the image adds this project's exact repo tip. */
   isProjectImage?: boolean;
-  runtimeProfile?: 'standard' | 'fast' | 'meta';
+  runtimeProfile?: 'standard' | 'fast' | 'meta' | 'pi-worker';
 }
 
 type PerProjectColdImageFlags = Pick<
@@ -1870,6 +1871,98 @@ export async function ensureFastSandboxImage(opts: {
     });
   } finally {
     if (ownsImage) fastImageBuilds.delete(buildKey);
+  }
+}
+
+const PIWORKER_SNAPSHOT_PREFIX = 'kortix-piworker';
+
+/** Environment-namespaced like the meta image, for the same reap-scoping reason. */
+export function piWorkerSnapshotName(contentHash: string): string {
+  return `${PIWORKER_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-${contentHash.slice(0, 16)}`;
+}
+
+export async function reapSupersededPiWorkerSnapshots(
+  provider: Pick<SandboxProviderAdapter, 'listSnapshots' | 'deleteSnapshot'>,
+  keepName: string,
+  recentLookup: (names: string[], withinMs: number) => Promise<Set<string>> = recentlyBuiltStrict,
+): Promise<void> {
+  return reapSupersededEnvironmentRuntimeSnapshots(
+    provider,
+    PIWORKER_SNAPSHOT_PREFIX,
+    'pi-worker',
+    keepName,
+    recentLookup,
+  );
+}
+
+const piWorkerImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
+
+/**
+ * The shared pi worker image — the meta image's shape exactly, but smaller in
+ * every way that matters: node plus a fetch-and-exec boot script, no daemon,
+ * no CLI, no toolchain. The session's actual harness is the per-(project, sha)
+ * compiled artifact the entrypoint downloads at boot, so this snapshot's
+ * content hash covers ONLY the scripts baked into it and survives every
+ * deploy that does not touch them.
+ */
+export async function ensurePiWorkerImage(opts: {
+  source?: SnapshotBuildSource;
+  provider: string;
+}): Promise<EnsureSandboxImageResult> {
+  const provider = getSandboxProvider(opts.provider);
+  if (!provider.isConfigured()) {
+    throw new SnapshotBuildError(`Sandbox provider ${opts.provider} is not configured`);
+  }
+  const contentHash = piWorkerImageFingerprint();
+  const snapshotName = piWorkerSnapshotName(contentHash);
+  const buildKey = `${opts.provider}:${snapshotName}`;
+  let image = piWorkerImageBuilds.get(buildKey);
+  let ownsImage = false;
+  if (!image) {
+    ownsImage = true;
+    image = (async () => {
+      let state = await provider.getSnapshotState(snapshotName);
+      if (state === 'building') state = await waitForProviderBuild(provider, snapshotName);
+      if (state === 'active') {
+        return {
+          snapshotName,
+          slug: 'pi-worker',
+          contentHash,
+          built: false,
+          isDefault: false,
+          runtimeProfile: 'pi-worker' as const,
+        };
+      }
+      if (state === 'build_failed') await provider.deleteSnapshot(snapshotName);
+      await provider.buildSnapshot({
+        snapshotName,
+        userDockerfile: '# pi worker runtime',
+        spec: { cpu: 1, memoryGb: 2, diskGb: 8 },
+        slug: 'pi-worker',
+        isShared: true,
+        runtimeProfile: 'pi-worker' as const,
+        entrypoint: [PI_WORKER_ENTRYPOINT],
+      });
+      await reapSupersededPiWorkerSnapshots(provider, snapshotName);
+      return {
+        snapshotName,
+        slug: 'pi-worker',
+        contentHash,
+        built: true,
+        isDefault: false,
+        runtimeProfile: 'pi-worker' as const,
+      };
+    })();
+    piWorkerImageBuilds.set(buildKey, image);
+  }
+  try {
+    const result = await image;
+    if (result.built) return result;
+    return await prepareSnapshotForReuse(provider, snapshotName, result, {
+      blocking: (opts.source ?? 'session-start') !== 'session-start',
+    });
+  } finally {
+    if (ownsImage) piWorkerImageBuilds.delete(buildKey);
   }
 }
 

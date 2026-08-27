@@ -2,7 +2,8 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSyn
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
-import { loadConfig, resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from './config'
+import { dispatchCli, isManagementSubcommand } from './cli'
+import { loadConfig, resolveHintedOpencodeConfigDir, resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from './config'
 import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
@@ -91,6 +92,7 @@ let claimedInitialTurn: InitialTurnClaim | null = null
 export function resetClaimedInitialTurnForTests(): void {
   claimedInitialTurn = null
 }
+
 
 async function main() {
   const bootTime = Date.now()
@@ -299,6 +301,37 @@ async function main() {
     }
   }
 
+  // ── Spawn OpenCode BEFORE the checkout exists ──────────────────────────
+  // OpenCode's process boot (bun start, module load, ~3–4 s on a 2-vCPU box)
+  // does not read the repo; only its per-directory Instance does, and that is
+  // created lazily by the first directory-scoped request. The API resolved the
+  // config dir at the base tip (KORTIX_OPENCODE_CONFIG_DIR_HINT), so the env
+  // var OpenCode reads at Instance init already points at the right place.
+  // After the repo lands we install config deps + injected skills there and
+  // dispose the instances in place (~50 ms) so the next request re-detects
+  // the git root and re-reads config. No hint → the serial boot below.
+  const earlyOpencodeConfigDir = cfg.autoClone ? resolveHintedOpencodeConfigDir(cfg) : null
+  let opencodeStartedEarly = false
+  const earlyOpencodeStartPromise: Promise<void> | null =
+    earlyOpencodeConfigDir && !(process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
+      ? (async () => {
+          opencode.cancelBinaryPrefetch()
+          opencode.reconfigure(cfg, earlyOpencodeConfigDir, projectEnv)
+          await opencode.start()
+          opencodeStartedEarly = opencode.getPid() !== null
+          if (opencodeStartedEarly) {
+            bootMark('opencode-spawned')
+            logger.info('[boot] opencode spawned before checkout (config-dir hint)', {
+              opencodeConfigDir: earlyOpencodeConfigDir,
+            })
+          }
+        })().catch((err) => {
+          logger.warn('[boot] early OpenCode start failed; using serial boot', {
+            err: err instanceof Error ? err.message : String(err),
+          })
+        })
+      : null
+
   const compiledOpencodeConfigDir = (process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
   const hasCompiledOpencodeConfig =
     compiledOpencodeConfigDir.length > 0 &&
@@ -328,6 +361,7 @@ async function main() {
   await repoMaterializePromise
   bootMark('repo-materialized')
   await compiledOpencodeStartPromise
+  await earlyOpencodeStartPromise
 
   // The boot clone is shallow; restore history in the background now that the
   // workspace is usable, so `git log`/`blame`/`diff` work without ever having
@@ -341,6 +375,17 @@ async function main() {
     opencodeConfigDir,
     usingProjectConfig: opencodeConfigDir !== cfg.defaultOpencodeConfigDir,
   })
+  // An early spawn on a WRONG dir (hint stale vs. the checkout) is not
+  // reusable: OPENCODE_CONFIG_DIR is process env. Fall through to the serial
+  // path, which reconfigures and starts a fresh process below.
+  if (opencodeStartedEarly && !bootState.repoMaterializationError && opencodeConfigDir !== earlyOpencodeConfigDir) {
+    logger.warn('[boot] config-dir hint did not match the checkout; restarting OpenCode', {
+      hinted: earlyOpencodeConfigDir,
+      resolved: opencodeConfigDir,
+    })
+    await opencode.stop().catch(() => {})
+    opencodeStartedEarly = false
+  }
   if (!opencodeStartedFromCompiledConfig) {
     await ensureOpencodeConfigDeps(opencodeConfigDir)
     await ensureInjectedManagedSkills(opencodeConfigDir)
@@ -366,7 +411,7 @@ async function main() {
 
   if (bootState.repoMaterializationError) {
     logger.warn('[boot] skipping runtime readiness because repo materialization failed')
-    if (opencodeStartedFromCompiledConfig) await opencode.stop()
+    if (opencodeStartedFromCompiledConfig || opencodeStartedEarly) await opencode.stop()
   } else {
     // Now that the repo exists, pin the credential helper repo-locally too, so
     // `git push` authenticates regardless of the invoking shell's HOME (the
@@ -379,7 +424,21 @@ async function main() {
     // Reconfigure now so any later restart uses the checked-out config. The
     // already-running compiled-config process stays untouched.
     opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)
-    if (!opencodeStartedFromCompiledConfig) {
+    if (opencodeStartedEarly) {
+      // The process is up on the right dir; the workspace arrived after it.
+      // Dispose in place so instances re-read config + re-detect the git root.
+      const reloaded = await opencode.reloadForWorkspace()
+      if (reloaded) {
+        bootMark('opencode-workspace-reloaded')
+      } else {
+        logger.warn('[boot] in-place workspace reload unavailable; restarting OpenCode')
+        await opencode.restart().catch((err) => {
+          logger.warn('[boot] opencode.restart() rejected', {
+            err: err instanceof Error ? err.message : String(err),
+          })
+        })
+      }
+    } else if (!opencodeStartedFromCompiledConfig) {
       await opencode.start().catch((err) => {
         logger.warn('[boot] opencode.start() rejected', {
           err: err instanceof Error ? err.message : String(err),
@@ -3146,6 +3205,24 @@ if (import.meta.main) {
         process.stderr.write(
           `[compiled-runtime] install failed: ${error instanceof Error ? error.message : String(error)}\n`,
         )
+        process.exit(1)
+      })
+  } else if (isManagementSubcommand(subcommand)) {
+    // kortixd management CLI: version / install / update / rollback /
+    // --health-check / --help. `serve` and any unrecognized verb fall through
+    // to the daemon below. See src/cli.ts.
+    dispatchCli(process.argv.slice(2))
+      .then((outcome) => {
+        if (outcome.action === 'exit') process.exit(outcome.code)
+        // action === 'serve' cannot happen here (management verbs never serve),
+        // but boot the daemon defensively rather than exit silently.
+        main().catch((err) => {
+          logger.error('[boot] fatal', err)
+          process.exit(1)
+        })
+      })
+      .catch((err) => {
+        process.stderr.write(`[kortixd] ${err instanceof Error ? err.message : String(err)}\n`)
         process.exit(1)
       })
   } else {

@@ -14,6 +14,13 @@ It is standard OAuth 2.1 (authorization code + PKCE) served by the Kortix API,
 so it works the same against `api.kortix.com` and against a self-hosted
 instance.
 
+<Callout>
+  Building an App **hosted by Kortix** (`*.apps.kortix.com`)? You need none of
+  this. The Apps gate already authenticated the viewer — read them with
+  `kortixAppViewerToken()` / `readAppViewer()`. See
+  [Apps → Your App already knows who is looking](/docs/sdk/apps).
+</Callout>
+
 ## 1. Register your app
 
 Go to **Account → Tokens → OAuth apps → Register app**, or call the SDK:

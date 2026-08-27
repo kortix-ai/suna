@@ -14,17 +14,14 @@
  *
  * The rule, in order:
  *
- *  1. The newest turn that has any assistant content. If its newest
+ *  1. The working projection names a turn. This is the server's current turn
+ *     or this tab's fresh send receipt. It outranks incomplete transcript
+ *     metadata because message completion can arrive one frame late.
+ *  2. The newest turn that has any assistant content. If its newest
  *     assistant message is still open (no `time.completed`), that is the
  *     working turn — the agent is visibly writing there. Older turns with an
  *     open assistant message are husks (a box that died mid-turn); the
  *     newest turn with content outranks them.
- *  2. Otherwise every turn after it is a PENDING turn — a user message with
- *     no answer yet. The server's own answer (`WorkingProjection.turnId`,
- *     the wire id of the prompt that opened the running turn, or this tab's
- *     receipt) picks between "still on the previous turn, between two
- *     steps" and "a fresh send that opened this turn" when it names one of
- *     them.
  *  3. Otherwise the NEWEST pending turn. OpenCode parents the next step to
  *     the latest user message and answers every queued message before it in
  *     that same step — so that is where the shimmer lands, and the ones
@@ -88,12 +85,6 @@ export function resolveWorkingTurn(input: {
     pendingTurnIds: turns.slice(index + 1).map((t) => t.userMessage.info.id),
   });
 
-  if (newestWithContent >= 0) {
-    const t = turns[newestWithContent];
-    const newest = t.assistantMessages[t.assistantMessages.length - 1];
-    if (!completedAt(newest.info)) return pick(newestWithContent);
-  }
-
   const hint = input.hintMessageId ?? null;
   if (hint) {
     if (newestWithContent >= 0 && turns[newestWithContent].userMessage.info.id === hint) {
@@ -101,6 +92,12 @@ export function resolveWorkingTurn(input: {
     }
     const idx = pendingIds.indexOf(hint);
     if (idx >= 0) return pick(newestWithContent + 1 + idx);
+  }
+
+  if (newestWithContent >= 0) {
+    const t = turns[newestWithContent];
+    const newest = t.assistantMessages[t.assistantMessages.length - 1];
+    if (!completedAt(newest.info)) return pick(newestWithContent);
   }
 
   // Rule 3, with the one fact the transcript cannot hold: the SERVER still has

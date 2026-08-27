@@ -29,7 +29,8 @@ import { join } from 'node:path'
 const OPENCODE_SRC = readFileSync(join(import.meta.dir, '..', 'opencode.ts'), 'utf8')
 
 function disposeReloadBody(): string {
-  const body = OPENCODE_SRC.split('async function tryDisposeReload(')[1]?.split('\n  }\n')[0]
+  // tryDisposeReload + the disposeInstances helper it delegates the HTTP call to.
+  const body = OPENCODE_SRC.split('async function tryDisposeReload(')[1]?.split('async function waitUntilReady(')[0]
   expect(body).toBeTruthy()
   return body as string
 }
@@ -39,10 +40,22 @@ describe('tryDisposeReload', () => {
     // Dispose re-reads from disk. Calling it without rewriting first would
     // re-read the same bytes and apply nothing.
     const body = disposeReloadBody()
-    const wrote = body.indexOf('writeKortixOpencodeConfig(')
+    // Via the shared writer, so a reload declares the same contributors
+    // (injected skills dir, secret-capability instruction) as a spawn.
+    const wrote = body.indexOf('writeComposedConfig(')
     const disposed = body.indexOf('/global/dispose')
     expect(wrote).toBeGreaterThanOrEqual(0)
     expect(disposed).toBeGreaterThan(wrote)
+  })
+
+
+  test('the shared writer declares the injected skills dir, like a spawn', () => {
+    const start = OPENCODE_SRC.indexOf('async function writeComposedConfig(')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const body = OPENCODE_SRC.slice(start, OPENCODE_SRC.indexOf('async function spawnChild(', start))
+    expect(body).toContain("injectedSkillsDir: join(currentOpencodeConfigDir, 'skills')")
+    expect(body).toContain('secretCapabilitiesInstructionPath')
+    expect(body).toContain('writeKortixOpencodeConfig(')
   })
 
   test('composes the config from the SAME env spawnChild uses', () => {

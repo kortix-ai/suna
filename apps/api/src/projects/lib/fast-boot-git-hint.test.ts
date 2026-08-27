@@ -32,7 +32,7 @@ function metadataFor(hint: FastBootGitHint = cachedHint, ref = 'main') {
 
 describe('fast boot Git hint cache', () => {
   test('reads a bounded cache entry for the requested ref', () => {
-    expect(metadataFor().git.fast_boot?.version).toBe(2);
+    expect(metadataFor().git.fast_boot?.version).toBe(3);
     expect(readCachedFastBootGitHint(metadataFor(), 'main')).toEqual(cachedHint);
     expect(readCachedFastBootGitHint(metadataFor(cachedHint, 'dev'), 'main')).toBeNull();
   });
@@ -58,6 +58,35 @@ describe('fast boot Git hint cache', () => {
         gitDeltaBundleBase64: cachedHint.gitDeltaBundleBase64,
       }),
     ).toBeNull();
+  });
+
+
+  test('round-trips a remote delta and the OpenCode config dir hint', () => {
+    const remote: FastBootGitHint = {
+      baseSha: 'a'.repeat(40),
+      gitDeltaBundleRemote: true,
+      gitDeltaParentSha: 'b'.repeat(40),
+      gitDeltaParentCommitBase64: Buffer.from('tree deadbeef\n').toString('base64'),
+      opencodeConfigDir: '.kortix/opencode',
+    };
+    const entry = metadataFor(remote).git.fast_boot;
+    expect(entry?.bundle_remote).toBe(true);
+    expect(entry?.bundle_base64).toBe('');
+    expect(entry?.opencode_config_dir).toBe('.kortix/opencode');
+    expect(readCachedFastBootGitHint(metadataFor(remote), 'main')).toEqual(remote);
+    // A remote delta must not also carry an inline bundle.
+    expect(
+      buildCachedFastBootGitHint('main', { ...remote, gitDeltaBundleBase64: 'QUJDRA==' }),
+    ).toBeNull();
+  });
+
+  test('caches a bare tip with "no project config" so the daemon can spawn early', () => {
+    const bare: FastBootGitHint = { baseSha: 'a'.repeat(40), opencodeConfigDir: null };
+    expect(metadataFor(bare).git.fast_boot?.opencode_config_dir).toBe('');
+    expect(readCachedFastBootGitHint(metadataFor(bare), 'main')).toEqual(bare);
+    const unknown: FastBootGitHint = { baseSha: 'a'.repeat(40) };
+    expect(metadataFor(unknown).git.fast_boot).not.toHaveProperty('opencode_config_dir');
+    expect(readCachedFastBootGitHint(metadataFor(unknown), 'main')).toEqual(unknown);
   });
 
   test('reuses a cache entry only when the remote tip still matches', async () => {

@@ -29,7 +29,10 @@ interface SessionWorkingState {
   /** Record that a prompt just left this tab. Replaces any previous receipt:
    *  the newest send is the one the UI is standing on. Also releases any
    *  pending stop — sending is the user saying they are not stopping. */
-  noteSendReceipt: (sessionId: string, receipt: { messageId: string; atMs: number }) => void;
+  noteSendReceipt: (
+    sessionId: string,
+    receipt: { messageId: string; turnId?: string | null; atMs: number },
+  ) => void;
   /** The server durably accepted `messageId`. Ignored when a NEWER send has
    *  already replaced the receipt — otherwise the old response would release a
    *  receipt for a send it knows nothing about. */
@@ -83,7 +86,7 @@ export const useSessionWorkingStore = create<SessionWorkingState>()((set) => ({
       return {
         receipts: {
           ...state.receipts,
-          [sessionId]: { messageId: receipt.messageId, atMs: receipt.atMs, acceptedAtMs: null },
+          [sessionId]: { ...receipt, acceptedAtMs: null },
         },
         // A send releases the stop. Leaving it would bar `/turn` from reporting
         // the turn this very send is about to start.

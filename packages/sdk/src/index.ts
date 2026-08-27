@@ -352,6 +352,19 @@ export type {
 } from './core/rest/projects-client';
 
 /**
+ * Kortix Apps — the viewer, in the browser. An App hosted by Kortix is opened
+ * by someone Kortix already authenticated, so `getToken: kortixAppViewerToken()`
+ * is the whole of its auth. See `core/auth/app-viewer.ts`.
+ */
+export {
+  fetchKortixAppViewer,
+  kortixAppViewerToken,
+  clearKortixAppViewerCache,
+  type KortixAppViewerSession,
+  type KortixAppViewerOptions,
+} from './core/auth/app-viewer';
+
+/**
  * Headless regular auth — `kortix.auth.*` (sign-up, password / magic-link /
  * social sign-in, refresh, password reset, sign-out through the Kortix API)
  * and `createKortixSession`, the self-refreshing token store for `getToken`.

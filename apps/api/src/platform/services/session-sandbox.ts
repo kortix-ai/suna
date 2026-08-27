@@ -14,6 +14,7 @@
 
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 import { db } from '../../shared/db';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
@@ -42,6 +43,7 @@ import {
 import {
   ensureSandboxImage,
   ensureMetaSandboxImage,
+  ensurePiWorkerImage,
   deleteSandboxImage,
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
@@ -367,7 +369,12 @@ export async function provisionSessionSandbox(opts: {
   ): Promise<EnsureSandboxImageResult> =>
     slug === META_SANDBOX_SLUG
       ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
-      : ensureSandboxImage(gitProject, {
+      : slug === PI_WORKER_SANDBOX_SLUG
+        ? // The pi worker is a shared content-hashed image like meta — never a
+          // project template. Its harness arrives at boot as the compiled
+          // artifact (KORTIX_PI_RUNTIME_REF/SHA in extraEnvVars).
+          ensurePiWorkerImage({ source: 'session-start', provider: targetProvider })
+        : ensureSandboxImage(gitProject, {
           slug,
           accountId,
           source: 'session-start',
@@ -567,7 +574,7 @@ export async function provisionSessionSandbox(opts: {
       slug: string;
       contentHash: string;
       isDefault: boolean;
-      runtimeProfile?: 'standard' | 'fast' | 'meta';
+      runtimeProfile?: 'standard' | 'fast' | 'meta' | 'pi-worker';
       isProjectImage?: boolean;
     } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id
