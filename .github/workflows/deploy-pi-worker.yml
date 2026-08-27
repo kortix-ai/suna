@@ -256,7 +256,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
         run: |
           set -euo pipefail
-          target="$(jq -r '.sandboxOrigin // empty' tests/test-results/preview/deployment.json)"
+          # Absolute: this step runs in the Worker's directory, not the checkout.
+          target="$(jq -r '.sandboxOrigin // empty' "$GITHUB_WORKSPACE/tests/test-results/preview/deployment.json")"
           [ -n "$target" ] || { echo "::error::the deploy reported no sandbox origin to point at"; exit 1; }
           echo "pointing ${PUBLIC_ORIGIN} -> ${target}"
           npx --yes wrangler@4 deploy --var "TARGET_ORIGIN:${target}"
