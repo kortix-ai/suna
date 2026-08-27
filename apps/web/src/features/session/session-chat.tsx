@@ -13,8 +13,13 @@ import {
   hasRetryingAssistantTurn,
   listSessionPrompts,
   projectSessionConnection,
+  sandboxStatusToLifecycle,
 } from '@kortix/sdk';
-import { isOptimisticSessionPrompt, useProjectSession } from '@kortix/sdk/react';
+import {
+  isOptimisticSessionPrompt,
+  useProjectSession,
+  useSessionRuntimeControl,
+} from '@kortix/sdk/react';
 import {
   WarningIcon as AlertTriangle,
   ArrowBendUpLeftIcon,
@@ -4792,8 +4797,17 @@ export function SessionChat({
   // reason the composer no longer guesses: `unknown` and `connecting` are
   // waits, and a wait is not a fault. Only the control plane saying the box is
   // down earns the waking notice.
+  // The LIVE box status the control channel pushes over `/events` — the frame
+  // the client used to DROP. Prefer it over the polled session row so the
+  // connection notice reacts to the box going down/up on the stream, not at the
+  // next poll; fall back to the row until the first frame lands (never read an
+  // absent frame as "stopped").
+  const runtimeControl = useSessionRuntimeControl(projectId, projectSessionId);
   const sessionConnection = projectSessionConnection({
-    sandbox: (projectSessionRow?.status as SandboxLifecycle | undefined) ?? null,
+    sandbox:
+      sandboxStatusToLifecycle(runtimeControl?.sandbox_status, runtimeControl?.waking) ??
+      (projectSessionRow?.status as SandboxLifecycle | undefined) ??
+      null,
     runtimeReady,
     unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
     stalled: runtimeStalled,

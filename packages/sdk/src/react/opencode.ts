@@ -45,6 +45,8 @@ export * from './use-opencode-pty';
 export * from './use-opencode-config';
 export * from './use-model-store';
 export * from './use-session-sync';
+export { useSessionRuntimeControl } from './use-session-runtime-control';
+export type { RuntimeControlSnapshot } from './session-stream-routing';
 export { useOpenCodeAgents as useRuntimeAgents } from './use-opencode-sessions/agents';
 export { useOpenCodeCommands as useRuntimeCommands } from './use-opencode-sessions/commands';
 export {

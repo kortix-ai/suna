@@ -194,6 +194,11 @@ export const qk = {
     /** `getSessionTurn` — server truth about the turns running right now. */
     sessionTurn: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'turn'] as const,
+    /** The live `kortix.control.runtime` box view, pushed over `/events` — the
+     *  control plane's sandbox_status/waking, so connection state rides the
+     *  stream instead of a poll. No fetch: written only by the stream sink. */
+    sessionRuntimeControl: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'runtime-control'] as const,
 
     connectors: (id: string) => [...qk.project.scope(id), 'connectors'] as const,
     /** One connector's config — `getConnectorConfig(id, slug)`. */

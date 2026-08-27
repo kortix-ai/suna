@@ -62,6 +62,7 @@ import { qk } from './query-keys';
 import {
   applyRuntimeStateLeg,
   routeSessionStreamFrame,
+  type RuntimeControlSnapshot,
   type RuntimeStateLegDeps,
 } from './session-stream-routing';
 import { clearConfigOverrides } from './use-opencode-config';
@@ -270,6 +271,15 @@ export function useSessionRuntimeStream(
         // reads it to invalidate its query and to stand its poll down — the
         // control channel is the notify path now, the endpoint stays the read.
         markSessionAuditWatermark(scope, fingerprint);
+      },
+      applyControlRuntime: (runtime: RuntimeControlSnapshot) => {
+        // The control plane's LIVE box view (was dropped). Cache-only — read by
+        // `useSessionRuntimeControl`, which feeds `projectSessionConnection`, so
+        // connection/readiness reacts to the stream instead of a poll.
+        queryClient.setQueryData(
+          qk.project.sessionRuntimeControl(projectId, sessionId),
+          runtime,
+        );
       },
     };
 

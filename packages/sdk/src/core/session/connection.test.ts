@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   connectionIsFaulted,
   projectSessionConnection,
+  sandboxStatusToLifecycle,
   type SessionConnectionInputs,
 } from './connection';
 
@@ -97,3 +98,39 @@ describe('connectionIsFaulted', () => {
     }
   });
 });
+
+describe('sandboxStatusToLifecycle (the live kortix.control.runtime bridge)', () => {
+  test('maps sandbox_status onto the lifecycle projectSessionConnection reads', () => {
+    expect(sandboxStatusToLifecycle('active')).toBe('running');
+    expect(sandboxStatusToLifecycle('provisioning')).toBe('provisioning');
+    expect(sandboxStatusToLifecycle('stopped')).toBe('stopped');
+    expect(sandboxStatusToLifecycle('archived')).toBe('archived');
+    expect(sandboxStatusToLifecycle('error')).toBe('failed');
+  });
+
+  test('a wake in flight reads as provisioning, whatever the row says', () => {
+    // `waking` is the control plane resuming the box RIGHT NOW — coming up, not
+    // a bare stopped box. It outranks the raw status so the notice says "waking".
+    expect(sandboxStatusToLifecycle('stopped', true)).toBe('provisioning');
+    expect(sandboxStatusToLifecycle('active', true)).toBe('provisioning');
+    expect(projectSessionConnection({ sandbox: sandboxStatusToLifecycle('stopped', true), runtimeReady: false })).toBe('waking');
+  });
+
+  test('an unknown/absent status is null — the caller falls back to the row, never read as stopped', () => {
+    expect(sandboxStatusToLifecycle(null)).toBeNull();
+    expect(sandboxStatusToLifecycle(undefined)).toBeNull();
+    expect(sandboxStatusToLifecycle('something-new')).toBeNull();
+    // null lifecycle → the projection says 'unknown', NOT 'waking' (no false alarm).
+    expect(projectSessionConnection({ sandbox: sandboxStatusToLifecycle(null), runtimeReady: false })).toBe('unknown');
+  });
+
+  test('a live active box with a fresh runtime frame reads as live', () => {
+    expect(
+      projectSessionConnection({
+        sandbox: sandboxStatusToLifecycle('active'),
+        runtimeReady: false,
+        activityFresh: true,
+      }),
+    ).toBe('live');
+  });
+})

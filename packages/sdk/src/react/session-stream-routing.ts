@@ -27,6 +27,23 @@ import type {
 import type { SessionPrompt, SessionTurn, SessionTurnEnded } from '../core/rest/projects-client/sessions';
 import type { SessionTurnObservation } from './use-session-working';
 
+/**
+ * The `kortix.control.runtime` frame's payload — the control plane's LIVE view
+ * of the box behind this session (`RuntimeControlState` server-side). This is
+ * what lets connection/readiness state ride the stream instead of a poll: a box
+ * going down, coming up, or being resumed is pushed here the instant it changes.
+ */
+export interface RuntimeControlSnapshot {
+  /** `session_sandboxes.status` — `active` / `provisioning` / `stopped` / … */
+  sandbox_status: string | null;
+  /** A resume is DRIVING this box right now (coming up, not merely stopped). */
+  waking: boolean;
+  /** The box's external id, or `null` before one is assigned. */
+  external_id?: string | null;
+  /** When an in-flight wake's grant expires, ISO — for the "taking a while" copy. */
+  deadline_at?: string | null;
+}
+
 export interface SessionStreamSinks {
   applyRuntimeEvent: (event: OpenCodeEvent) => void;
   applyControlTurn: (observation: SessionTurnObservation) => void;
@@ -36,6 +53,9 @@ export interface SessionStreamSinks {
    *  or was resolved. The sink invalidates the audit query; the payload is the
    *  change-detection fingerprint the presence signal dedupes on. */
   applyControlAudit: (fingerprint: string) => void;
+  /** The control plane's live view of the box — drives connection/readiness off
+   *  the stream (see {@link RuntimeControlSnapshot}). Was dropped before. */
+  applyControlRuntime: (runtime: RuntimeControlSnapshot) => void;
 }
 
 function frameStamp(frame: SessionStreamFrame): number {
@@ -87,8 +107,22 @@ export function routeSessionStreamFrame(frame: SessionStreamFrame, sinks: Sessio
       );
       return;
     }
+    case 'kortix.control.runtime': {
+      // The control plane's LIVE box view — no longer dropped. `known: false`
+      // is a read that failed and must not be applied (never assert a box state
+      // from a failed read). Drives connection/readiness off the stream.
+      if (payload?.known !== true) return;
+      sinks.applyControlRuntime({
+        sandbox_status:
+          typeof payload.sandbox_status === 'string' ? payload.sandbox_status : null,
+        waking: payload.waking === true,
+        external_id: typeof payload.external_id === 'string' ? payload.external_id : null,
+        deadline_at: typeof payload.deadline_at === 'string' ? payload.deadline_at : null,
+      });
+      return;
+    }
     default:
-      // kortix.control.runtime / .mirror / .resync — nothing to store yet.
+      // kortix.control.mirror / .resync — nothing to store yet.
       return;
   }
 }

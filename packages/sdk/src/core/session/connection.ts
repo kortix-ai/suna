@@ -99,3 +99,38 @@ export function projectSessionConnection(input: SessionConnectionInputs): Sessio
 export function connectionIsFaulted(connection: SessionConnection): boolean {
   return connection === 'unreachable';
 }
+
+/**
+ * Map the LIVE `kortix.control.runtime` frame's `sandbox_status`
+ * (`session_sandboxes.status`) onto the `SandboxLifecycle` that
+ * {@link projectSessionConnection} reads.
+ *
+ * This is the bridge that lets the connection state react to the STREAM instead
+ * of a polled `project_sessions.status` row: the control channel pushes the
+ * box's live status (and a `waking` flag while a resume is in flight), so a box
+ * going down or coming up is reflected the instant the frame arrives, not at the
+ * next poll. `waking === true` means a resume is DRIVING the box right now, so
+ * it reads as `provisioning` (coming up) rather than a bare `stopped`. `null` /
+ * an unknown value means "the frame said nothing usable" — the caller falls
+ * back to the row, and `null` is NOT read as stopped (see `SandboxLifecycle`).
+ */
+export function sandboxStatusToLifecycle(
+  status: string | null | undefined,
+  waking?: boolean,
+): SandboxLifecycle {
+  if (waking === true) return 'provisioning';
+  switch (status) {
+    case 'active':
+      return 'running';
+    case 'provisioning':
+      return 'provisioning';
+    case 'stopped':
+      return 'stopped';
+    case 'archived':
+      return 'archived';
+    case 'error':
+      return 'failed';
+    default:
+      return null;
+  }
+}

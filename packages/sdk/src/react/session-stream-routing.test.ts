@@ -13,23 +13,27 @@ function sinks(): SessionStreamSinks & {
   queues: Array<{ prompts: unknown[]; atMs: number }>;
   legs: unknown[];
   audits: string[];
+  runtimes: unknown[];
 } {
   const runtimeEvents: Array<{ type: string; properties: unknown }> = [];
   const turns: unknown[] = [];
   const queues: Array<{ prompts: unknown[]; atMs: number }> = [];
   const legs: unknown[] = [];
   const audits: string[] = [];
+  const runtimes: unknown[] = [];
   return {
     runtimeEvents,
     turns,
     queues,
     legs,
     audits,
+    runtimes,
     applyRuntimeEvent: (event) => runtimeEvents.push(event as never),
     applyControlTurn: (observation) => turns.push(observation),
     applyControlQueue: (prompts, atMs) => queues.push({ prompts: [...prompts], atMs }),
     applyRuntimeStateLeg: (leg) => legs.push(leg),
     applyControlAudit: (fingerprint) => audits.push(fingerprint),
+    applyControlRuntime: (runtime) => runtimes.push(runtime),
   };
 }
 
@@ -75,6 +79,38 @@ describe('routeSessionStreamFrame', () => {
     expect(s.turns).toEqual([
       { turns: [{ turn_token: 't1' }], last_ended: { turn_token: 't0' }, atMs: 1234 },
     ]);
+  });
+
+  test('a known control RUNTIME frame lands as a live box snapshot (was dropped before)', () => {
+    const s = sinks();
+    routeSessionStreamFrame(
+      {
+        channel: 'control',
+        type: 'kortix.control.runtime',
+        cseq: 3,
+        at: 9,
+        payload: {
+          known: true,
+          sandbox_status: 'stopped',
+          waking: true,
+          external_id: 'sbx_1',
+          deadline_at: '2026-08-28T00:00:00Z',
+        },
+      } as SessionStreamFrame,
+      s,
+    );
+    expect(s.runtimes).toEqual([
+      { sandbox_status: 'stopped', waking: true, external_id: 'sbx_1', deadline_at: '2026-08-28T00:00:00Z' },
+    ]);
+  });
+
+  test('an UNKNOWN control runtime frame is never applied — a failed read is not a box state', () => {
+    const s = sinks();
+    routeSessionStreamFrame(
+      { channel: 'control', type: 'kortix.control.runtime', payload: { known: false } } as SessionStreamFrame,
+      s,
+    );
+    expect(s.runtimes).toEqual([]);
   });
 
   test('an UNKNOWN control snapshot is never applied — unknown is not idle', () => {
