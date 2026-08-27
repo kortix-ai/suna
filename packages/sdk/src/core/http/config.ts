@@ -25,8 +25,10 @@ export interface KortixPlatformConfig {
   backendUrl: string;
   /** Returns the current bearer (Supabase JWT, PAT, or API key) — or null if unauthenticated. */
   getToken: () => Promise<string | null>;
-  /** Optional fetch implementation for tests, edge runtimes, and compatibility adapters. */
-  fetch?: typeof fetch;
+  /** Optional fetch implementation for tests, edge runtimes, and compatibility adapters.
+   *  Any fetch-shaped function is accepted (the global `fetch` type also carries
+   *  runtime extras such as Bun's `preconnect`, which no adapter needs to provide). */
+  fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   /** Identifies the host surface in centralized audit events. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'web';
   /** Optional UI error sink (toast/log). No-op by default. */

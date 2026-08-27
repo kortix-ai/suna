@@ -21,6 +21,58 @@ linked, not inlined.
 
 ## Register
 
+### A web API the middleware needs must exist in the IMAGE's runtime, not the laptop's (2026-08-27)
+
+**When:** adding any global middleware or hot-path code that uses a Web/Bun
+API (`CompressionStream`, `DecompressionStream`, `ReadableStream.from`,
+`Response.json`, …), or bumping/pinning Bun anywhere. `apps/api/Dockerfile`
+pins `ARG BUN_VERSION=1.2` (1.2.23 today) while every developer laptop and
+every CI lane runs Bun 1.3.x. `CompressionStream` does not exist in Bun 1.2.
+The compress middleware from #6946 peeked the body of every eligible response
+and then threw `ReferenceError: CompressionStream is not defined`, so on dev
+**every API response ≥ 1 KiB answered 500** (`GET /accounts`, `account-state`,
+`iam/permissions`, `iam/roles` — the whole account hub) while sub-KiB routes
+and `/health` stayed green. 8,545 green unit tests, a green typecheck and a green
+deploy proved nothing, because none of them ran on the image's Bun. Cloudflare
+sends `Accept-Encoding: gzip` to the origin regardless of the client, so no
+request could dodge the path.
+**Rules:** (1) feature-detect any Web API a middleware uses at module load and
+fail OPEN (skip the feature, never touch the body) when it is absent; (2) treat
+`BUN_VERSION` in the Dockerfile as the runtime contract — either pin the
+laptop/CI to it or add a test that runs the middleware under
+`oven/bun:<BUN_VERSION>`; (3) a green `/health` after deploy is not a smoke
+test — hit one route whose response exceeds 1 KiB.
+*Incident:* dev broken 2026-08-26 22:41 → 2026-08-27 (fix in progress) — first
+noticed only because the branding rollout verification hit `GET /accounts`.
+*Enforcer:* `compress.test.ts` pins the fail-open path with `CompressionStream`
+deleted from `globalThis`; nothing yet runs the suite under the image's Bun.
+
+### A React effect keyed on a provider-issued object must cache its work by id, never bail — and only the deployed page proves it (2026-08-26)
+
+**When:** an effect does one-shot async work (a consent read + approve, an
+exchange, anything consumed server-side) and its deps include an object the
+auth/data provider re-issues (`user`, `session`). The re-run cancels run #1
+via cleanup; a "started already" guard then makes run #2 bail, and the page
+holds its loading state forever. Cache the PROMISE per id and let whichever
+run is current apply it; a redirect after a consumed request fires
+unconditionally.
+*Incident:* Sign in with Kortix consent page (#6945) spun forever on
+dev.kortix.com for a fresh client while `/v1/oauth/authorize/consent/:id`
+answered 200; local Chromium never re-issued `user` in that window, so the
+local run passed. Fixed in #6949 the same evening; dev only.
+*Enforcer:* none — the rule is: drive the deployed page for any auth flow.
+
+### The dev edge WAF 403s any query string carrying a bare `localhost` / `127.0.0.1` host (2026-08-26)
+
+**When:** pointing a locally-running app at `dev-api.kortix.com` with a
+`redirect_uri`, `callback`, or `return_to` on `localhost`. Cloudflare answers
+403 before the API sees the request (cf-ray, no `x-kortix-*` headers). Use a
+`*.localhost` name (`demo.localhost:8792` — browsers resolve it to loopback
+and the OAuth registry accepts the suffix).
+*Near-miss:* the dev sign-in demo hit 403 on `/v1/oauth/authorize`; read as an
+API regression until curl with `app.example.test` returned the API's own 400.
+*Enforcer:* none — docs note in `/docs/sdk/sign-in` is the TODO.
+
 ### `github-release` needs the npm publishes, so an npm-publish failure silently strips the tag, Release, changelog, and VERSION sync from a shipped prod deploy (2026-08-26)
 
 **When:** touching `scripts/publish-npm-package.sh`, the deploy-prod publish

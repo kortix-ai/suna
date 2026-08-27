@@ -24,6 +24,7 @@ import {
 // pulled in by most of the project surface, and several suites mock the barrel
 // with a partial shape — a barrel import here turns those into module-load
 // SyntaxErrors far from anything they're testing.
+import { invalidateRequestMemo, requestMemo } from '../../lib/request-context';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { authorize } from '../../iam/authorize';
 import { actorForToken } from '../../iam/actor';
@@ -247,13 +248,38 @@ export interface ProjectGitRemote {
 }
 
 
+/**
+ * Request-memo key for one project's git connection. Exported so the write path
+ * below (and any future one) invalidates the exact same key it caches under.
+ */
+function gitConnectionMemoKey(projectId: string): string {
+  return `project-git-connection:${projectId}`;
+}
+
+/**
+ * The project's git connection row.
+ *
+ * Reached through four independent helpers (`withProjectGitAuth`,
+ * `resolveProjectUpstream`, `hasServerManagedGitAuth`, and the `/detail`
+ * response field), so a single request loads it two to three times: measured
+ * 3× on `GET /:projectId/detail` and 2× on `/secrets`, `/sandbox-health` and
+ * `/sessions/:id/config` (postgres.js statement trace, 2026-08-26). Each is a
+ * separate serial round trip on the request's critical path.
+ *
+ * Memoized for the duration of ONE request only — never across requests — so a
+ * caller can never observe a connection row written before its own request
+ * started. The upsert below drops the entry, so a read AFTER a write in the
+ * same request still sees the new row.
+ */
 export async function getProjectGitConnection(projectId: string): Promise<ProjectGitConnectionRow | null> {
-  const [row] = await db
-    .select()
-    .from(projectGitConnections)
-    .where(eq(projectGitConnections.projectId, projectId))
-    .limit(1);
-  return row ?? null;
+  return requestMemo(gitConnectionMemoKey(projectId), async () => {
+    const [row] = await db
+      .select()
+      .from(projectGitConnections)
+      .where(eq(projectGitConnections.projectId, projectId))
+      .limit(1);
+    return row ?? null;
+  });
 }
 
 
@@ -315,6 +341,9 @@ export async function upsertProjectGitConnection(input: {
       set: values,
     })
     .returning();
+  // The read above is request-memoized; a write inside the same request must
+  // not leave the pre-write row cached behind it.
+  invalidateRequestMemo(gitConnectionMemoKey(input.projectId));
   return row;
 }
 

@@ -76,6 +76,7 @@ describe('self-host ENTERPRISE_LICENSE_AVAILABLE override', () => {
     expect(ent.scim).toBe(true);
     expect(ent.rbac).toBe(true);
     expect(ent.auditAccess).toBe(true);
+    expect(ent.branding).toBe(true);
   });
 
   test('license on → unlocked even on the free tier', async () => {

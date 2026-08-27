@@ -36,6 +36,37 @@ export interface SessionRuntimeEnvInput {
   compiledAgentConfig?: string | null;
 }
 
+/**
+ * The sandbox audit relay's emission contract
+ * (apps/kortix-sandbox-agent-server/src/opencode-audit-relay.ts) is read from
+ * the SANDBOX environment. A self-host operator can set these in compose; a
+ * hosted sandbox has no such file, so the API forwards its own values when an
+ * operator sets them. Only these four names cross, and only when non-empty —
+ * an unset knob leaves the sandbox env byte-for-byte unchanged.
+ *
+ * This is the lever that retunes audit POST volume during an incident without
+ * a daemon release.
+ */
+const AUDIT_RELAY_ENV_KEYS = [
+  'KORTIX_AUDIT_RELAY_BATCH_SIZE',
+  'KORTIX_AUDIT_RELAY_FLUSH_MS',
+  'KORTIX_AUDIT_RELAY_DROP_TYPES',
+  'KORTIX_AUDIT_RELAY_COALESCE',
+] as const;
+
+export function auditRelayEnvPassthrough(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const forwarded: Record<string, string> = {};
+  for (const key of AUDIT_RELAY_ENV_KEYS) {
+    const value = env[key];
+    // `KORTIX_AUDIT_RELAY_DROP_TYPES=''` is a MEANINGFUL value (drop nothing),
+    // so only an absent variable is skipped.
+    if (typeof value === 'string') forwarded[key] = value;
+  }
+  return forwarded;
+}
+
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
   const allowsFullRepository = workspaceModeAllowsFullRepository(input.workspaceMode);
   const compiledBootMode = input.compiledBootMode ?? 'off';
@@ -73,6 +104,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...projectGitEnv,
     ...fastGitBootEnv,
     ...restoreGitEnv,
+    ...auditRelayEnvPassthrough(),
     ...(input.fastColdBootEnabled ? { KORTIX_OPENCODE_BINARY_PREFETCH: '1' } : {}),
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,

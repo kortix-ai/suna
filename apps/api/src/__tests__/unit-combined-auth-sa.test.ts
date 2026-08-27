@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realCrypto from '../shared/crypto';
 import { Hono } from 'hono';
 import * as realPreviewOwnership from '../shared/preview-ownership';
 import * as realRequestContext from '../lib/request-context';
@@ -9,6 +10,9 @@ import * as realSsoSync from '../iam/sso-sync';
 let secretKeyValidations: string[] = [];
 
 mock.module('../shared/crypto', () => ({
+  // Spread the real module: mock.module replaces it WHOLESALE, and the auth
+  // middleware now reaches shared/crypto through oauth/token-hash too.
+  ...realCrypto,
   isAccountToken: (t: string) => t.startsWith('kortix_pat_'),
   isServiceAccountToken: (t: string) => t.startsWith('kortix_sa_'),
   isKortixToken: (t: string) => t.startsWith('kortix_'),

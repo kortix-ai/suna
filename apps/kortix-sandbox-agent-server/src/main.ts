@@ -42,7 +42,7 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
-import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
+import { auditRelayConfigFromEnv, auditRelayToken, createAuditRelay } from './opencode-audit-relay'
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
   OPENCODE_SESSION_PIN_PATH,
@@ -679,9 +679,24 @@ async function startSessionRuntime(
         throw error
       }
     },
-    { spoolPath: resolveOpenCodeAuditSpoolPath(process.env) },
+    // Batch size, cadence, the dropped classes and the coalesced classes all
+    // come from the environment so an incident can retune the emission
+    // contract without a daemon release. See the contract block in
+    // opencode-audit-relay.ts.
+    {
+      spoolPath: resolveOpenCodeAuditSpoolPath(process.env),
+      ...auditRelayConfigFromEnv(process.env),
+    },
   )
+  const auditConfig = auditRelayConfigFromEnv(process.env)
+  logger.info('[opencode-events] audit relay emission contract', {
+    batchSize: auditConfig.batchSize,
+    flushMs: auditConfig.flushMs,
+    dropTypes: auditConfig.dropTypes,
+    coalesceTypes: auditConfig.coalesceTypes.length,
+  })
   const flushAuditRelay = () => {
+    logger.info('[opencode-events] audit relay volume', auditRelay.stats())
     void auditRelay.stop().catch((error) =>
       logger.warn('[opencode-events] audit relay shutdown flush failed', {
         err: error instanceof Error ? error.message : String(error),

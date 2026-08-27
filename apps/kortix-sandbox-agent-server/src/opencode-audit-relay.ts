@@ -396,11 +396,199 @@ export function sanitizeOpenCodeEvent(
   };
 }
 
+export interface AuditRelayStats {
+  /** Events refused at the source because their class is on `dropTypes`. */
+  dropped: number;
+  /** Events superseded in the pending queue by a newer identical state. */
+  coalesced: number;
+  /** Events the API accepted. A rejected batch is not counted until it lands. */
+  sent: number;
+  /** Accepted POSTs. `sent / posts` is the achieved batch size. */
+  posts: number;
+}
+
 export interface AuditRelay {
   enqueue(raw: { type?: string; properties?: unknown }): void;
   flush(): Promise<void>;
   stop(options?: { flush?: boolean }): Promise<void>;
+  stats(): AuditRelayStats;
 }
+
+/**
+ * EMISSION CONTRACT — how many POSTs one sandbox is allowed to cost.
+ * ------------------------------------------------------------------
+ * Measured on Essentia 2026-08-26: POST
+ * `/v1/projects/:p/sessions/:s/audit/events` ran 3,395 times across 20 session
+ * opens in one hour — 680 ms median, 2,265 s cumulative, the single largest
+ * line in the whole performance corpus. One local session
+ * (`08891820-0cd9-4fe7-bcfd-2431375ff75d`, `kortix.audit_events`) shows the
+ * mechanism: 117,437 relayed OpenCode events in 64 minutes, and the relay's own
+ * access log records 4,848 POSTs for that ONE session.
+ *
+ * The volume was never batched away because the relay forwarded EVERY OpenCode
+ * SSE event 1:1 (`main.ts` `onEvent` -> `enqueue`) at `batchSize = 50`. Three
+ * rules now bound it, in the order they apply:
+ *
+ * 1. DROP a class that carries no audited fact (`dropTypes`). Two qualify, and
+ *    together they are 91.7% of that session's traffic:
+ *      - `message.part.delta` (107,394 rows / 91.4%) is one row per streamed
+ *        TOKEN. The token itself is stripped by `sanitizeOpenCodeEvent`, so the
+ *        persisted row is identity + hashes and nothing a reconstruction can
+ *        use. The API already names this the one droppable class
+ *        (`shared/opencode-audit-rate-guard.ts:62`) — it just dropped it AFTER
+ *        paying for the network hop, the two scope queries and the insert.
+ *      - `server.heartbeat` (384 rows) is a daemon liveness ping: no actor, no
+ *        resource, no state change.
+ *    Dropping happens BEFORE `sanitizeOpenCodeEvent` and before `persist()`, so
+ *    it also removes 91.7% of the spool's fsyncs from the sandbox's hot path.
+ *
+ * 2. COALESCE repeats, never transitions (`coalesceTypes`). A streaming text
+ *    part emits one `message.part.updated` per chunk; every one of them has the
+ *    same session, message, part, phase and outcome, and differs only in a
+ *    timestamp and a hash of content that is deliberately not persisted. The
+ *    coalesce key includes `phase` and `outcome`, so a tool part walking
+ *    pending -> running -> completed keeps all three rows, and permission,
+ *    question, error, file and lifecycle classes are not on the list at all.
+ *    The survivor is the NEWEST state and it takes the tail position, so
+ *    `occurred_at` stays monotonic inside a batch.
+ *
+ * 3. BATCH what is left: one POST per `batchSize` events or per `flushMs`,
+ *    whichever comes first — the timer runs from the OLDEST pending event, so
+ *    a steady stream cannot keep postponing a flush. `batchSize` defaults to
+ *    the API's own ceiling
+ *    (`MAX_BATCH_SIZE = 200`, `shared/opencode-audit-ingestion.ts:10`) and is
+ *    clamped to it, so a misconfigured env can never produce a 400. The route
+ *    still writes in 25-row chunks server-side, so a 200-event POST costs the
+ *    same insert work as four 50-event POSTs but ONE auth pass and ONE pair of
+ *    scope queries.
+ *
+ * Nothing here weakens delivery: the spool is still fsynced per accepted event,
+ * `stop()` still drains, and a 503 + Retry-After still backs off on the
+ * existing ladder.
+ */
+
+/** The API rejects a batch larger than this (`MAX_BATCH_SIZE`). */
+export const MAX_RELAY_BATCH_SIZE = 200;
+export const DEFAULT_BATCH_SIZE = MAX_RELAY_BATCH_SIZE;
+/**
+ * Upper bound on how long an accepted event waits for company.
+ *
+ * After rule 1 a busy session emits ~190 events/min (12,083 kept events over
+ * the 64-minute reference session), so a 200-event batch takes ~63 s to fill:
+ * the relay is cadence-bound, not batch-bound, and this number alone decides
+ * the POST rate. Measured on the reference trace: 2 s -> 1,040 POSTs, 5 s ->
+ * 588, 10 s -> 318, against 4,848 POSTs actually recorded for that session.
+ *
+ * Measured POSTs for that session by `flushMs` (same trace, same relay):
+ *   500 ms (old default, no rule 1/2)  2,462   median batch 50
+ *   2 s                                1,040   median batch 11
+ *   5 s                                  588   median batch 17
+ *   10 s (this default)                  318   median batch 26
+ *   30 s                                  121   median batch 64
+ *   60 s                                   62   median batch 118
+ * An operator can move to 30 s with `KORTIX_AUDIT_RELAY_FLUSH_MS=30000` during
+ * an incident without a daemon release.
+ *
+ * 10 s is affordable because `kortix.audit_events` has NO real-time consumer.
+ * The approval gate and the question relay run on the live OpenCode SSE stream
+ * and `relayQuestionToApi` (main.ts), not on this ledger; what reads the ledger
+ * is the IAM audit log, the session audit panel, exports and the SIEM webhook.
+ * Nothing is lost by waiting: the spool is fsynced per accepted event and
+ * `stop()` drains it on SIGTERM/SIGINT.
+ */
+export const DEFAULT_FLUSH_MS = 10_000;
+
+/** Raw OpenCode event types the relay never forwards. See rule 1 above. */
+export const DEFAULT_DROPPED_EVENT_TYPES: readonly string[] = [
+  'message.part.delta',
+  'server.heartbeat',
+];
+
+/** Raw types whose same-state repeats collapse in the queue. See rule 2. */
+export const DEFAULT_COALESCED_EVENT_TYPES: readonly string[] = [
+  'message.updated',
+  'message.part.updated',
+  'session.status',
+  'session.updated',
+  'session.diff',
+  'catalog.updated',
+  'file.watcher.updated',
+];
+
+/**
+ * Two events collapse only when they are the same class, about the same thing,
+ * in the same lifecycle phase, with the same outcome. Any transition changes
+ * `phase` or `outcome` and therefore survives.
+ */
+export function coalesceKey(event: OpenCodeAuditEvent): string {
+  const part = event.input_summary.part;
+  const partObject =
+    part && typeof part === 'object' && !Array.isArray(part)
+      ? (part as Record<string, unknown>)
+      : {};
+  return [
+    event.type,
+    event.opencode_session_id ?? '',
+    event.message_id ?? '',
+    typeof partObject.id === 'string' ? partObject.id : '',
+    typeof partObject.type === 'string' ? partObject.type : '',
+    event.tool_call_id ?? '',
+    event.phase,
+    event.outcome,
+  ].join('|');
+}
+
+export interface AuditRelayConfig {
+  batchSize: number;
+  flushMs: number;
+  dropTypes: string[];
+  coalesceTypes: string[];
+}
+
+function typeList(raw: string | undefined, fallback: readonly string[]): string[] {
+  if (raw === undefined) return [...fallback];
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+/**
+ * Every knob in the contract above, readable from the sandbox environment so an
+ * incident can be tuned without a daemon release.
+ *
+ * - `KORTIX_AUDIT_RELAY_BATCH_SIZE` — 1..200, clamped. Default 200.
+ * - `KORTIX_AUDIT_RELAY_FLUSH_MS`   — >0 ms. Default 10000.
+ * - `KORTIX_AUDIT_RELAY_DROP_TYPES` — comma list; empty string drops nothing.
+ * - `KORTIX_AUDIT_RELAY_COALESCE`   — `0`/`false`/`off` disables rule 2, or a
+ *   comma list to replace the coalesced set outright.
+ */
+export function auditRelayConfigFromEnv(env: NodeJS.ProcessEnv): AuditRelayConfig {
+  const rawBatch = Number.parseInt(env.KORTIX_AUDIT_RELAY_BATCH_SIZE || '', 10);
+  const batchSize =
+    Number.isFinite(rawBatch) && rawBatch > 0
+      ? Math.min(rawBatch, MAX_RELAY_BATCH_SIZE)
+      : DEFAULT_BATCH_SIZE;
+  const rawFlush = Number.parseInt(env.KORTIX_AUDIT_RELAY_FLUSH_MS || '', 10);
+  const flushMs = Number.isFinite(rawFlush) && rawFlush > 0 ? rawFlush : DEFAULT_FLUSH_MS;
+  const coalesceRaw = env.KORTIX_AUDIT_RELAY_COALESCE;
+  const coalesceOff =
+    coalesceRaw !== undefined && ['0', 'false', 'off', 'no'].includes(coalesceRaw.trim().toLowerCase());
+  return {
+    batchSize,
+    flushMs,
+    dropTypes: typeList(env.KORTIX_AUDIT_RELAY_DROP_TYPES, DEFAULT_DROPPED_EVENT_TYPES),
+    coalesceTypes: coalesceOff
+      ? []
+      : typeList(coalesceRaw, DEFAULT_COALESCED_EVENT_TYPES),
+  };
+}
+
+/**
+ * How far back a coalesce lookup scans. Bounds the per-event cost even when a
+ * recovered spool hands the relay a queue with a very large backlog.
+ */
+const COALESCE_SCAN_LIMIT = 1_000;
 
 const DEFAULT_MAX_SPOOL_BYTES = 64 * 1024 * 1024;
 const MAX_LINEAGE_DEPTH = 100;
@@ -561,10 +749,17 @@ export function createAuditRelay(
     jitter?: () => number;
     spoolPath?: string;
     maxSpoolBytes?: number;
+    /** Raw OpenCode types never forwarded. Defaults to `DEFAULT_DROPPED_EVENT_TYPES`. */
+    dropTypes?: readonly string[];
+    /** Raw OpenCode types whose same-state repeats collapse. Empty disables rule 2. */
+    coalesceTypes?: readonly string[];
   } = {},
 ): AuditRelay {
-  const batchSize = options.batchSize ?? 50;
-  const flushMs = options.flushMs ?? 500;
+  const batchSize = Math.min(options.batchSize ?? DEFAULT_BATCH_SIZE, MAX_RELAY_BATCH_SIZE);
+  const flushMs = options.flushMs ?? DEFAULT_FLUSH_MS;
+  const dropTypes = new Set(options.dropTypes ?? DEFAULT_DROPPED_EVENT_TYPES);
+  const coalesceTypes = new Set(options.coalesceTypes ?? DEFAULT_COALESCED_EVENT_TYPES);
+  const stats: AuditRelayStats = { dropped: 0, coalesced: 0, sent: 0, posts: 0 };
   const retryMs = options.retryMs ?? 1_000;
   const maxRetryMs = options.maxRetryMs ?? MAX_RETRY_MS_DEFAULT;
   const jitter = options.jitter ?? Math.random;
@@ -649,7 +844,16 @@ export function createAuditRelay(
   };
   const recovered = load();
   const queue: OpenCodeAuditEvent[] = recovered.queue;
+  // Coalesce keys held in lockstep with `queue`. Never persisted: it is
+  // recomputed from the recovered events, so an in-place relay upgrade keeps
+  // the same contract without a spool version bump.
+  const queueKeys: string[] = queue.map((event) =>
+    coalesceTypes.has(event.type) ? coalesceKey(event) : '',
+  );
   for (const entry of recovered.lineage) sessions.set(entry.session_id, entry);
+  // Head of `queue` currently being POSTed. Coalescing must never rewrite a
+  // row that is already on the wire.
+  let inFlight = 0;
   let flushing: Promise<void> | null = null;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -676,17 +880,22 @@ export function createAuditRelay(
     if (flushing) return flushing;
     if (queue.length === 0) return;
     const batch = queue.slice(0, batchSize);
+    inFlight = batch.length;
     flushing = (async () => {
       try {
         await send(batch);
         consecutiveFailures = 0;
+        stats.sent += batch.length;
+        stats.posts += 1;
         queue.splice(0, batch.length);
+        queueKeys.splice(0, batch.length);
         persist();
       } catch (error) {
         consecutiveFailures += 1;
         schedule(retryDelay(retryAfterMs(error)));
         throw error;
       } finally {
+        inFlight = 0;
         flushing = null;
         // `schedule` is a no-op while a timer is already pending, so the
         // backoff armed by the catch above survives this line. Without that,
@@ -702,6 +911,12 @@ export function createAuditRelay(
   const relay: AuditRelay = {
     enqueue(raw) {
       if (stopped) return;
+      // Rule 1 — refused at the source, before sanitizing and before the spool
+      // fsync this event would otherwise cost.
+      if (typeof raw.type === 'string' && dropTypes.has(raw.type)) {
+        stats.dropped += 1;
+        return;
+      }
       const sanitized = sanitizeOpenCodeEvent(raw);
       if (!sanitized) return;
       const update = lineageUpdate(raw, sanitized.opencode_session_id);
@@ -718,21 +933,48 @@ export function createAuditRelay(
         });
       }
       const event = applyLineage(sanitized, sessions);
+      // Rule 2 — a pending event about the same thing, in the same phase, with
+      // the same outcome is superseded by this one. Bounded reverse scan, and
+      // never into the batch already on the wire.
+      const key = coalesceTypes.has(event.type) ? coalesceKey(event) : '';
+      let supersededAt = -1;
+      if (key) {
+        const from = Math.max(inFlight, queue.length - COALESCE_SCAN_LIMIT);
+        for (let i = queue.length - 1; i >= from; i -= 1) {
+          if (queueKeys[i] === key) {
+            supersededAt = i;
+            break;
+          }
+        }
+      }
+      const superseded = supersededAt >= 0 ? queue[supersededAt] : null;
+      if (supersededAt >= 0) {
+        queue.splice(supersededAt, 1);
+        queueKeys.splice(supersededAt, 1);
+      }
       queue.push(event);
+      queueKeys.push(key);
       try {
         persist();
       } catch (error) {
         queue.pop();
+        queueKeys.pop();
+        if (superseded) {
+          queue.splice(supersededAt, 0, superseded);
+          queueKeys.splice(supersededAt, 0, key);
+        }
         if (update && sessionId) {
           if (previous) sessions.set(sessionId, previous);
           else sessions.delete(sessionId);
         }
         throw error;
       }
+      if (superseded) stats.coalesced += 1;
       if (queue.length >= batchSize) void flush().catch(() => {});
       else schedule();
     },
     flush,
+    stats: () => ({ ...stats }),
     async stop(stopOptions = {}) {
       stopped = true;
       if (timer) clearTimeout(timer);

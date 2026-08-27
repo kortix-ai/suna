@@ -15,6 +15,7 @@ import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 import { syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { buildActor } from '../iam/actor';
 
@@ -158,6 +159,45 @@ export async function apiKeyAuth(c: Context, next: Next) {
 }
 
 /**
+ * Sign in with Kortix: resolve a `kortix_oat_` OAuth access token to the user
+ * who granted it. Shared by supabaseAuth and combinedAuth so both middlewares
+ * hand a route the same principal (see unit-oauth-access-token-auth.test.ts).
+ * Throws on any failure; sets the context and returns on success.
+ */
+async function applyOAuthAccessTokenPrincipal(c: Context, token: string): Promise<void> {
+  const result = await validateOAuthAccessToken(token);
+  if (!result.isValid || !result.userId) {
+    auditLoginFail({ c, reason: result.error ?? 'invalid_oauth_token', authType: 'oauth' });
+    throw new HTTPException(401, { message: result.error || 'Invalid OAuth access token' });
+  }
+  const scopes = result.scopes ?? [];
+  if (!oauthScopeAllowsPath(scopes, c.req.path)) {
+    auditLoginFail({ c, reason: 'insufficient_scope', authType: 'oauth', accountId: result.accountId ?? null });
+    throw new HTTPException(403, {
+      message: `insufficient_scope: this OAuth token was not granted the "kortix" scope, so it cannot reach ${c.req.path}`,
+    });
+  }
+  c.set('userId', result.userId);
+  c.set('userEmail', '');
+  c.set('authType', 'oauth');
+  if (result.accountId) c.set('accountId', result.accountId);
+  c.set('oauthClientId', result.clientId);
+  c.set('oauthScopes', scopes);
+  // No iamTokenId: the token acts AS the user (role-only), like an unscoped PAT.
+  c.set('agentGrant', null);
+  setSentryUser({ id: result.userId, accountId: result.accountId });
+  setContextField('userId', result.userId);
+  if (result.accountId) setContextField('accountId', result.accountId);
+  auditLoginSuccess({
+    c,
+    userId: result.userId,
+    accountId: result.accountId ?? null,
+    authType: 'oauth',
+    metadata: { oauth_client_id: result.clientId, scopes },
+  });
+}
+
+/**
  * Supabase JWT auth (for billing, platform, admin routes).
  * Header-only — sets userId and userEmail in context on success.
  *
@@ -257,6 +297,15 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
       authType: 'pat',
       metadata: result.projectId ? { project_id: result.projectId } : undefined,
     });
+    await next();
+    return;
+  }
+
+  // OAuth access token (Sign in with Kortix) — acts as the granting user.
+  // MUST precede every `kortix_`-prefix branch: the generic key validator
+  // would otherwise reject it against the api_keys table.
+  if (isOAuthAccessToken(token)) {
+    await applyOAuthAccessTokenPrincipal(c, token);
     await next();
     return;
   }
@@ -556,6 +605,15 @@ async function resolveCombinedAuth(c: Context, next: Next) {
       accountId: patResult.accountId ?? null,
       authType: 'pat',
     });
+    await next();
+    return;
+  }
+
+  // 1b. OAuth access token (Sign in with Kortix) — acts as the granting user.
+  // Precedes the generic `kortix_` branch for the same reason kortix_sa_ does.
+  if (isOAuthAccessToken(token)) {
+    await applyOAuthAccessTokenPrincipal(c, token);
+    if (isPreviewRoute) setPreviewSessionCookie(c, token);
     await next();
     return;
   }

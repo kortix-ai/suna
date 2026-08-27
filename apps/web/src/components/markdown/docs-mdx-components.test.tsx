@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { INLINE_CODE } from './code/inline-chip';
 import { docsMdxComponents } from './docs-mdx-components';
 
 const Pre = docsMdxComponents.pre;
+const InlineCode = docsMdxComponents.code;
 
 /**
  * Same throw-on-miss selector discipline as markdown-code.test.tsx: the card
@@ -92,5 +95,66 @@ describe('docsMdxComponents.pre — app CodeBlock shell around rehype-code outpu
 
     expect(codeClass).toContain('language-ts');
     expect(codeClass).toContain('shiki');
+  });
+});
+
+describe('docsMdxComponents.code — one inline chip across docs and chat', () => {
+  const render = (children: string) => renderToStaticMarkup(<InlineCode>{children}</InlineCode>);
+
+  test('inline code takes the SHARED chip, not a docs-local near-miss', () => {
+    // This file used to carry its own copy of the class string — `rounded-sm`,
+    // `bg-muted`, `px-1.5` against the shared chip's `rounded-[5px]`,
+    // `bg-inherit`, `px-1` — so the same backticks drew two different chips
+    // and every tune to one skipped the other.
+    expect(codeClassOf(render('kortix cr open'))).toBe(INLINE_CODE);
+  });
+
+  test('a hex colour gets the same swatch the transcript draws', () => {
+    const markup = render('#0ea5e9');
+
+    // The value stays literal: it is what gets copied into a stylesheet.
+    expect(markup).toContain('#0ea5e9');
+    expect(markup).toContain('background-color:#0ea5e9');
+    // The square carries no information the hex does not.
+    expect(markup).toContain('aria-hidden="true"');
+  });
+
+  test('a fenced block is passed through untouched for fumadocs', () => {
+    // Multiline content is rehype-code's output on its way to the `pre`
+    // override — chipping it would wrap a whole highlighted block in a border.
+    const markup = renderToStaticMarkup(
+      <InlineCode className="language-ts">{'const x = 1;\nconst y = 2;'}</InlineCode>,
+    );
+
+    expect(markup).not.toContain(INLINE_CODE);
+    expect(markup).toContain('language-ts');
+  });
+});
+
+describe('the chip module stays server-safe', () => {
+  test('inline-chip.tsx declares no "use client"', () => {
+    // This file is a SERVER module. Everything a `'use client'` module exports
+    // is a client reference, so importing the hex predicate from the client
+    // `inline-code.tsx` and calling it crashed the docs page outright:
+    // "Attempted to call isHexColor() from the server but isHexColor is on the
+    // client". The chip and the swatch therefore live in a module with no
+    // directive; adding one here breaks every docs page, silently at build
+    // time and loudly at request time.
+    //
+    // The check is the DIRECTIVE, not the words: the module's own comment
+    // explains why it has none, so a plain substring match would fail on its
+    // own documentation.
+    const source = readFileSync(
+      new URL('./code/inline-chip.tsx', import.meta.url).pathname,
+      'utf8',
+    );
+    const firstStatement = source
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line && !line.startsWith('*') && !line.startsWith('/*'));
+
+    expect(firstStatement).toBeDefined();
+    expect(firstStatement).not.toBe("'use client';");
+    expect(firstStatement).not.toBe('"use client";');
   });
 });

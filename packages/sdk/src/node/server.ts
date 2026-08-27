@@ -47,8 +47,11 @@ export async function forwardKortixRequest(options: {
   request: Request;
   upstreamUrl: string;
   token: string;
+  /** Custom `fetch` (tests, edge adapters). Defaults to the global. */
+  fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }): Promise<Response> {
   const { request, upstreamUrl, token } = options;
+  const fetchImpl = options.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
   const headers = new Headers(request.headers);
   headers.delete('host');
   headers.delete('content-length');
@@ -75,7 +78,7 @@ export async function forwardKortixRequest(options: {
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = await fetch(upstreamUrl, {
+    upstreamResponse = await fetchImpl(upstreamUrl, {
       method: request.method,
       headers,
       redirect: 'manual',
@@ -211,3 +214,26 @@ export function createScopedKortix(config: KortixPlatformConfig): Kortix {
   scoped.runtime = scopedRuntimeUnavailable;
   return scoped;
 }
+
+/**
+ * "Sign in with Kortix" for a standalone app — OAuth 2.1 sign-in, session
+ * cookie, refresh, sign-out, `/me`, and a same-origin `/proxy`. See ./auth.ts.
+ */
+export {
+  createKortixAuth,
+  KortixAuthError,
+  KORTIX_SESSION_SENTINEL,
+  safeReturnTo,
+  type KortixAuth,
+  type KortixFetch,
+  type KortixAuthOptions,
+  type KortixViewer,
+  type RequireViewerResult,
+} from './auth';
+
+/**
+ * Types a server-side consumer's declaration emit may need to name `Kortix`
+ * (the `auth` member and its session store) without reaching into src/.
+ */
+export type { HeadlessAuthApi, AuthSession, AuthUser, AuthSessionResult, AuthRequestOptions } from '../core/rest/platform-client/auth';
+export type { KortixSession, KortixSessionOptions, KortixSessionStorage } from '../core/auth/session';

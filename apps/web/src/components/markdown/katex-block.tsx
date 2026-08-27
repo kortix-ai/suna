@@ -21,7 +21,7 @@ export function KaTeXBlock({ math }: { math: string }) {
 
   if (!rendered.html) {
     return (
-      <pre className="katex-math-block border-border bg-muted text-muted-foreground my-5 overflow-x-auto rounded-md border px-4 py-3 font-mono text-sm">
+      <pre className="katex-math-block border-border bg-muted text-muted-foreground my-5 overflow-x-auto rounded-md border px-4 py-3 font-mono text-sm tracking-tight">
         {rendered.error}
       </pre>
     );

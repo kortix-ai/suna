@@ -172,11 +172,18 @@ export function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
  * project's session queries are ever the ones this event is actually about,
  * and firing a broader refetch would refresh unrelated data (a different
  * project's secrets/gateway state) on every title/tree change for no reason.
- * `qk.project.sessionsScope(projectId)` — the current route's project — is
- * the correct reach: the list (every scope) and every session/messages entry
- * beneath it, and nothing outside the sessions family, and nothing for a
- * project this event was never about. Outside a project route (`projectId`
- * null) there is nothing to mirror, so this is a no-op.
+ * `[...qk.project.sessionsScope(projectId), 'list']` — the current route's
+ * project, LIST family only — is the correct reach: the list in every scope,
+ * nothing outside the sessions family, and nothing for a project this event was
+ * never about. Outside a project route (`projectId` null) there is nothing to
+ * mirror, so this is a no-op.
+ *
+ * NOT the whole `sessionsScope` prefix, which this used to be: that prefix also
+ * covers `sessionTurn`, `sessionPrompts` and `messages` (see `query-keys.ts`),
+ * so every `session.created` and every title-changing `session.updated`
+ * re-issued `GET .../turn` and `GET .../prompts` as a side effect of mirroring
+ * a TITLE. Those two have their own cadences and their own reasons to refetch;
+ * a title event is not one of them.
  */
 export function refetchKortixSessionMirrors(
   queryClient: QueryClient,
@@ -184,7 +191,7 @@ export function refetchKortixSessionMirrors(
 ): void {
   if (!projectId) return;
   void queryClient.refetchQueries({
-    queryKey: qk.project.sessionsScope(projectId),
+    queryKey: [...qk.project.sessionsScope(projectId), 'list'],
     type: 'active',
   });
 }

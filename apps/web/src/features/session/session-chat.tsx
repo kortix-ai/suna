@@ -5312,20 +5312,21 @@ export function SessionChat({
 
             <div
               className={cn(
-                'absolute bottom-4 left-1/2 z-20 -translate-x-1/2 transition-[opacity,translate,scale] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-opacity',
-                showScrollButton
-                  ? 'translate-y-0 scale-100 opacity-100 duration-150'
-                  : 'pointer-events-none translate-y-1 scale-[0.97] opacity-0 duration-100',
+                'absolute inset-x-0 bottom-4 z-20 flex justify-center',
+                !showScrollButton && 'pointer-events-none',
               )}
             >
               <Button
-                variant="secondary"
+                variant="transparent"
                 size="icon-md"
                 aria-hidden={!showScrollButton}
                 tabIndex={showScrollButton ? undefined : -1}
                 className={cn(
-                  'hit-area-2 hover:bg-secondary border-border border shadow-xs',
-                  'transition-[scale] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96]',
+                  'hit-area-2 liquid-glass bg-liquid-glass hover:bg-liquid-glass-hover shadow-liquid-glass rounded-full',
+                  'transition-[opacity,scale] ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] motion-reduce:scale-100 motion-reduce:transition-opacity',
+                  showScrollButton
+                    ? 'scale-100 opacity-100 duration-150'
+                    : 'scale-[0.97] opacity-0 duration-100',
                 )}
                 onClick={smoothScrollToAbsoluteBottom}
               >

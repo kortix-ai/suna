@@ -119,6 +119,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       monitors: false,
       warm_sessions: false,
       secrets_egress: false,
+      pi_worker: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -691,6 +692,7 @@ describe('envelopes', () => {
       'monitors',
       'warm_sessions',
       'secrets_egress',
+      'pi_worker',
     ]);
   });
 

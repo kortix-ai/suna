@@ -3,7 +3,14 @@ title: Your project
 description: A project is a git repository that holds your agent's config and state.
 ---
 
-import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Card, Cards } from '@/components/markdown/docs-card';
+import {
+  BrainIcon,
+  FileTextIcon,
+  KeyIcon,
+  RobotIcon,
+  ScrollIcon,
+} from '@/lib/icons/ssr';
 
 A project is one git repository. It holds a manifest, agent config, and the
 state your agent produces. No separate database exists to keep in sync.
@@ -55,9 +62,9 @@ migration path.
 ## In this section
 
 <Cards>
-  <Card title="Manifest" href="/docs/project/manifest">The full kortix.yaml reference.</Card>
-  <Card title="Agents" href="/docs/project/agents">Markdown personas with scoped tools.</Card>
-  <Card title="Models" href="/docs/project/models">Which model a session uses, and who pays.</Card>
-  <Card title="Secrets" href="/docs/project/secrets">Encrypted values injected into a sandbox.</Card>
-  <Card title="Legacy TOML" href="/docs/project/legacy-toml">Migrating from kortix.toml.</Card>
+  <Card icon={<FileTextIcon />} title="Manifest" href="/docs/project/manifest">The full kortix.yaml reference.</Card>
+  <Card icon={<RobotIcon />} title="Agents" href="/docs/project/agents">Markdown personas with scoped tools.</Card>
+  <Card icon={<BrainIcon />} title="Models" href="/docs/project/models">Which model a session uses, and who pays.</Card>
+  <Card icon={<KeyIcon />} title="Secrets" href="/docs/project/secrets">Encrypted values injected into a sandbox.</Card>
+  <Card icon={<ScrollIcon />} title="Legacy TOML" href="/docs/project/legacy-toml">Migrating from kortix.toml.</Card>
 </Cards>

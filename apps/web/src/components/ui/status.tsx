@@ -110,7 +110,7 @@ export function StatusDot({
     <span
       data-slot="status-dot"
       className={cn(
-        'inline-block size-1.5 shrink-0 rounded-full',
+        'inline-block size-2 shrink-0 rounded-full',
         STATUS_DOT[tone],
         pulse && 'animate-pulse',
         className,

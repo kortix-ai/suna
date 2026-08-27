@@ -1,0 +1,18 @@
+{
+  "name": "@kortix/worker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The pi-based session worker: the harness and only the harness. Compiled per (project, sha) into a single .mjs by the API's compiled-boot pipeline (apps/api/src/git-proxy/compiled-pi-runtime.ts) and booted in a minimal worker sandbox.",
+  "scripts": {
+    "build": "bash scripts/build.sh"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.3",
+    "@earendil-works/pi-ai": "0.84.3",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1"
+  }
+}

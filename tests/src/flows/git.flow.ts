@@ -30,6 +30,7 @@ flow(
       "GET /v1/git/:project/info/refs",
       "GET /v1/git/:project/compiled-checkout",
       "GET /v1/git/:project/compiled-runtime",
+      "GET /v1/git/:project/compiled-pi-runtime",
       "POST /v1/git/:project/git-upload-pack",
       "POST /v1/git/:project/git-receive-pack",
     ],
@@ -67,6 +68,18 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .get("/v1/git/:project/compiled-runtime", {
+          params: { project: p.id },
+          query: { ref: "main", sha: "a".repeat(40) },
+        });
+      r.status([401, 403]);
+    });
+    await ctx.step("compiled pi runtime without git auth → 401", async () => {
+      // Same auth boundary as compiled-runtime; the pi_worker feature-flag
+      // gate sits BEHIND auth, so an anonymous caller never learns whether
+      // the flag is on.
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/compiled-pi-runtime", {
           params: { project: p.id },
           query: { ref: "main", sha: "a".repeat(40) },
         });

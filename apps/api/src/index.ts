@@ -46,6 +46,7 @@ import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import { authRouter } from './auth';
+import { headlessAuthRouter } from './auth/headless';
 import { authEmailHookApp } from './auth/send-email-hook';
 import { accountDeletionApp, billingApp } from './billing';
 import {
@@ -73,8 +74,11 @@ import { mountLlmGateway } from './llm-gateway/wire';
 import { marketplaceApp } from './marketplace';
 import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { createCorsMiddleware } from './middleware/cors';
+import { compressResponse } from './middleware/compress';
+import { upstreamTiming } from './middleware/upstream-timing';
 import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
 import { oauthApp } from './oauth';
+import { oauthAuthorizationServerMetadata } from './oauth/discovery';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
@@ -244,6 +248,14 @@ app.use('*', async (c, next) => {
 
 // === Global Middleware ===
 
+// Response compression. Mounted at the OUTSIDE of the chain so it sees the
+// final response of every route, including the ones the middleware below
+// rewrites. Only a NAMED compressible content type is ever compressed, which
+// keeps it away from SSE, the sandbox proxy's streams, the secret relay, the
+// LLM gateway and git pack transfer; the size floor is applied by peeking one
+// kilobyte of the body, never by buffering it. See middleware/compress.ts.
+app.use('*', compressResponse);
+
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
   ? process.env.CORS_ALLOWED_ORIGINS.split(',')
       .map((s) => s.trim())
@@ -291,6 +303,11 @@ app.use('*', async (c, next) => {
     c.req.header('traceparent'),
   );
 });
+
+// Per-request cost attribution (`Server-Timing: up;dur=…, api;dur=…`). Mounted
+// INSIDE the request-context middleware above, because it reads the
+// AsyncLocalStorage scope that one creates. See middleware/upstream-timing.ts.
+app.use('*', upstreamTiming);
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
 app.use('*', logger());
@@ -577,6 +594,16 @@ function hasInternalObservabilityAuth(c: any): boolean {
   return (!!bearer && safeEq(bearer, expected)) || (!!header && safeEq(header, expected));
 }
 
+// Sign in with Kortix — RFC 8414 discovery at the API root. The issuer is the
+// configured public API origin (KORTIX_URL); the request origin is only the
+// fallback for a bare local run. Mirrored under /v1/oauth/.well-known/… for
+// edges that route only /v1/*.
+app.get('/.well-known/oauth-authorization-server', (c) => {
+  return c.json(oauthAuthorizationServerMetadata(new URL(c.req.url).origin), 200, {
+    'cache-control': 'public, max-age=3600',
+  });
+});
+
 app.get('/metrics', (c) => {
   if (!hasInternalObservabilityAuth(c)) {
     return c.text('unauthorized\n', 401);
@@ -823,6 +850,9 @@ app.route('/v1/accounts', accountsRouter);
 // /v1/auth/* — auth-side server endpoints (logout for now). Audit
 // events for login/logout/failed-login live in the auth middleware
 // + this router so SOC2 reviews see the full auth lifecycle.
+// Headless regular auth (signup / sign-in / magic link / social / refresh /
+// reset) — public, mounted BEFORE the bearer-gated auth router on the same prefix.
+app.route('/v1/auth', headlessAuthRouter);
 app.route('/v1/auth', authRouter);
 // SCIM 2.0 — separate auth (per-account bearer tokens, not Supabase JWT).
 // Mounted outside /v1 so IdPs configure the documented protocol URL.

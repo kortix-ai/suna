@@ -50,7 +50,13 @@ describe('agent discovery documents', () => {
 
     const authMd = await getAuthMd().text();
     expect(authMd).toStartWith('# Kortix auth.md');
-    expect(authMd).toContain('Kortix does not publish dynamic OAuth client registration');
+    expect(authMd).toContain(
+      'Register an OAuth client yourself at Account → Tokens → OAuth apps, or `POST /v1/accounts/{accountId}/iam/oauth-clients` (needs `token.create`).',
+    );
+    expect(authMd).toContain(
+      'Authorization-server metadata for the Kortix-native provider: https://api.kortix.com/.well-known/oauth-authorization-server.',
+    );
+    expect(authMd).not.toContain('dynamic OAuth client registration');
     expect(authMd).toContain('Registration URI: /cli/authorize');
     expect(authMd).toContain('POST https://api.kortix.com/v1/accounts/tokens');
     expect(authMd).toContain('DELETE https://api.kortix.com/v1/accounts/tokens/{token_id}');

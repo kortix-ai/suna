@@ -1,7 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { hasRetryingAssistantTurn } from "../../core/turns/open-turn";
 import type { SessionTranscriptSyncEnvelope } from "../../core/rest/projects-client/sessions";
+import { configureKortix } from "../../core/http/config";
+import { openSessionBundle, resetSessionOpenBundles } from "../../core/session/open-bundle";
 import {
+	loadSessionTranscriptMirror,
 	mirrorMessagesForHydrate,
 	shouldHydrateFromMirror,
 } from "./server-transcript-mirror";
@@ -234,5 +237,73 @@ describe("the mirror settles against the runtime instead of duplicating", () => 
 		useSyncStore.getState().hydrate(ROOT, live);
 		expect(useSyncStore.getState().messages[ROOT]?.map((m) => m.id)).toEqual(["msg_1"]);
 		useSyncStore.getState().clearSession(ROOT);
+	});
+});
+
+// ── The session-open bundle seam ────────────────────────────────────────────
+
+describe("loadSessionTranscriptMirror and the open bundle", () => {
+	function mockFetch(body: unknown) {
+		const urls: string[] = [];
+		globalThis.fetch = mock(async (url: unknown) => {
+			urls.push(String(url));
+			return new Response(JSON.stringify(body), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		}) as unknown as typeof fetch;
+		return urls;
+	}
+
+	test("paints the mirror the open bundle already fetched, with no second read", async () => {
+		resetSessionOpenBundles();
+		configureKortix({ backendUrl: "http://api.test/v1", getToken: async () => "tok" });
+		const urls = mockFetch({
+			observed_at: "2026-08-26T12:00:00.000Z",
+			session: { session_id: "S1" },
+			turn: { known: true, turns: [] },
+			queue: { known: true, prompts: [], held: false },
+			transcript: { known: true, requested: true, ...envelope() },
+			config: { known: true },
+			models: { known: false, reason: "llm_gateway_disabled" },
+		});
+		openSessionBundle("P1", "S1");
+		// NOT awaited here on purpose. The hydrate runs at mount, while the
+		// bundle is still in flight, so the loader itself has to wait for the
+		// read it is riding — awaiting it in the test would prove nothing about
+		// the ordering that actually happens.
+		const painted = await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
+		expect(urls.filter((u) => u.includes("/transcript"))).toHaveLength(0);
+		expect(painted?.opencode_session_id).toBe(ROOT);
+		expect(painted?.messages).toHaveLength(2);
+	});
+
+	test("the stash is spent once — a later read goes to the server", async () => {
+		resetSessionOpenBundles();
+		configureKortix({ backendUrl: "http://api.test/v1", getToken: async () => "tok" });
+		const urls = mockFetch({
+			observed_at: "2026-08-26T12:00:00.000Z",
+			session: { session_id: "S1" },
+			turn: { known: true, turns: [] },
+			queue: { known: true, prompts: [], held: false },
+			transcript: { known: true, requested: true, ...envelope() },
+			config: { known: true },
+			models: { known: false, reason: "x" },
+		});
+		openSessionBundle("P1", "S1");
+		await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
+		await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
+		// A second paint over a store the runtime has already filled is how a
+		// transcript grows ghosts, so the stash must never answer twice.
+		expect(urls.some((u) => u.includes("/transcript"))).toBe(true);
+	});
+
+	test("reads the transcript route when no bundle stashed one", async () => {
+		resetSessionOpenBundles();
+		configureKortix({ backendUrl: "http://api.test/v1", getToken: async () => "tok" });
+		const urls = mockFetch(envelope());
+		const painted = await loadSessionTranscriptMirror({ kortixSessionScope: "P1/S1" });
+		expect(urls[0]).toContain("/sessions/S1/transcript?shape=sync");
+		expect(painted?.opencode_session_id).toBe(ROOT);
 	});
 });

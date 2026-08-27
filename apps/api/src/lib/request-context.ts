@@ -51,6 +51,64 @@ export interface RequestContext {
 
 const storage = new AsyncLocalStorage<RequestContext>();
 
+/**
+ * Per-request read cache.
+ *
+ * Several hot reads are issued more than once inside ONE request because they
+ * are reached through independent helpers: `GET /:projectId/detail` loads the
+ * project's git connection three times (withProjectGitAuth → loadProjectConfig
+ * → the response's `git_connection` field), and `/secrets`, `/sandbox-health`
+ * and `/sessions/:id/config` load it twice each. Measured 2026-08-26 with a
+ * postgres.js statement trace on the real handlers.
+ *
+ * A TTL cache is the wrong tool here: it would answer with a value read before
+ * this request started, so a write followed by a read inside the same request
+ * could observe stale data. Request scope has no such hazard — the entry lives
+ * exactly as long as the AsyncLocalStorage scope and is discarded with it.
+ * Outside a request (background sweeps, tests with no context) `requestMemo`
+ * degrades to a plain call with no caching at all.
+ *
+ * Only ever cache a READ, and invalidate with `invalidateRequestMemo` from the
+ * write that changes it.
+ */
+const MEMO_KEY = Symbol.for('kortix.request-memo');
+
+type MemoStore = Map<string, Promise<unknown>>;
+
+function memoStore(): MemoStore | null {
+  const ctx = storage.getStore() as (RequestContext & { [MEMO_KEY]?: MemoStore }) | undefined;
+  if (!ctx) return null;
+  let store = ctx[MEMO_KEY];
+  if (!store) {
+    store = new Map();
+    ctx[MEMO_KEY] = store;
+  }
+  return store;
+}
+
+/**
+ * Run `loader` at most once per `key` per request. A rejection is never cached:
+ * the entry is dropped so a retry inside the same request re-runs the loader.
+ */
+export function requestMemo<T>(key: string, loader: () => Promise<T>): Promise<T> {
+  const store = memoStore();
+  if (!store) return loader();
+  const hit = store.get(key) as Promise<T> | undefined;
+  if (hit) return hit;
+  const value = loader().catch((err) => {
+    store.delete(key);
+    throw err;
+  });
+  store.set(key, value);
+  return value;
+}
+
+/** Drop one memo entry — call from any write that invalidates it. */
+export function invalidateRequestMemo(key: string): void {
+  memoStore()?.delete(key);
+}
+
+
 let counter = 0;
 
 const LOG_FIELD_ALIASES: Record<string, string> = {
@@ -173,7 +231,16 @@ export function getTraceHeaders(): Record<string, string> {
  * start logging PII. Keep it that way: only add keys here that carry no user or
  * account identity.
  */
-const CLOUDWATCH_SAFE_FIELDS = ['kind', 'provider_get_ms', 'preview_link_ms'] as const;
+const CLOUDWATCH_SAFE_FIELDS = [
+  'kind',
+  'provider_get_ms',
+  'preview_link_ms',
+  // Milliseconds this request spent inside upstream calls (the sandbox daemon,
+  // a provider API). Aggregate-only, no identity — it is what makes a slow
+  // proxied route attributable in Logs Insights instead of a single opaque
+  // duration. See middleware/upstream-timing.ts.
+  'upstream_ms',
+] as const;
 
 /**
  * The allowlisted subset of the request context, for the completion log line.

@@ -214,6 +214,7 @@ export function resolveBillingFromRow(
           scim: enterprisePlan.entitlements.scim,
           rbac: enterprisePlan.entitlements.rbac,
           auditAccess: enterprisePlan.entitlements.auditAccess,
+          branding: enterprisePlan.entitlements.branding,
         }
       : {}),
     managedModels: managedModelsOverride ?? plan.entitlements.managedModels,

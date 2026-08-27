@@ -102,6 +102,7 @@ describe('temporaryAccessOverrides (pure)', () => {
     expect(o.scim).toEqual({ value: true, expires_at: END });
     expect(o.rbac).toEqual({ value: true, expires_at: END });
     expect(o.auditAccess).toEqual({ value: true, expires_at: END });
+    expect(o.branding).toEqual({ value: true, expires_at: END });
     expect(o.managedModels).toEqual({ value: true, expires_at: END });
     expect(o.maxConcurrentSessions).toEqual({ value: 5000, expires_at: END });
   });
@@ -112,6 +113,7 @@ describe('temporaryAccessOverrides (pure)', () => {
     expect(o.scim).toBeUndefined();
     expect(o.rbac).toBeUndefined();
     expect(o.auditAccess).toBeUndefined();
+    expect(o.branding).toBeUndefined();
     expect(o.maxConcurrentSessions).toEqual({ value: 200, expires_at: END });
   });
 

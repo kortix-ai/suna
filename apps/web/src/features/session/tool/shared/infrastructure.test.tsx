@@ -27,7 +27,8 @@ import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 //     `size-4` icon (replaced by the outcome glyph when the call failed), title
 //     `text-sm font-medium truncate`, mono `text-xs` subtitle, then the badge
 //     and a `CaretRightIcon` that rotates 90° when open;
-//   • body: rendered only while open, `border-t px-3 py-3 text-sm`;
+//   • body: `border-t px-3 py-3 text-sm`, inside a `DisclosureContent` that
+//     animates `height: 0 → auto` — the payload is mounted only while open;
 //   • open state: seeded by `defaultOpen`/`forceOpen`, held open by `locked`,
 //     driven by the same `useState` the inline surface uses — the branch used
 //     to compute that state and then ignore it entirely;
@@ -398,6 +399,125 @@ describe('a payload card de-nests on the panel and is unchanged inline (gate fin
 
     expect(html).toContain('border-destructive/40 bg-destructive/10');
     expect(html).toContain('rounded-md border');
+  });
+});
+
+describe('a subtitle the open body repeats is dropped from the trigger', () => {
+  /**
+   * `hideSubtitleWhenOpen` — the same rule the `bash` row follows in its own
+   * component: a closed row is the only place the text appears, so it stays
+   * there; open, it is the same string twice, and the trigger's copy is the
+   * truncated one.
+   *
+   * Opt-IN. Most subtitles are not repeated by the body — a `pty` row's
+   * terminal id appears nowhere in the buffer it opens — so the default must
+   * leave them alone.
+   */
+  const SUBTITLE = 'ls -la /workspace';
+
+  test('inline: closed keeps it, open drops it', () => {
+    const trigger = { title: 'Started terminal', subtitle: SUBTITLE, hideSubtitleWhenOpen: true };
+
+    const closed = renderToStaticMarkup(
+      <BasicTool trigger={trigger}>
+        <div>the card</div>
+      </BasicTool>,
+    );
+    expect(closed).toContain(SUBTITLE);
+
+    const open = renderToStaticMarkup(
+      <BasicTool trigger={trigger} defaultOpen>
+        <div>the card</div>
+      </BasicTool>,
+    );
+    expect(open).not.toContain(SUBTITLE);
+    // The row still says what it is, and the body it opened is still there.
+    expect(open).toContain('Started terminal');
+    expect(open).toContain('the card');
+  });
+
+  test('panel: the same, on the surface that shares the behaviour', () => {
+    const trigger = { title: 'Started terminal', subtitle: SUBTITLE, hideSubtitleWhenOpen: true };
+
+    expect(
+      renderPanel(
+        <BasicTool trigger={trigger}>
+          <div>the card</div>
+        </BasicTool>,
+      ),
+    ).toContain(SUBTITLE);
+    expect(
+      renderPanel(
+        <BasicTool trigger={trigger} defaultOpen>
+          <div>the card</div>
+        </BasicTool>,
+      ),
+    ).not.toContain(SUBTITLE);
+  });
+
+  test('without the flag an open row keeps its subtitle — this is opt-in', () => {
+    const html = renderToStaticMarkup(
+      <BasicTool trigger={{ title: 'Terminal output', subtitle: 'pty_a1b2c3' }} defaultOpen>
+        <div>the buffer</div>
+      </BasicTool>,
+    );
+
+    expect(html).toContain('pty_a1b2c3');
+  });
+});
+
+describe('BasicTool body opens with the same animation a thought does', () => {
+  /**
+   * The reported drift: an expanding tool row POPPED while a `Thinking` row in
+   * the same chain unfurled. Both are disclosures, but only the thought went
+   * through `DisclosureContent` — the tool rows rendered their body as a bare
+   * `{open && <div>}`, which mounts at full height in one frame.
+   *
+   * `DisclosureContent` animates `height: 0 → auto` with opacity through
+   * `AnimatePresence` (`ui/disclosure.tsx`). Static markup cannot watch an
+   * animation, but it CAN prove the animated element is the one rendering the
+   * body — `height:auto` in an inline style is written by motion, not by any
+   * class in this tree.
+   */
+  const OPEN_STATE = 'style="height:auto';
+
+  test('inline: the payload rides the animated element', () => {
+    const html = renderToStaticMarkup(
+      <BasicTool trigger={{ title: 'Ran command' }} defaultOpen>
+        <div>the payload</div>
+      </BasicTool>,
+    );
+
+    expect(html).toContain(OPEN_STATE);
+    expect(html).toContain('the payload');
+  });
+
+  test('panel: the same, on the surface that shares the behaviour', () => {
+    const html = renderPanel(
+      <BasicTool trigger={{ title: 'Ran command' }} defaultOpen>
+        <div>the payload</div>
+      </BasicTool>,
+    );
+
+    expect(html).toContain(OPEN_STATE);
+    expect(html).toContain('the payload');
+  });
+
+  test('closed, the wrapper is empty — a collapsed row is still zero-height', () => {
+    // `DisclosureContent` keeps its clipping wrapper mounted while the body is
+    // gone, so the wrapper must contribute nothing: no payload, and the 4px
+    // seam is PADDING on a child of the animated element rather than a margin
+    // on the wrapper, which would leave 8px of dead space under every closed
+    // row in a transcript.
+    const html = renderToStaticMarkup(
+      <BasicTool trigger={{ title: 'Ran command' }}>
+        <div>the payload</div>
+      </BasicTool>,
+    );
+
+    expect(html).toContain('<div class="overflow-hidden text-xs"></div>');
+    expect(html).not.toContain('the payload');
+    expect(html).not.toContain(OPEN_STATE);
   });
 });
 

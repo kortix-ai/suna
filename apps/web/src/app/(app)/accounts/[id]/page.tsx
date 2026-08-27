@@ -13,6 +13,7 @@ import {
   KeyIcon as KeyRound,
   LinkIcon,
   NetworkIcon as Network,
+  PaintBrushIcon as PaintBrush,
   PencilSimpleIcon as PencilSimple,
   ArrowClockwiseIcon as RefreshCw,
   ScrollIcon as ScrollText,
@@ -37,6 +38,7 @@ import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
 import { KeyRulesCard } from '@/components/iam/key-rules-card';
+import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { RolesTab } from '@/components/iam/roles-tab';
@@ -65,6 +67,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
+import { BrandingTab } from '@/features/accounts/settings/branding-tab';
+import { useBrandingScope } from '@/features/branding/branding-provider';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { Close } from '@/features/icon/icons/close';
@@ -161,6 +165,7 @@ const VALID_TABS = [
   'git',
   'tokens',
   'settings',
+  'branding',
   'billing',
   'transactions',
   'groups',
@@ -195,6 +200,10 @@ const NAV_GROUPS: Array<{
   {
     items: [
       { id: 'settings', label: 'Settings', icon: CogOne },
+      // Organization branding (Enterprise): the account's own logo, icon,
+      // favicon (light + dark), and product name for every member. Sits with the other
+      // "how is this account configured" items, not under Access.
+      { id: 'branding', label: 'Branding', icon: PaintBrush },
       { id: 'git', label: 'Git', icon: GitBranch },
       { id: 'tokens', label: 'Tokens', icon: KeyRound },
     ],
@@ -247,6 +256,10 @@ const PANE_META: Partial<Record<AccountSection, { title: string; description: st
     description: 'How access works in this account.',
   },
   settings: { title: 'Settings', description: 'Name and security for this account.' },
+  branding: {
+    title: 'Branding',
+    description: 'Your logo, icon, favicon, and product name for everyone in this account.',
+  },
 };
 
 // The enterprise IdP surface (SAML SSO + SCIM provisioning) is PLAN-GATED,
@@ -346,6 +359,10 @@ export default function AccountSettingsPage() {
   // render only when the tier carries the entitlement — mirrors the server-side
   // 402 so we never show a control the backend rejects.
   const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
+  // The hub brands as the account it SHOWS (Enterprise branding), not the
+  // switcher's selected one — so an upload on the Branding tab re-brands the
+  // header above it live.
+  useBrandingScope(accountId);
   const entitlements = accountStateQuery.data?.tier?.entitlements;
   const enterpriseIdentityEnabled = !!(entitlements?.sso || entitlements?.scim);
   // Audit and SSO/SCIM have no free-tier content — the server has nothing to
@@ -368,6 +385,7 @@ export default function AccountSettingsPage() {
   // loading we render nothing gated (skeleton) to avoid flashing.
   const rbacEnabled = !!entitlements?.rbac;
   const auditEnabled = !!entitlements?.auditAccess;
+  const brandingEnabled = !!entitlements?.branding;
   const entitlementsLoading = !entitlements && accountStateQuery.isLoading;
 
   const prefersReducedMotion = useReducedMotion();
@@ -426,6 +444,9 @@ export default function AccountSettingsPage() {
     // GET .../audit — `AUDIT_READ`, also ADMIN_EXTRAS.
     audit: canReadAudit === true,
     settings: canWriteAccount === true,
+    // Branding is all mutations (upload / remove / rename); the entitlement is
+    // the OTHER axis and picks between the pane and the upsell card below.
+    branding: canWriteAccount === true,
     // Reference copy — no data, no mutations, nothing to gate.
     help: true,
   };
@@ -743,6 +764,11 @@ export default function AccountSettingsPage() {
             {activeSection === 'tokens' && canWriteAccount ? (
               <div className="space-y-10">
                 <ApiKeysSection accountId={account.account_id} canManage={canWriteAccount} />
+                {/* OAuth apps — "Sign in with Kortix" clients. A client secret
+                    is a credential the account issues to a machine, so it
+                    sits with the other machine credentials and under the same
+                    `token.*` permissions. */}
+                <OAuthAppsCard accountId={account.account_id} canManage={canWriteAccount} />
                 <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
               </div>
             ) : null}
@@ -770,6 +796,20 @@ export default function AccountSettingsPage() {
                   <EnterpriseUpsell feature="identity" />
                 )}
               </div>
+            ) : null}
+
+            {/* Branding — Enterprise. The pane exists for anyone with
+                account.write (rail rule); the entitlement decides whether it
+                is the editor or the upsell, mirroring the server's 402 on the
+                write routes. */}
+            {activeSection === 'branding' && canWriteAccount ? (
+              entitlementsLoading ? (
+                <Skeleton className="h-64 w-full rounded-md" />
+              ) : brandingEnabled ? (
+                <BrandingTab accountId={account.account_id} canManage={canWriteAccount} />
+              ) : (
+                <EnterpriseUpsell feature="branding" />
+              )
             ) : null}
 
             {activeSection === 'settings' && canWriteAccount ? (

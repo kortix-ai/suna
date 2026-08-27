@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
@@ -23,6 +23,11 @@ import { FoldersIcon } from '@phosphor-icons/react';
  * something to cache, because the project layout awaits cookies() and the
  * route is therefore dynamic. Note this is production-only behaviour: Next
  * disables Link prefetching under `next dev`.
+ *
+ * `HoverPrefetchLink`, not a bare `<Link>`: prefetching on mount made every
+ * session open pay a full dynamic render of /files (2 requests, ~26KB) that
+ * nobody asked for. The prefetch now starts on hover/focus/touch, which still
+ * lands well before the click.
  *
  * Connectors / Skills / Commands used to sit beside this entry, one row each,
  * plus a Customize row below them. They are tabs of one `(capabilities)`
@@ -55,10 +60,10 @@ export function ProjectFilesNavItem() {
         tooltip="Files"
         className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
       >
-        <Link href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
+        <HoverPrefetchLink href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
           <FoldersIcon />
           Files
-        </Link>
+        </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

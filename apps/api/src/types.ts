@@ -81,8 +81,12 @@ export interface AuthVariables {
   userId: string;
   userEmail: string;
   accountId?: string;
-  authType?: 'supabase' | 'pat' | 'apiKey' | 'service_account';
+  authType?: 'supabase' | 'pat' | 'apiKey' | 'service_account' | 'oauth';
   apiKeyType?: 'user' | 'sandbox';
+  /** Sign in with Kortix: the OAuth client the `kortix_oat_` token was minted for. */
+  oauthClientId?: string;
+  /** Sign in with Kortix: scopes granted to the token (`profile`, `email`, `kortix`). */
+  oauthScopes?: string[];
   keyId?: string;
   sandboxId?: string;
   /** Set for project-scoped CLI PATs — enforced against the URL :projectId. */
@@ -142,6 +146,15 @@ export interface TierEntitlements {
    * export, or stream them out.
    */
   auditAccess: boolean;
+  /**
+   * Organization branding: replace the Kortix logo, icon, favicon (light +
+   * dark), and product name with the account's own for every member of the account
+   * (`accounts.branding`, written only through `/accounts/:id/branding*`).
+   * Reads and the reset/remove routes stay ungated so a downgraded account can
+   * still see and unwind what it set; the API stops SERVING the branding to
+   * members the moment the entitlement lapses.
+   */
+  branding: boolean;
 }
 
 export interface TierConfig {

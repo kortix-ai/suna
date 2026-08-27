@@ -87,6 +87,13 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       // Without this the browser cannot read it, which is why every client
       // classifies readiness by matching the English error body instead.
       'X-Kortix-Boot-Phase',
+      // Per-request cost attribution, `up;dur=` (time inside the sandbox /
+      // upstream fetch) vs `api;dur=` (everything this API did around it). Its
+      // whole point is to be readable from a browser HAR, so it has to survive
+      // the cross-origin boundary — the mid-path ~1.2 s on a proxied session
+      // read could not be split from outside precisely because nothing exposed
+      // this. See middleware/upstream-timing.ts.
+      'Server-Timing',
     ],
     credentials: true,
     maxAge: 600,

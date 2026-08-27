@@ -12,6 +12,70 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-26 — session `org-branding` — organization branding (Enterprise `branding` entitlement) — DONE
+
+Additive REST surface in `core/rest/projects-client/accounts.ts`: `getAccountBranding`,
+`updateAccountBranding` (`app_name`), `uploadAccountBrandingAsset` (multipart via `backendApi.upload`; kinds `logo|icon|favicon` ×
+light/`_dark`), `removeAccountBrandingAsset`, `resetAccountBranding`; types `AccountBranding`
+(`app_name` + six nullable URLs), `AccountBrandingAssetKind`, `AccountBrandingState` (root-barrel re-exports);
+`KortixAccount.branding` / `AccountDetail.branding` (effective branding the API attaches);
+`AccountState.tier.entitlements.branding`; `ADMIN_OVERRIDE_KEYS` += `branding`. Facade:
+`kortix.accounts.branding.{get,update,uploadAsset,removeAsset,reset}`. TDD:
+`accounts-branding.test.ts` (8 cases, RED first — missing exports — then GREEN). Host:
+`apps/web` `BrandingProvider` renders from the `['accounts']` query it already holds.
+
+### 2026-08-26 — session `sign-in-with-kortix` — the SDK owns third-party auth end to end — DONE
+### 2026-08-26 — session `session-ux` (WS-U) — ONE session-open read: the open bundle + polling discipline — DONE
+
+**Files (SDK):** `core/rest/projects-client/sessions.ts` (`getSessionOpenBundle`
++ 7 types) · `core/session/open-bundle.ts` (NEW — the coalescer + the pure leg
+projections) · `core/session/poll-owner.ts` (NEW — one cadence per session
+fact) · `react/use-poll-owner.ts` (NEW) · `react/use-session.ts` (starts the
+bundle in a LAYOUT effect; the title ladder now arms ONCE per session) ·
+`react/use-session-working.ts` (`readSessionTurnObservation` claims the bundle;
+the `/turn` interval is owned) · `react/use-session-prompts.ts` (same for the
+inbox) · `browser/session-sync/server-transcript-mirror.ts` (the hydrate rides
+the bundle's mirror) · `react/session-title-sync.ts` +
+`react/use-opencode-events/helpers.ts` (both narrowed off the `sessionsScope`
+prefix). Tests beside each. **Public surface: additive only** — 8 names
+(`getSessionOpenBundle` + `SessionOpenBundle*`), no rename, no removal; both
+snapshots regenerated.
+
+**Server:** `GET /v1/projects/:projectId/sessions/:sessionId/open-bundle`
+(`apps/api/src/projects/routes/session-open-bundle.ts`, NEW) answers the session
+row, the turn, the prompt queue, the transcript mirror, the config essentials
+and the model defaults from ONE auth + visibility resolution and one
+`Promise.allSettled`. Control plane only — no sandbox hop, so a stopped session
+answers as fast as a running one, and `/start` stays the only call that wakes
+anything. The turn read and the prompt wire view were EXTRACTED from `r8.ts`
+(`lib/session-turn-read.ts`, `lib/session-prompt-view.ts`) so both readers share
+one projection instead of two.
+
+**Why.** Measured on a real deployment (20 session opens, 2026-08-26):
+`GET .../turn` 6.0/open, `GET /sessions` 5.8/open, `/audit` 3.9/open,
+`/prompts` 1.4/open, each 0.3-2.3 s at the median — the client asked six
+questions in series before it could paint. Three causes, all fixed: (1) no
+aggregate read existed; (2) `refetchInterval` is scheduled PER OBSERVER and
+three hooks mount `/turn` on a session route; (3) `sessionPrompts` and
+`sessionTurn` nest under `qk.project.session`, so the title ladder's
+`sessionsScope` refetch re-issued four endpoints per pass, up to seven passes.
+
+**The rule the bundle must not break:** every leg is tri-state. `known: false`
+projects to `null`, which sends the consumer to its own endpoint — never to the
+NEGATIVE answer. An idle turn, an empty queue and an empty thread are all
+claims, and only a source that could have known may make one.
+
+**Verified in the real browser** (worktree stack, 3 runs each, request counts
+from the network layer): in the first 10 s of a session open, `/turn` 2 → 0,
+`/prompts` 3 → 0, `/transcript` 1 → 0, replaced by ONE `/open-bundle`.
+Time-to-composer median 3425 ms → 2176 ms. Live parity asserted against the
+five endpoints the bundle replaces: turn, queue, transcript, models and the
+session row all compare equal in the same second.
+
+**Gates:** `typecheck` clean (package + examples) · `bun run test` 2680 pass /
+0 fail across 178 files · `smoke:install` pass · `apps/api` `bash
+scripts/test.sh` 8545 pass / 0 fail · route-coverage gate passed.
+
 ### 2026-08-26 — session `session-ux` (WS-R) — stop-release: a re-minted prompt's echo must find ITS OWN bubble — DONE
 
 **Files:** `browser/stores/sync-store.ts` (`registerOptimisticEcho` follows the
@@ -1287,3 +1351,44 @@ picked up `sanitizeModelStore`, which the entry above added without recording
 
 **Gates:** `typecheck` clean · `bun test --isolate src` 2621 pass / 0 fail ·
 `smoke:install` pass.
+
+### 2026-08-26 — session `sign-in-with-kortix` — the SDK owns third-party auth end to end — DONE
+
+**Files:** `node/auth.ts` (+ `auth.test.ts`, 15 cases) — `createKortixAuth`:
+PKCE S256 sign-in, callback exchange, AES-256-GCM `HttpOnly` session cookie,
+`/refresh` rotation, `/signout` revocation, `/me`, same-origin `/proxy`,
+`viewer()` / `requireViewer()` / `kortix()` / `clientConfig()` ·
+`node/server.ts` (re-exports; `forwardKortixRequest` gains an optional
+`fetch`) · `core/rest/projects-client/oauth-clients.ts` (+ test) —
+`kortix.iam.oauthClients.{list,get,create,update,rotateSecret,remove}` ·
+`react/sign-in-with-kortix.tsx` (+ test) — `useKortixViewer`,
+`SignInWithKortix`, `fetchKortixViewer`, link helpers ·
+`platform-client/host-boundary.ts` (`OAuthConsentRequest` gains
+`client_id`, `client_type`, `remembered`) · `core/http/config.ts`
+(`fetch` accepts any fetch-shaped function — the global `typeof fetch` type
+carries Bun's `preconnect`, which no adapter provides) ·
+`examples/11-sign-in-with-kortix.ts` · `scripts/smoke-install.mjs` imports
+`createKortixAuth` from the packed tarball. **Public surface: additive** —
+both snapshots regenerated and reviewed (new names only; nothing renamed or
+removed).
+
+**Why.** A third-party app could not sign users in with Kortix: the SDK was
+token-in only, `/v1/oauth` was half-built (hand-inserted clients, in-memory
+requests, a token that opened only `/userinfo`) and the documented path was
+"embed supabase-js against Kortix's Supabase project". Spec:
+`docs/specs/2026-08-26-sign-in-with-kortix.md`. Docs: `docs/sdk/sign-in`.
+API side in the same branch: persisted authorization requests, remembered
+consent, public clients, `/revoke`, RFC 8414 discovery, `kortix_oat_` as a
+first-class credential on both auth middlewares, self-serve client registry.
+
+**Gates:** `pnpm --filter @kortix/sdk typecheck` clean (package + examples) ·
+`test` exit 0, no failing file · `smoke:install` pass.
+
+**Phase B (same session) — headless regular auth.** `core/rest/platform-client/auth.ts`
+(+ test) — `kortix.auth.{signUp, signInWithPassword, sendMagicLink, verifyOtp,
+signInWithProvider, exchangeCode, refresh, resetPassword, updatePassword,
+user, signOut}` over `/v1/auth/*` (API side: `apps/api/src/auth/headless.ts`
++ `gotrue.ts`, GoTrue called server-side with the API key + forwarded IP,
+per-IP token bucket) · `core/auth/session.ts` (+ test) — `createKortixSession`
+(storage adapter, shared in-flight refresh, 4xx on refresh = signed out) ·
+`HeadlessAuthError`. Public surface: additive.

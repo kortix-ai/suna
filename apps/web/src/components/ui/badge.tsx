@@ -26,42 +26,53 @@ const badgeColors = {
 
 type BadgeColor = keyof typeof badgeColors;
 
+/** Framer tint badge: 10% fill + matching inset ring + saturated label color. */
+function tintStyle(color: string) {
+  const fill = `color-mix(in srgb, ${color} 10%, transparent)`;
+  return {
+    color,
+    backgroundColor: fill,
+    boxShadow: `inset 0 0 0 1px ${fill}`,
+  } as const;
+}
+
 const badgeVariants = cva(
-  'border-transparent disabled:border-alpha-300 focus-visible:ring-offset-background outline-hidden has-focus-visible:ring-2 pointer-events-none inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-xs font-medium leading-none ring-blue-600 transition-[color,background-color,border-color,box-shadow,opacity,scale] focus-visible:ring-2 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:ring-0 [&>svg]:pointer-events-none bg-accent text-accent-foreground hover:bg-accent focus:bg-accent focus-visible:bg-accent has-[>svg]:gap-2 has-[>svg]:pl-[10px] [&>svg]:size-3 h-6 rounded-full',
+  'inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[5px] px-1.5 py-[0.1rem] font-mono text-[0.8rem] font-medium tracking-tight [overflow-wrap:anywhere] has-[>svg]:gap-0.5 has-[>[data-slot=status-dot]]:gap-1 [&>svg]:block [&>svg]:!size-[0.75em] [&>svg]:shrink-0 [&>svg]:pointer-events-none [&>[data-slot=status-dot]]:shrink-0 [&>[data-slot=status-dot]]:!size-[0.45em] uppercase',
   {
     variants: {
       variant: {
         solid: '',
-        default: 'border border-foreground/10 bg-foreground text-background',
-        secondary: 'border border-secondary/10 bg-secondary text-secondary-foreground',
-        accent: 'bg-foreground/5  ',
-        destructive:
-          'border-transparent bg-red-100   text-red-800   dark:bg-red-900/30 dark:text-red-400',
-        success: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+        default: 'bg-foreground/10 text-foreground ring-1 ring-inset ring-foreground/10',
+        secondary:
+          'bg-secondary/80 text-secondary-foreground ring-1 ring-inset ring-border/60 normal-case',
+        accent: 'bg-foreground/5 text-foreground ring-1 ring-inset ring-foreground/5',
+        destructive: 'bg-destructive/10 text-destructive ring-1 ring-inset ring-destructive/10',
+        success:
+          'bg-emerald-500/10 text-emerald-600 ring-1 ring-inset ring-emerald-500/10 dark:text-emerald-400',
         badgeSuccess:
-          'border-transparent bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-500 bg-teal-100 text-teal-700 hover:bg-teal-100 focus:bg-teal-100 focus-visible:bg-teal-100 px-1.5 text-[11px]',
-        update: 'border-transparent text-kortix-orange bg-chart-2/25 border',
-        kortix: 'border-transparent text-foreground bg-kortix-base/25 border',
+          'bg-teal-500/10 text-teal-700 ring-1 ring-inset ring-teal-500/10 dark:text-teal-400',
+        update: 'bg-chart-2/10 text-kortix-orange ring-1 ring-inset ring-chart-2/10',
+        kortix: 'bg-foreground/10 text-foreground ring-1 ring-inset ring-foreground/10',
         warning:
-          'border-transparent bg-amber-400/30 border  text-amber-800  dark:bg-amber-900/30 dark:text-amber-400',
-        outline: 'text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
-        new: 'border-transparent bg-primary/15 text-primary',
-        beta: 'border-transparent bg-primary/15 text-primary',
-        highlight: 'border-transparent bg-primary/15 text-primary',
-        info: 'border-transparent bg-neutral-200 border  text-neutral-800 dark:bg-neutral-900/50 dark:text-neutral-500',
-        muted: 'border-transparent bg-muted/50 text-muted-foreground',
-        transparent: 'border-transparent bg-transparent text-foreground',
+          'bg-amber-500/10 text-amber-700 ring-1 ring-inset ring-amber-500/10 dark:text-amber-400',
+        outline: 'bg-transparent text-foreground ring-1 ring-inset ring-border normal-case',
+        new: 'bg-primary/10 text-primary ring-1 ring-inset ring-primary/10',
+        beta: 'bg-primary/10 text-primary ring-1 ring-inset ring-primary/10',
+        highlight: 'bg-primary/10 text-primary ring-1 ring-inset ring-primary/10',
+        info: 'bg-neutral-500/10 text-neutral-700 ring-1 ring-inset ring-neutral-500/10 dark:text-neutral-400 normal-case',
+        muted: 'bg-muted/50 text-muted-foreground ring-1 ring-inset ring-muted/50 normal-case',
+        transparent: 'bg-transparent text-foreground ring-0 normal-case',
       },
       size: {
-        default: 'px-3 gap-1 [&>svg]:size-4',
-        sm: 'h-5 px-2 gap-0.5 has-[>svg]:gap-1 [&>svg]:size-3',
-        xs: 'h-5 px-1.5 text-[11px] gap-0.5 has-[>svg]:gap-1.5 [&>svg]:size-2',
-        tabular: 'h-5 min-w-5 px-1.5 text-[11px] tabular-nums gap-0 has-[>svg]:gap-1 [&>svg]:size-2',
+        default: 'px-1.5',
+        sm: '',
+        xs: '',
+        tabular: 'min-w-5 gap-0 px-1 tabular-nums tracking-normal',
       },
     },
     defaultVariants: {
       variant: 'default',
-      size: 'default',
+      size: 'xs',
     },
   },
 );
@@ -82,11 +93,8 @@ function Badge({
 
   const colorStyle = isSolid
     ? color === 'gray'
-      ? { backgroundColor: 'var(--accent)', color: 'var(--foreground)' }
-      : {
-          color: 'var(--foreground)',
-          backgroundColor: `color-mix(in srgb, ${colorValue} 15%, var(--background))`,
-        }
+      ? tintStyle('var(--foreground)')
+      : tintStyle(colorValue)
     : {};
 
   return (
