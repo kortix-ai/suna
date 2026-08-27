@@ -253,7 +253,7 @@ story += [
     p("Reviewed: 2026-08-28", "KSubtitle"),
     p("Original head: 5c609e689e03f2a93468e32257ac537e7e1f1517", "KSubtitle"),
     p("Fix commit: 7cc805c37578d66c50ef9ebed1c76c58ed45eb64", "KSubtitle"),
-    p("Current head: 1f86186e6d0c9c526960e9b18834e65395e7d1fc", "KSubtitle"),
+    p("Reviewed code head: 1f86186e6d0c9c526960e9b18834e65395e7d1fc", "KSubtitle"),
     Spacer(1, 5 * mm),
     box(
         "DECISION: DO NOT MERGE YET",
@@ -502,7 +502,7 @@ story += [
 story += [
     h1("Final shipping gate"),
     p("Do not merge PR #6957 until every item below passes."),
-    bullet("GitHub checks pass at head 1f86186e6d0c9c526960e9b18834e65395e7d1fc."),
+    bullet("GitHub checks pass for the final PR head after the report commit."),
     bullet("A stable real sandbox completes P1 and P2 automatically."),
     bullet("The DOM contains both exact assistant outputs under the correct prompts."),
     bullet("Lifecycle timestamps prove no same-session overlap."),

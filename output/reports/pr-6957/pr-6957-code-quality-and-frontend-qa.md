@@ -8,7 +8,7 @@
 
 **Fix commit:** `7cc805c37578d66c50ef9ebed1c76c58ed45eb64`
 
-**Current PR head:** `1f86186e6d0c9c526960e9b18834e65395e7d1fc`
+**Reviewed code head:** `1f86186e6d0c9c526960e9b18834e65395e7d1fc`
 
 **Current main:** `6f34da6c51bfd932493dbfb49d81dbe4f10cab1c`
 
@@ -337,7 +337,7 @@ The unrelated `globals.css` text-blur removal expands the review surface. Move i
 
 Do not merge PR #6957 until all items pass:
 
-1. GitHub checks pass at current head `1f86186e6d0c9c526960e9b18834e65395e7d1fc`.
+1. GitHub checks pass for the final PR head after the report commit.
 2. A stable real sandbox completes P1 and P2 automatically.
 3. The DOM contains both exact assistant outputs under the correct parent prompts.
 4. Lifecycle timestamps prove no same-session overlap.
