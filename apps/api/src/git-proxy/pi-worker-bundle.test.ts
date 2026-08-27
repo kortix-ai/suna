@@ -243,6 +243,37 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime — session read 
       expect(buffer).toContain('rendered, chief');
       const seqs = [...buffer.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
       expect(seqs.length).toBeGreaterThan(2);
+      // The COMPOSER delivery route: the API sends every composer/queue prompt
+      // to POST /session/:rootId/prompt_async (engine.ts postPrompt), 204 +
+      // background turn. This is the route that was 404ing, so the user never
+      // got a reply. Drive it with a scripted faux turn and the API's wire id.
+      const wireId = 'msg_wire00000001';
+      const asyncRes = await fetch(`${base}/session/${rootId}/prompt_async`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...authed.headers },
+        body: JSON.stringify({ messageID: wireId, parts: [{ type: 'text', text: 'over the composer route' }] }),
+      });
+      expect(asyncRes.status).toBe(204);
+      // The turn runs in the background; poll the transcript until it settles.
+      let asyncPage: any = null;
+      for (let i = 0; i < 100; i++) {
+        asyncPage = await (
+          await fetch(`${base}/kortix/opencode/messages/${rootId}?limit=40`, authed)
+        ).json();
+        const roles = asyncPage.messages.map((m: any) => m.info.role);
+        if (roles.filter((r: string) => r === 'user').length >= 1 && roles.includes('assistant')) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      // The user message reused the API's wire id verbatim (the turn oracle keys on it).
+      const userMsg = asyncPage.messages.find((m: any) => m.info.role === 'user' && m.info.id === wireId);
+      expect(userMsg).toBeDefined();
+      expect(userMsg.parts.some((p: any) => p.type === 'text' && p.text === 'over the composer route')).toBe(true);
+      // The health turn probe reported the in-flight turn under that id while it ran.
+      const probe = await (
+        await fetch(`${base}/kortix/health?turn=1&turn_message_id=${wireId}`)
+      ).json();
+      expect(probe).toHaveProperty('turn_in_flight');
+
       expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
     } finally {
       child.kill('SIGKILL');

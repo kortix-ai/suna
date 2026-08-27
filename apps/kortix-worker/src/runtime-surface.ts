@@ -257,6 +257,10 @@ export class RuntimeSurface {
   readonly bus = new WorkerEventBus();
   readonly transcript = new WireTranscript();
   private status: { type: string } = { type: 'idle' };
+  /** The user message id of the turn currently running, for the health turn
+   *  probe the API's turn-lifecycle polls (`/kortix/health?turn=1`). */
+  private activeTurnMessageId: string | null = null;
+  private turnInFlight = false;
   private messageSeq = 0;
   private readonly createdAt = Date.now();
   private updatedAt = Date.now();
@@ -283,6 +287,33 @@ export class RuntimeSurface {
       ((wire.properties.info as { sessionID?: string } | undefined)?.sessionID ??
         (wire.properties.part as { sessionID?: string } | undefined)?.sessionID);
     this.bus.publish(wire.type, wire.properties, session);
+  }
+
+  /** Record turn start/end so the health turn probe can report it. */
+  markTurn(userMessageId: string | null, inFlight: boolean): void {
+    this.turnInFlight = inFlight;
+    this.activeTurnMessageId = inFlight ? userMessageId : null;
+  }
+
+  /**
+   * The turn-probe answer for `GET /kortix/health?turn=1&turn_message_id=…`.
+   * The API's turn-lifecycle polls this to renew the box's deadline while a
+   * turn runs and to settle it when the turn ends — without it the reaper can
+   * stop the box mid-turn (the "a turn probe" learnings). `turn_in_flight` is
+   * true while a turn runs; when a specific `turn_message_id` is asked for, it
+   * answers about THAT turn (true only while it is the live one).
+   */
+  turnProbe(requestedMessageId: string | null): {
+    turn_in_flight: boolean;
+    turn_message_id: string | null;
+  } {
+    if (requestedMessageId) {
+      return {
+        turn_in_flight: this.turnInFlight && this.activeTurnMessageId === requestedMessageId,
+        turn_message_id: this.activeTurnMessageId,
+      };
+    }
+    return { turn_in_flight: this.turnInFlight, turn_message_id: this.activeTurnMessageId };
   }
 
   /** The first user text names the session, like OpenCode's title adoption. */

@@ -372,10 +372,13 @@ export async function startWorker(cfg = configFromEnv()) {
     }
   });
   // pi's stream carries the assistant; the USER message is published at prompt
-  // time so the transcript shows the turn the moment it starts.
-  const publishUserMessage = (text: string) => {
+  // time so the transcript shows the turn the moment it starts. `explicitId`
+  // is the wire id the API pre-placed for a composer/queue send (prompt_async's
+  // `messageID`): the worker MUST reuse it so the transcript, the API's inbox
+  // placement, and the turn oracle all key on the same id.
+  const publishUserMessage = (text: string, explicitId?: string): string => {
     surface.noteUserText(text);
-    const id = surface.mintMessageId();
+    const id = explicitId ?? surface.mintMessageId();
     surface.publishWire({
       type: 'message.updated',
       properties: {
@@ -401,10 +404,26 @@ export async function startWorker(cfg = configFromEnv()) {
         },
       },
     });
+    return id;
   };
-  const runTurn = async (text: string) => {
-    publishUserMessage(text);
-    await agent.prompt(text);
+  // Serialize turns: pi's Agent runs one conversation, and a second concurrent
+  // `prompt()` would interleave two turns' events on one stream. A composer
+  // send that lands while a turn is live queues behind it (OpenCode's own
+  // prompt_async serializes the same way).
+  let turnChain: Promise<unknown> = Promise.resolve();
+  const runTurn = async (text: string, opts?: { userMessageId?: string }) => {
+    const prev = turnChain;
+    turnChain = (async () => {
+      await prev.catch(() => {});
+      publishUserMessage(text, opts?.userMessageId);
+      surface.markTurn(opts?.userMessageId ?? null, true);
+      try {
+        await agent.prompt(text);
+      } finally {
+        surface.markTurn(opts?.userMessageId ?? null, false);
+      }
+    })();
+    return turnChain;
   };
 
   const server = createServer(async (req, res) => {
@@ -417,6 +436,59 @@ export async function startWorker(cfg = configFromEnv()) {
       if (surface.handleRawSessionList(req, res, url)) return;
     }
 
+    // ── prompt_async — the composer/queue delivery route ────────────────────
+    // The API's session lifecycle delivers EVERY composer send and queued
+    // prompt with POST /session/:rootId/prompt_async (engine.ts postPrompt),
+    // NOT the worker's own /say|/turn. OpenCode answers 204 and runs the turn
+    // in the background, streaming events; the worker matches that contract, so
+    // a send reaches the pi agent and the response streams back through the
+    // /events SSE. Without this route the prompt 404s, the delivery loop retries
+    // to `pending`, and the composer's Stop button spins forever with no reply.
+    {
+      const m = url.pathname.match(/^\/session\/([^/]+)\/prompt_async$/);
+      if (m && req.method === 'POST') {
+        const sid = decodeURIComponent(m[1]!);
+        if (sid !== surface.rootId) {
+          res.writeHead(404, { 'content-type': 'application/json' }).end(
+            JSON.stringify({ error: 'unknown session' }),
+          );
+          return;
+        }
+        let body = '';
+        req.on('data', (c) => (body += c));
+        req.on('end', () => {
+          let text = '';
+          let messageID: string | undefined;
+          try {
+            const parsed = JSON.parse(body || '{}') as {
+              messageID?: string;
+              parts?: Array<{ type?: string; text?: string }>;
+            };
+            messageID = typeof parsed.messageID === 'string' ? parsed.messageID : undefined;
+            text = (parsed.parts ?? [])
+              .filter((p) => p?.type === 'text' && typeof p.text === 'string')
+              .map((p) => p.text)
+              .join('');
+          } catch {
+            res.writeHead(400, { 'content-type': 'application/json' }).end(
+              JSON.stringify({ error: 'invalid json body' }),
+            );
+            return;
+          }
+          // Accept immediately (204), exactly like OpenCode's prompt_async — the
+          // turn runs in the background and its events reach the client over the
+          // /events SSE. runTurn serializes, so a send during a live turn queues.
+          res.writeHead(204).end();
+          void runTurn(text, { userMessageId: messageID }).catch((e: any) =>
+            console.error(
+              JSON.stringify({ msg: 'prompt_async turn failed', error: String(e?.message ?? e) }),
+            ),
+          );
+        });
+        return;
+      }
+    }
+
     // ── Platform compatibility surface ─────────────────────────────────────
     // The session lifecycle (start envelope, wake fences, env fan-out) speaks
     // kortixd's /kortix/* contract. The worker answers just enough of it that
@@ -425,6 +497,13 @@ export async function startWorker(cfg = configFromEnv()) {
       const compiled = (globalThis as Record<string, unknown>).__KORTIX_COMPILED__ as
         | { manifest?: { agent_config_etag?: string | null; source_sha?: string; ref?: string } }
         | undefined;
+      // Turn probe: the API's turn-lifecycle polls ?turn=1 to renew the box's
+      // deadline while a turn runs and to settle it when done. Answer from the
+      // surface's live turn state so the reaper never stops the box mid-turn.
+      const turnProbe =
+        url.searchParams.get('turn') === '1'
+          ? surface.turnProbe(url.searchParams.get('turn_message_id')?.trim() || null)
+          : null;
       const body = JSON.stringify({
         daemon: 'ok',
         status: 'ok',
@@ -445,6 +524,7 @@ export async function startWorker(cfg = configFromEnv()) {
         branch: compiled?.manifest?.ref ?? null,
         boot_timeline: [{ label: 'worker-listening', atMs: LISTEN_MS ?? 0 }],
         runtime: { build: null, at: null, components: {}, agentSwapPending: false, pinned: false },
+        ...(turnProbe ?? {}),
       });
       res.writeHead(200, { 'content-type': 'application/json' }).end(body);
       return;
