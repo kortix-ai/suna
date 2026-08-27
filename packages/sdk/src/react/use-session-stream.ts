@@ -74,6 +74,7 @@ import { sessionsNeedingRehydrate } from './use-opencode-events/rehydrate-target
 import { useEventStreamRefs } from './use-opencode-events/use-event-stream-refs';
 import { opencodeKeys } from './use-opencode-sessions';
 import { useCurrentRuntime } from './use-current-runtime';
+import { markCurrentRuntimeBundleApplied } from '../core/session/current-runtime';
 import { noteInboxObservation, reconcileOptimisticPrompts } from './use-session-prompts';
 import { resetPrefetchState } from './use-session-prefetch';
 import { sessionStreamScope } from './use-session-stream-presence';
@@ -297,6 +298,11 @@ export function useSessionRuntimeStream(
           // The bundle never rejects, but a claim must never block the stream.
         }
       }
+      // Whether or not a bundle landed, the roster seeds (if any) are now in
+      // cache — release the roster hooks so they read that cache. Without a
+      // bundle this lets them fall back to their own fetch; with one it wins
+      // the mount-vs-seed race so no redundant /agent,/command,/session fires.
+      if (!closed) markCurrentRuntimeBundleApplied();
       if (closed) return;
 
       connection = connectSessionStream({

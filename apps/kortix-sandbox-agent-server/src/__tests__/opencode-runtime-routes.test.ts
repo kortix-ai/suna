@@ -79,7 +79,17 @@ function startFakeOpencode() {
           return Response.json(permissions)
         case '/question':
           return Response.json([])
+        case '/vcs/diff':
+          return Response.json([{ file: 'a.ts', added: 1, removed: 0 }])
+        case '/project/current':
+          return Response.json({ worktree: '/workspace', vcs: 'git' })
         default:
+          if (/^\/session\/[^/]+\/todo$/.test(url.pathname)) {
+            return Response.json([{ id: 'todo_1', content: 'do a thing', status: 'pending' }])
+          }
+          if (/^\/session\/[^/]+$/.test(url.pathname)) {
+            return Response.json({ id: SESSION, title: 'From HTTP', directory: '/workspace' })
+          }
           if (/^\/session\/[^/]+\/message$/.test(url.pathname)) {
             return Response.json([
               {
@@ -703,3 +713,34 @@ describe('GET /turn/:messageId', () => {
     expect(body.in_flight).toBeNull()
   })
 })
+
+describe('GET /kortix/opencode/* passthroughs — the last raw reads move onto /kortix/*', () => {
+  test('vcs-diff, project-current, config, session, and todo forward to local OpenCode', async () => {
+    const { app } = makeRouter()
+    const cases: Array<[string, string]> = [
+      ['/vcs-diff', '/vcs/diff'],
+      ['/project-current', '/project/current'],
+      ['/config', '/config'],
+      [`/session/${SESSION}`, `/session/${SESSION}`],
+      [`/todo/${SESSION}`, `/session/${SESSION}/todo`],
+    ]
+    for (const [route, opencodePath] of cases) {
+      const res = await app.request(`http://d${route}`, { headers: auth })
+      expect(res.status).toBe(200)
+      expect(opencodeCalls).toContain(opencodePath)
+    }
+  })
+
+  test('vcs-diff forwards the mode query', async () => {
+    const { app } = makeRouter()
+    const res = await app.request('http://d/vcs-diff?mode=git', { headers: auth })
+    expect(res.status).toBe(200)
+    expect(opencodeCalls).toContain('/vcs/diff')
+  })
+
+  test('a passthrough refuses an unauthenticated request', async () => {
+    const { app } = makeRouter()
+    expect((await app.request('http://d/vcs-diff')).status).toBe(401)
+  })
+})
+

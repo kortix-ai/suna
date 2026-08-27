@@ -23,6 +23,7 @@ import {
 } from '../core/session/url';
 import { useCurrentRuntime } from './use-current-runtime';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
+import { readDaemonOpencode } from '../core/runtime/daemon-read';
 
 interface RuntimeResult<T> {
   data?: T;
@@ -41,7 +42,7 @@ function unwrapRuntimeResult<T>(result: RuntimeResult<T>): T {
 }
 
 export function getRuntimeProjectInfo(): Promise<RuntimeProjectInfo> {
-  return getClient().project.current().then(unwrapRuntimeResult);
+  return readDaemonOpencode<RuntimeProjectInfo>('project-current');
 }
 
 export function getRuntimePathInfo(): Promise<RuntimePathInfo> {
@@ -88,7 +89,7 @@ export function setRuntimeProviderApiKey(
 }
 
 export function getRuntimeConfig(): Promise<Config> {
-  return getClient().global.config.get().then(unwrapRuntimeResult);
+  return readDaemonOpencode<Config>('config');
 }
 
 export function updateRuntimeConfig(config: Config): Promise<Config> {

@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
+import { opencodeKeys, useOpenCodeRuntimeReady, useOpenCodeRosterReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
 import { getProjectDetail, type ProjectConfigSummary } from '../../core/rest/projects-client';
 import { contract } from '../query-contracts';
@@ -27,6 +27,7 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
   const directory = options?.directory;
   const projectId = options?.projectId ?? null;
   const runtimeReady = useOpenCodeRuntimeReady();
+  const rosterReady = useOpenCodeRosterReady();
   const cacheScope = projectId
     ? `project:${projectId}`
     : directory
@@ -78,7 +79,9 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
       return agents;
     },
     placeholderData: () => getLSCache<Agent[]>(LS_AGENTS, cacheScope),
-    enabled: projectId ? true : runtimeReady,
+    // Non-projectId branch reads the sandbox roster via the proxy — wait for
+    // the bundle seed so it reads cache, not a redundant /agent read.
+    enabled: projectId ? true : rosterReady,
     staleTime: projectId ? 30_000 : Infinity,
     gcTime: 10 * 60 * 1000,
   });

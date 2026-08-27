@@ -8,7 +8,11 @@ import {
   type SessionSyncTelemetryEvent,
   loadCompleteSessionHistory,
 } from '../../core/session-sync/session-sync-controller';
-import { getCurrentRuntimeSandboxId } from '../../core/session/current-runtime';
+import {
+  getCurrentRuntimeSandboxId,
+  getCurrentRuntimeUrl,
+} from '../../core/session/current-runtime';
+import { authenticatedFetch } from '../../core/http/auth';
 import { useSyncStore } from '../stores/sync-store';
 
 interface MessagesResponse {
@@ -48,6 +52,9 @@ interface RegistryEntry {
   consumers: number;
   lastUsedAt: number;
   client?: SessionMessageClient;
+  /** This session's proxy base (`/p/<box>/8000`), bound once from the current
+   *  runtime when its sandbox matches this controller's scope. */
+  runtimeUrl?: string;
   prefetchedSource?: SessionPrefetchSource;
 }
 
@@ -121,66 +128,48 @@ function messageKey(info: { id: string; time?: { created?: number } }): string {
  *
  * Cheap, and it means nothing downstream has to be defensive about shape again.
  */
-/**
- * The most specific message a failed `client.session.messages` response
- * carries. `error` is genuinely `unknown` (its shape varies per endpoint), so
- * this duck-types the same way `unwrap` (react/use-opencode-sessions/shared.ts)
- * does, and falls back to the status code.
- */
-function messagePageErrorText(result: MessagesResponse, status: number | undefined): string {
-  const err = result.error;
-  if (typeof err === 'string' && err) return err;
-  if (err && typeof err === 'object') {
-    const rec = err as Record<string, unknown>;
-    const data = rec.data && typeof rec.data === 'object' ? (rec.data as Record<string, unknown>) : undefined;
-    const message = data?.message ?? rec.message ?? rec.error;
-    if (typeof message === 'string' && message) return message;
-    try {
-      return JSON.stringify(err);
-    } catch {
-      // fall through to the status
-    }
-  }
-  return status ? `Session message read failed: ${status}` : 'Session message read failed';
-}
-
 export async function readSessionMessagePage(
-  client: SessionMessageClient,
+  runtimeUrl: string | null,
   sessionId: string,
   request: { limit: number; before?: string },
   signal?: AbortSignal,
 ): Promise<SessionSyncPage> {
-  const result = await client.session.messages(
-    {
-      sessionID: sessionId,
-      limit: request.limit,
-      ...(request.before ? { before: request.before } : {}),
-    },
+  // The Kortix daemon's TRIMMED transcript, not OpenCode's raw
+  // `/session/:id/message`. The raw read shipped every base64 attachment byte
+  // inline — 8-25 MB and 30-48 s per page on a real session (measured,
+  // Essentia 2026-08-24) — and the client fetched it on every open. The daemon
+  // strips attachment bytes to references, truncates giant tool outputs, pages
+  // the same way (`limit` + `before`), and returns ids VERBATIM so the reducer
+  // and any mirror key on the same identities. `runtimeUrl` is the SESSION's
+  // proxy base (`/p/<box>/8000`), bound to this controller — never a live
+  // global read, so a background session cannot pull the foreground box.
+  if (!runtimeUrl) {
+    throw new SandboxNotReadyError('session runtime url not ready');
+  }
+  const base = runtimeUrl.replace(/\/$/, '');
+  const query = new URLSearchParams({ limit: String(request.limit) });
+  if (request.before) query.set('before', request.before);
+  const response = await authenticatedFetch(
+    `${base}/kortix/opencode/messages/${encodeURIComponent(sessionId)}?${query}`,
     signal ? { signal } : undefined,
   );
-  // CLASSIFY, never swallow. The generated client resolves with `{ error }` on
-  // a non-2xx response, so a 503 arrives here as `{ data: undefined, error,
-  // response.status: 503 }`. `data ?? []` read that as a loaded, empty session
-  // — the transcript rendered blank and complete, no retry. Now:
-  //   - a sandbox-not-ready read (503, or a body matching the readiness
-  //     patterns) throws `SandboxNotReadyError` — retryable, "waking";
-  //   - any other failure throws a real error the controller marks `error`;
-  //   - only a genuine 2xx payload is normalized and returned.
-  const status = result.response?.status;
-  const failed =
-    result.error !== undefined || (typeof status === 'number' && status >= 400);
-  if (failed) {
-    const message = messagePageErrorText(result, status);
-    if (
-      status === 503 ||
-      isSandboxNotReadyError(result.error) ||
-      isSandboxNotReadyError(message)
-    ) {
-      throw new SandboxNotReadyError(message);
+  // CLASSIFY, never swallow. A 503 from the sandbox proxy is the box waking,
+  // not a failure — throw the retryable "waking" error so the controller keeps
+  // polling instead of painting a blank, complete transcript over a session
+  // that is about to load.
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    if (response.status === 503 || isSandboxNotReadyError(detail)) {
+      throw new SandboxNotReadyError(detail || `session ${response.status}`);
     }
-    throw new Error(message);
+    throw new Error(detail || `Session synchronization failed: ${response.status}`);
   }
-  const items = (Array.isArray(result.data) ? result.data : []).filter(
+  const body = (await response.json()) as {
+    messages?: Array<{ info: Message; parts: Part[] }>;
+    has_more?: boolean;
+    first_message_id?: string | null;
+  };
+  const items = (Array.isArray(body.messages) ? body.messages : []).filter(
     (item): item is { info: Message; parts: Part[] } =>
       !!item && typeof item === 'object' && !!(item as { info?: { id?: unknown } }).info?.id,
   );
@@ -193,7 +182,9 @@ export async function readSessionMessagePage(
           .sort((a, b) => cmp(a.id, b.id)),
       }))
       .sort((a, b) => cmp(messageKey(a.info), messageKey(b.info))),
-    nextCursor: result.response?.headers.get('x-next-cursor') || undefined,
+    // Older pages are walked with `before = <oldest id>`, so the next cursor is
+    // the first (oldest) message id whenever more remain.
+    nextCursor: body.has_more && body.first_message_id ? body.first_message_id : undefined,
   };
 }
 
@@ -201,15 +192,33 @@ function reportTelemetry(sessionId: string, event: SessionSyncTelemetryEvent): v
   console.debug('[session-sync]', { sessionId, ...event });
 }
 
-function resolveClient(key: string): SessionMessageClient {
-  return controllers.get(key)?.client ?? getClient();
+/**
+ * The proxy base this controller's transcript reads go to. `setCurrentRuntime`
+ * pairs (url, sandboxId), so the current url belongs to THIS controller only
+ * when the current sandbox matches its scope — bind it once then. A controller
+ * for a NON-current scope gets `null` (the reader throws the retryable
+ * "waking" error and polls) rather than borrowing the foreground box's url.
+ */
+function resolveRuntimeUrl(key: string): string | null {
+  const entry = controllers.get(key);
+  if (entry?.runtimeUrl) return entry.runtimeUrl;
+  if (entry && getCurrentRuntimeSandboxId() === entry.runtimeScope) {
+    const url = getCurrentRuntimeUrl();
+    if (url) {
+      entry.runtimeUrl = url;
+      return url;
+    }
+  }
+  // A scopeless read (single-runtime helpers) has only the current runtime.
+  if (!entry || entry.runtimeScope === 'none') return getCurrentRuntimeUrl();
+  return null;
 }
 
 function createController(sessionId: string, key: string): SessionSyncController {
   return new SessionSyncController({
     sessionId,
     loadPage: (request, signal) =>
-      readSessionMessagePage(resolveClient(key), sessionId, request, signal),
+      readSessionMessagePage(resolveRuntimeUrl(key), sessionId, request, signal),
     // No `loadStatus` / `setStatus`. The liveness poll reconciles the
     // transcript tail and claims nothing about whether the session is working:
     // `GET .../turn` answers that, and `setBusy` is already driven from that
@@ -369,7 +378,7 @@ export function loadSessionTranscriptMessages(
   sessionId: string,
 ): Promise<SessionSyncPage['messages']> {
   return loadCompleteSessionHistory((request) =>
-    readSessionMessagePage(getClient(), sessionId, request),
+    readSessionMessagePage(getCurrentRuntimeUrl(), sessionId, request),
   );
 }
 

@@ -226,6 +226,58 @@ export function createOpencodeRuntimeRouter(cfg: Config, deps: OpencodeRuntimeDe
   // and attaches the listener in the same synchronous tick, so nothing can be
   // published between them. Live envelopes that arrive while the replay is
   // still being written are queued behind it and de-duplicated by seq.
+  // ── Thin GET passthroughs for the last raw OpenCode reads ────────────────
+  //
+  // The web client speaks ONLY `/kortix/*` — no raw `/session`, `/vcs/diff`,
+  // `/project/current`, `/config` on the wire. These reads are lazy or
+  // user-triggered and are NOT in the state projection, so they cannot be
+  // seeded from the bundle; the daemon forwards them to the LOCAL OpenCode over
+  // the internal URL and returns the shape verbatim. Same auth + directory
+  // scoping as every other daemon read. Kept as thin as `act`'s forwarder.
+  const forwardOpencodeGet = async (
+    c: Context,
+    opencodePath: string,
+    extraQuery = '',
+  ): Promise<Response> => {
+    const auth = authorize(cfg, c)
+    if (!auth.ok) return auth.response
+    const base = deps.opencode.getInternalUrl()
+    const qs = [`directory=${encodeURIComponent(workspace())}`, extraQuery]
+      .filter(Boolean)
+      .join('&')
+    try {
+      const res = await fetch(`${base}${opencodePath}?${qs}`, {
+        signal: AbortSignal.timeout(15_000),
+      })
+      const bodyText = await res.text()
+      return new Response(bodyText, {
+        status: res.status,
+        headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' },
+      })
+    } catch (err) {
+      return Response.json(
+        {
+          error: 'opencode read failed',
+          detail: err instanceof Error ? err.message : String(err),
+        },
+        { status: 502 },
+      )
+    }
+  }
+
+  app.get('/vcs-diff', (c) => {
+    const mode = c.req.query('mode')
+    return forwardOpencodeGet(c, '/vcs/diff', mode ? `mode=${encodeURIComponent(mode)}` : '')
+  })
+  app.get('/project-current', (c) => forwardOpencodeGet(c, '/project/current'))
+  app.get('/config', (c) => forwardOpencodeGet(c, '/config'))
+  app.get('/session/:sessionId', (c) =>
+    forwardOpencodeGet(c, `/session/${encodeURIComponent(c.req.param('sessionId'))}`),
+  )
+  app.get('/todo/:sessionId', (c) =>
+    forwardOpencodeGet(c, `/session/${encodeURIComponent(c.req.param('sessionId'))}/todo`),
+  )
+
   app.get('/events', (c) => {
     const auth = authorize(cfg, c)
     if (!auth.ok) return auth.response

@@ -1,4 +1,5 @@
 'use client';
+import { readDaemonOpencode } from '../../core/runtime/daemon-read';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
@@ -7,7 +8,7 @@ import { markSessionFresh } from '../../core/http/fresh-sessions';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import type { Session } from '@opencode-ai/sdk/v2/client';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
+import { opencodeKeys, useOpenCodeRuntimeReady, useOpenCodeRosterReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryOpenCodeSession } from './shared';
 import { NoCompactionModelError } from './no-compaction-model-error';
 import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
@@ -18,6 +19,7 @@ import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-con
 
 export function useOpenCodeSessions(enabled = true) {
   const runtimeReady = useOpenCodeRuntimeReady();
+  const rosterReady = useOpenCodeRosterReady();
   // Subscribe to the active runtime sandbox so the query key recomputes the
   // instant the sandbox switches — returning to a warm session hits its cached
   // list rather than refetching from scratch.
@@ -33,7 +35,7 @@ export function useOpenCodeSessions(enabled = true) {
       return sorted;
     },
     placeholderData: () => getLSCache<Session[]>(LS_SESSIONS),
-    enabled: runtimeReady && enabled,
+    enabled: rosterReady && enabled,
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -58,9 +60,8 @@ export function useOpenCodeSession(sessionId: string) {
   return useQuery<Session>({
     queryKey: opencodeKeys.runtimeSession(sessionId),
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.session.get({ sessionID: sessionId });
-      return unwrap(result);
+      // `/kortix/opencode/session/:id` daemon passthrough, not raw `/session/:id`.
+      return readDaemonOpencode<Session>(`session/${encodeURIComponent(sessionId)}`);
     },
     enabled: runtimeReady && canQuerySession,
     staleTime: Infinity,
@@ -214,9 +215,8 @@ export function useOpenCodeSessionTodo(sessionId: string) {
   return useQuery({
     queryKey: ['opencode', 'session-todo', sessionId],
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.session.todo({ sessionID: sessionId });
-      const data = unwrap(result);
+      // `/kortix/opencode/todo/:id` daemon passthrough, not raw `/session/:id/todo`.
+      const data = await readDaemonOpencode<unknown[]>(`todo/${encodeURIComponent(sessionId)}`);
       return Array.isArray(data) ? data : [];
     },
     enabled: runtimeReady && canQuerySession,
@@ -245,8 +245,8 @@ export function useSummarizeOpenCodeSession() {
       // 1. Try config default model
       if (!providerID || !modelID) {
         try {
-          const configResult = await client.global.config.get();
-          const config = configResult.data;
+          // `/kortix/opencode/config` daemon passthrough, not raw `/config`.
+          const config = await readDaemonOpencode<{ model?: string }>('config');
           if (config?.model) {
             const parts = config.model.split('/');
             if (parts.length >= 2) {
