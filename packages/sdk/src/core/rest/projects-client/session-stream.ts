@@ -108,7 +108,7 @@ export function sessionStreamPath(
     }
   }
   const qs = search.toString();
-  return `/projects/${projectId}/sessions/${sessionId}/stream${qs ? `?${qs}` : ''}`;
+  return `/projects/${projectId}/sessions/${sessionId}/events${qs ? `?${qs}` : ''}`;
 }
 
 /**

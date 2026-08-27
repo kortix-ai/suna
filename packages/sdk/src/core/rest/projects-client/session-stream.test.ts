@@ -29,7 +29,7 @@ const SESSION = 'sess-1';
 describe('sessionStreamPath', () => {
   test('with no cursor it asks for a fresh stream', () => {
     expect(sessionStreamPath(PROJECT, SESSION)).toBe(
-      `/projects/${PROJECT}/sessions/${SESSION}/stream`,
+      `/projects/${PROJECT}/sessions/${SESSION}/events`,
     );
   });
 
@@ -136,7 +136,7 @@ describe('readSessionStream', () => {
   test('asks the right URL with an SSE Accept header', async () => {
     serve(['event: kortix.stream.hello\ndata: {"type":"kortix.stream.hello"}\n\n']);
     for await (const _frame of readSessionStream(PROJECT, SESSION)) break;
-    expect(requested[0]!.url).toBe(`http://api.test/v1/projects/${PROJECT}/sessions/${SESSION}/stream`);
+    expect(requested[0]!.url).toBe(`http://api.test/v1/projects/${PROJECT}/sessions/${SESSION}/events`);
     expect(requested[0]!.accept).toBe('text/event-stream');
     // No `Cache-Control` REQUEST header: it is not CORS-safelisted, so sending it
     // makes the browser preflight fail cross-origin and the stream never opens
