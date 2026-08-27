@@ -28,7 +28,13 @@ on:
 
 concurrency:
   group: deploy-pi-worker
-  cancel-in-progress: false
+  # A newer push supersedes an older deploy, exactly as deploy-dev does. Queuing
+  # them instead made every push wait out the one before it, so two pushes in a
+  # row cost two full cycles to reach a state only the second one describes.
+  # Cancelling is safe here because the environment is reused, not replaced: a
+  # cancelled deploy leaves the previous stack serving, and the next `compose
+  # up -d` reconciles it.
+  cancel-in-progress: true
 
 permissions:
   contents: read
