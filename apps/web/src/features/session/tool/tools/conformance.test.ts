@@ -2,8 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Grammar contract (docs/superpowers/specs/2026-07-16-advanced-tool-views-design.md
-// §"The grammar" + §S4): forbidden chrome that must never reappear in ANY
+// Grammar contract: forbidden chrome that must never reappear in ANY
 // tool view — gradients, shadows, the old rounded-2xl cards, raw palette
 // accent colors (sky/emerald/purple/amber), and a literal "Loading..." text
 // node rendered outside `TextShimmer` (the grammar's one sanctioned pending

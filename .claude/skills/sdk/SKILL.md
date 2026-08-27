@@ -1,15 +1,17 @@
+---
+name: sdk
+description: "The hard rules for editing `@kortix/sdk` (packages/sdk) — a PUBLISHED npm package with constraints no other package in this repo has: TDD is mandatory (failing test first, gates run and pasted every turn, explicit shippable YES/NO/NOT YET); exported names INCLUDING types are a public API contract and renaming one is a breaking change; the `version` field is inert and must never be hand-bumped; adding an export requires three synchronized edits; and a static import-graph tripwire enforces the framework-free core. Load WHENEVER you add, edit, rename, move, export, test, or delete anything under packages/sdk, or touch its streaming/transport layer."
+---
+
 # `@kortix/sdk`
 
-Read `../../AGENTS.md` first — it covers the monorepo (worktrees, the local
+Read the repo-root `AGENTS.md` first — it covers the monorepo (worktrees, the local
 stack, verification standard, release topology). This file covers only what is
 specific to **this package**, and the traps that have no analogue elsewhere in
 the repo.
 
-> ### Four rules before you touch anything
+> ### Three rules before you touch anything
 >
-> 0. **Read `packages/sdk/PROGRESS.md` first, and update it before you finish.**
->    Multiple sessions run against this repo. It tracks what is done, what is in
->    flight, and what is next. Claim a task before you work on it.
 > 1. **Write the failing test first**, before any implementation code.
 >    RED → GREEN → REFACTOR, no exceptions. *A test you have never seen fail is
 >    not a test.* The full loop is in **Test-driven, always** below.
@@ -430,9 +432,8 @@ broken change, not a partial one.
 >
 > It happened because the SDK left **no transport seam**. The fix — extracting an
 > injectable `EventStreamTransport`, so the platform-specific part is only *how
-> bytes arrive* and never the reconnect logic — is designed in
-> `docs/superpowers/specs/2026-07-10-sdk-v2-structure-and-distribution-design.md`
-> and deliberately deferred.
+> bytes arrive* and never the reconnect logic — is understood and deliberately
+> deferred.
 >
 > **Do not add a third copy.** If a host needs a different wire, build the seam.
 
@@ -534,51 +535,6 @@ stage + **dry-pack** of `@kortix/llm-catalog`, `@kortix/sdk`, and the deprecated
 `@kortix/executor-sdk` adapter.
 That is the release gate. It catches a broken `publishConfig` *and* a broken
 install; it does not catch a broken runtime target.
-
-## `PROGRESS.md` — read it first, update it last
-
-`packages/sdk/PROGRESS.md` is the **single source of truth for state** across every
-session and every plan: what is done, what is in flight, what is next, what is
-merely *known*, which decisions are open. It is not a design doc (that is the spec)
-and not a how-to (that is the plan). It links to both.
-
-It has four work sections, and **you may not edit them all**:
-
-| Section | You may… | You may **not**… |
-|---|---|---|
-| **Now** — the active plan's numbered chain | claim a task, update its status, add evidence | **renumber, reorder, delete, or insert.** The plan and the kickoff prompt reference tasks by number. |
-| **Next** — committed, needs a spec | — | start one without a spec |
-| **Backlog** — known gaps | **append freely** (`B<n>`, with evidence) | reorder or delete rows |
-| **Discovered this session** | **append freely** | rewrite others' entries |
-
-**Never delete a row.** Mark `WON'T DO (reason)`. A deleted row is a decision
-nobody can audit.
-
-**Found work mid-task? Do not do it.** Append it to *Backlog* or *Discovered this
-session*, finish the task you claimed, and tell the user. Scope creep inside a task
-is how a 146-file move becomes unreviewable.
-
-**Multi-step work never becomes a Task.** The *Now* chain comes from one plan
-document. New multi-step work earns its own spec → plan → chain. Backlog rows are
-single, self-contained changes.
-
-**Multiple sessions run against this repo simultaneously.** The failure mode is not
-forgetting — it is two sessions doing the same task, or one silently overwriting
-the other's status. So:
-
-- **Before starting:** pull, read the table, and **claim your task in its own
-  commit** before doing any work. A claim made after the work is not a lock.
-- **Before finishing:** update the row (`DONE` + SHA, or back to `NOT STARTED` /
-  `BLOCKED` with a reason) **and append a session-log entry**. A task left
-  `IN PROGRESS` by a session that ended is a lie the next session will believe.
-- **Prefer the append-only log** when you are short on turn. Appends merge cleanly
-  across branches; table edits conflict.
-- **Never mark `DONE` without pasting the evidence** — the commands you ran and
-  their real output. `typecheck` is not evidence.
-
-Git is the only lock available and it is advisory. A stale `IN PROGRESS` (older
-than ~24h, no commits touching its files) is abandoned — take it over, and say so
-in the log rather than overwriting silently.
 
 ## Test-driven, always. No exceptions in this package.
 
