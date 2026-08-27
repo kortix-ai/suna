@@ -40,9 +40,51 @@ describe('boot instrumentation', () => {
     expect(ready).toBeGreaterThan(accepted)
   })
 
+  test('the directory-scoped probe stays closed until the workspace is ready', () => {
+    // OpenCode builds a directory Instance — and reads that directory's
+    // node_modules for local tools — on the FIRST directory-scoped request,
+    // and keeps that registry for the life of the process. With the early
+    // spawn our own 100 ms readiness probe is that first request, so it must
+    // not be directory-scoped until the checkout + deps are in place.
+    expect(OPENCODE).toContain('deferDirectoryProbe?: boolean')
+    expect(OPENCODE).toContain('async function probeOpencodeListening(')
+    expect(OPENCODE).toContain('/kortix-liveness-probe')
+    const check = OPENCODE.indexOf('async function checkReady(')
+    expect(OPENCODE.slice(check, check + 220)).toContain('if (!directoryProbeOpen) return false')
+
+    // main.ts: gate requested exactly when the early spawn can happen, and
+    // opened only after config deps + injected skills.
+    expect(MAIN).toContain('deferDirectoryProbe: cfg.autoClone && resolveHintedOpencodeConfigDir(cfg) !== null')
+    const deps = MAIN.indexOf("bootMark('config-deps')")
+    const open = MAIN.indexOf('opencode.markWorkspaceReady()', deps)
+    const reload = MAIN.indexOf('opencode.reloadForWorkspace()', open)
+    expect(deps).toBeGreaterThan(-1)
+    expect(open).toBeGreaterThan(deps)
+    expect(reload).toBeGreaterThan(open)
+  })
+
+  test('the proxy holds every caller off until the workspace is complete', () => {
+    const PROXY = readFileSync(join(import.meta.dir, '..', 'proxy.ts'), 'utf8')
+    expect(PROXY).toContain("bootState.workspaceReady === false")
+    expect(PROXY).toContain("'workspace_not_ready'")
+    // set false only on the early-spawn path, true once deps + skills are in
+    expect(MAIN).toContain('if (earlyOpencodeConfigDir) bootState.workspaceReady = false')
+    const deps = MAIN.indexOf("bootMark('config-deps')")
+    expect(MAIN.indexOf('bootState.workspaceReady = true', deps)).toBeGreaterThan(deps)
+  })
+
+  test('an instance that answered before the workspace was ready forces a restart, not a dispose', () => {
+    const fn = OPENCODE.indexOf('async reloadForWorkspace()')
+    const body = OPENCODE.slice(fn, OPENCODE.indexOf('async reloadConfig(', fn))
+    expect(body).toContain('restarting instead of disposing')
+    expect(body).not.toContain('return disposeInstances()')
+    const restart = MAIN.indexOf('opencode.restart()', MAIN.indexOf('const reloaded = await opencode.reloadForWorkspace()'))
+    expect(restart).toBeGreaterThan(-1)
+  })
+
   test('the supervisor reports the first HTTP response separately from the first 200', () => {
     expect(OPENCODE).toContain('onFirstListeningResponse?: () => void')
-    const probe = OPENCODE.indexOf("const probe = await probeOpencodeReadiness(")
+    const probe = OPENCODE.indexOf('const probe = directoryProbeOpen')
     const report = OPENCODE.indexOf('options.onFirstListeningResponse?.()', probe)
     expect(probe).toBeGreaterThan(-1)
     expect(report).toBeGreaterThan(probe)

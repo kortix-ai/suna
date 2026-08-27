@@ -218,6 +218,10 @@ async function main() {
       bootMark('opencode-session-api-ready')
     },
     nativeBinaryFastPathEnabled: opencodeBinaryPrefetchEnabled,
+    // The early-spawn path (below) starts OpenCode before the checkout exists.
+    // Keep the directory-scoped probe closed until the workspace is complete so
+    // no Instance — and no tool registry — is built against a partial tree.
+    deferDirectoryProbe: cfg.autoClone && resolveHintedOpencodeConfigDir(cfg) !== null,
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
       // writing, or the client streams a part that will never complete.
@@ -333,6 +337,9 @@ async function main() {
   // dispose the instances in place (~50 ms) so the next request re-detects
   // the git root and re-reads config. No hint → the serial boot below.
   const earlyOpencodeConfigDir = cfg.autoClone ? resolveHintedOpencodeConfigDir(cfg) : null
+  // Only the early-spawn path can expose a half-built workspace; every other
+  // boot leaves this undefined and the proxy gate below is inert.
+  if (earlyOpencodeConfigDir) bootState.workspaceReady = false
   let opencodeStartedEarly = false
   const earlyOpencodeStartPromise: Promise<void> | null =
     earlyOpencodeConfigDir && !(process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
@@ -341,7 +348,11 @@ async function main() {
           opencode.reconfigure(cfg, earlyOpencodeConfigDir, projectEnv)
           await opencode.start()
           opencodeStartedEarly = opencode.getPid() !== null
-          if (opencodeStartedEarly) {
+          // The checkout, its config-dir deps and the injected skills are all in
+    // place now: OpenCode may build its Instance.
+    bootState.workspaceReady = true
+    opencode.markWorkspaceReady()
+    if (opencodeStartedEarly) {
             bootMark('opencode-spawned')
             logger.info('[boot] opencode spawned before checkout (config-dir hint)', {
               opencodeConfigDir: earlyOpencodeConfigDir,
@@ -433,6 +444,8 @@ async function main() {
 
   if (bootState.repoMaterializationError) {
     logger.warn('[boot] skipping runtime readiness because repo materialization failed')
+    bootState.workspaceReady = true
+    opencode.markWorkspaceReady()
     if (opencodeStartedFromCompiledConfig || opencodeStartedEarly) await opencode.stop()
   } else {
     // Now that the repo exists, pin the credential helper repo-locally too, so
