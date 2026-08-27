@@ -167,6 +167,9 @@ export async function deployPlatinumPreview(
   const api = new PlatinumApi(input.platinum.apiUrl, input.platinum.apiKey);
   let sandboxId = '';
   let launched = false;
+  // Set only when this run adopted an existing branch environment, so the
+  // failure path below can tell "a box I made" from "the standing environment".
+  let reusedSandboxId = '';
   try {
     const identity = previewSandboxIdentity(input);
     // A branch environment reuses its sandbox; only an ephemeral PR preview is
@@ -178,6 +181,7 @@ export async function deployPlatinumPreview(
       : null;
     // A branch environment idles between deploys; Platinum may have stopped it.
     if (reusable) {
+      reusedSandboxId = reusable.id;
       await api
         .json(`/v1/sandboxes/${reusable.id}/start`, { method: 'POST' })
         .catch(() => undefined);
@@ -228,7 +232,13 @@ export async function deployPlatinumPreview(
       startedAt,
       readSandbox: () => api.json<PlatinumSandbox>(`/v1/sandboxes/${created.id}`),
     });
-    await waitForWarmSandbox(api, sandboxId, platinumWarmReadinessTimeoutMs(sandbox.via));
+    // "Warm" means a template restore has finished and NOTHING is running yet.
+    // A reused branch-environment sandbox is the opposite by construction — it
+    // is still serving the previous deploy — so waiting for warmth there can
+    // only ever time out. Wait for it on a fresh sandbox only.
+    if (!reusable) {
+      await waitForWarmSandbox(api, sandboxId, platinumWarmReadinessTimeoutMs(sandbox.via));
+    }
     let previewUrl = sandbox.exposed?.find((item) => item.port === 8080)?.url;
     if (!previewUrl) {
       const exposed = await api.json<{ url: string }>(`/v1/sandboxes/${sandboxId}/expose`, {
@@ -298,7 +308,10 @@ export async function deployPlatinumPreview(
     return result;
   } catch (error) {
     if (launched) throw error;
-    if (sandboxId) await deletePlatinum(api, sandboxId).catch(() => {});
+    // Clean up only a sandbox THIS run created. Deleting a reused branch
+    // environment would throw away the stable origin it exists to hold — and a
+    // failed deploy is a reason to look at it, not to destroy it.
+    if (sandboxId && !reusedSandboxId) await deletePlatinum(api, sandboxId).catch(() => {});
     throw new PreviewInfrastructureError('Platinum preview infrastructure failed', error);
   }
 }

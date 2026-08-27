@@ -237,6 +237,13 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # there would break exactly that — it must refuse rather than rotate.
         self.assertIn("return `kortix-env-${slug}`;", PREVIEW_CORE)
         self.assertIn("reuseExisting: true,", PREVIEW_CORE)
+        # A reused sandbox is still serving the previous deploy, so it can never
+        # satisfy the warm check ("restored, nothing running") — waiting on it
+        # timed out at 120s and the cleanup below then deleted the environment.
+        self.assertIn("if (!reusable) {", PREVIEW_PROVIDERS)
+        # ...and cleanup deletes only a sandbox this run CREATED. Deleting a
+        # reused one discards the stable origin the environment exists to hold.
+        self.assertIn("if (sandboxId && !reusedSandboxId) await deletePlatinum(", PREVIEW_PROVIDERS)
         self.assertIn("if (input.branchEnv) {", PREVIEW_PROVIDERS)
         self.assertIn("is pinned to Platinum: a Daytona fallback would change its origin", PREVIEW_PROVIDERS)
         # OLD: rollback_deploy / PREVIOUS_TASK_DEFINITION rolled a live service
