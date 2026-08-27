@@ -96,13 +96,14 @@ describe('the composite cursor codec', () => {
 
 describe('readSessionStream', () => {
   const originalFetch = globalThis.fetch;
-  let requested: Array<{ url: string; accept: string | null }> = [];
+  let requested: Array<{ url: string; accept: string | null; cacheControl?: string | null }> = [];
 
   function serve(chunks: string[], keepOpen = false): void {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requested.push({
         url: input instanceof Request ? input.url : String(input),
         accept: new Headers(init?.headers ?? {}).get('accept'),
+        cacheControl: new Headers(init?.headers ?? {}).get('cache-control'),
       });
       const encoder = new TextEncoder();
       let index = 0;
@@ -137,6 +138,10 @@ describe('readSessionStream', () => {
     for await (const _frame of readSessionStream(PROJECT, SESSION)) break;
     expect(requested[0]!.url).toBe(`http://api.test/v1/projects/${PROJECT}/sessions/${SESSION}/stream`);
     expect(requested[0]!.accept).toBe('text/event-stream');
+    // No `Cache-Control` REQUEST header: it is not CORS-safelisted, so sending it
+    // makes the browser preflight fail cross-origin and the stream never opens
+    // (dev, 2026-08-27). The only header on this GET is `Accept`.
+    expect(requested[0]!.cacheControl).toBeNull();
   });
 
   test('classifies frames by CHANNEL, not by event name', async () => {

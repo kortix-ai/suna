@@ -1,6 +1,7 @@
 import { autoSeedDefaultModel, bedrockInferenceProfileRank } from '@kortix/llm-catalog';
 
 import type { FlatModel } from './model-flatten';
+import { GATEWAY_PROVIDER_IDS } from './provider-selection';
 import type { ModelKey } from './use-model-store';
 
 /**
@@ -32,6 +33,18 @@ import type { ModelKey } from './use-model-store';
  * analogue, applied BEFORE the request instead of after the failure.
  *
  * The rule, applied only within the key's OWN provider:
+ *  0. a GATEWAY key (`providerID` in `GATEWAY_PROVIDER_IDS`) → untouched. Under
+ *     the gateway every served model is registered as `kortix` and the real
+ *     provider rides in the modelID prefix (`amazon-bedrock/…`, `openrouter/…`,
+ *     `codex/…`), so "the same provider" would be the WHOLE catalog, and
+ *     `bedrockInferenceProfileRank` strips that prefix — a Bedrock profile
+ *     served through the gateway still ranks > 0. Without this step every
+ *     gateway pick without a twin (an OpenRouter or Codex model, a bare Bedrock
+ *     id) fell through to step 3 and "healed" to the newest Bedrock profile in
+ *     the catalog: on Essentia (2026-08-27) the chip was pinned to Claude Opus 5
+ *     (Global) whatever the user clicked, and every prompt was sent with it.
+ *     The gateway re-prefixes a bare id itself after Bedrock's 400 (PR #6897);
+ *     this guard is the native analogue and has no business on that path.
  *  1. already an inference profile (`global.`/regional) → untouched;
  *  2. a `global.` or regional twin of the same bare id is offered → use it
  *     (same model, invokable id — this also heals ids pinned or seeded before
@@ -50,6 +63,7 @@ export function healBedrockModelKey(
   offered: FlatModel[],
 ): ModelKey | undefined {
   if (!key) return key;
+  if (GATEWAY_PROVIDER_IDS.has(key.providerID)) return key;
   if (bedrockInferenceProfileRank(key.modelID) > 0) return key;
 
   // `enabled === false` is the server's per-project "off" stamp — the same

@@ -974,7 +974,10 @@ rendered under the turn that failed, or the user sees nothing at all.
 2026-08-12/13) returned no reply in every session on templates built before
 then; 0 gateway log rows ever. PR #6576.
 *Enforcer:* `managed-fallback-sync.test.ts` (bundled table vs `MANAGED_MODELS`
-drift), `managed-model-overlay.test.ts` (stale file + live overlay; failed
+drift — cited here since 2026-08-19 but ABSENT on `main` until 2026-08-27, when
+adding `glm-5.3-flash` found the gap; it now lives in
+`apps/kortix-sandbox-agent-server/src/__tests__/` and fails on a missing,
+misnamed, mis-sized, or mis-priced bundled entry), `managed-model-overlay.test.ts` (stale file + live overlay; failed
 fetch → bundled floor; await cap), `managed-scope.test.ts`; web: sync-store
 per-turn `session.error` tests. Not enforced: a live "picker ⊆ guest provider
 map" assertion after deploy — run the dev sweep by hand until it exists.
@@ -3385,3 +3388,8 @@ regions).
 - **Incident (2026-08-27):** the sandbox daemon's `scheduleRuntimeProjectionPush` (runtime-projection-relay.ts) always armed a 2s `unref()`d debounce timer, and only checked control-plane config (`KORTIX_SESSION_ID/TOKEN/API_URL`) inside the fired `doPush`. Every unconfigured daemon (self-host, local dev, and every daemon unit test that does not set those vars) armed a timer that fired later to do nothing. Bun runs a package's test files in ONE process, so the env-route test armed this relay and the unref'd timer fired mid a SIBLING test — flaking `env route — mid-session boundary rules arm the shim` intermittently in CI while the full suite passed 1098/0 locally. Re-running the lane never converged (3 attempts across #6950/#6953).
 - **Rule:** a debounced/deferred fire-and-forget must no-op at the SCHEDULE call when there is nothing to do (no config, no sink), not only when the timer fires. An armed unref'd timer outlives its caller and leaks work into whatever runs next — a real production waste (self-host daemons scheduling pushes they can never send) and a test-order flake generator. Gate at entry: `if (!configured()) return` before `setTimeout`.
 - **Enforcement:** `projectionConfigured()` guards the top of `scheduleRuntimeProjectionPush`; the relay's own test still sets the three env vars so the push path stays exercised (25/0).
+
+## Under the gateway every model is `providerID: 'kortix'` — a "same provider" heuristic keyed on `providerID` spans the whole catalog
+- **Incident (2026-08-27, Essentia self-host, web `39685da4`):** the composer model picker looked dead — every click left the chip on "Claude Opus 5 (Global)" and every prompt was sent with it. The click DID persist the pick; `healBedrockModelKey` (#6915, 2026-08-26) then replaced it at resolution time. The heal finds "the key's own provider" by `providerID` equality and detects Bedrock by any sibling ranking as an inference profile. On the gateway all 481 catalog models share `providerID: 'kortix'`, `bedrockInferenceProfileRank` strips the `amazon-bedrock/` prefix so `amazon-bedrock/global.anthropic.claude-opus-5` still ranks 2, and OpenRouter/Codex/bare-Bedrock picks (no `global.` twin) fell through to the auto-seed fallback = the newest profile in the whole catalog. The unit suite (16/0) was green because every fixture used native ids (`amazon-bedrock` / `xai.grok-4.6`); no test flattened a gateway catalog.
+- **Rule:** any SDK/web logic that groups, filters, or "heals" models by provider must resolve the REAL provider (`FlatModel.provider`, or the modelID prefix under the gateway), never `providerID` alone — and must be tested against BOTH shapes: a native list and a `projectLlmCatalogToProviderList` gateway list. A native-only guard (the gateway already retries bare Bedrock ids after the 400, #6897) must short-circuit on `GATEWAY_PROVIDER_IDS`.
+- **Enforcement:** `healBedrockModelKey` step 0 returns gateway keys untouched; `bedrock-invokable.test.ts` "under the gateway the heal is inert" builds the fixture through the real `projectLlmCatalogToProviderList` → `flattenModels` and pins OpenRouter, bare-Bedrock and Codex picks as untouched.

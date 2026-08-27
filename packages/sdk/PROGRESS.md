@@ -12,6 +12,39 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-27 — session `model-heal-gateway` — the Bedrock heal is inert on the gateway — DONE
+
+**Defect (Essentia, deployed web `39685da4`):** clicking any model in the
+composer picker did nothing — the chip stayed on "Claude Opus 5 (Global)" and
+every prompt was sent with it (`pending_prompt.model` on the session row).
+Reproduced in a fresh browser on the live workspace: the click DID write the
+pick (`gateway:<ses>` / `gateway:<agent>` slots in `opencode-model-store-v1`),
+but `currentModelKey` → `healBedrockModelKey` replaced it. Under the gateway
+every served model is `providerID: 'kortix'` with the real provider in the
+modelID prefix; `bedrockInferenceProfileRank` strips that prefix, so
+`amazon-bedrock/global.anthropic.claude-opus-5` ranks as a profile, all 73
+enabled models count as "the same provider", no twin exists for
+`openrouter/z-ai/glm-5.3-flash` / `amazon-bedrock/zai.glm-5` /
+`codex/gpt-5.6-sol`, and step 3 auto-seeded the newest profile — Opus 5
+(Global) — for every pick. Introduced by WS-K round 2 (#6915) on 2026-08-26.
+
+**Fix:** `react/bedrock-invokable.ts` — step 0: a key whose `providerID` is in
+`GATEWAY_PROVIDER_IDS` is returned untouched. The heal is the NATIVE analogue
+of the gateway's own bare-id re-prefix after Bedrock's 400 (#6897) and has no
+business on that path. RED-first: 3 new tests in
+`react/bedrock-invokable.test.ts` (gateway fixture built through the real
+`projectLlmCatalogToProviderList` → `flattenModels`), all three received
+`amazon-bedrock/global.anthropic.claude-opus-5` before the fix.
+
+**Public surface: unchanged** (`bedrock-invokable.ts` is internal).
+
+**Follow-up (not done):** on a gateway project the last-user-message auto-seed
+runs before `/model-picker` lands, `modelProviderMode(undefined)` is `native`,
+and the seed lands in `native:` slots that the gateway-mode read never
+consults. Harmless today (the slot is ignored), but it is a wrong-slot write.
+
+---
+
 ### 2026-08-27 — session `session-ux` (WS-Z3) — the controller cutover: ONE stream + bundle, deletions — DONE (net −1,383 LOC)
 
 **The cutover.** `useSession`'s runtime READ path now rides ONE control-plane
