@@ -648,7 +648,12 @@ describe('ActivityBurst', () => {
       } as unknown as Part,
     ]);
     expect(markup).not.toContain('Completed 1 step');
-    expect(markup).toContain('Thinking');
+    // Past tense: this thought is SETTLED (it has an end time), so it reads
+    // "Thought", not the live "Thinking". A settled thought that still said
+    // "Thinking" is what made every historical turn read as running on a
+    // degraded/absent runtime channel.
+    expect(markup).toContain('Thought');
+    expect(markup).not.toContain('Thinking');
   });
 
   test('a settled thought is a closed row, not a wall of prose', () => {
@@ -664,7 +669,7 @@ describe('ActivityBurst', () => {
         time: { start: 1, end: 2 },
       } as unknown as Part,
     ]);
-    expect(markup).toContain('Thinking');
+    expect(markup).toContain('Thought'); // settled → past tense
     expect(markup).not.toContain('Weighing two schemas');
   });
 
@@ -683,10 +688,12 @@ describe('ActivityBurst', () => {
     expect(markup).toContain('Thought for 12s');
   });
 
-  test('a thought under a second stays plain "Thinking"', () => {
+  test('a settled thought under a second stays plain "Thought" (no "0s")', () => {
     // `formatDuration` returns '' below 1000ms on purpose. A row saying "0s" is
     // worse than one saying nothing, and the same fallback covers a provider
-    // that sends no timing at all.
+    // that sends no timing at all. The tense still follows settled/running:
+    // a finished sub-second thought is past tense ("Thought"), never the live
+    // "Thinking".
     const timed = renderBurst([
       {
         id: 'r',
@@ -695,13 +702,14 @@ describe('ActivityBurst', () => {
         time: { start: 1_700_000_000_000, end: 1_700_000_000_400 },
       } as unknown as Part,
     ]);
-    expect(timed).toContain('>Thinking<');
+    expect(timed).toContain('>Thought<');
     expect(timed).not.toContain('Thought for');
+    expect(timed).not.toContain('Thinking');
 
     const untimed = renderBurst([
       { id: 'r', type: 'reasoning', text: 'Weighing two schemas' } as unknown as Part,
     ]);
-    expect(untimed).toContain('Thinking');
+    expect(untimed).toContain('Thought');
     expect(untimed).not.toContain('Thought for');
   });
 
@@ -750,7 +758,9 @@ describe('ActivityBurst', () => {
       ],
       { working: true, isTrailing: true },
     );
-    expect(markup).toContain('Thinking');
+    // The tool settled this reasoning block, so it is past tense even though
+    // the TURN is still working — and it is not shimmering.
+    expect(markup).toContain('Thought');
     expect(markup).not.toContain('Weighing two schemas');
     expect(shimmeringThoughts(markup)).toBe(0);
   });
@@ -1177,7 +1187,7 @@ describe('bare row alignment', () => {
         time: { start: 1, end: 2 },
       } as unknown as Part,
     ]);
-    expect(markup).toContain('Thinking');
+    expect(markup).toContain('Thought'); // settled → past tense
     expect(markup).toContain(RAIL_SHOWS);
   });
 });

@@ -32,6 +32,10 @@ export interface SessionStreamSinks {
   applyControlTurn: (observation: SessionTurnObservation) => void;
   applyControlQueue: (prompts: SessionPrompt[], atMs: number) => void;
   applyRuntimeStateLeg: (leg: unknown) => void;
+  /** The audit/approval watermark changed — a connector-gated action appeared
+   *  or was resolved. The sink invalidates the audit query; the payload is the
+   *  change-detection fingerprint the presence signal dedupes on. */
+  applyControlAudit: (fingerprint: string) => void;
 }
 
 function frameStamp(frame: SessionStreamFrame): number {
@@ -69,6 +73,18 @@ export function routeSessionStreamFrame(frame: SessionStreamFrame, sinks: Sessio
     }
     case 'kortix.control.runtime_state': {
       sinks.applyRuntimeStateLeg(payload);
+      return;
+    }
+    case 'kortix.control.audit': {
+      // A snapshot with `known: false` is a read that failed — it says nothing
+      // changed, so it must not bump the watermark and invalidate for nothing.
+      if (payload?.known !== true) return;
+      // The whole watermark IS the fingerprint: `pending` + the two newest
+      // instants. The presence signal dedupes on it, so a reconnect replay of
+      // the same values invalidates nothing.
+      sinks.applyControlAudit(
+        JSON.stringify([payload.pending, payload.latest_at, payload.latest_resolved_at]),
+      );
       return;
     }
     default:

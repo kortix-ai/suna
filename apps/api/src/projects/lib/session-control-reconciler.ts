@@ -31,8 +31,13 @@
  * it, and a reconnect needs no replay to be correct.
  */
 
-import { eq } from 'drizzle-orm';
-import { sessionSandboxes, sessionTranscriptMirrors, sessionTranscriptMessages } from '@kortix/db';
+import { and, eq, isNull } from 'drizzle-orm';
+import {
+  connectorCalls,
+  sessionSandboxes,
+  sessionTranscriptMirrors,
+  sessionTranscriptMessages,
+} from '@kortix/db';
 import { count, max } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
@@ -181,11 +186,12 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
   if (reconciler.ticking) return;
   reconciler.ticking = true;
   try {
-    const [turn, queue, runtime, mirror] = await Promise.allSettled([
+    const [turn, queue, runtime, mirror, audit] = await Promise.allSettled([
       readSessionTurnState(sessionId),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       readRuntimeControlState(sessionId),
       readMirrorWatermark(sessionId),
+      readSessionAuditWatermark(sessionId),
     ]);
 
     if (turn.status === 'fulfilled') {
@@ -206,6 +212,9 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
     }
     if (mirror.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.mirror', mirror.value);
+    }
+    if (audit.status === 'fulfilled') {
+      emit(sessionId, reconciler, 'kortix.control.audit', audit.value);
     }
   } catch {
     // `allSettled` above means this is unreachable in practice; the guard is
@@ -364,6 +373,58 @@ async function readMirrorWatermark(sessionId: string): Promise<MirrorWatermark> 
     opencode_session_id: mirror.opencodeSessionId ?? null,
     message_count: stats?.messages ?? 0,
     newest_message_at: stats?.newest ? new Date(stats.newest).toISOString() : null,
+  };
+}
+
+export interface AuditWatermark {
+  known: true;
+  /** Unresolved connector-gated approvals awaiting a human decision. This is
+   *  the number the sidebar nudge and the composer notice render. */
+  pending: number;
+  /** The newest connector-call CREATE instant — advances when a gated action
+   *  appears, so a fresh row bumps the watermark even if nothing resolves. */
+  latest_at: string | null;
+  /** The newest RESOLVE instant — advances when an approval is approved/denied,
+   *  so a resolution bumps the watermark even if the pending count is unchanged
+   *  by a concurrent new row. */
+  latest_resolved_at: string | null;
+}
+
+/**
+ * The audit surface's change-detection watermark.
+ *
+ * Two aggregate reads on `connector_calls` (the connector-gated action log the
+ * `GET .../audit` `actions` list is built from), never the rows. It captures
+ * every state change the audit surface cares about: a new gated action
+ * (`latest_at` moves), a resolution (`latest_resolved_at` moves and `pending`
+ * falls), so `emit`'s fingerprint fires on each. The heavy row read stays where
+ * it was — a human opens it; liveness only needs to know WHEN it changed.
+ */
+async function readSessionAuditWatermark(sessionId: string): Promise<AuditWatermark> {
+  const [pendingRow] = await db
+    .select({ pending: count() })
+    .from(connectorCalls)
+    .where(
+      and(
+        eq(connectorCalls.sessionId, sessionId),
+        eq(connectorCalls.status, 'pending_approval'),
+        isNull(connectorCalls.resolvedAt),
+      ),
+    );
+  const [stamps] = await db
+    .select({
+      latest: max(connectorCalls.createdAt),
+      latestResolved: max(connectorCalls.resolvedAt),
+    })
+    .from(connectorCalls)
+    .where(eq(connectorCalls.sessionId, sessionId));
+  return {
+    known: true,
+    pending: pendingRow?.pending ?? 0,
+    latest_at: stamps?.latest ? new Date(stamps.latest).toISOString() : null,
+    latest_resolved_at: stamps?.latestResolved
+      ? new Date(stamps.latestResolved).toISOString()
+      : null,
   };
 }
 

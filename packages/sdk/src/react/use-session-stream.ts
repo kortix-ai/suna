@@ -54,6 +54,7 @@ import {
   type SessionStreamConnection,
 } from '../core/stream/session-stream-controller';
 import {
+  markSessionAuditWatermark,
   markSessionRuntimeChannelLive,
   markSessionStreamConnected,
 } from '../core/stream/session-stream-presence';
@@ -264,6 +265,12 @@ export function useSessionRuntimeStream(
         );
       },
       applyRuntimeStateLeg: (leg: unknown) => applyRuntimeStateLeg(leg, legDeps()),
+      applyControlAudit: (fingerprint: string) => {
+        // Push the change onto the scope's audit signal. The web audit surface
+        // reads it to invalidate its query and to stand its poll down — the
+        // control channel is the notify path now, the endpoint stays the read.
+        markSessionAuditWatermark(scope, fingerprint);
+      },
     };
 
     /** Re-read the tail of held transcripts — the honest response to any

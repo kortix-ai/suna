@@ -2,7 +2,9 @@
 
 import { useSyncExternalStore } from 'react';
 import {
+  getSessionAuditTick,
   isSessionStreamConnected,
+  subscribeSessionAudit,
   subscribeSessionStreamPresence,
 } from '../core/stream/session-stream-presence';
 
@@ -27,4 +29,22 @@ export function useSessionStreamPresence(scope: string): boolean {
 /** The scope key both the stream hook and the poll owners agree on. */
 export function sessionStreamScope(projectId: string, sessionId: string): string {
   return `${projectId}/${sessionId}`;
+}
+
+/**
+ * The per-session audit watermark tick for `(projectId, sessionId)`.
+ *
+ * It changes when a `kortix.control.audit` frame reports a real change — a
+ * connector-gated approval appeared or was resolved. The audit surface reads it
+ * to invalidate its query on that push instead of polling, and pairs it with
+ * `useSessionStreamPresence(scope)` to stand its poll down while the stream is
+ * connected. Returns `0` until the first change (and on the server).
+ */
+export function useSessionAuditSignal(projectId: string, sessionId: string): number {
+  const scope = projectId && sessionId ? sessionStreamScope(projectId, sessionId) : '';
+  return useSyncExternalStore(
+    (onChange) => (scope ? subscribeSessionAudit(scope, onChange) : () => {}),
+    () => (scope ? getSessionAuditTick(scope) : 0),
+    () => 0,
+  );
 }

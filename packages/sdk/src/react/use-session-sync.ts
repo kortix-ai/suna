@@ -1,7 +1,11 @@
 'use client';
 
 import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { SERVER_OBSERVATION_MAX_MS } from '../core/session/working';
+import { qk } from './query-keys';
+import type { SessionTurnObservation } from './use-session-working';
 import {
   claimSessionCacheOwnership,
   getSessionCacheOwnership,
@@ -107,8 +111,58 @@ interface UseSessionSyncOptions {
 export function sessionSyncBusy(input: {
   working: boolean | undefined;
   streamBusy: boolean;
+  /**
+   * The CONTROL channel's turn snapshot says this session is idle — no turn is
+   * open (`turns: []`), pushed by the API's reconciler from the lifecycle
+   * authority (`readSessionTurnState`), NOT from the sandbox daemon.
+   *
+   * It is the authority a stale runtime frame must not outrank. On an old,
+   * slow, or degraded daemon the runtime channel can deliver a `busy` frame and
+   * then never the matching `idle` one — the box died mid-turn — and
+   * `streamBusy` then latches the composer on Stop forever, even though `/turn`
+   * already knows the turn ended. When the control snapshot is a fresh idle,
+   * that latch clears: control is daemon-independent, so a degraded daemon can
+   * never wedge busy. A definite `working: true` still wins (it already folds
+   * the same control read plus the inbox and live content — see
+   * `projectWorking`), so this only removes the stale-frame wedge; it never
+   * un-busies a session the projection knows is running.
+   */
+  controlTurnIdle?: boolean;
 }): boolean {
+  if (input.controlTurnIdle) return input.working ?? false;
   return input.working ?? input.streamBusy;
+}
+
+/** Split `${projectId}/${sessionId}` into its two ids. `['', '']` when absent
+ *  or malformed, which makes the control-turn query key inert (never enabled,
+ *  never a request). Both ids are UUIDs with no `/`, so the first split is
+ *  exact. */
+export function splitKortixSessionScope(
+  scope: string | undefined,
+): [string, string] {
+  if (!scope) return ['', ''];
+  const slash = scope.indexOf('/');
+  if (slash <= 0 || slash === scope.length - 1) return ['', ''];
+  return [scope.slice(0, slash), scope.slice(slash + 1)];
+}
+
+/**
+ * Is the control channel's turn snapshot a FRESH idle — no turn open?
+ *
+ * `turns: []` is the authority's statement that nothing is running. Bounded by
+ * `SERVER_OBSERVATION_MAX_MS` for the same reason the projection bounds its own
+ * server read: a snapshot the reconciler has not refreshed for that long is no
+ * longer evidence, so it may not clear busy on its own. A snapshot with an open
+ * turn (`turns.length > 0`) is NOT idle and returns false — the runtime frame,
+ * or the projection, decides then.
+ */
+export function isControlTurnIdle(
+  turn: SessionTurnObservation | undefined,
+  nowMs: number,
+): boolean {
+  if (!turn) return false;
+  if (nowMs - turn.atMs > SERVER_OBSERVATION_MAX_MS) return false;
+  return turn.turns.length === 0;
 }
 
 /**
@@ -375,10 +429,45 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   const todos = useSyncStore((state) => state.todos[readableSessionId]) as Todo[] | undefined;
 
   const streamBusy = status.type === 'busy' || status.type === 'retry';
+
+  // The CONTROL channel's turn snapshot — the SAME `qk.project.sessionTurn`
+  // cache entry the `kortix.control.turn` frame writes (`use-session-stream.ts`
+  // `applyControlTurn`). Read by SUBSCRIBING to the react-query cache, never by
+  // mounting a `useQuery` observer: this hook has no `/turn` queryFn, and a
+  // queryFn-less observer throws "No queryFn was passed" the moment anything
+  // triggers a fetch — so this reads the stream-seeded cache and CANNOT itself
+  // issue a request. It is the daemon-independent authority that keeps a dead
+  // daemon's stale `busy` frame from wedging the composer: when the snapshot is
+  // a fresh idle (no open turn), busy clears even if the runtime channel went
+  // silent mid-turn. Keyed by the Kortix `(projectId, sessionId)` pair carried
+  // in `kortixSessionScope`, because `/turn` is addressed by those ids while
+  // this hook is keyed by the OpenCode wire id.
+  const queryClient = useQueryClient();
+  const [turnProjectId, turnSessionId] = splitKortixSessionScope(kortixSessionScope);
+  const turnKey = qk.project.sessionTurn(turnProjectId, turnSessionId);
+  // Stable-ref subscription: the snapshot is the cached object, which react-query
+  // only replaces on a real write, so `useSyncExternalStore` bails out of
+  // re-render when nothing moved even though the cache fires for other keys.
+  const turnKeyHashRef = useRef('');
+  turnKeyHashRef.current = JSON.stringify(turnKey);
+  const controlTurn = useSyncExternalStore(
+    (onChange) =>
+      queryClient.getQueryCache().subscribe((event) => {
+        if (JSON.stringify(event.query.queryKey) === turnKeyHashRef.current) onChange();
+      }),
+    () =>
+      turnProjectId && turnSessionId
+        ? queryClient.getQueryData<SessionTurnObservation>(turnKey)
+        : undefined,
+    () => undefined,
+  );
+  const controlTurnIdle = isControlTurnIdle(controlTurn, Date.now());
+
   // Published, so it cannot be removed — but it is now an ALIAS of the
   // projection when the caller passed one, so the hook's public answer and the
-  // poll's switch are the same rule instead of two.
-  const isBusy = sessionSyncBusy({ working, streamBusy });
+  // poll's switch are the same rule instead of two — with the control turn
+  // snapshot allowed to clear a stale runtime-frame wedge (`controlTurnIdle`).
+  const isBusy = sessionSyncBusy({ working, streamBusy, controlTurnIdle });
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
 
   const busy = livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn });
