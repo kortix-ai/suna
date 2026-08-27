@@ -77,8 +77,20 @@ failed:` followed by nothing, is this. Read the `Unhandled error` block, not the
 failing test name.
 *Near-miss:* PR #6963 (the Apps viewer token). Cost two CI rounds and a wrong
 "it's a pre-existing flake" call before the real cause was read.
+*Recurrence, same day:* `d990e122aa` added `ensurePiWorkerImage` to the static
+import from `snapshots/builder` in `platform/services/session-sandbox.ts`. The
+module edge already existed — only the NAME was new — and that was enough: all
+eleven suites that stub `snapshots/builder` by listing its exports died at
+import. It reddened the packages lane on two unrelated PRs (#6978, and #6957 on
+different tests) before anyone read the cause. Fixed in #6982 by deferring that
+one name to a dynamic import at its single call site: zero mock churn.
+**It does not reproduce locally** — the full `apps/api` suite passes 8745/0 both
+with and without the fix. Only CI's worker count and interleaving surface it, so
+"it passes on my machine" proves nothing about this class. Read the CI
+`Unhandled error` block.
 *Enforcer:* none. A lint that flags `mock.module` factories which do not spread
-the real module would catch the mocks; nothing catches the import edge.
+the real module would catch the mocks; nothing catches the import edge. Worth
+building — this rule has now been paid for twice in one day.
 
 ### Two migrations generated from the same parent fork the drizzle chain, and main then cannot generate ANY migration (2026-08-27)
 
@@ -3482,3 +3494,45 @@ regions).
 - **Incident (2026-08-27, Essentia self-host, web `39685da4`):** the composer model picker looked dead — every click left the chip on "Claude Opus 5 (Global)" and every prompt was sent with it. The click DID persist the pick; `healBedrockModelKey` (#6915, 2026-08-26) then replaced it at resolution time. The heal finds "the key's own provider" by `providerID` equality and detects Bedrock by any sibling ranking as an inference profile. On the gateway all 481 catalog models share `providerID: 'kortix'`, `bedrockInferenceProfileRank` strips the `amazon-bedrock/` prefix so `amazon-bedrock/global.anthropic.claude-opus-5` still ranks 2, and OpenRouter/Codex/bare-Bedrock picks (no `global.` twin) fell through to the auto-seed fallback = the newest profile in the whole catalog. The unit suite (16/0) was green because every fixture used native ids (`amazon-bedrock` / `xai.grok-4.6`); no test flattened a gateway catalog.
 - **Rule:** any SDK/web logic that groups, filters, or "heals" models by provider must resolve the REAL provider (`FlatModel.provider`, or the modelID prefix under the gateway), never `providerID` alone — and must be tested against BOTH shapes: a native list and a `projectLlmCatalogToProviderList` gateway list. A native-only guard (the gateway already retries bare Bedrock ids after the 400, #6897) must short-circuit on `GATEWAY_PROVIDER_IDS`.
 - **Enforcement:** `healBedrockModelKey` step 0 returns gateway keys untouched; `bedrock-invokable.test.ts` "under the gateway the heal is inert" builds the fixture through the real `projectLlmCatalogToProviderList` → `flattenModels` and pins OpenRouter, bare-Bedrock and Codex picks as untouched.
+
+## Deployed configuration has one truth, and it is not the file in git
+
+Found 2026-08-27 while auditing secret access. The git profiles
+`apps/api/.env.{dev,staging,prod}` had drifted far from what the deployed
+environments actually run: dev was missing 54 keys, staging 34, prod 90, and
+`.env.prod` still declared `FRONTEND_URL=http://localhost:3000`. Runtime truth
+is the AWS Secrets Manager blob `kortix-<env>-env`, injected by ECS as
+`KORTIX_ENV_JSON`, plus the plain `environment` entries on the API task
+definition. Nothing synchronized the two: the dev and prod blobs are edited by
+operators, and the staging blob is rebuilt as existing-blob-plus-overrides on
+each staging deploy. An operator reading the git file was reading fiction.
+
+**Rules.**
+1. Name the single runtime source for every deployed setting, and make a
+   committed check assert the file equals it. Drift that nothing measures grows
+   without bound.
+2. Pull from the runtime source into the file. Push a file value into the
+   runtime source only as a deliberate change with a rollout.
+3. A file that mirrors a deployed environment must not receive a credential
+   whose value is identical to production, when that file is readable by more
+   people than production is. Keep it in the secret store and record the
+   omission with its reason.
+4. Every tool that reads or writes a dotenvx file must run the CLI with a bare
+   environment. An exported shell variable makes `dotenvx get` return the shell
+   value and `dotenvx set` a silent no-op that reports `○ no change`, so a
+   comparison silently reads — and a write silently skips — the wrong value.
+5. dotenvx writes `KEY="encrypted:…"` with quotes. A plaintext scan that matches
+   `=encrypted:` reports every encrypted value as plaintext. Match
+   `=["']?encrypted:`.
+6. Verify a credential before treating it as sensitive. The three
+   `AWS_SECRET_ACCESS_KEY` values in these files returned
+   `SignatureDoesNotMatch`; they were dead keys, not live production access.
+
+*Automation:* `pnpm test:envs --sm` runs `scripts/secrets-sm-parity.py check`,
+which fails on any Secrets Manager or task-definition key that is missing or
+different in the file. `scripts/secrets-file-only.allowlist` and
+`scripts/secrets-sm-quarantine.allowlist` carry the two classes of deliberate
+exception, each line with the rotation that removes it.
+
+*Incident:* no outage. The audit found the drift; no deployed environment was
+changed.

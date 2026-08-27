@@ -209,6 +209,10 @@ async function main() {
   const opencodeBinaryPrefetchEnabled = process.env.KORTIX_OPENCODE_BINARY_PREFETCH === '1'
   const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
+    onFirstListeningResponse: () => {
+      if (bootState.timeline.some((mark) => mark.label === 'opencode-http-listening')) return
+      bootMark('opencode-http-listening')
+    },
     onFirstReadyResponse: () => {
       if (bootState.timeline.some((mark) => mark.label === 'opencode-session-api-ready')) return
       bootMark('opencode-session-api-ready')
@@ -258,6 +262,24 @@ async function main() {
     exit: (code) => shutdown({ reason: 'agent-swap', exitCode: code }),
   })
   bootMark('proxy-up')
+
+  // The initial-turn claim is a read (it returns the API's `delivering` record
+  // for this session; nothing server-side changes). It used to run only after
+  // OpenCode answered, costing one control-plane round trip on the critical
+  // path. Prefetch it now — memoized in claimInitialTurnFromApi — so the
+  // initial-session path finds it resolved.
+  if (bootstrapSession && (process.env.KORTIX_SESSION_ID ?? '').trim()) {
+    void claimInitialTurnFromApi()
+      .then(() => {
+        if (bootState.timeline.some((mark) => mark.label === 'initial-turn-claimed')) return
+        bootMark('initial-turn-claimed')
+      })
+      .catch((err) => {
+        logger.warn('[boot] early initial-turn claim failed; the session path retries', {
+          err: err instanceof Error ? err.message : String(err),
+        })
+      })
+  }
 
   // Learn the CURRENT managed lineup from the gateway this session bills
   // against, concurrently with the repo clone. The managed set is deployment
@@ -899,6 +921,7 @@ async function startSessionRuntime(
     loopStarted = true
     const finalizeInitialSession = async () => {
       await reconcileInitialTurnAcceptance()
+      bootMark('initial-turn-accepted')
       opencode.markReady()
       bootMark('opencode-ready')
       logger.info('[boot] opencode ready via initial session', {
@@ -1471,6 +1494,9 @@ async function maybeCreateInitialOpencodeSession(
   onListening?: () => void,
 ): Promise<void> {
   const claimedTurn = await claimInitialTurnFromApi()
+  if (!bootState.timeline.some((mark) => mark.label === 'initial-turn-claimed')) {
+    bootMark('initial-turn-claimed')
+  }
   const prompt = claimedTurn?.prompt ?? ''
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   if (!prompt && !bootstrapSession) return
@@ -1572,6 +1598,7 @@ async function maybeCreateInitialOpencodeSession(
     bootMark('runtime-session-new-requested')
     const session = await createInitialOpenCodeSession(opencode, workspace)
     if (!session.id) throw new Error('opencode session create returned no id')
+    bootMark('opencode-root-created')
     sessionId = session.id
   }
 
@@ -1604,6 +1631,7 @@ async function maybeCreateInitialOpencodeSession(
     // skips this line) — the durable receipt `reusedRootAlreadyDelivered`
     // trusts unconditionally on every later boot of this sandbox.
     markInitialPromptDelivered()
+    bootMark('initial-prompt-delivered')
     logger.info('[boot] initial prompt delivered', { sessionId })
   } else if (prompt) {
     bootState.initialOpenCodeSessionId = sessionId

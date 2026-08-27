@@ -33,8 +33,10 @@ import {
 } from '@earendil-works/pi-ai';
 import { AssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { Session } from '@earendil-works/pi-agent-core';
+import { ChatEventAdapter } from './chat-events.ts';
 import { KortixExecutionEnv } from './kortix-env.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
+import { RuntimeSurface } from './runtime-surface.ts';
 import { DurableSessionStorage, RemoteSessionLog } from './session-store.ts';
 
 /**
@@ -332,8 +334,88 @@ export async function startWorker(cfg = configFromEnv()) {
     for (const l of listeners) l(line);
   });
 
+  // ── Kortix Runtime API (/kortix/opencode/*) ─────────────────────────────
+  // The product's session surface: /state, paged /messages, ONE sequenced
+  // /events SSE the API relays. One PERSISTENT adapter feeds one surface — the
+  // stream and the transcript can never disagree, and message ids stay unique
+  // and lexicographically ordered across the whole session.
+  const compiledPayload = (globalThis as Record<string, unknown>).__KORTIX_COMPILED__ as
+    | {
+        manifest?: { agent_config_etag?: string | null; default_agent?: string | null };
+        agentConfig?: {
+          model?: string;
+          agent?: Record<string, { description?: string; model?: string }>;
+        } | null;
+      }
+    | undefined;
+  const surface = new RuntimeSurface({
+    sessionId: cfg.sessionId ?? 'session-local',
+    token: cfg.kortixToken,
+    agentName:
+      process.env.KORTIX_AGENT ??
+      compiledPayload?.manifest?.default_agent ??
+      undefined,
+    agentConfigEtag: compiledPayload?.manifest?.agent_config_etag ?? null,
+    agents: compiledPayload?.agentConfig?.agent ?? {},
+    defaultModel: cfg.modelId ?? compiledPayload?.agentConfig?.model ?? null,
+    workspace: cfg.envCwd,
+  });
+  const wireAdapter = new ChatEventAdapter({
+    sessionID: surface.rootId,
+    mintMessageId: surface.mintMessageId,
+  });
+  agent.subscribe((event: any) => {
+    try {
+      for (const wire of wireAdapter.translate(event)) surface.publishWire(wire);
+    } catch (e: any) {
+      console.error(JSON.stringify({ msg: 'wire adapter failed', error: String(e?.message ?? e) }));
+    }
+  });
+  // pi's stream carries the assistant; the USER message is published at prompt
+  // time so the transcript shows the turn the moment it starts.
+  const publishUserMessage = (text: string) => {
+    surface.noteUserText(text);
+    const id = surface.mintMessageId();
+    surface.publishWire({
+      type: 'message.updated',
+      properties: {
+        sessionID: surface.rootId,
+        info: {
+          id,
+          role: 'user',
+          sessionID: surface.rootId,
+          time: { created: Date.now() },
+        },
+      },
+    });
+    surface.publishWire({
+      type: 'message.part.updated',
+      properties: {
+        sessionID: surface.rootId,
+        part: {
+          id: `${id}-p0`,
+          messageID: id,
+          sessionID: surface.rootId,
+          type: 'text',
+          text,
+        },
+      },
+    });
+  };
+  const runTurn = async (text: string) => {
+    publishUserMessage(text);
+    await agent.prompt(text);
+  };
+
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
+
+    if (url.pathname.startsWith('/kortix/opencode/')) {
+      if (surface.handle(req, res, url)) return;
+    }
+    if (url.pathname === '/session' || url.pathname.startsWith('/session/')) {
+      if (surface.handleRawSessionList(req, res, url)) return;
+    }
 
     // ── Platform compatibility surface ─────────────────────────────────────
     // The session lifecycle (start envelope, wake fences, env fan-out) speaks
@@ -356,7 +438,7 @@ export async function startWorker(cfg = configFromEnv()) {
         boot_error: null,
         // The pi worker has no OpenCode store to pin — the start path must not
         // wait for one.
-        opencode_session_id: null,
+        opencode_session_id: surface.rootId,
         opencode_session_required: false,
         agent_config_etag: compiled?.manifest?.agent_config_etag ?? null,
         commit_sha: compiled?.manifest?.source_sha ?? null,
@@ -428,7 +510,7 @@ export async function startWorker(cfg = configFromEnv()) {
               ),
             );
           }
-          await agent.prompt(String(text ?? ''));
+          await runTurn(String(text ?? ''));
           const result = { messages: agent.state.messages.length };
           const payload = JSON.stringify({ ok: true, result, rpcCalls: env.calls.map((c) => c.op) });
           res.writeHead(200, { 'content-type': 'application/json' }).end(payload);
@@ -462,7 +544,7 @@ export async function startWorker(cfg = configFromEnv()) {
           res.write(`data: ${JSON.stringify(event)}\n\n`);
         });
         try {
-          await agent.prompt(String(text ?? ''));
+          await runTurn(String(text ?? ''));
           res.write(`event: done\ndata: ${JSON.stringify({ rpcCalls: env.calls.map((c) => c.op) })}\n\n`);
         } catch (e: any) {
           res.write(`event: error\ndata: ${JSON.stringify({ error: String(e?.message ?? e) })}\n\n`);
@@ -484,7 +566,7 @@ export async function startWorker(cfg = configFromEnv()) {
           const { text } = JSON.parse(body || '{}');
           timing.firstTokenMs = null;
           const t0 = process.hrtime.bigint();
-          await agent.prompt(String(text ?? ''));
+          await runTurn(String(text ?? ''));
           const totalMs = Number(process.hrtime.bigint() - t0) / 1e6;
           const last = agent.state.messages.filter((m: any) => m.role === 'assistant').pop();
           const answer = (last?.content ?? [])

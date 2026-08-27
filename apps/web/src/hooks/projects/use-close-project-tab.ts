@@ -34,6 +34,21 @@ import {
  * close events where `pathname` lags the store), this returns immediately
  * instead of computing `idx === -1` and routing to `/sessions/undefined`.
  */
+/**
+ * Where a tab id actually lives.
+ *
+ * `CUSTOMIZE_TAB_ID` is a sentinel, not a session: interpolating it produced
+ * `/projects/<id>/sessions/customize`, which is not a route. Closing the tab
+ * beside an open Customize tab therefore navigated to a 404. The prefetch
+ * already skipped the sentinel; the push did not, so the two disagreed about
+ * where the close was going.
+ */
+function tabHref(projectId: string, tabId: string): string {
+  return tabId === CUSTOMIZE_TAB_ID
+    ? `/projects/${projectId}/customize`
+    : `/projects/${projectId}/sessions/${tabId}`;
+}
+
 export function useCloseProjectTab(projectId: string) {
   const router = useRouter();
   const pathname = usePathname();
@@ -63,10 +78,8 @@ export function useCloseProjectTab(projectId: string) {
     // The close picks `remaining[min(idx, remaining.length - 1)]` — the next
     // tab, or the previous one when the active tab is last.
     const neighbour = tabs[idx + 1] ?? tabs[idx - 1];
-    // Skip the Customize sentinel: the push below sends it to
-    // `/sessions/customize`, which is not a route. Warming that is pointless.
-    if (!neighbour || neighbour === CUSTOMIZE_TAB_ID) return;
-    router.prefetch(`/projects/${projectId}/sessions/${neighbour}`);
+    if (!neighbour) return;
+    router.prefetch(tabHref(projectId, neighbour));
   }, [openTabs, pathname, projectId, router]);
 
   return useCallback(
@@ -101,7 +114,7 @@ export function useCloseProjectTab(projectId: string) {
       setOptimisticActive(projectId, nextId);
       // nav-contract: prefetch-only — the neighbour is only chosen at close
       // time. The effect above warms it.
-      router.push(`/projects/${projectId}/sessions/${nextId}`);
+      router.push(tabHref(projectId, nextId));
       startTransition(() => closeTab(projectId, sessionId));
     },
     [projectId, pathname, router, closeTab, setOptimisticActive],
