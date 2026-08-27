@@ -147,6 +147,23 @@ export class PreviewInfrastructureError extends Error {
   }
 }
 
+/**
+ * A PERSISTENT per-branch environment, as opposed to the ephemeral per-PR
+ * preview above.
+ *
+ * The difference that matters is lifecycle, not shape: a PR preview is deleted
+ * and recreated on every head change (so its sandbox id — and therefore its
+ * URL — changes every push), while a branch environment is created ONCE and
+ * redeployed in place. Reusing the sandbox is what makes the URL stable enough
+ * to bookmark, to register a Stripe webhook against, and to keep a signed-in
+ * session and its Postgres volume across deploys.
+ */
+export function branchEnvSandboxName(branch: string): string {
+  const slug = branch.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!slug) throw new Error(`invalid branch for a persistent environment: ${branch}`);
+  return `kortix-env-${slug}`;
+}
+
 export function previewSandboxName(prNumber: number): string {
   if (!Number.isSafeInteger(prNumber) || prNumber < 1) {
     throw new Error(`invalid preview PR number: ${prNumber}`);

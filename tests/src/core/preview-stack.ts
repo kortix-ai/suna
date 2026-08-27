@@ -206,14 +206,14 @@ export function applyPreviewEnvironment(
     KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'true',
     KORTIX_RESTRICT_ACCOUNT_CREATION: 'false',
     KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'false',
-    // A preview is an ephemeral test environment with no Stripe customer, so a
-    // fresh account resolves to the free tier and `accountEntitledToLlmGateway`
-    // is false — the API then withholds KORTIX_LLM_BASE_URL and every agent
-    // (the pi worker included) falls back to the FAUX test provider, so no
-    // session can produce a real answer. Same posture as local dev: billing off
-    // entitles every account, which is what makes a preview testable at all.
-    KORTIX_BILLING_INTERNAL_ENABLED: 'false',
-    KORTIX_PUBLIC_BILLING_ENABLED: 'false',
+    // Billing ON, with the Stripe SANDBOX (test-mode) keys below — the same
+    // posture as dev, so the subscribe -> entitlement -> managed-models path is
+    // exercised here rather than bypassed. An account that has not subscribed
+    // is free-tier and therefore NOT entitled to managed models, which is what
+    // makes an agent fall back to the faux provider: subscribe with a Stripe
+    // test card (or connect a BYOK key) to get real model answers.
+    KORTIX_BILLING_INTERNAL_ENABLED: 'true',
+    KORTIX_PUBLIC_BILLING_ENABLED: 'true',
     KORTIX_WORKERS_ENABLED: 'false',
     SCHEDULER_ENABLED: 'false',
     KORTIX_TRIGGER_SCHEDULER_ENABLED: 'false',

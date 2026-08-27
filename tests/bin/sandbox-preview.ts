@@ -107,7 +107,12 @@ const daytona = {
 if (action === 'deploy') {
   const prNumber = positiveInteger('PREVIEW_PR_NUMBER');
   const sha = required('PREVIEW_SHA');
+  // PREVIEW_BRANCH_ENV turns this deploy into a PERSISTENT per-branch
+  // environment: the sandbox is reused instead of replaced, so the URL is
+  // stable across pushes (see branchEnvSandboxName).
+  const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
   const deployment: SandboxPreviewDeploymentInput = {
+    ...(branchEnv ? { branchEnv } : {}),
     repository,
     ref: value('PREVIEW_REF', sha),
     sha,

@@ -35,6 +35,7 @@ import {
   type SandboxPreviewResult,
   buildPreviewBootstrapScript,
   previewLockfileHash,
+  branchEnvSandboxName,
   previewSandboxName,
   selectStalePreviewSandboxIds,
 } from './sandbox-preview';
@@ -55,6 +56,16 @@ export interface SandboxPreviewDeploymentInput {
   secrets: PreviewRuntimeSecrets;
   platinum: { apiUrl: string; apiKey: string };
   daytona: { apiUrl: string; apiKey: string; target: string };
+  /**
+   * A PERSISTENT per-branch environment instead of an ephemeral per-PR preview.
+   *
+   * When set, the sandbox is named after the BRANCH and reused across deploys
+   * rather than deleted and recreated. That is the whole difference: the
+   * sandbox id — and therefore the public URL — stays put, so the environment
+   * can be bookmarked, registered as a Stripe webhook target, and keep its
+   * Postgres volume (and your signed-in session) across pushes.
+   */
+  branchEnv?: string;
 }
 
 interface PlatinumSandboxPage {
@@ -157,7 +168,22 @@ export async function deployPlatinumPreview(
   let sandboxId = '';
   let launched = false;
   try {
-    await replaceExistingPlatinumPreview(api, input.prNumber);
+    const persistentName = input.branchEnv ? branchEnvSandboxName(input.branchEnv) : null;
+    // A persistent branch environment reuses its sandbox; only an ephemeral PR
+    // preview is replaced (which is what rotates the URL on every push).
+    const reusable = persistentName
+      ? (await allPlatinumPreviewSandboxes(api)).find(
+          (sandbox) =>
+            sandbox.name === persistentName && sandbox.metadata?.owner === 'kortix-branch-env',
+        ) ?? null
+      : null;
+    // A persistent box idles between deploys; Platinum may have stopped it.
+    if (reusable) {
+      await api
+        .json(`/v1/sandboxes/${reusable.id}/start`, { method: 'POST' })
+        .catch(() => undefined);
+    }
+    if (!persistentName) await replaceExistingPlatinumPreview(api, input.prNumber);
     const hash = previewLockfileHash(input.lockfileHash);
     const base = await ensureTemplate(
       api,
@@ -169,24 +195,24 @@ export async function deployPlatinumPreview(
     );
     const template = await ensureWarmTemplate(api, base, hash);
     const startedAt = Date.now();
-    const created = await api.json<PlatinumSandbox>(
+    const created = reusable ?? await api.json<PlatinumSandbox>(
       '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
       {
         method: 'POST',
         headers: { 'idempotency-key': platinumPreviewIdempotencyKey(input) },
         body: JSON.stringify({
-          name: previewSandboxName(input.prNumber),
+          name: persistentName ?? previewSandboxName(input.prNumber),
           template: template.id,
           type: 'persistent',
           auto_stop_minutes: 0,
-          auto_archive_days: 7,
-          auto_delete_days: 7,
+          auto_archive_days: persistentName ? 0 : 7,
+          auto_delete_days: persistentName ? 0 : 7,
           cpu: 8,
           ram_mb: 16_384,
           disk_gb: 50,
           expose: [{ port: 8080, public: true }],
           metadata: {
-            owner: 'kortix-preview',
+            owner: persistentName ? 'kortix-branch-env' : 'kortix-preview',
             repository: input.repository,
             pr_number: String(input.prNumber),
             git_sha: input.sha,

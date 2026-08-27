@@ -1,0 +1,217 @@
+name: Deploy pi-worker environment
+
+# A PERSISTENT environment for the `pi-worker` branch — not a PR preview.
+#
+# Why this exists: the PR-preview workflow deletes and recreates its sandbox on
+# every head change, so its URL rotates on every push, its data is wiped, and
+# Stripe has no stable webhook target. The pi worker is developed on a branch
+# that never merges to main, so it needs a real environment of its own.
+#
+# The difference is lifecycle, not shape: the same self-host stack (Postgres,
+# Supabase, API, gateway, frontend, Mailpit) is deployed into a sandbox that is
+# created ONCE and redeployed in place. The sandbox id — and therefore the
+# public URL — stays put, the Postgres volume survives, and a signed-in session
+# and Stripe webhook keep working across deploys.
+#
+# This workflow lives on the `pi-worker` branch and is triggered by `push`, so
+# GitHub runs the copy from THIS branch. Nothing on `main` has to change for it
+# to work (unlike `pull_request_target`, which always uses the base branch).
+on:
+  push:
+    branches: [pi-worker]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-pi-worker
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  BRANCH_ENV: pi-worker
+
+jobs:
+  build-api:
+    name: Build API image
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/api/Dockerfile:linux/amd64
+      - uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          push: false
+          outputs: type=docker,dest=/tmp/pi-api.tar
+          build-args: |
+            SERVICE=apps/api
+            KORTIX_VERSION=pi-${{ github.sha }}
+            KORTIX_COMMIT=${{ github.sha }}
+          tags: kortix/kortix-api:pr-${{ github.sha }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pi-api-${{ github.sha }}
+          path: /tmp/pi-api.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  build-gateway:
+    name: Build gateway image
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/llm-gateway/Dockerfile:linux/amd64
+      - uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: apps/llm-gateway/Dockerfile
+          platforms: linux/amd64
+          push: false
+          outputs: type=docker,dest=/tmp/pi-gateway.tar
+          build-args: |
+            KORTIX_VERSION=pi-${{ github.sha }}
+            KORTIX_COMMIT=${{ github.sha }}
+          tags: kortix/kortix-gateway:pr-${{ github.sha }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pi-gateway-${{ github.sha }}
+          path: /tmp/pi-gateway.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  build-web:
+    name: Build frontend image
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Build standalone frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @kortix/web build
+      - uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/web/Dockerfile:linux/amd64
+      - uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: false
+          outputs: type=docker,dest=/tmp/pi-web.tar
+          build-args: |
+            KORTIX_VERSION=pi-${{ github.sha }}
+            KORTIX_COMMIT=${{ github.sha }}
+          tags: kortix/kortix-frontend:pr-${{ github.sha }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pi-web-${{ github.sha }}
+          path: /tmp/pi-web.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  deploy:
+    name: Deploy the persistent pi-worker environment
+    needs: [build-api, build-gateway, build-web]
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        with:
+          name: pi-api-${{ github.sha }}
+          path: /tmp/pi-api
+      - uses: actions/download-artifact@v7
+        with:
+          name: pi-gateway-${{ github.sha }}
+          path: /tmp/pi-gateway
+      - uses: actions/download-artifact@v7
+        with:
+          name: pi-web-${{ github.sha }}
+          path: /tmp/pi-web
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Publish images
+        run: |
+          set -euo pipefail
+          for archive in /tmp/pi-api/pi-api.tar /tmp/pi-gateway/pi-gateway.tar /tmp/pi-web/pi-web.tar; do
+            [ -s "$archive" ] || { echo "::error::missing image archive $archive"; exit 1; }
+            docker load --input "$archive"
+          done
+          for image in \
+            "kortix/kortix-api:pr-${GITHUB_SHA}" \
+            "kortix/kortix-gateway:pr-${GITHUB_SHA}" \
+            "kortix/kortix-frontend:pr-${GITHUB_SHA}"; do
+            docker push "$image"
+          done
+      - name: Deploy into the persistent sandbox
+        env:
+          # PREVIEW_BRANCH_ENV is what makes the deploy REUSE its sandbox
+          # instead of replacing it — the whole reason the URL is stable.
+          PREVIEW_BRANCH_ENV: ${{ env.BRANCH_ENV }}
+          PREVIEW_PR_NUMBER: '6998'
+          PREVIEW_REPOSITORY: ${{ github.repository }}
+          PREVIEW_REF: ${{ github.ref }}
+          PREVIEW_SHA: ${{ github.sha }}
+          PREVIEW_IMAGE_TAG: pi-${{ github.sha }}
+          PREVIEW_SANDBOX_PROVIDER: platinum
+          PLATINUM_API_URL: https://api.platinum.dev
+          PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          # Stripe SANDBOX (test-mode) keys — the same pair dev runs on, so the
+          # subscribe/entitlement path is exercised here exactly as it is there.
+          KE2E_STRIPE_SECRET_KEY: ${{ secrets.KE2E_STRIPE_SECRET_KEY }}
+          KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.KE2E_STRIPE_WEBHOOK_SECRET }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          KORTIX_GITHUB_APP_ID: ${{ secrets.KORTIX_GITHUB_APP_ID }}
+          KORTIX_GITHUB_APP_PRIVATE_KEY: ${{ secrets.KORTIX_GITHUB_APP_PRIVATE_KEY }}
+          KORTIX_GITHUB_APP_SLUG: ${{ secrets.KORTIX_GITHUB_APP_SLUG }}
+          MANAGED_GIT_GITHUB_OWNER: ${{ secrets.MANAGED_GIT_GITHUB_OWNER }}
+          MANAGED_GIT_GITHUB_INSTALL_ID: ${{ secrets.MANAGED_GIT_GITHUB_INSTALL_ID }}
+        run: bun tests/bin/sandbox-preview.ts deploy
+      - name: Report the environment URL
+        if: always()
+        run: |
+          set -euo pipefail
+          url="$(jq -r '.previewUrl // empty' tests/test-results/preview-deployment.json 2>/dev/null || true)"
+          if [ -n "$url" ]; then
+            {
+              echo "## pi-worker environment"
+              echo ""
+              echo "- **URL:** ${url}"
+              echo "- **Mail:** ${url}/_mailpit"
+              echo "- **Commit:** \`${GITHUB_SHA}\`"
+              echo ""
+              echo "This sandbox is persistent — the URL does not change between deploys."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "pi-worker environment: ${url}"
+          fi
