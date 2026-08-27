@@ -103,10 +103,25 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+      # NEXT_OUTPUT=standalone is load-bearing: without it Next emits no
+      # .next/standalone and the Dockerfile COPY fails on a missing path.
       - name: Build standalone frontend
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm --filter @kortix/web build
+        run: pnpm --filter ./apps/web build
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          NEXT_PUBLIC_URL: http://localhost:3000
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
+          NEXT_PUBLIC_BILLING_ENABLED: "true"
+          NEXT_PUBLIC_KORTIX_VERSION: pi-${{ github.sha }}
+          NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.sha }}
+          NEXT_OUTPUT: standalone
       - uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/web/Dockerfile:linux/amd64
