@@ -54,12 +54,12 @@ export const cta = {
 /**
  * Trust / security block.
  *
- * ACCURACY GATE: SOC 2 Type I and Type II are NOT held — both badges render
- * de-emphasised and carry an explicit "In progress" state. GDPR is a compliance
- * posture the company does hold, so it carries no state and renders bare.
- * Never write "compliant", "certified", or "we are SOC 2" here — the `comms`
- * skill forbids claiming a certification we do not hold. Adding a badge without
- * holding it, or clearing a SOC 2 `state` before the report lands, is a copy bug.
+ * ACCURACY GATE: SOC 2 Type I is held — its badge renders bare (no state), like
+ * GDPR, which is a compliance posture the company holds. SOC 2 Type II is NOT
+ * held and carries an explicit "In progress" state. Never write "compliant",
+ * "certified", or "we are SOC 2" here — the `comms` skill forbids claiming a
+ * certification we do not hold. Adding a badge without holding it, or clearing
+ * a SOC 2 `state` before the report lands, is a copy bug.
  */
 export const trust = {
   eyebrow: 'Security & trust',
@@ -82,7 +82,7 @@ export const trust = {
   ctaHref: '/enterprise',
   /** Exactly three. No HIPAA, no ISO — we do not hold them. */
   badges: [
-    { id: 'soc2-type-1', line1: 'SOC 2', line2: 'TYPE I', state: 'In progress' },
+    { id: 'soc2-type-1', line1: 'SOC 2', line2: 'TYPE I', state: '' },
     { id: 'soc2-type-2', line1: 'SOC 2', line2: 'TYPE II', state: 'In progress' },
     { id: 'gdpr', line1: 'GDPR', line2: '', state: '' },
   ],
