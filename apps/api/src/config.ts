@@ -533,6 +533,16 @@ const envSchema = z.object({
   // bakes. Provider transitions still prepare their target image explicitly.
   // Default OFF keeps the session path on one shared image per provider.
   KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
+  // Pi worker pool (harness/worker split P1.8): keep this many PARKED boxes of
+  // the shared pi-worker snapshot per environment, claimed at session create
+  // (a claim skips provider create + box boot, ~4s of the cold path measured
+  // on dev 2026-08-27). 0 = off. Pure accelerator: claim failure falls back to
+  // an ordinary cold create.
+  KORTIX_PI_WORKER_POOL_TARGET: optInt(0),
+  // Parked boxes older than this are reaped and replaced; also the Daytona
+  // auto-stop backstop a parked box is created with, so an orphaned box
+  // reclaims itself even if every API instance dies.
+  KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: optInt(60),
   // One kill switch for additive cold-boot accelerators. It keeps the standard
   // runtime image and every tool. It enables native OpenCode binary prefetch,
   // Platinum rootfs materialization, and stopped per-project images with the
@@ -1180,6 +1190,8 @@ export const config = {
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
+  KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
+  KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
   KORTIX_FAST_COLD_BOOT_CONFIGURED: env.KORTIX_FAST_COLD_BOOT_ENABLED !== undefined,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,

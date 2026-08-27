@@ -126,7 +126,7 @@ function buildApp() {
 
 function openBundle(query = '', sessionId = SESSION_ID) {
   return buildApp().request(
-    `/v1/projects/${PROJECT_ID}/sessions/${sessionId}/open-bundle${query}`,
+    `/v1/projects/${PROJECT_ID}/sessions/${sessionId}/snapshot${query}`,
   );
 }
 

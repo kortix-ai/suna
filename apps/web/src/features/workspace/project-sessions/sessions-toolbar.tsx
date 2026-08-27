@@ -14,6 +14,7 @@ import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-
 import { cn } from '@/lib/utils';
 import type { ProjectSession } from '@kortix/sdk';
 import { MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
 
 export function SessionsToolbar({
   projectId,
@@ -36,7 +37,11 @@ export function SessionsToolbar({
   searchOpen: boolean;
   onSearchOpenChange: (open: boolean) => void;
   onEnterSelectMode: () => void;
-  onNewSession: () => void;
+  /**
+   * Click-time side effects for "New". The control is an anchor to the project
+   * composer, so the navigation itself is not this handler's job.
+   */
+  onNewSession?: () => void;
   creatingSession: boolean;
   canSelect: boolean;
 }) {
@@ -142,22 +147,35 @@ export function SessionsToolbar({
         </Button>
       ) : null}
 
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        className={cn('h-8 gap-1.5 transition-[scale] duration-150 active:scale-[0.96]')}
-        onClick={onNewSession}
-        disabled={creatingSession}
-        aria-busy={creatingSession}
-      >
-        {creatingSession ? (
+      {/* An anchor, not a button: the composer route is known at render time,
+          so <Link> holds its payload in the segment cache and the click never
+          runs a cold RSC fetch. The in-flight state stays a real <button> so
+          `disabled` still holds. */}
+      {creatingSession ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className={cn('h-8 gap-1.5 transition-[scale] duration-150 active:scale-[0.96]')}
+          disabled
+          aria-busy
+        >
           <Loading className="size-4 shrink-0" />
-        ) : (
-          <PlusIcon className="size-4 shrink-0" />
-        )}
-        New
-      </Button>
+          New
+        </Button>
+      ) : (
+        <Button
+          asChild
+          size="sm"
+          variant="secondary"
+          className={cn('h-8 gap-1.5 transition-[scale] duration-150 active:scale-[0.96]')}
+        >
+          <Link href={`/projects/${projectId}`} prefetch onClick={onNewSession}>
+            <PlusIcon className="size-4 shrink-0" />
+            New
+          </Link>
+        </Button>
+      )}
     </div>
   );
 }

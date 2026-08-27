@@ -17,7 +17,9 @@
  */
 import { Agent, request as httpRequest } from 'node:http';
 import { Agent as HttpsAgent } from 'node:https';
-import WebSocket from 'ws';
+// `ws` loads lazily: only the ws transport needs it, and keeping the top
+// level free of it lets other packages import these sources for tests.
+type WsInstance = import('ws').default;
 
 export interface RpcTransport {
   call(op: string, args: Record<string, unknown>, cwd: string): Promise<any>;
@@ -82,7 +84,7 @@ export class KeepAliveTransport implements RpcTransport {
 /** One socket, many in-flight calls, correlated by id. */
 export class WebSocketTransport implements RpcTransport {
   readonly kind = 'ws';
-  private ws?: WebSocket;
+  private ws?: WsInstance;
   private ready?: Promise<void>;
   private seq = 0;
   private readonly pending = new Map<number, { resolve: (v: any) => void; reject: (e: any) => void }>();
@@ -91,7 +93,9 @@ export class WebSocketTransport implements RpcTransport {
 
   private connect(): Promise<void> {
     if (this.ready) return this.ready;
-    this.ready = new Promise((resolve, reject) => {
+    this.ready = (async () => {
+      const { default: WebSocket } = await import('ws');
+      await new Promise<void>((resolve, reject) => {
       const url = this.baseUrl.replace(/^http/, 'ws').replace(/\/$/, '') + '/rpc-ws';
       const ws = new WebSocket(url, { headers: this.headers });
       this.ws = ws;
@@ -110,7 +114,8 @@ export class WebSocketTransport implements RpcTransport {
         this.pending.clear();
         this.ready = undefined;
       });
-    });
+      });
+    })();
     return this.ready;
   }
 

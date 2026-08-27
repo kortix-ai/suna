@@ -1773,7 +1773,16 @@ export async function createProjectSession(input: {
               projectId,
               sessionId,
               agentName,
-              opencodeModel,
+              // Only an EXPLICIT session model may override the baked agent
+              // model — the platform/project fallback resolution exists for
+              // the OpenCode path and must not clobber the artifact's own
+              // model (KORTIX_MODEL wins over the bake inside the worker).
+              // Stripped to the native ref: the worker's env path takes the
+              // value verbatim, unlike the baked path which de-prefixes.
+              opencodeModel:
+                opencodeModelSource === 'explicit' && opencodeModel
+                  ? opencodeModel.replace(/^kortix\//, '')
+                  : null,
               apiUrl: deriveKortixApiBase(),
               frontendUrl: sandboxFrontendBaseUrl(),
             }),

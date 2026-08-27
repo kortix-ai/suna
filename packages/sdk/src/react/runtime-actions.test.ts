@@ -57,7 +57,20 @@ const client = {
 
 mock.module('../core/runtime/client', () => ({
   getClient: () => client,
-}));
+}))
+
+// getRuntimeProjectInfo / getRuntimeConfig now read the daemon `/kortix/opencode/*`
+// passthroughs. Delegate to the same `client` mock's data.
+mock.module('../core/runtime/daemon-read', () => ({
+  readDaemonOpencode: async (path: string) => {
+    if (path === 'project-current') {
+      calls.push(['project.current']);
+      return (await client.project.current()).data;
+    }
+    if (path === 'config') return (await client.global.config.get()).data;
+    return undefined;
+  },
+}));;
 
 const actions = await import('./runtime-actions');
 

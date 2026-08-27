@@ -396,7 +396,16 @@ export function useSessionPrompts(
         removeOptimisticPrompt(prev ?? [], input.clientMessageId),
       );
     },
-    onSettled: invalidate,
+    // Read-back is a POLL in disguise while the session STREAM is connected:
+    // `onMutate` already painted the optimistic row, `onSuccess` already swapped
+    // it for the server's row id, and `kortix.control.queue` pushes the
+    // authoritative list on change — so invalidating here just fires a redundant
+    // `GET .../prompts` after every send (measured: the one remaining prompts
+    // read on an open+send). With no stream, the invalidate stands (the poll is
+    // the only thing that would confirm the durable row).
+    onSettled: () => {
+      if (!streamConnected) return invalidate();
+    },
   });
   // No-op hook-level `onError`s: every caller shows its own specific toast,
   // and without one TanStack falls back to the app-global default `onError`

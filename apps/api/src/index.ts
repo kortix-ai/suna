@@ -43,6 +43,10 @@ import { accountInvitesRouter } from './accounts/invites';
 import { adminApp } from './admin';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
+import {
+  startPiWorkerPoolMaintenance,
+  stopPiWorkerPoolMaintenance,
+} from './platform/services/pi-worker-pool';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import { authRouter } from './auth';
@@ -1498,6 +1502,10 @@ async function startSingletonWorkers() {
   startProviderTransitionWorker();
   startAppDeploymentWorker();
   startAppIdleReaper();
+  // Pi worker pool (P1.8): keep parked worker boxes at target so pi session
+  // creates claim instead of cold-creating. No-op unless
+  // KORTIX_PI_WORKER_POOL_TARGET > 0.
+  startPiWorkerPoolMaintenance();
   startAuditWebhookWorker();
   startAuditReconciliationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
@@ -1516,6 +1524,7 @@ async function stopSingletonWorkers() {
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
+  stopPiWorkerPoolMaintenance();
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');

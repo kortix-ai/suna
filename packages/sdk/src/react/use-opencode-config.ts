@@ -1,4 +1,5 @@
 'use client';
+import { readDaemonOpencode } from '../core/runtime/daemon-read';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../core/runtime/client';
@@ -30,9 +31,8 @@ export function useOpenCodeConfig() {
   return useQuery<Config>({
     queryKey: configKeys.all,
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.global.config.get();
-      return unwrap(result);
+      // `/kortix/opencode/config` daemon passthrough, not raw `/config`.
+      return readDaemonOpencode<Config>('config');
     },
     enabled: runtimeReady,
     staleTime: Infinity,

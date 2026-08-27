@@ -71,6 +71,17 @@ export type ControlEventType =
   | 'kortix.control.runtime'
   /** The transcript mirror's watermark (how far the durable copy has caught up). */
   | 'kortix.control.mirror'
+  /**
+   * The session's audit/approval WATERMARK — a change-detection signal for the
+   * per-session audit surface (`GET .../audit`). It carries the count of
+   * unresolved connector-gated approvals plus the newest create/resolve
+   * instants, so a client can tell "a gated action appeared or was resolved"
+   * without polling. It is deliberately NOT the audit ROWS: the rows are a
+   * heavier read a human opens on demand, while liveness only needs to know
+   * WHEN they changed. The client invalidates its audit query on a new
+   * watermark and stands its poll down while the stream is connected.
+   */
+  | 'kortix.control.audit'
   /** The daemon's `/kortix/opencode/state` projection, when the stream has one. */
   | 'kortix.control.runtime_state';
 

@@ -74,12 +74,11 @@ import {
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import * as React from 'react';
 import { useState } from 'react';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
-  const router = useRouter();
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -96,6 +95,9 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // serves them all from one fetch.
   useEnsureSelectedAccount();
 
+  // For the rows that OPEN something in place — the settings panel, the log-out
+  // confirmation. Navigating rows do not use it: they are anchors now, and an
+  // anchor needs no deferral because the App Router owns the transition.
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
     requestAnimationFrame(() => fn());
@@ -175,12 +177,18 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
                     <DropdownMenuSeparator />
 
-                    <DropdownMenuItem
-                      onSelect={() => deferAfterClose(() => router.push('/new'))}
-                      size="sm"
-                    >
-                      <PlusIcon />
-                      Create a workspace…
+                    {/* An anchor, not a handler. `router.push` from a menu row
+                        runs the RSC fetch cold at click time, and that fetch
+                        degrades into a full document load whenever it answers
+                        wrong — an auth bounce, a build-id skew mid-deploy, a
+                        network blip. `onSelect` keeps the explicit close and
+                        must not call `preventDefault`: that cancels the
+                        anchor. */}
+                    <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                      <Link href="/new" prefetch>
+                        <PlusIcon />
+                        Create a workspace…
+                      </Link>
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuPortal>
@@ -203,17 +211,19 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 User Settings
               </DropdownMenuItem>
 
-              <DropdownMenuItem
-                onSelect={() => deferAfterClose(() => router.push('/download'))}
-                size="sm"
-              >
-                <DownloadSimple />
-                Download App
+              {/* `prefetch` explicitly: `(public)/download/page.tsx` awaits
+                  `headers()` and has no `loading.tsx`, so the default `auto`
+                  intent would cache nothing for a dynamic route. */}
+              <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                <Link href="/download" prefetch>
+                  <DownloadSimple />
+                  Download App
+                </Link>
               </DropdownMenuItem>
 
               <ThemeSubmenu />
 
-              <HelpSubmenu deferAfterClose={deferAfterClose} onClose={() => setMenuOpen(false)} />
+              <HelpSubmenu onClose={() => setMenuOpen(false)} />
 
               {/* Log out is the only row that ends something, so it gets its own
                   group. Nothing sits below it — the last item in a menu is the

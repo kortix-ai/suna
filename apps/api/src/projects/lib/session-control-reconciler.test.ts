@@ -18,15 +18,26 @@ let sandboxRow: Record<string, unknown> | null = null;
 let mirrorRow: Record<string, unknown> | null = null;
 let turnReads = 0;
 let inboxReads = 0;
+// The audit watermark reads `connector_calls` twice: a pending COUNT, then the
+// two newest instants. The mock returns whichever the current projection asks
+// for, so a test can move the watermark by changing these.
+let auditPending = 0;
+let auditLatestAt: Date | null = null;
+let auditLatestResolvedAt: Date | null = null;
 
 mock.module('../../shared/db', () => ({
   db: {
     select: (projection: Record<string, unknown>) => ({
-      from: (table: unknown) => {
+      from: (_table: unknown) => {
+        // Distinguish the reads by the PROJECTION they ask for, not the table
+        // name: drizzle's `table._.name` is undefined in this version, so the
+        // name-based branch was dead. The projection is unambiguous per read.
         const rows = () => {
-          const name = String((table as { _?: { name?: string } })?._?.name ?? '');
-          if (name.includes('mirror')) return mirrorRow ? [mirrorRow] : [];
-          if (name.includes('message')) return [{ messages: 0, newest: null }];
+          if ('pending' in projection) return [{ pending: auditPending }];
+          if ('latest' in projection)
+            return [{ latest: auditLatestAt, latestResolved: auditLatestResolvedAt }];
+          if ('capturedAt' in projection) return mirrorRow ? [mirrorRow] : [];
+          if ('messages' in projection) return [{ messages: 0, newest: null }];
           return sandboxRow ? [sandboxRow] : [];
         };
         const stage = {
@@ -78,6 +89,9 @@ beforeEach(() => {
   inboxRows = [];
   sandboxRow = { status: 'active', externalId: 'box-1', provider: 'e2b', metadata: {}, deadlineAt: new Date(0) };
   mirrorRow = null;
+  auditPending = 0;
+  auditLatestAt = null;
+  auditLatestResolvedAt = null;
 });
 
 afterEach(() => {
@@ -95,6 +109,7 @@ describe('emission', () => {
       'kortix.control.queue',
       'kortix.control.runtime',
       'kortix.control.mirror',
+      'kortix.control.audit',
     ]);
     handle.release();
   });
@@ -117,7 +132,7 @@ describe('emission', () => {
     const handle = acquireControlReconciler(SESSION);
     await handle.ready();
     const head = controlChannelState(SESSION).head_cseq;
-    expect(head).toBe(4);
+    expect(head).toBe(5);
 
     handle.poke();
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -140,6 +155,42 @@ describe('emission', () => {
 
     expect(received).toEqual(['kortix.control.queue']);
     expect(controlChannelState(SESSION).head_cseq).toBe(head + 1);
+    sub.unsubscribe();
+    handle.release();
+  });
+
+  test('the audit watermark carries the pending count and the two newest instants', async () => {
+    auditPending = 2;
+    auditLatestAt = new Date('2026-08-27T00:00:00.000Z');
+    auditLatestResolvedAt = null;
+    const handle = acquireControlReconciler(`${SESSION}-audit`);
+    await handle.ready();
+    const audit = handle.snapshot().find((event) => event.type === 'kortix.control.audit');
+    expect(audit!.payload).toEqual({
+      known: true,
+      pending: 2,
+      latest_at: '2026-08-27T00:00:00.000Z',
+      latest_resolved_at: null,
+    });
+    handle.release();
+  });
+
+  test('a resolution (pending falls, resolved instant moves) publishes ONE new audit frame', async () => {
+    auditPending = 1;
+    auditLatestAt = new Date('2026-08-27T00:00:00.000Z');
+    const handle = acquireControlReconciler(`${SESSION}-audit-move`);
+    await handle.ready();
+    const head = controlChannelState(`${SESSION}-audit-move`).head_cseq;
+
+    const received: string[] = [];
+    const sub = subscribeControlEvents(`${SESSION}-audit-move`, {}, (event) => received.push(event.type));
+    auditPending = 0;
+    auditLatestResolvedAt = new Date('2026-08-27T00:01:00.000Z');
+    handle.poke();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(received).toEqual(['kortix.control.audit']);
+    expect(controlChannelState(`${SESSION}-audit-move`).head_cseq).toBe(head + 1);
     sub.unsubscribe();
     handle.release();
   });
@@ -235,13 +286,13 @@ describe('reference counting', () => {
 
   test('a RECONNECT re-publishes nothing when the control plane did not move', async () => {
     // The defect this closes, found on the live stack: deleting the reconciler
-    // on release threw away its change detection, so the next connect emitted
-    // four snapshots identical to the four before them. Idempotent, but it
+    // on release threw away its change detection, so the next connect emitted five (was four)
+    // snapshots identical to the ones before them. Idempotent, but it
     // burns the replay ring on every reconnect.
     const first = acquireControlReconciler(`${SESSION}-reconnect`);
     await first.ready();
     const head = controlChannelState(`${SESSION}-reconnect`).head_cseq;
-    expect(head).toBe(4);
+    expect(head).toBe(5);
     first.release();
 
     const second = acquireControlReconciler(`${SESSION}-reconnect`);
@@ -249,7 +300,7 @@ describe('reference counting', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(controlChannelState(`${SESSION}-reconnect`).head_cseq).toBe(head);
     // And the reconnecting stream still has the full snapshot to open with.
-    expect(second.snapshot().map((event) => event.cseq)).toEqual([1, 2, 3, 4]);
+    expect(second.snapshot().map((event) => event.cseq)).toEqual([1, 2, 3, 4, 5]);
     second.release();
   });
 

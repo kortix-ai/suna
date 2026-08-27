@@ -7,12 +7,25 @@
  * onto PATH, self-update to the current published build, and roll back the last
  * update. All of that lives here so `main.ts` keeps serving the daemon.
  *
- * THE RELIABILITY PROPERTY. A self-update never bricks the app. The flow is
- * download → verify content digest → smoke-test the new binary → atomic swap
- * (keeping the replaced binary as `<name>.prev`) → post-swap health-check →
- * auto-rollback to `.prev` on any failure. A half-written binary is never left
- * on disk: bytes are written to a temp file in the destination directory and
- * only `rename(2)`d into place after they pass every gate.
+ * TWO UPDATE CONTEXTS. `update`/`rollback` are context-aware:
+ *   - STANDALONE (run-anywhere, no supervisor): kortixd owns the swap. Flow is
+ *     download → verify content digest → smoke-test → atomic self-swap (keeping
+ *     the replaced binary as `<name>.prev`) → post-swap health → auto-rollback
+ *     to `.prev` on any failure.
+ *   - SUPERVISED (in-sandbox, KORTIX_SUPERVISED=1 set by the entrypoint): kortixd
+ *     does NOT self-swap. A process cannot overwrite its own running binary, and
+ *     warm-fork/resume/restart reuse the VM without re-running boot — only the
+ *     entrypoint supervisor's staged swap survives those. So kortixd downloads →
+ *     verifies → smoke-tests → STAGES `<state-dir>/agent.next` (+ `.sha256`) and
+ *     exits 75. The supervisor (apps/sandbox/entrypoint.sh) re-verifies the
+ *     digest, renames it into `agent.current`, keeps `agent.prev`, and rolls back
+ *     a crash-looper against the immutable baked floor. See the convergent-runtime
+ *     spec docs/specs/2026-08-20-convergent-runtime.md.
+ *
+ * THE RELIABILITY PROPERTY. An update never bricks the app in either context. A
+ * half-written binary is never left on disk: bytes are written to a temp file on
+ * the destination filesystem and only `rename(2)`d into place after they pass
+ * every gate.
  *
  * THE BOOT CONTRACT. The primary caller is the sandbox boot path, which runs,
  * every start, idempotently: `kortixd install` → `kortixd update --boot` →
@@ -177,6 +190,125 @@ function invalidateDigestCache(statePath: string): void {
   }
 }
 
+// ── supervisor integration (in-sandbox) ─────────────────────────────────────
+//
+// Inside a sandbox the entrypoint supervisor (apps/sandbox/entrypoint.sh) — not
+// kortixd — owns the binary swap. A process cannot safely overwrite its own
+// running executable, and warm-fork/resume/restart reuse the same VM without
+// re-running boot, so only the supervisor's staged-swap survives those. kortixd
+// therefore STAGES the update and asks for the swap instead of self-swapping.
+//
+// EX_TEMPFAIL. The supervisor reads exactly this code as "install the staged
+// binary and relaunch me"; every other non-zero exit counts against its crash-
+// loop budget. Keep in lockstep with `SWAP_CODE` in apps/sandbox/entrypoint.sh
+// and `AGENT_SWAP_EXIT_CODE` in runtime-assets.ts.
+export const AGENT_SWAP_EXIT_CODE = 75
+
+/** The supervisor's state dir. `agent.next` is staged here; `agent.current` /
+ *  `agent.prev` / `agent.pinned` are the supervisor's own. */
+export function agentStateDir(): string {
+  const v = (process.env.KORTIX_AGENT_STATE_DIR ?? '').trim()
+  return v || '/opt/kortix'
+}
+
+function bakedAgentPath(): string {
+  const v = (process.env.KORTIX_AGENT_BIN ?? '').trim()
+  return v || '/usr/local/bin/kortix-agent'
+}
+
+/**
+ * Is this process running under the entrypoint supervisor?
+ *
+ * Primary signal: `KORTIX_SUPERVISED=1`, which the entrypoint exports before it
+ * launches the agent. Fallback for an older baked entrypoint that predates that
+ * env: the running binary IS a supervisor-managed path (`agent.current` or the
+ * baked floor) and the state dir exists. A standalone kortixd on a normal
+ * machine matches neither, so it keeps the self-swap path.
+ */
+export function detectSupervised(binPath: string): boolean {
+  if ((process.env.KORTIX_SUPERVISED ?? '').trim() === '1') return true
+  const stateDir = agentStateDir()
+  const current = join(stateDir, 'agent.current')
+  if ((binPath === current || binPath === bakedAgentPath()) && existsSync(stateDir)) return true
+  return false
+}
+
+/**
+ * Move an already-verified binary into the supervisor's staged slot.
+ *
+ * The write order matches runtime-assets.ts `stageAgentBinary` and the contract
+ * the supervisor's `promote_staged_agent` enforces: the digest side-car is
+ * renamed into place FIRST, then `agent.next` itself. Every interruption
+ * therefore leaves a state the supervisor already refuses — `agent.next` absent
+ * (nothing to promote), or present without a matching digest (discarded). It can
+ * never leave one the supervisor would install blind. `verifiedTmp` must already
+ * live inside `stateDir` so the rename is same-filesystem (atomic).
+ */
+function stageForSupervisor(stateDir: string, sha256: string, verifiedTmp: string): void {
+  const nextPath = join(stateDir, 'agent.next')
+  const tmpSha = join(
+    stateDir,
+    `.kortixd.stage.${process.pid}.${Math.random().toString(36).slice(2, 10)}.sha256`,
+  )
+  mkdirSync(stateDir, { recursive: true })
+  try {
+    writeFileSync(tmpSha, `${sha256}\n`, 'utf8')
+    renameSync(tmpSha, `${nextPath}.sha256`)
+  } catch (e) {
+    try {
+      rmSync(tmpSha, { force: true })
+    } catch {
+      /* nothing to clean */
+    }
+    throw e
+  }
+  renameSync(verifiedTmp, nextPath)
+}
+
+/**
+ * The supervisor-side rollback (in-sandbox), mirroring `rollback_agent` in
+ * apps/sandbox/entrypoint.sh: restore `agent.prev` over `agent.current` when a
+ * predecessor exists, otherwise drop back to the baked floor by removing the
+ * `agent.current` override — the floor is a root-owned file runtime code cannot
+ * write, so a box can never be bricked by this. Then latch `agent.pinned` so the
+ * supervisor stops re-staging the same bad build, and discard any staged
+ * `agent.next`. Effective at the next daemon launch; the running process keeps
+ * its open inode until then.
+ */
+export function performSupervisorRollback(stateDir: string): { code: number; message: string } {
+  const current = join(stateDir, 'agent.current')
+  const prev = join(stateDir, 'agent.prev')
+  const pinned = join(stateDir, 'agent.pinned')
+  if (!existsSync(current)) {
+    return {
+      code: 1,
+      message: 'no update to roll back (agent.current absent); the box already runs the baked binary',
+    }
+  }
+  try {
+    if (existsSync(prev)) {
+      renameSync(prev, current)
+      chmodSync(current, 0o755)
+    } else {
+      rmSync(current, { force: true })
+    }
+    // Latch updates off, exactly like the supervisor, so the next boot does not
+    // re-stage the build we just rejected.
+    writeFileSync(pinned, '')
+    // Drop any staged artifact immediately (the pin would make the supervisor
+    // discard it anyway, but leaving it invites confusion).
+    rmSync(join(stateDir, 'agent.next'), { force: true })
+    rmSync(join(stateDir, 'agent.next.sha256'), { force: true })
+    const restored = existsSync(current) ? 'previous binary' : 'baked binary'
+    return {
+      code: 0,
+      message: `rolled back to the ${restored} and pinned updates off; effective on next daemon launch`,
+    }
+  } catch (e) {
+    return { code: 1, message: `supervisor rollback failed: ${e instanceof Error ? e.message : String(e)}` }
+  }
+}
+
 // ── version ──────────────────────────────────────────────────────────────────
 
 /** The build digest is the running binary's own sha256 — the exact value the
@@ -270,7 +402,18 @@ export interface SpawnDeps {
 function realRun(bin: string, args: string[], timeoutMs: number): Promise<number> {
   return new Promise((resolve) => {
     let settled = false
-    const child = nodeSpawn(bin, args, { stdio: 'ignore', env: process.env })
+    let child: ReturnType<typeof nodeSpawn>
+    try {
+      // A non-executable candidate can throw ENOEXEC SYNCHRONOUSLY here, before
+      // any 'error' event fires. Without this guard the throw escapes the smoke
+      // test, skips the temp-file cleanup, and surfaces as an uncaught error
+      // instead of a clean "candidate failed" — the box must keep its binary,
+      // not crash the updater. Treat it exactly like a spawn error: exit 126.
+      child = nodeSpawn(bin, args, { stdio: 'ignore', env: process.env })
+    } catch {
+      resolve(126) // not executable / spawn error
+      return
+    }
     const timer = setTimeout(() => {
       if (settled) return
       settled = true
@@ -417,6 +560,16 @@ export interface UpdateOptions {
   /** Boot / best-effort mode: never hard-fail, keep the last-good binary. */
   bestEffort: boolean
   statePath: string
+  /**
+   * In-sandbox: stage the update for the entrypoint supervisor instead of
+   * self-swapping. On success the verified binary lands at `<stateDir>/agent.next`
+   * (+ `.sha256`) and the result asks the caller to exit {@link AGENT_SWAP_EXIT_CODE}.
+   * The supervisor then performs the atomic swap, health-supervision, and
+   * crash-loop rollback. Standalone (default) keeps the self-swap.
+   */
+  supervised?: boolean
+  /** Where `agent.next` is staged when {@link supervised}. Defaults to `agentStateDir()`. */
+  stateDir?: string
   fetchImpl?: typeof fetch
   spawn?: SpawnDeps
   /** Test seam: resolve the target directly instead of hitting the network. */
@@ -424,9 +577,11 @@ export interface UpdateOptions {
 }
 
 export interface UpdateResult {
-  /** 'current' = already up to date (no swap). 'updated' = swapped in a new
-   *  binary. 'failed' = kept the last-good binary. */
-  outcome: 'current' | 'updated' | 'failed'
+  /** 'current' = already up to date (no swap/stage). 'updated' = self-swapped a
+   *  new binary (standalone). 'staged' = wrote `agent.next` for the supervisor
+   *  and is asking the caller to exit {@link AGENT_SWAP_EXIT_CODE}. 'failed' =
+   *  kept the last-good binary. */
+  outcome: 'current' | 'updated' | 'staged' | 'failed'
   code: number
   message: string
 }
@@ -550,6 +705,23 @@ export async function performUpdate(opts: UpdateOptions): Promise<UpdateResult> 
     return { outcome: 'current', code: 0, message: 'already current' }
   }
 
+  // Supervised: if a prior pass already staged exactly this build, do not
+  // re-download it. Exit 75 again so a still-running daemon gets the swap it has
+  // not yet taken; a re-run from a shell just no-ops the download.
+  if (opts.supervised) {
+    const stateDir = opts.stateDir ?? agentStateDir()
+    let stagedSha: string | null = null
+    try {
+      stagedSha = readFileSync(join(stateDir, 'agent.next.sha256'), 'utf8').trim()
+    } catch {
+      /* nothing staged */
+    }
+    if (stagedSha === resolved.sha256 && existsSync(join(stateDir, 'agent.next'))) {
+      out(`kortixd already staged ${resolved.sha256.slice(0, 12)}; requesting supervisor swap (exit ${AGENT_SWAP_EXIT_CODE})`)
+      return { outcome: 'staged', code: AGENT_SWAP_EXIT_CODE, message: 'already staged' }
+    }
+  }
+
   // Fetch the bytes if the resolver only gave us a URL + digest.
   let bytes = resolved.bytes
   if (!bytes) {
@@ -576,10 +748,14 @@ export async function performUpdate(opts: UpdateOptions): Promise<UpdateResult> 
     )
   }
 
-  // Write to a temp file in the destination dir (same fs → atomic rename).
-  const tmp = join(dir, `.kortixd.download.${process.pid}.${Math.random().toString(36).slice(2, 10)}`)
+  // Write to a temp file on the SAME filesystem as its final destination, so the
+  // later rename is atomic. Standalone: the target's own dir. Supervised: the
+  // supervisor state dir, because `agent.next` lands there — not next to the
+  // running binary (which may be the baked floor on another mount).
+  const stageDir = opts.supervised ? (opts.stateDir ?? agentStateDir()) : dir
+  const tmp = join(stageDir, `.kortixd.download.${process.pid}.${Math.random().toString(36).slice(2, 10)}`)
   try {
-    mkdirSync(dir, { recursive: true })
+    mkdirSync(stageDir, { recursive: true })
     writeFileSync(tmp, bytes)
     chmodSync(tmp, 0o755)
   } catch (e) {
@@ -598,7 +774,33 @@ export async function performUpdate(opts: UpdateOptions): Promise<UpdateResult> 
     return fail(`candidate failed smoke test: ${smokeFail} — kept current binary`)
   }
 
-  // Atomic swap. Keep exactly one previous version for fast rollback.
+  // ── SUPERVISED: stage for the entrypoint supervisor; never self-swap ────────
+  // A process cannot overwrite its own running binary, and warm-fork/resume/
+  // restart reuse the VM without re-running boot — only the supervisor's staged
+  // swap survives those. So write `agent.next` (+ `.sha256`) and ask the caller
+  // to exit 75. The supervisor re-verifies the digest, renames it into
+  // `agent.current`, keeps `agent.prev`, and rolls back a crash-looper. kortixd
+  // does NOT touch the live binary here.
+  if (opts.supervised) {
+    try {
+      stageForSupervisor(stageDir, resolved.sha256, tmp)
+    } catch (e) {
+      try {
+        rmSync(tmp, { force: true })
+      } catch {
+        /* nothing to clean */
+      }
+      return fail(`could not stage binary for the supervisor: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    const label = resolved.version ? ` (${resolved.version})` : ''
+    out(
+      `kortixd staged ${resolved.sha256.slice(0, 12)}${label} at ${join(stageDir, 'agent.next')}; ` +
+        `requesting supervisor swap (exit ${AGENT_SWAP_EXIT_CODE})`,
+    )
+    return { outcome: 'staged', code: AGENT_SWAP_EXIT_CODE, message: 'staged for supervisor' }
+  }
+
+  // ── STANDALONE: atomic self-swap. Keep exactly one previous version. ────────
   try {
     copyFileSync(target, prev)
   } catch (e) {
@@ -651,6 +853,14 @@ async function cmdUpdate(binPath: string, argv: string[]): Promise<number> {
     flags['best-effort'] === true ||
     (process.env.KORTIXD_UPDATE_BEST_EFFORT ?? '') === '1'
   const targetPath = typeof flags.target === 'string' ? flags.target : binPath
+  // Context: supervised in-sandbox (stage for the entrypoint supervisor) vs
+  // standalone (self-swap). `--standalone` forces self-swap; `--supervised`
+  // forces staging (both mainly for testing / recovery).
+  const supervised =
+    flags.standalone === true
+      ? false
+      : flags.supervised === true || detectSupervised(binPath)
+  const stateDir = typeof flags['state-dir'] === 'string' ? flags['state-dir'] : agentStateDir()
   const result = await performUpdate({
     targetPath,
     from:
@@ -662,6 +872,8 @@ async function cmdUpdate(binPath: string, argv: string[]): Promise<number> {
     channel: typeof flags.channel === 'string' ? flags.channel : undefined,
     version: typeof flags.version === 'string' ? flags.version : undefined,
     bestEffort,
+    supervised,
+    stateDir,
     statePath: defaultStatePath(targetPath),
   })
   return result.code
@@ -690,7 +902,15 @@ export function performRollback(
 function cmdRollback(binPath: string, argv: string[]): number {
   const flags = parseFlags(argv)
   const targetPath = typeof flags.target === 'string' ? flags.target : binPath
-  const r = performRollback(targetPath, defaultStatePath(targetPath))
+  const supervised =
+    flags.standalone === true
+      ? false
+      : flags.supervised === true || detectSupervised(binPath)
+  // Supervised: operate the supervisor's rollback contract (restore agent.prev /
+  // drop back to the baked floor + latch the pin). Standalone: consume `.prev`.
+  const r = supervised
+    ? performSupervisorRollback(typeof flags['state-dir'] === 'string' ? flags['state-dir'] : agentStateDir())
+    : performRollback(targetPath, defaultStatePath(targetPath))
   if (r.code === 0) out(r.message)
   else err(`rollback: ${r.message}`)
   return r.code
@@ -706,8 +926,12 @@ USAGE
   kortixd version                 Print version and build digest.
   kortixd install [--dir <path>]  Install this binary onto PATH (idempotent;
                                   no-op if present, --force to overwrite).
-  kortixd update [flags]          Self-update to the current published build.
-  kortixd rollback                Revert to the previous binary (<name>.prev).
+  kortixd update [flags]          Update to the current published build.
+                                  In-sandbox: stage for the supervisor (exit 75).
+                                  Standalone: safe self-swap + auto-rollback.
+  kortixd rollback                Revert the last update. In-sandbox: operate the
+                                  supervisor contract (restore prev / baked floor,
+                                  pin). Standalone: restore <name>.prev.
   kortixd --health-check          Smoke-test: boot a health server and exit 0.
   kortixd --help                  Show this help.
 
@@ -719,7 +943,17 @@ UPDATE FLAGS
   --boot              Best-effort: never hard-fail; keep the last-good binary
                       and exit 0 so a boot sequence can proceed to \`serve\`.
                       (Also enabled by KORTIXD_UPDATE_BEST_EFFORT=1.)
+  --standalone        Force the self-swap path even inside a supervised sandbox.
+  --supervised        Force staging for the supervisor (exit 75) off-sandbox.
+  --state-dir <path>  Supervisor state dir for staging/rollback (testing).
   --target <path>     Update a binary other than the running one (testing).
+
+SUPERVISED VS STANDALONE
+  Inside a sandbox the entrypoint supervisor owns the binary swap. \`update\`
+  stages <state-dir>/agent.next (+ .sha256) and exits 75; the supervisor
+  re-verifies the digest, swaps atomically, health-supervises, and rolls back a
+  crash-looper. KORTIX_SUPERVISED=1 (set by the entrypoint) selects this path.
+  Off-sandbox, \`update\` self-swaps and auto-rolls-back as before.
 
 BOOT SEQUENCE (idempotent, run every start)
   kortixd install && kortixd update --boot && kortixd serve

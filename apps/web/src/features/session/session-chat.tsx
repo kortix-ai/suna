@@ -29,6 +29,7 @@ import {
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -664,6 +665,17 @@ interface SessionTurnProps {
    */
   isWorkingTurn: boolean;
   /**
+   * Suppress this turn's live busy indicator even though it is the working
+   * turn. Set only when `resolveWorkingTurn` fell back to a turn whose answer is
+   * already COMPLETE while queued prompts wait below it (every pending prompt
+   * still held in the inbox). Without it, that finished turn's "Thinking" row
+   * rendered ABOVE the just-sent (queued) message and then jumped down when the
+   * prompt started running — the reposition the transcript must never do. A
+   * finished turn shows nothing; the queued turns render as their own dimmed
+   * bubbles until one starts and legitimately becomes the working turn.
+   */
+  suppressBusyIndicator: boolean;
+  /**
    * A user message the agent has not reached yet — after the working turn,
    * with no assistant content. Drawn dimmed, like a queued prompt (it IS one:
    * the server forwarded it and OpenCode holds it until the next step), and
@@ -795,6 +807,7 @@ function SessionTurnImpl({
   isFirstTurn,
   sessionWorking,
   isWorkingTurn,
+  suppressBusyIndicator,
   pending,
   queueRow,
   queueHeld,
@@ -1817,7 +1830,11 @@ function SessionTurnImpl({
       )}
 
       {/* ── Working status indicator (always at the end while working) ── */}
-      {showTurnBusyIndicator({ working, hasError: !!turnError, isRetrying: !!retryInfo }) && (
+      {showTurnBusyIndicator({
+        working: working && !suppressBusyIndicator,
+        hasError: !!turnError,
+        isRetrying: !!retryInfo,
+      }) && (
         <div className="space-y-2">
           {retryInfo && retryMessage && (
             <SessionRetryDisplay
@@ -3262,6 +3279,24 @@ export function SessionChat({
   }, [workingTurn.workingTurnId]);
   const pendingTurnIds = useMemo(() => new Set(workingTurn.pendingTurnIds), [workingTurn]);
   /**
+   * Does the resolved working turn have a COMPLETED answer while queued prompts
+   * wait below it? `resolveWorkingTurn` falls back to the newest turn WITH
+   * content when every pending prompt is still held in the inbox (rule 4). If
+   * that turn's answer is already complete, its live busy row would render above
+   * the just-sent (queued) message and then jump down when the prompt starts
+   * running. In that one case the working turn shows no indicator — the queued
+   * turns are their own dimmed bubbles until one runs. Only a FINISHED answer
+   * suppresses; a turn streaming between steps has an OPEN assistant message, so
+   * `resolveWorkingTurn` rule 1 picks it and this stays false (no flicker).
+   */
+  const suppressWorkingTurnBusy = useMemo(() => {
+    if (workingTurn.pendingTurnIds.length === 0) return false;
+    const wt = turns.find((t) => t.userMessage.info.id === workingTurn.workingTurnId);
+    if (!wt || wt.assistantMessages.length === 0) return false;
+    const newest = wt.assistantMessages[wt.assistantMessages.length - 1];
+    return !!(newest.info as { time?: { completed?: number } }).time?.completed;
+  }, [turns, workingTurn]);
+  /**
    * ONE render key per turn. A turn keeps the id its bubble was FIRST painted
    * under (the optimistic origin), so a re-minted echo re-renders the same
    * element instead of mounting a new one. But an origin can transiently be
@@ -4428,18 +4463,34 @@ export function SessionChat({
 
   // Thread context for subsessions only (real parentID).
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
+
+  // The "Sub-session of <parent>" back destination, resolved the moment the
+  // parent session loads. It is a route-cache miss on the `?oc=` branch, so it
+  // is warmed below instead of being fetched cold on the click.
+  const backToParentHref = useMemo(() => {
+    if (!session?.parentID || !parentSessionData) return null;
+    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
+    if (!projectRoute) return null;
+    const [, projectId, projectSessionId] = projectRoute;
+    return parentSessionData.parentID
+      ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
+      : `/projects/${projectId}/sessions/${projectSessionId}`;
+  }, [session?.parentID, parentSessionData, pathname]);
+
+  useEffect(() => {
+    if (backToParentHref) router.prefetch(backToParentHref);
+  }, [backToParentHref, router]);
+
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
-    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
     return {
       parentTitle: parentSessionData.title || 'Parent session',
       onBackToParent: () => {
-        if (projectRoute) {
-          const [, projectId, projectSessionId] = projectRoute;
-          const href = parentSessionData.parentID
-            ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
-            : `/projects/${projectId}/sessions/${projectSessionId}`;
-          router.push(href);
+        if (backToParentHref) {
+          // nav-contract: prefetch-only — the composer's threadContext contract
+          // carries an opaque `onBackToParent: () => void`, so this control
+          // cannot render an anchor until that contract carries the href.
+          router.push(backToParentHref);
           return;
         }
         openTabAndNavigate({
@@ -4450,7 +4501,7 @@ export function SessionChat({
         });
       },
     };
-  }, [session?.parentID, parentSessionData, pathname, router]);
+  }, [session?.parentID, parentSessionData, backToParentHref, router]);
 
   // ---- Stable props for <SessionChatInput> (it's React.memo-wrapped, so every
   // prop below must keep referential identity across renders that don't
@@ -4921,20 +4972,21 @@ export function SessionChat({
                 'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
               )}
             </div>
-            {/* Soft nav, not `window.location.assign` — a full page reload
-                  tore down the whole app to move one route. */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                try {
-                  if (sessionId) useTabStore.getState().closeTab?.(sessionId);
-                } catch {}
-                router.push('/');
-              }}
-            >
-              {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
+            {/* An anchor, not a button: home is known at render time, so Next
+                  prefetches it and the click never runs a cold RSC fetch that
+                  could degrade into a full page load. */}
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href="/"
+                prefetch
+                onClick={() => {
+                  try {
+                    if (sessionId) useTabStore.getState().closeTab?.(sessionId);
+                  } catch {}
+                }}
+              >
+                {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
+              </Link>
             </Button>
           </div>
         ) : (
@@ -5129,59 +5181,58 @@ export function SessionChat({
                               CompactionMarker rendered by SessionTurn IS the
                               divider (rule–pill–rule), through every phase. */}
                           {suppressedFailedCompaction ? null : (
-                            <SessionTurn
-                              turn={turn}
-                              isLast={turn.userMessage.info.id === lastUserMessageId}
-                              ownsPlan={turn.userMessage.info.id === planAnchorId}
-                              sessionId={sessionId}
-                              sessionStatus={sessionStatus}
-                              permissions={pendingPermissions}
-                              questions={pendingQuestions}
-                              agentNames={agentNames}
-                              isFirstTurn={turnIndex === 0}
-                              sessionWorking={lastTurnWorking}
-                              isWorkingTurn={turn.userMessage.info.id === workingTurn.workingTurnId}
-                              pending={
-                                lastTurnWorking && pendingTurnIds.has(turn.userMessage.info.id)
-                              }
-                              queueRow={inboxRowsByMessageId.get(turn.userMessage.info.id) ?? null}
-                              queueHeld={queueRows.held}
-                              onQueueRemove={handleRemoveQueuedMessage}
-                              onQueueSendNow={handleQueueSendNow}
-                              onQueueRetry={handleRetryQueuedMessage}
-                              interruptedBeforeRun={interruptedTurnIds.has(
-                                turn.userMessage.info.id,
-                              )}
-                              isCompaction={hasCompaction}
-                              onOpenCompactionSummary={
-                                panel ? handleOpenCompactionSummary : undefined
-                              }
-                              providers={providers}
-                              commandMessages={commandMessagesRef.current}
-                              commands={commands}
-                              disableToolNavigation={disableToolNavigation}
-                              onPermissionReply={handlePermissionReply}
-                              onRewind={handleRewind}
-                              editingText={
-                                rewindTarget?.messageId === turn.userMessage.info.id
-                                  ? rewindTarget.text
-                                  : null
-                              }
-                              editPending={editSendPending || !!sessionState?.rewindPending}
-                              onEditCancel={handleEditCancel}
-                              onEditSend={handleEditSend}
-                              rewindDisabled={
-                                !!readOnly ||
-                                !sessionState ||
-                                isBusy ||
-                                sessionState.rewindPending ||
-                                // The runtime is not idle while queued prompts
-                                // are still on their way to it — a rewind mid-
-                                // delivery fails downstream with "Session is
-                                // busy" (measured); refuse it up front instead.
-                                promptInbox.prompts.length > 0
-                              }
-                            />
+                          <SessionTurn
+                            turn={turn}
+                            isLast={turn.userMessage.info.id === lastUserMessageId}
+                            ownsPlan={turn.userMessage.info.id === planAnchorId}
+                            sessionId={sessionId}
+                            sessionStatus={sessionStatus}
+                            permissions={pendingPermissions}
+                            questions={pendingQuestions}
+                            agentNames={agentNames}
+                            isFirstTurn={turnIndex === 0}
+                            sessionWorking={lastTurnWorking}
+                            isWorkingTurn={turn.userMessage.info.id === workingTurn.workingTurnId}
+                            suppressBusyIndicator={suppressWorkingTurnBusy}
+                            pending={
+                              lastTurnWorking && pendingTurnIds.has(turn.userMessage.info.id)
+                            }
+                            queueRow={inboxRowsByMessageId.get(turn.userMessage.info.id) ?? null}
+                            queueHeld={queueRows.held}
+                            onQueueRemove={handleRemoveQueuedMessage}
+                            onQueueSendNow={handleQueueSendNow}
+                            onQueueRetry={handleRetryQueuedMessage}
+                            interruptedBeforeRun={interruptedTurnIds.has(turn.userMessage.info.id)}
+                            isCompaction={hasCompaction}
+                            onOpenCompactionSummary={
+                              panel ? handleOpenCompactionSummary : undefined
+                            }
+                            providers={providers}
+                            commandMessages={commandMessagesRef.current}
+                            commands={commands}
+                            disableToolNavigation={disableToolNavigation}
+                            onPermissionReply={handlePermissionReply}
+                            onRewind={handleRewind}
+                            editingText={
+                              rewindTarget?.messageId === turn.userMessage.info.id
+                                ? rewindTarget.text
+                                : null
+                            }
+                            editPending={editSendPending || !!sessionState?.rewindPending}
+                            onEditCancel={handleEditCancel}
+                            onEditSend={handleEditSend}
+                            rewindDisabled={
+                              !!readOnly ||
+                              !sessionState ||
+                              isBusy ||
+                              sessionState.rewindPending ||
+                              // The runtime is not idle while queued prompts
+                              // are still on their way to it — a rewind mid-
+                              // delivery fails downstream with "Session is
+                              // busy" (measured); refuse it up front instead.
+                              promptInbox.prompts.length > 0
+                            }
+                          />
                           )}
                         </TurnViewport>
                       );

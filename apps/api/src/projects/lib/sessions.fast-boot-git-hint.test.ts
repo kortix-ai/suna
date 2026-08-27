@@ -94,3 +94,16 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
     expect(block).toContain('resolveCommitSha(authedProject, ref).catch(() => null)');
   });
 });
+
+describe('pi worker env model override', () => {
+  test('only an explicit session model overrides the baked agent model', async () => {
+    const source = await sessionsSource();
+    const fork = source.indexOf('const envPromise = piWorkerBoot');
+    const slim = source.indexOf('buildPiWorkerSessionEnvVars({', fork);
+    const block = source.slice(slim, source.indexOf('apiUrl:', slim));
+    expect(block).toContain("opencodeModelSource === 'explicit'");
+    // Env refs reach the worker verbatim, so the gateway prefix is stripped
+    // server-side (the baked path de-prefixes inside the worker).
+    expect(block).toContain("replace(/^kortix\\//, '')");
+  });
+});

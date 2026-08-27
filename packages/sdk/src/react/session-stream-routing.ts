@@ -32,6 +32,10 @@ export interface SessionStreamSinks {
   applyControlTurn: (observation: SessionTurnObservation) => void;
   applyControlQueue: (prompts: SessionPrompt[], atMs: number) => void;
   applyRuntimeStateLeg: (leg: unknown) => void;
+  /** The audit/approval watermark changed — a connector-gated action appeared
+   *  or was resolved. The sink invalidates the audit query; the payload is the
+   *  change-detection fingerprint the presence signal dedupes on. */
+  applyControlAudit: (fingerprint: string) => void;
 }
 
 function frameStamp(frame: SessionStreamFrame): number {
@@ -71,6 +75,18 @@ export function routeSessionStreamFrame(frame: SessionStreamFrame, sinks: Sessio
       sinks.applyRuntimeStateLeg(payload);
       return;
     }
+    case 'kortix.control.audit': {
+      // A snapshot with `known: false` is a read that failed — it says nothing
+      // changed, so it must not bump the watermark and invalidate for nothing.
+      if (payload?.known !== true) return;
+      // The whole watermark IS the fingerprint: `pending` + the two newest
+      // instants. The presence signal dedupes on it, so a reconnect replay of
+      // the same values invalidates nothing.
+      sinks.applyControlAudit(
+        JSON.stringify([payload.pending, payload.latest_at, payload.latest_resolved_at]),
+      );
+      return;
+    }
     default:
       // kortix.control.runtime / .mirror / .resync — nothing to store yet.
       return;
@@ -107,6 +123,14 @@ export interface RuntimeStateLegDeps {
   /** The projection deliberately trims question BODIES, so an unknown open
    *  question cannot be seeded — it must be read in full, once. */
   requestAskRecovery: (kind: 'questions') => void;
+  /**
+   * Seed one runtime-state COLLECTION (agents, commands, sessions) into the
+   * exact query cache its hook reads, so the panel paints from the bundle the
+   * open already fetched instead of issuing its own proxied `/agent`,
+   * `/command`, `/session` read. Optional: a caller with no query client (a
+   * pure test, the boot path before the client exists) simply omits it.
+   */
+  seedRuntimeCollection?: (kind: 'agents' | 'commands' | 'sessions', value: unknown[]) => void;
 }
 
 /** The fill-a-gap rule, restated from `use-opencode-events/helpers.ts`:
@@ -128,7 +152,23 @@ export function applyRuntimeStateLeg(leg: unknown, deps: RuntimeStateLegDeps): v
     statuses?: KnownSection<Record<string, { type: string }>>;
     permissions?: KnownSection<Array<{ id: string; sessionID: string }>>;
     questions?: KnownSection<Array<{ id: string; sessionID: string }>>;
+    agents?: KnownSection<unknown[]>;
+    commands?: KnownSection<unknown[]>;
+    sessions?: KnownSection<unknown[]>;
   };
+
+  // Seed the roster collections the bundle already carries — the daemon's
+  // `/kortix/opencode/state` returns agents/commands/sessions VERBATIM in the
+  // same shapes their hooks expect, so the panels read cache instead of each
+  // firing its own `/p/<box>/8000/{agent,command,session}` proxied read.
+  if (deps.seedRuntimeCollection) {
+    for (const kind of ['agents', 'commands', 'sessions'] as const) {
+      const section = state[kind];
+      if (section?.known === true && Array.isArray(section.value)) {
+        deps.seedRuntimeCollection(kind, section.value);
+      }
+    }
+  }
 
   if (state.statuses?.known === true && state.statuses.value) {
     const statuses = state.statuses.value;

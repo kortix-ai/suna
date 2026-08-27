@@ -51,6 +51,7 @@ import {
 } from '../../snapshots/builder';
 import { deleteProjectSandboxImage } from '../../snapshots/project-image-delete';
 import { config } from '../../config';
+import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
@@ -680,6 +681,34 @@ export async function provisionSessionSandbox(opts: {
       // §4). The guest holds a handle; the broker route substitutes server-side.
       let result: ProvisionResult;
       let attempts: number;
+      // P1.8 (harness/worker split): a pi worker boot tries the parked pool
+      // first. The claim delivers the exact env the create would have
+      // (session token + gateway URL included), so the box boots the same
+      // session either way; null falls through to the cold create unchanged.
+      const pooledClaim =
+        opts.metadata?.pi_worker_boot === true && providerName === 'daytona'
+          ? await claimParkedPiWorkerBox(providerCreateInput.envVars ?? {}).catch((err) => {
+              console.warn(
+                `[session-sandbox] pi pool claim errored for ${sandbox.sandboxId}; cold create:`,
+                err,
+              );
+              return null;
+            })
+          : null;
+      if (pooledClaim) {
+        result = {
+          externalId: pooledClaim.externalId,
+          baseUrl: pooledClaim.baseUrl,
+          metadata: {
+            provisionedBy: opts.userId,
+            daytonaSandboxId: pooledClaim.externalId,
+            snapshot: imageInfo!.snapshotName,
+            pooled: true,
+          },
+        };
+        attempts = 0;
+        tl.mark('pool-claim');
+      } else {
       try {
       ({ result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
         onAttemptStart: async (attempt, maxAttempts) => {
@@ -748,6 +777,12 @@ export async function provisionSessionSandbox(opts: {
           continue provisioning;
         }
         throw createErr;
+      }
+      }
+      // Refill toward target after every pi boot — a consumed claim leaves a
+      // hole, and a claim miss means the pool is empty. Fire-and-forget.
+      if (opts.metadata?.pi_worker_boot === true && providerName === 'daytona') {
+        void maintainPiWorkerPool();
       }
       bgExternalId = result.externalId;
       tl.mark(`provider-create:${attempts}x`);

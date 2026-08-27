@@ -46,6 +46,7 @@ import { useServerStore } from '../browser/stores/server-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { logger } from '../core/http/logger';
 import { isRuntimeLivenessEvent } from '../core/stream/keepalive';
+import { markCurrentRuntimeBundleApplied } from '../core/session/current-runtime';
 import { claimOpenBundle } from '../core/session/open-bundle';
 import { dropClientForUrl, getClient } from '../core/runtime/client';
 import type { SessionOpenBundleRuntime } from '../core/rest/projects-client/sessions';
@@ -55,6 +56,7 @@ import {
   type SessionStreamConnection,
 } from '../core/stream/session-stream-controller';
 import {
+  markSessionAuditWatermark,
   markSessionRuntimeChannelLive,
   markSessionStreamConnected,
 } from '../core/stream/session-stream-presence';
@@ -227,6 +229,17 @@ export function useSessionRuntimeStream(
       hasPendingQuestion: (id) => !!useOpenCodePendingStore.getState().questions[id],
       addPermission: (permission) => addPermission(permission as never),
       requestAskRecovery: () => recoverQuestions(),
+      seedRuntimeCollection: (kind, value) => {
+        // The bundle already fetched these; write them into the exact cache the
+        // hook reads so the panel never issues its own proxied roster read.
+        const key =
+          kind === 'agents'
+            ? opencodeKeys.agents()
+            : kind === 'commands'
+              ? opencodeKeys.commands()
+              : opencodeKeys.sessions();
+        queryClient.setQueryData(key, value);
+      },
     });
 
     const scope = sessionStreamScope(projectId, sessionId);
@@ -262,6 +275,12 @@ export function useSessionRuntimeStream(
         );
       },
       applyRuntimeStateLeg: (leg: unknown) => applyRuntimeStateLeg(leg, legDeps()),
+      applyControlAudit: (fingerprint: string) => {
+        // Push the change onto the scope's audit signal. The web audit surface
+        // reads it to invalidate its query and to stand its poll down — the
+        // control channel is the notify path now, the endpoint stays the read.
+        markSessionAuditWatermark(scope, fingerprint);
+      },
     };
 
     /** Re-read the tail of held transcripts — the honest response to any
@@ -296,6 +315,11 @@ export function useSessionRuntimeStream(
           // The bundle never rejects, but a claim must never block the stream.
         }
       }
+      // Whether or not a bundle landed, the roster seeds (if any) are now in
+      // cache — release the roster hooks so they read that cache. Without a
+      // bundle this lets them fall back to their own fetch; with one it wins
+      // the mount-vs-seed race so no redundant /agent,/command,/session fires.
+      if (!closed) markCurrentRuntimeBundleApplied();
       if (closed) return;
 
       connection = connectSessionStream({

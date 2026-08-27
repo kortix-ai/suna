@@ -21,6 +21,7 @@ import { opencodeTurnInFlight, readPinnedSessionId } from './opencode-turn-state
 import { OPENCODE_HOME } from './opencode'
 import { createAbortRouter } from './routes/abort'
 import { createEnvRouter } from './routes/env'
+import { createEnvRpcRouter } from './routes/env-rpc'
 import { createGitRouter } from './routes/git'
 import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
@@ -200,6 +201,12 @@ export function buildOpencodeApp(
   kortixRouter.route('/git/', gitRouter)
   kortixRouter.route('/pty', ptyRouter)
   kortixRouter.route('/pty/', ptyRouter)
+  // Harness/worker split (P1.7): the pi worker's ExecutionEnv, one op per POST.
+  // Self-authenticated like /pty (X-Kortix-User-Context signed with this box's
+  // KORTIX_TOKEN — the worker holds the same session credential).
+  const envRpcRouter = createEnvRpcRouter(cfg)
+  kortixRouter.route('/env-rpc', envRpcRouter)
+  kortixRouter.route('/env-rpc/', envRpcRouter)
   // /kortix/part — attachment bytes on demand; see routes/part.ts.
   const partRouter = createPartRouter(opencode, { sidecarDir: defaultSidecarDir(OPENCODE_HOME) })
   kortixRouter.route('/part', partRouter)

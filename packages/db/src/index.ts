@@ -76,6 +76,7 @@ export {
   providerTransitions,
   providerTransitionStatusEnum,
   sandboxTemplates,
+  sessionEnvironments,
   sessionSandboxes,
   sessionSandboxStatusEnum,
   sessionTurns,

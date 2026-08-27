@@ -192,26 +192,19 @@ export function useDeleteOperation() {
   };
 }
 
-// Hook to handle side effects (navigation, auto-reset)
+// Hook to handle side effects (auto-reset)
+//
+// It used to also navigate: on `operation === 'success' && isActive` it wrote
+// `window.location.pathname = '/dashboard'`. That was a document load onto a
+// route this app does not have — `/dashboard` is not in src/app. Nothing sets
+// `operation` to 'success' either: `useDeleteOperationStore` and
+// `useDeleteOperation` have no consumer, so `performDelete` never runs. The
+// navigation was dead code pointing at a 404, so it is gone rather than
+// repointed — a global "go somewhere" effect needs an owner that asks for it.
 export function useDeleteOperationEffects() {
   const operation = useDeleteOperationStore((s) => s.operation);
   const isActive = useDeleteOperationStore((s) => s.isActive);
   const reset = useDeleteOperationStore((s) => s.reset);
-
-  useEffect(() => {
-    if (operation === 'success' && isActive) {
-      // Delay navigation to allow UI feedback
-      const timer = setTimeout(() => {
-        try {
-          // Use window.location for reliable navigation
-          window.location.pathname = '/dashboard';
-        } catch (error) {
-          console.error('Navigation error:', error);
-        }
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [operation, isActive]);
 
   useEffect(() => {
     if (operation === 'success' && !isActive) {

@@ -554,7 +554,7 @@ jobs:
       # first kpp2 rollout. Automatic pushes remain false. A deliberate manual
       # surface=all dispatch can enable it after the rollout gates pass.
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_FAST_COLD_BOOT_ENABLED":"${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && 'true' || 'false' }}","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com"}
+        {"KORTIX_FAST_COLD_BOOT_ENABLED":"${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && 'true' || 'false' }}","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

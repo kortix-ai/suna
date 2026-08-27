@@ -151,9 +151,9 @@ function parseCursorQuery(c: {
 projectsApp.openapi(
   createRoute({
     method: 'get',
-    path: '/{projectId}/sessions/{sessionId}/stream',
+    path: '/{projectId}/sessions/{sessionId}/events',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/stream',
+    summary: 'GET /:projectId/sessions/:sessionId/events',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),

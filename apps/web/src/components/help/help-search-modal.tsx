@@ -82,12 +82,22 @@ export function HelpSearchModal({ open, onOpenChange }: HelpSearchModalProps) {
   const handleSelect = (url: string) => {
     onOpenChange(false);
     setSearch('');
+    // nav-contract: prefetch-only — cmdk 0.2.1 fires onSelect on Enter without
+    // dispatching a DOM click, so a row cannot be an anchor. The open effect
+    // below warms every destination instead.
     router.push(url);
   };
 
   useEffect(() => {
     if (!open) setSearch('');
   }, [open]);
+
+  // Warm every help page the moment the dialog opens. helpPages is a
+  // module-level constant, so the whole set is one prefetch each.
+  useEffect(() => {
+    if (!open) return;
+    for (const page of helpPages) router.prefetch(page.url);
+  }, [open, router]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

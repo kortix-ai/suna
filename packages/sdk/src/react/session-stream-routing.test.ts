@@ -12,20 +12,24 @@ function sinks(): SessionStreamSinks & {
   turns: unknown[];
   queues: Array<{ prompts: unknown[]; atMs: number }>;
   legs: unknown[];
+  audits: string[];
 } {
   const runtimeEvents: Array<{ type: string; properties: unknown }> = [];
   const turns: unknown[] = [];
   const queues: Array<{ prompts: unknown[]; atMs: number }> = [];
   const legs: unknown[] = [];
+  const audits: string[] = [];
   return {
     runtimeEvents,
     turns,
     queues,
     legs,
+    audits,
     applyRuntimeEvent: (event) => runtimeEvents.push(event as never),
     applyControlTurn: (observation) => turns.push(observation),
     applyControlQueue: (prompts, atMs) => queues.push({ prompts: [...prompts], atMs }),
     applyRuntimeStateLeg: (leg) => legs.push(leg),
+    applyControlAudit: (fingerprint) => audits.push(fingerprint),
   };
 }
 
@@ -130,6 +134,43 @@ describe('routeSessionStreamFrame', () => {
     expect(s.legs).toEqual([leg]);
   });
 
+  test('a known audit watermark becomes a change fingerprint', () => {
+    const s = sinks();
+    routeSessionStreamFrame(
+      {
+        channel: 'control',
+        type: 'kortix.control.audit',
+        cseq: 6,
+        at: 1,
+        payload: {
+          known: true,
+          pending: 2,
+          latest_at: '2026-08-27T00:00:00.000Z',
+          latest_resolved_at: null,
+        },
+      } as SessionStreamFrame,
+      s,
+    );
+    expect(s.audits).toEqual([
+      JSON.stringify([2, '2026-08-27T00:00:00.000Z', null]),
+    ]);
+  });
+
+  test('a known-false audit read bumps nothing (it says nothing changed)', () => {
+    const s = sinks();
+    routeSessionStreamFrame(
+      {
+        channel: 'control',
+        type: 'kortix.control.audit',
+        cseq: 7,
+        at: 1,
+        payload: { known: false },
+      } as SessionStreamFrame,
+      s,
+    );
+    expect(s.audits).toEqual([]);
+  });
+
   test('unrecognized control types are ignored, not misapplied', () => {
     const s = sinks();
     routeSessionStreamFrame(
@@ -145,6 +186,7 @@ describe('routeSessionStreamFrame', () => {
     expect(s.turns).toEqual([]);
     expect(s.queues).toEqual([]);
     expect(s.legs).toEqual([]);
+    expect(s.audits).toEqual([]);
   });
 });
 

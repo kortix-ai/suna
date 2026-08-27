@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  AGENT_SWAP_EXIT_CODE,
+  detectSupervised,
   parseFlags,
   performRollback,
+  performSupervisorRollback,
   performUpdate,
   type ResolvedTarget,
   type SpawnDeps,
@@ -138,6 +141,124 @@ describe('performUpdate', () => {
     // The cache file now exists and records the digest.
     const cache = JSON.parse(readFileSync(opts.statePath, 'utf8'))
     expect(cache.current.sha256).toBe(sha(current))
+  })
+})
+
+describe('performUpdate — supervised (in-sandbox staging)', () => {
+  test('stages agent.next + sha256, exits 75, and never touches the live binary', async () => {
+    // The running binary is V1; the target build is V2.
+    writeFileSync(join(dir, 'kortixd'), Buffer.from('BINARY-V1'))
+    const next = Buffer.from('BINARY-V2')
+    const stateDir = join(dir, 'state')
+    const res = await performUpdate(
+      baseOpts({ resolveTarget: resolveTo(next), supervised: true, stateDir }),
+    )
+    // Asks the caller to exit 75 so the supervisor performs the swap.
+    expect(res.outcome).toBe('staged')
+    expect(res.code).toBe(AGENT_SWAP_EXIT_CODE)
+    // The live binary is UNTOUCHED — kortixd never self-swaps in-sandbox.
+    expect(readFileSync(join(dir, 'kortixd')).toString()).toBe('BINARY-V1')
+    expect(existsSync(join(dir, 'kortixd.prev'))).toBe(false)
+    // The staged slot the supervisor reads holds the verified V2 + its digest.
+    expect(readFileSync(join(stateDir, 'agent.next')).toString()).toBe('BINARY-V2')
+    expect(readFileSync(join(stateDir, 'agent.next.sha256'), 'utf8').trim()).toBe(sha(next))
+  })
+
+  test('no-op when the running binary already matches the target', async () => {
+    const current = Buffer.from('BINARY-V1')
+    writeFileSync(join(dir, 'kortixd'), current)
+    const stateDir = join(dir, 'state')
+    const res = await performUpdate(
+      baseOpts({ resolveTarget: resolveTo(current), supervised: true, stateDir }),
+    )
+    expect(res.outcome).toBe('current')
+    expect(res.code).toBe(0)
+    expect(existsSync(join(stateDir, 'agent.next'))).toBe(false)
+  })
+
+  test('a candidate that fails its smoke test is never staged', async () => {
+    writeFileSync(join(dir, 'kortixd'), Buffer.from('BINARY-V1'))
+    const next = Buffer.from('BINARY-V2-BROKEN')
+    const stateDir = join(dir, 'state')
+    // Any candidate whose path is not the live target fails its smoke test —
+    // the staged temp file is a candidate, so it fails.
+    const spawn = spawnWith((bin) => (bin.endsWith('kortixd') ? 0 : 1))
+    const res = await performUpdate(
+      baseOpts({ resolveTarget: resolveTo(next), supervised: true, stateDir, spawn }),
+    )
+    expect(res.outcome).toBe('failed')
+    expect(existsSync(join(stateDir, 'agent.next'))).toBe(false)
+    expect(existsSync(join(stateDir, 'agent.next.sha256'))).toBe(false)
+  })
+
+  test('a re-run that finds the build already staged asks for the swap without re-staging', async () => {
+    writeFileSync(join(dir, 'kortixd'), Buffer.from('BINARY-V1'))
+    const next = Buffer.from('BINARY-V2')
+    const stateDir = join(dir, 'state')
+    // First pass stages it.
+    await performUpdate(baseOpts({ resolveTarget: resolveTo(next), supervised: true, stateDir }))
+    // Second pass: agent.next.sha256 already matches → staged, exit 75.
+    const res = await performUpdate(
+      baseOpts({ resolveTarget: resolveTo(next), supervised: true, stateDir }),
+    )
+    expect(res.outcome).toBe('staged')
+    expect(res.code).toBe(AGENT_SWAP_EXIT_CODE)
+    expect(res.message).toBe('already staged')
+  })
+})
+
+describe('detectSupervised', () => {
+  const prev = process.env.KORTIX_SUPERVISED
+  afterEach(() => {
+    if (prev === undefined) delete process.env.KORTIX_SUPERVISED
+    else process.env.KORTIX_SUPERVISED = prev
+  })
+  test('KORTIX_SUPERVISED=1 selects the supervised path', () => {
+    process.env.KORTIX_SUPERVISED = '1'
+    expect(detectSupervised('/anything/kortixd')).toBe(true)
+  })
+  test('a normal standalone binary is not supervised', () => {
+    delete process.env.KORTIX_SUPERVISED
+    expect(detectSupervised(join(dir, 'kortixd'))).toBe(false)
+  })
+})
+
+describe('performSupervisorRollback', () => {
+  test('with a predecessor: restores agent.prev and latches the pin', () => {
+    const state = join(dir, 'state')
+    // Prepare the supervisor state as it looks after one update.
+    mkdirSync(state, { recursive: true })
+    writeFileSync(join(state, 'agent.current'), 'UPDATED')
+    writeFileSync(join(state, 'agent.prev'), 'PREVIOUS')
+    writeFileSync(join(state, 'agent.next'), 'STAGED')
+    writeFileSync(join(state, 'agent.next.sha256'), 'deadbeef\n')
+    const r = performSupervisorRollback(state)
+    expect(r.code).toBe(0)
+    expect(readFileSync(join(state, 'agent.current')).toString()).toBe('PREVIOUS')
+    expect(existsSync(join(state, 'agent.prev'))).toBe(false)
+    expect(existsSync(join(state, 'agent.pinned'))).toBe(true)
+    // A staged build is discarded so the box does not re-stage what was rejected.
+    expect(existsSync(join(state, 'agent.next'))).toBe(false)
+    expect(existsSync(join(state, 'agent.next.sha256'))).toBe(false)
+  })
+
+  test('no predecessor: drops back to the baked floor and pins', () => {
+    const state = join(dir, 'state')
+    mkdirSync(state, { recursive: true })
+    writeFileSync(join(state, 'agent.current'), 'FIRST-UPDATE-BAD')
+    const r = performSupervisorRollback(state)
+    expect(r.code).toBe(0)
+    // Removing the override drops the box back to the immutable baked binary.
+    expect(existsSync(join(state, 'agent.current'))).toBe(false)
+    expect(existsSync(join(state, 'agent.pinned'))).toBe(true)
+  })
+
+  test('nothing to roll back: no agent.current → non-zero, box already on baked', () => {
+    const state = join(dir, 'state')
+    mkdirSync(state, { recursive: true })
+    const r = performSupervisorRollback(state)
+    expect(r.code).toBe(1)
+    expect(r.message).toContain('no update to roll back')
   })
 })
 

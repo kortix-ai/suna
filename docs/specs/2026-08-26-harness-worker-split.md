@@ -304,6 +304,37 @@ persistent multiplexed connection (never per-call HTTP — see "What we measure"
 - **Proof:** a session that never calls a compute tool provisions **zero**
   sandboxes, asserted against the DB. One that does provisions exactly one.
 
+> **Shipped 2026-08-27** in two slices. E1 (PR #6986): `session_environments`
+> table + `POST /v1/projects/:pid/sessions/:sid/environment/ensure` — the env
+> box is the full daemon image on the session branch, booted with the SESSION's
+> own service key and `KORTIX_BOOTSTRAP_OPENCODE_SESSION=0`; the response hands
+> the worker a provider-edge origin + token, so worker↔environment traffic
+> never transits the session proxy. E2: the daemon gains `/kortix/env-rpc`
+> (ExecutionEnv ops, self-authenticated like `/pty`) and the worker gains
+> `LazyKortixEnv` — pi's built-in bash/read/write/edit tools attach on first
+> use.
+>
+> **Two recorded deviations from the letter of this plan.** (1) *P1.2's "tools
+> live in `@kortix/sdk`"*: the worker speaks the daemon surface directly. The
+> worker is platform infrastructure (like the daemon, which also consumes no
+> SDK), it is workspace-excluded with npm-pinned deps and cannot depend on
+> unpublished SDK changes, and pi's own tools already carry the ExecutionEnv
+> seam — reimplementing them as SDK clients would have bought a package
+> boundary at the cost of the tools' ergonomics. The SDK tool pack remains the
+> right shape for HOST-side consumers and stays on the backlog. (2) *"one
+> persistent multiplexed connection"*: v1 ships the keep-alive transport with
+> the retirement-retry guard over the provider edge (the G0 measurement path);
+> the ws multiplex upgrade slots in behind the same `RpcTransport` interface.
+
+### P1.6b — Worker pool (added 2026-08-27, shipped as "P1.8" in PRs #6981/#6985)
+
+Not in the original plan; the cold-boot decomposition demanded it. Parked
+worker boxes (park-mode entrypoint + single-accept claim server) claimed at
+session create; Daytona labels are the registry; pure accelerator with cold
+fallback. Measured on dev: create→ready 6.5–7.7 s claimed vs 8.5–10 s cold.
+Note the PR titles say "P1.8" — that name collided with this plan's
+history-without-runtime item, which remains OPEN below.
+
 ### P1.8 — History readable with nothing running
 
 Serve session history without touching a runtime.

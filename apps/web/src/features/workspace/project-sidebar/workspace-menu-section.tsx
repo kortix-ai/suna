@@ -25,8 +25,9 @@
 
 import { GearSixIcon as CogOne, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useParams, usePathname } from 'next/navigation';
+import { useMemo, useState, type MouseEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -44,7 +45,9 @@ import {
   groupWorkspacesByAccount,
   resolveSwitcherAccountId,
   resolveWorkspaceRowNavigation,
+  type WorkspaceRowNavigation,
 } from '@/features/workspace/project-sidebar/workspace-grouping';
+import { isModifiedClick } from '@/lib/navigation/modified-click';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
@@ -56,7 +59,6 @@ import { contract, qk } from '@kortix/sdk/react';
 import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 
 export function WorkspaceMenuSection() {
-  const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
@@ -138,22 +140,37 @@ export function WorkspaceMenuSection() {
   // No explicit close: these are `DropdownMenuItem`s, and Radix closes the menu
   // on select unless the handler calls `preventDefault`.
   //
+  // Side effects only — the row IS the anchor now, so it carries the
+  // navigation itself. This handler must never call `preventDefault`: that
+  // cancels the anchor and the click goes nowhere.
+  //
   // Two destinations, not one — see `resolveWorkspaceRowNavigation`. The row
   // you are already in used to `return` here, so clicking the one row the menu
   // marks with a checkmark spent the click and did nothing; it now opens that
   // workspace's ACCOUNT settings. `beginSwitch` and the account-store write are
   // switch-only: there is no project switch to narrate, and the account is
   // already the selected one.
-  const openWorkspaceRow = (project: KortixProject) => {
-    const target = resolveWorkspaceRowNavigation(project, activeProjectId);
-    if (target.kind === 'switch') {
-      beginSwitch(project.project_id);
-      // Keep the account store in step with the workspace actually being
-      // opened; otherwise account-scoped surfaces keep answering for the
-      // previous one.
-      if (project.account_id !== selectedAccountId) setSelectedAccountId(project.account_id);
-    }
-    router.push(target.href);
+  //
+  // It takes the click event because a modified click must NOT run any of this.
+  // Radix fires `onSelect` for every activation, but `next/link` deliberately
+  // bails out of the client navigation on a modified event
+  // (node_modules/next/dist/client/link.js — `isModifiedEvent`) and lets the
+  // browser open a new tab. Without this guard, cmd-clicking a row to open a
+  // workspace beside the current one repointed the CURRENT tab's account store
+  // at the other account and left its switch overlay spinning for a navigation
+  // that never happened here.
+  const startWorkspaceRow = (
+    event: MouseEvent<HTMLAnchorElement>,
+    project: KortixProject,
+    target: WorkspaceRowNavigation,
+  ) => {
+    if (target.kind !== 'switch') return;
+    if (isModifiedClick(event)) return;
+    beginSwitch(project.project_id);
+    // Keep the account store in step with the workspace actually being
+    // opened; otherwise account-scoped surfaces keep answering for the
+    // previous one.
+    if (project.account_id !== selectedAccountId) setSelectedAccountId(project.account_id);
   };
 
   return (
@@ -193,12 +210,17 @@ export function WorkspaceMenuSection() {
       {switcherAccountId ? (
         <>
           <div className="p-0.5">
-            <DropdownMenuItem
-              onSelect={() => router.push(`/accounts/${switcherAccountId}`)}
-              className="cursor-pointer px-1.5"
-            >
-              <CogOne />
-              <span className="min-w-0 flex-1 truncate">Account settings</span>
+            {/* An anchor, not a handler. A `router.push` from a menu row runs
+                the RSC fetch cold at click time, and that fetch turns into a
+                full document load whenever it comes back wrong — an auth
+                bounce, a build-id skew mid-deploy, a network blip. A
+                prefetched `<Link>` already holds the payload, so the click
+                never runs it. `prefetch` explicitly, not the `auto` default. */}
+            <DropdownMenuItem asChild className="cursor-pointer px-1.5">
+              <Link href={`/accounts/${switcherAccountId}`} prefetch>
+                <CogOne />
+                <span className="min-w-0 flex-1 truncate">Account settings</span>
+              </Link>
             </DropdownMenuItem>
           </div>
           <DropdownMenuSeparator />
@@ -236,39 +258,57 @@ export function WorkspaceMenuSection() {
                     workspace.project_id,
                     activeProjectId ?? null,
                   );
+                  // Resolved during render, which is the whole point: the row
+                  // renders as an anchor instead of a button that discovers its
+                  // destination at click time. A `router.push` from a menu row
+                  // runs the RSC fetch cold, and that fetch degrades into a
+                  // full document load whenever it answers wrong — an auth
+                  // bounce, a build-id skew mid-deploy, a network blip.
+                  const target = resolveWorkspaceRowNavigation(workspace, activeProjectId);
                   return (
                     <DropdownMenuItem
                       key={workspace.project_id}
+                      asChild
                       disabled={loading}
-                      onSelect={() => openWorkspaceRow(workspace)}
                       className={cn(
                         'group/workspace-row cursor-pointer px-1.5',
                         active && 'bg-muted/80',
                       )}
                     >
-                      <EntityAvatar label={workspace.name} emoji={workspace.icon} size="sm" />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {workspace.name}
-                      </span>
-                      {loading ? (
-                        <Loading className="text-muted-foreground size-3.5" />
-                      ) : active ? (
-                        // The active row navigates to account settings rather
-                        // than switching, so pointing at it swaps the "you are
-                        // here" check for the destination's own icon. Stacked
-                        // rather than swapped in the tree so the trailing
-                        // column keeps one width and the label never reflows.
-                        <span className="relative size-4 shrink-0">
-                          <CheckCircleSolid
-                            weight="fill"
-                            className="text-kortix-green absolute top-0 left-0 transition-opacity duration-150 group-data-[highlighted]/workspace-row:opacity-0"
-                          />
-                          <CogOne
-                            aria-hidden
-                            className="text-muted-foreground absolute top-0 left-0 opacity-0 transition-opacity duration-150 group-data-[highlighted]/workspace-row:opacity-100"
-                          />
+                      {/* Default `auto` prefetch, not `prefetch`. This list is
+                          every workspace in every account, so a forced full
+                          prefetch would render one `/projects/<id>` RSC payload
+                          per visible row on every submenu open. `auto` fills the
+                          segment cache to `projects/[id]/loading.tsx`, which is
+                          the boundary the click needs. */}
+                      <Link
+                        href={target.href}
+                        onClick={(event) => startWorkspaceRow(event, workspace, target)}
+                      >
+                        <EntityAvatar label={workspace.name} emoji={workspace.icon} size="sm" />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          {workspace.name}
                         </span>
-                      ) : null}
+                        {loading ? (
+                          <Loading className="text-muted-foreground size-3.5" />
+                        ) : active ? (
+                          // The active row navigates to account settings rather
+                          // than switching, so pointing at it swaps the "you are
+                          // here" check for the destination's own icon. Stacked
+                          // rather than swapped in the tree so the trailing
+                          // column keeps one width and the label never reflows.
+                          <span className="relative size-4 shrink-0">
+                            <CheckCircleSolid
+                              weight="fill"
+                              className="text-kortix-green absolute top-0 left-0 transition-opacity duration-150 group-data-[highlighted]/workspace-row:opacity-0"
+                            />
+                            <CogOne
+                              aria-hidden
+                              className="text-muted-foreground absolute top-0 left-0 opacity-0 transition-opacity duration-150 group-data-[highlighted]/workspace-row:opacity-100"
+                            />
+                          </span>
+                        ) : null}
+                      </Link>
                     </DropdownMenuItem>
                   );
                 })}

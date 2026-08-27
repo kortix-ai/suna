@@ -81,6 +81,30 @@ export const uncoveredAllow: AllowEntry[] = [
     path: "/v1/webhooks/teams/oauth/callback",
     reason: "Teams admin-consent OAuth callback — browser redirect from Microsoft (admin_consent+tenant), not an API client route; mirrors the slack oauth callback",
   },
+  {
+    method: "POST",
+    path: "/v1/projects/:*/sessions/:*/environment/ensure",
+    reason:
+      "DEBT. Harness/worker split P1.7: lazily provisions the pi session's compute environment — a REAL cloud sandbox, which the local flow profile explicitly excludes, so no local flow can exercise it yet. Auth ordering, the session-caller self-scope, and the pi-worker slug gate are pinned source-level in apps/api/src/projects/routes/session-environment.test.ts; the live contract is verified against dev. Needs a staging flow once the target-full profile grows a pi lane.",
+  },
+  {
+    method: "GET",
+    path: "/v1/projects/:*/sessions/:*/environment",
+    reason:
+      "DEBT. Read-only status sibling of environment/ensure (same auth gate, never provisions) — same cloud-sandbox exclusion keeps it out of local flows; pinned in the same source test.",
+  },
+  {
+    method: "POST",
+    path: "/v1/projects/:*/sessions/:*/environment/stop",
+    reason:
+      "DEBT. Stop sibling of environment/ensure — same cloud-sandbox exclusion; pinned in the same source test.",
+  },
+  {
+    method: "GET",
+    path: "/v1/git/:*/fast-boot-bundle",
+    reason:
+      "DEBT, not a considered exemption. Route shipped with the fast-git-boot work (#6976) but the manifest was not regenerated then; the canonical regen for the session-environment routes surfaced it. Nothing covers it — this entry keeps the gap visible instead of re-hiding it behind a stale manifest.",
+  },
 ];
 
 export const externalRoutes: AllowEntry[] = [

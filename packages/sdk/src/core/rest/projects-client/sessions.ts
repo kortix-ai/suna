@@ -804,7 +804,7 @@ export async function getSessionOpenBundle(
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionOpenBundle>(
-      `/projects/${projectId}/sessions/${sessionId}/open-bundle${qs ? `?${qs}` : ''}`,
+      `/projects/${projectId}/sessions/${sessionId}/snapshot${qs ? `?${qs}` : ''}`,
       { signal: options?.signal },
     ),
   );

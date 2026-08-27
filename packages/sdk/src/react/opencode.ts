@@ -194,6 +194,11 @@ export {
   type SessionTurnObservation,
   type UseSessionWorkingOptions,
 } from './use-session-working';
+export {
+  useSessionAuditSignal,
+  useSessionStreamPresence,
+  sessionStreamScope,
+} from './use-session-stream-presence';
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
 export { useRuntimeBootStalled, RUNTIME_BOOT_STALL_MS } from './use-runtime-boot-stalled';
 export {

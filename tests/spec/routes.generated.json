@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 630,
+  "count": 634,
   "routes": [
     {
       "method": "GET",
@@ -1059,6 +1059,10 @@
       "path": "/v1/git/:project/compiled-runtime"
     },
     {
+      "method": "GET",
+      "path": "/v1/git/:project/fast-boot-bundle"
+    },
+    {
       "method": "POST",
       "path": "/v1/git/:project/git-receive-pack"
     },
@@ -1991,12 +1995,24 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/config"
     },
     {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/model"
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/environment"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/environment/ensure"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/environment/stop"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/open-bundle"
+      "path": "/v1/projects/:projectId/sessions/:sessionId/events"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/model"
     },
     {
       "method": "GET",
@@ -2067,16 +2083,16 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/sharing"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/snapshot"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/start"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/stop"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/stream"
     },
     {
       "method": "GET",
