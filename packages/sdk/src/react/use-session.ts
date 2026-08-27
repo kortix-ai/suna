@@ -53,7 +53,6 @@ import { setCurrentRuntime } from '../core/session/current-runtime';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails } from '../core/turns/errors';
-import { startGiveUpExpiryAtMs } from './session-start-giveup';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
@@ -81,6 +80,7 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { useSessionSync } from './use-session-sync';
+import { useSessionStartGiveUp } from './use-session-start-give-up';
 import { useSessionWorking } from './use-session-working';
 import { useVisibleAgents } from './use-visible-agents';
 
@@ -178,7 +178,11 @@ export function shouldPollSessionStart(
  * is the safe direction — it never cuts short a legitimate wake, only delays
  * how quickly a genuine outage surfaces its error card.
  */
-export const START_INCONCLUSIVE_GIVE_UP_MS = 45_000;
+export {
+  START_INCONCLUSIVE_GIVE_UP_MS,
+  hasStartGivenUp,
+  nextInconclusiveSince,
+} from './use-session-start-give-up';
 
 /**
  * Has `/start` been returning nothing usable — no data, no error — for at
@@ -188,18 +192,6 @@ export const START_INCONCLUSIVE_GIVE_UP_MS = 45_000;
  * caller stop waiting on it" are different questions once the first answer
  * is permanently yes.
  */
-export function hasStartGivenUp(
-  data: SessionStartResult | null | undefined,
-  error: unknown,
-  inconclusiveSinceMs: number | null,
-  nowMs: number,
-): boolean {
-  if (data || error) return false;
-  return (
-    inconclusiveSinceMs !== null && nowMs - inconclusiveSinceMs >= START_INCONCLUSIVE_GIVE_UP_MS
-  );
-}
-
 /**
  * Compute the next value for the "inconclusive since" clock that feeds
  * {@link hasStartGivenUp}, given one poll tick's outcome. Pure and separate
@@ -217,30 +209,17 @@ export function hasStartGivenUp(
  *   up" nor is it "still working" — it hasn't started. A stamp taken while
  *   disabled must not survive into the enabled window.
  * - Data or error arrived → clear to `null`. The poll said SOMETHING.
- * - Enabled, inconclusive (no data, no error), not mid-fetch → arm at
+ * - Enabled and inconclusive (no data, no error) → arm at
  *   `nowMs` if nothing is armed yet; otherwise keep the existing stamp — the
  *   clock starts once, at the FIRST inconclusive tick, not every tick.
- * - Mid-fetch → keep whatever is already armed; a fetch in flight is not
- *   itself informative either way, and time spent waiting on it still counts.
+ * - The first mid-fetch state also arms the clock. A request that never settles
+ *   must reach the same bounded verdict as repeated empty responses.
  *
  * Session-identity resetting (`projectId`/`sessionId` changing under a reused
  * hook instance) is handled by a separate effect, not here — this function
  * has no session id to key on by design, matching the narrow input the
  * `useEffect` actually has on each tick.
  */
-export function nextInconclusiveSince(input: {
-  current: number | null;
-  enabled: boolean;
-  hasData: boolean;
-  hasError: boolean;
-  isFetching: boolean;
-  nowMs: number;
-}): number | null {
-  if (!input.enabled) return null;
-  if (input.hasData || input.hasError) return null;
-  if (input.isFetching) return input.current;
-  return input.current ?? input.nowMs;
-}
 
 /**
  * Whether the `/start` poll should be treated as SETTLED — resolved, failed,
@@ -906,90 +885,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // error — so `computeStartSettled` can bound the "given up" case (see
   // START_INCONCLUSIVE_GIVE_UP_MS) instead of waiting on a poll that a
   // swallowed transport failure can keep alive forever. `nextInconclusiveSince`
-  // owns the arm/reset decision (pure, unit-tested); the effects here are thin
-  // callers of it. Only the RAW TIMESTAMP lives in a ref — `hasGivenUp` below
-  // is the one piece of *derived* state, and everything else `phase` needs
-  // (`enabled`/`isFetching`/`data`/`error`) is read fresh at render, never
-  // stored (see the comment on `startSettled` below for why).
-  const startInconclusiveSinceRef = useRef<number | null>(null);
-  const [startGivenUp, setStartGivenUp] = useState(false);
-  // A new session gets a fresh clock AND a fresh give-up verdict. This hook
-  // instance is reused across session navigation (see the switch effect
-  // below), and neither may bleed from a DIFFERENT (projectId, sessionId)
-  // into this one's give-up budget. Declared before the arming effect so both
-  // clear first, within the same commit, when the session changes.
-  useEffect(() => {
-    startInconclusiveSinceRef.current = null;
-    setStartGivenUp(false);
-  }, [projectId, sessionId]);
-  useEffect(() => {
-    // `Date.now()` lives here, not in the render body: reading it during
-    // render made this impure and a StrictMode/concurrent-render hazard. One
-    // read feeds both the arm decision and the give-up decision, computed
-    // together so they never disagree about "now".
-    const nowMs = Date.now();
-    startInconclusiveSinceRef.current = nextInconclusiveSince({
-      current: startInconclusiveSinceRef.current,
-      enabled: startEnabled,
-      hasData: !!start.data,
-      hasError: !!start.error,
-      isFetching: start.isFetching,
-      nowMs,
-    });
-    setStartGivenUp(
-      hasStartGivenUp(start.data, start.error, startInconclusiveSinceRef.current, nowMs),
-    );
-
-    // Once armed, the give-up budget used to flip only when a poll tick
-    // happened to re-run this effect — worst case ≈45s + waitMs + poll
-    // interval, ≈61.5s per the module doc above (`:170-178`). It now fires
-    // deterministically at 45s + 1ms via this timer: same mechanism, and
-    // the same reason, as the compaction cap below — the budget has to
-    // apply when NOTHING else re-renders.
-    //
-    // NOT covered: a `/start` whose very first fetch never settles leaves
-    // the ref null on this run (`nextInconclusiveSince` returns `current`
-    // while `isFetching`, so nothing is armed yet) — bounded by the client
-    // transport timeout, not this timer; the genuine unbounded hang is a
-    // separate, independently tracked defect in `core/http/api-client.ts`.
-    // The instant is computed from `startInconclusiveSinceRef.current` (just
-    // assigned above, so this is the freshest value there is) rather than
-    // from a piece of state, to match how the rest of this block reads the
-    // ref directly.
-    const expiryAtMs = startGiveUpExpiryAtMs({
-      inconclusiveSinceMs: startInconclusiveSinceRef.current,
-      budgetMs: START_INCONCLUSIVE_GIVE_UP_MS,
-    });
-    if (expiryAtMs === null) return;
-    const timer = setTimeout(
-      () => {
-        const fireNowMs = Date.now();
-        setStartGivenUp(
-          hasStartGivenUp(start.data, start.error, startInconclusiveSinceRef.current, fireNowMs),
-        );
-      },
-      Math.max(0, expiryAtMs - Date.now()) + 1,
-    );
-    // `clearTimeout` here is correct hygiene, but it is not what makes a
-    // session switch safe — the four deps can compare equal by `Object.is`
-    // across a switch (e.g. both sessions mid-fetch, no data, no error), in
-    // which case this effect does NOT re-run and the old timer stays live.
-    // Safety comes from a stronger fact instead: a timer can only exist when
-    // the run that armed it saw `!hasData && !hasError` (otherwise
-    // `nextInconclusiveSince` returns `null` and the early return above arms
-    // nothing). So for every live timer, the closed-over `start.data`/
-    // `start.error` are provably falsy, and `hasStartGivenUp`'s
-    // `if (data || error) return false` early-out can never be taken with
-    // stale values. At fire time the verdict reads the LIVE ref and a fresh
-    // `Date.now()` — `start.data`/`start.error` themselves stay closed over
-    // from the arming run, but since a timer only exists when that run saw
-    // them both falsy, they cannot change the outcome. A stale timer
-    // armed for session A firing during session B therefore writes B's own
-    // correct verdict, not a stale one. (One narrow gap: right after such an
-    // identical-deps switch, B has no timer of its own until a dep moves —
-    // not a hang, since the very next `isFetching` toggle re-arms it.)
-    return () => clearTimeout(timer);
-  }, [startEnabled, start.data, start.error, start.isFetching]);
+  // owns the arm/reset decision. `useSessionStartGiveUp` owns the timestamp and
+  // timer. The hook-level test proves that a first request which never settles
+  // still reaches this verdict.
+  const startGivenUp = useSessionStartGiveUp({
+    identity: `${projectId}\u0000${sessionId}`,
+    enabled: startEnabled,
+    hasData: !!start.data,
+    hasError: !!start.error,
+    isFetching: start.isFetching,
+  });
   // `startEnabled`/`start.isFetching`/`start.data`/`start.error` are read
   // FRESH here, on every render — never stored. Only `startGivenUp` comes
   // from state. The PREVIOUS version stored `computeStartSettled`'s entire

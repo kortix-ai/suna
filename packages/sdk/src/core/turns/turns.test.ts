@@ -170,6 +170,29 @@ describe('groupMessagesIntoTurns', () => {
     expect(turns[1].assistantMessages.map((m) => m.info.id)).toEqual(['a2']);
   });
 
+  test('a zero-part parentless assistant record never owns a later user prompt', () => {
+    const emptyAssistant = {
+      info: {
+        id: 'empty-a1',
+        role: 'assistant' as const,
+        time: { created: 3 },
+        tokens: { input: 0, output: 0, reasoning: 0 },
+      },
+      parts: [],
+    };
+    const turns = groupMessagesIntoTurns([
+      { ...userMsg('u1'), info: { ...userMsg('u1').info, time: { created: 1 } } },
+      { ...userMsg('u2'), info: { ...userMsg('u2').info, time: { created: 2 } } },
+      emptyAssistant,
+      { ...assistantMsg('a2', 'u2'), info: { ...assistantMsg('a2', 'u2').info, time: { created: 4 } } },
+    ]);
+
+    expect(turns.map((turn) => turn.assistantMessages.map((message) => message.info.id))).toEqual([
+      [],
+      ['a2'],
+    ]);
+  });
+
   test('creates a synthetic turn when no user messages exist at all', () => {
     const turns = groupMessagesIntoTurns([assistantMsg('a1')]);
     expect(turns).toHaveLength(1);

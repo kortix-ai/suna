@@ -75,7 +75,7 @@ import { sessionsNeedingRehydrate } from './use-opencode-events/rehydrate-target
 import { useEventStreamRefs } from './use-opencode-events/use-event-stream-refs';
 import { opencodeKeys } from './use-opencode-sessions';
 import { useCurrentRuntime } from './use-current-runtime';
-import { noteInboxObservation, reconcileOptimisticPrompts } from './use-session-prompts';
+import { applyInboxObservation } from './use-session-prompts';
 import { resetPrefetchState } from './use-session-prefetch';
 import { sessionStreamScope } from './use-session-stream-presence';
 import type { SessionTurnObservation } from './use-session-working';
@@ -256,10 +256,9 @@ export function useSessionRuntimeStream(
         queryClient.setQueryData(qk.project.sessionTurn(projectId, sessionId), observation);
       },
       applyControlQueue: (prompts: SessionPrompt[], atMs: number) => {
-        noteInboxObservation(sessionId, prompts, atMs);
         queryClient.setQueryData<SessionPrompt[]>(
           qk.project.sessionPrompts(projectId, sessionId),
-          (prev) => reconcileOptimisticPrompts(prev, prompts),
+          (prev) => applyInboxObservation(sessionId, prev, prompts, atMs),
         );
       },
       applyRuntimeStateLeg: (leg: unknown) => applyRuntimeStateLeg(leg, legDeps()),

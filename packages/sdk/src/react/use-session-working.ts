@@ -22,7 +22,6 @@ import {
 import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
-import { sessionStreamScope, useSessionStreamPresence } from './use-session-stream-presence';
 
 /**
  * The ONE answer to "is this session working?", and where the answer came from.
@@ -43,10 +42,6 @@ export const WORKING_POLL_IDLE_MS = 15_000;
 /** Cadence while the session is working, including on this tab's own
  *  unanswered receipt: the end of the turn is the news worth having early. */
 export const WORKING_POLL_ACTIVE_MS = 5_000;
-/** The slowest the `/turn` poll may go while a stream is attached. Must stay
- *  under `SERVER_OBSERVATION_MAX_MS` (45s) with room for one missed read, so a
- *  silent stream can never age the observation out. */
-export const STREAM_ATTACHED_POLL_FLOOR_MS = 20_000;
 
 export function workingPollMs(projection: WorkingProjection): number {
   return projection.state === 'working' ? WORKING_POLL_ACTIVE_MS : WORKING_POLL_IDLE_MS;
@@ -55,34 +50,16 @@ export function workingPollMs(projection: WorkingProjection): number {
 /**
  * The `/turn` query's interval, given who else is answering.
  *
- * The session stream's `kortix.control.turn` frames are THE SAME projection
- * (`readSessionTurnState`) pushed on change, so while a stream is connected
- * for this session the poll is pure duplication and hands its cadence over.
- * The moment the stream drops, the owner's poll resumes — presence flips a
- * subscribed store, so this re-evaluates immediately, not on the next tick.
+ * The owner always polls. A connected stream proves transport presence, not
+ * delivery of `kortix.control.turn` frames. Polling remains the recovery path
+ * when a connected stream is silent or incomplete.
  */
 export function workingRefetchInterval(input: {
   pollOwner: boolean;
-  streamConnected: boolean;
   projection: WorkingProjection;
 }): number | false {
   if (!input.pollOwner) return false;
-  // A CONNECTED stream is not a DELIVERING stream, and the two were treated as
-  // the same thing here. `onConnectionChange(true)` fires on the FIRST frame of
-  // an attempt whatever its type, and the API writes `kortix.stream.hello`
-  // synchronously at open followed by a typed heartbeat every 15s — so a stream
-  // that never carries one control frame keeps this flag pinned true forever.
-  //
-  // Handing the cadence over entirely then removed the client's only way to ask.
-  // `kortix.control.turn` is fingerprint-gated on the server, and an open turn's
-  // payload is constant, so a long turn produces two frames and then silence;
-  // the held observation aged past SERVER_OBSERVATION_MAX_MS and nothing was
-  // left to contradict it. The poll never resumed, because it only resumes when
-  // the stream DROPS — and the socket was still open.
-  //
-  // So the stream earns a slower floor, never an off switch.
-  const ms = workingPollMs(input.projection);
-  return input.streamConnected ? Math.min(STREAM_ATTACHED_POLL_FLOOR_MS, ms) : ms;
+  return workingPollMs(input.projection);
 }
 
 /**
@@ -337,9 +314,6 @@ export function useSessionWorking(
     projectWorking(inputsFor(turn, nowMs));
 
   const pollOwner = usePollOwner(`turn:${projectId}/${sessionId}`, canRead);
-  const streamConnected = useSessionStreamPresence(
-    canRead ? sessionStreamScope(projectId, sessionId) : '',
-  );
 
   const query = useQuery({
     queryKey: qk.project.sessionTurn(projectId, sessionId),
@@ -352,13 +326,11 @@ export function useSessionWorking(
     // session at three times its declared cadence — measured as 6 `/turn`
     // reads inside one 25 s open. Non-owners read the same entry the owner
     // refreshes, so nobody sees a staler answer; only the scheduling moved.
-    // And while the session STREAM is connected, even the owner stands down:
-    // `kortix.control.turn` writes this same cache entry, from the same
-    // server projection — see `workingRefetchInterval`.
+    // A connected stream does not disable this poll. Transport presence does
+    // not prove that control frames are arriving.
     refetchInterval: (query) =>
       workingRefetchInterval({
         pollOwner,
-        streamConnected,
         projection: project(query.state.data, Date.now()),
       }),
     // Coming back to a tab is the moment a turn that started (or ended) while

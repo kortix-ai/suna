@@ -1195,12 +1195,14 @@ describe('SessionSyncController — partial commit of a failed history walk', ()
   async function makeControllerWithPagedHistory(options: { rejectAtPage?: number }) {
     const { rejectAtPage } = options;
     const hydrated: MessageWithParts[] = [];
+    const olderBefore: string[] = [];
     let olderReads = 0;
     const servePage = mock(async (request: { limit: number; before?: string }) => {
       if (!request.before) {
         // The initial tail page — seeds the cursor `loadOlder` walks back from.
         return page(['tail'], 'cursor-0');
       }
+      olderBefore.push(request.before);
       olderReads += 1;
       if (rejectAtPage && olderReads === rejectAtPage) {
         throw new Error(`page ${olderReads} failed`);
@@ -1217,7 +1219,7 @@ describe('SessionSyncController — partial commit of a failed history walk', ()
       markLoaded: () => {},
     });
     await controller.start();
-    return { controller, hydrated, servePage };
+    return { controller, hydrated, olderBefore, servePage };
   }
 
   // S2: an older-history pull walks up to 11 pages. Committing them in one
@@ -1269,5 +1271,17 @@ describe('SessionSyncController — partial commit of a failed history walk', ()
     // never failed — only the very next read did, before any onPage call
     // had ever fired.
     expect([...olderIds]).toEqual(['assistant-1']);
+  });
+
+  test('a retry resumes at the failed-page boundary instead of replaying committed pages', async () => {
+    const { controller, olderBefore } = await makeControllerWithPagedHistory({
+      rejectAtPage: 6,
+    });
+
+    await controller.loadOlder().catch(() => undefined);
+    const readsAfterFailure = olderBefore.length;
+    await controller.loadOlder();
+
+    expect(olderBefore[readsAfterFailure]).toBe('cursor-5');
   });
 });

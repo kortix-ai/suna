@@ -108,6 +108,26 @@ export function noteInboxObservation(
   useSessionWorkingStore.getState().noteInboxPending(sessionId, countLiveInboxPrompts(prompts), atMs);
 }
 
+/**
+ * Apply one server inbox snapshot to both projections, with one freshness rule.
+ *
+ * A direct read and the session stream can settle out of order. Updating the
+ * working projection through `noteInboxObservation` already rejected an older
+ * answer, but updating the React Query cache did not. That split let an old
+ * empty control frame hide a prompt that a newer POST/read had confirmed.
+ */
+export function applyInboxObservation(
+  sessionId: string,
+  cached: readonly SessionPrompt[] | undefined,
+  prompts: readonly SessionPrompt[],
+  atMs: number,
+): SessionPrompt[] {
+  const current = useSessionWorkingStore.getState().inbox[sessionId];
+  if (current && current.atMs > atMs) return [...(cached ?? [])];
+  noteInboxObservation(sessionId, prompts, atMs);
+  return reconcileOptimisticPrompts(cached, prompts);
+}
+
 
 // ============================================================================
 // Optimistic queue rows — Enter paints the row in the SAME frame
@@ -240,22 +260,21 @@ export async function readSessionPromptsInbox(
       // exactly as a direct read is: the inbox observation is what keeps the
       // composer on Stop while a prompt is durable but not yet a turn.
       const observedAtMs = Date.parse(bundle!.observed_at);
-      noteInboxObservation(
+      return applyInboxObservation(
         sessionId,
+        cached,
         bundled,
         Number.isFinite(observedAtMs) ? observedAtMs : Date.now(),
       );
-      return reconcileOptimisticPrompts(cached, bundled);
     }
   }
   // Stamped BEFORE the request, like `/turn`'s: an answer is only as fresh
   // as the moment it was asked.
   const atMs = Date.now();
   const { prompts } = await listSessionPrompts(projectId, sessionId);
-  noteInboxObservation(sessionId, prompts, atMs);
   // Keep this tab's not-yet-confirmed rows on screen across a poll that landed
   // before their POST returned.
-  return reconcileOptimisticPrompts(cached, prompts);
+  return applyInboxObservation(sessionId, cached, prompts, atMs);
 }
 
 export interface UseSessionPromptsResult {

@@ -51,6 +51,7 @@ export function shouldPaintTerminalCard(input: {
  * (`starting`: still polling, the server retries on its own) from the three
  * that must paint (`failed`: the server is done trying).
  */
-export function shouldPaintFatalCard(input: { stage: string | null }): boolean {
+export function shouldPaintFatalCard(input: { stage: SessionStartStage | null }): boolean {
   return input.stage !== 'starting';
 }
+import type { SessionStartStage } from '@kortix/sdk';

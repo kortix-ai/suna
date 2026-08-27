@@ -588,7 +588,7 @@ export class SessionSyncController {
     // every successful read and left `nextCursor` unmoved: nothing to resume
     // from, so the retry replayed the identical walk. `onPage` existed for
     // exactly this and was never passed.
-    return this.loadCompleteTurn(firstPage, 'older', 'manual', before, (messagesSoFar) => {
+    return this.loadCompleteTurn(firstPage, 'older', 'manual', before, (partialPage) => {
       // `rememberUserMessages` mutates the instance-level `knownUserMessageIds`
       // Set (below), and `onPage` fires on a rejection too (the catch in
       // `loadCompleteTurn`, right before it rethrows). So a walk that fails
@@ -601,8 +601,9 @@ export class SessionSyncController {
       // instead of walking the rest of the turn. Accepted: the pages already
       // landed in the store on the failed attempt via this same callback,
       // which is the fix this method exists for.
-      this.rememberUserMessages(messagesSoFar);
-      this.options.hydrate(messagesSoFar);
+      this.rememberUserMessages(partialPage.messages);
+      this.options.hydrate(partialPage.messages);
+      this.setCursor(partialPage.nextCursor);
     });
   }
 
@@ -611,7 +612,7 @@ export class SessionSyncController {
     operation: 'tail' | 'older',
     reason: SessionSyncReason,
     initialCursor?: string,
-    onPage?: (messagesSoFar: SessionSyncMessage[]) => void,
+    onPage?: (pageSoFar: SessionSyncPage) => void,
   ): Promise<SessionSyncPage> {
     const messages = [...firstPage.messages];
     const knownUserMessageIds = new Set(this.knownUserMessageIds);
@@ -649,7 +650,7 @@ export class SessionSyncController {
         // (seeded before the loop) plus every completed iteration. Commit it
         // before rethrowing so a rejection on THIS read (including the
         // loop's very first) cannot drop what was already read.
-        onPage?.([...messages]);
+        onPage?.({ messages: [...messages], nextCursor: cursor });
         throw error;
       }
       if (this.destroyed) return { messages, nextCursor: cursor };
@@ -664,7 +665,7 @@ export class SessionSyncController {
       cursor = page.nextCursor;
       // Repaint as each page lands, so a long turn fills in front of the user
       // instead of withholding everything until the walk ends.
-      onPage?.([...messages]);
+      onPage?.({ messages: [...messages], nextCursor: cursor });
     }
 
     return { messages, nextCursor: cursor };

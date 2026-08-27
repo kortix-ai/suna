@@ -12,6 +12,51 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-27 — session `session-protocol` — PR #6957 release blockers — NOT YET
+
+**Linear:** JAY-720, JAY-721, JAY-726, and JAY-291.
+
+**Scope:** preserve the failed-page cursor during older-history hydration; arm
+the first `/start` give-up deadline; make assistant-to-user turn ownership
+identity-based; migrate queued sends away from interleaving
+`/prompt_async` semantics. Every production change starts with a failing
+regression test. Final proof includes SDK gates, package gates, and the real
+frontend queue scenario.
+
+**Implemented:** partial history hydration now advances the failed-page cursor;
+the first never-settling `/start` request arms a real hook timer and later data
+clears it; zero-token, zero-part assistant records cannot adopt a later user
+message; queue delivery serializes one same-session prompt at a time; stale
+queue snapshots update the working projection and query cache through one
+freshness gate. The `/turn` owner keeps polling even when a stream is attached;
+the previous stream-specific `Math.min(20s, 5s/15s)` mode was deleted because
+it never changed the cadence.
+
+**RED/GREEN evidence:** cursor retry resumes at `cursor-5`; the mounted give-up
+hook covers a never-settling first request and a later successful response;
+the turn grouper rejects the empty-assistant ownership shape; the inbox gate
+refuses `turn_active`; the drain requeues same-session siblings; an older empty
+stream snapshot cannot erase a newer confirmed queue row. Focused session tests:
+71 pass / 0 fail. Give-up hook: 2 pass / 0 fail.
+
+**Fresh gates:** full SDK package test exit 0; SDK typecheck exit 0; packed
+install smoke exit 0. Full API suite: 8,748 pass / 79 skip / 0 fail. Full web
+suite: 8,648 pass / 0 fail. CLI suite: 1,243 pass / 0 fail. Frontend TypeScript
+still reports the repository's `test.each` typing baseline in four test files;
+changed-file ESLint reports 0 errors and 32 existing React Compiler warnings.
+
+**Real frontend:** two prompts received HTTP 202. While P1 was active,
+`GET /prompts` retained P2 as `waiting`, reason `turn_active`, attempts 0. The
+UI retained P2 with “Remove from queue” after the stale stream snapshot and
+refresh. The runtime then ended `runtime_gone`; automatic P2 completion is not
+verified. JAY-728 tracks the remaining cross-clock observation boundary.
+
+**Shippable:** NOT YET. PR #6957 is unmerged by user instruction. No dev deploy
+or exact-SHA dev verification exists. JAY-726's required real second-turn output
+and parent-identity proof remains blocked by the `runtime_gone` browser run.
+
+---
+
 ### 2026-08-27 — session `session-queue-state` — direct idle sends must own the working turn — DONE
 
 **Defect:** every direct composer send briefly becomes a durable inbox row. The

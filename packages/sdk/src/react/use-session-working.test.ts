@@ -10,7 +10,6 @@ import {
 import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
 import { configureKortix } from '../core/http/config';
 import {
-  STREAM_ATTACHED_POLL_FLOOR_MS,
   WORKING_POLL_ACTIVE_MS,
   readSessionTurnObservation,
   WORKING_POLL_IDLE_MS,
@@ -436,7 +435,7 @@ describe('readSessionTurnObservation', () => {
   });
 });
 
-describe('workingRefetchInterval (stream presence hands the cadence over)', () => {
+describe('workingRefetchInterval', () => {
   const projection = {
     state: 'working',
     source: 'server',
@@ -447,7 +446,7 @@ describe('workingRefetchInterval (stream presence hands the cadence over)', () =
 
   test('poll owner with no stream polls at the projection cadence', () => {
     expect(
-      workingRefetchInterval({ pollOwner: true, streamConnected: false, projection }),
+      workingRefetchInterval({ pollOwner: true, projection }),
     ).toBe(WORKING_POLL_ACTIVE_MS);
   });
 
@@ -465,32 +464,23 @@ describe('workingRefetchInterval (stream presence hands the cadence over)', () =
   // healthy silent socket never does. Every turn longer than 45s read as
   // stopped while the agent was still working.
   //
-  // A stream earns a slower floor, never an off switch.
-  test('a connected stream still polls, bounded under the observation window', () => {
-    const ms = workingRefetchInterval({ pollOwner: true, streamConnected: true, projection });
-    // The point is that it is a NUMBER, not `false`. The floor caps a slow
-    // cadence; it never raises a fast one, so a working session keeps its 5s.
-    expect(typeof ms).toBe('number');
-    expect(ms as number).toBeLessThanOrEqual(STREAM_ATTACHED_POLL_FLOOR_MS);
-    // The invariant that matters: the poll can never be slower than the window
-    // in which the held observation expires, or the UI can go blind mid-turn.
-    expect(ms as number).toBeLessThan(SERVER_OBSERVATION_MAX_MS);
+  test('a connected stream keeps the projection cadence', () => {
+    const ms = workingRefetchInterval({ pollOwner: true, projection });
+    expect(ms).toBe(WORKING_POLL_ACTIVE_MS);
   });
 
   test('an idle projection with a stream attached is also still polled', () => {
     const idleProjection = { ...projection, state: 'idle' as const };
     const ms = workingRefetchInterval({
       pollOwner: true,
-      streamConnected: true,
       projection: idleProjection,
     });
-    expect(typeof ms).toBe('number');
-    expect(ms as number).toBeLessThan(SERVER_OBSERVATION_MAX_MS);
+    expect(ms).toBe(WORKING_POLL_IDLE_MS);
   });
 
   test('a non-owner never polls, stream or not', () => {
     expect(
-      workingRefetchInterval({ pollOwner: false, streamConnected: false, projection }),
+      workingRefetchInterval({ pollOwner: false, projection }),
     ).toBe(false);
   });
 });

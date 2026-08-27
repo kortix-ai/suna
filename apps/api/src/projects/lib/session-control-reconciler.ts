@@ -18,12 +18,11 @@
  * optimisation, and nothing is built on top of it.
  *
  * ─── THE COST, STATED ──────────────────────────────────────────────────────
- * Three indexed reads per {@link CONTROL_RECONCILE_MS} per session that has at
- * least one stream open — and ZERO for a session nobody is watching. What it
- * replaces per client: `GET .../turn` and `GET .../prompts` on their own
- * timers, each a full HTTP round trip through the edge, per TAB. One
- * reconciler serves every tab on the instance, so the DB load falls as the
- * client count rises, which is the opposite of the polling it retires.
+ * Four subsystem reads per {@link CONTROL_RECONCILE_MS} per session that has at
+ * least one stream open — and ZERO for a session nobody is watching. It
+ * replaces the per-tab `GET .../prompts` timer. The client keeps one owner
+ * polling `GET .../turn` as a recovery path because transport presence does
+ * not prove that control frames are arriving.
  *
  * ─── EVERY EMISSION IS A FULL SNAPSHOT ─────────────────────────────────────
  * See `session-control-events.ts`. A frame carries its subsystem's whole state,
@@ -70,12 +69,10 @@ export const RECONCILER_IDLE_TTL_MS = 5 * 60_000;
 /**
  * How long a retained control frame may go un-restamped.
  *
- * The client AGES every snapshot it holds: a turn observation older than
- * `SERVER_OBSERVATION_MAX_MS` (45s) stops deciding anything, and while a stream
- * is attached the client does not poll. So a producer that suppresses redundant
- * CONTENT also suppresses FRESHNESS, and an open turn — whose payload is
- * constant for its whole life — went silent after two frames and aged out of
- * the client's window while the agent was still working.
+ * The client ages every snapshot it holds. A producer that suppresses
+ * redundant content also suppresses freshness. Refreshing retained snapshots
+ * keeps stream consumers current and prevents a new subscriber from receiving
+ * an already-expired replay.
  *
  * A frame is a snapshot, not an event, so re-sending an identical one is
  * idempotent. Must stay comfortably under half the client's 45s bound.
@@ -236,12 +233,8 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
  * Publish when the subsystem's serialized state moved, OR when the frame we are
  * holding has gone stale.
  *
- * The staleness half is not an optimisation. The client ages what it holds and
- * stops polling while a stream is attached, so suppressing an unchanged frame
- * suppresses the client's only proof that the fact is still true. An open turn
- * emits exactly two frames — `delivering` then `accepted` — and then nothing for
- * its entire duration, which is precisely the case where the client most needs
- * to hear that it is still open.
+ * The staleness half is not an optimisation. The client ages what it holds, so
+ * suppressing an unchanged frame suppresses freshness for stream consumers.
  *
  * Re-stamping also fixes what a NEW stream is handed: `snapshot()` replays the
  * retained frame verbatim, so without this a client attaching mid-turn received

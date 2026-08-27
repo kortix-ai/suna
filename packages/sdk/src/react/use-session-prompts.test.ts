@@ -6,6 +6,7 @@ import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open
 import type { SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
   applyOptimisticPrompt,
+  applyInboxObservation,
   optimisticSessionPrompt,
   reconcileOptimisticPrompts,
   removeOptimisticPrompt,
@@ -119,6 +120,25 @@ describe('noteInboxObservation', () => {
     noteInboxObservation('sess_1', [prompt({ state: 'waiting', reason: 'held' })], 500);
 
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 500 });
+  });
+
+  test('an older empty stream snapshot cannot erase a newer confirmed queue row', () => {
+    useSessionWorkingStore.getState().reset();
+    const queued = prompt({ prompt_id: 'p2', client_message_id: 'q_2' });
+
+    expect(applyInboxObservation('sess_1', undefined, [queued], 500)).toEqual([queued]);
+    expect(applyInboxObservation('sess_1', [queued], [], 400)).toEqual([queued]);
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 1, atMs: 500 });
+  });
+
+  test('a newer empty snapshot removes a queue row after delivery', () => {
+    useSessionWorkingStore.getState().reset();
+    const queued = prompt({ prompt_id: 'p2', client_message_id: 'q_2' });
+
+    applyInboxObservation('sess_1', undefined, [queued], 500);
+
+    expect(applyInboxObservation('sess_1', [queued], [], 600)).toEqual([]);
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 600 });
   });
 
 });

@@ -22,6 +22,11 @@ export interface MessageInfoLike {
   role: string;
   parentID?: string;
   error?: unknown;
+  tokens?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+  };
   /** When the runtime persisted the message. Optional so bare fixtures still
    *  type-check; `groupMessagesIntoTurns` orders by it, id as the tiebreak. */
   time?: { created?: number };
