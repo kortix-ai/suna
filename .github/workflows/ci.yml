@@ -359,18 +359,71 @@ jobs:
       - name: Ensure Electron runtime
         run: pnpm --filter @kortix/desktop-electron exec node scripts/ensure-runtime.js
 
-      - name: Build Linux desktop installer (Electron, unsigned)
+      # Three channels install side by side, so the thing worth guarding is that
+      # they stay DISTINCT. Pure config resolution — milliseconds — and it fails
+      # the moment two channels would collide in the OS or an icon is missing.
+      - name: Verify the three channels resolve to distinct identities
+        working-directory: apps/desktop-electron
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const { CHANNEL_NAMES } = require("./src/channel");
+            const rows = CHANNEL_NAMES.map((channel) => {
+              // Re-require per channel: electron-builder.js reads KORTIX_CHANNEL
+              // at module load, so the cache has to be cleared between reads.
+              process.env.KORTIX_CHANNEL = channel;
+              delete require.cache[require.resolve("./electron-builder.js")];
+              const c = require("./electron-builder.js");
+              for (const f of [c.mac.icon, c.win.icon, c.linux.icon]) {
+                if (!fs.existsSync(f)) {
+                  throw new Error(`${channel}: missing ${f} — run pnpm --filter @kortix/desktop-electron icons`);
+                }
+              }
+              return {
+                channel,
+                appId: c.appId,
+                productName: c.productName,
+                scheme: c.protocols[0].schemes[0],
+                url: c.extraMetadata.kortixDefaultUrl,
+              };
+            });
+            for (const key of ["appId", "productName", "scheme", "url"]) {
+              const values = rows.map((r) => r[key]);
+              if (new Set(values).size !== values.length) {
+                throw new Error(`channels share a ${key}: ${values.join(", ")} — two installs would collide`);
+              }
+            }
+            const stable = rows.find((r) => r.channel === "stable");
+            if (stable.appId !== "com.kortix.desktop" || stable.scheme !== "kortix") {
+              throw new Error(`stable identity moved: ${JSON.stringify(stable)} — this orphans every existing install`);
+            }
+            console.table(rows);
+          '
+
+      # One real package proves the whole per-channel path: config discovery,
+      # extraMetadata baking, and per-channel icon resolution. Linux is the
+      # cheapest target and needs no signing.
+      - name: Build Linux desktop installer (dev channel, unsigned)
         run: pnpm --filter @kortix/desktop-electron exec electron-builder --linux --publish never
         env:
-          KORTIX_DESKTOP_DEFAULT_URL: https://dev.kortix.com/projects
+          KORTIX_CHANNEL: dev
+          KORTIX_VERSION: 0.0.0-ci
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Verify installer exists
+      - name: Verify the dev installer carries the dev identity
         run: |
+          set -euo pipefail
           shopt -s nullglob
           files=(apps/desktop-electron/dist/*.AppImage)
           test "${#files[@]}" -gt 0
           ls -lh "${files[@]}"
+          # The channel has to reach the artifact NAME, not just the config —
+          # that is what stops a dev build being published as the prod download.
+          case "${files[0]}" in
+            *"Kortix Dev-0.0.0-ci"*) echo "dev artifact name OK: ${files[0]}" ;;
+            *) echo "::error::expected a 'Kortix Dev-0.0.0-ci' AppImage, got ${files[0]}"; exit 1 ;;
+          esac
 
   dependency-scan:
     name: Dependency + secret scan
