@@ -192,7 +192,6 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module("../snapshots/builder", () => ({
-  routedPerProjectWarmImageName: () => "kpp2-test",
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   ensureFastSandboxImage: async () => ({ snapshotName: "kortix-fast-test", slug: "default", contentHash: "f".repeat(64), built: false, isDefault: true, runtimeProfile: "fast" }),
@@ -210,12 +209,6 @@ mock.module("../snapshots/builder", () => ({
   reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => "a".repeat(40),
-  ensurePerProjectWarmImage: async () => ({
-    snapshotName: "kortix-ppwarm-test",
-    tip: "a".repeat(40),
-    built: false,
-    provider: "daytona",
-  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 

@@ -92,7 +92,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
   // in-sandbox `git fetch` runs at all. This used to hide behind the
   // fast-cold-boot / compiled-boot experiments; measured 2026-08-27 on dev,
   // the two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
-  // `repo-materialized` (docs/specs/2026-08-27-fast-clone-path.md).
+  // `repo-materialized`, measured on dev 2026-08-27.
   const fastGitBootEnv: Record<string, string> =
     allowsFullRepository && input.freshSession
       ? {

@@ -33,7 +33,7 @@ import {
 } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
-import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
+import { isWarmBuildSlug, templateSlugFromBuildSlug } from './build-slug';
 import { metadataMerge } from '../projects/lib/metadata-merge';
 import { isReapableTemplatePredecessor } from './predecessor-reap-policy';
 import { readManifest } from '../projects/triggers';

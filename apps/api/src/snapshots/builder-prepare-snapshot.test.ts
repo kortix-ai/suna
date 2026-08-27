@@ -239,15 +239,15 @@ describe('prepareSnapshotForReuse', () => {
 test('wires every active-reuse path through source-aware preparation', async () => {
   const source = await Bun.file(new URL('./builder.ts', import.meta.url)).text();
 
-  expect(source.match(/prepareSnapshotForReuse\(/g)).toHaveLength(11);
-  expect(source.match(/blocking: blockingPreparation/g)).toHaveLength(5);
+  // 8, not 11: the retired per-project warm baker owned the other three.
+  expect(source.match(/prepareSnapshotForReuse\(/g)).toHaveLength(8);
+  expect(source.match(/blocking: blockingPreparation/g)).toHaveLength(4);
   // meta + pi-worker + the original: the shared runtime images all defer
   // preparation off the session-start critical path the same way.
   expect(
     source.match(/blocking: \(opts\.source \?\? 'session-start'\) !== 'session-start'/g),
   ).toHaveLength(3);
-  expect(source.match(/blocking: true/g)).toHaveLength(2);
-  expect(source.match(/activeName, undefined, \{ blocking: false \}/g)).toHaveLength(1);
+  expect(source.match(/blocking: true/g)).toHaveLength(1);
 });
 
 test('a fast session reuse never joins startup preparation', async () => {

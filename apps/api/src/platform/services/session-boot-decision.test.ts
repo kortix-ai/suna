@@ -57,7 +57,7 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
     ).toEqual({ bootByTemplateId: null });
   });
 
-  test('a per-project cold image boots by the activated id when its image name matches', () => {
+  test('boots by the activated id when the resolved image name matches the activation', () => {
     expect(
       decideSessionBoot({
         killSwitchOn: true,
@@ -65,13 +65,12 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
         providerName: 'platinum',
         providerSupportsIdBoot: true,
         imageIsDefault: true,
-        imageIsProjectImage: true,
         imageSnapshotName: 'snap-project-current',
       }),
     ).toEqual({ bootByTemplateId: 'tpl_pinned' });
   });
 
-  test('a per-project cold image name-boots when its image name differs from the activated image', () => {
+  test('name-boots when the resolved image name differs from the activated image', () => {
     expect(
       decideSessionBoot({
         killSwitchOn: true,
@@ -79,13 +78,12 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
         providerName: 'platinum',
         providerSupportsIdBoot: true,
         imageIsDefault: true,
-        imageIsProjectImage: true,
         imageSnapshotName: 'snap-project-newer',
       }),
     ).toEqual({ bootByTemplateId: null });
   });
 
-  test('a per-project cold image name-boots when activated image metadata is missing', () => {
+  test('name-boots when the activation records no image name', () => {
     expect(
       decideSessionBoot({
         killSwitchOn: true,
@@ -93,13 +91,12 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
         providerName: 'platinum',
         providerSupportsIdBoot: true,
         imageIsDefault: true,
-        imageIsProjectImage: true,
         imageSnapshotName: 'snap-project-current',
       }),
     ).toEqual({ bootByTemplateId: null });
   });
 
-  test('a resolved base image never boots an activated project-image id with a different name', () => {
+  test('never boots an activated id whose recorded image name is not the resolved one', () => {
     expect(
       decideSessionBoot({
         killSwitchOn: true,
@@ -107,7 +104,6 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
         providerName: 'platinum',
         providerSupportsIdBoot: true,
         imageIsDefault: true,
-        imageIsProjectImage: false,
         imageSnapshotName: 'snap-standard-base',
       }),
     ).toEqual({ bootByTemplateId: null });
@@ -189,7 +185,7 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
     ).toEqual({ bootByTemplateId: null });
   });
 
-  test('disabledForSession prevents an exact project-image id boot during FAST rollback', () => {
+  test('disabledForSession prevents an exact id boot even on a full name match', () => {
     expect(
       decideSessionBoot({
         killSwitchOn: true,
@@ -197,7 +193,6 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
         providerName: 'platinum',
         providerSupportsIdBoot: true,
         imageIsDefault: true,
-        imageIsProjectImage: true,
         imageSnapshotName: 'snap-project-current',
         disabledForSession: true,
       }),

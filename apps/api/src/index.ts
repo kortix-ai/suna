@@ -146,7 +146,6 @@ import { getPlatformRole } from './shared/platform-roles';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 import { skillsApp } from './skills';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { projectImageRolloutDiagnostic } from './snapshots/project-image-scope';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import {
   startTunnelService,
@@ -1452,7 +1451,6 @@ let draining = false;
 // service serve request-path needs (per-node caches + the WS acceptor), so they
 // must be live on each node behind the load balancer.
 async function startReplicaServices() {
-  appLogger.info('[snapshots] project image rollout', projectImageRolloutDiagnostic());
   warnIfPreviewOriginsMissing(appLogger);
   startAccessControlCache();
   startTunnelService();

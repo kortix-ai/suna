@@ -43,7 +43,6 @@ import { resolveFastBootGitHintWithCache } from '../projects/lib/fast-boot-git-h
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, rename, rm, stat, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
-import { kickProjectWarmPrebake } from '../snapshots/builder';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { featureDisabledBody } from '../feature-flags/gate';
 import {
@@ -222,17 +221,18 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
     if (!STRIP_RESPONSE_HEADERS.has(key.toLowerCase())) respHeaders.set(key, value);
   });
 
-  // Build-on-push warm prebake: a successful push (git-receive-pack) to the
-  // managed git may have advanced the project's default-branch tip. Kick a
-  // fire-and-forget per-project warm bake so the FIRST session on the new commit
-  // boots warm instead of cold ("starting agent…"). Never blocks or fails the
-  // push; kickProjectWarmPrebake resolves the current tip and is idempotent, so it
-  // no-ops unless the default-branch tip actually moved. The session-start
-  // on-demand trigger stays the fallback for projects that never push.
+  // Build-on-push warming: a successful push (git-receive-pack) to the managed
+  // git may have advanced the project's default-branch tip. Kick the
+  // fire-and-forget warms that make the FIRST session on the new commit fast
+  // (the fast-boot git hint below, and the compiled/pi-worker artifact
+  // prebuilds) instead of cold ("starting agent…"). None of them blocks or
+  // fails the push, and each is idempotent, so a push that did not move the tip
+  // costs nothing. Session-start remains the on-demand fallback for projects
+  // that never push.
   //
-  // Pass the per-project provider PIN so the prebake warms the provider(s) a
-  // session on this project will actually use (pinned provider ⇒ that one; no
-  // pin ⇒ every enabled provider) — full parity, not just the default provider.
+  // The per-project provider PIN is read here so a prebuild targets the
+  // provider(s) a session on this project will actually use (pinned provider =>
+  // that one; no pin => every enabled provider).
   if (suffix === '/git-receive-pack' && res.status >= 200 && res.status < 300) {
     void (async () => {
       try {
@@ -279,10 +279,6 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
           // GET /compiled-pi-runtime stays the correctness path for pushes
           // that bypass this proxy (e.g. straight to a user's own GitHub).
           piWorkerEnabled ? prebuildDefaultBranchPiRuntime(gitProject) : Promise.resolve(null),
-          kickProjectWarmPrebake(gitProject, {
-            accountId: auth.project.accountId,
-            projectPin,
-          }),
         ]);
         if (compiledResult.status === 'rejected') {
           console.warn(

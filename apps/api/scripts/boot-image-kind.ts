@@ -1,8 +1,17 @@
-import {
-  PPWARM_PREFIX,
-  SCOPED_PPWARM_PREFIX,
-  isExactPpwarmImageName,
-} from '../src/snapshots/ppwarm-names';
+import { PPWARM_PREFIX, SCOPED_PPWARM_PREFIX } from '../src/snapshots/quota-gc-select';
+
+/**
+ * Complete names of the two RETIRED per-project warm image formats. The baker is
+ * gone; these names only ever appear now in persisted boot telemetry, which this
+ * report classifies after the fact. Kept here (not in the deleted namer) because
+ * this is the last consumer.
+ */
+const EXACT_PPWARM_IMAGE_NAME =
+  /^(?:kortix-ppwarm-(?:[0-9a-f]{8}-[0-9a-f]{12}|[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{12})|kpp2-[0-9a-f]{12}-[0-9a-f]{12}-[0-9a-f]{16}-[0-9a-f]{16})$/;
+
+function isExactPpwarmImageName(name: string): boolean {
+  return EXACT_PPWARM_IMAGE_NAME.test(name);
+}
 
 export type BootImageKind =
   | 'ppwarm'

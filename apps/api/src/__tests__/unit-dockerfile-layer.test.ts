@@ -177,34 +177,23 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('&& test -n "$pw_chrome"');
   });
 
-  test('the Chromium layer sits BEFORE the per-project warm-repo COPY', () => {
-    // Cache-order invariant: the warm-repo COPY (and, downstream of it, the
-    // opencode instance re-warm) is per-project and never cache-stable, so
-    // Chromium must sit ahead of it — keeping Chromium's own content-addressed
-    // cache key independent of any per-project step and identical across every
-    // per-project bake AND the shared default image. (PHASE 1 moved the
-    // credential-bearing clone API-side; the image now only COPYs sanitized
-    // bytes, but the ordering guarantee is unchanged.)
+  test('the Chromium layer sits BEFORE the opencode instance re-warm', () => {
+    // Cache-order invariant: the opencode instance re-warm's RUN text is never
+    // cache-stable, so Chromium must sit ahead of it — keeping Chromium's own
+    // content-addressed cache key independent of it and identical across every
+    // bake. Chromium re-downloading here is what a mis-ordered layer costs.
     const merged = buildLayeredDockerfile({
       userDockerfile: 'FROM ubuntu:24.04',
       ...COMMON,
       opencodeConfigPath: 'kortix-opencode-config',
-      warmRepo: {
-        stagedPath: 'kortix-warm-repo',
-        stagedGitPath: 'kortix-warm-repo-git.tar',
-        branch: 'main',
-      },
     });
     const chromiumIdx = merged.indexOf(
       `playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`,
     );
-    const cloneIdx = merged.indexOf('Per-project COLD warm: bake repo checkout into /workspace');
-    const opencodeWarmupIdx = merged.indexOf('kortix-opencode-warmup instance repo');
+    const opencodeWarmupIdx = merged.indexOf('kortix-opencode-warmup instance');
     expect(chromiumIdx).toBeGreaterThanOrEqual(0);
-    expect(cloneIdx).toBeGreaterThanOrEqual(0);
     expect(opencodeWarmupIdx).toBeGreaterThanOrEqual(0);
-    expect(chromiumIdx).toBeLessThan(cloneIdx);
-    expect(cloneIdx).toBeLessThan(opencodeWarmupIdx);
+    expect(chromiumIdx).toBeLessThan(opencodeWarmupIdx);
   });
 
   test('hard-fails the bake if opencode-config-deps cannot be bundled by Bun', () => {
