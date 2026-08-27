@@ -188,6 +188,9 @@ jobs:
             "kortix/kortix-frontend:pr-${GITHUB_SHA}"; do
             docker push "$image"
           done
+      - name: Hash the lockfile
+        # Selects the warm sandbox template whose dependencies match this commit.
+        run: echo "PREVIEW_LOCKFILE_SHA256=$(sha256sum pnpm-lock.yaml | awk '{print $1}')" >> "$GITHUB_ENV"
       - name: Deploy into the persistent sandbox
         env:
           # PREVIEW_BRANCH_ENV is what makes the deploy REUSE its sandbox
@@ -207,11 +210,14 @@ jobs:
           KE2E_STRIPE_SECRET_KEY: ${{ secrets.KE2E_STRIPE_SECRET_KEY }}
           KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.KE2E_STRIPE_WEBHOOK_SECRET }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          KORTIX_GITHUB_APP_ID: ${{ secrets.KORTIX_GITHUB_APP_ID }}
-          KORTIX_GITHUB_APP_PRIVATE_KEY: ${{ secrets.KORTIX_GITHUB_APP_PRIVATE_KEY }}
-          KORTIX_GITHUB_APP_SLUG: ${{ secrets.KORTIX_GITHUB_APP_SLUG }}
-          MANAGED_GIT_GITHUB_OWNER: ${{ secrets.MANAGED_GIT_GITHUB_OWNER }}
-          MANAGED_GIT_GITHUB_INSTALL_ID: ${{ secrets.MANAGED_GIT_GITHUB_INSTALL_ID }}
+          # The PREVIEW_ prefix is the whole name — there are no unprefixed
+          # copies of these, so dropping it silently yields empty strings and
+          # applyPreviewEnvironment then refuses the deploy.
+          KORTIX_GITHUB_APP_ID: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_ID }}
+          KORTIX_GITHUB_APP_PRIVATE_KEY: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_PRIVATE_KEY }}
+          KORTIX_GITHUB_APP_SLUG: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_SLUG }}
+          MANAGED_GIT_GITHUB_OWNER: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_OWNER }}
+          MANAGED_GIT_GITHUB_INSTALL_ID: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID }}
         run: bun tests/bin/sandbox-preview.ts deploy
       - name: Report the environment URL
         if: always()
