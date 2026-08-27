@@ -25,10 +25,6 @@ import {
   shouldHydrateFromMirror,
 } from '../browser/session-sync/server-transcript-mirror';
 import { transcriptIsFragment } from '../core/session-sync/fragment';
-import {
-  isSessionRuntimeChannelLive,
-  subscribeSessionStreamPresence,
-} from '../core/stream/session-stream-presence';
 import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -176,23 +172,31 @@ export function isControlTurnIdle(
 export const TRANSCRIPT_FALLBACK_POLL_MS = 10_000;
 
 /**
- * Should the transcript fall back to a bounded interval read, and how often?
+ * @deprecated Retired — the transcript-poll fallback is gone; always `null`.
  *
- * The steady state polls NOTHING: while the session stream's RUNTIME channel
- * is live, every transcript frame rides a dense seq, so a loss is detected
- * and repaired exactly (`connectSessionStream`). But a working session whose
- * runtime channel is NOT live — a daemon too old to serve
- * `/kortix/opencode/events` (the convergence window after this ships), or an
- * attach that keeps failing — has no live transcript feed at all, and mid-turn
- * output would freeze until turn end. For exactly that window, the old
- * bounded tail read returns, at its old 10s cadence. `null` = do not poll.
+ * It re-read `/kortix/opencode/messages` on a timer whenever the runtime
+ * channel was not live. But "runtime channel not live" is a box that is
+ * down / rebuilding / not-yet-reachable — and such a daemon serves NEITHER
+ * `/kortix/opencode/events` NOR `/kortix/opencode/messages` (they ship
+ * together), so the poll only 404-spammed for nothing while the user watched a
+ * churning network tab (dev, 2026-08-27). It also defeated the whole point of
+ * the owned surface: `/events` + `/snapshot` ARE the feed.
+ *
+ * The steady state polls NOTHING and now so does every other state: while the
+ * runtime channel is live, every transcript frame rides a dense seq so a loss
+ * is detected and repaired EXACTLY by the stream's gap reconcile
+ * (`connectSessionStream` → `reconcileHeldTranscripts` on a `resync`/seq-gap).
+ * A box that is genuinely down has nothing to stream; the composer says so
+ * (the runtime-unreachable / waking notice) instead of hammering a dead route.
+ *
+ * Kept as a no-op export because the name is published API — removing it is a
+ * breaking change. It always returns `null`.
  */
-export function transcriptFallbackPollMs(input: {
+export function transcriptFallbackPollMs(_input: {
   busy: boolean;
   runtimeChannelLive: boolean;
 }): number | null {
-  if (!input.busy || input.runtimeChannelLive) return null;
-  return TRANSCRIPT_FALLBACK_POLL_MS;
+  return null;
 }
 
 export function livenessBusy(input: {
@@ -475,22 +479,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     controller.setBusy(busy);
   }, [controller, busy]);
 
-  // The stale-daemon fallback poll — see `transcriptFallbackPollMs`. While the
-  // session stream's runtime channel is live this arms NOTHING; a working
-  // session with no live daemon feed re-reads its tail at the old cadence.
-  const streamScope = kortixSessionScope ?? '';
-  const runtimeChannelLive = useSyncExternalStore(
-    (onChange) => (streamScope ? subscribeSessionStreamPresence(streamScope, onChange) : () => {}),
-    () => !!streamScope && isSessionRuntimeChannelLive(streamScope),
-    () => false,
-  );
-  useEffect(() => {
-    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
-    const pollMs = transcriptFallbackPollMs({ busy, runtimeChannelLive });
-    if (pollMs === null) return;
-    const timer = setInterval(() => void controller.reconcile('poll'), pollMs);
-    return () => clearInterval(timer);
-  }, [busy, controller, networkEnabled, runtimeChannelLive, sessionId]);
+  // No transcript-poll fallback. `/events` is the single feed: a lost frame is
+  // a dense-seq gap the stream repairs exactly (`connectSessionStream` →
+  // `reconcileHeldTranscripts`), and a box that is down has nothing to stream —
+  // the composer shows the waking / lost-contact notice rather than hammering a
+  // dead `/kortix/opencode/messages` route. See `transcriptFallbackPollMs`
+  // (retired). This removed the `/messages` 404-spam a rebuilding box produced.
 
   // Re-read the tail on demand. The transcript body renders this behind its
   // "couldn't load" state so `freshness === 'error'` is recoverable without a

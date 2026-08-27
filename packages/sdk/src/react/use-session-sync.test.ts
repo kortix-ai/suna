@@ -228,16 +228,17 @@ describe('livenessBusy: an open server turn keeps the repair running', () => {
   });
 });
 
-describe('transcriptFallbackPollMs (the stale-daemon window)', () => {
-  test('working with NO live runtime channel polls — the only transcript feed left', () => {
-    expect(transcriptFallbackPollMs({ busy: true, runtimeChannelLive: false })).toBe(10_000);
-  });
-
-  test('a live runtime channel silences the fallback — seq gaps repair losses exactly', () => {
+describe('transcriptFallbackPollMs (retired — /events is the only transcript feed)', () => {
+  // The transcript-poll fallback is GONE. It re-read `/kortix/opencode/messages`
+  // whenever the runtime channel was not live — but that is exactly a box that
+  // is down/rebuilding, whose daemon serves NEITHER `/events` NOR `/messages`
+  // (they shipped together), so the poll only 404-spammed for nothing while the
+  // user watched (dev, 2026-08-27). `/events` is the single transcript feed; a
+  // real loss is a dense-seq gap the stream repairs exactly. This function now
+  // never asks for a poll, whatever the state.
+  test('never polls, in any state — the fallback is retired', () => {
+    expect(transcriptFallbackPollMs({ busy: true, runtimeChannelLive: false })).toBeNull();
     expect(transcriptFallbackPollMs({ busy: true, runtimeChannelLive: true })).toBeNull();
-  });
-
-  test('an idle session never polls, channel or not', () => {
     expect(transcriptFallbackPollMs({ busy: false, runtimeChannelLive: false })).toBeNull();
     expect(transcriptFallbackPollMs({ busy: false, runtimeChannelLive: true })).toBeNull();
   });
