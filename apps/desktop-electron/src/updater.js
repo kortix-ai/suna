@@ -27,8 +27,8 @@
 const { app, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 // Pure helpers live in their own module so they're unit-testable without the
-// Electron runtime (see update-channel.test.js).
-const { resolveChannel, isUpdaterSupported } = require('./update-channel');
+// Electron runtime (see channel.test.js).
+const { resolveChannel, isUpdaterSupported } = require('./channel');
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 

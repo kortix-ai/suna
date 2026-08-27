@@ -4,6 +4,7 @@ const {
   CHANNEL_NAMES,
   buildUserAgent,
   channelConfig,
+  isUpdaterSupported,
   resolveChannel,
   resolveScheme,
 } = require('./channel');
@@ -134,5 +135,24 @@ describe('buildUserAgent', () => {
     const ua = buildUserAgent('Base/1 Kortix+Dev/9.9.9 Tail/2', 'Kortix+Dev', 'KortixDesktop/0.1.0', 'kortix');
     expect(ua).not.toContain('Kortix+Dev/9.9.9');
     expect(ua).toContain('Tail/2');
+  });
+});
+
+describe('isUpdaterSupported', () => {
+  it('enables only packaged stable builds', () => {
+    expect(isUpdaterSupported({ isPackaged: true, channel: 'stable' })).toBe(true);
+  });
+
+  it('disables unpackaged (dev `electron .`) runs', () => {
+    expect(isUpdaterSupported({ isPackaged: false, channel: 'stable' })).toBe(false);
+  });
+
+  // dev and staging publish to mutable prereleases, not versioned feeds, so
+  // there is nothing to compare against — and a successful "update" would
+  // silently move the user onto a prod installer.
+  it('disables every prerelease channel even when packaged', () => {
+    for (const channel of CHANNEL_NAMES.filter((c) => c !== 'stable')) {
+      expect(isUpdaterSupported({ isPackaged: true, channel })).toBe(false);
+    }
   });
 });

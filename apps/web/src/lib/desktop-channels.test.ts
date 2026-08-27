@@ -4,10 +4,9 @@ import path from 'node:path';
 
 import {
   DEFAULT_DESKTOP_SCHEME,
-  DESKTOP_CHANNEL_LABEL,
   DESKTOP_SCHEMES,
   desktopChannelForHost,
-  desktopReleaseApiPath,
+  desktopReleaseTag,
   resolveDesktopScheme,
 } from './desktop-channels';
 
@@ -64,14 +63,16 @@ describe('resolveDesktopScheme', () => {
   });
 });
 
-describe('desktopReleaseApiPath', () => {
-  it('reads the immutable vX.Y.Z release for stable', () => {
-    expect(desktopReleaseApiPath('stable')).toBe('releases/latest');
+describe('desktopReleaseTag', () => {
+  // Stable has no fixed tag — it ships in whatever vX.Y.Z is current.
+  it('names no tag for stable', () => {
+    expect(desktopReleaseTag('stable')).toBeNull();
   });
 
-  it('reads the mutable prerelease tags for dev and staging', () => {
-    expect(desktopReleaseApiPath('dev')).toBe('releases/tags/desktop-dev-latest');
-    expect(desktopReleaseApiPath('staging')).toBe('releases/tags/desktop-staging-latest');
+  // These strings are the contract with desktop.yml's publish job.
+  it('names the mutable prerelease tags for dev and staging', () => {
+    expect(desktopReleaseTag('dev')).toBe('desktop-dev-latest');
+    expect(desktopReleaseTag('staging')).toBe('desktop-staging-latest');
   });
 });
 
@@ -86,7 +87,7 @@ describe('agreement with the desktop shell', () => {
     '../../../desktop-electron/src/channel.js',
   );
   const { CHANNELS } = createRequire(import.meta.url)(shellPath) as {
-    CHANNELS: Record<string, { scheme: string; productName: string }>;
+    CHANNELS: Record<string, { scheme: string }>;
   };
 
   it('covers exactly the shell\'s channels', () => {
@@ -99,9 +100,4 @@ describe('agreement with the desktop shell', () => {
     }
   });
 
-  it("uses the shell's product name for every channel", () => {
-    for (const channel of Object.keys(DESKTOP_CHANNEL_LABEL) as (keyof typeof DESKTOP_CHANNEL_LABEL)[]) {
-      expect(DESKTOP_CHANNEL_LABEL[channel]).toBe(CHANNELS[channel].productName);
-    }
-  });
 });

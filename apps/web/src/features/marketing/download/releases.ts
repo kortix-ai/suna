@@ -26,7 +26,7 @@
  */
 
 import type { DesktopChannel } from '@/lib/desktop-channels';
-import { desktopReleaseApiPath } from '@/lib/desktop-channels';
+import { desktopReleaseTag } from '@/lib/desktop-channels';
 
 import type { DesktopOs } from './detect-os';
 
@@ -35,23 +35,20 @@ const REPO = 'kortix-ai/suna';
 /** Where every download falls back to when the API is unreachable. */
 export const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 
-/**
- * Where a channel's installers are published.
- *
- * Stable reads the immutable `vX.Y.Z` release. Dev and staging read the mutable
- * `desktop-dev-latest` / `desktop-staging-latest` prereleases their build
- * workflows force-push over, so the tag stays put while the assets behind it
- * move — which is what "the current dev app" means.
- */
+/** The GitHub API endpoint listing a channel's assets. */
 function releaseApiUrl(channel: DesktopChannel): string {
-  return `https://api.github.com/repos/${REPO}/${desktopReleaseApiPath(channel)}`;
+  const tag = desktopReleaseTag(channel);
+  return `https://api.github.com/repos/${REPO}/${tag ? `releases/tags/${tag}` : 'releases/latest'}`;
 }
 
-/** Human-facing fallback page for a channel, used when the API is unreachable. */
+/**
+ * Human-facing fallback page for a channel, used when the API is unreachable.
+ * It stays on the visitor's OWN channel: bouncing a dev tester to the stable
+ * releases page would quietly hand them the production installer.
+ */
 export function releasesPageFor(channel: DesktopChannel): string {
-  return channel === 'stable'
-    ? RELEASES_PAGE
-    : `https://github.com/${REPO}/releases/tag/desktop-${channel}-latest`;
+  const tag = desktopReleaseTag(channel);
+  return tag ? `https://github.com/${REPO}/releases/tag/${tag}` : RELEASES_PAGE;
 }
 
 export type ReleaseAsset = { name: string; url: string; size: number };

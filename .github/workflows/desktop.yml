@@ -37,51 +37,18 @@ concurrency:
   group: desktop-${{ inputs.channel || (github.ref_name == 'staging' && 'staging' || 'dev') }}
   cancel-in-progress: true
 
+# The channel is a pure function of the trigger, so it is resolved here rather
+# than by a job. electron-builder.js turns it into appId, productName, icon,
+# target URL and kortix:// scheme via src/channel.js — it is the only identity
+# input any job needs. `stable` is unreachable by construction: it belongs to
+# deploy-prod.yml, which publishes the immutable vX.Y.Z release.
+env:
+  KORTIX_CHANNEL: ${{ inputs.channel || (github.ref_name == 'staging' && 'staging' || 'dev') }}
+
 jobs:
-  # ── Resolve the channel + version once, so no job re-derives them ───────────
-  setup:
-    name: Resolve channel
-    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
-    outputs:
-      channel: ${{ steps.resolve.outputs.channel }}
-      version: ${{ steps.resolve.outputs.version }}
-      tag: ${{ steps.resolve.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Resolve channel and version
-        id: resolve
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -n "${{ inputs.channel }}" ]; then
-            channel="${{ inputs.channel }}"
-          elif [ "$GITHUB_REF_NAME" = "staging" ]; then
-            channel="staging"
-          else
-            channel="dev"
-          fi
-          # `stable` is deploy-prod.yml's alone: it publishes the immutable
-          # vX.Y.Z release, and building it here would overwrite production
-          # identity from a mutable prerelease tag.
-          if [ "$channel" = "stable" ]; then
-            echo "::error::The stable channel is built by deploy-prod.yml, not this workflow."
-            exit 1
-          fi
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
-          echo "tag=desktop-$channel-latest" >> "$GITHUB_OUTPUT"
-          echo "::notice::Building the $channel desktop channel → desktop-$channel-latest"
-
   build:
-    name: Build ${{ needs.setup.outputs.channel }} desktop ${{ matrix.target_pretty }}
-    needs: setup
+    name: Build ${{ matrix.target_pretty }}
     runs-on: ${{ matrix.runner }}
-    env:
-      # The ONLY identity input. electron-builder.js resolves appId, productName,
-      # icon, target URL and kortix:// scheme from it via src/channel.js.
-      KORTIX_CHANNEL: ${{ needs.setup.outputs.channel }}
-      KORTIX_VERSION: ${{ needs.setup.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
@@ -129,6 +96,10 @@ jobs:
         run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron
         env:
           npm_config_engine_strict: "false"
+
+      - name: Compute version
+        shell: bash
+        run: echo "KORTIX_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
 
       # Fails the build on a typo'd channel or a channel whose icons were never
       # generated — better here than as an unsigned bundle carrying the wrong
@@ -229,16 +200,14 @@ jobs:
 
   # ── Publish/refresh the mutable `desktop-<channel>-latest` prerelease ───────
   publish:
-    name: Publish ${{ needs.setup.outputs.tag }}
-    needs: [setup, build]
+    name: Publish prerelease
+    needs: build
     # Publish whatever installers built — a single OS's signing failure shouldn't
     # discard the others.
-    if: always() && needs.build.result != 'cancelled' && needs.setup.result == 'success'
+    if: always() && needs.build.result != 'cancelled'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     permissions:
       contents: write
-    env:
-      TAG: ${{ needs.setup.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -264,24 +233,25 @@ jobs:
           sha256sum ./* > SHA256SUMS
           ls -lh
 
-      - name: Move ${{ env.TAG }} to this commit
+      - name: Move desktop-${{ env.KORTIX_CHANNEL }}-latest to this commit
         run: |
+          TAG="desktop-$KORTIX_CHANNEL-latest"
           git tag -f "$TAG" "$GITHUB_SHA"
           git push -f origin "$TAG"
 
       - name: Publish GitHub prerelease
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG }}
-          name: ${{ env.TAG }}
+          tag_name: desktop-${{ env.KORTIX_CHANNEL }}-latest
+          name: desktop-${{ env.KORTIX_CHANNEL }}-latest
           prerelease: true
           make_latest: false
           generate_release_notes: false
           body: |
-            Mutable **${{ needs.setup.outputs.channel }}** desktop build for `${{ github.sha }}`.
+            Mutable **${{ env.KORTIX_CHANNEL }}** desktop build for `${{ github.sha }}`.
 
             Installs alongside the other channels — its own app name, icon and
-            `kortix-${{ needs.setup.outputs.channel }}://` scheme. Get it from
-            https://${{ needs.setup.outputs.channel }}.kortix.com/download
+            `kortix-${{ env.KORTIX_CHANNEL }}://` scheme. Get it from
+            https://${{ env.KORTIX_CHANNEL }}.kortix.com/download
           files: |
             release/*

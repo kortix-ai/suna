@@ -127,18 +127,6 @@ function tauri(): TauriGlobal | null {
 }
 
 /**
- * Custom URL scheme registered by the desktop shell. OAuth providers and
- * email magic links should redirect here (instead of `https://kortix.com/...`)
- * so the OS hands the callback back to the desktop app rather than opening
- * it in the user's browser.
- *
- * This is the STABLE build's scheme. Staging and dev builds register
- * `kortix-staging://` and `kortix-dev://` so all three can be installed at
- * once — read the running app's own scheme with `desktopUrlScheme()`.
- */
-export const DESKTOP_URL_SCHEME = DEFAULT_DESKTOP_SCHEME;
-
-/**
  * The deep-link scheme of the desktop build we are running inside.
  *
  * The shell advertises it in its user-agent (`KortixScheme/kortix-dev`), the

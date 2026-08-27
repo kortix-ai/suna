@@ -110,11 +110,25 @@ function buildUserAgent(fallbackUA, appName, uaToken, scheme) {
   return `${base} ${uaToken} KortixScheme/${scheme}`;
 }
 
+/**
+ * Auto-update only makes sense for an installed app on the stable feed:
+ *   • unpackaged `electron .` dev runs ship no app-update.yml — electron-updater
+ *     refuses to check;
+ *   • `dev` and `staging` publish to mutable prereleases (desktop-dev-latest /
+ *     desktop-staging-latest), not versioned feeds, so there is no "newer
+ *     version" to compare against — and a successful "update" would silently
+ *     move the user onto a prod installer.
+ */
+function isUpdaterSupported({ isPackaged, channel }) {
+  return isPackaged === true && channel === 'stable';
+}
+
 module.exports = {
   CHANNELS,
   CHANNEL_NAMES,
   buildUserAgent,
   channelConfig,
+  isUpdaterSupported,
   resolveChannel,
   resolveScheme,
 };

@@ -74,21 +74,17 @@ export function resolveDesktopScheme(raw: string | null | undefined): string {
 }
 
 /**
- * GitHub release the /download surfaces read for this channel.
+ * The git tag holding this channel's installers, or null for stable.
  *
- * Stable reads `releases/latest`, the immutable vX.Y.Z release cut by
- * deploy-prod.yml. Dev and staging read mutable prereleases that their build
- * workflows force-push over on every publish, so the tag is stable while the
- * assets behind it are not — which is what "give me the current dev app" means.
+ * Stable ships in the immutable `vX.Y.Z` release cut by deploy-prod.yml, which
+ * has no fixed tag to name — `releases/latest` resolves it. Dev and staging
+ * publish to prereleases that desktop.yml force-pushes over on every build, so
+ * the tag stays put while the assets behind it move. That is exactly what "give
+ * me the current dev app" means.
+ *
+ * Every URL that names a channel's release derives from this one function, so
+ * the tag format is written once.
  */
-export function desktopReleaseApiPath(channel: DesktopChannel): string {
-  if (channel === 'stable') return 'releases/latest';
-  return `releases/tags/desktop-${channel}-latest`;
+export function desktopReleaseTag(channel: DesktopChannel): string | null {
+  return channel === 'stable' ? null : `desktop-${channel}-latest`;
 }
-
-/** Human label for the channel, used on the /download page. */
-export const DESKTOP_CHANNEL_LABEL: Record<DesktopChannel, string> = {
-  stable: 'Kortix',
-  staging: 'Kortix Staging',
-  dev: 'Kortix Dev',
-};
