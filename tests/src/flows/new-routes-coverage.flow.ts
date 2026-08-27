@@ -192,8 +192,8 @@ flow(
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
-      'GET /v1/projects/:projectId/sessions/:sessionId/stream',
+      'GET /v1/projects/:projectId/sessions/:sessionId/snapshot',
+      'GET /v1/projects/:projectId/sessions/:sessionId/events',
     ],
   },
   async (ctx) => {
@@ -237,7 +237,7 @@ flow(
       response.status(404);
     });
 
-    await ctx.step('Session open bundle answers every leg in ONE round trip', async () => {
+    await ctx.step('Session snapshot answers every leg in ONE round trip', async () => {
       // The bundle is what a session view opens with: one call replacing the
       // session row + /turn + /prompts + /transcript + /model-defaults. Two
       // claims are asserted here because both are contract, not detail:
@@ -248,7 +248,7 @@ flow(
       const session = await ctx.fixtures.session(project);
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
           params: { projectId: project.id, sessionId: session.id },
         });
       response.status(200);
@@ -293,7 +293,7 @@ flow(
       }
     });
 
-    await ctx.step('Session open bundle carries a TRI-STATE runtime leg', async () => {
+    await ctx.step('Session snapshot carries a TRI-STATE runtime leg', async () => {
       // The leg that replaces seven proxied reads of the box (`/agent`
       // `/command` `/config` `/session` `/session/status` `/permission`
       // `/question`). A fresh session has no projection yet, so the honest
@@ -302,7 +302,7 @@ flow(
       const session = await ctx.fixtures.session(project);
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
           params: { projectId: project.id, sessionId: session.id },
         });
       response.status(200);
@@ -321,7 +321,7 @@ flow(
       }
     });
 
-    await ctx.step('Session stream serves control events with NO sandbox attached', async () => {
+    await ctx.step('Session events stream serves control events with NO sandbox attached', async () => {
       // The stream's load-bearing property: it is a 200 that keeps delivering
       // control-plane facts even when the box is stopped, missing or
       // unreachable. A stream that errored because a sandbox was absent would
@@ -337,7 +337,7 @@ flow(
       const startedAt = Date.now();
       try {
         const response = await fetch(
-          `${ctx.env.apiUrl}/projects/${project.id}/sessions/${session.id}/stream`,
+          `${ctx.env.apiUrl}/projects/${project.id}/sessions/${session.id}/events`,
           {
             headers: { accept: 'text/event-stream', authorization: `Bearer ${token}` },
             signal: controller.signal,
@@ -388,38 +388,38 @@ flow(
       }
     });
 
-    await ctx.step('Session stream refuses an anonymous caller', async () => {
+    await ctx.step('Session events stream refuses an anonymous caller', async () => {
       const response = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/sessions/:sessionId/stream', {
+        .get('/v1/projects/:projectId/sessions/:sessionId/events', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status([401, 403, 404]);
     });
 
-    await ctx.step('Session stream returns 404 for an unknown session', async () => {
+    await ctx.step('Session events stream returns 404 for an unknown session', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/stream', {
+        .get('/v1/projects/:projectId/sessions/:sessionId/events', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status(404);
     });
 
-    await ctx.step('Session open bundle returns 404 for an unknown session', async () => {
+    await ctx.step('Session snapshot returns 404 for an unknown session', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status(404);
     });
 
-    await ctx.step('Session open bundle refuses an anonymous caller', async () => {
+    await ctx.step('Session snapshot refuses an anonymous caller', async () => {
       // It carries the transcript and the prompt queue — session CONTENT.
       const response = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status([401, 403, 404]);
