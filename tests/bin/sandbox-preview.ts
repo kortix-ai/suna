@@ -111,8 +111,14 @@ if (action === 'deploy') {
   // environment: the sandbox is reused instead of replaced, so the URL is
   // stable across pushes (see branchEnvSandboxName).
   const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
+  // A PR preview is a gate, so it runs the suite. A branch environment is a
+  // place to work: the suite is ~10 of the ~14 minutes a deploy takes and
+  // proves nothing the stack health check has not, so it is off by default
+  // there. PREVIEW_RUN_TESTS=1 forces it back on for a deliberate full run.
+  const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;
   const deployment: SandboxPreviewDeploymentInput = {
     ...(branchEnv ? { branchEnv } : {}),
+    runTests,
     repository,
     ref: value('PREVIEW_REF', sha),
     sha,

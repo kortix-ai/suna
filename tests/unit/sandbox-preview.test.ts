@@ -54,6 +54,30 @@ describe('provider-neutral preview lifecycle', () => {
     );
   });
 
+  it('runs the suite in a pull request preview and skips it in a branch environment', () => {
+    const base = {
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker',
+      sha: 'a'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://x.example.test',
+    };
+    // Match the executed LINE: the skip branch names the command in a hint, so
+    // a substring check would report it as running.
+    const executesSuite = (script: string) =>
+      script.split('\n').some((line) => line.trim() === 'pnpm test -- --target-full');
+
+    expect(executesSuite(buildPreviewBootstrapScript(base))).toBe(true);
+    expect(executesSuite(buildPreviewBootstrapScript({ ...base, runTests: true }))).toBe(true);
+    expect(executesSuite(buildPreviewBootstrapScript({ ...base, runTests: false }))).toBe(false);
+
+    // Skipping the suite must not skip the proof that the stack came up on
+    // this commit — that check is what the deploy is actually gated on.
+    for (const runTests of [true, false]) {
+      expect(buildPreviewBootstrapScript({ ...base, runTests })).toContain('/v1/health');
+    }
+  });
+
   it('keeps branch environments out of the nightly sweep', () => {
     // A branch environment has no pull request to close, so the reconciler must
     // never see it as stale. It is excluded by OWNER, not by an expiry date.

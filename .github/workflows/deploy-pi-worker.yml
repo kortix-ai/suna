@@ -20,6 +20,11 @@ on:
   push:
     branches: [pi-worker]
   workflow_dispatch:
+    inputs:
+      run_tests:
+        description: 'Run the full suite inside the environment (adds ~10 min)'
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-pi-worker
@@ -196,6 +201,10 @@ jobs:
           # PREVIEW_BRANCH_ENV is what makes the deploy REUSE its sandbox
           # instead of replacing it — the whole reason the URL is stable.
           PREVIEW_BRANCH_ENV: ${{ env.BRANCH_ENV }}
+          # Off by default: the suite is ~10 of the ~14 minutes a deploy takes
+          # and proves nothing the stack health check does not. Run it from the
+          # Actions tab with "Run the full suite" when you actually want it.
+          PREVIEW_RUN_TESTS: ${{ inputs.run_tests && '1' || '0' }}
           PREVIEW_PR_NUMBER: '6998'
           PREVIEW_REPOSITORY: ${{ github.repository }}
           PREVIEW_REF: ${{ github.ref }}

@@ -37,6 +37,15 @@ export function buildPreviewBootstrapScript(input: {
   sha: string;
   prNumber: number;
   origin: string;
+  /**
+   * Run the full suite inside the environment once it is up. Default true.
+   *
+   * A PR preview exists to be a gate, so it runs it. A branch environment
+   * exists to be WORKED IN, and the suite is ~10 of the ~14 minutes a deploy
+   * takes — a tax on every push that proves nothing the health check above
+   * has not already proved. Run it there on demand instead.
+   */
+  runTests?: boolean;
 }): string {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
     throw new Error(`invalid GitHub repository: ${input.repository}`);
@@ -130,11 +139,17 @@ for _ in $(seq 1 60); do
 done
 curl -fsS --max-time 10 ${shellQuote(`${origin.origin}/v1/health`)} | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .environment == "preview" and .commit == $sha' >/dev/null
 
-printf 'tests\n' > "$PHASE"
+${
+    input.runTests === false
+      ? `printf 'tests-skipped\\n' > "$PHASE"
+printf 'suite skipped — this is a branch environment, not a gate. Run it with:\\n' >&2
+printf '  cd %s && set -a && . %s && set +a && pnpm test -- --target-full\\n' "$ROOT" ${shellQuote(`${instanceDir}/.env.test`)} >&2`
+      : `printf 'tests\\n' > "$PHASE"
 set -a
 source ${shellQuote(`${instanceDir}/.env.test`)}
 set +a
-pnpm test -- --target-full
+pnpm test -- --target-full`
+  }
 
 printf 'ready\n' > "$PHASE"
 `;

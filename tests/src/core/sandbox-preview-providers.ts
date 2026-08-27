@@ -66,6 +66,8 @@ export interface SandboxPreviewDeploymentInput {
    * Postgres volume (and your signed-in session) across pushes.
    */
   branchEnv?: string;
+  /** Run the full suite inside the environment after it comes up. Default true. */
+  runTests?: boolean;
 }
 
 interface PlatinumSandboxPage {
