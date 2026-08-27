@@ -67,6 +67,22 @@ import { createDeflate, createGzip } from 'node:zlib';
 export const COMPRESSION_MIN_BYTES = 1024;
 
 /**
+ * Whether THIS runtime can compress at all. `CompressionStream` is a Web API
+ * that Bun 1.2 (the API image's pinned major, `apps/api/Dockerfile`
+ * `BUN_VERSION`) does not implement, while Bun 1.3 — every laptop and CI lane
+ * — does. Checked per call, not once at import, so a test can remove the
+ * global and prove the fail-open path; the cost is one property read.
+ *
+ * Fail OPEN: without the API the middleware must not touch the body. The
+ * first deploy of this file threw `ReferenceError: CompressionStream is not
+ * defined` AFTER peeking the body, so on dev every response of 1 KiB or more
+ * answered 500 while `/health` stayed green (2026-08-26 22:41 → 2026-08-27).
+ */
+export function compressionAvailable(): boolean {
+  return typeof (globalThis as { CompressionStream?: unknown }).CompressionStream === 'function';
+}
+
+/**
  * Content types worth compressing.
  *
  * `text/event-stream` and `application/x-ndjson` are deliberately absent: they
@@ -233,21 +249,28 @@ function restream(
  * Feature-detect once and fall back to `node:zlib`, which streams on every Bun
  * this repo runs.
  */
-const HAS_NATIVE_COMPRESSION_STREAM = typeof CompressionStream !== 'undefined';
-
 /** `body` piped through the requested encoding, on native or zlib plumbing. */
 export function compressedStream(
   encoding: 'gzip' | 'deflate',
   body: ReadableStream<Uint8Array>,
-  useNative: boolean = HAS_NATIVE_COMPRESSION_STREAM,
+  useNative: boolean = compressionAvailable(),
 ): ReadableStream<Uint8Array> {
   if (useNative) {
-    return body.pipeThrough(
-      new CompressionStream(encoding) as unknown as ReadableWritablePair<
-        Uint8Array,
-        Uint8Array
-      >,
-    );
+    try {
+      return body.pipeThrough(
+        new CompressionStream(encoding) as unknown as ReadableWritablePair<
+          Uint8Array,
+          Uint8Array
+        >,
+      );
+    } catch (err) {
+      // Present but broken (or an encoding it does not implement): fall through
+      // to zlib rather than 500 a response that was perfectly fine.
+      console.warn('[compress] CompressionStream failed — using node:zlib', {
+        encoding,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
   const zlib = encoding === 'gzip' ? createGzip() : createDeflate();
   return Readable.toWeb(
@@ -311,6 +334,10 @@ export async function compressResponse(c: Context, next: Next): Promise<void> {
     return;
   }
 
+  // The body has been partially consumed by the peek, so from here on the
+  // ONLY correct outcome is "compressed": `compressedStream` uses the native
+  // CompressionStream when the runtime has one and node:zlib when it does not
+  // (the Bun 1.2 runtime image), and never throws for a healthy response.
   headers.set('content-encoding', encoding);
   // The compressed length is unknown until the stream ends, so any declared
   // length must go: keeping it would describe the wrong number of bytes and the

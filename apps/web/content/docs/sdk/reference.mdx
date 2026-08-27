@@ -39,6 +39,7 @@ kortix.runtime(); // OpenCode REST compatibility client
 | --- | --- |
 | `list()` · `get(accountId)` | accounts you belong to · one account |
 | `create({ name })` · `updateName(accountId, name)` | create · rename an account |
+| `branding.get(accountId)` · `branding.update(accountId, { app_name })` · `branding.uploadAsset(accountId, kind, file)` · `branding.removeAsset(accountId, kind)` · `branding.reset(accountId)` | organization branding (Enterprise): own logo / icon / favicon and product name; `kind` is `logo` · `icon` · `favicon`, or `logo_dark` · `icon_dark` · `favicon_dark` for the dark-scheme variant |
 | `members(accountId)` · `invite(accountId, input)` | list members · invite one |
 | `updateMemberRole(accountId, userId, role)` · `removeMember(accountId, userId)` | assign the account role · remove a member |
 | `invites(accountId)` | pending invites |

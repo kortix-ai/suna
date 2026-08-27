@@ -241,6 +241,9 @@ export type {
   // Accounts / IAM
   KortixAccount,
   AccountDetail,
+  AccountBranding,
+  AccountBrandingAssetKind,
+  AccountBrandingState,
   AccountMember,
   AccountRole,
   ProjectRole,

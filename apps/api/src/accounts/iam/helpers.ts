@@ -13,6 +13,7 @@ const ENTITLEMENT_LABEL: Record<keyof TierEntitlements, string> = {
   scim: 'SCIM directory provisioning',
   rbac: 'Custom roles, policies, and groups',
   auditAccess: 'Audit log access and export',
+  branding: 'Organization branding',
 };
 
 /**

@@ -5,6 +5,7 @@ import {
   COMPRESSION_MIN_BYTES,
   compressResponse,
   compressedStream,
+  compressionAvailable,
   compressionCandidate,
   negotiateEncoding,
 } from './compress';
@@ -271,5 +272,59 @@ describe('compressedStream zlib fallback (Bun 1.2 image has no CompressionStream
         .pipeThrough(new DecompressionStream('deflate')),
     ).text();
     expect(text).toBe(bigJson);
+  });
+});
+
+// ─── No CompressionStream? Compress anyway (node:zlib), never 500 ───────────
+//
+// The API image pins Bun 1.2 (`apps/api/Dockerfile` BUN_VERSION), which has no
+// `CompressionStream`; laptops and CI run Bun 1.3, which does. The first deploy
+// threw `ReferenceError` AFTER peeking the body, so on dev every response of
+// 1 KiB or more answered 500 while `/health` (small) stayed green. These pin
+// the contract on that runtime: the response is STILL gzip-compressed (via
+// node:zlib), 200, and round-trips byte-identical.
+describe('compressResponse without CompressionStream (Bun 1.2 image)', () => {
+  const g = globalThis as { CompressionStream?: unknown };
+
+  function withoutCompressionStream<T>(run: () => Promise<T>): Promise<T> {
+    const saved = g.CompressionStream;
+    delete g.CompressionStream;
+    return run().finally(() => {
+      g.CompressionStream = saved;
+    });
+  }
+
+  test('compressionAvailable() reports the global, live', async () => {
+    expect(compressionAvailable()).toBe(true);
+    await withoutCompressionStream(async () => {
+      expect(compressionAvailable()).toBe(false);
+    });
+    expect(compressionAvailable()).toBe(true);
+  });
+
+  test('a large JSON GET with accept-encoding: gzip is STILL gzip-compressed, 200', async () => {
+    await withoutCompressionStream(async () => {
+      const res = await app().request('/big.json', { headers: { 'accept-encoding': 'gzip' } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-encoding')).toBe('gzip');
+      expect(await inflate(await res.arrayBuffer())).toBe(bigJson);
+    });
+  });
+
+  test('a constructor that throws after the peek still compresses via zlib', async () => {
+    const saved = g.CompressionStream;
+    g.CompressionStream = class {
+      constructor() {
+        throw new TypeError('simulated: unsupported encoding');
+      }
+    };
+    try {
+      const res = await app().request('/big.json', { headers: { 'accept-encoding': 'gzip' } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-encoding')).toBe('gzip');
+      expect(await inflate(await res.arrayBuffer())).toBe(bigJson);
+    } finally {
+      g.CompressionStream = saved;
+    }
   });
 });

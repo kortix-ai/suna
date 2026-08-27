@@ -792,7 +792,7 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
           <h3 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
             {app.name}
           </h3>
-          <Badge size="xs" variant={status.live ? 'success' : 'muted'} className="shrink-0">
+          <Badge variant={status.live ? 'success' : 'muted'} className="shrink-0">
             {status.label}
           </Badge>
         </div>

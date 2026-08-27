@@ -52,6 +52,7 @@ export interface EntitlementOverrides {
   scim?: OverrideEntry<boolean>;
   rbac?: OverrideEntry<boolean>;
   auditAccess?: OverrideEntry<boolean>;
+  branding?: OverrideEntry<boolean>;
   managedModels?: OverrideEntry<boolean>;
 }
 
@@ -60,12 +61,13 @@ export type OverrideKey = keyof EntitlementOverrides;
 /** The value type of one key, e.g. `boolean` for `sso`, `number` for `maxConcurrentSessions`. */
 export type OverrideValue<K extends OverrideKey> = NonNullable<EntitlementOverrides[K]>['value'];
 
-/** The five per-entitlement booleans, applied after the enterprise expansion. */
+/** The six per-entitlement booleans, applied after the enterprise expansion. */
 export const ENTITLEMENT_OVERRIDE_KEYS = [
   'sso',
   'scim',
   'rbac',
   'auditAccess',
+  'branding',
   'managedModels',
 ] as const;
 

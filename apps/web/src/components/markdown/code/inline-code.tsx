@@ -19,10 +19,11 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { childrenToText } from './children-text';
+// Server-safe by design — see `inline-chip.tsx`. Re-exported so the client
+// consumers that already import them from here keep working.
+import { HexColorCode, INLINE_CODE, isHexColor } from './inline-chip';
 
-// ─── Inline code ─────────────────────────────────────────────────────────────
-export const INLINE_CODE =
-  'rounded-[5px] bg-muted px-1.5 py-[0.08rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card border border-muted-foreground/5';
+export { HexColorCode, INLINE_CODE, isHexColor };
 
 /**
  * A path inside a message, rendered as a door to the file — but only while
@@ -143,6 +144,13 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
 export function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   const { proxyUrl } = useSandboxProxy();
   const text = childrenToText(children).trim();
+
+  // Before the URL and path checks: a hex is neither, and the test is a single
+  // anchored regex against a string that is at most nine characters.
+  if (isHexColor(text)) {
+    return <HexColorCode hex={text}>{children}</HexColorCode>;
+  }
+
   const isUrl = looksLikeUrl(text);
 
   if (isUrl) {

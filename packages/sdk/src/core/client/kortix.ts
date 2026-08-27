@@ -169,6 +169,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     get: P.getAccount,
     create: P.createAccount,
     updateName: P.updateAccountName,
+    /** Organization branding (Enterprise): own logo / icon / favicon (light + dark) and product name. */
+    branding: {
+      get: P.getAccountBranding,
+      update: P.updateAccountBranding,
+      uploadAsset: P.uploadAccountBrandingAsset,
+      removeAsset: P.removeAccountBrandingAsset,
+      reset: P.resetAccountBranding,
+    },
     leave: P.leaveAccount,
     members: P.listAccountMembers,
     invite: P.inviteAccountMember,

@@ -143,6 +143,10 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `INV-4` `POST /account-invites/:inviteId/accept` → 200 membership created (rate-limited); already accepted by this user → 200 `{already_accepted:true}`; **expired → 410**; wrong email → 403.
 `INV-5` `POST /account-invites/:inviteId/decline` → 200; already accepted → 409; wrong email → 403; not found → 404.
 
+### Organization branding (Enterprise)
+
+`ACCT-BRAND-1` `GET /accounts/:id/branding` → member → 200 `{branding:{app_name,logo_url,icon_url,favicon_url,logo_dark_url,icon_dark_url,favicon_dark_url}, entitled}` (the STORED record). `PUT /accounts/:id/branding {app_name}` and `POST /accounts/:id/branding/assets/:kind` (`kind` ∈ `logo|icon|favicon|logo_dark|icon_dark|favicon_dark`, multipart `file`, bytes sniffed: PNG/JPEG/WebP/SVG-without-script/ICO, ≤ 1 MiB) → `ACCOUNT_WRITE` **and** the `branding` entitlement → 200; non-entitled → **402 `{code:"entitlement_required", entitlement:"branding"}`**; `MEMBER` → 403. `DELETE …/assets/:kind` and `DELETE /accounts/:id/branding` (reset) → `ACCOUNT_WRITE` only — a downgraded account can always unwind. `GET /accounts` and `GET /accounts/:id` carry `branding` = the record while entitled, `null` otherwise (serving is entitlement-checked; the local profile has no Enterprise tier, so writes 402 and the list carries `null`).
+
 ### Account PATs (CLI tokens)
 
 `TOK-1` `GET /accounts/tokens` → list.
@@ -719,7 +723,7 @@ supplied scope field without restarting the session.
 
 ## 25. Parallel-authored domains (git/platform/iam/channels/queue/audit/scim)
 
-`GH-9` `GET /git/:project/info/refs` · `GET …/compiled-checkout` · `GET …/compiled-runtime` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → Git proxy and compiled boot artifacts, git token auth (not JWT); bad/no token → 401/502.
+`GH-9` `GET /git/:project/info/refs` · `GET …/compiled-checkout` · `GET …/compiled-runtime` · `GET …/compiled-pi-runtime` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → Git proxy and compiled boot artifacts, git token auth (not JWT); bad/no token → 401/502.
 `GH-10` `GET /git/:project/info/refs` → user JWT is not a git token → 401/403; NONMEMBER → 401/403/404.
 `GH-12` `POST /projects/:id/git/collaborators` → missing username → 400; non-managed → 409; no install → 502.
 `GH-13` `GET /projects/github/repositories` → PROJECT_CREATE; no App install → 409 install_url.

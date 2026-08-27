@@ -52,6 +52,8 @@ export interface PlanRecord {
     scim: boolean;
     rbac: boolean;
     auditAccess: boolean;
+    /** Organization branding (own logo / icon / favicon / product name). */
+    branding: boolean;
     /** True iff the tier's `models` list includes 'all' (tierGrantsAllModels). */
     managedModels: boolean;
     canPurchaseCredits: boolean;
@@ -94,8 +96,20 @@ export const PLAN_FAMILY_LABELS: Record<PlanFamily, string> = {
   enterprise: 'Enterprise',
 };
 
-const NO_ENTERPRISE = { sso: false, scim: false, rbac: false, auditAccess: false } as const;
-const ALL_ENTERPRISE = { sso: true, scim: true, rbac: true, auditAccess: true } as const;
+const NO_ENTERPRISE = {
+  sso: false,
+  scim: false,
+  rbac: false,
+  auditAccess: false,
+  branding: false,
+} as const;
+const ALL_ENTERPRISE = {
+  sso: true,
+  scim: true,
+  rbac: true,
+  auditAccess: true,
+  branding: true,
+} as const;
 
 // ─── RANKING ────────────────────────────────────────────────────────────────
 // rank 0 = none, rank 1 = free, then ascending monthly price, enterprise last.

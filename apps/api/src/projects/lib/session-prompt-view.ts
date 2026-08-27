@@ -15,6 +15,9 @@ import { PROMPT_TEXT_PREVIEW_CHARS } from '../session-lifecycle/prompt-parts';
 
 export type PromptRow = typeof sessionLifecycleCommands.$inferSelect;
 
+/** One inbox row in wire shape — the element type of `{ prompts: [...] }`. */
+export type SessionPromptView = ReturnType<typeof serializePrompt>;
+
 /**
  * Map a durable command row onto the inbox's four user-visible states.
  *
