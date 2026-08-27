@@ -228,6 +228,15 @@ rollback_agent() {
 
 mkdir -p "${AGENT_STATE_DIR}" 2>/dev/null || true
 
+# Tell the daemon (and any `kortixd` invocation that inherits this env) that a
+# supervisor owns the binary swap. `kortixd update` then STAGES ${AGENT_NEXT}
+# and exits ${SWAP_CODE} for this loop to install, instead of self-swapping its
+# own running binary — which is unsafe and which warm-fork/resume/restart would
+# not re-run anyway. Export the resolved state dir so it stages into the exact
+# slot select_agent/promote_staged_agent read. See apps/kortix-sandbox-agent-server/src/cli.ts.
+export KORTIX_SUPERVISED=1
+export KORTIX_AGENT_STATE_DIR="${AGENT_STATE_DIR}"
+
 COMPILED_RUNTIME_PATH=""
 COMPILED_RUNTIME_ACTIVE=0
 case "${KORTIX_COMPILED_BOOT_MODE:-off}" in
