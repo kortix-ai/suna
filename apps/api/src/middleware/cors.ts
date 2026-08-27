@@ -55,6 +55,11 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       'X-Request-Id',
       'Last-Event-ID',
       'X-Kortix-Client',
+      // Defense in depth for the session stream: a cross-origin SSE reader that
+      // sends `Cache-Control: no-cache` (older SDKs, the opencode fallback) would
+      // otherwise fail preflight and the stream would never open. The current SDK
+      // no longer sends it, but allowing it keeps any client that does working.
+      'Cache-Control',
       // Act-as impersonation. A header absent from this list is stripped by the
       // browser's preflight, so the request arrives WITHOUT the grant and runs
       // as the operator's own account — the exact silent mis-scoping the
