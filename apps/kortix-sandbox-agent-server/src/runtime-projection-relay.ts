@@ -75,7 +75,25 @@ function unrefd(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
  * runtime state store yet. Trailing debounce — a burst of triggers collapses
  * to one POST carrying the state as of the LAST trigger.
  */
+/**
+ * The control-plane config `doPush` requires. Checked BEFORE arming the debounce
+ * timer, not only inside the push: an unconfigured daemon (self-host, local dev,
+ * every unit test that does not set these) must not arm a timer that later fires
+ * to do nothing — an unref'd timer that outlives the caller leaks a fire-and-
+ * forget into whatever runs next (observed: a daemon test-suite flake where the
+ * env route armed this and the timer fired mid sibling test).
+ */
+function projectionConfigured(): boolean {
+  return Boolean(
+    process.env.KORTIX_SESSION_ID?.trim() &&
+      (process.env.KORTIX_TOKEN || '').trim() &&
+      process.env.KORTIX_API_URL?.trim(),
+  )
+}
+
 export function scheduleRuntimeProjectionPush(reason: string): void {
+  // Nothing to push to — do not arm a timer that would only no-op later.
+  if (!projectionConfigured()) return
   try {
     pendingReason = reason
     if (debounceTimer) clearTimeout(debounceTimer)
