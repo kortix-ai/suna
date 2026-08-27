@@ -227,8 +227,10 @@ jobs:
       - name: Prove the environment is serving this commit
         run: |
           set -euo pipefail
-          url="$(jq -r '.previewUrl // empty' tests/test-results/preview-deployment.json 2>/dev/null || true)"
-          [ -n "$url" ] || { echo "::error::the deploy produced no environment URL"; exit 1; }
+          # writeDeploymentResult writes tests/test-results/preview/deployment.json.
+          result=tests/test-results/preview/deployment.json
+          url="$(jq -r '.previewUrl // empty' "$result" 2>/dev/null || true)"
+          [ -n "$url" ] || { echo "::error::the deploy produced no environment URL ($result)"; exit 1; }
           served="$(curl -fsS --max-time 30 "${url}/v1/health" | jq -r '.commit // empty')"
           [ "$served" = "$GITHUB_SHA" ] || {
             echo "::error::${url} serves commit ${served:-<none>}, expected ${GITHUB_SHA}"
