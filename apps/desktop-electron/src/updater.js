@@ -6,7 +6,7 @@
 //
 // Flow:
 //   1. On launch we ask GitHub for the newest signed release (the feed is the
-//      `vX.Y.Z` release list — electron-builder.yml already declares the github
+//      `vX.Y.Z` release list — electron-builder.js already declares the github
 //      provider, so the packaged app ships an `app-update.yml` pointing at it).
 //   2. If a newer version exists it downloads in the BACKGROUND — the app stays
 //      fully usable; we never block the window on a ~100 MB download. While the

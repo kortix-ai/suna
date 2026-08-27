@@ -23,7 +23,10 @@ describe('isUpdaterSupported', () => {
     expect(isUpdaterSupported({ isPackaged: false, channel: 'stable' })).toBe(false);
   });
 
-  it('disables the dev channel even when packaged', () => {
-    expect(isUpdaterSupported({ isPackaged: true, channel: 'dev' })).toBe(false);
+  // dev and staging publish to mutable prereleases, not versioned feeds, so
+  // there is nothing for electron-updater to compare against — and a successful
+  // "update" would silently move the user onto a prod installer.
+  it.each(['dev', 'staging'])('disables the %s channel even when packaged', (channel) => {
+    expect(isUpdaterSupported({ isPackaged: true, channel })).toBe(false);
   });
 });

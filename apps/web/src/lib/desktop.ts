@@ -9,6 +9,8 @@
  * `@tauri-apps/api`.
  */
 
+import { DEFAULT_DESKTOP_SCHEME, resolveDesktopScheme } from '@/lib/desktop-channels';
+
 export const DESKTOP_UA_TOKEN = 'KortixDesktop';
 
 /**
@@ -129,8 +131,27 @@ function tauri(): TauriGlobal | null {
  * email magic links should redirect here (instead of `https://kortix.com/...`)
  * so the OS hands the callback back to the desktop app rather than opening
  * it in the user's browser.
+ *
+ * This is the STABLE build's scheme. Staging and dev builds register
+ * `kortix-staging://` and `kortix-dev://` so all three can be installed at
+ * once — read the running app's own scheme with `desktopUrlScheme()`.
  */
-export const DESKTOP_URL_SCHEME = 'kortix';
+export const DESKTOP_URL_SCHEME = DEFAULT_DESKTOP_SCHEME;
+
+/**
+ * The deep-link scheme of the desktop build we are running inside.
+ *
+ * The shell advertises it in its user-agent (`KortixScheme/kortix-dev`), the
+ * same channel `isDesktop()` already uses: available synchronously before
+ * hydration, and — unlike an IPC bridge — it also reaches the server on every
+ * request. Builds shipped before per-channel schemes existed send no such
+ * token and only answer `kortix://`, which is exactly the fallback.
+ */
+export function desktopUrlScheme(): string {
+  if (typeof navigator === 'undefined') return DEFAULT_DESKTOP_SCHEME;
+  const match = /KortixScheme\/([a-z][a-z0-9+.-]*)/.exec(navigator.userAgent);
+  return resolveDesktopScheme(match?.[1]);
+}
 
 /**
  * Returns the right OAuth redirect target for the current runtime:
@@ -151,7 +172,12 @@ export function authRedirectUrl(path: string = '/auth/callback'): string {
   const origin = window.location.origin;
   if (isDesktop()) {
     const sep = cleanPath.includes('?') ? '&' : '?';
-    return `${origin}${cleanPath}${sep}desktop=true`;
+    // `desktop_scheme` is what makes the bounce land in THIS app rather than
+    // whichever Kortix build the OS registered last. It has to travel through
+    // the URL because the page that finally renders the deep link runs in the
+    // user's system browser, which knows nothing about the app that started
+    // the sign-in. The callback route allowlists the value before using it.
+    return `${origin}${cleanPath}${sep}desktop=true&desktop_scheme=${encodeURIComponent(desktopUrlScheme())}`;
   }
   return `${origin}${cleanPath}`;
 }

@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
+import { buildDesktopDeepLink } from '@/lib/auth/desktop-bounce';
 import {
   DESKTOP_BASE_ZOOM,
+  authRedirectUrl,
   desktopPlatform,
+  desktopUrlScheme,
   desktopShellPlatform,
   getDesktopZoom,
   isDesktop,
@@ -182,5 +185,109 @@ describe('desktop zoom persistence', () => {
     await zoomReset();
     expect(getDesktopZoom()).toBe(DESKTOP_BASE_ZOOM);
     expect(DESKTOP_BASE_ZOOM).not.toBe(1);
+  });
+});
+
+/* ── Per-channel deep-link scheme ─────────────────────────────────────────
+   Prod, staging and dev desktop builds install side by side, so the OAuth
+   bounce must name the scheme of the build that started the sign-in. The shell
+   advertises it in its user-agent; authRedirectUrl carries it to the callback
+   URL, because the page that renders the deep link runs in the user's SYSTEM
+   browser and knows nothing about the app. */
+
+describe('desktopUrlScheme', () => {
+  test('reads the scheme the shell advertises', () => {
+    setNavigator('Mozilla/5.0 KortixDesktop/0.1.0 KortixScheme/kortix-dev', 'MacIntel');
+    expect(desktopUrlScheme()).toBe('kortix-dev');
+
+    setNavigator('Mozilla/5.0 KortixDesktop/0.1.0 KortixScheme/kortix-staging', 'MacIntel');
+    expect(desktopUrlScheme()).toBe('kortix-staging');
+  });
+
+  // Every build shipped before per-channel schemes existed sends no token and
+  // answers only kortix://.
+  test('falls back to kortix for a shell that advertises nothing', () => {
+    setNavigator('Mozilla/5.0 KortixDesktop/0.1.0', 'MacIntel');
+    expect(desktopUrlScheme()).toBe('kortix');
+  });
+
+  test('falls back to kortix in a plain browser', () => {
+    setNavigator('Mozilla/5.0 (Macintosh) Chrome/120', 'MacIntel');
+    expect(desktopUrlScheme()).toBe('kortix');
+  });
+
+  // The UA is not a trust boundary, but it still must not smuggle a protocol.
+  test('rejects a scheme that is not one of ours', () => {
+    setNavigator('Mozilla/5.0 KortixDesktop/0.1.0 KortixScheme/javascript', 'MacIntel');
+    expect(desktopUrlScheme()).toBe('kortix');
+  });
+});
+
+describe('authRedirectUrl carries the channel', () => {
+  function setWindow(origin: string) {
+    Object.defineProperty(globalThis, 'window', {
+      value: { location: { origin } },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  test('a dev build asks for its own scheme back', () => {
+    setNavigator('Mozilla/5.0 KortixDesktop/0.1.0 KortixScheme/kortix-dev', 'MacIntel');
+    setWindow('https://dev.kortix.com');
+    const url = new URL(authRedirectUrl('/auth/callback'));
+    expect(url.origin).toBe('https://dev.kortix.com');
+    expect(url.searchParams.get('desktop')).toBe('true');
+    expect(url.searchParams.get('desktop_scheme')).toBe('kortix-dev');
+  });
+
+  test('an existing query string is preserved', () => {
+    setNavigator('Mozilla/5.0 KortixDesktop/0.1.0 KortixScheme/kortix-staging', 'MacIntel');
+    setWindow('https://staging.kortix.com');
+    const url = new URL(authRedirectUrl('/auth/callback?returnUrl=%2Fprojects'));
+    expect(url.searchParams.get('returnUrl')).toBe('/projects');
+    expect(url.searchParams.get('desktop_scheme')).toBe('kortix-staging');
+  });
+
+  test('a browser gets no desktop markers at all', () => {
+    setNavigator('Mozilla/5.0 (Macintosh) Chrome/120', 'MacIntel');
+    setWindow('https://kortix.com');
+    expect(authRedirectUrl('/auth/callback')).toBe('https://kortix.com/auth/callback');
+  });
+});
+
+// The whole point of the chain: a dev build's sign-in ends up back in the dev
+// build, not in whichever Kortix app the OS registered last.
+describe('end to end: shell UA → callback URL → deep link', () => {
+  test('a dev build round-trips to kortix-dev://', () => {
+    setNavigator('Mozilla/5.0 KortixDesktop/0.1.0 KortixScheme/kortix-dev', 'MacIntel');
+    Object.defineProperty(globalThis, 'window', {
+      value: { location: { origin: 'https://dev.kortix.com' } },
+      configurable: true,
+      writable: true,
+    });
+
+    // 1. The app builds the OAuth redirect target.
+    const callbackUrl = new URL(authRedirectUrl('/auth/callback'));
+    // 2. Supabase 302s the SYSTEM browser there, plus the auth code.
+    callbackUrl.searchParams.set('code', 'abc123');
+    // 3. The route hands the code back to the app that started the sign-in.
+    expect(buildDesktopDeepLink(callbackUrl.searchParams)).toBe(
+      'kortix-dev://auth/callback?code=abc123',
+    );
+  });
+
+  test('a legacy build with no scheme token still round-trips to kortix://', () => {
+    setNavigator('Mozilla/5.0 KortixDesktop/0.1.0', 'MacIntel');
+    Object.defineProperty(globalThis, 'window', {
+      value: { location: { origin: 'https://kortix.com' } },
+      configurable: true,
+      writable: true,
+    });
+    const callbackUrl = new URL(authRedirectUrl('/auth/callback'));
+    callbackUrl.searchParams.set('code', 'abc123');
+    expect(buildDesktopDeepLink(callbackUrl.searchParams)).toBe(
+      'kortix://auth/callback?code=abc123',
+    );
   });
 });
