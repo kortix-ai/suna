@@ -11,7 +11,7 @@ const SHA = 'a'.repeat(40);
 
 describe('ephemeral self-host preview stack', () => {
   it('routes every public surface through one origin', () => {
-    const caddy = buildPreviewCaddyfile();
+    const caddy = buildPreviewCaddyfile('preview.example.test');
     expect(caddy).toContain(':8080');
     expect(caddy).toContain('@api path /v1*');
     expect(caddy).toContain('reverse_proxy kortix-api:8008');
@@ -110,5 +110,18 @@ describe('ephemeral self-host preview stack', () => {
         {},
       ),
     ).toThrow('complete managed GitHub App configuration');
+  });
+
+  // 2026-08-27: every Server Action on the preview 500'd with `Invalid Server
+  // Actions request` — surfaced in the browser as minified React error #441 —
+  // because the sandbox ingress sets `x-forwarded-host` to the INTERNAL host
+  // (`*.aec.local`) while the browser's `origin` is the public one, and Next's
+  // CSRF guard compares the two. The whole auth flow was unusable.
+  it('pins the PUBLIC host on the Next upstream for Server Actions', () => {
+    const caddy = buildPreviewCaddyfile('8080-abc.eu-west.sbx.platinum.dev');
+    expect(caddy).toContain('X-Forwarded-Host 8080-abc.eu-west.sbx.platinum.dev');
+    expect(caddy).toContain('X-Forwarded-Proto https');
+    const frontendBlock = caddy.slice(caddy.indexOf('reverse_proxy frontend:3000'));
+    expect(frontendBlock).toContain('X-Forwarded-Host');
   });
 });

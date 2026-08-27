@@ -68,7 +68,7 @@ export function validatePreviewRuntimeSecrets(
   }
 }
 
-export function buildPreviewCaddyfile(): string {
+export function buildPreviewCaddyfile(publicHost: string): string {
   return `:8080 {
   encode zstd gzip
 
@@ -96,7 +96,17 @@ export function buildPreviewCaddyfile(): string {
   }
 
   handle {
-    reverse_proxy frontend:3000
+    reverse_proxy frontend:3000 {
+      # Next.js Server Actions reject a request whose \`x-forwarded-host\` does
+      # not match its \`origin\` (CSRF guard). The sandbox ingress sets
+      # \`x-forwarded-host\` to the INTERNAL host (\`*.aec.local\`) while the
+      # browser's origin is the PUBLIC one, so every Server Action — the whole
+      # auth flow included — died with \`Invalid Server Actions request\` (500,
+      # surfaced in the browser as minified React error #441). Pin the public
+      # host so the guard compares like with like.
+      header_up X-Forwarded-Host ${publicHost}
+      header_up X-Forwarded-Proto https
+    }
   }
 }
 `;
@@ -196,8 +206,14 @@ export function applyPreviewEnvironment(
     KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'true',
     KORTIX_RESTRICT_ACCOUNT_CREATION: 'false',
     KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'false',
-    KORTIX_BILLING_INTERNAL_ENABLED: 'true',
-    KORTIX_PUBLIC_BILLING_ENABLED: 'true',
+    // A preview is an ephemeral test environment with no Stripe customer, so a
+    // fresh account resolves to the free tier and `accountEntitledToLlmGateway`
+    // is false — the API then withholds KORTIX_LLM_BASE_URL and every agent
+    // (the pi worker included) falls back to the FAUX test provider, so no
+    // session can produce a real answer. Same posture as local dev: billing off
+    // entitles every account, which is what makes a preview testable at all.
+    KORTIX_BILLING_INTERNAL_ENABLED: 'false',
+    KORTIX_PUBLIC_BILLING_ENABLED: 'false',
     KORTIX_WORKERS_ENABLED: 'false',
     SCHEDULER_ENABLED: 'false',
     KORTIX_TRIGGER_SCHEDULER_ENABLED: 'false',
