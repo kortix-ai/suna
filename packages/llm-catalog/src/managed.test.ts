@@ -12,7 +12,8 @@ import {
 describe('managed catalog', () => {
   // 2026-08-10: claude-opus-4.8 / claude-sonnet-4.6 / kimi-k3 deactivated
   // (commented out in MANAGED_MODELS, reactivatable by diff); muse-spark-1.2,
-  // minimax-m3, and gpt-5.6-luna added the same day.
+  // minimax-m3, and gpt-5.6-luna added the same day. 2026-08-27: glm-5.3-flash
+  // (OpenRouter, Z.ai first-party) added.
   test('exposes the managed lineup', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual([
       'grok-4.6',
@@ -22,6 +23,7 @@ describe('managed catalog', () => {
       'muse-spark-1.2',
       'minimax-m3',
       'gpt-5.6-luna',
+      'glm-5.3-flash',
     ]);
   });
 
@@ -178,6 +180,29 @@ describe('managed resolution + back-compat aliases', () => {
       limit: { context: 1_048_575, output: 384_000 },
       openrouterProvider: {
         order: ['gmicloud'],
+        allow_fallbacks: true,
+      },
+    });
+    // Measured 2026-08-27 on OpenRouter: z-ai (first-party) + novita at
+    // $0.075/$0.25/$0.015, 1_048_576 ctx / 131_072 out; gmicloud degraded
+    // (status -2, 86.9% uptime) and ignored. Vision: models.dev lists
+    // text+image+video input.
+    expect(getManagedModel('glm-5.3-flash')).toMatchObject({
+      name: 'GLM 5.3 Flash',
+      upstreamModelId: 'z-ai/glm-5.3-flash',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+      pricing: {
+        inputPerMillion: 0.075,
+        cachedInputPerMillion: 0.015,
+        outputPerMillion: 0.25,
+      },
+      tier: 'fast',
+      vision: true,
+      limit: { context: 1_048_576, output: 131_072 },
+      openrouterProvider: {
+        order: ['z-ai', 'novita'],
+        ignore: ['gmicloud'],
         allow_fallbacks: true,
       },
     });

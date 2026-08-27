@@ -537,6 +537,11 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 // model), and DeepSeek V4 Flash became the platform default (cheapest
 // credible agentic coder; beats GLM 5.2 on every published agentic
 // benchmark while costing ~10x less per unit of work).
+//
+// 2026-08-27: GLM 5.3 Flash added (OpenRouter transport, Z.ai first-party
+// endpoint). Cheapest managed model with vision ($0.075/$0.25 vs Luna's
+// $0.20/$1.20); LLM_GATEWAY_VISION_MODEL deliberately stays on gpt-5.6-luna
+// until the reroute target is re-evaluated on quality, not price alone.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     // Grok 4.6 through OpenRouter's first-party xAI endpoint. The explicit
@@ -811,6 +816,51 @@ export const MANAGED_MODELS: ManagedModel[] = [
     limit: { context: 1_050_000, output: 128_000 },
     openrouterProvider: {
       order: ['openai'],
+      allow_fallbacks: true,
+    },
+  },
+  {
+    // Z.ai's GLM 5.3 Flash (released 2026-08-26) via OpenRouter. 12 endpoints
+    // serve the slug (measured 2026-08-27) and they are NOT interchangeable:
+    //  - `z-ai` (first-party) and `novita`: $0.075/$0.25, cache read $0.015,
+    //    1_048_576 ctx / 131_072 max out, tools + reasoning_effort, 99.1% /
+    //    99.8% 30m uptime. Pinned in that order. Verified live: a tool-call
+    //    request with this exact `provider` block landed on Z.AI (HTTP 200,
+    //    4.95s, finish_reason:tool_calls, cost 1.49e-5 USD = this entry's
+    //    rate to the cent); `z-ai` alone with allow_fallbacks:false also 200s,
+    //    which proves the slug. Novita was 429 "rate-limited upstream" on the
+    //    shared pool at measurement time — a second choice, not a first.
+    //  - `gmicloud`: same price but status -2 / 86.9% uptime → explicit `ignore`.
+    //  - `reka/fp8` and `io-net/fp8` cap context at 262_144 and `reka` caps
+    //    output at 48_000 — they cannot hold a session this entry advertises.
+    //  - every other host (venice, modal, parasail, together, cloudflare,
+    //    deepinfra, baseten) bills 2x ($0.15/$0.50): the fallback pool.
+    // The advertised limit is the SAFE INTERSECTION of the two pinned hosts.
+    // `pricingRef` resolves on LIVE models.dev (openrouter/z-ai/glm-5.3-flash:
+    // effort low/high/max, image+video input, temperature:true,
+    // structured_output:true); the committed catalog.generated.json predates
+    // the release, so snapshot-only consumers use the synthetic record until
+    // the weekly regen (same as muse-spark-1.2 on 2026-08-10).
+    // PRICE NOTE: $0.075/$0.25 is OpenRouter's current rate on the pinned
+    // hosts, shown there as a 50% launch discount off $0.15/$0.50. If the
+    // discount ends, or a turn falls back off the pinned hosts, upstream cost
+    // is 2x this entry — bump `pricing` (or overlay LLM_GATEWAY_MANAGED_MODELS).
+    id: 'glm-5.3-flash',
+    name: 'GLM 5.3 Flash',
+    upstreamModelId: 'z-ai/glm-5.3-flash',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+    pricing: {
+      inputPerMillion: 0.075,
+      cachedInputPerMillion: 0.015,
+      outputPerMillion: 0.25,
+    },
+    tier: 'fast',
+    vision: true,
+    limit: { context: 1_048_576, output: 131_072 },
+    openrouterProvider: {
+      order: ['z-ai', 'novita'],
+      ignore: ['gmicloud'],
       allow_fallbacks: true,
     },
   },

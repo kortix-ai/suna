@@ -445,9 +445,11 @@ const envSchema = z.object({
   LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
   // Target when a DEFAULT-model request carries image input and the default
   // model lacks vision. Empty = no reroute (the request goes to the default
-  // model as-is). gpt-5.6-luna is the cheapest vision-capable managed model
-  // ($0.20/$1.20) — the default platform model (deepseek-v4-flash) is
-  // text-only.
+  // model as-is). gpt-5.6-luna ($0.20/$1.20) is the vision reroute target —
+  // the default platform model (deepseek-v4-flash) is text-only. Since
+  // 2026-08-27 glm-5.3-flash ($0.075/$0.25) is the cheaper vision-capable
+  // managed model; switching the reroute target is a quality decision that
+  // has not been made yet, so the default stays on Luna.
   LLM_GATEWAY_VISION_MODEL: optStrDefault('gpt-5.6-luna'),
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
   // Optional JSON array replacing the platform managed-model overlay (transport,

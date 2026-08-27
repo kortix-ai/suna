@@ -974,7 +974,10 @@ rendered under the turn that failed, or the user sees nothing at all.
 2026-08-12/13) returned no reply in every session on templates built before
 then; 0 gateway log rows ever. PR #6576.
 *Enforcer:* `managed-fallback-sync.test.ts` (bundled table vs `MANAGED_MODELS`
-drift), `managed-model-overlay.test.ts` (stale file + live overlay; failed
+drift — cited here since 2026-08-19 but ABSENT on `main` until 2026-08-27, when
+adding `glm-5.3-flash` found the gap; it now lives in
+`apps/kortix-sandbox-agent-server/src/__tests__/` and fails on a missing,
+misnamed, mis-sized, or mis-priced bundled entry), `managed-model-overlay.test.ts` (stale file + live overlay; failed
 fetch → bundled floor; await cap), `managed-scope.test.ts`; web: sync-store
 per-turn `session.error` tests. Not enforced: a live "picker ⊆ guest provider
 map" assertion after deploy — run the dev sweep by hand until it exists.

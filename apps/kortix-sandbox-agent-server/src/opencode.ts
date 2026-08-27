@@ -1300,6 +1300,22 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
       context_over_200k: { input: 4, output: 12, cache_read: 1 },
     },
   },
+  // Mirrors @kortix/llm-catalog `glm-5.3-flash` (added 2026-08-27). Capabilities
+  // = models.dev openrouter/z-ai/glm-5.3-flash: effort low/high/max, image
+  // input, temperature:true, structured_output:true. Limit = the safe
+  // intersection of the pinned z-ai + novita hosts.
+  'glm-5.3-flash': {
+    name: 'GLM 5.3 Flash',
+    provider: 'kortix',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
+    tool_call: true,
+    attachment: true,
+    structured_output: true,
+    temperature: true,
+    limit: { context: 1_048_576, output: 131_072 },
+    cost: { input: 0.075, output: 0.25, cache_read: 0.015 },
+  },
   // Second Kortix-managed AsterLab model (Kimi K3). Same `kortix` provider
   // branding + `aster` transport (ASTER_API_KEY) as GLM 5.2.
   // `temperature:false` — models.dev advertises Kimi K3 as
