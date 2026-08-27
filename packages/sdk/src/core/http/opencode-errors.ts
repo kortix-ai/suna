@@ -79,6 +79,15 @@ const SANDBOX_NOT_READY_PATTERNS: readonly RegExp[] = [
   /opencode (?:session )?(?:is )?not ready/i,
   /\bsandbox_not_ready\b/,
   /\bsandbox_lifecycle_unavailable\b/,
+  // The sandbox-proxy state page for a stopped/idle box the control plane can
+  // wake (dev, 2026-08-27): `404  This sandbox URL is not active.  not-running`.
+  // A box in this state is parked, not gone — the same wakeable state as a 503
+  // `sandbox not ready (status: stopped)`. Without these the transcript read
+  // dead-ended on the 404 and painted "Couldn't load this conversation" over a
+  // session that only needed a wake. Specific enough to never match a genuine
+  // `{"message":"Not found"}` 404. See session-sync-registry.readSessionMessagePage.
+  /sandbox url is not active/i,
+  /\bnot-running\b/,
 ];
 
 /**
