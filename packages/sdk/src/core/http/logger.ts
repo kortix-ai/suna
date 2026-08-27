@@ -1,14 +1,21 @@
 /**
- * Structured logger that ships log entries to the OpenCode server
- * via `client.app.log()` while also writing to the browser console
- * for local development visibility.
+ * Structured logger for the SDK. Writes to the console only.
+ *
+ * It used to ALSO ship every entry to the sandbox's OpenCode server via
+ * `getClient().app.log()` — a raw `POST /p/<box>/8000/log` per log line. This
+ * logger is imported on the streaming HOT PATHS (`session-stream-controller`,
+ * `use-session-stream`, `sandbox-connection-store`), so a degraded stream or a
+ * retry ladder turned it into a flood: hundreds of raw `/log` POSTs while the
+ * user watched a churning network tab (dev, 2026-08-27). It is also a RAW
+ * OpenCode route the "web speaks only /kortix/*" cutover was meant to retire —
+ * the web logger (`apps/web/src/lib/logger.ts`) was already fixed the same way;
+ * this is its SDK-core twin. Console only. Daemon-side telemetry, if ever
+ * wanted, goes through a BATCHED platform endpoint, never a per-line raw POST.
  *
  * Usage:
- *   import { logger } from '@/lib/logger';
+ *   import { logger } from '../http/logger';
  *   logger.error('Stream disconnected', { runId, attempt: 3 });
  */
-
-import { getClient } from '../runtime/client';
 
 const SERVICE_NAME = 'frontend';
 
@@ -30,21 +37,6 @@ function send(level: LogLevel, message: string, extra?: LogExtra): void {
           : console.log;
 
   consoleFn(`[${SERVICE_NAME}] ${message}`, ...(extra ? [extra] : []));
-
-  // Fire-and-forget: ship the log entry to the server.
-  // Wrapped in try/catch so a logging failure never breaks the caller.
-  try {
-    const client = getClient();
-    client.app.log({
-      service: SERVICE_NAME,
-      level,
-      message,
-      extra,
-    });
-  } catch {
-    // Swallow — if the SDK client isn't available yet (e.g. during SSR or
-    // before the first server URL is resolved) we just skip server logging.
-  }
 }
 
 export const logger = {
