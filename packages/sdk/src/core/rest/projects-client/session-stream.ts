@@ -180,7 +180,14 @@ export async function* readSessionStream(
 
   const response = await authenticatedFetch(url, {
     method: 'GET',
-    headers: { Accept: 'text/event-stream', 'Cache-Control': 'no-cache' },
+    // Only `Accept` here. A `Cache-Control` REQUEST header is not CORS-safelisted,
+    // so cross-origin (web app -> API on another host) the browser preflights it;
+    // if the API's Access-Control-Allow-Headers omits it the preflight FAILS and
+    // the GET never fires — the stream dies with `net::ERR_FAILED` / "Failed to
+    // fetch" and the client falls back to polling forever (dev, 2026-08-27). The
+    // header bought nothing anyway: caching of an SSE stream is governed by the
+    // RESPONSE `Cache-Control` the server already sets, not by a request header.
+    headers: { Accept: 'text/event-stream' },
     signal: options?.signal,
   });
 
