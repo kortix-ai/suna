@@ -171,6 +171,52 @@ export function previewSandboxName(prNumber: number): string {
   return `kortix-preview-pr-${prNumber}`;
 }
 
+export interface PreviewSandboxIdentity {
+  name: string;
+  owner: 'kortix-preview' | 'kortix-branch-env';
+  autoArchiveDays: number;
+  autoDeleteDays: number;
+  reuseExisting: boolean;
+}
+
+/**
+ * Who a deploy's sandbox belongs to and how long it lives. The two modes differ
+ * only here — everything downstream (template, bootstrap, ingress) is identical.
+ *
+ * A PR preview is disposable: named after the PR, owned by `kortix-preview`,
+ * replaced on every head change, and swept after 7 idle days. `kortix-preview`
+ * is also the owner `selectStalePreviewSandboxIds` reconciles on, so a PR
+ * preview whose PR closed is deleted by the nightly sweep.
+ *
+ * A branch environment is a standing deployment: named after the BRANCH, owned
+ * by `kortix-branch-env`, reused in place, and never auto-archived or
+ * auto-deleted. Reuse is what holds the sandbox id — and therefore the public
+ * URL — still, so the environment can be bookmarked, registered as a Stripe
+ * webhook target, and keep its Postgres volume across deploys. The distinct
+ * owner is what keeps the nightly sweep from reaping it: it has no PR to close.
+ */
+export function previewSandboxIdentity(input: {
+  prNumber: number;
+  branchEnv?: string;
+}): PreviewSandboxIdentity {
+  if (input.branchEnv) {
+    return {
+      name: branchEnvSandboxName(input.branchEnv),
+      owner: 'kortix-branch-env',
+      autoArchiveDays: 0,
+      autoDeleteDays: 0,
+      reuseExisting: true,
+    };
+  }
+  return {
+    name: previewSandboxName(input.prNumber),
+    owner: 'kortix-preview',
+    autoArchiveDays: 7,
+    autoDeleteDays: 7,
+    reuseExisting: false,
+  };
+}
+
 export function selectStalePreviewSandboxIds(
   sandboxes: PreviewSandboxRecord[],
   activePullRequests: ReadonlyMap<number, string>,

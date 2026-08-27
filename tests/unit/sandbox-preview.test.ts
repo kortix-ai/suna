@@ -3,6 +3,7 @@ import {
   PreviewInfrastructureError,
   buildPreviewBootstrapScript,
   previewLockfileHash,
+  previewSandboxIdentity,
   previewSandboxName,
   runSandboxPreview,
   selectStalePreviewSandboxIds,
@@ -22,6 +23,48 @@ const input = {
 describe('provider-neutral preview lifecycle', () => {
   it('uses one stable sandbox name per pull request', () => {
     expect(previewSandboxName(6337)).toBe('kortix-preview-pr-6337');
+  });
+
+  it('gives a pull request preview a disposable identity and a branch environment a standing one', () => {
+    expect(previewSandboxIdentity({ prNumber: 6337 })).toEqual({
+      name: 'kortix-preview-pr-6337',
+      owner: 'kortix-preview',
+      autoArchiveDays: 7,
+      autoDeleteDays: 7,
+      reuseExisting: false,
+    });
+    expect(previewSandboxIdentity({ prNumber: 6998, branchEnv: 'pi-worker' })).toEqual({
+      name: 'kortix-env-pi-worker',
+      owner: 'kortix-branch-env',
+      autoArchiveDays: 0,
+      autoDeleteDays: 0,
+      reuseExisting: true,
+    });
+  });
+
+  it('names a branch environment after the branch, not the pull request that carries it', () => {
+    // The whole point is a URL that survives a push, so the PR number must not
+    // reach the name — two deploys of one branch have to land on one sandbox.
+    const first = previewSandboxIdentity({ prNumber: 1, branchEnv: 'feat/Pi_Worker' });
+    const second = previewSandboxIdentity({ prNumber: 999, branchEnv: 'feat/Pi_Worker' });
+    expect(first.name).toBe(second.name);
+    expect(first.name).toBe('kortix-env-feat-pi-worker');
+    expect(() => previewSandboxIdentity({ prNumber: 1, branchEnv: '///' })).toThrow(
+      /invalid branch for a persistent environment/,
+    );
+  });
+
+  it('keeps branch environments out of the nightly sweep', () => {
+    // A branch environment has no pull request to close, so the reconciler must
+    // never see it as stale. It is excluded by OWNER, not by an expiry date.
+    const stale = selectStalePreviewSandboxIds(
+      [
+        { id: 'closed-pr', metadata: { owner: 'kortix-preview', pr_number: '4242', git_sha: 'a' } },
+        { id: 'branch-env', metadata: { owner: 'kortix-branch-env', pr_number: '6998', git_sha: 'b' } },
+      ],
+      new Map<number, string>(),
+    );
+    expect(stale).toEqual(['closed-pr']);
   });
 
   it('uses a new Platinum idempotency key for each deployment run', () => {

@@ -35,7 +35,7 @@ import {
   type SandboxPreviewResult,
   buildPreviewBootstrapScript,
   previewLockfileHash,
-  branchEnvSandboxName,
+  previewSandboxIdentity,
   previewSandboxName,
   selectStalePreviewSandboxIds,
 } from './sandbox-preview';
@@ -168,22 +168,21 @@ export async function deployPlatinumPreview(
   let sandboxId = '';
   let launched = false;
   try {
-    const persistentName = input.branchEnv ? branchEnvSandboxName(input.branchEnv) : null;
-    // A persistent branch environment reuses its sandbox; only an ephemeral PR
-    // preview is replaced (which is what rotates the URL on every push).
-    const reusable = persistentName
+    const identity = previewSandboxIdentity(input);
+    // A branch environment reuses its sandbox; only an ephemeral PR preview is
+    // replaced, which is what rotates its URL on every push.
+    const reusable = identity.reuseExisting
       ? (await allPlatinumPreviewSandboxes(api)).find(
-          (sandbox) =>
-            sandbox.name === persistentName && sandbox.metadata?.owner === 'kortix-branch-env',
+          (sandbox) => sandbox.name === identity.name && sandbox.metadata?.owner === identity.owner,
         ) ?? null
       : null;
-    // A persistent box idles between deploys; Platinum may have stopped it.
+    // A branch environment idles between deploys; Platinum may have stopped it.
     if (reusable) {
       await api
         .json(`/v1/sandboxes/${reusable.id}/start`, { method: 'POST' })
         .catch(() => undefined);
     }
-    if (!persistentName) await replaceExistingPlatinumPreview(api, input.prNumber);
+    if (!identity.reuseExisting) await replaceExistingPlatinumPreview(api, input.prNumber);
     const hash = previewLockfileHash(input.lockfileHash);
     const base = await ensureTemplate(
       api,
@@ -195,32 +194,34 @@ export async function deployPlatinumPreview(
     );
     const template = await ensureWarmTemplate(api, base, hash);
     const startedAt = Date.now();
-    const created = reusable ?? await api.json<PlatinumSandbox>(
-      '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
-      {
-        method: 'POST',
-        headers: { 'idempotency-key': platinumPreviewIdempotencyKey(input) },
-        body: JSON.stringify({
-          name: persistentName ?? previewSandboxName(input.prNumber),
-          template: template.id,
-          type: 'persistent',
-          auto_stop_minutes: 0,
-          auto_archive_days: persistentName ? 0 : 7,
-          auto_delete_days: persistentName ? 0 : 7,
-          cpu: 8,
-          ram_mb: 16_384,
-          disk_gb: 50,
-          expose: [{ port: 8080, public: true }],
-          metadata: {
-            owner: persistentName ? 'kortix-branch-env' : 'kortix-preview',
-            repository: input.repository,
-            pr_number: String(input.prNumber),
-            git_sha: input.sha,
-            run_id: input.runId,
-          },
-        }),
-      },
-    );
+    const created =
+      reusable ??
+      (await api.json<PlatinumSandbox>(
+        '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
+        {
+          method: 'POST',
+          headers: { 'idempotency-key': platinumPreviewIdempotencyKey(input) },
+          body: JSON.stringify({
+            name: identity.name,
+            template: template.id,
+            type: 'persistent',
+            auto_stop_minutes: 0,
+            auto_archive_days: identity.autoArchiveDays,
+            auto_delete_days: identity.autoDeleteDays,
+            cpu: 8,
+            ram_mb: 16_384,
+            disk_gb: 50,
+            expose: [{ port: 8080, public: true }],
+            metadata: {
+              owner: identity.owner,
+              repository: input.repository,
+              pr_number: String(input.prNumber),
+              git_sha: input.sha,
+              run_id: input.runId,
+            },
+          }),
+        },
+      ));
     sandboxId = created.id;
     const sandbox = await observePlatinumSandboxStart({
       sandbox: created,
@@ -321,6 +322,15 @@ export async function deployDaytonaPreview(
   input: SandboxPreviewDeploymentInput,
 ): Promise<SandboxPreviewResult> {
   if (!input.daytona.apiKey) throw new PreviewInfrastructureError('DAYTONA_API_KEY is required');
+  // Daytona is the fallback for a Platinum infrastructure failure, and it issues
+  // its own preview URL. Falling back would therefore hand a branch environment
+  // a DIFFERENT origin than the one people bookmarked and Stripe posts webhooks
+  // to — the one property it exists to hold still. Fail loudly instead.
+  if (input.branchEnv) {
+    throw new PreviewInfrastructureError(
+      `branch environment ${input.branchEnv} is pinned to Platinum: a Daytona fallback would change its origin`,
+    );
+  }
   const api = new DaytonaApi(input.daytona.apiUrl, input.daytona.apiKey);
   let sandbox: DaytonaSandbox | null = null;
   let launched = false;

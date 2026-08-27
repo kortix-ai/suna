@@ -226,13 +226,30 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # NEW: one stable sandbox name per PR; the origin is provider-issued.
         self.assertIn("return `kortix-preview-pr-${prNumber}`;", PREVIEW_CORE)
         self.assertIn("invalid preview PR number", PREVIEW_CORE)
-        self.assertEqual(PREVIEW_PROVIDERS.count("name: previewSandboxName(input.prNumber),"), 2)
+        # Both providers name the sandbox after the PR: Daytona directly, and
+        # Platinum through previewSandboxIdentity, whose PR branch is the same
+        # call. Neither may improvise a name.
+        self.assertIn("name: previewSandboxName(input.prNumber),", PREVIEW_PROVIDERS)
+        self.assertIn("name: previewSandboxName(input.prNumber),", PREVIEW_CORE)
+        self.assertIn("name: identity.name,", PREVIEW_PROVIDERS)
+        # A branch environment is named after the BRANCH and reused in place, so
+        # its origin survives a push. Daytona issues its own URL, so falling back
+        # there would break exactly that — it must refuse rather than rotate.
+        self.assertIn("return `kortix-env-${slug}`;", PREVIEW_CORE)
+        self.assertIn("reuseExisting: true,", PREVIEW_CORE)
+        self.assertIn("if (input.branchEnv) {", PREVIEW_PROVIDERS)
+        self.assertIn("is pinned to Platinum: a Daytona fallback would change its origin", PREVIEW_PROVIDERS)
         # OLD: rollback_deploy / PREVIOUS_TASK_DEFINITION rolled a live service
         # back. A sandbox is disposable, so a redeploy deletes and recreates it.
         self.assertIn("async function replaceExistingPlatinumPreview(", PREVIEW_PROVIDERS)
         self.assertIn("async function replaceExistingDaytonaPreview(", PREVIEW_PROVIDERS)
         self.assertIn("refused to replace unowned Daytona sandbox", PREVIEW_PROVIDERS)
-        self.assertIn("owner: 'kortix-preview',", PREVIEW_PROVIDERS)
+        # The owner a PR preview is stamped with (previewSandboxIdentity) is the
+        # same one every destructive read filters on, so a redeploy, a teardown,
+        # and the nightly sweep can only ever touch a sandbox this system made.
+        self.assertIn("owner: 'kortix-preview',", PREVIEW_CORE)
+        self.assertIn("owner: identity.owner,", PREVIEW_PROVIDERS)
+        self.assertEqual(PREVIEW_PROVIDERS.count("sandbox.metadata?.owner === 'kortix-preview'"), 2)
         self.assertIn("'kortix-preview': 'true',", PREVIEW_PROVIDERS)
         # A provider switch must not leave the other provider's sandbox running.
         self.assertIn(
@@ -391,10 +408,19 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn(".filter((sandbox) => sandbox.metadata?.owner === 'kortix-preview')", PREVIEW_CORE)
         self.assertIn("const approved = pull.labels?.some((label) => label.name === 'preview');", PREVIEW_CLI)
         self.assertIn("const sameRepository = pull.head?.repo?.full_name === repository;", PREVIEW_CLI)
-        self.assertIn("auto_archive_days: 7,", PREVIEW_PROVIDERS)
-        self.assertIn("auto_delete_days: 7,", PREVIEW_PROVIDERS)
+        # A PR preview is swept after 7 idle days; the Platinum retention now
+        # comes from previewSandboxIdentity, which is where the 7 lives.
+        self.assertIn("auto_archive_days: identity.autoArchiveDays,", PREVIEW_PROVIDERS)
+        self.assertIn("auto_delete_days: identity.autoDeleteDays,", PREVIEW_PROVIDERS)
+        self.assertIn("autoArchiveDays: 7,", PREVIEW_CORE)
+        self.assertIn("autoDeleteDays: 7,", PREVIEW_CORE)
         self.assertIn("autoArchiveInterval: 10_080,", PREVIEW_PROVIDERS)
         self.assertIn("autoDeleteInterval: 10_080,", PREVIEW_PROVIDERS)
+        # A branch environment is exempt from the sweep BY OWNER, not by luck:
+        # it never expires, and the reconciler above only reaps 'kortix-preview'.
+        self.assertIn("owner: 'kortix-branch-env',", PREVIEW_CORE)
+        self.assertIn("autoArchiveDays: 0,", PREVIEW_CORE)
+        self.assertIn("autoDeleteDays: 0,", PREVIEW_CORE)
 
     def test_a_failed_pull_request_query_never_reads_as_no_active_previews(self):
         # OLD: assertNotIn("|| printf closed") — a shell fallback that turned a
