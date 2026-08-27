@@ -116,7 +116,7 @@ function buildApp() {
 
 function openStream(query = '', headers: Record<string, string> = {}) {
   return buildApp().request(
-    `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/stream${query}`,
+    `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/events${query}`,
     { headers },
   );
 }
@@ -202,7 +202,7 @@ afterEach(() => __resetControlEventsForTests());
 describe('gates', () => {
   test('a non-uuid session id is rejected before anything is opened', async () => {
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/sessions/not-a-uuid/stream`,
+      `/v1/projects/${PROJECT_ID}/sessions/not-a-uuid/events`,
     );
     expect(response.status).toBe(400);
   });
