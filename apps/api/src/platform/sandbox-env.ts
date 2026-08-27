@@ -33,7 +33,6 @@ const SANDBOX_ALLOWED_CREDENTIALS: ReadonlySet<string> = new Set([
  */
 const SANDBOX_FORBIDDEN_KEYS: ReadonlySet<string> = new Set([
   'OPENROUTER_API_KEY',
-  'ANTHROPIC_API_KEY',
   'OPENAI_API_KEY',
   'TAVILY_API_KEY',
   'SERPER_API_KEY',

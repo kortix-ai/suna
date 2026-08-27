@@ -208,7 +208,6 @@ describe('matchAllowedRoute', () => {
     test('proxy services registry contains expected services', () => {
       const serviceNames = Object.keys(getProxyServices()).sort();
       expect(serviceNames).toEqual([
-        'anthropic',
         'apify',
         'context7',
         'firecrawl',

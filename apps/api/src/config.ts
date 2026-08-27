@@ -476,8 +476,6 @@ const envSchema = z.object({
   // service-specific credential for bedrock.amazonaws.com.
   AWS_BEDROCK_REGION: optStr,
   AWS_BEDROCK_API_KEY: optStr,
-  ANTHROPIC_API_URL: optUrl('https://api.anthropic.com/v1'),
-  ANTHROPIC_API_KEY: optStr,
   OPENAI_API_URL: optUrl('https://api.openai.com/v1'),
   OPENAI_API_KEY: optStr,
   // xAI / Gemini / Groq route their TEXT models through OpenRouter (see
@@ -1163,8 +1161,6 @@ export const config = {
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
   AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,
   AWS_BEDROCK_API_KEY: env.AWS_BEDROCK_API_KEY,
-  ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,
-  ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
   OPENAI_API_URL: env.OPENAI_API_URL,
   OPENAI_API_KEY: env.OPENAI_API_KEY,
   XAI_API_URL: env.XAI_API_URL,

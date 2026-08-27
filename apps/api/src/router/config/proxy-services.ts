@@ -191,17 +191,6 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
     // The proxy handler picks targetBaseUrl for Mode 2/3 and
     // kortixTargetBaseUrl for Mode 1 (when present).
 
-    anthropic: {
-      name: 'anthropic',
-      targetBaseUrl: config.ANTHROPIC_API_URL,   // https://api.anthropic.com/v1
-      getKortixApiKey: () => config.ANTHROPIC_API_KEY,
-      keyInjection: { type: 'header', headerName: 'x-api-key' },
-      allowedRoutes: [
-        { path: '/messages', methods: ['POST'] },
-      ],
-      billingToolName: 'llm_anthropic',
-      isLlm: true,
-    },
 
     openai: {
       name: 'openai',
