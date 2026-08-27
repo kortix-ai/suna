@@ -45,6 +45,7 @@ import { noteRuntimeEvidence } from '../browser/stores/sandbox-connection-store'
 import { useServerStore } from '../browser/stores/server-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { logger } from '../core/http/logger';
+import { isRuntimeLivenessEvent } from '../core/stream/keepalive';
 import { claimOpenBundle } from '../core/session/open-bundle';
 import { dropClientForUrl, getClient } from '../core/runtime/client';
 import type { SessionOpenBundleRuntime } from '../core/rest/projects-client/sessions';
@@ -232,11 +233,21 @@ export function useSessionRuntimeStream(
 
     const sinks = {
       applyRuntimeEvent: (event: never) => {
-        // Every delivered daemon frame is live proof the runtime is reachable
-        // — it vetoes concurrent health-probe failures, exactly as before —
-        // and that the runtime CHANNEL is live, which is what stands the
-        // transcript fallback poll down.
-        noteRuntimeEvidence();
+        // A delivered frame is proof the runtime is reachable — it vetoes
+        // concurrent health-probe failures (a loaded box can miss the probe
+        // deadline mid-turn) — and proof the runtime CHANNEL is live, which is
+        // what stands the transcript fallback poll down.
+        //
+        // NOT every frame, though. The sandbox daemon injects
+        // `kortix.keepalive` every 20s from a hop ABOVE opencode
+        // (`sse-keepalive.ts`), so it proves the PATH is warm and says nothing
+        // about whether opencode answered. Counting it here stamped
+        // `lastRuntimeEvidenceAt` on a cadence shorter than
+        // RUNTIME_EVIDENCE_FRESH_MS (15s), so `shouldIgnoreProbeFailure`
+        // discarded most failed probes and a dead opencode kept reading
+        // healthy. Channel liveness is a different question and keepalives DO
+        // answer it, so `markSessionRuntimeChannelLive` stays unconditional.
+        if (isRuntimeLivenessEvent(event)) noteRuntimeEvidence();
         markSessionRuntimeChannelLive(scope, true);
         noteSessionSyncEvent(event);
         handleEvent(event);
