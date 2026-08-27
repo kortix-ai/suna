@@ -10,6 +10,8 @@
 
 **Reviewed code head:** `1f86186e6d0c9c526960e9b18834e65395e7d1fc`
 
+**CI repair commit:** `fb372de577`
+
 **Current main:** `6f34da6c51bfd932493dbfb49d81dbe4f10cab1c`
 
 **Reviewed on:** 2026-08-28
@@ -32,6 +34,8 @@ The same commit also fixes two related frontend correctness gaps:
 - Queue snapshots now use one freshness gate inside each SDK observation path.
 
 The updated branch has no merge conflict with `main`. GitHub reports `mergeable: true`.
+
+The first final-head CI run found one additional blocker. The sandbox-agent job typechecked imported worker source without installing the worker package dependencies. Commit `fb372de577` adds that package-local install step. The exact typecheck and Linux binary build pass locally.
 
 The branch is still not ready to merge for two reasons:
 
@@ -224,6 +228,8 @@ Not verified:
 | SDK typecheck after main sync | Exit 0 |
 | SDK packed install smoke | Exit 0 |
 | Focused API queue and timing files after main sync | 38 pass, 0 fail |
+| Sandbox agent typecheck after CI repair | Exit 0 |
+| Sandbox agent Linux binary build after CI repair | Exit 0 |
 | Full API suite before main sync | 8,748 pass, 79 skip, 0 fail |
 | Full web suite before main sync | 8,648 pass, 0 fail |
 | Standalone CLI suite before main sync | 1,243 pass, 0 fail |

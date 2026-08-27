@@ -254,6 +254,7 @@ story += [
     p("Original head: 5c609e689e03f2a93468e32257ac537e7e1f1517", "KSubtitle"),
     p("Fix commit: 7cc805c37578d66c50ef9ebed1c76c58ed45eb64", "KSubtitle"),
     p("Reviewed code head: 1f86186e6d0c9c526960e9b18834e65395e7d1fc", "KSubtitle"),
+    p("CI repair commit: fb372de577", "KSubtitle"),
     Spacer(1, 5 * mm),
     box(
         "DECISION: DO NOT MERGE YET",
@@ -270,6 +271,7 @@ story += [
     bullet("Empty zero-token assistant rows no longer paint blank turns."),
     bullet("Older empty queue snapshots cannot erase a newer queue row in the SDK observation path."),
     bullet("The branch is synchronized with main. GitHub reports mergeable: true."),
+    bullet("The sandbox-agent CI dependency gap is fixed in fb372de577."),
     Spacer(1, 4 * mm),
     box(
         "Confidence",
@@ -387,6 +389,8 @@ story += [
             ["SDK typecheck after main sync", "Exit 0"],
             ["SDK packed install smoke", "Exit 0"],
             ["Focused API after main sync", "38 pass, 0 fail"],
+            ["Sandbox agent typecheck after CI repair", "Exit 0"],
+            ["Sandbox agent Linux build after CI repair", "Exit 0"],
             ["Full API before main sync", "8,748 pass, 79 skip, 0 fail"],
             ["Full web before main sync", "8,648 pass, 0 fail"],
             ["Standalone CLI before main sync", "1,243 pass, 0 fail"],
