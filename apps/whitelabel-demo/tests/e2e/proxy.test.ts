@@ -122,10 +122,10 @@ describe('BFF SDK transport', () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(events.length).toBeGreaterThan(0);
       // The Kortix Runtime API cutover: session.stream() opens the multiplexed
-      // control-plane stream (`/sessions/:sid/stream`), not the old opencode
+      // control-plane stream (`/sessions/:sid/events`), not the old opencode
       // sandbox SSE (`/p/<box>/8000/global/event`).
       expect(
-        mock.requests.some((request) => request.path.endsWith('/stream')),
+        mock.requests.some((request) => request.path.endsWith('/events')),
       ).toBe(true);
     } finally {
       stream.close();
