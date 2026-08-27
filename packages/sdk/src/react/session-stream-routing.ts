@@ -107,6 +107,14 @@ export interface RuntimeStateLegDeps {
   /** The projection deliberately trims question BODIES, so an unknown open
    *  question cannot be seeded — it must be read in full, once. */
   requestAskRecovery: (kind: 'questions') => void;
+  /**
+   * Seed one runtime-state COLLECTION (agents, commands, sessions) into the
+   * exact query cache its hook reads, so the panel paints from the bundle the
+   * open already fetched instead of issuing its own proxied `/agent`,
+   * `/command`, `/session` read. Optional: a caller with no query client (a
+   * pure test, the boot path before the client exists) simply omits it.
+   */
+  seedRuntimeCollection?: (kind: 'agents' | 'commands' | 'sessions', value: unknown[]) => void;
 }
 
 /** The fill-a-gap rule, restated from `use-opencode-events/helpers.ts`:
@@ -128,7 +136,23 @@ export function applyRuntimeStateLeg(leg: unknown, deps: RuntimeStateLegDeps): v
     statuses?: KnownSection<Record<string, { type: string }>>;
     permissions?: KnownSection<Array<{ id: string; sessionID: string }>>;
     questions?: KnownSection<Array<{ id: string; sessionID: string }>>;
+    agents?: KnownSection<unknown[]>;
+    commands?: KnownSection<unknown[]>;
+    sessions?: KnownSection<unknown[]>;
   };
+
+  // Seed the roster collections the bundle already carries — the daemon's
+  // `/kortix/opencode/state` returns agents/commands/sessions VERBATIM in the
+  // same shapes their hooks expect, so the panels read cache instead of each
+  // firing its own `/p/<box>/8000/{agent,command,session}` proxied read.
+  if (deps.seedRuntimeCollection) {
+    for (const kind of ['agents', 'commands', 'sessions'] as const) {
+      const section = state[kind];
+      if (section?.known === true && Array.isArray(section.value)) {
+        deps.seedRuntimeCollection(kind, section.value);
+      }
+    }
+  }
 
   if (state.statuses?.known === true && state.statuses.value) {
     const statuses = state.statuses.value;

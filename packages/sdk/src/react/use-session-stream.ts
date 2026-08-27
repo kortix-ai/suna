@@ -226,6 +226,17 @@ export function useSessionRuntimeStream(
       hasPendingQuestion: (id) => !!useOpenCodePendingStore.getState().questions[id],
       addPermission: (permission) => addPermission(permission as never),
       requestAskRecovery: () => recoverQuestions(),
+      seedRuntimeCollection: (kind, value) => {
+        // The bundle already fetched these; write them into the exact cache the
+        // hook reads so the panel never issues its own proxied roster read.
+        const key =
+          kind === 'agents'
+            ? opencodeKeys.agents()
+            : kind === 'commands'
+              ? opencodeKeys.commands()
+              : opencodeKeys.sessions();
+        queryClient.setQueryData(key, value);
+      },
     });
 
     const scope = sessionStreamScope(projectId, sessionId);

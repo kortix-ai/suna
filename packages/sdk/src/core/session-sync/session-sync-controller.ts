@@ -214,8 +214,15 @@ export function createHttpSessionSyncPageLoader(
     const query = new URLSearchParams({ limit: String(limit) });
     if (before) query.set('before', before);
     const token = await options.getToken?.();
+    // The Kortix daemon's trimmed transcript, NOT OpenCode's raw
+    // `/session/:id/message`. The raw read shipped every base64 attachment byte
+    // inline — 8-25 MB and 30-48 s per page on a real session (measured,
+    // Essentia 2026-08-24) — and the client fetched it twice on every open. The
+    // daemon endpoint strips attachment bytes to references, truncates giant
+    // tool outputs, pages the same way (`limit` + `before`), and returns ids
+    // VERBATIM so the reducer and any mirror key on the same identities.
     const response = await fetchImpl(
-      `${baseUrl}/session/${encodeURIComponent(options.sessionId)}/message?${query}`,
+      `${baseUrl}/kortix/opencode/messages/${encodeURIComponent(options.sessionId)}?${query}`,
       {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         ...(signal ? { signal } : {}),
@@ -230,9 +237,18 @@ export function createHttpSessionSyncPageLoader(
       }
       throw new Error(`Session synchronization failed: ${response.status}`);
     }
+    // The daemon wraps the page: `{ messages, has_more, first_message_id, … }`.
+    // Older pages are walked with `before = <oldest id in this page>`, so the
+    // next cursor is the first (oldest) message id whenever more remain.
+    const body = (await response.json()) as {
+      messages?: SessionSyncMessage[];
+      has_more?: boolean;
+      first_message_id?: string | null;
+    };
     return {
-      messages: (await response.json()) as SessionSyncMessage[],
-      nextCursor: response.headers.get('x-next-cursor') || undefined,
+      messages: body.messages ?? [],
+      nextCursor:
+        body.has_more && body.first_message_id ? body.first_message_id : undefined,
     };
   };
 }

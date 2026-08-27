@@ -101,10 +101,14 @@ describe('SessionSyncController', () => {
           url: String(input),
           authorization: headers.get('authorization'),
         });
-        return new Response(JSON.stringify(page(['message-1']).messages), {
-          status: 200,
-          headers: { 'X-Next-Cursor': 'cursor-1' },
-        });
+        return new Response(
+          JSON.stringify({
+            messages: page(['message-1']).messages,
+            has_more: true,
+            first_message_id: 'message-1',
+          }),
+          { status: 200 },
+        );
       },
       hydrate: (messages) => hydrated.push(messages),
       markLoaded: () => {},
@@ -113,7 +117,7 @@ describe('SessionSyncController', () => {
     await controller.start();
     expect(requests).toEqual([
       {
-        url: `https://runtime.example.test/session/session%2F1/message?limit=${SESSION_SYNC_TAIL_PAGE_SIZE}`,
+        url: `https://runtime.example.test/kortix/opencode/messages/session%2F1?limit=${SESSION_SYNC_TAIL_PAGE_SIZE}`,
         authorization: 'Bearer token-1',
       },
     ]);
