@@ -244,6 +244,7 @@ import {
 } from './session-older-autoload';
 import { useHeldOlderLoading } from './session-older-loading';
 import { useReadinessSettling } from './use-readiness-settling';
+import { projectSessionHref } from '@/lib/navigation/session-href';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -4488,15 +4489,20 @@ export function SessionChat({
           router.push(backToParentHref);
           return;
         }
+        // The fallback when the panel contract carries no href. Project-scoped,
+        // because `/sessions/<id>` is not a route: the tab stays mounted so the
+        // click looks fine, but that URL 404s on reload or Back.
         openTabAndNavigate({
           id: parentSessionData.id,
           title: parentSessionData.title || 'Parent session',
           type: 'session',
-          href: `/sessions/${parentSessionData.id}`,
+          href: projectId
+            ? projectSessionHref(projectId, parentSessionData.id)
+            : `/sessions/${parentSessionData.id}`,
         });
       },
     };
-  }, [session?.parentID, parentSessionData, backToParentHref, router]);
+  }, [session?.parentID, parentSessionData, backToParentHref, router, projectId]);
 
   // ---- Stable props for <SessionChatInput> (it's React.memo-wrapped, so every
   // prop below must keep referential identity across renders that don't

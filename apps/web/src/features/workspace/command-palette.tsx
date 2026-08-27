@@ -1044,6 +1044,9 @@ export function CommandPalette() {
         id: `terminal:${pty.id}`,
         title: pty.title || pty.command || 'Terminal',
         type: 'terminal',
+        // LEGACY: terminal tabs only surface through <SidebarRight />, which
+        // both AppProviders call sites mount with showRightSidebar={false}.
+        // `/terminal/<id>` is not a route.
         href: `/terminal/${pty.id}`,
       });
     } catch {
@@ -1339,6 +1342,9 @@ export function CommandPalette() {
     createSession
       .mutateAsync()
       .then((session) => {
+          // LEGACY, unreachable in the product: this branch runs only when
+          // there is NO projectId, and every authed route is `/projects/[id]/*`.
+          // `/sessions/<id>` is not a route — see `lib/navigation/session-href.ts`.
         openTabAndNavigate({
           id: session.id,
           title: 'New session',
