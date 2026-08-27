@@ -60,6 +60,8 @@ const Schema = z.object({
   KORTIX_GIT_DELTA_BUNDLE_BASE64: z.string().optional(),
   KORTIX_GIT_DELTA_PARENT_SHA: z.string().optional(),
   KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: z.string().optional(),
+  KORTIX_GIT_DELTA_BUNDLE_REMOTE: z.string().optional(),
+  KORTIX_OPENCODE_CONFIG_DIR_HINT: z.string().optional(),
   KORTIX_COMPILED_BOOT_MODE: CompiledBootModeSchema.default('off'),
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
@@ -126,6 +128,14 @@ export type Config = {
   gitDeltaBundleBase64?: string
   gitDeltaParentSha?: string
   gitDeltaParentCommitBase64?: string
+  /** Delta exceeds the env cap: fetch it with one GET from the API (KORTIX_GIT_DELTA_BUNDLE_REMOTE=1). */
+  gitDeltaBundleRemote?: boolean
+  /**
+   * OpenCode config dir at the base tip, repo-relative; '' = the tip ships no
+   * project config; undefined = unknown (serial boot). Lets OpenCode spawn
+   * before the checkout exists.
+   */
+  opencodeConfigDirHint?: string
   compiledBootMode: CompiledBootMode
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
@@ -165,6 +175,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_GIT_DELTA_BUNDLE_BASE64: env.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     KORTIX_GIT_DELTA_PARENT_SHA: env.KORTIX_GIT_DELTA_PARENT_SHA,
     KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
+    KORTIX_GIT_DELTA_BUNDLE_REMOTE: env.KORTIX_GIT_DELTA_BUNDLE_REMOTE,
+    KORTIX_OPENCODE_CONFIG_DIR_HINT: env.KORTIX_OPENCODE_CONFIG_DIR_HINT,
     KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
@@ -198,6 +210,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     gitDeltaBundleBase64: parsed.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     gitDeltaParentSha: parsed.KORTIX_GIT_DELTA_PARENT_SHA,
     gitDeltaParentCommitBase64: parsed.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
+    gitDeltaBundleRemote: parsed.KORTIX_GIT_DELTA_BUNDLE_REMOTE === '1',
+    opencodeConfigDirHint: parsed.KORTIX_OPENCODE_CONFIG_DIR_HINT,
     compiledBootMode: parsed.KORTIX_COMPILED_BOOT_MODE,
     sandboxToken: parsed.KORTIX_TOKEN,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
@@ -376,4 +390,21 @@ async function readOpencodeConfigDirFromManifest(
   // Reject absolute paths and parent traversal — matches the API's validator.
   if (!raw || raw.startsWith('/') || raw.split('/').includes('..')) return fallback
   return raw
+}
+
+/**
+ * Absolute OpenCode config dir to spawn on BEFORE the checkout exists, from
+ * the API's tip-resolved hint: '' → the baked default dir, a relative path →
+ * that dir under the project target, undefined/unsafe → null (serial boot).
+ */
+export function resolveHintedOpencodeConfigDir(cfg: Config): string | null {
+  const hint = cfg.opencodeConfigDirHint
+  if (hint === undefined) return null
+  if (hint === '') return cfg.defaultOpencodeConfigDir
+  const trimmed = hint.trim().replace(/\/+$/, '')
+  if (!trimmed || trimmed.startsWith('/') || trimmed.startsWith('-')) return null
+  if (trimmed.split('/').some((seg) => !seg || seg === '.' || seg === '..' || !/^[\w .-]+$/.test(seg))) {
+    return null
+  }
+  return `${cfg.projectTarget}/${trimmed}`
 }

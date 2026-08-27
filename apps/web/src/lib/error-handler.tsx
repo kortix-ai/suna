@@ -3,11 +3,15 @@ import { errorToast, infoToast, successToast, warningToast } from '@/components/
 import { isServerDeadlineNoiseMessage } from '@/lib/browser-error-noise';
 import { isBillingEnabled } from '@/lib/config';
 import { isSilentTimeoutError } from '@/lib/timeout-toast-policy';
-import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import {
+  buildAccountSettingsHref,
+  useAccountSettingsModalStore,
+} from '@/stores/account-settings-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import type { BillingState } from '@kortix/sdk';
 import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
 import * as Sentry from '@sentry/nextjs';
+import Link from 'next/link';
 
 const MANAGE_PLAN_LABEL = 'Manage plan';
 
@@ -298,13 +302,10 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
           'Upgrade your plan for a higher limit, or contact the Kortix team to raise it for your account.',
         duration: 6000,
         button: (
-          <Button
-            size="sm"
-            onClick={() =>
-              useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' })
-            }
-          >
-            {MANAGE_PLAN_LABEL}
+          <Button size="sm" asChild>
+            <Link href={buildAccountSettingsHref({ tab: 'billing' })} prefetch>
+              {MANAGE_PLAN_LABEL}
+            </Link>
           </Button>
         ),
       });

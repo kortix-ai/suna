@@ -237,3 +237,19 @@ export {
  */
 export type { HeadlessAuthApi, AuthSession, AuthUser, AuthSessionResult, AuthRequestOptions } from '../core/rest/platform-client/auth';
 export type { KortixSession, KortixSessionOptions, KortixSessionStorage } from '../core/auth/session';
+
+/**
+ * Kortix Apps — the viewer the Apps gate signs into every request. See
+ * ./app-viewer.ts: an App hosted by Kortix authenticates its visitor with no
+ * login of its own.
+ */
+export {
+  readAppViewer,
+  createAppViewerKortix,
+  AppViewerUnavailableError,
+  APP_VIEWER_HEADER,
+  APP_VIEWER_TOKEN_HEADER,
+  APP_VIEWER_SECRET_ENV,
+  type KortixAppViewer,
+  type ReadAppViewerOptions,
+} from './app-viewer';

@@ -37,7 +37,6 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -528,7 +527,6 @@ function MemberProjectAccessSection({
   canEdit: boolean;
   query: ReturnType<typeof useQuery<Awaited<ReturnType<typeof listMemberProjectAccess>>>>;
 }) {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [editTarget, setEditTarget] = useState<ProjectEditTarget | null>(null);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
@@ -628,7 +626,7 @@ function MemberProjectAccessSection({
             kebab.push({
               label: 'Open project',
               icon: <OpenIcon className="size-3.5" />,
-              onSelect: () => router.push(`/projects/${project.project_id}`),
+              href: `/projects/${project.project_id}`,
             });
 
             return (
@@ -645,7 +643,7 @@ function MemberProjectAccessSection({
                   </span>
                 }
                 trailing={policy?.role_name ?? builtinRoleLabel('project', project.role)}
-                onClick={() => router.push(`/projects/${project.project_id}`)}
+                href={`/projects/${project.project_id}`}
                 pending={openingProjectId === project.project_id}
                 kebab={kebab}
                 kebabLabel={`Actions for ${project.project_name}`}

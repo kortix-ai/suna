@@ -22,7 +22,6 @@ import {
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { cn } from '@/lib/utils';
 import {
   selectCollapsedSections,
@@ -44,6 +43,7 @@ import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { CaretRightIcon, ChatIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
+import Link from 'next/link';
 import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
@@ -188,7 +188,6 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(
     null,
   );
-  const newSession = useNewProjectSession(projectId);
   const creatingSession = useIsCreatingProjectSession(projectId);
 
   const sessionsQuery = useQuery({
@@ -443,7 +442,6 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       searchOpen={searchOpen}
       onSearchOpenChange={setSearchOpen}
       onEnterSelectMode={() => setSelectMode(true)}
-      onNewSession={() => newSession()}
       creatingSession={creatingSession}
       canSelect={sessions.length > 0}
     />
@@ -491,17 +489,22 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
               title="No sessions yet"
               description="Start a session to give this project its first task."
               action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => newSession()}
-                  disabled={creatingSession}
-                  aria-busy={creatingSession}
-                >
-                  <PlusIcon className="size-3.5 shrink-0" />
-                  New session
-                </Button>
+                // The composer route is known at render time, so this is an
+                // anchor whose payload Next already holds — the first control a
+                // brand-new project offers must not run a cold RSC fetch.
+                creatingSession ? (
+                  <Button variant="outline" size="sm" className="gap-1.5" disabled aria-busy>
+                    <PlusIcon className="size-3.5 shrink-0" />
+                    New session
+                  </Button>
+                ) : (
+                  <Button asChild variant="outline" size="sm" className="gap-1.5">
+                    <Link href={`/projects/${projectId}`} prefetch>
+                      <PlusIcon className="size-3.5 shrink-0" />
+                      New session
+                    </Link>
+                  </Button>
+                )
               }
             />
           ) : grouped.sections.length === 0 ? (

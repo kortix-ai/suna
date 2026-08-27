@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { auditRelayEnvPassthrough, buildSessionRuntimeEnv } from './session-runtime-env';
+import {
+  auditRelayEnvPassthrough,
+  buildPiWorkerSessionEnvVars,
+  buildSessionRuntimeEnv,
+} from './session-runtime-env';
 
 const BASE_INPUT = {
   projectId: 'proj-1',
@@ -199,7 +203,10 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe(gitDeltaParentCommitBase64);
   });
 
-  test('omits both hints when the experiment is disabled', () => {
+  test('sends fresh-session and base-tip hints even with the experiment disabled', () => {
+    // 2026-08-27: the fresh-session fast path is the default boot
+    // (KORTIX_FAST_GIT_BOOT_ENABLED, decided at create). Only the compiled-boot
+    // mode stays gated here (see the compiled-boot tests above).
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       fastColdBootEnabled: false,
@@ -210,11 +217,56 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
     });
 
-    expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
-    expect(env).not.toHaveProperty('KORTIX_BASE_SHA');
-    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
-    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_SHA');
-    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64');
+    expect(env.KORTIX_SESSION_FRESH).toBe('1');
+    expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
+    expect(env.KORTIX_GIT_DELTA_BUNDLE_BASE64).toBe('R0lUIEJVTkRMRQ==');
+    expect(env.KORTIX_GIT_DELTA_PARENT_SHA).toBe('b'.repeat(40));
+    expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe('dHJlZSBkZWFkYmVlZgo=');
+    expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
+    expect(env).not.toHaveProperty('KORTIX_OPENCODE_BINARY_PREFETCH');
+  });
+
+  test('marks a remote delta and ships the OpenCode config-dir hint for fresh sessions only', () => {
+    const fresh = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      freshSession: true,
+      baseSha: 'a'.repeat(40),
+      gitDeltaBundleRemote: true,
+      gitDeltaParentSha: 'b'.repeat(40),
+      gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
+      opencodeConfigDir: '.kortix/opencode',
+    });
+    expect(fresh.KORTIX_GIT_DELTA_BUNDLE_REMOTE).toBe('1');
+    expect(fresh).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
+    expect(fresh.KORTIX_OPENCODE_CONFIG_DIR_HINT).toBe('.kortix/opencode');
+
+    // '' = "this tip ships no project OpenCode config" — still a usable hint.
+    const bare = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      freshSession: true,
+      baseSha: 'a'.repeat(40),
+      opencodeConfigDir: null,
+    });
+    expect(bare.KORTIX_OPENCODE_CONFIG_DIR_HINT).toBe('');
+
+    for (const env of [
+      buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, baseSha: 'a'.repeat(40) }),
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        freshSession: false,
+        opencodeConfigDir: '.kortix/opencode',
+        gitDeltaBundleRemote: true,
+      }),
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        workspaceMode: 'runtime',
+        freshSession: true,
+        opencodeConfigDir: '.kortix/opencode',
+      }),
+    ]) {
+      expect(env).not.toHaveProperty('KORTIX_OPENCODE_CONFIG_DIR_HINT');
+      expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_REMOTE');
+    }
   });
 
   test('omits both hints for resumed and non-repository sessions', () => {
@@ -305,5 +357,48 @@ describe('audit relay emission knobs', () => {
       KORTIX_AUDIT_RELAY_DROP_TYPES: '',
       KORTIX_AUDIT_RELAY_COALESCE: '0',
     });
+  });
+});
+
+describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
+  const input = {
+    projectId: 'proj-1',
+    sessionId: 'sess-1',
+    agentName: 'dev',
+    apiUrl: 'https://api.kortix.test/v1',
+    frontendUrl: 'https://kortix.test',
+    opencodeModel: 'openrouter/anthropic/claude-sonnet-4.5',
+  };
+
+  test('emits exactly the worker contract, nothing from the OpenCode chain', () => {
+    const env = buildPiWorkerSessionEnvVars(input);
+    expect(env).toEqual({
+      KORTIX_PROJECT_ID: 'proj-1',
+      KORTIX_SESSION_ID: 'sess-1',
+      KORTIX_SERVICE_PORT: '8000',
+      KORTIX_AGENT_NAME: 'dev',
+      KORTIX_AGENT: 'dev',
+      KORTIX_API_URL: 'https://api.kortix.test/v1',
+      KORTIX_FRONTEND_URL: 'https://kortix.test',
+      KORTIX_PROJECT_AUTO_CLONE: '0',
+      KORTIX_MODEL: 'openrouter/anthropic/claude-sonnet-4.5',
+    });
+    // The heavy chain must never leak in: no compiled config (baked into the
+    // artifact), no secret plumbing (v0 grants the worker none), no git.
+    expect(env).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SECRET_NAMES');
+    expect(env).not.toHaveProperty('KORTIX_REPO_URL');
+    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
+  });
+
+  test('model and frontend URL are optional', () => {
+    const env = buildPiWorkerSessionEnvVars({
+      projectId: 'proj-1',
+      sessionId: 'sess-1',
+      agentName: 'dev',
+      apiUrl: 'https://api.kortix.test/v1',
+    });
+    expect(env).not.toHaveProperty('KORTIX_MODEL');
+    expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
   });
 });

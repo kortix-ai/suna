@@ -262,6 +262,14 @@ export const ROOT_SUGGESTION_LIMIT = 8;
 export const WORKSPACE_SWITCHER_ITEM_ID = 'nav-projects';
 
 /**
+ * How many rows of one page the palette warms (see the prefetch effects in
+ * `CommandPalette`). The sessions page renders up to 50 rows; firing 50 RSC
+ * requests because a project has 50 sessions costs more than the cold fetch it
+ * saves. Eight is the same slice the root page shows.
+ */
+const PALETTE_PREFETCH_LIMIT = 8;
+
+/**
  * The rows the palette offers before anything is typed.
  *
  * "Switch workspace" is PINNED to the front, then the registry's own order,
@@ -1375,6 +1383,8 @@ export function CommandPalette() {
     (workspace: KortixProject) => {
       beginSwitch(workspace.project_id);
       if (workspace.account_id !== selectedAccountId) setSelectedAccountId(workspace.account_id);
+      // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
+      // push must follow `beginSwitch`. The workspace-rows effect warms it.
       router.push(`/projects/${workspace.project_id}`);
       close();
     },
@@ -1389,6 +1399,9 @@ export function CommandPalette() {
       // ownership check (it's scoped by user, not account) and would open
       // the wrong account's workspace. Same rule `account-switcher.tsx`
       // follows after creating an account.
+      // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
+      // push must follow `setSelectedAccountId`. The 'accounts' page effect
+      // warms it.
       router.push(PROJECT_LANDING_PATH);
       close();
     },
@@ -1399,6 +1412,8 @@ export function CommandPalette() {
     (s: ProjectSession) => {
       if (!projectId) return close();
       openProjectTab(projectId, s.session_id);
+      // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
+      // push must follow `openProjectTab`. The session-rows effect warms it.
       router.push(`/projects/${projectId}/sessions/${s.session_id}`);
       close();
     },
@@ -1507,6 +1522,94 @@ export function CommandPalette() {
     [hasQuery, workspaceRows, query],
   );
 
+  /*
+   * Warm the destinations the rows on screen can reach.
+   *
+   * A palette row can never be an anchor. cmdk 0.2.1 activates a row on Enter
+   * by dispatching its own `cmdk-item-select` event — not a DOM click — and
+   * `Command.Item` renders a hard-coded div with no `asChild`, so wrapping the
+   * row in a `<Link>` leaves keyboard activation dead. Every navigation below
+   * is therefore a `router.push`, which runs the RSC fetch cold at click time.
+   * A cold fetch turns into a full document load whenever it comes back a
+   * redirect, a non-2xx (the middleware /auth bounce), or from a newer build.
+   * Prefetching puts the payload in the segment cache, so the push stays soft.
+   *
+   * Each effect warms only what its page renders, capped at
+   * PALETTE_PREFETCH_LIMIT.
+   */
+
+  // Root — registry Navigation rows. Only /projects and /accounts hrefs reach
+  // `router.push` in `handleRegistryItem`; the rest open the settings overlay
+  // or a workspace tab.
+  useEffect(() => {
+    if (!open || page !== 'root') return;
+    const rows = hasQuery ? filteredNavItems : rootSuggestionItems;
+    for (const item of rows.slice(0, PALETTE_PREFETCH_LIMIT)) {
+      const href = item.href;
+      if (item.kind !== 'navigate' || !href) continue;
+      if (href.startsWith('/projects') || href.startsWith('/accounts')) router.prefetch(href);
+    }
+  }, [open, page, hasQuery, filteredNavItems, rootSuggestionItems, router]);
+
+  // Root — Settings rows. With a project open `openSettingsTab` opens the
+  // overlay in place and never routes, so only the project-less branch needs
+  // warming.
+  useEffect(() => {
+    if (!open || page !== 'root' || projectId) return;
+    for (const group of filteredSettingsGroups) {
+      for (const item of group.items) router.prefetch(`/settings/${item.tab}`);
+    }
+  }, [open, page, projectId, filteredSettingsGroups, router]);
+
+  // Workspace rows — the root hits and the dedicated page both land on
+  // /projects/<id>.
+  useEffect(() => {
+    if (!open) return;
+    const rows =
+      page === 'workspaces' ? workspacePageRows : page === 'root' ? rootWorkspaceRows : [];
+    for (const row of rows.slice(0, PALETTE_PREFETCH_LIMIT)) {
+      router.prefetch(`/projects/${row.workspace.project_id}`);
+    }
+  }, [open, page, workspacePageRows, rootWorkspaceRows, router]);
+
+  // Session rows — the root hits and the dedicated page both land on
+  // /projects/<projectId>/sessions/<id>.
+  useEffect(() => {
+    if (!open || !projectId) return;
+    const rows =
+      page === 'sessions' ? filteredProjectSessionsList : page === 'root' ? rootSessionResults : [];
+    for (const s of rows.slice(0, PALETTE_PREFETCH_LIMIT)) {
+      router.prefetch(`/projects/${projectId}/sessions/${s.session_id}`);
+    }
+  }, [open, page, projectId, filteredProjectSessionsList, rootSessionResults, router]);
+
+  // Pages whose every row shares one destination. One prefetch each, as the
+  // page opens.
+  useEffect(() => {
+    if (!open) return;
+    if (page === 'accounts') router.prefetch(PROJECT_LANDING_PATH);
+    if (page === 'files' && projectId) router.prefetch(`/projects/${projectId}/files`);
+    if (page === 'flags' && projectId) {
+      router.prefetch(`/projects/${projectId}/config?section=feature-flags`);
+    }
+  }, [open, page, projectId, router]);
+
+  // "Invite members" and "Workspace members". The account id arrives from
+  // `paletteProjectDetail`, whose query only runs once the palette opens, so
+  // warm the common branch the moment it resolves. The `/projects/<id>/members`
+  // fallback stays cold on purpose: it exists only for the window before that.
+  useEffect(() => {
+    if (!open || !projectId || !inviteMembersAccountId) return;
+    router.prefetch(`/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`);
+  }, [open, projectId, inviteMembersAccountId, router]);
+
+  // Sign out lands on /auth. Warm it while the confirm dialog is up — the push
+  // itself only runs after `signOut()` has resolved.
+  useEffect(() => {
+    if (!logoutConfirmOpen) return;
+    router.prefetch('/auth');
+  }, [logoutConfirmOpen, router]);
+
   const hasSessionResults = rootSessionResults.length > 0;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
   const hasSettingsResults = settingsResultCount > 0;
@@ -1539,6 +1642,8 @@ export function CommandPalette() {
   const handleSelectFile = useCallback(
     (_filePath: string, _lineNumber?: number) => {
       if (!projectId) return close();
+      // nav-contract: prefetch-only — a cmdk row activated by keyboard. The
+      // 'files' page effect warms this one destination as the page opens.
       router.push(`/projects/${projectId}/files`);
       close();
     },
@@ -1782,6 +1887,9 @@ export function CommandPalette() {
         useSettingsPanelStore.getState().openSettings(tab);
         return;
       }
+      // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
+      // branch is only known here: with a project open this returns above and
+      // never routes. The root-settings effect warms the project-less branch.
       router.push(`/settings/${tab}`);
     },
     [close, projectId, router],
@@ -1813,6 +1921,9 @@ export function CommandPalette() {
     await supabase.auth.signOut();
     clearUserLocalStorage();
     await clearSessionIDBCache();
+    // nav-contract: prefetch-only — the push runs after `signOut()` resolves,
+    // so an anchor would leave before the session is cleared. The confirm-open
+    // effect warms /auth.
     router.push('/auth');
   }, [router]);
 
@@ -1865,6 +1976,8 @@ export function CommandPalette() {
     // redirect to exactly this destination (it resolves the account id itself
     // and appends the same `&project=` scoping), so the unresolved case costs
     // one extra hop instead of the click doing nothing.
+    // nav-contract: prefetch-only — the destination depends on whether
+    // `inviteMembersAccountId` has resolved, so it is not known at render.
     router.push(
       inviteMembersAccountId
         ? `/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`
@@ -1922,6 +2035,8 @@ export function CommandPalette() {
   /** The 'flags' page's fallback when the caller may not write feature flags. */
   const handleOpenFeatureFlagsSection = useCallback(() => {
     if (!projectId) return;
+    // nav-contract: prefetch-only — a cmdk row activated by keyboard. The
+    // 'flags' page effect warms this one destination as the page opens.
     router.push(`/projects/${projectId}/config?section=feature-flags`);
     close();
   }, [close, projectId, router]);
@@ -2064,6 +2179,9 @@ export function CommandPalette() {
           }
 
           if (href.startsWith('/projects') || href.startsWith('/accounts')) {
+            // nav-contract: prefetch-only — a cmdk row activated by keyboard,
+            // and `href` is resolved from the registry item at click time. The
+            // root-navigation effect warms the rendered rows.
             router.push(href);
             close();
             break;

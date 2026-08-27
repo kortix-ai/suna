@@ -1,6 +1,6 @@
 {
   "id": "1fc56941-33cb-4705-9ee1-d4b13e93b072",
-  "prevId": "78f55920-43e4-41c3-95d3-f4b4a699c096",
+  "prevId": "5e77f4d8-9ac8-455b-8a38-595e021e4a4f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1963,6 +1963,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "branding": {
+          "name": "branding",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
         }
       },
       "indexes": {},

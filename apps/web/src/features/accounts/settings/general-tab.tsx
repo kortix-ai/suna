@@ -52,7 +52,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, MotionConfig } from 'motion/react';
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { LanguageSwitcher } from './language-switcher';
@@ -61,7 +61,6 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('settings.general');
   const tCommon = useTranslations('common');
-  const router = useRouter();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
@@ -371,16 +370,12 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                 <ItemDescription>{t('accountSettings.description')}</ItemDescription>
               </ItemContent>
               <ItemActions>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    onClose();
-                    router.push(`/accounts/${accountId}`);
-                  }}
-                >
-                  {t('accountSettings.button')}
-                  <ArrowUpRight className="size-3.5" />
+                <Button asChild variant="outline" size="sm">
+                  {/* The anchor navigates; `onClose` only shuts the dialog. */}
+                  <Link href={`/accounts/${accountId}`} onClick={onClose}>
+                    {t('accountSettings.button')}
+                    <ArrowUpRight className="size-3.5" />
+                  </Link>
                 </Button>
               </ItemActions>
             </Item>

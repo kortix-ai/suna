@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/marketing/button';
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { DitherShader } from '@/components/ui/wallpaper-shaders';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { cta } from '@/features/marketing/landing/content';
@@ -8,7 +9,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 import { ArrowRightIcon } from '@phosphor-icons/react';
-import { useCallback } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
  * Closing CTA above the site map. Copy lives in content.ts, not the i18n
@@ -18,10 +19,20 @@ export function CtaSection() {
   const { user } = useAuth();
   const openDemo = useRequestDemo();
 
-  const handleLaunch = useCallback(() => {
-    trackCtaSignup();
-    window.location.href = user ? latestProjectPath(user.id) : '/auth';
-  }, [user]);
+  // `latestProjectPath` reads document.cookie, which the server pass cannot
+  // see. Seeding with `/auth` keeps both passes identical and lets the row be a
+  // real anchor: hydration adopts the remembered project afterwards. An anchor
+  // is what gives the site's primary closing CTA middle-click, cmd-click and
+  // "copy link address" — a button has none of them.
+  //
+  // `HoverPrefetchLink`, so an anonymous visitor scrolling past the footer does
+  // not prefetch an authed route it will never open.
+  const [launchHref, setLaunchHref] = useState('/auth');
+  useEffect(() => {
+    if (!user) return;
+    const href = latestProjectPath(user.id);
+    setLaunchHref((prev) => (prev === href ? prev : href));
+  });
 
   return (
     <section id="cta" className="py-24 sm:py-30">
@@ -41,13 +52,11 @@ export function CtaSection() {
         </p>
 
         <div className="mt-8 flex w-full flex-col items-stretch gap-3 sm:mt-10 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
-          <Button
-            size="lg"
-            className="w-full active:scale-[0.97] sm:w-auto sm:min-w-36"
-            onClick={handleLaunch}
-          >
-            {cta.ctaPrimary}
-            <ArrowRightIcon className="size-4 shrink-0" />
+          <Button size="lg" className="w-full active:scale-[0.97] sm:w-auto sm:min-w-36" asChild>
+            <HoverPrefetchLink href={launchHref} prefetch onClick={trackCtaSignup}>
+              {cta.ctaPrimary}
+              <ArrowRightIcon className="size-4 shrink-0" />
+            </HoverPrefetchLink>
           </Button>
           <Button
             size="lg"

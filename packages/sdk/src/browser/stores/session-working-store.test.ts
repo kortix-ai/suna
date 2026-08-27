@@ -29,6 +29,21 @@ describe('send receipts', () => {
     });
   });
 
+  test('preserves the turn associated with the send receipt', () => {
+    useSessionWorkingStore.getState().noteSendReceipt('sess_1', {
+      messageId: 'msg_queued',
+      turnId: 'msg_active',
+      atMs: 10,
+    });
+
+    expect(useSessionWorkingStore.getState().receipts.sess_1).toEqual({
+      messageId: 'msg_queued',
+      turnId: 'msg_active',
+      atMs: 10,
+      acceptedAtMs: null,
+    });
+  });
+
   test('acceptance stamps the instant the server took the send', () => {
     const store = useSessionWorkingStore.getState();
     store.noteSendReceipt('sess_1', { messageId: 'msg_1', atMs: 10 });

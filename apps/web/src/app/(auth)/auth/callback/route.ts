@@ -44,16 +44,10 @@ export async function GET(request: NextRequest) {
   const runtimeEnv = getServerPublicEnv();
 
   // Desktop OAuth bounce: Supabase 302'd the user's BROWSER here. Don't
-  // exchange the code on the web side — bounce to `<scheme>://auth/callback`
+  // exchange the code on the web side — bounce to `kortix://auth/callback`
   // with the same params so the OS hands the code to the desktop app, and
   // leave the browser tab on a real page so it doesn't spin forever waiting
-  // for a navigation that a custom scheme never produces.
-  //
-  // The scheme comes from `desktop_scheme`, which the app put on this URL in
-  // authRedirectUrl(): prod, staging and dev builds register kortix://,
-  // kortix-staging:// and kortix-dev:// respectively, so a machine with all
-  // three installed still hands the code back to the one that started the
-  // sign-in. buildDesktopDeepLink allowlists the value before using it.
+  // for a navigation that the kortix:// scheme never produces.
   if (desktop) {
     // The deep link is built from attacker-influenced query params, so the
     // HTML is rendered by a helper that escapes both the href attribute and the

@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
 import { useCallback, useState } from 'react';
 
 /* ── tiny highlighter ──────────────────────────────────────────────────────
@@ -212,14 +213,25 @@ export function SdkSurface({ cta }: { cta?: React.ReactNode }) {
 }
 
 export function SurfaceLink({ href, children }: { href: string; children: React.ReactNode }) {
+  const className = cn(
+    'text-muted-foreground hover:text-foreground duration-fast inline-flex items-center gap-1.5',
+    'font-mono text-[11px] transition-colors',
+  );
+
+  // A relative href is an in-app route: render an anchor the router owns, so the
+  // click is served from the segment cache instead of reloading the document.
+  // An absolute href leaves this origin, where a document load is correct.
+  if (href.startsWith('/')) {
+    return (
+      <Link href={href} prefetch className={className}>
+        {children}
+        <span aria-hidden>↗</span>
+      </Link>
+    );
+  }
+
   return (
-    <a
-      href={href}
-      className={cn(
-        'text-muted-foreground hover:text-foreground duration-fast inline-flex items-center gap-1.5',
-        'font-mono text-[11px] transition-colors',
-      )}
-    >
+    <a href={href} className={className}>
       {children}
       <span aria-hidden>↗</span>
     </a>

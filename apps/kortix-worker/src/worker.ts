@@ -214,6 +214,16 @@ export async function buildHarness(cfg: WorkerConfig) {
     }
     const list = models.getModels(provider.id);
     model = cfg.modelId ? models.getModel(provider.id, cfg.modelId) : list[0];
+    if (!model && cfg.modelId && cfg.gatewayUrl && list[0]) {
+      // Behind the Kortix gateway the model ref is the GATEWAY's contract
+      // (native `<provider>/<model>`), not a catalog-membership question —
+      // the first dev session died here with "no model resolved" because the
+      // baked ref is not an OpenRouter catalog id. Clone a catalog entry for
+      // its field shape, stamp the requested ref, and point it at the
+      // gateway directly so routing does not depend on auth-layer env
+      // plumbing.
+      model = { ...list[0], id: cfg.modelId, name: cfg.modelId, baseUrl: cfg.gatewayUrl };
+    }
     if (!model) throw new Error(`no model resolved for provider ${provider.id}`);
   }
 
@@ -296,6 +306,49 @@ export async function startWorker(cfg = configFromEnv()) {
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
+
+    // ── Platform compatibility surface ─────────────────────────────────────
+    // The session lifecycle (start envelope, wake fences, env fan-out) speaks
+    // kortixd's /kortix/* contract. The worker answers just enough of it that
+    // a pi session reads as ready without a daemon in the box.
+    if (url.pathname === '/kortix/health') {
+      const compiled = (globalThis as Record<string, unknown>).__KORTIX_COMPILED__ as
+        | { manifest?: { agent_config_etag?: string | null; source_sha?: string; ref?: string } }
+        | undefined;
+      const body = JSON.stringify({
+        daemon: 'ok',
+        status: 'ok',
+        runtimeReady: true,
+        workload: 'session',
+        opencode: 'ok',
+        engine: 'pi',
+        uptime_s: Math.floor((Date.now() - BOOT_T0) / 1000),
+        repo_required: false,
+        repo_ready: true,
+        boot_error: null,
+        // The pi worker has no OpenCode store to pin — the start path must not
+        // wait for one.
+        opencode_session_id: null,
+        opencode_session_required: false,
+        agent_config_etag: compiled?.manifest?.agent_config_etag ?? null,
+        commit_sha: compiled?.manifest?.source_sha ?? null,
+        branch: compiled?.manifest?.ref ?? null,
+        boot_timeline: [{ label: 'worker-listening', atMs: LISTEN_MS ?? 0 }],
+        runtime: { build: null, at: null, components: {}, agentSwapPending: false, pinned: false },
+      });
+      res.writeHead(200, { 'content-type': 'application/json' }).end(body);
+      return;
+    }
+
+    // Env fan-out and config refresh land here on secret writes and reloads.
+    // Acknowledged, not applied: a pi worker's config is immutable per artifact
+    // — a new commit compiles a new artifact. Refusing (non-200) would surface
+    // every flagged session as a sync failure in the fan-out's logs.
+    if ((url.pathname === '/kortix/env' || url.pathname === '/kortix/refresh') && req.method === 'POST') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+         .end(JSON.stringify({ ok: true, changed: false, engine: 'pi' }));
+      return;
+    }
 
     if (url.pathname === '/health') {
       const body = JSON.stringify({
@@ -451,6 +504,8 @@ export async function startWorker(cfg = configFromEnv()) {
   return { server, agent, env, port, close: () => new Promise<void>((r) => server.close(() => r())) };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  startWorker().catch((e) => { console.error(e); process.exit(1); });
-}
+// No self-start guard here: src/main.ts is the bundle's sole entrypoint and
+// owns startup. In the compiled artifact every module shares one
+// import.meta.url, so a guard here fired ALONGSIDE main's start — two binds on
+// one port, EADDRINUSE ~1s after boot, dead worker. Found on the first
+// dev-served artifact; the api test now asserts survival past that window.

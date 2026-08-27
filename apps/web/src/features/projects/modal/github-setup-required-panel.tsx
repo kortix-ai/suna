@@ -8,7 +8,7 @@
 // deployment (there's no hosted Kortix App to install on self-host).
 
 import { GithubLogoIcon as Github } from '@phosphor-icons/react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -48,8 +48,6 @@ export function GitHubSetupRequiredPanel({
   size = 'default',
   className,
 }: GitHubSetupRequiredPanelProps) {
-  const router = useRouter();
-
   return (
     <EmptyState
       icon={Github}
@@ -62,19 +60,22 @@ export function GitHubSetupRequiredPanel({
           : "Every Kortix project is a git repository. Ask your admin to connect GitHub in this account's Git settings."
       }
       action={
-        <Button
-          type="button"
-          size="sm"
-          className="gap-1.5"
-          disabled={!accountId}
-          onClick={() => {
-            onNavigate?.();
-            if (accountId) router.push(`/accounts/${accountId}?tab=git`);
-          }}
-        >
-          <Github className="size-4" />
-          Set up GitHub
-        </Button>
+        // An anchor once the account resolves, so Next prefetches Git settings
+        // and the click cannot degrade into a full document load. With no
+        // account there is no target, so it stays a disabled button.
+        accountId ? (
+          <Button size="sm" className="gap-1.5" asChild>
+            <Link href={`/accounts/${accountId}?tab=git`} prefetch onClick={onNavigate}>
+              <Github className="size-4" />
+              Set up GitHub
+            </Link>
+          </Button>
+        ) : (
+          <Button type="button" size="sm" className="gap-1.5" disabled>
+            <Github className="size-4" />
+            Set up GitHub
+          </Button>
+        )
       }
       secondaryAction={secondaryAction}
     />

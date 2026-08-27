@@ -585,6 +585,19 @@ const client = createKortix(auth.clientConfig());  // talks to Kortix through /p
 `@kortix/sdk/react` adds `useKortixViewer()` and `<SignInWithKortix />`.
 Full guide: `/docs/sdk/sign-in`. Example: `examples/11-sign-in-with-kortix.ts`.
 
+### A Kortix-hosted App is already signed in
+
+```ts
+const kortix = createKortix({ backendUrl, getToken: kortixAppViewerToken() });  // browser
+const viewer = await readAppViewer(request);                                    // server (@kortix/sdk/server)
+const asViewer = await createAppViewerKortix(request, { backendUrl });          // act as them
+```
+
+The Apps gate authenticated the visitor before your App was served and signs
+their identity into every request; `viewer_token_scope` on the App's access
+policy decides whether the App also gets a token to act with. Guide:
+`/docs/sdk/apps`.
+
 ### Headless sign-in (your users, straight through the API)
 
 ```ts

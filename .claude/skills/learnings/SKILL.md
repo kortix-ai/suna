@@ -21,6 +21,95 @@ linked, not inlined.
 
 ## Register
 
+### An experiment flag that deploy-dev pins to an explicit `false` can never double as a kill switch (2026-08-27)
+
+**When:** reusing an existing feature/experiment flag to gate a new default-on
+behaviour with "unset = on, explicit `false` = off" semantics.
+`deploy-dev.yml` injects `KORTIX_FAST_COLD_BOOT_ENABLED=false` into the API
+task on EVERY push deploy (`.github/workflows/deploy-dev.yml`, the
+`enable_fast_cold_boot` dispatch input), so on dev that flag is always
+"explicitly false" even though `apps/api/.env*` leave it unset. PR #6964 gated
+the fresh-session git hint (`KORTIX_BASE_SHA` + scaffold delta + OpenCode
+config-dir hint) on that reading; dev sessions got `KORTIX_SESSION_FRESH=1`
+only and still fetched `main` through the proxy (3.0–3.4 s instead of 0.2 s).
+`provision-core.ts` had the same gate on its seed-time hint for weeks.
+
+**The rule: a new default-on path gets its OWN flag** (#6973:
+`KORTIX_FAST_GIT_BOOT_ENABLED`, `optBoolTrue`), and before choosing
+"explicit false = off" semantics on any flag, grep the deploy workflows and
+`infra/scripts/ecs-deploy.sh` for who sets it — `.env` files are not the only
+source of the task environment.
+
+**Diagnostic:** the daemon env inside a box (`env | grep KORTIX_` via
+`POST <sandbox_url>/kortix/pty`) and `projects.metadata->'git'->'fast_boot'`
+staying `null` after a session: the API never even attempted the hint.
+*Near-miss:* #6964 → #6973, one wasted deploy cycle.
+*Enforcer:* none. A config test that asserts every `optBoolUnset`-style
+"configured?" gate is not also set by `deploy-*.yml` would catch it.
+
+### A new import edge into a widely-mocked graph breaks hand-written module mocks all over the suite — and the failure names no test (2026-08-27)
+
+**When:** adding an import to code that many suites exercise (a middleware, a
+proxy, a gate). `mock.module` replaces a module **WHOLESALE**, so every suite
+that stubs a module by listing its exports silently deletes the ones it did not
+name. Pull that module into a new part of the graph and those missing names
+become `SyntaxError: Export named 'X' not found in module …`, printed as
+`# Unhandled error between tests` — attributed to NO test, and it takes an
+unrelated parallel worker down with it, so the visible symptom is a stranger's
+suite failing.
+
+Fix them one at a time and it cascades: `loadTokenBinding` →
+`ensureAgentServiceAccount` → `createAccountToken` →
+`resolveInheritedSessionSharing`, each spread pulling the next real module in.
+
+**The rule: fix the import, not the mocks.** Ask what the new code actually
+needs. Here the Apps gate wanted one email lookup and reached it through
+`projects/lib/access`, which re-exports it from behind the whole
+project/session/IAM read graph; `accounts/core/owner-emails` is the same
+function with `drizzle` + `db` as its entire import list. One line, cascade
+gone, zero test churn. Spread the real module (the 2026-08-18 rule) when you
+own the mock and the dependency is genuinely needed — not as the way out of a
+cascade you created.
+
+**Diagnostic:** a suite that fails with `1 fail / 1 error` where the failing
+test is in a file your branch never touched, and the run prints `1 tests
+failed:` followed by nothing, is this. Read the `Unhandled error` block, not the
+failing test name.
+*Near-miss:* PR #6963 (the Apps viewer token). Cost two CI rounds and a wrong
+"it's a pre-existing flake" call before the real cause was read.
+*Enforcer:* none. A lint that flags `mock.module` factories which do not spread
+the real module would catch the mocks; nothing catches the import edge.
+
+### Two migrations generated from the same parent fork the drizzle chain, and main then cannot generate ANY migration (2026-08-27)
+
+**When:** two PRs are open at once and each runs `pnpm migrate:generate`. Each
+snapshot records `prevId` = whatever the tail was when it was cut. Merge both
+and `drizzle/meta/` has two snapshots claiming the same parent; the next
+generate anywhere on main dies with
+`[a_snapshot.json, b_snapshot.json] are pointing to a parent snapshot: … which
+is a collision` — and the wrapper still prints the reassuring
+`No schema changes detected` line (same lie as the 2026-08-19 TTY entry), so it
+reads as "nothing to do" rather than "the repo is wedged".
+
+The second snapshot is also WRONG on content, not just on lineage: it was
+diffed against the older parent, so it is missing whatever the other PR added
+(here `accounts.branding`, from #6947, absent from #6953's snapshot).
+
+**The repair** (metadata only — no applied migration file is touched, so
+immutability holds): in the LATER snapshot set `prevId` to the earlier
+snapshot's `id`, and copy in the objects the earlier one added. Then generate
+and READ THE SQL: it must contain only your own change. If it re-proposes the
+other PR's DDL, the content merge was incomplete.
+
+**The prevention:** regenerate your migration against the current tail
+immediately before merging (rebase → delete your snapshot + journal entry →
+`migrate:generate` again), the same way a lockfile is refreshed.
+*Incident:* main was un-generatable between #6947/#6953 merging (2026-08-26
+21:26Z) and the repair on the `app-viewer-token` branch. No deploy was affected
+— both migrations applied fine; only generation was blocked.
+*Enforcer:* none — a CI check that asserts one linear `prevId` chain over
+`drizzle/meta/*_snapshot.json` is the TODO.
+
 ### A web API the middleware needs must exist in the IMAGE's runtime, not the laptop's (2026-08-27)
 
 **When:** adding any global middleware or hot-path code that uses a Web/Bun

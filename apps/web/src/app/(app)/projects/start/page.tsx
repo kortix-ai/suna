@@ -217,6 +217,10 @@ function StartSignOutButton() {
   const { signOut } = useAuth();
   const [pending, setPending] = useState(false);
 
+  useEffect(() => {
+    router.prefetch('/auth');
+  }, [router]);
+
   return (
     <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
       <Button
@@ -227,6 +231,9 @@ function StartSignOutButton() {
         onClick={async () => {
           setPending(true);
           await signOut();
+          // nav-contract: prefetch-only — the navigation must follow `signOut`,
+          // so an anchor would race the sign-out it is meant to complete. The
+          // effect above warms `/auth`.
           router.replace('/auth');
         }}
       >

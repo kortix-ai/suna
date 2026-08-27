@@ -31,6 +31,7 @@ import './routes/r6';
 import './routes/group-grants';
 import './routes/warm-sessions';
 import './routes/project-sessions';
+import './routes/session-environment';
 import './routes/session-transcripts';
 import './routes/session-open-bundle';
 import './routes/session-stream';

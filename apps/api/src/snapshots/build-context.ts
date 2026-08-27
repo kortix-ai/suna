@@ -12,6 +12,7 @@
  * snapshots/providers/daytona.ts (Daytona) + snapshots/providers/platinum.ts.
  */
 
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import {
@@ -337,7 +338,224 @@ export async function stageFastBuildContext(): Promise<StagedContext> {
   }
 }
 
-export type RuntimeBuildProfile = 'standard' | 'fast' | 'meta' | 'app';
+
+/**
+ * The pi worker image: node + a boot script, nothing else. The actual harness
+ * arrives at BOOT as the per-(project, sha) compiled artifact served by
+ * GET /v1/git/{project}.git/compiled-pi-runtime — so this image is pure
+ * transport and changes only when the scripts below change. The fingerprint
+ * hashes exactly what is baked, mirroring the meta image's content-hash
+ * discipline: same content ⇒ same snapshot, reused forever.
+ */
+export const PI_WORKER_ENTRYPOINT = '/usr/local/bin/pi-worker-entrypoint';
+
+const PI_WORKER_ENTRYPOINT_SH = `#!/bin/sh
+# Boot a session on the compiled pi worker runtime.
+# Fails loudly: a worker that cannot fetch its exact artifact must not serve.
+#
+# Park mode (KORTIX_PI_PARK=1): the box was pre-created by the worker pool and
+# knows no session yet. It idles on a tiny claim server; the API's pool claim
+# delivers the session env (token, project, ref/sha) and the same fetch+exec
+# path runs then. See PI_WORKER_PARK_MJS.
+set -eu
+export PORT="\${KORTIX_SERVICE_PORT:-8000}"
+if [ -n "\${KORTIX_PI_PARK:-}" ]; then
+  : "\${KORTIX_PI_PARK_TOKEN:?}"
+  exec node /opt/kortix/park.mjs
+fi
+: "\${KORTIX_API_URL:?}" "\${KORTIX_TOKEN:?}" "\${KORTIX_PROJECT_ID:?}"
+: "\${KORTIX_PI_RUNTIME_REF:?}" "\${KORTIX_PI_RUNTIME_SHA:?}"
+node /opt/kortix/fetch-runtime.mjs
+exec node /opt/kortix/session-worker.mjs
+`;
+
+const PI_WORKER_PARK_MJS = `// Parked pi worker box: idle until one session claims it.
+// The claim is the ONLY serialization the pool has — first POST wins, every
+// later one gets 409 — so racing API instances need no shared lock.
+import { spawn } from 'node:child_process';
+import { timingSafeEqual } from 'node:crypto';
+import { createServer } from 'node:http';
+
+const PORT = Number(process.env.PORT ?? 8000);
+const PARK_TOKEN = process.env.KORTIX_PI_PARK_TOKEN ?? '';
+const RUNTIME_DIR = process.env.KORTIX_PI_PARK_DIR ?? '/opt/kortix';
+const REQUIRED = [
+  'KORTIX_API_URL',
+  'KORTIX_TOKEN',
+  'KORTIX_PROJECT_ID',
+  'KORTIX_PI_RUNTIME_REF',
+  'KORTIX_PI_RUNTIME_SHA',
+];
+let claimed = false;
+
+function tokenOk(header) {
+  const a = Buffer.from(String(header ?? ''));
+  const b = Buffer.from(PARK_TOKEN);
+  return PARK_TOKEN.length > 0 && a.length === b.length && timingSafeEqual(a, b);
+}
+
+function readBody(req, cap) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > cap) reject(new Error('claim body too large'));
+      else chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+async function boot(env) {
+  // Same two steps the cold entrypoint runs, with the claim env layered over
+  // the park env. Values never hit the log.
+  const merged = { ...process.env, ...env };
+  const fetchExit = await new Promise((resolve) => {
+    const child = spawn('node', [RUNTIME_DIR + '/fetch-runtime.mjs'], { env: merged, stdio: 'inherit' });
+    child.on('exit', (code) => resolve(code ?? 1));
+    child.on('error', () => resolve(1));
+  });
+  if (fetchExit !== 0) {
+    console.error(JSON.stringify({ msg: 'claimed park boot FAILED at fetch', exit: fetchExit }));
+    process.exit(1);
+  }
+  const worker = spawn('node', [RUNTIME_DIR + '/session-worker.mjs'], { env: merged, stdio: 'inherit' });
+  for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => worker.kill(sig));
+  worker.on('exit', (code) => process.exit(code ?? 1));
+}
+
+const server = createServer(async (req, res) => {
+  const path = String(req.url ?? '').split('?')[0];
+  if (req.method === 'GET' && path === '/kortix/health') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, parked: true, runtimeReady: false }));
+    return;
+  }
+  if (req.method === 'POST' && path === '/kortix/claim') {
+    if (!tokenOk(req.headers['x-park-token'])) {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'bad park token' }));
+      return;
+    }
+    if (claimed) {
+      res.writeHead(409, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'already claimed' }));
+      return;
+    }
+    let env;
+    try {
+      const body = JSON.parse(await readBody(req, 256 * 1024));
+      env = body?.env;
+      if (!env || typeof env !== 'object' || Array.isArray(env)) throw new Error('env map required');
+      for (const [key, value] of Object.entries(env)) {
+        if (!/^KORTIX_[A-Z0-9_]*$/.test(key) || typeof value !== 'string') {
+          throw new Error('claim env keys must be KORTIX_* strings');
+        }
+      }
+      for (const key of REQUIRED) {
+        if (!env[key]) throw new Error('claim env missing ' + key);
+      }
+    } catch (error) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: String(error?.message ?? error) }));
+      return;
+    }
+    claimed = true;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    console.log(JSON.stringify({ msg: 'park claim accepted', keys: Object.keys(env).length }));
+    // Free the port for the worker, then boot with the claim env.
+    server.close(() => void boot(env));
+    return;
+  }
+  res.writeHead(404, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ error: 'not found' }));
+});
+server.listen(PORT, () => {
+  console.log(JSON.stringify({ msg: 'pi worker parked', port: PORT }));
+});
+`;
+
+const PI_WORKER_FETCH_MJS = `// Download this session's compiled pi runtime, verified before it may run.
+import { createHash } from 'node:crypto';
+import { writeFileSync, renameSync } from 'node:fs';
+
+const url = new URL(
+  \`\${process.env.KORTIX_API_URL.replace(/\\/$/, '')}/git/\${process.env.KORTIX_PROJECT_ID}.git/compiled-pi-runtime\`,
+);
+url.searchParams.set('ref', process.env.KORTIX_PI_RUNTIME_REF);
+url.searchParams.set('sha', process.env.KORTIX_PI_RUNTIME_SHA);
+
+let lastError = 'unknown';
+for (let attempt = 1; attempt <= 30; attempt++) {
+  try {
+    const res = await fetch(url, {
+      headers: { authorization: \`Bearer \${process.env.KORTIX_TOKEN}\` },
+    });
+    if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+    const body = Buffer.from(await res.arrayBuffer());
+    const expected = res.headers.get('x-kortix-artifact-sha256');
+    const actual = createHash('sha256').update(body).digest('hex');
+    // Digest-verified like every other converged runtime asset: a truncated or
+    // tampered artifact never reaches exec.
+    if (expected && expected !== actual) throw new Error('artifact sha256 mismatch');
+    const text = body.toString('utf8');
+    if (!text.includes('kortix-worker starting')) throw new Error('artifact has no worker entrypoint');
+    writeFileSync('/opt/kortix/session-worker.mjs.tmp', body, { mode: 0o500 });
+    renameSync('/opt/kortix/session-worker.mjs.tmp', '/opt/kortix/session-worker.mjs');
+    console.log(JSON.stringify({ msg: 'pi runtime fetched', bytes: body.length, sha256: actual }));
+    process.exit(0);
+  } catch (error) {
+    lastError = String(error?.message ?? error);
+    console.error(JSON.stringify({ msg: 'pi runtime fetch retry', attempt, error: lastError }));
+    await new Promise((r) => setTimeout(r, Math.min(500 * attempt, 5000)));
+  }
+}
+console.error(JSON.stringify({ msg: 'pi runtime fetch FAILED', error: lastError }));
+process.exit(1);
+`;
+
+function buildPiWorkerDockerfile(): string {
+  return `FROM node:22-slim
+RUN useradd --create-home --shell /usr/sbin/nologin kortix \\
+    && mkdir -p /opt/kortix && chown kortix:kortix /opt/kortix
+COPY pi-worker-entrypoint /usr/local/bin/pi-worker-entrypoint
+COPY fetch-runtime.mjs /opt/kortix/fetch-runtime.mjs
+COPY park.mjs /opt/kortix/park.mjs
+RUN chmod 0555 /usr/local/bin/pi-worker-entrypoint /opt/kortix/fetch-runtime.mjs /opt/kortix/park.mjs
+USER kortix
+ENV NODE_ENV=production
+`;
+}
+
+/** Content identity of the pi worker image — nothing else goes into it. */
+export function piWorkerImageFingerprint(): string {
+  return createHash('sha256')
+    .update(
+      `pi-worker-v1\0${buildPiWorkerDockerfile()}\0${PI_WORKER_ENTRYPOINT_SH}\0${PI_WORKER_FETCH_MJS}\0${PI_WORKER_PARK_MJS}`,
+    )
+    .digest('hex');
+}
+
+/** The park server script, exported for the handshake test only. */
+export function piWorkerParkScriptForTest(): string {
+  return PI_WORKER_PARK_MJS;
+}
+
+export async function stagePiWorkerBuildContext(): Promise<StagedContext> {
+  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-piworker-snap-'));
+  await writeFileFs(join(contextDir, 'pi-worker-entrypoint'), PI_WORKER_ENTRYPOINT_SH, { mode: 0o755 });
+  await writeFileFs(join(contextDir, 'fetch-runtime.mjs'), PI_WORKER_FETCH_MJS);
+  await writeFileFs(join(contextDir, 'park.mjs'), PI_WORKER_PARK_MJS);
+  const dockerfileName = 'Dockerfile';
+  const composedPath = join(contextDir, dockerfileName);
+  await writeFileFs(composedPath, buildPiWorkerDockerfile());
+  return { contextDir, composedPath, dockerfileName };
+}
+
+export type RuntimeBuildProfile = 'standard' | 'fast' | 'meta' | 'app' | 'pi-worker';
 
 /** Select one runtime renderer for every provider adapter. */
 export async function stageRuntimeBuildContext(input: {
@@ -354,6 +572,8 @@ export async function stageRuntimeBuildContext(input: {
       return stageAppBuildContext(input.snapshotName, input.userDockerfile, input.appContext);
     case 'meta':
       return stageMetaBuildContext();
+    case 'pi-worker':
+      return stagePiWorkerBuildContext();
     case 'fast':
       return stageFastBuildContext();
     default:

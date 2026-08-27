@@ -209,12 +209,27 @@ export async function middleware(request: NextRequest) {
     );
   }
 
+  // Slide the access window on every authorized request, not only on a Basic
+  // challenge.
+  //
+  // The cookie carries maxAge 7 days and used to be re-set ONLY when
+  // `protection.source === 'basic'`. Once a browser held the cookie every later
+  // request authorized as `source === 'cookie'`, which skipped the renewal — so
+  // the window never moved and the cookie expired exactly 7 days after the one
+  // Basic challenge, mid-session. The next request then 401s. A 401 on an RSC
+  // navigation is not a login prompt: Next sees a non-flight, non-2xx response
+  // and converts the click into a full document load
+  // (fetch-server-response.js:148) — the "clicking a menu item randomly hard
+  // refreshes the page" report, on dev and staging.
+  //
+  // Renewing whenever the request is authorized makes it a sliding session. The
+  // gate is unchanged: the value is still SHA-256 of the CURRENT password, so a
+  // rotation still invalidates every outstanding cookie.
   const finalizeEnvironmentAccess = (response: NextResponse) => {
     if (
       protectionEnabled === 'true' &&
-      protection.source === 'basic' &&
-      expectedAccessCookie &&
-      accessCookie !== expectedAccessCookie
+      (protection.source === 'basic' || protection.source === 'cookie') &&
+      expectedAccessCookie
     ) {
       response.cookies.set(ENVIRONMENT_ACCESS_COOKIE, expectedAccessCookie, {
         domain: '.kortix.com',

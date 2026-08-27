@@ -99,9 +99,10 @@ describe('user menu settings entry points', () => {
    */
   test('the user settings row is wired to `profile`, not the project-scoped `general`', async () => {
     const source = await Bun.file(new URL('./user-menu.tsx', import.meta.url)).text();
-    const calls = [...source.matchAll(/openUserSettings\('([^']+)'\)/g)].map((m) => m[1]);
-    expect(calls).toContain('profile');
-    expect(calls).not.toContain('general');
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    const tabs = [...code.matchAll(/href="\/settings\/([a-z-]+)"/g)].map((m) => m[1]);
+    expect(tabs).toContain('profile');
+    expect(tabs).not.toContain('general');
   });
 
   /**
@@ -125,20 +126,25 @@ describe('user menu settings entry points', () => {
     const source = await Bun.file(new URL('./user-menu.tsx', import.meta.url)).text();
     const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-    expect(code).toContain('router.push(`/settings/${tab}`)');
+    // A prefetching anchor, not a handler. A menu row that calls `router.push`
+    // runs the RSC fetch cold at click time, and Next converts that fetch into
+    // a full document load whenever it answers wrong
+    // (fetch-server-response.js:148/177/181).
+    expect(code).toContain('<Link href="/settings/profile" prefetch>');
+    expect(code).not.toContain('router.push');
     // The store is unreachable from this mount — no call, and no import left
     // behind to make one look reachable.
     expect(code).not.toContain('useSettingsPanelStore');
 
-    const calls = [...code.matchAll(/openUserSettings\('([^']+)'\)/g)].map((m) => m[1]);
-    expect(calls).toContain('profile');
+    const tabs = [...code.matchAll(/href="\/settings\/([a-z-]+)"/g)].map((m) => m[1]);
+    expect(tabs).toContain('profile');
     // Billing no longer goes through `openUserSettings`: it is an ACCOUNT
     // setting, it left the overlay for `/accounts/[id]`, and
     // `parseSettingsTab('billing')` returns `null` — so `/settings/billing`
     // would have fallen back to the default tab. The row builds the account
     // URL directly. Both halves are asserted so a revert to the old href
     // fails here.
-    expect(calls).not.toContain('billing');
+    expect(tabs).not.toContain('billing');
     expect(code).toContain('?tab=billing');
     expect(code).not.toContain('/settings/billing');
   });
@@ -151,10 +157,10 @@ describe('user menu settings entry points', () => {
   test('every tab the rows navigate to is a real /settings segment', async () => {
     const source = await Bun.file(new URL('./user-menu.tsx', import.meta.url)).text();
     const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-    const calls = [...code.matchAll(/openUserSettings\('([^']+)'\)/g)].map((m) => m[1]);
+    const tabs = [...code.matchAll(/href="\/settings\/([a-z-]+)"/g)].map((m) => m[1]);
 
-    expect(calls.length).toBeGreaterThan(0);
-    for (const tab of calls) {
+    expect(tabs.length).toBeGreaterThan(0);
+    for (const tab of tabs) {
       expect(parseSettingsTab(tab)).toBe(tab as SettingsTab);
     }
   });

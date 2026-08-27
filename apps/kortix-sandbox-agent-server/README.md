@@ -1,7 +1,19 @@
-# @kortix/sandbox-agent-server
+# kortixd
 
 Thin sandbox-side daemon that runs inside every Kortix project-session sandbox
 — and, in a second boot mode, inside every project **monitor box**.
+
+The compiled binary is a single, installable app named **`kortixd`**. Running
+it with no arguments (or `kortixd serve`) starts the daemon described below.
+It also manages its own lifecycle — see [Management CLI](#management-cli).
+
+> **Binary name compatibility.** The npm package and the product name are now
+> `kortixd`. The build still ALSO emits `dist/kortix-agent`, and the sandbox
+> image still bakes `/usr/local/bin/kortix-agent`. That path is a load-bearing
+> contract: `apps/sandbox/entrypoint.sh` treats it as the immutable floor, the
+> snapshot bake COPYs it, and the API serves it as the runtime-assets `/agent`
+> artifact for already-deployed boxes. Renaming that on-disk path is a fleet
+> migration, not a build change, so both names ship from one compile.
 
 **Boot modes** (decided by `KORTIX_WORKLOAD` at startup):
 
@@ -154,11 +166,11 @@ bun install
 bash scripts/build.sh
 ```
 
-Produces `dist/kortix-agent` — a single-file Bun binary targeting the current
-host architecture by default (`bun-linux-x64` or `bun-linux-arm64`). Set
-`BUN_COMPILE_TARGET` when building for a specific Docker/runtime architecture.
-The binary built on macOS will not execute locally; that's expected. To
-smoke-test the daemon on macOS, run from source:
+Produces `dist/kortixd` (primary) plus `dist/kortix-agent` (compatibility copy;
+see the note at the top) — a single-file Bun binary targeting `bun-linux-x64`
+by default. Set `BUN_COMPILE_TARGET` for another architecture. The Linux binary
+built on macOS will not execute locally; that's expected. To smoke-test the
+daemon on macOS, run from source:
 
 ```
 KORTIX_PROJECT_AUTO_CLONE=0 KORTIX_SERVICE_PORT=9999 bun run src/main.ts
@@ -167,3 +179,73 @@ curl -s http://localhost:9999/kortix/health
 
 The daemon should boot and report `opencode: "starting"` (or `"down"` if the
 binary is genuinely missing) without crashing.
+
+## Management CLI
+
+`kortixd` is a normal installable app. Its subcommands (`src/cli.ts`) manage the
+binary's own lifecycle; the default (no subcommand) and `serve` boot the daemon.
+
+| Command                          | Effect                                                            |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `kortixd` / `kortixd serve`      | Run the sandbox agent server (default).                          |
+| `kortixd version`                | Print version + build digest (the binary's own sha256).          |
+| `kortixd install [--dir <path>]` | Install the binary onto PATH. Idempotent; `--force` overwrites.  |
+| `kortixd update [flags]`         | Self-update to the current published build.                      |
+| `kortixd rollback`               | Revert to the previous binary (`<name>.prev`).                   |
+| `kortixd --health-check`         | Smoke-test: boot a health server on an ephemeral port, exit 0.   |
+| `kortixd --help`                 | Usage.                                                            |
+
+The daemon also keeps its two pre-existing subcommands: `git-credential`
+(git execs it as a credential helper) and `install-compiled-runtime`.
+
+### Self-update reliability
+
+`update` never bricks the app:
+
+```
+resolve target → verify content digest → smoke-test the new binary →
+atomic swap (keep the replaced binary as <name>.prev) → post-swap health-check →
+auto-rollback to <name>.prev on any failure
+```
+
+A half-written binary is never left on disk (write-to-temp + atomic
+`rename(2)`). Exactly one previous version is kept for fast rollback.
+
+### Boot sequence
+
+The sandbox boot path runs, every start, idempotently:
+
+```
+kortixd install && kortixd update --boot && kortixd serve
+```
+
+- `install` is a fast no-op when the target already holds a binary (presence-
+  based, so it never clobbers a binary that `update` already bumped).
+- `update` does the ~700 B manifest/digest check FIRST and exits 0 with no
+  download when the local binary already matches the target.
+- `update --boot` is best-effort: any download/verify/health failure keeps the
+  last-good binary and exits 0 so boot proceeds to `serve`. A bad publish never
+  bricks a box; it serves stale-but-working and logs loudly. Manual
+  `kortixd update` (no `--boot`) hard-fails non-zero instead.
+
+### Bootstrap install
+
+`install.sh` (curl | sh) is the one-line bootstrap that downloads the right
+target binary and puts `kortixd` on PATH:
+
+```
+curl -fsSL https://<host>/kortixd/install.sh | sh
+```
+
+After it lands the first binary, `kortixd update` self-manages. Flags/env:
+`--url`/`KORTIXD_URL`, `--base`/`KORTIXD_BASE_URL`, `--version`, `--dir`, and
+`--from <path>` for an offline/local install.
+
+### Relation to the sandbox supervisor
+
+Inside a deployed box, `apps/sandbox/entrypoint.sh` is a shell supervisor that
+performs the SAME kind of staged swap + crash-based rollback around the baked
+`/usr/local/bin/kortix-agent` floor (via `agent.current` / `agent.next` /
+`agent.prev` / exit code 75). The `kortixd update`/`rollback` subcommands bring
+that reliability property into the binary itself so it works as a standalone app
+on any machine, not only under the sandbox supervisor.

@@ -1690,6 +1690,14 @@ export type Opencode = {
   restart(): Promise<void>
   reloadConfig(opts?: { mustRespawn?: boolean }): Promise<ReloadConfigResult>
   /**
+   * The workspace (repo checkout, config-dir deps, injected skills) landed
+   * AFTER this process spawned. Rewrite the composed config with the same
+   * inputs a spawn uses and dispose every OpenCode instance in place, so the
+   * next directory-scoped request re-detects the git root and re-reads config
+   * without a respawn. False when dispose is unavailable (caller restarts).
+   */
+  reloadForWorkspace(): Promise<boolean>
+  /**
    * Boot the new opencode, verify it serves, then swap and retire the old one.
    * Never leaves the session without an opencode.
    */
@@ -1884,6 +1892,28 @@ export function createOpencodeSupervisor(
    * it exits: it is on trial, and a candidate that dies is a verdict, not an
    * outage.
    */
+  /**
+   * Compose + write the Kortix OpenCode config exactly as a spawn does: the
+   * injected managed-skills dir under the CURRENT config dir and the secret
+   * capability instruction. Shared by spawn and by the in-place reloads so a
+   * reload can never drop a contributor the spawn declared.
+   */
+  async function writeComposedConfig(baseEnv: NodeJS.ProcessEnv): Promise<string | null> {
+    let secretCapabilitiesInstructionPath: string | null = null
+    try {
+      secretCapabilitiesInstructionPath = writeSecretCapabilitiesInstruction(baseEnv)
+    } catch (err) {
+      logger.warn('[opencode] secret capability instruction file unavailable; env catalog remains available', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+    return writeKortixOpencodeConfig(baseEnv, {
+      configPath: options.configPathOverride,
+      injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
+      secretCapabilitiesInstructionPath,
+    })
+  }
+
   async function spawnChild(
     bin: string,
     opts: { port?: number; supervise?: boolean } = {},
@@ -1934,19 +1964,7 @@ export function createOpencodeSupervisor(
       env.OPENCODE_DISABLE_MODELS_FETCH = '1'
     }
 
-    let secretCapabilitiesInstructionPath: string | null = null
-    try {
-      secretCapabilitiesInstructionPath = writeSecretCapabilitiesInstruction(baseEnv)
-    } catch (err) {
-      logger.warn('[opencode] secret capability instruction file unavailable; env catalog remains available', {
-        err: err instanceof Error ? err.message : String(err),
-      })
-    }
-    const configPath = await writeKortixOpencodeConfig(baseEnv, {
-      configPath: options.configPathOverride,
-      injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
-      secretCapabilitiesInstructionPath,
-    })
+    const configPath = await writeComposedConfig(baseEnv)
     if (configPath) {
       env.OPENCODE_CONFIG = configPath
       delete env.OPENCODE_CONFIG_CONTENT
@@ -2281,15 +2299,18 @@ export function createOpencodeSupervisor(
     const baseEnv = currentProjectEnv
       ? mergeProjectEnv(process.env, currentProjectEnv)
       : process.env
-    const written = await writeKortixOpencodeConfig(baseEnv, {
-      configPath: options.configPathOverride,
-    }).catch((err) => {
+    const written = await writeComposedConfig(baseEnv).catch((err) => {
       logger.warn('[opencode] could not rewrite config for reload', {
         err: (err as Error).message,
       })
       return null
     })
     if (!written) return false
+    return disposeInstances()
+  }
+
+  /** `POST /global/dispose`: every instance re-reads config on its next request. */
+  async function disposeInstances(): Promise<boolean> {
     try {
       const res = await fetch(
         `http://127.0.0.1:${livePort()}/global/dispose`,
@@ -2540,6 +2561,32 @@ export function createOpencodeSupervisor(
      * a future opencode that drops the endpoint degrades to today's behaviour
      * rather than silently not applying the config.
      */
+    async reloadForWorkspace(): Promise<boolean> {
+      if (stopping || !child) return false
+      // The composed config was written at spawn, when the workspace's
+      // injected-skills dir did not exist yet: rewrite it now so the FIRST
+      // Instance init reads the complete config.
+      const baseEnv = currentProjectEnv
+        ? mergeProjectEnv(process.env, currentProjectEnv)
+        : process.env
+      const written = await writeComposedConfig(baseEnv).catch((err) => {
+        logger.warn('[opencode] could not rewrite config for workspace reload', {
+          err: (err as Error).message,
+        })
+        return null
+      })
+      if (!written) return false
+      // Instances are created lazily by the first directory-scoped request.
+      // If none answered yet, nothing has read the old config or the missing
+      // git root — there is nothing to dispose, and disposing would only
+      // fail against a port that is still coming up (a restart would then
+      // throw away a perfectly good boot).
+      if (readyResponseProcess !== child) {
+        logger.info('[opencode] workspace landed before the first instance; no dispose needed')
+        return true
+      }
+      return disposeInstances()
+    },
     async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
       // A dispose re-reads the config in place — same process, no turn lost.
       if (!opts.mustRespawn && (await tryDisposeReload())) {

@@ -26,16 +26,14 @@ const {
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
-const { CHANNELS, buildUserAgent, resolveChannel, resolveScheme } = require('./channel');
 const {
   DESKTOP_CHROME_JS,
   configureNativeWindowControls,
   macTrafficLightPosition,
 } = require('./window-chrome');
 
-// Name comes from the bundle (productName): "Kortix", "Kortix Staging" or
-// "Kortix Dev" — see src/channel.js. Per-name data dir so all three coexist
-// without sharing a session (a shared dir means a shared login),
+// Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
+// dev builds. Per-name data dir so dev + prod coexist without sharing a session,
 // and so we never inherit another "Kortix" app's stale Chromium state (per-site
 // zoom / GPU cache) — a real cause of blurry rendering. `${name} Desktop` keeps
 // us off the bare "Kortix" Application Support folder.
@@ -43,18 +41,16 @@ app.setPath('userData', path.join(app.getPath('appData'), `${app.getName()} Desk
 
 /* ─── Config ──────────────────────────────────────────────────────────── */
 
-// A packaged app has no build-time env at runtime, so electron-builder.js bakes
-// this build's identity into package.json via extraMetadata. Dev builds →
-// dev.kortix.com; staging → staging.kortix.com; prod → kortix.com.
-function bakedMetadata() {
+// A packaged app has no build-time env at runtime, so CI bakes the target URL
+// into package.json (electron-builder --config.extraMetadata.kortixDefaultUrl).
+// Dev builds → dev.kortix.com; prod → kortix.com.
+function bakedDefaultUrl() {
   try {
-    return require('../package.json');
+    return require('../package.json').kortixDefaultUrl || null;
   } catch {
-    return {};
+    return null;
   }
 }
-
-const PKG = bakedMetadata();
 
 // Default target URL precedence:
 //   1. KORTIX_DESKTOP_DEFAULT_URL env (local dev convenience)
@@ -63,21 +59,14 @@ const PKG = bakedMetadata();
 // A runtime KORTIX_DESKTOP_URL / the Frontend-URL menu still overrides this.
 const DEFAULT_URL =
   process.env.KORTIX_DESKTOP_DEFAULT_URL ||
-  PKG.kortixDefaultUrl ||
-  CHANNELS.stable.url;
+  bakedDefaultUrl() ||
+  'https://kortix.com/projects';
 
-const PRESET_PROD = CHANNELS.stable.url;
-const PRESET_STAGING = CHANNELS.staging.url;
-const PRESET_DEV = CHANNELS.dev.url;
+const PRESET_PROD = 'https://kortix.com/projects';
+const PRESET_DEV = 'https://dev.kortix.com/projects';
 const PRESET_LOCAL = 'http://localhost:3000/projects';
 
-// Which build this is, and the deep-link scheme it claims in the OS. Each
-// channel gets its OWN scheme (kortix / kortix-staging / kortix-dev): three
-// bundles registering `kortix://` is a coin flip in LaunchServices, so signing
-// in to the dev app could hand the OAuth code to prod, which rejects it.
-// apps/web/src/lib/auth/desktop-bounce.ts picks the matching scheme per host.
-const CHANNEL = resolveChannel(PKG);
-const URL_SCHEME = resolveScheme(PKG);
+const URL_SCHEME = 'kortix';
 // Matches DESKTOP_UA_TOKEN in apps/web/src/lib/desktop.ts and the
 // KortixDesktop check in apps/web/src/middleware.ts.
 const UA_TOKEN = 'KortixDesktop/0.1.0';
@@ -252,9 +241,8 @@ function shouldLoadInApp(urlStr) {
   return false;
 }
 
-/* ─── Deep links (<scheme>://) ────────────────────────────────────────────
-   The scheme is per-channel — kortix:// on prod, kortix-dev:// on a dev build.
-   The OS hands us `<scheme>://auth/callback?code=…` after OAuth completes in the
+/* ─── Deep links (kortix://) ──────────────────────────────────────────────
+   The OS hands us `kortix://auth/callback?code=…` after OAuth completes in the
    user's browser (also email magic links). Translate the path onto the loaded
    origin and navigate the webview there; the web app then runs its existing
    /auth/callback flow inside the desktop session. */
@@ -521,13 +509,6 @@ function buildMenu() {
         },
       },
       {
-        label: 'Staging (staging.kortix.com)',
-        click: () => {
-          writeUrlOverride(PRESET_STAGING);
-          navigateMainWindow(PRESET_STAGING);
-        },
-      },
-      {
         label: 'Dev (dev.kortix.com)',
         click: () => {
           writeUrlOverride(PRESET_DEV);
@@ -712,26 +693,16 @@ function registerIpc() {
 
 /* ─── User agent ──────────────────────────────────────────────────────────
    Strip "Electron" (Google blocks embedded-webview UAs) and the product token,
-   append the KortixDesktop marker the web middleware + isDesktop() rely on,
-   plus a KortixScheme token naming this build's deep-link scheme.
-
-   The scheme has to reach the web layer somehow: `authRedirectUrl()` puts it on
-   the OAuth callback URL so the bounce page — which renders in the user's
-   SYSTEM browser, with no knowledge of the app that started the sign-in — can
-   deep-link back into THIS build instead of whichever Kortix app the OS
-   registered last. The UA carries it because it is readable synchronously
-   before hydration and also reaches the server on every request, unlike an IPC
-   bridge. See apps/web/src/lib/desktop.ts (desktopUrlScheme). */
+   append the KortixDesktop marker the web middleware + isDesktop() rely on. */
 
 function applyUserAgent() {
   // Strip the Electron token and the product token (whatever the app is named —
   // "Kortix" or "Kortix Dev") before appending the stable KortixDesktop marker.
-  app.userAgentFallback = buildUserAgent(
-    app.userAgentFallback,
-    app.getName(),
-    UA_TOKEN,
-    URL_SCHEME,
-  );
+  const name = app.getName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const ua = app.userAgentFallback
+    .replace(/\sElectron\/\S+/, '')
+    .replace(new RegExp(`\\s${name}\\/\\S+`), '');
+  app.userAgentFallback = `${ua} ${UA_TOKEN}`;
 }
 
 /* ─── App lifecycle ───────────────────────────────────────────────────────*/
@@ -806,10 +777,6 @@ if (!gotLock) {
     } else {
       app.setAsDefaultProtocolClient(URL_SCHEME);
     }
-    console.log(
-      `[kortix] channel=${CHANNEL} scheme=${URL_SCHEME}:// url=${resolveAppUrl()} ` +
-        `userData=${app.getPath('userData')}`,
-    );
 
     applyUserAgent();
     registerIpc();

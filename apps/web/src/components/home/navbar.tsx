@@ -30,6 +30,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
@@ -120,6 +121,23 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const pathname = usePathname();
   const t = useTranslations('common');
   const isMobile = useIsMobile();
+
+  // `latestProjectPath` reads document.cookie, which the server pass cannot see.
+  // Seed the state with the landing door and adopt the remembered project after
+  // mount, so the "Projects" href is identical on both passes.
+  //
+  // No dependency array on purpose. Keyed on `[user]` the href froze at mount,
+  // so opening another project in a second tab left this one pointing at the
+  // previously remembered project — and an anchor's href is also what a
+  // middle-click and "copy link address" use, so a stale value is visible, not
+  // just wrong on click. Re-reading after every render costs one cookie read
+  // and a string compare, and the setter is guarded so it cannot loop.
+  const [projectsHref, setProjectsHref] = useState(PROJECT_LANDING_PATH);
+  useEffect(() => {
+    if (!user) return;
+    const next = latestProjectPath(user.id);
+    setProjectsHref((prev) => (prev === next ? prev : next));
+  });
 
   const filteredNavLinks = siteConfig.nav.links;
   const { stars, formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
@@ -282,12 +300,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   {tHardcodedUi.raw('componentsHomeNavbar.downloadBrandAssets')}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
-                <ContextMenuItem
-                  onClick={() => router.push('/design-system')}
-                  className="cursor-pointer gap-2 text-sm"
-                >
-                  <Layers className="size-3.5 shrink-0" />
-                  {tHardcodedUi.raw('componentsHomeNavbar.line259JsxTextDesignSystem')}
+                <ContextMenuItem asChild className="cursor-pointer gap-2 text-sm">
+                  <Link href="/design-system" prefetch>
+                    <Layers className="size-3.5 shrink-0" />
+                    {tHardcodedUi.raw('componentsHomeNavbar.line259JsxTextDesignSystem')}
+                  </Link>
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
@@ -383,18 +400,16 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             )}
 
             {user ? (
-              <Button size="sm" onClick={() => router.push(latestProjectPath(user.id))}>
-                Projects
+              <Button size="sm" asChild>
+                <Link href={projectsHref} prefetch>
+                  Projects
+                </Link>
               </Button>
             ) : (
-              <Button
-                size="sm"
-                onClick={() => {
-                  trackCtaSignup();
-                  router.push(CTA_LINK);
-                }}
-              >
-                {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
+              <Button size="sm" asChild>
+                <Link href={CTA_LINK} onClick={trackCtaSignup}>
+                  {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
+                </Link>
               </Button>
             )}
 
@@ -514,17 +529,15 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </Button>
 
             {user ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsDrawerOpen(false);
-                  router.push(latestProjectPath(user.id));
-                }}
+              <Link
+                href={projectsHref}
+                prefetch
+                onClick={() => setIsDrawerOpen(false)}
                 className="text-muted-foreground active:text-foreground flex items-center gap-1.5 text-base transition-colors"
               >
                 Projects
                 <ArrowRightIcon className="size-4" />
-              </button>
+              </Link>
             ) : (
               <Button size="lg" className="w-full" asChild>
                 <Link

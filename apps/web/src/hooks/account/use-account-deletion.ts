@@ -117,6 +117,7 @@ export function useDeleteAccountImmediately() {
 
       // Redirect to home or logout after a short delay
       setTimeout(() => {
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Account deletion: the document load is the point, the signed-in tree and every cache belong to an account that no longer exists.
         window.location.href = '/';
       }, 2000);
     },

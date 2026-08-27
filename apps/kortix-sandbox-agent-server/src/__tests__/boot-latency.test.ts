@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +13,7 @@ import {
   catalogIsDegraded,
   hasKortixLlmGateway,
   scheduleCatalogWarmToPathForTests,
+  resetManagedModelsStateForTests,
 } from '../opencode'
 
 const BASE_ENV = { KORTIX_WORKSPACE: '/workspace', KORTIX_REPO_URL: 'https://example.test/r.git' }
@@ -37,7 +38,13 @@ async function makeOriginRepo(): Promise<string> {
 }
 
 const tempDirs: string[] = []
+// The managed-models prefetch cache is module state in opencode.ts. Another
+// file in the same worker can leave a "live managed set" in it, and then the
+// catalog-floor assertions below read that set instead of the bundled floor
+// (order-dependent CI flake, 2026-08-27). Start every test from the baked state.
+beforeEach(() => resetManagedModelsStateForTests())
 afterEach(async () => {
+  resetManagedModelsStateForTests()
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 

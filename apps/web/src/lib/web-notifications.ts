@@ -17,6 +17,7 @@ import { useWebNotificationStore } from '@/stores/web-notification-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { toast } from '@/lib/toast';
 import { logger } from '@/lib/logger';
+import { softNavigate } from '@/lib/navigation/router-bridge';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { playSound } from '@/lib/sounds';
 import type { SoundEvent } from '@/stores/sound-store';
@@ -111,8 +112,8 @@ function playNotificationPing() {
  * Navigate to a session by opening/activating its tab and navigating to it.
  */
 function navigateToSession(sessionId: string, sessionTitle?: string, opts?: { forceNavigation?: boolean }) {
+  const href = `/sessions/${sessionId}`;
   try {
-    const href = `/sessions/${sessionId}`;
     // Open/activate the tab in the tab store + pushState
     openTabAndNavigate({
       id: sessionId,
@@ -120,13 +121,15 @@ function navigateToSession(sessionId: string, sessionTitle?: string, opts?: { fo
       type: 'session',
       href,
     });
-    // Only use location.assign for native notification clicks where the
-    // browser may be in the background and client-side routing won't work.
+    // A native notification click can arrive while the tab is backgrounded, so
+    // the tab store's pushState alone may not bring the session into view.
+    // `softNavigate` routes through the App Router; `window.location.assign`
+    // here tore down and rebooted the whole SPA on every notification click.
     if (opts?.forceNavigation && window.location.pathname !== href) {
-      window.location.assign(href);
+      softNavigate(href);
     }
   } catch {
-    window.location.href = `/sessions/${sessionId}`;
+    softNavigate(href);
   }
 }
 

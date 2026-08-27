@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 630,
+  "count": 634,
   "routes": [
     {
       "method": "GET",
@@ -1059,6 +1059,10 @@
       "path": "/v1/git/:project/compiled-runtime"
     },
     {
+      "method": "GET",
+      "path": "/v1/git/:project/fast-boot-bundle"
+    },
+    {
       "method": "POST",
       "path": "/v1/git/:project/git-receive-pack"
     },
@@ -1989,6 +1993,18 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/config"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/environment"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/environment/ensure"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/environment/stop"
     },
     {
       "method": "GET",

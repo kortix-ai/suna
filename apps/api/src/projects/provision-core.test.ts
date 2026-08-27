@@ -115,7 +115,7 @@ describe('provision phases', () => {
   test('precomputes the Git hint after a verified seed only when fast boot is enabled', async () => {
     const source = await coreSource();
     const seedState = source.indexOf('const verifiedSeedState');
-    const gate = source.indexOf('if (config.KORTIX_FAST_COLD_BOOT_ENABLED');
+    const gate = source.indexOf('if (config.KORTIX_FAST_GIT_BOOT_ENABLED');
     const precompute = source.indexOf('resolveFastBootGitHintWithCache(', gate);
     expect(seedState).toBeGreaterThan(-1);
     expect(gate).toBeGreaterThan(seedState);

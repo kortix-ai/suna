@@ -9,11 +9,11 @@ import { ProjectOnboardingWizard } from '@/components/projects/project-onboardin
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
-import { AppProviders } from '@/features/layout/app-providers';
 import { useBrandingScope } from '@/features/branding/branding-provider';
+import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
+import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
 import {
@@ -22,8 +22,8 @@ import {
 } from '@/features/workspace/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
@@ -163,7 +163,24 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     const next = new URLSearchParams(searchParams.toString());
     next.delete('customize');
     const query = next.toString();
-    router.replace(`/projects/${projectId}${query ? `?${query}` : ''}`, { scroll: false });
+    // `history.replaceState`, not `router.replace`: this branch only drops a
+    // stale query key the shell already ignores, so there is no server data to
+    // fetch. Dropping a param changes the router cache key, so `router.replace`
+    // would miss the segment cache and run a cold RSC fetch for nothing — on
+    // the component every `/projects/*` page mounts. Next patches
+    // `replaceState` and updates its own canonical URL, so `useSearchParams`
+    // still reports the stripped URL. Same mechanism as `openTabAndNavigate` in
+    // `stores/tab-store.ts`.
+    //
+    // The path comes from `window.location.pathname`, never a hardcoded
+    // `/projects/<id>`. This shell is mounted by
+    // `app/(app)/projects/[id]/layout.tsx`, so the effect runs on EVERY route
+    // beneath it, and rewriting the address bar to the project root while
+    // `/projects/<id>/files` is still the rendered view desyncs the two: the
+    // sidebar's active-row test stops matching, Back leaves for somewhere the
+    // user never was, and a reload lands on a different screen. Only the query
+    // key is being dropped here — the path must not move.
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
   }, [projectId, router, searchParams, shellAccountId]);
 
   useEffect(() => {

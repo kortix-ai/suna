@@ -57,7 +57,7 @@ export interface BuildableTemplate {
   /** Shared platform default (vs per-project). Every template is built cold. */
   isShared?: boolean;
   /** Selects a fixed platform runtime instead of the full standard layer. */
-  runtimeProfile?: 'standard' | 'fast' | 'meta' | 'app';
+  runtimeProfile?: 'standard' | 'fast' | 'meta' | 'app' | 'pi-worker';
   /** Required when runtimeProfile is app. */
   appContext?: AppBuildContext;
   /**
