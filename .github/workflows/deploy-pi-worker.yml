@@ -218,21 +218,34 @@ jobs:
           KORTIX_GITHUB_APP_SLUG: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_SLUG }}
           MANAGED_GIT_GITHUB_OWNER: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_OWNER }}
           MANAGED_GIT_GITHUB_INSTALL_ID: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID }}
-        run: bun tests/bin/sandbox-preview.ts deploy
-      - name: Report the environment URL
-        if: always()
+        # `deploy` boots the environment AND runs the full suite inside it,
+        # exiting non-zero for either. This is a development environment, so a
+        # failing flow is a finding, not a broken deploy — the gate below is
+        # what decides. Real infrastructure failures still land there, because
+        # they leave nothing serving.
+        run: bun tests/bin/sandbox-preview.ts deploy || echo "SUITE_FAILED=1" >> "$GITHUB_ENV"
+      - name: Prove the environment is serving this commit
         run: |
           set -euo pipefail
           url="$(jq -r '.previewUrl // empty' tests/test-results/preview-deployment.json 2>/dev/null || true)"
-          if [ -n "$url" ]; then
-            {
-              echo "## pi-worker environment"
+          [ -n "$url" ] || { echo "::error::the deploy produced no environment URL"; exit 1; }
+          served="$(curl -fsS --max-time 30 "${url}/v1/health" | jq -r '.commit // empty')"
+          [ "$served" = "$GITHUB_SHA" ] || {
+            echo "::error::${url} serves commit ${served:-<none>}, expected ${GITHUB_SHA}"
+            exit 1
+          }
+          {
+            echo "## pi-worker environment"
+            echo ""
+            echo "- **URL:** ${url}"
+            echo "- **Mail:** ${url}/_mailpit"
+            echo "- **Tests:** ${url}/_tests/"
+            echo "- **Commit:** \`${GITHUB_SHA}\` (confirmed by /v1/health)"
+            echo ""
+            echo "This sandbox is persistent — the URL does not change between deploys."
+            if [ -n "${SUITE_FAILED:-}" ]; then
               echo ""
-              echo "- **URL:** ${url}"
-              echo "- **Mail:** ${url}/_mailpit"
-              echo "- **Commit:** \`${GITHUB_SHA}\`"
-              echo ""
-              echo "This sandbox is persistent — the URL does not change between deploys."
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "pi-worker environment: ${url}"
-          fi
+              echo "> Some flows failed. The environment is up — see the test report."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "pi-worker environment: ${url}"
