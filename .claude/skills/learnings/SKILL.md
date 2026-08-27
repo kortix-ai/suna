@@ -21,6 +21,39 @@ linked, not inlined.
 
 ## Register
 
+### A new import edge into a widely-mocked graph breaks hand-written module mocks all over the suite — and the failure names no test (2026-08-27)
+
+**When:** adding an import to code that many suites exercise (a middleware, a
+proxy, a gate). `mock.module` replaces a module **WHOLESALE**, so every suite
+that stubs a module by listing its exports silently deletes the ones it did not
+name. Pull that module into a new part of the graph and those missing names
+become `SyntaxError: Export named 'X' not found in module …`, printed as
+`# Unhandled error between tests` — attributed to NO test, and it takes an
+unrelated parallel worker down with it, so the visible symptom is a stranger's
+suite failing.
+
+Fix them one at a time and it cascades: `loadTokenBinding` →
+`ensureAgentServiceAccount` → `createAccountToken` →
+`resolveInheritedSessionSharing`, each spread pulling the next real module in.
+
+**The rule: fix the import, not the mocks.** Ask what the new code actually
+needs. Here the Apps gate wanted one email lookup and reached it through
+`projects/lib/access`, which re-exports it from behind the whole
+project/session/IAM read graph; `accounts/core/owner-emails` is the same
+function with `drizzle` + `db` as its entire import list. One line, cascade
+gone, zero test churn. Spread the real module (the 2026-08-18 rule) when you
+own the mock and the dependency is genuinely needed — not as the way out of a
+cascade you created.
+
+**Diagnostic:** a suite that fails with `1 fail / 1 error` where the failing
+test is in a file your branch never touched, and the run prints `1 tests
+failed:` followed by nothing, is this. Read the `Unhandled error` block, not the
+failing test name.
+*Near-miss:* PR #6963 (the Apps viewer token). Cost two CI rounds and a wrong
+"it's a pre-existing flake" call before the real cause was read.
+*Enforcer:* none. A lint that flags `mock.module` factories which do not spread
+the real module would catch the mocks; nothing catches the import edge.
+
 ### Two migrations generated from the same parent fork the drizzle chain, and main then cannot generate ANY migration (2026-08-27)
 
 **When:** two PRs are open at once and each runs `pnpm migrate:generate`. Each
