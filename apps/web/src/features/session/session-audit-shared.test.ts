@@ -91,7 +91,7 @@ describe('session audit polling', () => {
 
   test('late cache readers do not refetch on mount', () => {
     const source = readFileSync(new URL('./session-audit-shared.tsx', import.meta.url), 'utf8');
-    expect(source).toContain('refetchOnMount: options?.poll ? true : false');
+    expect(source).toContain('refetchOnMount: poll ? true : false');
   });
 });
 
