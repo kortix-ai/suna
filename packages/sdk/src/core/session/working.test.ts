@@ -117,10 +117,27 @@ describe('projectWorking', () => {
       nowMs: T0 + SERVER_OBSERVATION_MAX_MS + 1,
     });
 
+    // Still true, and still the point of the bound: a stale read may not CLAIM
+    // the session is working. Nothing here changes that.
     expect(projection.state).toBe('idle');
     expect(projection.turnId).toBeNull();
-    // A read too old to decide is too old to REPORT an open turn from either.
-    expect(projection.serverOpenTurnToken).toBeNull();
+
+    // INVERTED. This used to assert `null`, on the reasoning that "a read too
+    // old to decide is too old to REPORT an open turn from either". That
+    // conflated two different things — refusing to DECIDE on stale data, and
+    // refusing to keep LOOKING — and it made the projection self-sealing.
+    //
+    // `serverOpenTurnToken` is not a verdict. It feeds `serverHoldsTurn`
+    // (use-session.ts) -> `livenessBusy` (use-session-sync.ts) -> the transcript
+    // fallback poll. Nulling it on staleness switched off the one mechanism
+    // that could have produced fresh evidence, so a wrong idle could never be
+    // discovered and the UI stayed wrong for the rest of the turn. Measured on a
+    // live stack: opencode still writing, the ledger row still `active` after
+    // nine minutes, and the composer showing the send arrow.
+    //
+    // The row is retired by end-of-turn evidence, never by the age of a read.
+    // Refuse to decide; never refuse to look.
+    expect(projection.serverOpenTurnToken).toBe('tt-1');
   });
 
   test('a stale server read cannot declare idle either — it decides nothing', () => {

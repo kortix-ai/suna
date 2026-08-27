@@ -67,6 +67,21 @@ const PROMPT_LIST_LIMIT = 200;
  */
 export const RECONCILER_IDLE_TTL_MS = 5 * 60_000;
 
+/**
+ * How long a retained control frame may go un-restamped.
+ *
+ * The client AGES every snapshot it holds: a turn observation older than
+ * `SERVER_OBSERVATION_MAX_MS` (45s) stops deciding anything, and while a stream
+ * is attached the client does not poll. So a producer that suppresses redundant
+ * CONTENT also suppresses FRESHNESS, and an open turn — whose payload is
+ * constant for its whole life — went silent after two frames and aged out of
+ * the client's window while the agent was still working.
+ *
+ * A frame is a snapshot, not an event, so re-sending an identical one is
+ * idempotent. Must stay comfortably under half the client's 45s bound.
+ */
+export const CONTROL_REFRESH_MS = 20_000;
+
 interface Reconciler {
   refs: number;
   timer: ReturnType<typeof setInterval> | null;
@@ -217,7 +232,21 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
   }
 }
 
-/** Publish only when the subsystem's serialized state actually moved. */
+/**
+ * Publish when the subsystem's serialized state moved, OR when the frame we are
+ * holding has gone stale.
+ *
+ * The staleness half is not an optimisation. The client ages what it holds and
+ * stops polling while a stream is attached, so suppressing an unchanged frame
+ * suppresses the client's only proof that the fact is still true. An open turn
+ * emits exactly two frames — `delivering` then `accepted` — and then nothing for
+ * its entire duration, which is precisely the case where the client most needs
+ * to hear that it is still open.
+ *
+ * Re-stamping also fixes what a NEW stream is handed: `snapshot()` replays the
+ * retained frame verbatim, so without this a client attaching mid-turn received
+ * a frame already older than its own expiry window.
+ */
 function emit(
   sessionId: string,
   reconciler: Reconciler,
@@ -225,7 +254,9 @@ function emit(
   payload: unknown,
 ): void {
   const fingerprint = JSON.stringify(payload) ?? 'null';
-  if (reconciler.fingerprints.get(type) === fingerprint) return;
+  const held = reconciler.latest.get(type);
+  const stale = !held || Date.now() - held.at >= CONTROL_REFRESH_MS;
+  if (reconciler.fingerprints.get(type) === fingerprint && !stale) return;
   reconciler.fingerprints.set(type, fingerprint);
   reconciler.latest.set(type, publishControlEvent(sessionId, type, payload));
 }

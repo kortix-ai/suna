@@ -43,6 +43,10 @@ export const WORKING_POLL_IDLE_MS = 15_000;
 /** Cadence while the session is working, including on this tab's own
  *  unanswered receipt: the end of the turn is the news worth having early. */
 export const WORKING_POLL_ACTIVE_MS = 5_000;
+/** The slowest the `/turn` poll may go while a stream is attached. Must stay
+ *  under `SERVER_OBSERVATION_MAX_MS` (45s) with room for one missed read, so a
+ *  silent stream can never age the observation out. */
+export const STREAM_ATTACHED_POLL_FLOOR_MS = 20_000;
 
 export function workingPollMs(projection: WorkingProjection): number {
   return projection.state === 'working' ? WORKING_POLL_ACTIVE_MS : WORKING_POLL_IDLE_MS;
@@ -62,8 +66,23 @@ export function workingRefetchInterval(input: {
   streamConnected: boolean;
   projection: WorkingProjection;
 }): number | false {
-  if (!input.pollOwner || input.streamConnected) return false;
-  return workingPollMs(input.projection);
+  if (!input.pollOwner) return false;
+  // A CONNECTED stream is not a DELIVERING stream, and the two were treated as
+  // the same thing here. `onConnectionChange(true)` fires on the FIRST frame of
+  // an attempt whatever its type, and the API writes `kortix.stream.hello`
+  // synchronously at open followed by a typed heartbeat every 15s — so a stream
+  // that never carries one control frame keeps this flag pinned true forever.
+  //
+  // Handing the cadence over entirely then removed the client's only way to ask.
+  // `kortix.control.turn` is fingerprint-gated on the server, and an open turn's
+  // payload is constant, so a long turn produces two frames and then silence;
+  // the held observation aged past SERVER_OBSERVATION_MAX_MS and nothing was
+  // left to contradict it. The poll never resumed, because it only resumes when
+  // the stream DROPS — and the socket was still open.
+  //
+  // So the stream earns a slower floor, never an off switch.
+  const ms = workingPollMs(input.projection);
+  return input.streamConnected ? Math.min(STREAM_ATTACHED_POLL_FLOOR_MS, ms) : ms;
 }
 
 /**

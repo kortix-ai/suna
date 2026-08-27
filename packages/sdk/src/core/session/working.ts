@@ -467,11 +467,19 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
       source: 'stream',
       turnId: null,
       since: activity!.atMs,
-      serverOpenTurnToken: serverFresh ? (server!.turns[0]?.turn_token ?? null) : null,
+      serverOpenTurnToken: server?.turns[0]?.turn_token ?? null,
     };
   }
 
-  const ledgerTurn = serverFresh ? server!.turns[0] : undefined;
+  // NOT gated on `serverFresh`. A read going stale is a fact about the READ, not
+  // about the row: the control plane does not release a turn because this tab's
+  // last look got old. Gating it here made being wrong self-sealing — the token
+  // nulls, `serverHoldsTurn` (use-session.ts) goes false, `livenessBusy` goes
+  // false, and the transcript fallback poll clears its own interval. The one
+  // mechanism that could have produced fresh evidence was switched off BY the
+  // staleness it existed to repair, so a false idle could never be discovered.
+  // The token is retired by end-of-turn evidence, never by age.
+  const ledgerTurn = server?.turns[0];
   // `serverOpenTurnToken` deliberately keeps reporting the LEDGER's turn even
   // when the runtime's frame has decided the state above — see its docstring.
   // It answers "is the control plane still holding authority", which is what a
