@@ -4,7 +4,6 @@ import { DesktopCardImage, MobileCardImage } from '@/features/marketing/download
 import { DownloadCloseButton } from '@/features/marketing/download/close-button';
 import {
   DESKTOP_CARD,
-  DESKTOP_CHANNEL_COPY,
   DESKTOP_ROWS,
   MOBILE_CARD,
   MOBILE_ROWS,
@@ -27,8 +26,6 @@ import {
   pickDesktopAsset,
 } from '@/features/marketing/download/releases';
 import { TerminalBlock } from '@/features/marketing/download/terminal-block';
-import { Badge } from '@/components/ui/badge';
-import { desktopChannelForHost } from '@/lib/desktop-channels';
 import type { Metadata } from 'next';
 import { marketingMetadata } from '@/lib/seo/metadata';
 import { headers } from 'next/headers';
@@ -50,14 +47,11 @@ export default async function DownloadPage({
 }: {
   searchParams: Promise<{ platform?: string }>;
 }) {
-  const [headerList, params] = await Promise.all([headers(), searchParams]);
-
-  // The host decides which desktop build this page advertises AND hands over.
-  // Both come from the same value, so the page can never print one build's size
-  // above a button that downloads another's.
-  const channel = desktopChannelForHost(headerList.get('host'));
-  const release = await getLatestRelease(channel);
-  const channelCopy = channel === 'stable' ? null : DESKTOP_CHANNEL_COPY[channel];
+  const [headerList, params, release] = await Promise.all([
+    headers(),
+    searchParams,
+    getLatestRelease(),
+  ]);
 
   const detected: Platform =
     normalizePlatform(params.platform) ?? detectPlatform(headerList.get('user-agent'));
@@ -89,8 +83,8 @@ export default async function DownloadPage({
     <PlatformCard
       key="desktop"
       image={<DesktopCardImage />}
-      title={channelCopy?.title ?? DESKTOP_CARD.title}
-      description={channelCopy?.description ?? DESKTOP_CARD.description}
+      title={DESKTOP_CARD.title}
+      description={DESKTOP_CARD.description}
       rows={desktopRows}
       filled={onPhone ? null : detected}
     />
@@ -122,15 +116,6 @@ export default async function DownloadPage({
           {hero.title}
         </h1>
         <p className="text-muted-foreground mx-auto mt-3 max-w-md text-balance">{hero.sub}</p>
-        {/* Only ever rendered on dev.kortix.com / staging.kortix.com. A visitor
-            on kortix.com has no use for channel vocabulary and never sees it. */}
-        {channelCopy ? (
-          <div className="mt-4 flex justify-center">
-            <Badge variant="outline" size="sm">
-              {channelCopy.badge}
-            </Badge>
-          </div>
-        ) : null}
       </header>
 
       <div className="space-y-4">

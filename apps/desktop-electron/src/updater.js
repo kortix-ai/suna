@@ -6,7 +6,7 @@
 //
 // Flow:
 //   1. On launch we ask GitHub for the newest signed release (the feed is the
-//      `vX.Y.Z` release list — electron-builder.js already declares the github
+//      `vX.Y.Z` release list — electron-builder.yml already declares the github
 //      provider, so the packaged app ships an `app-update.yml` pointing at it).
 //   2. If a newer version exists it downloads in the BACKGROUND — the app stays
 //      fully usable; we never block the window on a ~100 MB download. While the
@@ -27,8 +27,8 @@
 const { app, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 // Pure helpers live in their own module so they're unit-testable without the
-// Electron runtime (see channel.test.js).
-const { resolveChannel, isUpdaterSupported } = require('./channel');
+// Electron runtime (see update-channel.test.js).
+const { resolveChannel, isUpdaterSupported } = require('./update-channel');
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 

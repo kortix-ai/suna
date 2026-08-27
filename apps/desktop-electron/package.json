@@ -10,19 +10,14 @@
   "scripts": {
     "setup": "node scripts/ensure-runtime.js",
     "dev": "node scripts/ensure-runtime.js && KORTIX_DESKTOP_URL=http://localhost:3000/projects electron .",
-    "dev:staging-env": "node scripts/ensure-runtime.js && KORTIX_DESKTOP_URL=https://staging.kortix.com/projects electron .",
     "dev:dev-env": "node scripts/ensure-runtime.js && KORTIX_DESKTOP_URL=https://dev.kortix.com/projects electron .",
     "dev:prod-env": "node scripts/ensure-runtime.js && KORTIX_DESKTOP_URL=https://kortix.com/projects electron .",
     "pack": "node scripts/ensure-runtime.js && electron-builder --dir",
-    "pack:staging": "node scripts/ensure-runtime.js && KORTIX_CHANNEL=staging electron-builder --dir",
-    "pack:dev": "node scripts/ensure-runtime.js && KORTIX_CHANNEL=dev electron-builder --dir",
     "dev:macos": "pnpm run pack && open \"$(find dist -maxdepth 2 -name 'Kortix.app' | head -1)\"",
     "build": "node scripts/ensure-runtime.js && electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux",
-    "icons": "node scripts/make-channel-icons.js",
-    "test": "bun test src"
+    "build:linux": "electron-builder --linux"
   },
   "devDependencies": {
     "electron": "^39.8.1",

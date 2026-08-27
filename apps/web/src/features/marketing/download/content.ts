@@ -20,8 +20,6 @@
  *     the public. The rows carry a status instead of a link — see MOBILE_ROWS.
  */
 
-import type { DesktopChannel } from '@/lib/desktop-channels';
-
 import type { DesktopOs, MobileOs } from './detect-os';
 
 export const hero = {
@@ -37,36 +35,6 @@ export type ComingSoonRowCopy = { label: string; hint: string };
 export const DESKTOP_CARD: CardCopy = {
   title: 'Desktop app',
   description: 'Run Kortix on your own machine, with your files and your terminal.',
-};
-
-/**
- * Copy overrides for the non-production hosts.
- *
- * dev.kortix.com and staging.kortix.com serve their OWN desktop build, not the
- * released one. The card has to say so plainly: these installers point at a
- * different backend, and a tester who cannot tell which app they just launched
- * is the exact problem this page is solving. `badge` is a mono chip under the
- * hero — the app icons carry the colour, so the page stays neutral.
- *
- * Stable has no entry: kortix.com renders DESKTOP_CARD unchanged, so a customer
- * never sees channel vocabulary they have no use for.
- */
-export const DESKTOP_CHANNEL_COPY: Record<
-  Exclude<DesktopChannel, 'stable'>,
-  CardCopy & { badge: string }
-> = {
-  dev: {
-    badge: 'Dev build',
-    title: 'Kortix Dev desktop app',
-    description:
-      'The dev build, rebuilt from main. It opens dev.kortix.com and installs alongside Kortix and Kortix Staging.',
-  },
-  staging: {
-    badge: 'Staging build',
-    title: 'Kortix Staging desktop app',
-    description:
-      'The release-candidate build. It opens staging.kortix.com and installs alongside Kortix and Kortix Dev.',
-  },
 };
 
 export const MOBILE_CARD: CardCopy = {

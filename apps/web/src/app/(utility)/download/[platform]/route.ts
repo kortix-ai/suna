@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { desktopChannelForHost } from '@/lib/desktop-channels';
 import { isMobilePlatform, normalizePlatform } from '@/features/marketing/download/detect-os';
 import {
+  RELEASES_PAGE,
   getLatestRelease,
   pickDesktopAsset,
-  releasesPageFor,
 } from '@/features/marketing/download/releases';
 
 /**
@@ -20,32 +19,23 @@ import {
  * replies. Asset resolution is shared with the /download page, so the file a
  * visitor receives is always the one the page advertised.
  *
- * The installer served depends on the HOST, not on a query param: dev.kortix.com
- * serves the dev build, staging.kortix.com the staging build, everything else
- * the released one. Those builds install side by side, so hitting all three
- * hosts gets you all three apps on one machine. Deriving the channel from the
- * host (rather than a `?channel=` param) keeps the URLs hand-writable and makes
- * it impossible to hand a kortix.com visitor a mutable prerelease.
- *
  * Anything unresolvable falls back to the releases page rather than erroring —
  * a visitor who wanted software should always land somewhere they can get it.
  */
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ platform: string }> },
 ) {
   const { platform } = await params;
   const os = normalizePlatform(platform);
-  const channel = desktopChannelForHost(request.headers.get('host'));
-  const fallback = releasesPageFor(channel);
 
   // Mobile values are rejected here, not left to pickDesktopAsset. That
   // function's isInstaller() ends in an unguarded `return n.endsWith('.appimage')`
   // fallthrough, so /download/ios would hand an iPhone visitor a Linux AppImage.
   // Phones are served by the App Store and Play Store links on the page.
-  if (!os || isMobilePlatform(os)) return NextResponse.redirect(fallback, 302);
+  if (!os || isMobilePlatform(os)) return NextResponse.redirect(RELEASES_PAGE, 302);
 
-  const release = await getLatestRelease(channel);
+  const release = await getLatestRelease();
   const asset = release ? pickDesktopAsset(release.assets, os) : undefined;
-  return NextResponse.redirect(asset?.url ?? fallback, 302);
+  return NextResponse.redirect(asset?.url ?? RELEASES_PAGE, 302);
 }
