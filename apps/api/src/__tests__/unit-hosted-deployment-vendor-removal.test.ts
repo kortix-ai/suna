@@ -31,7 +31,6 @@ const immutableSchemaHistoryPrefixes = [
 // Files whose job is to name the retired vendor so it cannot come back. They are
 // exempt from the scan below; everything else in the repository is not.
 const trackingFiles = new Set([
-  'packages/sdk/PROGRESS.md',
   'apps/api/src/__tests__/unit-hosted-deployment-vendor-removal.test.ts',
   // Lists the keys that scripts/secrets-sm-parity.py must never copy out of AWS
   // Secrets Manager into a tracked apps/api/.env* file. A dotenvx file stores key

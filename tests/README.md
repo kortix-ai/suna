@@ -468,7 +468,7 @@ its default budget is 30s.
 
 SDK tests stay in `packages/sdk`. They protect the published package contract
 and framework-free core. Run them through `pnpm test -- --sdk-only` or the
-package command documented in `packages/sdk/AGENTS.md`.
+package command documented in the **sdk** skill.
 
 ## Adding or changing coverage
 

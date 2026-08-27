@@ -61,7 +61,7 @@ run("shares", async () => {
     const status = (error as { status?: number }).status;
     if (status === 502) {
       console.log(
-        "⚠ sandboxShares.list(): 502 from /p/share on the local stack — known platform issue (see PROGRESS.md); the SDK surfaced it correctly as a typed ApiError",
+        "⚠ sandboxShares.list(): 502 from /p/share on the local stack — known platform issue; the SDK surfaced it correctly as a typed ApiError",
       );
       return;
     }

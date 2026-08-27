@@ -1,8 +1,7 @@
 'use client';
 
 /** Moved from session-chat.tsx (`UserMessageRow`) so the turn module owns the
- *  user-message card. Full-width card, no reference chips — see
- *  docs/superpowers/sdd/2026-07-31-assistant-turn-ux/task-6-report.md. */
+ *  user-message card. Full-width card, no reference chips. */
 
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
