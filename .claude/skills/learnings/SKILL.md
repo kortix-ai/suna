@@ -21,6 +21,46 @@ linked, not inlined.
 
 ## Register
 
+### Starting a long-lived process before its working directory exists poisons it for good (2026-08-27)
+
+**When:** overlapping a slow step (repo materialization) with a process start to
+save wall-clock. #6964 spawned OpenCode at `proxy-up`, before the checkout. The
+supervisor's readiness probe is directory-scoped
+(`GET /session?directory=/workspace`) on a 100 ms cadence, and OpenCode builds
+its per-directory Instance — including the local-tool registry, which IMPORTS
+from that directory's `node_modules` — on the FIRST directory-scoped request.
+On any repo whose materialization outlives OpenCode's HTTP start (imported repos
+clone for seconds; bun start is ~4 s) our own probe was that first request, so
+the registry was built against an empty workspace. Every turn then answered
+`ResolveMessage: Cannot find module '@mendable/firecrawl-js' from
+/workspace/.kortix/opencode/tools/scrape_webpage.ts`. Verified in a live box:
+`/experimental/tool/ids` returns its FIRST answer unchanged across
+`POST /global/dispose` (even with `node_modules` moved away) — the state is
+process-cached, so no reload repairs it. Only a restart does, which is also the
+only way to heal a box that is already running.
+
+**The rule: a readiness probe must not be the thing that initializes the
+resource.** Gate every directory/workspace-scoped request — yours AND the
+proxy's — until the workspace is COMPLETE (checkout + dependency install +
+injected files), and poll liveness on a route that creates nothing
+(`deferDirectoryProbe` + `markWorkspaceReady()`, #7002). If something did
+initialize early, restart the process; do not dispose.
+
+**Corollary, and the reason this cost two deploys:** #7002's gate-open landed
+inside the early-spawn block instead of after the dependency install, so it
+opened at ~130 ms and the fix was inert (#7004). The test that should have
+caught it asserted `indexOf('workspaceReady = true', afterConfigDeps)`, which a
+DUPLICATE assignment in the failure branch satisfied. **A source-order assertion
+must anchor on the real sequence, not on the first index after a marker.**
+
+**Diagnostic:** the guest daemon log ordering is the whole story — `probe
+opened` must come after `config deps installed`, and `repo materialized` before
+both. `/kortix/health` `boot_timeline` shows the dangerous shape directly:
+`opencode-http-listening` earlier than `repo-materialized`.
+*Incident:* live dev, imported repo `kortix-ai/company`, every turn broken.
+*Enforcer:* `boot-instrumentation.test.ts` (gate closed on the early-spawn path,
+opened only after deps + skills, early-spawn block free of `markWorkspaceReady`).
+
 ### An experiment flag that deploy-dev pins to an explicit `false` can never double as a kill switch (2026-08-27)
 
 **When:** reusing an existing feature/experiment flag to gate a new default-on
