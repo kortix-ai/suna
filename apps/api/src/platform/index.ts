@@ -4,6 +4,7 @@ import { makeOpenApiApp, json } from '../openapi';
 import { versionRouter } from './routes/version';
 import { githubAppSetupRouter } from './routes/github-app';
 import { bootTimelineRouter } from './routes/boot-timeline';
+import { runtimeProjectionRouter } from './routes/runtime-projection';
 
 // Platform sub-app. The legacy /v1/platform/sandbox/* lifecycle surface
 // (one-per-account sandbox lifecycle, members, invites, pool admin, backup
@@ -34,5 +35,10 @@ platformApp.route('/github-app', githubAppSetupRouter);
 // here at runtime-ready. Makes in-guest boot latency queryable next to the host
 // marks (provider_events, kind 'boot'); see services/boot-timeline-store.ts.
 platformApp.route('/boot-timeline', bootTimelineRouter);
+// /v1/platform/runtime-projection — the in-sandbox daemon pushes its
+// `/kortix/opencode/state` document here so a session open (and a STOPPED
+// session) can answer agents/commands/config from Postgres with zero sandbox
+// hops; see projects/lib/session-runtime-projection.ts.
+platformApp.route('/runtime-projection', runtimeProjectionRouter);
 
 export { platformApp };

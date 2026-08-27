@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { livenessBusy, sessionSyncBusy } from './use-session-sync';
+import { livenessBusy, sessionSyncBusy, transcriptFallbackPollMs } from './use-session-sync';
 
 /**
  * WHICH signal switches the transcript liveness poll.
@@ -144,5 +144,20 @@ describe('livenessBusy: an open server turn keeps the repair running', () => {
         serverHoldsTurn: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe('transcriptFallbackPollMs (the stale-daemon window)', () => {
+  test('working with NO live runtime channel polls — the only transcript feed left', () => {
+    expect(transcriptFallbackPollMs({ busy: true, runtimeChannelLive: false })).toBe(10_000);
+  });
+
+  test('a live runtime channel silences the fallback — seq gaps repair losses exactly', () => {
+    expect(transcriptFallbackPollMs({ busy: true, runtimeChannelLive: true })).toBeNull();
+  });
+
+  test('an idle session never polls, channel or not', () => {
+    expect(transcriptFallbackPollMs({ busy: false, runtimeChannelLive: false })).toBeNull();
+    expect(transcriptFallbackPollMs({ busy: false, runtimeChannelLive: true })).toBeNull();
   });
 });

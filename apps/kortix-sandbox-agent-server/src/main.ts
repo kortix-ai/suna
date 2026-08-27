@@ -30,6 +30,7 @@ import {
   type Opencode,
 } from './opencode'
 import { relayBootTimelineToApi } from './boot-timeline-relay'
+import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { ensureInjectedManagedSkills } from './injected-skills'
@@ -42,6 +43,8 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { kortixEventBus } from './kortix-event-bus'
+import { runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, auditRelayToken, createAuditRelay } from './opencode-audit-relay'
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
@@ -103,7 +106,13 @@ async function main() {
   // In-container boot timeline (ms since process start). Surfaced via
   // /kortix/health so the dashboard can attribute post-create boot latency.
   const bootMark = (label: string) => {
-    bootState.timeline.push({ label, atMs: Date.now() - bootTime })
+    const atMs = Date.now() - bootTime
+    bootState.timeline.push({ label, atMs })
+    // Boot phases ride the SAME sequenced stream as OpenCode's own frames
+    // (`/kortix/opencode/events`). A client watching a cold box learns
+    // "repo materialized" / "opencode ready" in order with everything else,
+    // instead of inferring it from a health poll's shape.
+    kortixEventBus().publishDaemon('kortix.boot', { label, at_ms: atMs })
   }
   // The daemon's own log lands on the box from the first line (logger.ts):
   // under E2B stdout goes to envd and is not on disk, which is why the
@@ -706,6 +715,29 @@ async function startSessionRuntime(
   process.once('SIGTERM', flushAuditRelay)
   process.once('SIGINT', flushAuditRelay)
   const onEvent = (event: { type?: string; properties?: unknown }) => {
+    // Fan out BEFORE the audit relay: the sequencer and the state projection
+    // are what the product reads, and neither may be starved by a relay that
+    // is spooling to disk. Both swallow their own faults; the try/catch here
+    // only guarantees an unexpected throw cannot break the audit path that
+    // follows, which IS allowed to mark the runtime unhealthy.
+    try {
+      kortixEventBus().publishOpencode(event)
+      runtimeStateStore()?.noteEvent(event)
+      // A catalog-moving frame re-pushes the projection (debounced, etag-gated).
+      // Same set noteEvent invalidates its catalog on.
+      if (
+        event.type === 'server.instance.disposed' ||
+        event.type === 'mcp.tools.changed' ||
+        event.type === 'plugin.added' ||
+        event.type === 'global.disposed'
+      ) {
+        scheduleRuntimeProjectionPush(event.type)
+      }
+    } catch (error) {
+      logger.warn('[opencode-events] runtime fan-out failed', {
+        err: error instanceof Error ? error.message : String(error),
+      })
+    }
     try {
       auditRelay.enqueue(event)
     } catch (error) {
@@ -722,11 +754,21 @@ async function startSessionRuntime(
     )
   }
   const onSessionIdle = (opencodeSessionId: string) => {
+    kortixEventBus().publishDaemon(
+      'kortix.turn',
+      { opencode_session_id: opencodeSessionId, verdict: 'idle' },
+      opencodeSessionId,
+    )
     void relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
   const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
+    kortixEventBus().publishDaemon(
+      'kortix.turn',
+      { opencode_session_id: opencodeSessionId, verdict: 'error', error: error ?? null },
+      opencodeSessionId,
+    )
     void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error).catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
@@ -815,6 +857,9 @@ async function startSessionRuntime(
       // Persist the in-guest timeline now that this boot is complete — see
       // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
       relayBootTimelineToApi(bootState.timeline)
+      // The boot push: the projection exists server-side from the moment the
+      // box is usable, so a cold session answers its roster from Postgres.
+      scheduleRuntimeProjectionPush('boot')
       scheduleRuntimeAssetsReconcile(cfg)
     }
     await maybeCreateInitialOpencodeSession(
@@ -859,6 +904,7 @@ async function startSessionRuntime(
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
     relayBootTimelineToApi(bootState.timeline)
+    scheduleRuntimeProjectionPush('boot')
     scheduleRuntimeAssetsReconcile(cfg)
     // Only start the loop if the initial-session branch didn't already (avoids a
     // duplicate subscription when the initial session was requested but failed).

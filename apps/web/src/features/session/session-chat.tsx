@@ -208,9 +208,7 @@ import {
   startSessionWithPrompt,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
-  usePermissionSelfHeal,
   useProjectConfig,
-  useQuestionSelfHeal,
   useRuntimeAgents,
   useRuntimeBootStalled,
   useRuntimeCommands,
@@ -3330,20 +3328,11 @@ export function SessionChat({
       }
     };
   }, []);
-  // Self-heal a missed `question.asked` SSE event (a `question` tool part
-  // rendering as running with nothing in the pending store for this session) —
-  // see the SDK's `useQuestionSelfHeal` for why this poll is distinct from
-  // `useRuntimeEventStream`'s reconnect-gap hydration.
-  useQuestionSelfHeal(sessionId, messages, {
-    enabled: !sessionState && isActiveSessionTab,
-    isSuppressed: isQuestionSuppressed,
-  });
-  // The permission twin — a missed `permission.asked` frame otherwise leaves
-  // the agent silently blocked with no card to answer (the "have to type
-  // `continue`" wedge).
-  usePermissionSelfHeal(sessionId, messages, {
-    enabled: !sessionState && isActiveSessionTab,
-  });
+  // The 2 s permission/question self-heal polls that used to sit here are
+  // gone: the session stream's runtime channel is SEQUENCED (a lost
+  // `question.asked` frame is a detectable gap, not a silent hole), and the
+  // `kortix.control.runtime_state` snapshots re-seed open asks on every
+  // attach/reconnect — see the SDK's `useSessionRuntimeStream`.
 
   // ---- Permission/question reply handlers ----
   const removePermission = useRuntimePendingStore((s) => s.removePermission);

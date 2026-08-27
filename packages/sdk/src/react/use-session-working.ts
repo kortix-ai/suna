@@ -22,6 +22,7 @@ import {
 import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
+import { sessionStreamScope, useSessionStreamPresence } from './use-session-stream-presence';
 
 /**
  * The ONE answer to "is this session working?", and where the answer came from.
@@ -45,6 +46,24 @@ export const WORKING_POLL_ACTIVE_MS = 5_000;
 
 export function workingPollMs(projection: WorkingProjection): number {
   return projection.state === 'working' ? WORKING_POLL_ACTIVE_MS : WORKING_POLL_IDLE_MS;
+}
+
+/**
+ * The `/turn` query's interval, given who else is answering.
+ *
+ * The session stream's `kortix.control.turn` frames are THE SAME projection
+ * (`readSessionTurnState`) pushed on change, so while a stream is connected
+ * for this session the poll is pure duplication and hands its cadence over.
+ * The moment the stream drops, the owner's poll resumes — presence flips a
+ * subscribed store, so this re-evaluates immediately, not on the next tick.
+ */
+export function workingRefetchInterval(input: {
+  pollOwner: boolean;
+  streamConnected: boolean;
+  projection: WorkingProjection;
+}): number | false {
+  if (!input.pollOwner || input.streamConnected) return false;
+  return workingPollMs(input.projection);
 }
 
 /**
@@ -299,6 +318,9 @@ export function useSessionWorking(
     projectWorking(inputsFor(turn, nowMs));
 
   const pollOwner = usePollOwner(`turn:${projectId}/${sessionId}`, canRead);
+  const streamConnected = useSessionStreamPresence(
+    canRead ? sessionStreamScope(projectId, sessionId) : '',
+  );
 
   const query = useQuery({
     queryKey: qk.project.sessionTurn(projectId, sessionId),
@@ -311,8 +333,15 @@ export function useSessionWorking(
     // session at three times its declared cadence — measured as 6 `/turn`
     // reads inside one 25 s open. Non-owners read the same entry the owner
     // refreshes, so nobody sees a staler answer; only the scheduling moved.
+    // And while the session STREAM is connected, even the owner stands down:
+    // `kortix.control.turn` writes this same cache entry, from the same
+    // server projection — see `workingRefetchInterval`.
     refetchInterval: (query) =>
-      pollOwner ? workingPollMs(project(query.state.data, Date.now())) : false,
+      workingRefetchInterval({
+        pollOwner,
+        streamConnected,
+        projection: project(query.state.data, Date.now()),
+      }),
     // Coming back to a tab is the moment a turn that started (or ended) while
     // it was hidden has to be on screen.
     refetchOnWindowFocus: true,

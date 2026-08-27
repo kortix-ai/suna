@@ -193,6 +193,7 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
       'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
+      'GET /v1/projects/:projectId/sessions/:sessionId/stream',
     ],
   },
   async (ctx) => {
@@ -290,6 +291,119 @@ flow(
           `bundle turn must equal GET /turn: ${JSON.stringify(bundleTurn)} vs ${JSON.stringify(singleBody)}`,
         );
       }
+    });
+
+    await ctx.step('Session open bundle carries a TRI-STATE runtime leg', async () => {
+      // The leg that replaces seven proxied reads of the box (`/agent`
+      // `/command` `/config` `/session` `/session/status` `/permission`
+      // `/question`). A fresh session has no projection yet, so the honest
+      // answer is `known:false` with a REASON — never an empty agent roster,
+      // which is the defect the tri-state contract exists to prevent.
+      const session = await ctx.fixtures.session(project);
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      response.status(200);
+      const body = response.json<{ runtime: { known: boolean; reason?: string; state?: unknown } }>();
+      if (typeof body.runtime?.known !== 'boolean') {
+        throw new Error(`runtime must carry a boolean 'known', got ${JSON.stringify(body.runtime)}`);
+      }
+      if (body.runtime.known === false) {
+        const allowed = ['no_projection', 'identity_mismatch', 'stale', 'leg_failed'];
+        if (!allowed.includes(String(body.runtime.reason))) {
+          throw new Error(`unknown runtime reason: ${JSON.stringify(body.runtime)}`);
+        }
+        if ('state' in body.runtime) {
+          throw new Error('a refused runtime leg must not also carry a state document');
+        }
+      }
+    });
+
+    await ctx.step('Session stream serves control events with NO sandbox attached', async () => {
+      // The stream's load-bearing property: it is a 200 that keeps delivering
+      // control-plane facts even when the box is stopped, missing or
+      // unreachable. A stream that errored because a sandbox was absent would
+      // send every client straight back to polling.
+      //
+      // Raw fetch, not ctx.client: this response never ends, so a buffered read
+      // would hang the flow rather than assert on it.
+      const session = await ctx.fixtures.session(project);
+      const token = (ctx.P.OWNER as { auth?: { token?: string } }).auth?.token;
+      if (!token) ctx.skip('OWNER principal has no bearer token on this target');
+
+      const controller = new AbortController();
+      const startedAt = Date.now();
+      try {
+        const response = await fetch(
+          `${ctx.env.apiUrl}/projects/${project.id}/sessions/${session.id}/stream`,
+          {
+            headers: { accept: 'text/event-stream', authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          },
+        );
+        if (response.status !== 200) {
+          throw new Error(`stream must open 200, got ${response.status}`);
+        }
+        const contentType = response.headers.get('content-type') ?? '';
+        if (!contentType.includes('text/event-stream')) {
+          throw new Error(`stream must be an event stream, got ${contentType}`);
+        }
+        // Never compressed: a gzip stream buffers, and a buffered event stream
+        // is a broken event stream.
+        if (response.headers.get('content-encoding')) {
+          throw new Error('the stream must never be compressed');
+        }
+        if (!response.headers.get('x-kortix-control-epoch')) {
+          throw new Error('the stream must name its control epoch');
+        }
+
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const events: string[] = [];
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline && !events.includes('kortix.control.turn')) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          for (const line of buffer.split('\n')) {
+            if (line.startsWith('event: ')) events.push(line.slice(7).trim());
+          }
+          buffer = buffer.slice(buffer.lastIndexOf('\n') + 1);
+        }
+        await reader.cancel().catch(() => {});
+
+        if (events[0] !== 'kortix.stream.hello') {
+          throw new Error(`the first frame must be the handshake, got ${JSON.stringify(events)}`);
+        }
+        if (!events.includes('kortix.control.turn')) {
+          throw new Error(
+            `the control channel must deliver a turn snapshot within ${Date.now() - startedAt}ms, got ${JSON.stringify(events)}`,
+          );
+        }
+      } finally {
+        controller.abort();
+      }
+    });
+
+    await ctx.step('Session stream refuses an anonymous caller', async () => {
+      const response = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/projects/:projectId/sessions/:sessionId/stream', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status([401, 403, 404]);
+    });
+
+    await ctx.step('Session stream returns 404 for an unknown session', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/stream', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status(404);
     });
 
     await ctx.step('Session open bundle returns 404 for an unknown session', async () => {

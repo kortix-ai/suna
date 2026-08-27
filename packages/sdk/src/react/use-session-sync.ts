@@ -21,6 +21,10 @@ import {
   shouldHydrateFromMirror,
 } from '../browser/session-sync/server-transcript-mirror';
 import { transcriptIsFragment } from '../core/session-sync/fragment';
+import {
+  isSessionRuntimeChannelLive,
+  subscribeSessionStreamPresence,
+} from '../core/stream/session-stream-presence';
 import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -64,12 +68,13 @@ interface UseSessionSyncOptions {
   /**
    * The caller's working projection (`useSessionWorking`), when it has one.
    *
-   * It is the transcript liveness poll's switch. Reading the raw `session.status`
-   * slot instead means a dropped busy frame — a backgrounded tab, a proxy
-   * reconnect across the start of a turn — leaves the poll off for a turn the
-   * server's own authority says is running, and the transcript then never
-   * refreshes behind the missing stream. Omit it (apps/mobile) and the stream
-   * slot decides, as before.
+   * It is the controller's busy switch, whose remaining job is the TURN-END
+   * tail read (the busy→idle edge re-reads the tail once — the moment a
+   * stream that dropped its last frames leaves the answer truncated). Reading
+   * the raw `session.status` slot instead means a dropped busy frame — a
+   * backgrounded tab, a reconnect across the start of a turn — misses that
+   * edge for a turn the server's own authority says ran. Omit it
+   * (apps/mobile) and the stream slot decides, as before.
    */
   working?: boolean;
   /**
@@ -107,9 +112,35 @@ export function sessionSyncBusy(input: {
 }
 
 /**
- * Whether the transcript liveness poll should be running. Pure, so "the
- * projection outranks the stream slot" is a test rather than a convention.
+ * Whether the controller should treat this session as BUSY — the switch whose
+ * busy→idle edge fires the turn-end tail read. (The 10s interval poll this
+ * used to arm is deleted: the session stream's dense seq detects a lost frame
+ * exactly.) Pure, so "the projection outranks the stream slot" is a test
+ * rather than a convention.
  */
+/** The stale-daemon fallback cadence. */
+export const TRANSCRIPT_FALLBACK_POLL_MS = 10_000;
+
+/**
+ * Should the transcript fall back to a bounded interval read, and how often?
+ *
+ * The steady state polls NOTHING: while the session stream's RUNTIME channel
+ * is live, every transcript frame rides a dense seq, so a loss is detected
+ * and repaired exactly (`connectSessionStream`). But a working session whose
+ * runtime channel is NOT live — a daemon too old to serve
+ * `/kortix/opencode/events` (the convergence window after this ships), or an
+ * attach that keeps failing — has no live transcript feed at all, and mid-turn
+ * output would freeze until turn end. For exactly that window, the old
+ * bounded tail read returns, at its old 10s cadence. `null` = do not poll.
+ */
+export function transcriptFallbackPollMs(input: {
+  busy: boolean;
+  runtimeChannelLive: boolean;
+}): number | null {
+  if (!input.busy || input.runtimeChannelLive) return null;
+  return TRANSCRIPT_FALLBACK_POLL_MS;
+}
+
 export function livenessBusy(input: {
   networkEnabled: boolean;
   /**
@@ -303,11 +334,10 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   }, [controller, networkEnabled, sessionId]);
 
   // Coming back to the tab is a moment of MAXIMUM uncertainty, so it is a
-  // moment to re-read. A backgrounded tab has its timers clamped (Chrome: about
-  // one tick a minute), so the 10s liveness poll effectively stops, and the SSE
-  // connection can be dropped with no visible error. Whatever the transcript
-  // shows on return was assembled from a stream nobody was watching. One
-  // bounded tail read settles it.
+  // moment to re-read. A backgrounded tab has its timers clamped (Chrome:
+  // about one tick a minute) and its SSE connection can be dropped with no
+  // visible error. Whatever the transcript shows on return was assembled from
+  // a stream nobody was watching. One bounded tail read settles it.
   useEffect(() => {
     if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
     return onTabVisible(() => {
@@ -351,11 +381,27 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   const isBusy = sessionSyncBusy({ working, streamBusy });
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
 
+  const busy = livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn });
   useEffect(() => {
-    controller.setBusy(
-      livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
-    );
-  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn]);
+    controller.setBusy(busy);
+  }, [controller, busy]);
+
+  // The stale-daemon fallback poll — see `transcriptFallbackPollMs`. While the
+  // session stream's runtime channel is live this arms NOTHING; a working
+  // session with no live daemon feed re-reads its tail at the old cadence.
+  const streamScope = kortixSessionScope ?? '';
+  const runtimeChannelLive = useSyncExternalStore(
+    (onChange) => (streamScope ? subscribeSessionStreamPresence(streamScope, onChange) : () => {}),
+    () => !!streamScope && isSessionRuntimeChannelLive(streamScope),
+    () => false,
+  );
+  useEffect(() => {
+    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
+    const pollMs = transcriptFallbackPollMs({ busy, runtimeChannelLive });
+    if (pollMs === null) return;
+    const timer = setInterval(() => void controller.reconcile('poll'), pollMs);
+    return () => clearInterval(timer);
+  }, [busy, controller, networkEnabled, runtimeChannelLive, sessionId]);
 
   // Re-read the tail on demand. The transcript body renders this behind its
   // "couldn't load" state so `freshness === 'error'` is recoverable without a

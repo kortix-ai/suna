@@ -28,7 +28,10 @@ import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
 import { createWebProxyRouter } from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
-import { registerAgentSwapBlocker } from './runtime-assets'
+import { createOpencodeRuntimeRouter } from './routes/opencode-runtime'
+import { OpencodeDb } from './opencode-db'
+import { configureRuntimeState, runtimeStateStore } from './runtime-state-projection'
+import { registerAgentSwapBlocker, runtimeConvergenceReport } from './runtime-assets'
 import type { ProjectEnvStore } from './project-env'
 import {
   KORTIX_USER_CONTEXT_HEADER,
@@ -219,6 +222,36 @@ export function buildOpencodeApp(
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)
   }
+
+  // /kortix/opencode/* — the Kortix Runtime API (routes/opencode-runtime.ts).
+  //
+  // ADDITIVE. The `/p/<box>/8000/...` passthrough below still serves every
+  // OpenCode path it serves today; this namespace answers the same questions
+  // in a projected, gzipped, SEQUENCED form so the product never has to speak
+  // OpenCode's wire format or poll for a frame it might have missed.
+  //
+  // The store is a process singleton so `POST /kortix/env` and a verified
+  // reload can invalidate it without threading a handle through the proxy —
+  // `reload()` rebuilds this app on a warm-snapshot restore and must not orphan
+  // the projection it was maintaining.
+  const opencodeDb = new OpencodeDb(opencodeDbPath(OPENCODE_HOME))
+  const runtimeState =
+    runtimeStateStore() ??
+    configureRuntimeState({
+      opencode,
+      cfg,
+      db: opencodeDb,
+      pinnedSessionId: readPinnedSessionId,
+      daemonBuild: async () => (await runtimeConvergenceReport()).build,
+    })
+  const opencodeRuntimeRouter = createOpencodeRuntimeRouter(cfg, {
+    opencode,
+    db: opencodeDb,
+    state: runtimeState,
+    pinnedSessionId: readPinnedSessionId,
+  })
+  kortixRouter.route('/opencode', opencodeRuntimeRouter)
+  kortixRouter.route('/opencode/', opencodeRuntimeRouter)
 
   app.route('/kortix', kortixRouter)
 

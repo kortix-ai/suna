@@ -296,6 +296,45 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         return Response.json([]);
       }
 
+      // The Kortix Runtime API session stream (`GET /projects/:pid/sessions/:sid/stream`).
+      // `session.stream()` opens THIS now, not `/p/<box>/8000/global/event`. Emit two
+      // runtime frames immediately, then heartbeats — enough to prove the stream is
+      // unbuffered end-to-end through the wrapper BFF.
+      const runtimeStreamMatch = p.match(/^projects\/([^/]+)\/sessions\/([^/]+)\/stream$/);
+      if (runtimeStreamMatch && method === 'GET') {
+        let interval: ReturnType<typeof setInterval> | undefined;
+        const stream = new ReadableStream({
+          start(controller) {
+            const enc = new TextEncoder();
+            let seq = 0;
+            const frame = (obj: unknown, id: string) => {
+              controller.enqueue(enc.encode(`id: ${id}\ndata: ${JSON.stringify(obj)}\n\n`));
+            };
+            // hello first (connection machinery — advances nothing), then two runtime events.
+            frame({ channel: 'stream', type: 'kortix.hello' }, '||0|0');
+            frame({ channel: 'runtime', type: 'message.updated', epoch: 'e1', seq: ++seq, payload: { n: seq } }, `e1|${seq}|0|0`);
+            frame({ channel: 'runtime', type: 'message.part.updated', epoch: 'e1', seq: ++seq, payload: { n: seq } }, `e1|${seq}|0|0`);
+            interval = setInterval(() => {
+              controller.enqueue(enc.encode(`: heartbeat\n\n`));
+            }, 200);
+            activeIntervals.add(interval);
+          },
+          cancel() {
+            if (interval) {
+              clearInterval(interval);
+              activeIntervals.delete(interval);
+            }
+          },
+        });
+        return new Response(stream, {
+          headers: {
+            'content-type': 'text/event-stream',
+            'cache-control': 'no-cache',
+            connection: 'keep-alive',
+          },
+        });
+      }
+
       // Any other `projects/:id/...` sub-path (sessions, files, connectors, …) —
       // generic forwarded-OK, recorded for assertion.
       if (/^projects\/[^/]+(\/.*)?$/.test(p)) {

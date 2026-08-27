@@ -483,148 +483,84 @@ describe('SessionSyncController', () => {
     ]);
   });
 
-  test('uses event activity instead of part count for busy liveness', async () => {
-    const clock = createScheduler();
-    const requests: Array<{ limit: number; before?: string }> = [];
-    const statuses: SessionStatus[] = [];
-    let statusReads = 0;
-    const controller = new SessionSyncController({
-      sessionId: 'session-1',
-      loadPage: async (request) => {
-        requests.push(request);
-        return page([]);
-      },
-      loadStatus: async () => {
-        statusReads += 1;
-        return { type: 'idle' } as SessionStatus;
-      },
-      hydrate: () => {},
-      markLoaded: () => {},
-      setStatus: (status) => statuses.push(status),
-      scheduler: clock.scheduler,
-      livenessIntervalMs: 10_000,
-    });
-
-    await controller.start();
-    controller.setBusy(true);
-    clock.advance(9_000);
-    controller.noteActivity();
-    clock.advance(10_000);
-    await Promise.resolve();
-    expect(requests).toHaveLength(1);
-
-    clock.advance(10_000);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(requests).toHaveLength(2);
-    // The poll reconciles the TAIL and nothing else. Its status half read the
-    // runtime over REST and wrote the answer into the slot SSE frames land in,
-    // which made a REST poll indistinguishable from the runtime's own voice —
-    // and re-stamped the stream observation on every tick, so the bound that
-    // stops a dead stream from deciding was never reached. `GET .../turn` is
-    // the status authority now, and the controller's own `setBusy` is already
-    // driven FROM that projection, so a fourth stamped input could only
-    // confirm or latch, never correct.
-    expect(statuses).toEqual([]);
-    expect(statusReads).toBe(0);
-  });
-
-  test('the caller\'s working signal, and only it, starts transcript liveness reconciliation', async () => {
-    const clock = createScheduler();
-    const requests: Array<{ limit: number; before?: string }> = [];
-    const hydrated: string[][] = [];
-    const statuses: SessionStatus[] = [];
-    let statusReads = 0;
-    const controller = new SessionSyncController({
-      sessionId: 'session-1',
-      loadPage: async (request) => {
-        requests.push(request);
-        return messagePage([
-          { id: 'user-new', role: 'user' },
-          { id: 'assistant-new', role: 'assistant', parentID: 'user-new' },
-        ]);
-      },
-      loadStatus: async () => {
-        statusReads += 1;
-        return { type: 'idle' } as SessionStatus;
-      },
-      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
-      markLoaded: () => {},
-      setStatus: (status) => statuses.push(status),
-      scheduler: clock.scheduler,
-      livenessIntervalMs: 10_000,
-    });
-
-    // Nothing polls until someone says the session is working. The controller
-    // does not decide that any more — `projectWorking` does, from the server's
-    // turn authority — so an unattended controller is silent.
-    clock.advance(10_001);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(requests).toHaveLength(0);
-
-    controller.setBusy(true);
-    clock.advance(10_001);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(requests).toHaveLength(1);
-    expect(hydrated).toEqual([['user-new', 'assistant-new']]);
-    // The tail is repaired; no status is claimed or even read. `loadStatus` /
-    // `setStatus` remain on the options type only because 0.12.8 published
-    // them — see their `@deprecated` banners.
-    expect(statuses).toEqual([]);
-    expect(statusReads).toBe(0);
-  });
-
   /**
-   * The postponement hole (prod, 2026-08-26): `noteActivity` renews the poll's
-   * quiet timer on EVERY transcript frame, so a degraded stream that still
-   * delivers a trickle — events lost at the source or the edge, connection
-   * alive — postponed the tail read indefinitely while the transcript diverged
-   * arbitrarily far from the runtime. The repair built for a lossy stream was
-   * switched off by the surviving frames of that same lossy stream.
-   *
-   * While the session is busy, a bounded verification read runs at
-   * `verifyIntervalMs` no matter how much activity arrives. A healthy stream
-   * pays one tail page per interval and the hydrate is a no-op.
+   * The 10s quiet-based liveness poll and the 30s busy-verification read are
+   * DELETED. Their job — catching a transcript frame lost between the runtime
+   * and this tab — moved to the session stream, whose runtime channel is
+   * DENSE-SEQUENCED: a lost frame is `seq > last + 1`, detected the moment
+   * the next frame arrives and repaired by one immediate bounded tail read
+   * (`connectSessionStream`'s `onRuntimeGap`/`onRuntimeResync`,
+   * `session-stream-controller.test.ts`). A poll that re-read the tail on a
+   * timer hoping to catch a loss it could not observe is strictly worse than
+   * a gap check that observes it exactly.
    */
-  test('continuous stream activity cannot postpone tail verification forever', async () => {
+  test('a busy session schedules NO interval reads — loss repair moved to the stream seq', async () => {
     const clock = createScheduler();
     const requests: Array<{ limit: number; before?: string }> = [];
+    const statuses: SessionStatus[] = [];
+    let statusReads = 0;
     const controller = new SessionSyncController({
       sessionId: 'session-1',
       loadPage: async (request) => {
         requests.push(request);
         return page([]);
       },
+      loadStatus: async () => {
+        statusReads += 1;
+        return { type: 'idle' } as SessionStatus;
+      },
       hydrate: () => {},
       markLoaded: () => {},
+      setStatus: (status) => statuses.push(status),
       scheduler: clock.scheduler,
       livenessIntervalMs: 10_000,
       verifyIntervalMs: 30_000,
     });
 
+    await controller.start();
+    expect(requests).toHaveLength(1);
     controller.setBusy(true);
-    // A busy runtime: activity lands between every poll tick, forever.
-    for (let tick = 0; tick < 5; tick++) {
-      clock.advance(5_000);
+    // Two minutes busy, with stream activity arriving throughout: not one
+    // timer-driven read, whatever the (deprecated, ignored) intervals say.
+    for (let tick = 0; tick < 12; tick++) {
+      clock.advance(10_000);
       controller.noteActivity();
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    // 25s of constant activity: the quiet-based poll never fired.
+    expect(requests).toHaveLength(1);
+    // No status is claimed or even read either — `GET .../turn` is the status
+    // authority, and `setBusy` is already driven FROM that projection.
+    expect(statuses).toEqual([]);
+    expect(statusReads).toBe(0);
+
+    // The busy→idle edge still reads the tail once: the turn end is exactly
+    // when a stream that dropped its last frames leaves the answer truncated.
+    controller.setBusy(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(2);
+  });
+
+  test('an unattended controller is silent — no reads without a consumer action', async () => {
+    const clock = createScheduler();
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return page([]);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+    });
+
+    clock.advance(120_000);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requests).toHaveLength(0);
-
-    clock.advance(5_000);
-    controller.noteActivity();
+    // `setBusy(false)` on a session that was never busy reads nothing either.
+    controller.setBusy(false);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    // 30s since the last tail read (there has never been one): verification
-    // runs even though activity is fresh.
-    expect(requests).toHaveLength(1);
-
-    // And the NEXT verification waits a full interval again — one read per
-    // `verifyIntervalMs`, not one per tick.
-    clock.advance(5_000);
-    controller.noteActivity();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(0);
   });
 
   test('the snapshot holds transcript state only — never a busy opinion', async () => {
