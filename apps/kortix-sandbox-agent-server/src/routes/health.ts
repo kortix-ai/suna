@@ -62,6 +62,14 @@ export type SandboxBootState = {
   initialOpenCodeSessionError?: string | null
   /** Fatal local persistence failure in the OpenCode audit relay. */
   auditRelayError?: string | null
+  /**
+   * False ONLY while the early-spawn boot path is still assembling the
+   * workspace (checkout + config-dir deps + injected skills). OpenCode builds
+   * a directory Instance — and caches its local-tool registry, imports
+   * included — on the first directory-scoped request, so nothing may reach it
+   * before this flips. Undefined on every other path: unchanged behaviour.
+   */
+  workspaceReady?: boolean
 }
 
 /**

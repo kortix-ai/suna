@@ -4,7 +4,7 @@
 Called by scripts/e2e-secrets-envs.sh (pnpm test:envs). Tracked exceptions live in
 scripts/secrets-shared-with-prod.allowlist — every entry is a debt with a reason.
 """
-import json, re, subprocess, sys
+import json, os, re, subprocess, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,7 +15,10 @@ PROD = "apps/api/.env.prod"
 
 
 def load(rel: str) -> dict:
-    out = subprocess.run([DX, "get", "-f", str(ROOT / rel), "--format", "json"], capture_output=True, text=True).stdout
+    # Isolate the shell environment: `dotenvx get` lets an exported variable shadow
+    # the file value, which would silently compare the wrong values.
+    clean = {k: v for k, v in os.environ.items() if k == "PATH" or k.startswith("HOME")}
+    out = subprocess.run([DX, "get", "-f", str(ROOT / rel), "--format", "json"], capture_output=True, text=True, env=clean).stdout
     start = out.find("{")
     return json.loads(out[start:]) if start >= 0 else {}
 

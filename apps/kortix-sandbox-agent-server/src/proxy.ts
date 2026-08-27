@@ -381,6 +381,19 @@ export function buildOpencodeApp(
         'repo_not_materialized',
       )
     }
+    // The checkout can be on disk while its config-dir dependencies are still
+    // installing. A directory-scoped request in that window makes OpenCode
+    // cache a tool registry whose imports failed, for the life of the process
+    // (dev, 2026-08-27). Hold callers off until the workspace is complete.
+    if (bootState.workspaceReady === false) {
+      return notReady(
+        {
+          error: 'sandbox runtime not ready',
+          reason: 'workspace_not_ready',
+        },
+        'workspace_not_ready',
+      )
+    }
 
     if (bootState.initialOpenCodeSessionError) {
       return notReady(

@@ -459,6 +459,28 @@ describe('readSessionMessagePage — error classification', () => {
     await expect(promise).rejects.not.toBeInstanceOf(SandboxNotReadyError);
   });
 
+  test('the proxy 404 "not active / not-running" page is a wakeable state, not a hard error', async () => {
+    // A stopped/idle box the control plane can wake answers `/p/<box>/8000/...`
+    // with the sandbox state page (dev, 2026-08-27):
+    //   404  This sandbox URL is not active.  not-running
+    // Classifying that 404 as a hard error painted "Couldn't load this
+    // conversation" over a session whose box just needed a wake. It must throw
+    // the retryable SandboxNotReadyError, exactly like the 503 "stopped" path.
+    daemonRespond(
+      '<!doctype html><title>404</title><h1>404</h1><p>This sandbox URL is not active.</p><p>not-running</p>',
+      404,
+    );
+    await expect(
+      readSessionMessagePage(RUNTIME_URL, 'session-1', { limit: 50 }),
+    ).rejects.toBeInstanceOf(SandboxNotReadyError);
+  });
+
+  test('a genuine 404 (session not found) stays a hard error, never a false wake', async () => {
+    daemonRespond(JSON.stringify({ error: true, message: 'Not found', status: 404 }), 404);
+    const promise = readSessionMessagePage(RUNTIME_URL, 'session-1', { limit: 50 });
+    await expect(promise).rejects.not.toBeInstanceOf(SandboxNotReadyError);
+  });
+
   test('a 2xx payload is still normalized and returned', async () => {
     daemonRespond(
       JSON.stringify({ messages: [{ info: { id: 'm1', time: { created: 1 } }, parts: [] }] }),

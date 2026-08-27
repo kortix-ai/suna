@@ -1698,6 +1698,12 @@ export type Opencode = {
    */
   reloadForWorkspace(): Promise<boolean>
   /**
+   * Open the directory-scoped probe gate: the workspace (checkout + config-dir
+   * deps + injected skills) is complete, so OpenCode may now create its
+   * per-directory Instance. See `deferDirectoryProbe`.
+   */
+  markWorkspaceReady(): void
+  /**
    * Boot the new opencode, verify it serves, then swap and retire the old one.
    * Never leaves the session without an opencode.
    */
@@ -1732,6 +1738,24 @@ export type Opencode = {
 export interface OpencodeSupervisorOptions {
   onStartupMark?: (label: string) => void
   onFirstReadyResponse?: () => void
+  /**
+   * First HTTP response of ANY status from the spawned process: the port is
+   * bound and bun has finished loading the binary. The gap to
+   * onFirstReadyResponse is then OpenCode's Instance init for the workspace.
+   */
+  onFirstListeningResponse?: () => void
+  /**
+   * Start with the directory-scoped readiness probe CLOSED. OpenCode creates
+   * an Instance for a directory on the first directory-scoped request, and it
+   * reads that directory's `node_modules` (local tools) ONCE per process: an
+   * Instance created before the checkout landed keeps a tool registry whose
+   * imports failed, for the life of the process (dev, 2026-08-27:
+   * `ResolveMessage: Cannot find module '@mendable/firecrawl-js' from
+   * /workspace/.kortix/opencode/tools/scrape_webpage.ts`). The early-spawn
+   * boot path therefore probes liveness on a non-Instance route until
+   * `markWorkspaceReady()`.
+   */
+  deferDirectoryProbe?: boolean
   binaryPathOverride?: string
   binaryPathResolverOverride?: () => Promise<string | null>
   nativeBinaryFastPathEnabled?: boolean
@@ -1790,6 +1814,8 @@ export function createOpencodeSupervisor(
   let livenessFailures = 0
   let readinessTimer: ReturnType<typeof setTimeout> | null = null
   let firstReadyResponseReported = false
+  let firstListeningResponseReported = false
+  let directoryProbeOpen = options.deferDirectoryProbe !== true
   let readyResponseProcess: ChildProcess | null = null
   const readyResponseWaiters = new Set<() => void>()
   let opencodeCwd = cfg.workspace
@@ -2274,6 +2300,7 @@ export function createOpencodeSupervisor(
   }
 
   async function checkReady(port = livePort()): Promise<boolean> {
+    if (!directoryProbeOpen) return false
     return probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000)
   }
 
@@ -2379,7 +2406,15 @@ export function createOpencodeSupervisor(
       if (stopping) return
       const probedPort = livePort()
       const probedChild = child
-      const ready = await checkReady(probedPort)
+      // Closed gate → liveness only, on a route that creates no Instance.
+      const probe = directoryProbeOpen
+        ? await probeOpencodeReadiness(`http://127.0.0.1:${probedPort}`, currentCfg.projectTarget, 2_000)
+        : ((await probeOpencodeListening(`http://127.0.0.1:${probedPort}`, 2_000)) ? 'listening' : 'down')
+      const ready = probe === 'ready'
+      if (probe !== 'down' && !firstListeningResponseReported && probedChild === child) {
+        firstListeningResponseReported = true
+        options.onFirstListeningResponse?.()
+      }
       if (stopping) return
       if (probedPort !== livePort()) {
         scheduleReadinessProbe()
@@ -2561,6 +2596,11 @@ export function createOpencodeSupervisor(
      * a future opencode that drops the endpoint degrades to today's behaviour
      * rather than silently not applying the config.
      */
+    markWorkspaceReady() {
+      if (directoryProbeOpen) return
+      directoryProbeOpen = true
+      logger.info('[opencode] workspace ready; directory-scoped readiness probe opened')
+    },
     async reloadForWorkspace(): Promise<boolean> {
       if (stopping || !child) return false
       // The composed config was written at spawn, when the workspace's
@@ -2585,7 +2625,12 @@ export function createOpencodeSupervisor(
         logger.info('[opencode] workspace landed before the first instance; no dispose needed')
         return true
       }
-      return disposeInstances()
+      // An Instance already answered for this directory, i.e. it was created
+      // before the workspace was complete. Its tool registry / module
+      // resolution is process-cached, so dispose is NOT enough — take the
+      // restart. With the probe gate this is a fallback, not the normal path.
+      logger.warn('[opencode] an instance answered before the workspace was ready; restarting instead of disposing')
+      return false
     },
     async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
       // A dispose re-reads the config in place — same process, no turn lost.
@@ -2757,6 +2802,20 @@ export async function waitForOpencodeReady(
 
 /** Richer boot probe: 'down' = port not answering at all, 'listening' = answers
  *  HTTP but /session not 2xx yet, 'ready' = /session 2xx/3xx. */
+/**
+ * Is the process serving HTTP at all? Any status counts, and the path is
+ * deliberately NOT directory-scoped: OpenCode answers unknown paths from its
+ * SPA catch-all, so this never creates an Instance for a directory.
+ */
+async function probeOpencodeListening(baseUrl: string, timeoutMs = 1_000): Promise<boolean> {
+  try {
+    await fetch(`${baseUrl}/kortix-liveness-probe`, { signal: AbortSignal.timeout(timeoutMs) })
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function probeOpencodeReadiness(
   baseUrl: string,
   directory: string,

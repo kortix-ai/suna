@@ -209,11 +209,19 @@ async function main() {
   const opencodeBinaryPrefetchEnabled = process.env.KORTIX_OPENCODE_BINARY_PREFETCH === '1'
   const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
     onStartupMark: bootMark,
+    onFirstListeningResponse: () => {
+      if (bootState.timeline.some((mark) => mark.label === 'opencode-http-listening')) return
+      bootMark('opencode-http-listening')
+    },
     onFirstReadyResponse: () => {
       if (bootState.timeline.some((mark) => mark.label === 'opencode-session-api-ready')) return
       bootMark('opencode-session-api-ready')
     },
     nativeBinaryFastPathEnabled: opencodeBinaryPrefetchEnabled,
+    // The early-spawn path (below) starts OpenCode before the checkout exists.
+    // Keep the directory-scoped probe closed until the workspace is complete so
+    // no Instance — and no tool registry — is built against a partial tree.
+    deferDirectoryProbe: cfg.autoClone && resolveHintedOpencodeConfigDir(cfg) !== null,
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
       // writing, or the client streams a part that will never complete.
@@ -258,6 +266,24 @@ async function main() {
     exit: (code) => shutdown({ reason: 'agent-swap', exitCode: code }),
   })
   bootMark('proxy-up')
+
+  // The initial-turn claim is a read (it returns the API's `delivering` record
+  // for this session; nothing server-side changes). It used to run only after
+  // OpenCode answered, costing one control-plane round trip on the critical
+  // path. Prefetch it now — memoized in claimInitialTurnFromApi — so the
+  // initial-session path finds it resolved.
+  if (bootstrapSession && (process.env.KORTIX_SESSION_ID ?? '').trim()) {
+    void claimInitialTurnFromApi()
+      .then(() => {
+        if (bootState.timeline.some((mark) => mark.label === 'initial-turn-claimed')) return
+        bootMark('initial-turn-claimed')
+      })
+      .catch((err) => {
+        logger.warn('[boot] early initial-turn claim failed; the session path retries', {
+          err: err instanceof Error ? err.message : String(err),
+        })
+      })
+  }
 
   // Learn the CURRENT managed lineup from the gateway this session bills
   // against, concurrently with the repo clone. The managed set is deployment
@@ -311,6 +337,9 @@ async function main() {
   // dispose the instances in place (~50 ms) so the next request re-detects
   // the git root and re-reads config. No hint → the serial boot below.
   const earlyOpencodeConfigDir = cfg.autoClone ? resolveHintedOpencodeConfigDir(cfg) : null
+  // Only the early-spawn path can expose a half-built workspace; every other
+  // boot leaves this undefined and the proxy gate below is inert.
+  if (earlyOpencodeConfigDir) bootState.workspaceReady = false
   let opencodeStartedEarly = false
   const earlyOpencodeStartPromise: Promise<void> | null =
     earlyOpencodeConfigDir && !(process.env.KORTIX_COMPILED_OPENCODE_CONFIG_DIR ?? '').trim()
@@ -411,6 +440,8 @@ async function main() {
 
   if (bootState.repoMaterializationError) {
     logger.warn('[boot] skipping runtime readiness because repo materialization failed')
+    bootState.workspaceReady = true
+    opencode.markWorkspaceReady()
     if (opencodeStartedFromCompiledConfig || opencodeStartedEarly) await opencode.stop()
   } else {
     // Now that the repo exists, pin the credential helper repo-locally too, so
@@ -424,6 +455,13 @@ async function main() {
     // Reconfigure now so any later restart uses the checked-out config. The
     // already-running compiled-config process stays untouched.
     opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)
+    // The checkout, its config-dir dependencies and the injected skills are ALL
+    // on disk now — this is the first moment a directory-scoped request may
+    // reach OpenCode. Opening the gate earlier is the bug this exists to stop
+    // (an Instance built against a partial workspace caches failed tool
+    // imports for the life of the process).
+    bootState.workspaceReady = true
+    opencode.markWorkspaceReady()
     if (opencodeStartedEarly) {
       // The process is up on the right dir; the workspace arrived after it.
       // Dispose in place so instances re-read config + re-detect the git root.
@@ -899,6 +937,7 @@ async function startSessionRuntime(
     loopStarted = true
     const finalizeInitialSession = async () => {
       await reconcileInitialTurnAcceptance()
+      bootMark('initial-turn-accepted')
       opencode.markReady()
       bootMark('opencode-ready')
       logger.info('[boot] opencode ready via initial session', {
@@ -1471,6 +1510,9 @@ async function maybeCreateInitialOpencodeSession(
   onListening?: () => void,
 ): Promise<void> {
   const claimedTurn = await claimInitialTurnFromApi()
+  if (!bootState.timeline.some((mark) => mark.label === 'initial-turn-claimed')) {
+    bootMark('initial-turn-claimed')
+  }
   const prompt = claimedTurn?.prompt ?? ''
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   if (!prompt && !bootstrapSession) return
@@ -1572,6 +1614,7 @@ async function maybeCreateInitialOpencodeSession(
     bootMark('runtime-session-new-requested')
     const session = await createInitialOpenCodeSession(opencode, workspace)
     if (!session.id) throw new Error('opencode session create returned no id')
+    bootMark('opencode-root-created')
     sessionId = session.id
   }
 
@@ -1604,6 +1647,7 @@ async function maybeCreateInitialOpencodeSession(
     // skips this line) — the durable receipt `reusedRootAlreadyDelivered`
     // trusts unconditionally on every later boot of this sandbox.
     markInitialPromptDelivered()
+    bootMark('initial-prompt-delivered')
     logger.info('[boot] initial prompt delivered', { sessionId })
   } else if (prompt) {
     bootState.initialOpenCodeSessionId = sessionId

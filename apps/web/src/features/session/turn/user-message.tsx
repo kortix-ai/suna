@@ -1,8 +1,7 @@
 'use client';
 
 /** Moved from session-chat.tsx (`UserMessageRow`) so the turn module owns the
- *  user-message card. Full-width card, no reference chips — see
- *  docs/superpowers/sdd/2026-07-31-assistant-turn-ux/task-6-report.md. */
+ *  user-message card. Full-width card, no reference chips. */
 
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -66,6 +65,7 @@ import {
 import { messageCreatedAt } from './message-time';
 import { MessageTimeLabel } from './message-time-label';
 import { PlanCard, useHasPlan } from './plan-card';
+import { useProjectSessionHref } from '@/lib/navigation/session-href';
 
 // ============================================================================
 // Fixed channel brand colors + DCP (dynamic context pruning) notifications —
@@ -1381,24 +1381,28 @@ export function UserMessage({
     return keyed;
   }, [bodyText, sourceRefs, sessionTitles, agentNames]);
 
+  const sessionHref = useProjectSessionHref();
+
   const openSessionMention = (raw: string) => {
+    // `/projects/<id>/sessions/<id>`, not `/sessions/<id>`. The latter is not a
+    // route — the tab stays mounted so the click looks fine, but the URL it
+    // writes into history 404s on reload or Back. See `session-href.ts`.
     // Direct session ID (ses_...) — navigate without title lookup
     if (raw.startsWith('ses_')) {
-      openTabAndNavigate({
-        id: raw,
-        title: 'Session',
-        type: 'session',
-        href: `/sessions/${raw}`,
-      });
+      const href = sessionHref(raw);
+      if (!href) return;
+      openTabAndNavigate({ id: raw, title: 'Session', type: 'session', href });
       return;
     }
     const ref = sessionRefs.find((s) => s.title === raw);
     if (!ref) return;
+    const href = sessionHref(ref.id);
+    if (!href) return;
     openTabAndNavigate({
       id: ref.id,
       title: ref.title || 'Session',
       type: 'session',
-      href: `/sessions/${ref.id}`,
+      href,
     });
   };
 

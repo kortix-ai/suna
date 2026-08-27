@@ -427,9 +427,25 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
       continue;
     }
 
-    // NEVER wake. Only `active` is attached to; anything else waits and
-    // re-checks, and the control channel is already telling the client why.
-    if (!sandbox?.externalId || sandbox.status !== 'active') {
+    // Attach to a box that EXISTS and is not reaper-stopped/archived/errored.
+    // `active` AND `provisioning` both mean "a real box is up or coming up":
+    // a project ENVIRONMENT rebuild (or a still-settling cold boot) leaves a
+    // RUNNING session's row at `provisioning` while its box is Ready and
+    // serving the turn (dev, 2026-08-27 — "Sandbox build running…", Platinum
+    // Ready). Gating on `=== 'active'` there refused the live attach, the
+    // client fell back to POLLING the transcript, and reasoning never
+    // collapsed / turns never ended / `/log` spun — the whole "client is
+    // broken" report. `/events` must attach to a REACHABLE box, full stop; a
+    // build happening elsewhere is irrelevant to whether THIS box can stream.
+    //
+    // Still NEVER wakes: attaching is a READ. A `stopped` (reaper-stopped),
+    // `error` or `archived` row is refused, so the "do not resurrect a
+    // reaper-stopped box and bill for it" safety this gate protects is kept.
+    // A `provisioning` box that is not up YET simply fails the attach below and
+    // retries on the backoff ladder — no wake, no bill, just a faster live
+    // stream the instant the daemon answers.
+    const attachable = sandbox?.status === 'active' || sandbox?.status === 'provisioning';
+    if (!sandbox?.externalId || !attachable) {
       announceDown(sandbox ? `sandbox_${sandbox.status}` : 'no_sandbox');
       await sleep(RUNTIME_IDLE_RECHECK_MS, args.abort.signal);
       continue;

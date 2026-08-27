@@ -66,9 +66,22 @@ There are **four environments**, each a separate encrypted file with its **own k
   for people without production clearance until every prod-shared vendor key
   in `scripts/secrets-shared-with-prod.allowlist` is split (dev/staging carry
   the prod AWS IAM user, Daytona key, and Pipedream client today).
-- **`.env.prod`** is the owner-only record of every production credential;
-  AWS Secrets Manager mirrors it for the deployed stack. Dead-in-code keys
-  (Betterstack ClickHouse, JustAVPS) stay only in `.env.prod`.
+- **`.env.dev` / `.env.staging` / `.env.prod` mirror the deployed env 1:1.**
+  Runtime truth for a deployed env is the AWS Secrets Manager blob
+  `kortix-<env>-env` (ECS injects it as `KORTIX_ENV_JSON`; dev+staging in
+  us-west-2, prod in eu-west-2) plus the plain `environment` entries on the API
+  task definition (`KORTIX_PREVIEW_BASE_DOMAIN`, `LLM_GATEWAY_PROXY_TARGET`, …).
+  Nothing syncs the files automatically: `kortix-dev-env` and `kortix-prod-env`
+  are edited by operators, `kortix-staging-env` is rebuilt as existing blob +
+  overrides on each staging deploy. `scripts/secrets-sm-parity.py` closes the
+  gap: `check` fails on any SM/task-def key that is missing or different in the
+  file; `pull` copies SM → file. Keys allowed to exist only in a file (ops
+  metadata, terraform inputs, Cloudflare tokens, the owner record of dead prod
+  keys) are listed in `scripts/secrets-file-only.allowlist`. Run it with an MFA
+  session: `pnpm test:envs --sm` (uses `AWS_PROFILE=kortix-mfa`; refresh with
+  `aws sts get-session-token --serial-number arn:aws:iam::935064898258:mfa/markokraemer-mfa --token-code <code>`).
+  Direction rule: SM → file for anything already running; file → SM only as a
+  deliberate change with a rollout (`aws secretsmanager put-secret-value`).
 - Each profile owns its internal secrets (`INTERNAL_SERVICE_KEY`,
   `API_KEY_SECRET`, `GATEWAY_INTERNAL_TOKEN`, `TUNNEL_SIGNING_SECRET`).
   `INTERNAL_SERVICE_KEY` is injected into sandboxes at creation
@@ -112,6 +125,7 @@ This re-encrypts the file in place (value becomes `KEY=encrypted:…`). Then com
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Run local / dev / staging / prod             | `pnpm dev` · `pnpm dev:dev-env` · `pnpm dev:staging-env` · `pnpm dev:prod-env`                                                                |
 | Verify all 4 envs decrypt + no non-prod secret equals prod | `pnpm test:envs` (allowlist: `scripts/secrets-shared-with-prod.allowlist`)                                                        |
+| Verify each env file equals its AWS SM blob   | `pnpm test:envs --sm` (needs `kortix-mfa` session); `python3 scripts/secrets-sm-parity.py pull <env>` copies SM → file                     |
 | Read a secret                                | `dotenvx get KEY -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`)                                                             |
 | Add / change a secret                        | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`), then commit                                          |
 | First time / new machine (non-prod profiles) | `dotenvx armor login` then, from each app directory, `for f in .env .env.dev .env.staging; do dotenvx armor pull --team kortix -f "$f"; done` |

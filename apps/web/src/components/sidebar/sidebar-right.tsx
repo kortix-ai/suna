@@ -60,6 +60,8 @@ export function SidebarRight() {
         id: `terminal:${pty.id}`,
         title: pty.title || pty.command || `Terminal`,
         type: 'terminal',
+        // LEGACY: this rail is never mounted — both AppProviders call sites
+        // pass showRightSidebar={false}. `/terminal/<id>` is not a route.
         href: `/terminal/${pty.id}`,
       });
     } catch (e) {
