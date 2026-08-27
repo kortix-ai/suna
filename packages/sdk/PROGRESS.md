@@ -12,6 +12,29 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-27 — session `session-queue-state` — direct idle sends must own the working turn — DONE
+
+**Defect:** every direct composer send briefly becomes a durable inbox row. The
+inbox working observation currently replaces the send receipt's `turnId` with
+`null`, so the web transcript classifies the new bubble as pending. The bubble
+renders dimmed with queue controls and the working indicator stays on the prior
+turn, even when no response was active at send time.
+
+**Fix:** `SendReceipt` now carries an optional `turnId`. `projectWorking`
+preserves that association when the durable inbox outranks the receipt. The web
+composer captures the working turn at Enter: an idle send names itself, while a
+send during an active response names the existing turn. The existing fallback
+for callers that omit `turnId` remains `messageId`. Commit `24d35ca894`.
+
+**RED first:** 4 new assertions failed with `turnId: null`; the idle integration
+resolved `{workingTurnId:'old', pendingTurnIds:['new']}`. GREEN: 113 targeted
+tests pass. Full evidence: SDK typecheck clean; SDK suite 2723 pass / 0 fail
+across 168 files; packed-tarball smoke install passed; web session suite 2668
+pass / 0 fail across 190 files; changed-file TypeScript check has 0 matches;
+ESLint has 0 errors (30 pre-existing warnings in `session-chat.tsx`).
+
+---
+
 ### 2026-08-27 — session `app-viewer-token` — a Kortix-hosted App is already signed in — DONE
 
 **Files:** `core/auth/app-viewer.ts` (+ test) — `fetchKortixAppViewer`,

@@ -30,6 +30,14 @@ export interface SessionRuntimeEnvInput {
   gitDeltaParentSha?: string;
   /** Raw parent commit object. Its tree already exists in the baked scaffold. */
   gitDeltaParentCommitBase64?: string;
+  /** Delta too large for the env: daemon downloads it with one authenticated GET. */
+  gitDeltaBundleRemote?: boolean;
+  /**
+   * OpenCode config dir at `baseSha` (repo-relative), `null` when the tip ships
+   * none, undefined when unknown. The daemon spawns OpenCode on it BEFORE the
+   * checkout exists and only falls back to the serial boot without a hint.
+   */
+  opencodeConfigDir?: string | null;
   /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
@@ -79,8 +87,14 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
         KORTIX_BRANCH_NAME: input.sessionId,
       }
     : {};
+  // A brand-new session's branch IS the base tip: the daemon creates it
+  // locally and materializes from the baked scaffold + the API's delta, so no
+  // in-sandbox `git fetch` runs at all. This used to hide behind the
+  // fast-cold-boot / compiled-boot experiments; measured 2026-08-27 on dev,
+  // the two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
+  // `repo-materialized` (docs/specs/2026-08-27-fast-clone-path.md).
   const fastGitBootEnv: Record<string, string> =
-    allowsFullRepository && (input.fastColdBootEnabled || compiledBootEnabled) && input.freshSession
+    allowsFullRepository && input.freshSession
       ? {
           KORTIX_SESSION_FRESH: '1',
           ...(compiledBootEnabled ? { KORTIX_COMPILED_BOOT_MODE: compiledBootMode } : {}),
@@ -88,6 +102,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
           ...(input.gitDeltaBundleBase64
             ? { KORTIX_GIT_DELTA_BUNDLE_BASE64: input.gitDeltaBundleBase64 }
             : {}),
+          ...(input.gitDeltaBundleRemote ? { KORTIX_GIT_DELTA_BUNDLE_REMOTE: '1' } : {}),
           ...(input.gitDeltaParentSha
             ? { KORTIX_GIT_DELTA_PARENT_SHA: input.gitDeltaParentSha }
             : {}),
@@ -96,6 +111,13 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
             : {}),
         }
       : {};
+  // Known for fresh sessions only (resolved at the same tip as the clone).
+  // '' = "this revision has no project OpenCode config"; the daemon then
+  // spawns on its baked default dir without waiting for the checkout.
+  const opencodeConfigDirHintEnv: Record<string, string> =
+    allowsFullRepository && input.freshSession && input.opencodeConfigDir !== undefined
+      ? { KORTIX_OPENCODE_CONFIG_DIR_HINT: input.opencodeConfigDir ?? '' }
+      : {};
   const restoreGitEnv: Record<string, string> =
     allowsFullRepository && input.restoreSessionBranch
       ? { KORTIX_SESSION_BRANCH_RESTORE: '1' }
@@ -103,6 +125,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
   return {
     ...projectGitEnv,
     ...fastGitBootEnv,
+    ...opencodeConfigDirHintEnv,
     ...restoreGitEnv,
     ...auditRelayEnvPassthrough(),
     ...(input.fastColdBootEnabled ? { KORTIX_OPENCODE_BINARY_PREFETCH: '1' } : {}),

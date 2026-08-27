@@ -12,6 +12,7 @@
  * snapshots/providers/daytona.ts (Daytona) + snapshots/providers/platinum.ts.
  */
 
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import {
@@ -337,7 +338,97 @@ export async function stageFastBuildContext(): Promise<StagedContext> {
   }
 }
 
-export type RuntimeBuildProfile = 'standard' | 'fast' | 'meta' | 'app';
+
+/**
+ * The pi worker image: node + a boot script, nothing else. The actual harness
+ * arrives at BOOT as the per-(project, sha) compiled artifact served by
+ * GET /v1/git/{project}.git/compiled-pi-runtime — so this image is pure
+ * transport and changes only when the scripts below change. The fingerprint
+ * hashes exactly what is baked, mirroring the meta image's content-hash
+ * discipline: same content ⇒ same snapshot, reused forever.
+ */
+export const PI_WORKER_ENTRYPOINT = '/usr/local/bin/pi-worker-entrypoint';
+
+const PI_WORKER_ENTRYPOINT_SH = `#!/bin/sh
+# Boot a session on the compiled pi worker runtime.
+# Fails loudly: a worker that cannot fetch its exact artifact must not serve.
+set -eu
+: "\${KORTIX_API_URL:?}" "\${KORTIX_TOKEN:?}" "\${KORTIX_PROJECT_ID:?}"
+: "\${KORTIX_PI_RUNTIME_REF:?}" "\${KORTIX_PI_RUNTIME_SHA:?}"
+export PORT="\${KORTIX_SERVICE_PORT:-8000}"
+node /opt/kortix/fetch-runtime.mjs
+exec node /opt/kortix/session-worker.mjs
+`;
+
+const PI_WORKER_FETCH_MJS = `// Download this session's compiled pi runtime, verified before it may run.
+import { createHash } from 'node:crypto';
+import { writeFileSync, renameSync } from 'node:fs';
+
+const url = new URL(
+  \`\${process.env.KORTIX_API_URL.replace(/\\/$/, '')}/git/\${process.env.KORTIX_PROJECT_ID}.git/compiled-pi-runtime\`,
+);
+url.searchParams.set('ref', process.env.KORTIX_PI_RUNTIME_REF);
+url.searchParams.set('sha', process.env.KORTIX_PI_RUNTIME_SHA);
+
+let lastError = 'unknown';
+for (let attempt = 1; attempt <= 30; attempt++) {
+  try {
+    const res = await fetch(url, {
+      headers: { authorization: \`Bearer \${process.env.KORTIX_TOKEN}\` },
+    });
+    if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+    const body = Buffer.from(await res.arrayBuffer());
+    const expected = res.headers.get('x-kortix-artifact-sha256');
+    const actual = createHash('sha256').update(body).digest('hex');
+    // Digest-verified like every other converged runtime asset: a truncated or
+    // tampered artifact never reaches exec.
+    if (expected && expected !== actual) throw new Error('artifact sha256 mismatch');
+    const text = body.toString('utf8');
+    if (!text.includes('kortix-worker starting')) throw new Error('artifact has no worker entrypoint');
+    writeFileSync('/opt/kortix/session-worker.mjs.tmp', body, { mode: 0o500 });
+    renameSync('/opt/kortix/session-worker.mjs.tmp', '/opt/kortix/session-worker.mjs');
+    console.log(JSON.stringify({ msg: 'pi runtime fetched', bytes: body.length, sha256: actual }));
+    process.exit(0);
+  } catch (error) {
+    lastError = String(error?.message ?? error);
+    console.error(JSON.stringify({ msg: 'pi runtime fetch retry', attempt, error: lastError }));
+    await new Promise((r) => setTimeout(r, Math.min(500 * attempt, 5000)));
+  }
+}
+console.error(JSON.stringify({ msg: 'pi runtime fetch FAILED', error: lastError }));
+process.exit(1);
+`;
+
+function buildPiWorkerDockerfile(): string {
+  return `FROM node:22-slim
+RUN useradd --create-home --shell /usr/sbin/nologin kortix \\
+    && mkdir -p /opt/kortix && chown kortix:kortix /opt/kortix
+COPY pi-worker-entrypoint /usr/local/bin/pi-worker-entrypoint
+COPY fetch-runtime.mjs /opt/kortix/fetch-runtime.mjs
+RUN chmod 0555 /usr/local/bin/pi-worker-entrypoint /opt/kortix/fetch-runtime.mjs
+USER kortix
+ENV NODE_ENV=production
+`;
+}
+
+/** Content identity of the pi worker image — nothing else goes into it. */
+export function piWorkerImageFingerprint(): string {
+  return createHash('sha256')
+    .update(`pi-worker-v1\0${buildPiWorkerDockerfile()}\0${PI_WORKER_ENTRYPOINT_SH}\0${PI_WORKER_FETCH_MJS}`)
+    .digest('hex');
+}
+
+export async function stagePiWorkerBuildContext(): Promise<StagedContext> {
+  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-piworker-snap-'));
+  await writeFileFs(join(contextDir, 'pi-worker-entrypoint'), PI_WORKER_ENTRYPOINT_SH, { mode: 0o755 });
+  await writeFileFs(join(contextDir, 'fetch-runtime.mjs'), PI_WORKER_FETCH_MJS);
+  const dockerfileName = 'Dockerfile';
+  const composedPath = join(contextDir, dockerfileName);
+  await writeFileFs(composedPath, buildPiWorkerDockerfile());
+  return { contextDir, composedPath, dockerfileName };
+}
+
+export type RuntimeBuildProfile = 'standard' | 'fast' | 'meta' | 'app' | 'pi-worker';
 
 /** Select one runtime renderer for every provider adapter. */
 export async function stageRuntimeBuildContext(input: {
@@ -354,6 +445,8 @@ export async function stageRuntimeBuildContext(input: {
       return stageAppBuildContext(input.snapshotName, input.userDockerfile, input.appContext);
     case 'meta':
       return stageMetaBuildContext();
+    case 'pi-worker':
+      return stagePiWorkerBuildContext();
     case 'fast':
       return stageFastBuildContext();
     default:

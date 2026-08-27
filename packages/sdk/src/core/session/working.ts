@@ -147,9 +147,17 @@ export const OPTIMISTIC_ABORT_MAX_MS = 15_000;
 
 /** This tab's own record that a prompt went out. */
 export interface SendReceipt {
-  /** The submission's tab-local name — never sent anywhere. It exists so a
-   *  `working` state can say WHICH send it is standing on. */
+  /** The submission's tab-local name — never sent anywhere. */
   messageId: string;
+  /**
+   * The user-message turn that owns the working indicator while this receipt
+   * is live. A direct idle send names itself. A send made during an existing
+   * response names that existing turn, so its new bubble remains pending.
+   *
+   * `undefined` preserves the original contract and falls back to
+   * `messageId`. `null` explicitly means the caller cannot identify the turn.
+   */
+  turnId?: string | null;
   /** ms epoch at which the send left this tab. */
   atMs: number;
   /**
@@ -334,6 +342,11 @@ function instant(value: string | null | undefined): number | null {
 export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   const { optimistic, abort, inbox, server, stream, activity, nowMs } = inputs;
   const receiptLive = !!optimistic && nowMs - optimistic.atMs < OPTIMISTIC_RECEIPT_MAX_MS;
+  const receiptTurnId = optimistic
+    ? optimistic.turnId === undefined
+      ? optimistic.messageId
+      : optimistic.turnId
+    : null;
   // TWO floors, because the two server-side observers have different knowledge.
   //
   // `GET .../turn` reads the control plane's ledger, and there is NO row in it
@@ -522,7 +535,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     return {
       state: 'working',
       source: 'server',
-      turnId: null,
+      turnId: receiptLive ? receiptTurnId : null,
       since: inbox!.atMs,
       serverOpenTurnToken,
     };
@@ -555,7 +568,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     return {
       state: 'working',
       source: 'optimistic',
-      turnId: optimistic!.messageId,
+      turnId: receiptTurnId,
       since: optimistic!.atMs,
       serverOpenTurnToken,
     };

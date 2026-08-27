@@ -43,15 +43,33 @@ function bakedOverlay(cfg: WorkerConfig): WorkerConfig {
   const agent = agentName ? agents[agentName] : undefined;
 
   const out = { ...cfg };
+  // Session-sandbox mode: the platform injects the LLM gateway URL and the
+  // session token (the same pair the daemon hands OpenCode —
+  // kortix-sandbox-agent-server/src/opencode.ts wires apiKey = KORTIX_TOKEN).
+  // Explicit KORTIX_API_KEY / KORTIX_MODEL_MODE always win.
+  const gatewayBase = process.env.KORTIX_LLM_BASE_URL;
+  if (!process.env.KORTIX_API_KEY && !process.env.KORTIX_MODEL_MODE && gatewayBase && process.env.KORTIX_TOKEN) {
+    out.modelMode = 'real';
+    out.gatewayUrl = gatewayBase;
+    out.apiKey = process.env.KORTIX_TOKEN;
+    out.providerId = 'openrouter';
+  }
   // The baked prompt applies only when the env did not set one — the env var
   // is a session-start override, the bake is the commit's truth.
   if (!process.env.KORTIX_SYSTEM_PROMPT && agent?.prompt) out.systemPrompt = agent.prompt;
   // Agent model strings are opencode-shaped: "<providerID>/<modelID...>".
   const model = agent?.model ?? compiled.agentConfig?.model;
   if (!process.env.KORTIX_MODEL && model?.includes('/')) {
-    const slash = model.indexOf('/');
-    out.providerId = model.slice(0, slash);
-    out.modelId = model.slice(slash + 1);
+    // Gateway model refs are kortix/<provider>/<model>; native ones are
+    // <provider>/<model>. Behind the gateway the whole suffix is the model id.
+    const native = model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
+    const slash = native.indexOf('/');
+    if (out.gatewayUrl) {
+      out.modelId = native;
+    } else {
+      out.providerId = native.slice(0, slash);
+      out.modelId = native.slice(slash + 1);
+    }
   }
   return out;
 }

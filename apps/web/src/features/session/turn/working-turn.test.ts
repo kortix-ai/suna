@@ -1,3 +1,4 @@
+import { projectWorking } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { resolveWorkingTurn } from './working-turn';
 
@@ -59,6 +60,52 @@ describe('resolveWorkingTurn', () => {
     });
     expect(r.workingTurnId).toBe('new');
     expect(r.pendingTurnIds).toEqual([]);
+  });
+
+  test('an idle send admitted by the inbox owns the indicator instead of becoming queued', () => {
+    const working = projectWorking({
+      optimistic: {
+        messageId: 'new',
+        turnId: 'new',
+        atMs: 1_000,
+        acceptedAtMs: 1_100,
+      },
+      inbox: { pending: 1, atMs: 1_100 },
+      server: { turns: [], atMs: 1_200 },
+      stream: { type: 'idle', atMs: 900 },
+      nowMs: 1_300,
+    });
+
+    expect(
+      resolveWorkingTurn({
+        turns: [turn('old', 'done'), turn('new')],
+        hintMessageId: working.turnId,
+        unrunTurnIds: new Set(['new']),
+      }),
+    ).toEqual({ workingTurnId: 'new', pendingTurnIds: [] });
+  });
+
+  test('a send admitted during an active response stays queued behind that response', () => {
+    const working = projectWorking({
+      optimistic: {
+        messageId: 'queued',
+        turnId: 'active',
+        atMs: 1_000,
+        acceptedAtMs: 1_100,
+      },
+      inbox: { pending: 1, atMs: 1_100 },
+      server: { turns: [], atMs: 1_200 },
+      stream: { type: 'busy', atMs: 900 },
+      nowMs: 1_300,
+    });
+
+    expect(
+      resolveWorkingTurn({
+        turns: [turn('active', 'open'), turn('queued')],
+        hintMessageId: working.turnId,
+        unrunTurnIds: new Set(['queued']),
+      }),
+    ).toEqual({ workingTurnId: 'active', pendingTurnIds: ['queued'] });
   });
 
   test('no hint: the NEWEST pending turn is where the next step lands', () => {

@@ -56,9 +56,13 @@ const realApiKeys = await import('../repositories/api-keys');
 const realIamActions = await import('../iam/actions');
 const realIamAuthorize = await import('../iam/authorize');
 
+let validateCalls = 0;
 mock.module('../repositories/account-tokens', () => ({
   ...realAccountTokens,
-  validateAccountToken: async () => patResult,
+  validateAccountToken: async () => {
+    validateCalls += 1;
+    return patResult;
+  },
 }));
 mock.module('../repositories/api-keys', () => ({
   ...realApiKeys,
@@ -84,9 +88,10 @@ mock.module('../iam/authorize', () => ({
   },
 }));
 
-const { authorizeGitProxy } = await import('../projects/lib/git');
+const { authorizeGitProxy, __resetGitProxyAuthzMemoForTests } = await import('../projects/lib/git');
 
 beforeEach(() => {
+  __resetGitProxyAuthzMemoForTests();
   projectRow = { projectId: PROJECT_ID, accountId: OWNER_ACCOUNT, status: 'active' };
   patResult = { isValid: true, accountId: OWNER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
   apiKeyResult = { isValid: false };
@@ -294,5 +299,34 @@ describe('authorizeGitProxy — sandbox token', () => {
       status: 403,
       message: 'sandbox token is not scoped to this project',
     });
+  });
+});
+
+describe('authorizeGitProxy — verdict memo', () => {
+  test("a positive verdict is reused for the clone's follow-up requests without re-validating", async () => {
+    validateCalls = 0;
+    patResult = { isValid: true, accountId: OWNER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
+    const first = await authorizeGitProxy('kortix_pat_memo', PROJECT_ID, 'read');
+    expect(first.ok).toBe(true);
+    expect(validateCalls).toBe(1);
+    // Same token+project+scope inside the TTL → memoized, no second validation
+    // even though the token would now be refused.
+    patResult = { isValid: false, error: 'revoked' };
+    const second = await authorizeGitProxy('kortix_pat_memo', PROJECT_ID, 'read');
+    expect(second.ok).toBe(true);
+    expect(validateCalls).toBe(1);
+    // A different scope is a fresh verdict — and sees the revocation.
+    const write = await authorizeGitProxy('kortix_pat_memo', PROJECT_ID, 'write');
+    expect(write.ok).toBe(false);
+    expect(validateCalls).toBe(2);
+  });
+
+  test('denials are never memoized', async () => {
+    patResult = { isValid: false, error: 'revoked' };
+    const denied = await authorizeGitProxy('kortix_pat_denied', PROJECT_ID, 'read');
+    expect(denied.ok).toBe(false);
+    patResult = { isValid: true, accountId: OWNER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
+    const allowed = await authorizeGitProxy('kortix_pat_denied', PROJECT_ID, 'read');
+    expect(allowed.ok).toBe(true);
   });
 });

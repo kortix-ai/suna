@@ -254,6 +254,17 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+// The fresh-session fast-boot hint is ALWAYS resolved at session create
+// (2026-08-27): against this fixture's fake repo URL the mirror clone fails
+// slowly (~0.4 s), which let fire-and-forget provisions from earlier tests
+// land inside a later test's counter window. Resolve it instantly here; the
+// hint itself is covered by fast-boot-git-hint.test.ts and the REST flows.
+const realFastBootGitHint = await import('../projects/lib/fast-boot-git-hint');
+mock.module('../projects/lib/fast-boot-git-hint', () => ({
+  ...realFastBootGitHint,
+  resolveFastBootGitHintWithCache: async () => undefined,
+}));
+
 mock.module('../projects/git', () => ({
   MergeConflictError: class MergeConflictError extends Error {},
   createRemoteSessionBranch: async () => {

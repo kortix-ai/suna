@@ -534,13 +534,25 @@ const envSchema = z.object({
   // Default OFF keeps the session path on one shared image per provider.
   KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
   // One kill switch for additive cold-boot accelerators. It keeps the standard
-  // runtime image and every tool. It enables local Git hints, native OpenCode
-  // binary prefetch, Platinum rootfs materialization, and stopped per-project
-  // images with the exact repository tip baked into /workspace. It never keeps
-  // a sandbox or OpenCode process running. An explicit false also disables the
-  // legacy session per-project image path. An unset value preserves the legacy
+  // runtime image and every tool. It enables native OpenCode binary prefetch,
+  // Platinum rootfs materialization, and stopped per-project images with the
+  // exact repository tip baked into /workspace. It never keeps a sandbox or
+  // OpenCode process running. An explicit false also disables the legacy
+  // session per-project image path. An unset value preserves the legacy
   // KORTIX_WARM_SNAPSHOT_ENABLED rollout while leaving new accelerators off.
+  //
+  // NOT gated here any more (default boot since 2026-08-27, see
+  // docs/specs/2026-08-27-fast-clone-path.md): the fresh-session Git fast path
+  // has its own switch, KORTIX_FAST_GIT_BOOT_ENABLED below. deploy-dev.yml
+  // injects an explicit `false` here on every push, so this flag can never
+  // double as that path's kill switch.
   KORTIX_FAST_COLD_BOOT_ENABLED: optBoolUnset,
+  // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
+  // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
+  // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
+  // `false` restores the pre-2026-08-27 create-time contract. The daemon side
+  // is additive and falls back to the clone path without these hints.
+  KORTIX_FAST_GIT_BOOT_ENABLED: optBoolTrue,
   // Experimental compiled boot path. The API builds a verified checkout and
   // OpenCode launcher for one exact Git SHA. `off` preserves the clone and
   // baked-agent path. `shadow` verifies both artifacts without using them.
@@ -1170,6 +1182,7 @@ export const config = {
   KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
   KORTIX_FAST_COLD_BOOT_CONFIGURED: env.KORTIX_FAST_COLD_BOOT_ENABLED !== undefined,
+  KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
