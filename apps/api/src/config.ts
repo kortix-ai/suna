@@ -265,8 +265,6 @@ const envSchema = z.object({
   // ── Proxy Providers (optional) ───────────────────────────────────────────
   FIRECRAWL_API_URL: optUrl('https://api.firecrawl.dev'),
   FIRECRAWL_API_KEY: optStr,
-  REPLICATE_API_URL: optUrl('https://api.replicate.com'),
-  REPLICATE_API_TOKEN: optStr,
   CONTEXT7_API_URL: optUrl('https://context7.com'),
   CONTEXT7_API_KEY: optStr,
 
@@ -1095,8 +1093,6 @@ export const config = {
   // ─── Proxy Providers ──────────────────────────────────────────────────────
   FIRECRAWL_API_URL: env.FIRECRAWL_API_URL,
   FIRECRAWL_API_KEY: env.FIRECRAWL_API_KEY,
-  REPLICATE_API_URL: env.REPLICATE_API_URL,
-  REPLICATE_API_TOKEN: env.REPLICATE_API_TOKEN,
   CONTEXT7_API_URL: env.CONTEXT7_API_URL,
   CONTEXT7_API_KEY: env.CONTEXT7_API_KEY,
 
@@ -1440,33 +1436,6 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
     baseCost: 0.01,
     perResultCost: 0,
     markupMultiplier: 1.5,
-  },
-  proxy_replicate: {
-    baseCost: 0.005,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  proxy_replicate_nano_banana: {
-    baseCost: 0.01,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  proxy_replicate_gpt_image: {
-    baseCost: 0.05,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  // Moondream2 vision captioning (image_search enrichment) — cheap per-call model.
-  proxy_replicate_moondream: {
-    baseCost: 0.002,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  // Polling a created prediction's status — billed at zero (the create call already paid).
-  proxy_replicate_poll: {
-    baseCost: 0,
-    perResultCost: 0,
-    markupMultiplier: 1,
   },
   proxy_context7: {
     baseCost: 0.001,

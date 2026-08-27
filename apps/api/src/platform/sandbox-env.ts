@@ -37,7 +37,6 @@ const SANDBOX_FORBIDDEN_KEYS: ReadonlySet<string> = new Set([
   'TAVILY_API_KEY',
   'SERPER_API_KEY',
   'FIRECRAWL_API_KEY',
-  'REPLICATE_API_TOKEN',
   'CONTEXT7_API_KEY',
   // Platform infra secrets that never belong in a sandbox and don't match the
   // pattern below.

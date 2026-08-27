@@ -14,7 +14,6 @@ const services = getProxyServices();
 const tavilyRoutes = services.tavily.allowedRoutes;
 const serperRoutes = services.serper.allowedRoutes;
 const firecrawlRoutes = services.firecrawl.allowedRoutes;
-const replicateRoutes = services.replicate.allowedRoutes;
 const context7Routes = services.context7.allowedRoutes;
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -111,61 +110,6 @@ describe('matchAllowedRoute', () => {
     });
   });
 
-  describe('replicate routes (per-model billing)', () => {
-    test('matches nano-banana model route', () => {
-      const result = matchAllowedRoute(
-        'POST',
-        '/v1/models/google/nano-banana/predictions',
-        replicateRoutes,
-      );
-      expect(result).not.toBeNull();
-      expect(result!.billingToolName).toBe('proxy_replicate_nano_banana');
-    });
-
-    test('matches gpt-image model route', () => {
-      const result = matchAllowedRoute(
-        'POST',
-        '/v1/models/openai/gpt-image-1.5/predictions',
-        replicateRoutes,
-      );
-      expect(result).not.toBeNull();
-      expect(result!.billingToolName).toBe('proxy_replicate_gpt_image');
-    });
-
-    test('rejects unlisted model', () => {
-      const result = matchAllowedRoute(
-        'POST',
-        '/v1/models/stability-ai/sdxl/predictions',
-        replicateRoutes,
-      );
-      expect(result).toBeNull();
-    });
-
-    test('rejects GET on replicate model routes', () => {
-      const result = matchAllowedRoute(
-        'GET',
-        '/v1/models/google/nano-banana/predictions',
-        replicateRoutes,
-      );
-      expect(result).toBeNull();
-    });
-
-    test('matches versioned prediction create (moondream2) with body-version gate', () => {
-      const result = matchAllowedRoute('POST', '/predictions', replicateRoutes);
-      expect(result).not.toBeNull();
-      expect(result!.billingToolName).toBe('proxy_replicate_moondream');
-      // The handler enforces these against the request body's `version`.
-      expect(result!.allowedBodyVersions).toContain(
-        '72ccb656353c348c1385df54b237eeb7bfa874bf11486cf0b9473e691b662d31',
-      );
-    });
-
-    test('matches prediction polling (GET /predictions/{id}) billed at zero', () => {
-      const result = matchAllowedRoute('GET', '/predictions/abc123', replicateRoutes);
-      expect(result).not.toBeNull();
-      expect(result!.billingToolName).toBe('proxy_replicate_poll');
-    });
-  });
 
   describe('context7 routes', () => {
     test('matches GET and POST on libs/search', () => {
@@ -214,7 +158,6 @@ describe('matchAllowedRoute', () => {
         'gemini',
         'groq',
         'openai',
-        'replicate',
         'serper',
         'tavily',
         'xai',
