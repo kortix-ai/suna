@@ -51,6 +51,18 @@ mock.module('../repositories/account-tokens', () => ({
         tokenId: 'tok-account',
       };
     }
+    if (t === 'kortix_pat_session_bound_a') {
+      // The in-sandbox KORTIX_TOKEN shape: project+SESSION-scoped
+      // ("One sandbox, one session-scoped Kortix credential").
+      return {
+        isValid: true,
+        userId: 'user-1',
+        accountId: ACCOUNT,
+        projectId: PROJECT_A,
+        sessionId: SANDBOX_A,
+        tokenId: 'tok-session-a',
+      };
+    }
     return { isValid: false, error: 'Invalid PAT' };
   },
 }));
@@ -117,6 +129,13 @@ function appWithProbe() {
     c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
   );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
+  app.post('/v1/platform/runtime-projection', (c) =>
+    c.json({
+      ok: true,
+      sandboxId: c.get('sandboxId' as never),
+      sessionId: c.get('sessionId' as never),
+    }),
+  );
   app.get('/v1/skills/:name', (c) => c.json({ ok: true, name: c.req.param('name') }));
   app.get('/v1/skills/:name/file', (c) => c.json({ ok: true }));
   return app;
@@ -237,5 +256,34 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     const body = await res.json();
     expect(body.userId).toBe('user-1');
     expect(body.tokenProjectId).toBeFalsy();
+  });
+
+  // The runtime-projection sink is called by the daemon holding the in-sandbox
+  // KORTIX_TOKEN — a project+SESSION-scoped PAT. enforceTokenProjectScope is
+  // default-deny, so without an explicit allowance the push 403s before the
+  // handler's own isSessionSandboxCredential check ever runs (observed live:
+  // POST /v1/platform/runtime-projection -> 403 "Project-scoped token cannot
+  // call this surface" from a real Platinum box, 2026-08-27).
+  test('a session-BOUND project PAT reaches the runtime-projection sink', async () => {
+    const res = await appWithProbe().request('/v1/platform/runtime-projection', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_pat_session_bound_a' },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The handler's isSessionSandboxCredential needs both, equal.
+    expect(body.sessionId).toBe(SANDBOX_A);
+    expect(body.sandboxId).toBe(SANDBOX_A);
+  });
+
+  test('a plain project PAT (no session binding) still cannot reach the sink', async () => {
+    const res = await appWithProbe().request('/v1/platform/runtime-projection', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain('Project-scoped token cannot call this surface');
   });
 });

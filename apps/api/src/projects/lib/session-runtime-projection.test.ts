@@ -8,10 +8,12 @@
  * ghost roster is indistinguishable from a real one at the UI.
  */
 import { describe, expect, test } from 'bun:test';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   PROJECTION_MAX_AGE_MS,
   projectionIdentity,
   resolveRuntimeLeg,
+  capturedAtNotNewerThan,
   type RuntimeProjectionRead,
 } from './session-runtime-projection';
 
@@ -149,5 +151,34 @@ describe('projectionIdentity', () => {
   test('a head_seq that is not a map is dropped rather than half-trusted', () => {
     expect(projectionIdentity({ identity: { head_seq: [1, 2] } }).head_seq).toBeNull();
     expect(projectionIdentity({ identity: { head_seq: 2016 } }).head_seq).toBeNull();
+  });
+});
+
+// ── The out-of-order guard's SQL binding ────────────────────────────────────
+// `capturedAtNotNewerThan` is a raw `sql` fragment. Drizzle's `.values()`/`set`
+// column bindings map a JS Date correctly, but a raw fragment does not: it hands
+// postgres-js the Date, which serializes it with its locale `toString()`
+// ("Thu Aug 27 2026 03:01:29 GMT+0200 (CEST)"). Postgres cannot parse that as a
+// timestamp, so EVERY real push 500'd on the upsert while this file's other
+// tests — which never touch a real DB — stayed green. Verified live on a
+// Platinum box (2026-08-27): the fix turned the push from a 500 into a stored
+// row. These pin the compiled parameter so the raw Date can never come back.
+describe('capturedAtNotNewerThan (the upsert out-of-order guard)', () => {
+  const capturedAt = new Date(Date.UTC(2026, 7, 27, 1, 1, 29, 468));
+
+  test('binds an ISO string with a ::timestamptz cast, never a raw Date', () => {
+    const q = new PgDialect().sqlToQuery(capturedAtNotNewerThan(capturedAt));
+    expect(q.sql).toContain('::timestamptz');
+    // Exactly one bound parameter, and it is the ISO string — not a Date.
+    expect(q.params).toEqual(['2026-08-27T01:01:29.468Z']);
+    expect(typeof q.params[0]).toBe('string');
+  });
+
+  test('the bound parameter is never a JS Date locale string', () => {
+    const q = new PgDialect().sqlToQuery(capturedAtNotNewerThan(capturedAt));
+    for (const p of q.params) {
+      expect(p).not.toBeInstanceOf(Date);
+      expect(String(p)).not.toMatch(/GMT|Central European|[A-Z][a-z]{2} [A-Z][a-z]{2} \d/);
+    }
   });
 });

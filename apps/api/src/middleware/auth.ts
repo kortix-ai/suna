@@ -268,7 +268,9 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
       throw new HTTPException(401, { message: result.error || 'Invalid PAT' });
     }
     if (result.projectId) {
-      await enforceTokenProjectScope(c, result.projectId);
+      await enforceTokenProjectScope(c, result.projectId, {
+        sessionBound: Boolean(result.sessionId),
+      });
     }
     c.set('userId', result.userId);
     c.set('userEmail', '');
@@ -587,7 +589,9 @@ async function resolveCombinedAuth(c: Context, next: Next) {
       throw new HTTPException(401, { message: patResult.error || 'Invalid PAT' });
     }
     if (patResult.projectId) {
-      await enforceTokenProjectScope(c, patResult.projectId);
+      await enforceTokenProjectScope(c, patResult.projectId, {
+        sessionBound: Boolean(patResult.sessionId),
+      });
     }
     c.set('userId', patResult.userId);
     c.set('userEmail', '');
@@ -599,7 +603,13 @@ async function resolveCombinedAuth(c: Context, next: Next) {
     // this, a capability check on a combinedAuth route silently no-ops the fold —
     // a scoped agent PAT would pass gates it should not (e.g. connector-admin).
     c.set('iamTokenId', patResult.tokenId);
-    if (patResult.sessionId) c.set('sessionId', patResult.sessionId);
+    if (patResult.sessionId) {
+      c.set('sessionId', patResult.sessionId);
+      // A session-scoped token is also the identity of its sandbox — mirror
+      // supabaseAuth's PAT branch, so isSessionSandboxCredential() answers the
+      // same on combinedAuth-mounted routes as on supabaseAuth-mounted ones.
+      c.set('sandboxId', patResult.sessionId);
+    }
     c.set('agentGrant', patResult.agentGrant ?? null);
     setSentryUser({ id: patResult.userId, accountId: patResult.accountId });
     setContextField('userId', patResult.userId);
@@ -826,8 +836,23 @@ function extractPreviewSandboxId(path: string): string | null {
  *
  * Throws HTTPException(403) so the calling middleware aborts the chain.
  */
-async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Promise<void> {
+async function enforceTokenProjectScope(
+  c: Context,
+  tokenProjectId: string,
+  opts: { sessionBound?: boolean } = {},
+): Promise<void> {
   const path = c.req.path;
+
+  // `/v1/platform/runtime-projection` — the sandbox daemon pushing its OWN
+  // runtime projection. A session sandbox holds exactly ONE credential — a
+  // project+SESSION-scoped PAT ("One sandbox, one session-scoped Kortix
+  // credential", platform/services/session-sandbox.ts) — so without this
+  // branch the daemon's push can never reach the sink on any environment.
+  // Allowed ONLY for a session-BOUND token; an ordinary project PAT stays
+  // denied. The handler re-verifies the binding against `session_sandboxes`
+  // (sandbox id ∧ session ∧ account ∧ live) via isSessionSandboxCredential,
+  // so this gate is authentication, not the authorization boundary.
+  if (opts.sessionBound && path === '/v1/platform/runtime-projection') return;
 
   // Whitelist a couple of self-identity probes the CLI hits even for
   // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm

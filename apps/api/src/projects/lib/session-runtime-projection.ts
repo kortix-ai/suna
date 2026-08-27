@@ -171,6 +171,19 @@ export interface SaveRuntimeProjectionInput {
  * Returns `'ignored'` when a NEWER capture is already stored — the guard that
  * stops an out-of-order retry from overwriting fresher truth.
  */
+/**
+ * The out-of-order guard, as a raw `sql` fragment: only overwrite when the
+ * stored capture is not newer than this one. Bind an ISO string with an
+ * explicit `::timestamptz` cast, NOT the raw Date — in a raw `sql` fragment
+ * postgres-js serializes a JS Date with its locale `toString()`
+ * ("Thu Aug 27 2026 03:01:29 GMT+0200 (CEST)"), which Postgres cannot parse as
+ * a timestamp, so every real push 500'd here while the mocked-db unit test
+ * never ran the SQL. Exported so a unit test can pin the compiled parameter.
+ */
+export function capturedAtNotNewerThan(capturedAt: Date) {
+  return sql`${sessionRuntimeProjections.capturedAt} <= ${capturedAt.toISOString()}::timestamptz`;
+}
+
 export async function saveRuntimeProjection(
   input: SaveRuntimeProjectionInput,
 ): Promise<'stored' | 'ignored'> {
@@ -219,8 +232,9 @@ export async function saveRuntimeProjection(
       // they own a session (warm-fork adoption), and a retry ladder can deliver
       // an older capture after a newer one; without this guard the loser's
       // retry would overwrite the winner's state. `<=` and not `<` so a repeat
-      // of the SAME capture is idempotent rather than refused.
-      setWhere: sql`${sessionRuntimeProjections.capturedAt} <= ${input.capturedAt}`,
+      // of the SAME capture is idempotent rather than refused. The ISO+cast
+      // binding lives in capturedAtNotNewerThan — the raw-Date form 500'd.
+      setWhere: capturedAtNotNewerThan(input.capturedAt),
     })
     .returning({ etag: sessionRuntimeProjections.projectionEtag });
 
