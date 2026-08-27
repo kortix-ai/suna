@@ -57,7 +57,7 @@ import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
-import { useOpenCodeEventStream } from './use-opencode-events';
+import { useSessionRuntimeStream } from './use-session-stream';
 import { formatModelString } from './use-opencode-local';
 import {
   type AbortSettlement,
@@ -74,10 +74,8 @@ import {
   useSendOpenCodeMessage,
 } from './use-opencode-sessions';
 import { unwrap } from './use-opencode-sessions/shared';
-import { usePermissionSelfHeal } from './use-permission-self-heal';
 import { useProjectConfig } from './use-project-config';
 import { useProjectModels } from './use-project-models';
-import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
@@ -770,26 +768,23 @@ export interface UseSessionOptions {
    */
   initialOpenCodeSessionId?: string | null;
   /**
-   * Mount the chat-consumption engine — `useSessionSync` (messages/status/diffs/
-   * todos, including its 10s busy-poll SSE-stall fallback) and `useQuestionSelfHeal`
-   * (the 2s missed-`question.asked` self-heal poll) — on top of the boot/lifecycle
-   * machinery every host needs. Default true.
+   * Mount the chat-consumption engine — `useSessionSync` (messages/status/
+   * diffs/todos) — on top of the boot/lifecycle machinery every host needs.
+   * Default true.
    *
    * Set this false when the host mounts its OWN chat surface for the same
    * `(projectId, sessionId)` (e.g. apps/web's `SessionChat`, which has its own
-   * `useSessionSync` + `useQuestionSelfHeal`): with two callers of `useSession`
-   * alive for the same session — this hook (for boot/lifecycle) and the host's
-   * chat component — leaving it `true` would double-mount both pollers, running
-   * the question self-heal poll twice and the busy-poll fallback at ~2x cadence
-   * for no benefit, since nothing reads this hook's chat fields anyway.
+   * `useSessionSync`): with two callers of `useSession` alive for the same
+   * session — this hook (for boot/lifecycle) and the host's chat component —
+   * leaving it `true` would double-drive the transcript machinery for no
+   * benefit, since nothing reads this hook's chat fields anyway.
    *
    * When `false`: `messages`/`diffs`/`todos` are empty arrays, `status` is the
-   * idle status, `isBusy`/`isLoading` are `false`, `questions`/`permissions` stay
-   * live (populated by SSE via the still-active event stream, just without the
-   * self-heal poll backstop), and `replayStartStash` is force-disabled (it reads
-   * the now-empty chat state, so it would never fire correctly). Everything the
-   * boot/lifecycle fields need — `start`/`switch`/`runtimePhase`/`sandbox`/`stage`/
-   * `opencodeSessionId` — is unaffected.
+   * idle status, `isBusy`/`isLoading` are `false`, `questions`/`permissions`
+   * stay live (carried by the session stream), and `replayStartStash` is
+   * force-disabled (it reads the now-empty chat state, so it would never fire
+   * correctly). Everything the boot/lifecycle fields need — `start`/`switch`/
+   * `runtimePhase`/`sandbox`/`stage`/`opencodeSessionId` — is unaffected.
    */
   chatEngine?: boolean;
 }
@@ -1001,10 +996,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setOpenCodeHealth(true);
   }, [switched]);
 
-  // 4. Open the live SSE stream. This was a provider component (OpenCodeEvent
-  // StreamProvider); calling the underlying hook here means the host mounts
-  // nothing. It self-gates on the connection store's healthy flag (seeded above).
-  useOpenCodeEventStream({ enabled: switched });
+  // 4. Open THE live stream — one control-plane SSE per session
+  // (`GET .../sessions/:sid/stream`). Mounted on SESSION IDENTITY, not on
+  // runtime readiness: the control channel (turn verdicts, the prompt queue,
+  // the runtime projection) answers while the box is stopped or waking, and
+  // the runtime channel attaches by itself the moment the daemon does. This
+  // replaced the `/p/`-proxied opencode event stream, the connect-time `/p/`
+  // hydration reads, and the 2 s permission/question self-heal polls.
+  useSessionRuntimeStream(projectId, sessionId, { enabled: startEnabled });
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
@@ -1092,19 +1091,6 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindPending(false);
     setRewindError(null);
   }, [sessionId, ocSessionId]);
-
-  // 5b. Self-heal a missed `question.asked` SSE event (a `question` tool part
-  // rendering as running with nothing in the pending store) — see
-  // `useQuestionSelfHeal` for why this is distinct from the SSE reconnect-gap
-  // hydration in `useOpenCodeEventStream`. Disabled entirely when `chatEngine`
-  // is off — see that option's jsdoc: a host mounting its own chat surface
-  // already runs its own copy of this poller for the same session.
-  useQuestionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId,
-  });
-  usePermissionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId,
-  });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
   // keyed by request id carrying sessionID). useSessionSync does NOT surface them.

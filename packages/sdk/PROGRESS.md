@@ -12,6 +12,57 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-27 — session `session-ux` (WS-Z3) — the controller cutover: ONE stream + bundle, deletions — DONE (net −1,383 LOC)
+
+**The cutover.** `useSession`'s runtime READ path now rides ONE control-plane
+SSE — `GET .../sessions/:sid/stream` — plus the open-bundle. New:
+`core/stream/session-stream-controller.ts` (**`connectSessionStream`**,
+framework-free: capped-backoff reconnect that NEVER parks, 45 s heartbeat
+watchdog, the two cursors never mixed, typed resync + dense-seq gap signals) ·
+`core/stream/session-stream-presence.ts` (streamConnected + runtimeChannelLive
+per scope) · `react/session-stream-routing.ts` (runtime frames → the SAME
+`createEventHandler` reducer, ids verbatim; control snapshots → the exact
+caches the polls filled; `applyRuntimeStateLeg` seeds statuses/permissions and
+recovers questions) · `react/use-session-stream.ts` (**`useSessionRuntimeStream`**,
+mounted on SESSION IDENTITY — a stopped box still gets queue/turn/mirror truth) ·
+`react/use-session-stream-presence.ts`. `session.stream()` keeps its signature
+over the new primitive.
+
+**DELETED** (the point): `openEventStream` + its 1,427-line suite (the
+`/p/<box>/8000/global/event` machine), `useOpenCodeEventStream`/`hydrateCore`
+(the connect-time `/p/` permission/question/status reads), stream-revival, BOTH
+2 s self-heal polls, and the 10 s/30 s transcript tail-verify inside
+`SessionSyncController` (busy→idle turn-end read kept). `/turn` + `/prompts`
+polls hand their cadence over while a stream is connected
+(`workingRefetchInterval`/`promptsRefetchInterval`); a working session whose
+RUNTIME channel is not live (stale daemon — observed live) falls back to the
+old 10 s tail read (`transcriptFallbackPollMs`).
+
+**Public surface: DELIBERATE removals** (assembled ONE PR carries them):
+openEventStream/EventStream{Client,Timers,TimerHandle,ParkedInfo}/
+OpenEventStreamOptions, useOpenCodeEventStream/useRuntimeEventStream/
+OpenCodeEventStreamProvider, both self-heal hooks + helpers. KEPT under the
+same names: `OpenCodeEvent`, `EventStreamHandle`, `./event-stream` subpath
+(shim re-exports the new primitive). Snapshots regenerated deliberately.
+
+**Verified live** (worktree API :15708, real Supabase JWT, instrumented fetch):
+a session open = exactly 2 requests (open-bundle + stream), zero
+/turn|/prompts|/transcript|/p/; reconnect at cseq replays no duplicates; stale
+cepoch → typed resync then 4 snapshots; box-down streams
+`{state:"down",reason:"sandbox_stopped"}` with zero sandbox hops. The runtime
+channel vs a REAL Z1 daemon is still unverified (live box's daemon predates
+Z1 → attach loops up→down(stream_ended); the fallback poll covers that window).
+
+**Gates:** `bun test --isolate src` 2,699 pass / 0 fail (183 files) ·
+`pnpm test -- --sdk-only` PASS · typecheck clean (package + examples) ·
+`smoke:install` ✔ · web tsc = known test.each noise only.
+
+**Full record:** scratchpad `session-ux/DONE-Z3.md` (deletion table, re-homed
+assertions, ONE-PR remainders: stale-daemon window, transcript pages still on
+`/p/`, daemon push, health probe untouched, deployed re-benchmark).
+
+---
+
 ### 2026-08-27 — session `session-ux` (WS-Z2) — the Kortix Runtime API, API half: stream fronting + runtime projection — DONE (SDK part is ADDITIVE ONLY)
 
 **Files (SDK):** `core/rest/projects-client/session-stream.ts` (NEW — the URL

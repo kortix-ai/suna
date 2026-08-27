@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { Message, Part, Todo } from '../runtime/client';
 import { type KortixChatEvent, heartbeatGapEvent, narrowChatEvent } from './chat-events';
-import type { OpenCodeEvent } from './event-stream';
+import type { OpenCodeEvent } from './session-stream-controller';
 
 function ev(type: string, properties: unknown): OpenCodeEvent {
   return { id: 'e1', type, properties } as unknown as OpenCodeEvent;

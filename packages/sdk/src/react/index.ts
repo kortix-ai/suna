@@ -30,19 +30,17 @@ export {
   type BillingErrorUI,
 } from '../core/http/api/errors';
 
-// The framework-free SSE event-stream primitive that `useOpenCodeEventStream`
-// (exported above via `./opencode`) wraps. Re-exported here too so a host
-// already importing from `@kortix/sdk/react` can build its own binding
-// (e.g. a non-QueryClient consumer) without a second import from
-// `@kortix/sdk/event-stream`.
+// The framework-free session-stream primitive the session controller wraps.
+// Re-exported here too so a host already importing from `@kortix/sdk/react`
+// can build its own binding (e.g. a non-QueryClient consumer) without a
+// second import from the root entry.
 export {
-  openEventStream,
-  type EventStreamClient,
+  connectSessionStream,
+  type ConnectSessionStreamOptions,
   type EventStreamHandle,
-  type EventStreamTimers,
   type OpenCodeEvent,
-  type OpenEventStreamOptions,
-} from '../core/stream/event-stream';
+  type SessionStreamConnection,
+} from '../core/stream/session-stream-controller';
 
 // The kortix-master React Query layer (tasks/tickets/projects/milestones/
 // credentials/sandbox-services) relocated from apps/web's six

@@ -107,20 +107,28 @@ export type { SessionHealthResponse, SessionHealthResult } from './core/session/
 export type { SessionRuntimeEntry } from './core/session/session-runtime-registry';
 
 /**
- * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
- * heartbeat watchdog, and event coalescing, with ZERO react/react-query
- * imports. `@kortix/sdk/react`'s `useOpenCodeEventStream` is a thin wrapper
- * around this for the React host; any other host (worker, CLI, non-React UI)
- * can call it directly.
+ * The framework-free session-stream primitive — ONE reconnecting SSE to
+ * `GET /projects/:pid/sessions/:sid/stream` (runtime + control channels),
+ * with cursor bookkeeping, a heartbeat watchdog, and typed resync/gap
+ * signals. ZERO react/react-query imports: any host (worker, CLI, non-React
+ * UI) can call it directly; `session.stream()` and `@kortix/sdk/react`'s
+ * session controller are thin wrappers over it. This replaced the
+ * opencode-proxy `openEventStream` machine — the stream now comes from the
+ * control plane, so it works while the box is stopped or waking.
  */
 export {
-  openEventStream,
-  type EventStreamClient,
+  HEARTBEAT_TIMEOUT_MS,
+  connectSessionStream,
+  runtimeFrameToOpenCodeEvent,
+  type ConnectSessionStreamOptions,
   type EventStreamHandle,
-  type EventStreamTimers,
   type OpenCodeEvent,
-  type OpenEventStreamOptions,
-} from './core/stream/event-stream';
+  type RuntimeGapInfo,
+  type RuntimeResyncInfo,
+  type SessionStreamConnection,
+  type SessionStreamReader,
+  type SessionStreamTimers,
+} from './core/stream/session-stream-controller';
 
 /**
  * Typed error classes for the REST surface — isomorphic (no DOM/React deps),
@@ -445,7 +453,6 @@ export {
   type SessionSyncMessage,
 } from './core/session-sync/session-sync-controller';
 export * from './core/session/url';
-export * from './core/stream/event-stream';
 export * from './core/stream/fetch-sse';
 export * from './core/turns';
 export * from './transcript';
