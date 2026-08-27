@@ -1732,6 +1732,12 @@ export type Opencode = {
 export interface OpencodeSupervisorOptions {
   onStartupMark?: (label: string) => void
   onFirstReadyResponse?: () => void
+  /**
+   * First HTTP response of ANY status from the spawned process: the port is
+   * bound and bun has finished loading the binary. The gap to
+   * onFirstReadyResponse is then OpenCode's Instance init for the workspace.
+   */
+  onFirstListeningResponse?: () => void
   binaryPathOverride?: string
   binaryPathResolverOverride?: () => Promise<string | null>
   nativeBinaryFastPathEnabled?: boolean
@@ -1790,6 +1796,7 @@ export function createOpencodeSupervisor(
   let livenessFailures = 0
   let readinessTimer: ReturnType<typeof setTimeout> | null = null
   let firstReadyResponseReported = false
+  let firstListeningResponseReported = false
   let readyResponseProcess: ChildProcess | null = null
   const readyResponseWaiters = new Set<() => void>()
   let opencodeCwd = cfg.workspace
@@ -2379,7 +2386,12 @@ export function createOpencodeSupervisor(
       if (stopping) return
       const probedPort = livePort()
       const probedChild = child
-      const ready = await checkReady(probedPort)
+      const probe = await probeOpencodeReadiness(`http://127.0.0.1:${probedPort}`, currentCfg.projectTarget, 2_000)
+      const ready = probe === 'ready'
+      if (probe !== 'down' && !firstListeningResponseReported && probedChild === child) {
+        firstListeningResponseReported = true
+        options.onFirstListeningResponse?.()
+      }
       if (stopping) return
       if (probedPort !== livePort()) {
         scheduleReadinessProbe()

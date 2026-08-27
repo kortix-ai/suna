@@ -43,7 +43,6 @@ import {
 import {
   ensureSandboxImage,
   ensureMetaSandboxImage,
-  ensurePiWorkerImage,
   deleteSandboxImage,
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
@@ -374,7 +373,21 @@ export async function provisionSessionSandbox(opts: {
         ? // The pi worker is a shared content-hashed image like meta — never a
           // project template. Its harness arrives at boot as the compiled
           // artifact (KORTIX_PI_RUNTIME_REF/SHA in extraEnvVars).
-          ensurePiWorkerImage({ source: 'session-start', provider: targetProvider })
+          //
+          // Imported lazily, and ONLY this name. `mock.module` replaces a
+          // module wholesale, so every suite that stubs `snapshots/builder` by
+          // listing its exports drops the ones it did not name. Adding
+          // `ensurePiWorkerImage` to the static import above made all eleven of
+          // those suites die at import with `SyntaxError: Export named
+          // 'ensurePiWorkerImage' not found` — attributed to no test, and it
+          // takes an unrelated parallel worker down with it. The register's
+          // rule is "fix the import, not the mocks"
+          // (.claude/skills/learnings/SKILL.md:39). This edge is reached once,
+          // on the pi-worker branch only, so deferring it costs nothing and
+          // needs no test churn.
+          import('../../snapshots/builder').then(({ ensurePiWorkerImage }) =>
+            ensurePiWorkerImage({ source: 'session-start', provider: targetProvider }),
+          )
         : ensureSandboxImage(gitProject, {
           slug,
           accountId,

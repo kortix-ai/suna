@@ -160,3 +160,40 @@ describe('nav contract — dev/staging environment gate', () => {
     expect(body).not.toContain('accessCookie !== expectedAccessCookie');
   });
 });
+
+describe('nav contract — every URL written to history is a real route', () => {
+  // `openTabAndNavigate` pushState's a tab's href straight into the address
+  // bar. `/sessions/<id>` and `/terminal/<id>` are leftovers of the
+  // instance-scoped scheme (packages/sdk/.../instance-routes.ts) and have no
+  // App Router page, so the tab looked fine while the URL 404'd on reload or
+  // Back. Live code must build `/projects/<id>/sessions/<id>` instead.
+  //
+  // The allow-list is exactly the paths proven unreachable: the palette's
+  // no-projectId branch, and the terminal rail that both AppProviders call
+  // sites mount with showRightSidebar={false}.
+  const LEGACY_UNREACHABLE = [
+    'src/features/workspace/command-palette.tsx',
+    'src/components/sidebar/sidebar-right.tsx',
+  ];
+
+  test('no live code writes a /sessions/<id> or /terminal/<id> tab href', () => {
+    const hits = execFileSync(
+      'grep',
+      ['-rln', 'href: `/\\(sessions\\|terminal\\)/', 'src', '--include=*.ts', '--include=*.tsx'],
+      { cwd: WEB_ROOT, encoding: 'utf8' },
+    )
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .filter((f) => !f.includes('.test.'))
+      .filter((f) => !LEGACY_UNREACHABLE.includes(f));
+
+    expect(hits).toEqual([]);
+  });
+
+  test('the canonical builder exists and is project-scoped', () => {
+    const source = readFileSync(resolve(WEB_ROOT, 'src/lib/navigation/session-href.ts'), 'utf8');
+    expect(source).toContain('export function projectSessionHref');
+    expect(source).toContain('`/projects/${projectId}/sessions/${sessionId}`');
+  });
+});

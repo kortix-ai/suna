@@ -77,8 +77,20 @@ failed:` followed by nothing, is this. Read the `Unhandled error` block, not the
 failing test name.
 *Near-miss:* PR #6963 (the Apps viewer token). Cost two CI rounds and a wrong
 "it's a pre-existing flake" call before the real cause was read.
+*Recurrence, same day:* `d990e122aa` added `ensurePiWorkerImage` to the static
+import from `snapshots/builder` in `platform/services/session-sandbox.ts`. The
+module edge already existed — only the NAME was new — and that was enough: all
+eleven suites that stub `snapshots/builder` by listing its exports died at
+import. It reddened the packages lane on two unrelated PRs (#6978, and #6957 on
+different tests) before anyone read the cause. Fixed in #6982 by deferring that
+one name to a dynamic import at its single call site: zero mock churn.
+**It does not reproduce locally** — the full `apps/api` suite passes 8745/0 both
+with and without the fix. Only CI's worker count and interleaving surface it, so
+"it passes on my machine" proves nothing about this class. Read the CI
+`Unhandled error` block.
 *Enforcer:* none. A lint that flags `mock.module` factories which do not spread
-the real module would catch the mocks; nothing catches the import edge.
+the real module would catch the mocks; nothing catches the import edge. Worth
+building — this rule has now been paid for twice in one day.
 
 ### Two migrations generated from the same parent fork the drizzle chain, and main then cannot generate ANY migration (2026-08-27)
 
