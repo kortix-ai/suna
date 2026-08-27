@@ -2,6 +2,7 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSyn
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
+import { dispatchCli, isManagementSubcommand } from './cli'
 import { loadConfig, resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from './config'
 import {
   configureGitCredentialHelper,
@@ -3113,6 +3114,24 @@ if (import.meta.main) {
         process.stderr.write(
           `[compiled-runtime] install failed: ${error instanceof Error ? error.message : String(error)}\n`,
         )
+        process.exit(1)
+      })
+  } else if (isManagementSubcommand(subcommand)) {
+    // kortixd management CLI: version / install / update / rollback /
+    // --health-check / --help. `serve` and any unrecognized verb fall through
+    // to the daemon below. See src/cli.ts.
+    dispatchCli(process.argv.slice(2))
+      .then((outcome) => {
+        if (outcome.action === 'exit') process.exit(outcome.code)
+        // action === 'serve' cannot happen here (management verbs never serve),
+        // but boot the daemon defensively rather than exit silently.
+        main().catch((err) => {
+          logger.error('[boot] fatal', err)
+          process.exit(1)
+        })
+      })
+      .catch((err) => {
+        process.stderr.write(`[kortixd] ${err instanceof Error ? err.message : String(err)}\n`)
         process.exit(1)
       })
   } else {

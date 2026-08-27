@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@kortix/sandbox-agent-server",
+      "name": "kortixd",
       "dependencies": {
         "hono": "^4.12.25",
         "node-forge": "^1.4.0",
