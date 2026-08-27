@@ -9,7 +9,8 @@ import {
   ShieldWarningIcon as ShieldAlert,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
@@ -57,6 +58,7 @@ function apiOrigin() {
 export default function PublicSessionSharePage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const params = useParams();
+  const router = useRouter();
   const token = params?.token as string;
   const [meta, setMeta] = useState<PublicShareMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -138,7 +140,8 @@ export default function PublicSessionSharePage() {
     if (!meta) return;
     const authToken = await getAuthToken();
     if (!authToken) {
-      window.location.href = `/auth?next=${encodeURIComponent(window.location.pathname)}`;
+      // nav-contract: prefetch-only — a defensive bounce for a token that expired between render and click; the offline panel's Sign in <Link> already prefetches this href.
+      router.push(`/auth?next=${encodeURIComponent(`/share/session/${token}`)}`);
       return;
     }
     setStarting(true);
@@ -147,14 +150,16 @@ export default function PublicSessionSharePage() {
         backendUrl: base,
         accessToken: authToken,
       });
-      window.location.reload();
+      // Only `sandbox_status` changed. Re-read the share instead of reloading
+      // the document — `meta` is the page's whole server-derived state.
+      const body = await getPublicShareByToken<PublicShareMeta>(token, {
+        backendUrl: base,
+        cache: 'no-store',
+      });
+      setMeta(body);
     } finally {
       setStarting(false);
     }
-  }
-
-  function signInForAccess() {
-    window.location.href = `/auth?next=${encodeURIComponent(window.location.pathname)}`;
   }
 
   const filePath = meta?.share.file_path || meta?.share.label || '';
@@ -251,13 +256,10 @@ export default function PublicSessionSharePage() {
             {/* One CTA in both auth states. A signed-out visitor still wants
                 "Open in Kortix"; sign-in is a step on the way there, not a
                 different destination. */}
-            <Button
-              size="sm"
-              onClick={() => {
-                window.location.href = hasAuth ? sessionHref : authHref;
-              }}
-            >
-              {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextOpenIn2fdbf464')}
+            <Button size="sm" asChild>
+              <Link href={hasAuth ? sessionHref : authHref} prefetch>
+                {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextOpenIn2fdbf464')}
+              </Link>
             </Button>
             <Hint label="Full screen" side="bottom">
               <Button
@@ -306,8 +308,10 @@ export default function PublicSessionSharePage() {
                   )}
                 </Button>
               ) : (
-                <Button className="mt-5" onClick={signInForAccess}>
-                  {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextSignInb66c3487')}
+                <Button className="mt-5" asChild>
+                  <Link href={authHref} prefetch>
+                    {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextSignInb66c3487')}
+                  </Link>
                 </Button>
               )}
             </div>

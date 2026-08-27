@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
@@ -746,12 +747,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           title="Couldn't start session"
           message="This session is no longer available, or you do not have access to it."
           action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/projects/${projectId}`)}
-            >
-              Back to project
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/projects/${projectId}`} prefetch>
+                Back to project
+              </Link>
             </Button>
           }
         />
@@ -1167,7 +1166,6 @@ function ActiveSessionChat({
   const rawRuntimeBootError = useRuntimeConnectionStore((s) => s.runtimeError);
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
-  const router = useRouter();
 
   const rootSessionId = sessionState.opencodeSessionId;
   const runtimeSessions = sessionState.runtimeSessions;
@@ -1287,18 +1285,26 @@ function ActiveSessionChat({
     const params = new URLSearchParams(searchParams.toString());
     params.delete('oc');
     const query = params.toString();
-    router.replace(
+    // `history.replaceState`, not `router.replace`: this only drops an `oc` key
+    // the page has already resolved to nothing, so there is no server data to
+    // fetch. Dropping a param changes the router cache key, so `router.replace`
+    // would run a cold RSC fetch mid-boot — the worst moment on the hottest
+    // route. Next patches `replaceState` and updates its own canonical URL, so
+    // `useSearchParams` still reports the stripped URL and this effect settles
+    // on its next run. Same mechanism as `openTabAndNavigate` in
+    // `stores/tab-store.ts`.
+    window.history.replaceState(
+      null,
+      '',
       query
         ? `/projects/${projectId}/sessions/${sessionId}?${query}`
         : `/projects/${projectId}/sessions/${sessionId}`,
-      { scroll: false },
     );
   }, [
     selectedOpenCodeSessionId,
     selectedSession,
     sessionsLoading,
     searchParams,
-    router,
     projectId,
     sessionId,
   ]);

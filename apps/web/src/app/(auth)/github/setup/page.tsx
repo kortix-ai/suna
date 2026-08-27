@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -17,6 +18,7 @@ import {
   type LinkableGitHubInstallation,
 } from '@kortix/sdk';
 import { GithubLogoIcon as Github } from '@phosphor-icons/react';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 type SetupState = 'verify' | 'loading' | 'select' | 'empty' | 'saving' | 'done' | 'error';
@@ -46,6 +48,18 @@ function GitHubSetup() {
   const [githubUserToken, setGitHubUserToken] = useState('');
   const [installations, setInstallations] = useState<LinkableGitHubInstallation[]>([]);
   const [installUrl, setInstallUrl] = useState<string | null>(null);
+
+  // `useAppHome` reads document.cookie, which the server pass cannot see. Seed
+  // the state with the door and adopt the real answer after mount, so an href
+  // built from it is identical on both passes.
+  const [homeHref, setHomeHref] = useState(PROJECT_LANDING_PATH);
+  useEffect(() => setHomeHref(appHome), [appHome]);
+
+  // Where "Back" goes. Read (not consumed) at mount so the control can be an
+  // anchor and Next can prefetch it; the click still clears the one-shot entry.
+  const [returnPath, setReturnPath] = useState<string | null>(null);
+  useEffect(() => setReturnPath(peekGitHubSetupReturn()), []);
+  const backHref = returnPath ?? homeHref;
 
   const installState = searchParams.get('state') || '';
   const installationId = searchParams.get('installation_id') || '';
@@ -265,20 +279,19 @@ function GitHubSetup() {
                   Install GitHub App
                 </Button>
               ) : null}
-              <Button
-                size="lg"
-                variant="outline"
-                className="w-full"
-                onClick={() => router.replace(consumeGitHubSetupReturn() ?? appHome)}
-              >
-                Back
+              <Button size="lg" variant="outline" className="w-full" asChild>
+                <Link href={backHref} replace prefetch onClick={clearGitHubSetupReturn}>
+                  Back
+                </Link>
               </Button>
             </div>
           </Rise>
         ) : state === 'error' ? (
           <Rise delay={0.06}>
-            <Button size="lg" className="w-full" onClick={() => router.replace(appHome)}>
-              Back to Kortix
+            <Button size="lg" className="w-full" asChild>
+              <Link href={homeHref} replace prefetch>
+                Back to Kortix
+              </Link>
             </Button>
           </Rise>
         ) : null}
@@ -353,13 +366,27 @@ function requestGitHubUserProof(): Promise<string> {
   });
 }
 
-function consumeGitHubSetupReturn(): string | null {
+/** The stored return path, validated, WITHOUT clearing it. */
+function peekGitHubSetupReturn(): string | null {
   try {
     const value = window.localStorage.getItem('kortix:github_setup_return');
-    window.localStorage.removeItem('kortix:github_setup_return');
     if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
     return value;
   } catch {
     return null;
   }
+}
+
+function clearGitHubSetupReturn(): void {
+  try {
+    window.localStorage.removeItem('kortix:github_setup_return');
+  } catch {
+    // A blocked storage read is not a reason to fail the navigation.
+  }
+}
+
+function consumeGitHubSetupReturn(): string | null {
+  const value = peekGitHubSetupReturn();
+  clearGitHubSetupReturn();
+  return value;
 }

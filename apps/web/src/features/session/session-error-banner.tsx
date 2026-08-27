@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 
 import {
   Checkpoint,
@@ -11,7 +12,8 @@ import {
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
-import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import { buildAccountSettingsHref } from '@/stores/account-settings-modal-store';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
 import {
@@ -58,8 +60,8 @@ function isUsageLimitError(text: string): boolean {
 }
 
 function UsageLimitCard({ errorText, className }: { errorText: string; className?: string }) {
-  const openAccountSettings = useAccountSettingsModalStore((s) => s.openAccountSettings);
-  const openBilling = () => openAccountSettings({ tab: 'billing' });
+  const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
+  const billingHref = buildAccountSettingsHref({ tab: 'billing', accountId });
 
   return (
     <Checkpoint className={className}>
@@ -67,9 +69,11 @@ function UsageLimitCard({ errorText, className }: { errorText: string; className
         <LightningIcon className="size-4 shrink-0" />
       </CheckpointIcon>
       <CheckpointLabel className="overflow-visible whitespace-normal">{errorText}</CheckpointLabel>
-      <CheckpointTrigger onClick={openBilling}>
-        <LightningIcon className="size-3" />
-        Upgrade plan
+      <CheckpointTrigger asChild>
+        <Link href={billingHref} prefetch>
+          <LightningIcon className="size-3" />
+          Upgrade plan
+        </Link>
       </CheckpointTrigger>
     </Checkpoint>
   );
@@ -91,9 +95,13 @@ function InsufficientCreditsCard({
   className?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const openAccountSettings = useAccountSettingsModalStore((s) => s.openAccountSettings);
+  const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const balance = parseBalance(errorText);
-  const openBilling = () => openAccountSettings({ tab: 'billing', highlight: 'credits' });
+  const billingHref = buildAccountSettingsHref({
+    tab: 'billing',
+    highlight: 'credits',
+    accountId,
+  });
   const title = tHardcodedUi.raw(
     'componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits',
   );
@@ -105,12 +113,16 @@ function InsufficientCreditsCard({
         <CreditCardIcon className="size-4 shrink-0" />
       </CheckpointIcon>
       <CheckpointLabel className="overflow-visible whitespace-normal">{label}</CheckpointLabel>
-      <CheckpointTrigger onClick={openBilling}>
-        <LightningIcon className="size-3" />
-        {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}
+      <CheckpointTrigger asChild>
+        <Link href={billingHref} prefetch>
+          <LightningIcon className="size-3" />
+          {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}
+        </Link>
       </CheckpointTrigger>
-      <CheckpointTrigger variant="outline" onClick={openBilling}>
-        {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}
+      <CheckpointTrigger variant="outline" asChild>
+        <Link href={billingHref} prefetch>
+          {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}
+        </Link>
       </CheckpointTrigger>
     </Checkpoint>
   );

@@ -51,9 +51,10 @@ import {
   Sun,
 } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export type MenuLink = {
   label: string;
@@ -150,20 +151,18 @@ export function ThemeSubmenu() {
  * hands the URL to the system browser — so the anchor's own navigation is
  * cancelled to avoid opening the page twice.
  */
-export function HelpSubmenu({
-  deferAfterClose,
-  onClose,
-}: {
-  deferAfterClose: (fn: () => void) => void;
-  onClose: () => void;
-}) {
-  const router = useRouter();
-
+export function HelpSubmenu({ onClose }: { onClose: () => void }) {
   const renderMenuLink = ({ label, href, Icon, internal }: MenuLink) =>
     internal ? (
-      <DropdownMenuItem key={href} onClick={() => deferAfterClose(() => router.push(href))}>
-        <Icon />
-        {label}
+      // An anchor, exactly like the external branch below. `router.push` from a
+      // menu row runs the RSC fetch cold at click time, and that fetch degrades
+      // into a full document load whenever it answers wrong — a build-id skew
+      // mid-deploy, a maintenance redirect, a network blip.
+      <DropdownMenuItem key={href} asChild onClick={onClose}>
+        <Link href={href} prefetch>
+          <Icon />
+          {label}
+        </Link>
       </DropdownMenuItem>
     ) : (
       <DropdownMenuItem key={href} asChild>
@@ -216,10 +215,24 @@ export function useLogoutFlow(deferAfterClose: (fn: () => void) => void) {
 
   const openConfirm = () => deferAfterClose(() => setConfirmOpen(true));
 
+  // `/auth` cannot be an anchor here: the navigation must run AFTER
+  // `signOut()` and `resetClientState()` resolve, and an anchor would leave on
+  // the click instead. Warm the destination while the confirmation is up, so
+  // the push reads the segment cache rather than running the RSC fetch cold —
+  // the fetch that degrades into a full document load when it answers wrong.
+  // Middleware skips identity resolution on `/auth` entirely
+  // (`middleware.ts:494-500`), so prefetching it from a live session is
+  // answered normally.
+  useEffect(() => {
+    if (confirmOpen) router.prefetch('/auth');
+  }, [confirmOpen, router]);
+
   const performLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
     await resetClientState();
+    // nav-contract: prefetch-only — the navigation must follow signOut(), so it
+    // stays a push; the effect above puts /auth in the cache first.
     router.push('/auth');
   };
 

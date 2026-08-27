@@ -29,6 +29,7 @@ import {
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -4418,18 +4419,34 @@ export function SessionChat({
 
   // Thread context for subsessions only (real parentID).
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
+
+  // The "Sub-session of <parent>" back destination, resolved the moment the
+  // parent session loads. It is a route-cache miss on the `?oc=` branch, so it
+  // is warmed below instead of being fetched cold on the click.
+  const backToParentHref = useMemo(() => {
+    if (!session?.parentID || !parentSessionData) return null;
+    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
+    if (!projectRoute) return null;
+    const [, projectId, projectSessionId] = projectRoute;
+    return parentSessionData.parentID
+      ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
+      : `/projects/${projectId}/sessions/${projectSessionId}`;
+  }, [session?.parentID, parentSessionData, pathname]);
+
+  useEffect(() => {
+    if (backToParentHref) router.prefetch(backToParentHref);
+  }, [backToParentHref, router]);
+
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
-    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
     return {
       parentTitle: parentSessionData.title || 'Parent session',
       onBackToParent: () => {
-        if (projectRoute) {
-          const [, projectId, projectSessionId] = projectRoute;
-          const href = parentSessionData.parentID
-            ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
-            : `/projects/${projectId}/sessions/${projectSessionId}`;
-          router.push(href);
+        if (backToParentHref) {
+          // nav-contract: prefetch-only — the composer's threadContext contract
+          // carries an opaque `onBackToParent: () => void`, so this control
+          // cannot render an anchor until that contract carries the href.
+          router.push(backToParentHref);
           return;
         }
         openTabAndNavigate({
@@ -4440,7 +4457,7 @@ export function SessionChat({
         });
       },
     };
-  }, [session?.parentID, parentSessionData, pathname, router]);
+  }, [session?.parentID, parentSessionData, backToParentHref, router]);
 
   // ---- Stable props for <SessionChatInput> (it's React.memo-wrapped, so every
   // prop below must keep referential identity across renders that don't
@@ -4911,20 +4928,21 @@ export function SessionChat({
                 'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
               )}
             </div>
-            {/* Soft nav, not `window.location.assign` — a full page reload
-                  tore down the whole app to move one route. */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                try {
-                  if (sessionId) useTabStore.getState().closeTab?.(sessionId);
-                } catch {}
-                router.push('/');
-              }}
-            >
-              {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
+            {/* An anchor, not a button: home is known at render time, so Next
+                  prefetches it and the click never runs a cold RSC fetch that
+                  could degrade into a full page load. */}
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href="/"
+                prefetch
+                onClick={() => {
+                  try {
+                    if (sessionId) useTabStore.getState().closeTab?.(sessionId);
+                  } catch {}
+                }}
+              >
+                {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
+              </Link>
             </Button>
           </div>
         ) : (

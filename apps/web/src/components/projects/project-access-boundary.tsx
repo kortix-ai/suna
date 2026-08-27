@@ -3,7 +3,7 @@
 import { ShieldWarningIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -261,9 +261,17 @@ function AccessGateScreen({
   onWaiting: (state: WaitingGateState) => void;
 }) {
   const t = useTranslations('hardcodedUi');
-  const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  // Where both "Back to projects" controls below point. Leaving THIS project
+  // (access denied, or the user just left it) is not a browse-the-list escape,
+  // so it goes to the latest project this user has open, never the removed
+  // `/projects` list.
+  //
+  // `useAppHome` reads a cookie, so it is browser-only. This screen never
+  // reaches the server render — the boundary above returns AuthPendingScreen
+  // while its getProject query is loading, which is its state on the server —
+  // so the value can go straight into an href without desyncing hydration.
   const appHome = useAppHome();
   const { data: adminRole } = useAdminRole();
   const noteId = useId();
@@ -323,10 +331,6 @@ function AccessGateScreen({
   const copy = gateCopyKeys(state);
   const forbidden = isForbiddenState(state);
   const action = gateAction(state);
-  // "Back to projects" leaves THIS project (access denied, or the user just
-  // left it) — not a browse-the-list escape, so it goes to the latest
-  // project this user has open, never the removed `/projects` list.
-  const goToProjects = () => router.push(appHome);
   const showAdminBypass = forbidden && !!adminRole?.isAdmin;
 
   return (
@@ -403,10 +407,13 @@ function AccessGateScreen({
               </Button>
             </form>
           ) : action === 'leave' ? (
-            // Terminal. The way out IS the primary action, so it is a button
-            // rather than the quiet link the other screens carry underneath.
-            <Button type="button" size="lg" className="mt-5 w-full" onClick={goToProjects}>
-              {t.raw('projectAccessBoundary.projectsAction')}
+            // Terminal. The way out IS the primary action, so it carries the
+            // button's own styling rather than the quiet link the other screens
+            // show underneath — an anchor, so the payload is already cached.
+            <Button asChild size="lg" className="mt-5 w-full">
+              <Link href={appHome} prefetch>
+                {t.raw('projectAccessBoundary.projectsAction')}
+              </Link>
             </Button>
           ) : (
             <Button
@@ -431,13 +438,13 @@ function AccessGateScreen({
                 {action === 'leave' ? (
                   <span />
                 ) : (
-                  <button
-                    type="button"
-                    onClick={goToProjects}
+                  <Link
+                    href={appHome}
+                    prefetch
                     className="hover:text-foreground -my-2 inline-block cursor-pointer py-2 underline-offset-4 transition-colors hover:underline"
                   >
                     {t.raw('projectAccessBoundary.projectsAction')}
-                  </button>
+                  </Link>
                 )}
                 {/*
                   403 only. Admin bypass re-fetches with a bypass header, which

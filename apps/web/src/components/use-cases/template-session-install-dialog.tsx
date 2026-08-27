@@ -105,6 +105,9 @@ export function TemplateSessionInstallDialog({
         projectId,
         `${TEMPLATE_CATALOG_NAMESPACE}:${templateId}`,
       );
+      // nav-contract: prefetch-only — `session_id` comes back from the install
+      // POST, and the project may be provisioned in the same click, so neither
+      // half of this href exists before the click.
       router.push(`/projects/${projectId}/sessions/${session_id}`);
     } catch (e) {
       setError(

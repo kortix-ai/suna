@@ -136,6 +136,15 @@ export function useNewProjectSession(projectId: string | undefined) {
     [],
   );
 
+  // The no-options branch below always lands on the project composer, so the
+  // destination is known long before any click. Warm it once per project: the
+  // anchor entry points get it from their own <Link>, and this covers the two
+  // that cannot be anchors (the Cmd+J shortcut, the command palette row).
+  useEffect(() => {
+    if (!projectId) return;
+    router.prefetch(`/projects/${projectId}`);
+  }, [projectId, router]);
+
   const startSession = useCallback(
     (opts?: NewProjectSessionOpts) => {
       if (!projectId) {
@@ -144,6 +153,9 @@ export function useNewProjectSession(projectId: string | undefined) {
       }
 
       if (!opts) {
+        // nav-contract: prefetch-only — this branch serves the keyboard
+        // shortcut and the command palette row, neither of which is an anchor.
+        // The effect above holds the composer payload in the segment cache.
         router.push(`/projects/${projectId}`);
         return;
       }
@@ -271,6 +283,9 @@ export function useNewProjectSession(projectId: string | undefined) {
               queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) }),
           });
           opts?.onNavigate?.(sessionId);
+          // nav-contract: prefetch-only — the session id is minted or returned
+          // by the create POST, so no anchor can name it. `takeOrCreateSession`
+          // prefetches the route the moment the id exists.
           router.push(`/projects/${projectId}/sessions/${sessionId}`);
         },
       }).catch((err) => {

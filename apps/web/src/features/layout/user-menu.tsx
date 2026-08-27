@@ -22,7 +22,6 @@ import {
   ThemeSubmenu,
   useLogoutFlow,
 } from '@/features/layout/user-menu-shared';
-import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { isBillingEnabled } from '@/lib/config';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -38,7 +37,7 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 
@@ -64,7 +63,6 @@ export function UserMenu({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const router = useRouter();
   const sidebar = React.useContext(SidebarContext);
   const { selectedAccountId } = useCurrentAccountStore();
   const { isOpen: referralOpen, closeDialog: closeReferral } = useReferralDialog();
@@ -97,36 +95,14 @@ export function UserMenu({
 
   const canManageBilling = usePermission(currentAccount?.account_id, 'billing.write').allowed;
 
+  // For the rows that OPEN something in place — the log-out confirmation, the
+  // Help submenu's external tabs. Navigating rows do not use it: they are
+  // anchors now, and an anchor needs no deferral because the App Router owns
+  // the transition.
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
     requestAnimationFrame(() => fn());
   };
-
-  /**
-   * NAVIGATE, do not poke the store.
-   *
-   * `useSettingsPanelStore.openSettings(tab)` only opens something when a
-   * `SettingsPanel` is mounted to observe it. There are exactly two such mounts
-   * — `project-layout/project-shell.tsx:195` and
-   * `workspace/settings/standalone-settings-route.tsx:113` — and `UserMenu` is
-   * inside NEITHER. Its only mount is the app header
-   * (`features/layout/app-header.tsx:108`, `variant="header"`), and the only
-   * layout rendering that header is `app/(app)/accounts/layout.tsx:26`. So a
-   * store write here set `open: true` with no subscriber and the rows did
-   * nothing at all — the click was silently swallowed.
-   *
-   * `/settings/<tab>` is the account-scoped door into the same overlay
-   * (`app/(app)/settings/[tab]/page.tsx` -> `StandaloneSettingsRoute`, which
-   * mounts the panel itself and validates the segment through
-   * `parseSettingsTab`). `SettingsTab` is the segment vocabulary, so the
-   * template needs no mapping table.
-   *
-   * `deferAfterClose` stays: the dropdown closes on the current frame and the
-   * navigation runs on the next, so the menu is not left mounted over a
-   * route transition.
-   */
-  const openUserSettings = (tab: SettingsTab) =>
-    deferAfterClose(() => router.push(`/settings/${tab}`));
 
   const { openConfirm: openLogoutConfirm, dialog: logoutDialog } = useLogoutFlow(deferAfterClose);
 
@@ -201,22 +177,26 @@ export function UserMenu({
       >
         {currentAccount && (
           <>
-            <DropdownMenuItem
-              onClick={() =>
-                deferAfterClose(() => router.push(`/accounts/${currentAccount.account_id}`))
-              }
-              size="sm"
-            >
-              {/* No avatar: the trigger right below already shows it, and
-                  repeating it inside the menu it opened is decoration. The
-                  email is the identifier that actually disambiguates which
-                  account you are about to open. */}
-              <div className="min-w-0 flex-1 leading-tight">
-                <div className="text-foreground truncate text-sm font-medium">{user.email}</div>
-                <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">
-                  {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextAccountSettings007162f5')}
+            {/* An anchor, not a handler. `router.push` from a menu row runs the
+                RSC fetch cold at click time, and that fetch degrades into a full
+                document load whenever it answers wrong — `/accounts` is not in
+                `middleware.ts` PUBLIC_ROUTES, so an expired session answers it
+                with an HTML redirect to `/auth`. `onClick` keeps the explicit
+                close and must not call `preventDefault`: that cancels the
+                anchor. */}
+            <DropdownMenuItem asChild onClick={() => setMenuOpen(false)} size="sm">
+              <Link href={`/accounts/${currentAccount.account_id}`} prefetch>
+                {/* No avatar: the trigger right below already shows it, and
+                    repeating it inside the menu it opened is decoration. The
+                    email is the identifier that actually disambiguates which
+                    account you are about to open. */}
+                <div className="min-w-0 flex-1 leading-tight">
+                  <div className="text-foreground truncate text-sm font-medium">{user.email}</div>
+                  <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">
+                    {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextAccountSettings007162f5')}
+                  </div>
                 </div>
-              </div>
+              </Link>
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />
@@ -234,14 +214,36 @@ export function UserMenu({
             `ACCOUNT_SCOPED_SETTINGS_TABS`, so with no project open the rail
             filters it out and the panel falls back anyway. Same tab
             `/settings` opens on (`STANDALONE_DEFAULT_SETTINGS_TAB`). */}
-        <DropdownMenuItem onClick={() => openUserSettings('profile')} size="sm">
-          <CogOne />
-          {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
+        {/* NAVIGATE, do not poke the store.
+            `useSettingsPanelStore.openSettings(tab)` only opens something when
+            a `SettingsPanel` is mounted to observe it. There are exactly two
+            such mounts — `project-layout/project-shell.tsx:195` and
+            `workspace/settings/standalone-settings-route.tsx:113` — and
+            `UserMenu` is inside NEITHER. Its only mount is the app header
+            (`features/layout/app-header.tsx:108`, `variant="header"`), and the
+            only layout rendering that header is `app/(app)/accounts/layout.tsx:26`.
+            So a store write here set `open: true` with no subscriber and the
+            row did nothing at all — the click was silently swallowed.
+            `/settings/profile` is the account-scoped door into the same overlay
+            (`app/(app)/settings/[tab]/page.tsx` -> `StandaloneSettingsRoute`,
+            which mounts the panel itself and validates the segment through
+            `parseSettingsTab`).
+            `prefetch` explicitly. `app/(app)/settings/loading.tsx` is the
+            default `auto` intent would cache nothing for a dynamic route. */}
+        <DropdownMenuItem asChild onClick={() => setMenuOpen(false)} size="sm">
+          <Link href="/settings/profile" prefetch>
+            <CogOne />
+            {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
+          </Link>
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/download'))} size="sm">
-          <DownloadSimple />
-          {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
+        {/* `prefetch` explicitly: `(public)/download/page.tsx` awaits `headers()`
+            and has no `loading.tsx`. */}
+        <DropdownMenuItem asChild onClick={() => setMenuOpen(false)} size="sm">
+          <Link href="/download" prefetch>
+            <DownloadSimple />
+            {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
+          </Link>
         </DropdownMenuItem>
 
         {/* `/accounts/<id>?tab=billing`, NOT `/settings/billing`. Billing is
@@ -254,22 +256,17 @@ export function UserMenu({
             who reaches it, so the row staying hidden is what keeps a member
             without `billing.write` from being handed the link. */}
         {currentAccount && isBillingEnabled() && canManageBilling && (
-          <DropdownMenuItem
-            onClick={() =>
-              deferAfterClose(() =>
-                router.push(`/accounts/${currentAccount.account_id}?tab=billing`),
-              )
-            }
-            size="sm"
-          >
-            <CreditCard />
-            Billing
+          <DropdownMenuItem asChild onClick={() => setMenuOpen(false)} size="sm">
+            <Link href={`/accounts/${currentAccount.account_id}?tab=billing`} prefetch>
+              <CreditCard />
+              Billing
+            </Link>
           </DropdownMenuItem>
         )}
 
         <ThemeSubmenu />
 
-        <HelpSubmenu deferAfterClose={deferAfterClose} onClose={() => setMenuOpen(false)} />
+        <HelpSubmenu onClose={() => setMenuOpen(false)} />
 
         {/* Log out is the only row that ends something, so it gets its own
             group. Nothing sits below it — the last item in a menu is the one a

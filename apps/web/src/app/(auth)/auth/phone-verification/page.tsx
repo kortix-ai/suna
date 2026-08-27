@@ -17,7 +17,7 @@ import {
 } from '@/hooks/auth';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { SignOutIcon as LogOut } from '@phosphor-icons/react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -34,6 +34,7 @@ export default function PhoneVerificationPage() {
   const [isSubmittingPhone, setIsSubmittingPhone] = useState(false);
   const [hasExistingFactor, setHasExistingFactor] = useState(false);
   const router = useRouter();
+  const queryClient = useQueryClient();
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear the post-verify redirect timer if we unmount before it fires.
@@ -141,8 +142,11 @@ export default function PhoneVerificationPage() {
 
       // If enrollment fails because factor already exists, try to handle existing factor
       if (err instanceof Error && err.message.includes('already exists')) {
-        // Force refetch of factors
-        window.location.reload();
+        // The factor is already enrolled — refetch it. Only the factor list is
+        // stale, so invalidate that query; reloading the document threw away
+        // the whole React tree and re-ran the Supabase session bootstrap to
+        // achieve the same refetch.
+        void queryClient.invalidateQueries({ queryKey: ['phone-verification-factors'] });
       }
     } finally {
       setIsSubmittingPhone(false);
@@ -189,6 +193,7 @@ export default function PhoneVerificationPage() {
       // Clear local storage before sign out
       clearUserLocalStorage();
       await signOut().catch(() => void 0);
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Sign-out: the document load is the point, it drops every in-memory cache and provider.
       window.location.href = '/';
     },
   });

@@ -274,9 +274,13 @@ export function SessionApprovalNotice({
                           asChild
                         >
                           {/* Plain anchor, not next/link: the same absolute URL is what
-                              gets relayed out-of-band, so there is one link shape. */}
+                              gets relayed out-of-band, so there is one link shape. It
+                              opens a new tab, as the ExternalLink icon promises —
+                              in this tab it would tear down the live session. */}
                           <a
                             href={action.approval_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             aria-label="Open the full approval page"
                             onClick={(event) => event.stopPropagation()}
                             onKeyDown={(event) => event.stopPropagation()}

@@ -12,6 +12,7 @@ import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
 import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { BrandingProvider } from '@/features/branding/branding-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
+import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
 import { locales, type Locale } from '@/i18n/config';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
@@ -358,6 +359,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               <TooltipProvider delayDuration={300}>
                 <AuthProvider>
                   <I18nProvider>
+                    {/* Publishes the App Router to lib/navigation/router-bridge so
+                    stores and error handlers navigate softly instead of
+                    reloading the document. */}
+                    <RouterBridge />
                     <BrowserNoiseGuard />
                     <DesktopChrome />
                     <DesktopUrlPrompt />

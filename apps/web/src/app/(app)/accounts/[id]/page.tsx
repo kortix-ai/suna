@@ -22,6 +22,7 @@ import {
 import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { m, useReducedMotion } from 'motion/react';
+import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -570,10 +571,19 @@ export default function AccountSettingsPage() {
                     {items.map((item) => {
                       const active = item.id === activeSection;
                       return (
-                        <button
+                        // A rail item is an anchor, not a button: `?tab=<id>`
+                        // is part of the router cache key, so each of the
+                        // twelve sections prefetches as its own segment-cache
+                        // entry and the click never runs a cold RSC fetch.
+                        // `replace` + `scroll={false}` keep the exact history
+                        // and scroll behaviour `navigate()` had, and the bare
+                        // `?tab=` drops the `project` / `group` / `member`
+                        // params the same way `navigate(section)` does.
+                        <Link
                           key={item.id}
-                          type="button"
-                          onClick={() => navigate(item.id)}
+                          href={`/accounts/${accountId}?tab=${item.id}`}
+                          replace
+                          scroll={false}
                           aria-current={active ? 'page' : undefined}
                           className={cn(
                             'flex h-8 shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-sm whitespace-nowrap transition-colors lg:w-full',
@@ -584,7 +594,7 @@ export default function AccountSettingsPage() {
                         >
                           <item.icon className="size-4 shrink-0" />
                           {item.label}
-                        </button>
+                        </Link>
                       );
                     })}
                   </div>
