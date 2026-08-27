@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CATALOG, bedrockInferenceProfileRank } from '@kortix/llm-catalog';
 import { type FlatModel, flattenModels, isOfferedModel } from './model-flatten';
-import { nativeProviderListFromCatalog } from './provider-selection';
+import { nativeProviderListFromCatalog, projectLlmCatalogToProviderList } from './provider-selection';
 import { modelProviderMode } from './use-opencode-local';
 import { healBedrockModelKey } from './bedrock-invokable';
 
@@ -195,5 +195,77 @@ describe('use-opencode-local applies the guard at every resolution seam', () => 
       source.indexOf('const explicitModelKey'),
     );
     expect(block).toContain('autoSeedableModels');
+  });
+});
+
+// ── Round 3: under the GATEWAY the heal must be inert ───────────────────────
+//
+// Under the gateway every served model is registered as providerID `kortix`
+// and the REAL provider rides in the modelID prefix
+// (`amazon-bedrock/global.anthropic.claude-opus-5`, `openrouter/z-ai/glm-5.3-flash`).
+// `bedrockInferenceProfileRank` strips that prefix, so a Bedrock profile served
+// through the gateway still ranks > 0 — and "the key's OWN provider", matched
+// by `providerID`, is the WHOLE catalog. On the deployed Essentia bundle (web
+// 39685da4, 2026-08-27) every pick without a `global.`/regional twin —
+// OpenRouter GLM-5.3-Flash, Bedrock GLM-5, Codex GPT-5.6 Sol — fell through to
+// step 3 and "healed" to the newest profile in the catalog, Claude Opus 5
+// (Global). The chip never left Opus, and every prompt was sent with it
+// (`pending_prompt.model` on the session row).
+//
+// The gateway already re-prefixes a bare Bedrock id after the 400 (PR #6897);
+// the heal is the NATIVE analogue and has no business on a gateway key.
+describe('under the gateway the heal is inert — the gateway owns bare-id retry', () => {
+  const gatewayCatalog = projectLlmCatalogToProviderList({
+    models: {
+      'amazon-bedrock/global.anthropic.claude-opus-5': {
+        name: 'Claude Opus 5 (Global)',
+        provider: 'amazon-bedrock',
+        released: '2026-08-01',
+        enabled: true,
+      },
+      'amazon-bedrock/zai.glm-5': {
+        name: 'GLM-5',
+        provider: 'amazon-bedrock',
+        released: '2026-03-01',
+        enabled: true,
+      },
+      'openrouter/z-ai/glm-5.3-flash': {
+        name: 'GLM-5.3-Flash',
+        provider: 'openrouter',
+        released: '2026-07-01',
+        enabled: true,
+      },
+      'codex/gpt-5.6-sol': {
+        name: 'GPT-5.6 Sol (ChatGPT)',
+        provider: 'codex',
+        released: '2026-06-01',
+        enabled: true,
+      },
+    },
+  } as never);
+  const mode = modelProviderMode(gatewayCatalog);
+  const offered = flattenModels(gatewayCatalog, { providerMode: mode });
+
+  test('the fixture IS the gateway shape production flattens', () => {
+    expect(mode).toBe('gateway');
+    expect(offered.every((model) => model.providerID === 'kortix')).toBe(true);
+    // The trap: a Bedrock profile served through the gateway still ranks as one.
+    expect(bedrockInferenceProfileRank('amazon-bedrock/global.anthropic.claude-opus-5')).toBe(2);
+  });
+
+  test('THE REGRESSION: an OpenRouter pick is returned untouched, never the Bedrock flagship', () => {
+    const key = { providerID: 'kortix', modelID: 'openrouter/z-ai/glm-5.3-flash' };
+    expect(isOfferedModel(offered, key)).toBe(true);
+    expect(healBedrockModelKey(key, offered)).toBe(key);
+  });
+
+  test('a bare Bedrock id under the gateway is left for the gateway to re-prefix', () => {
+    const key = { providerID: 'kortix', modelID: 'amazon-bedrock/zai.glm-5' };
+    expect(healBedrockModelKey(key, offered)).toBe(key);
+  });
+
+  test('a Codex pick is returned untouched', () => {
+    const key = { providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' };
+    expect(healBedrockModelKey(key, offered)).toBe(key);
   });
 });
