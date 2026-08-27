@@ -111,7 +111,7 @@ import {
   parseSessionRuntimeContext,
 } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { buildSessionRuntimeEnv } from './session-runtime-env';
+import { buildPiWorkerSessionEnvVars, buildSessionRuntimeEnv } from './session-runtime-env';
 import {
   buildPlatformMetaOpenCodeConfig,
   resolvePlatformMetaSandbox,
@@ -1361,12 +1361,23 @@ export async function createProjectSession(input: {
   if (!platformMetaAgent && resolveFeatureFlag(project.metadata, 'pi_worker')) {
     try {
       const authedProject = await withProjectGitAuth(project);
-      const runtime = await resolveManifestRuntime(authedProject, baseRef);
-      if (runtime === 'pi') {
-        const ref = (baseRef ?? '').trim() || project.defaultBranch;
-        piWorkerSha = await resolveCommitSha(authedProject, ref);
+      const ref = (baseRef ?? '').trim() || project.defaultBranch;
+      // One round trip, not two: the runtime read and the tip resolution are
+      // independent, and both sit on the POST /sessions critical path. A
+      // non-pi manifest wastes one ls-remote-sized read; a pi manifest saves
+      // a full sequential git hop.
+      const [runtime, sha] = await Promise.all([
+        resolveManifestRuntime(authedProject, baseRef),
+        resolveCommitSha(authedProject, ref).catch(() => null),
+      ]);
+      if (runtime === 'pi' && sha) {
+        piWorkerSha = sha;
         piWorkerBoot = true;
         sandboxSlug = PI_WORKER_SANDBOX_SLUG;
+      } else if (runtime === 'pi') {
+        console.warn(
+          `[sessions] pi manifest on ${projectId} but tip resolution for '${ref}' failed; booting OpenCode path`,
+        );
       }
     } catch (err) {
       console.warn(
@@ -1695,8 +1706,10 @@ export async function createProjectSession(input: {
       // just means the daemon's fetch fallback. Deliberately NOT tied to
       // KORTIX_FAST_COLD_BOOT_ENABLED (the image/rootfs experiment), which
       // deploy-dev pins to an explicit `false`.
+      // The worker path never clones: the scaffold/delta hint is pure waste
+      // there, and the hint alone holds the env build for up to 2 s.
       const fastBootGitHintPromise =
-        config.KORTIX_FAST_GIT_BOOT_ENABLED
+        !piWorkerBoot && config.KORTIX_FAST_GIT_BOOT_ENABLED
         ? Promise.race([
             projectWithGitAuthPromise
               .then((projectWithGitAuth) =>
@@ -1714,7 +1727,9 @@ export async function createProjectSession(input: {
             if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
           })
         : Promise.resolve(undefined);
-      if (config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
+      // OpenCode compiled-boot artifacts serve the daemon path only; a worker
+      // boot fetches its own per-commit pi artifact instead.
+      if (!piWorkerBoot && config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
         void Promise.all([projectWithGitAuthPromise, fastBootGitHintPromise])
           .then(([projectWithGitAuth, hint]) =>
             hint?.baseSha
@@ -1746,7 +1761,27 @@ export async function createProjectSession(input: {
             });
           });
       }
-      const envPromise = fastBootGitHintPromise
+      // Worker boots skip the OpenCode env build entirely: the compiled
+      // artifact already carries the agent map, v0 grants the worker no
+      // project secrets (the gateway resolves BYOK server-side per request),
+      // and nothing clones. Measured on dev 2026-08-27, the full chain
+      // (hint race + compiled config + secret grant + secrets snapshot) cost
+      // 1.1–2.4 s of every cold pi boot.
+      const envPromise = piWorkerBoot
+        ? Promise.resolve(
+            buildPiWorkerSessionEnvVars({
+              projectId,
+              sessionId,
+              agentName,
+              opencodeModel,
+              apiUrl: deriveKortixApiBase(),
+              frontendUrl: sandboxFrontendBaseUrl(),
+            }),
+          ).then((envVars) => {
+            tl.mark('env-vars');
+            return envVars;
+          })
+        : fastBootGitHintPromise
         .then((fastBootGitHint) =>
           buildSessionSandboxEnvVars({
             accountId,

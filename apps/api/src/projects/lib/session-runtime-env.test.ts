@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { auditRelayEnvPassthrough, buildSessionRuntimeEnv } from './session-runtime-env';
+import {
+  auditRelayEnvPassthrough,
+  buildPiWorkerSessionEnvVars,
+  buildSessionRuntimeEnv,
+} from './session-runtime-env';
 
 const BASE_INPUT = {
   projectId: 'proj-1',
@@ -353,5 +357,48 @@ describe('audit relay emission knobs', () => {
       KORTIX_AUDIT_RELAY_DROP_TYPES: '',
       KORTIX_AUDIT_RELAY_COALESCE: '0',
     });
+  });
+});
+
+describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
+  const input = {
+    projectId: 'proj-1',
+    sessionId: 'sess-1',
+    agentName: 'dev',
+    apiUrl: 'https://api.kortix.test/v1',
+    frontendUrl: 'https://kortix.test',
+    opencodeModel: 'openrouter/anthropic/claude-sonnet-4.5',
+  };
+
+  test('emits exactly the worker contract, nothing from the OpenCode chain', () => {
+    const env = buildPiWorkerSessionEnvVars(input);
+    expect(env).toEqual({
+      KORTIX_PROJECT_ID: 'proj-1',
+      KORTIX_SESSION_ID: 'sess-1',
+      KORTIX_SERVICE_PORT: '8000',
+      KORTIX_AGENT_NAME: 'dev',
+      KORTIX_AGENT: 'dev',
+      KORTIX_API_URL: 'https://api.kortix.test/v1',
+      KORTIX_FRONTEND_URL: 'https://kortix.test',
+      KORTIX_PROJECT_AUTO_CLONE: '0',
+      KORTIX_MODEL: 'openrouter/anthropic/claude-sonnet-4.5',
+    });
+    // The heavy chain must never leak in: no compiled config (baked into the
+    // artifact), no secret plumbing (v0 grants the worker none), no git.
+    expect(env).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG');
+    expect(env).not.toHaveProperty('KORTIX_PROJECT_SECRET_NAMES');
+    expect(env).not.toHaveProperty('KORTIX_REPO_URL');
+    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
+  });
+
+  test('model and frontend URL are optional', () => {
+    const env = buildPiWorkerSessionEnvVars({
+      projectId: 'proj-1',
+      sessionId: 'sess-1',
+      agentName: 'dev',
+      apiUrl: 'https://api.kortix.test/v1',
+    });
+    expect(env).not.toHaveProperty('KORTIX_MODEL');
+    expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
   });
 });

@@ -1897,6 +1897,19 @@ export async function reapSupersededPiWorkerSnapshots(
 
 const piWorkerImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
 
+// A verified-active pi worker snapshot stays valid: the name is content-hashed
+// (immutable) and the reaper only deletes SUPERSEDED hashes, never the current
+// one. Without this memo every session create paid a provider state round trip
+// (~310 ms measured on dev 2026-08-27). The TTL bounds staleness if the
+// current-hash snapshot is ever deleted by hand mid-window — the same race the
+// uncached per-create check already had, just up to 5 minutes wider.
+const PI_WORKER_IMAGE_READY_TTL_MS = 5 * 60_000;
+const piWorkerImageReady = new Map<string, { at: number; result: EnsureSandboxImageResult }>();
+
+export function __resetPiWorkerImageReadyCacheForTests(): void {
+  piWorkerImageReady.clear();
+}
+
 /**
  * The shared pi worker image — the meta image's shape exactly, but smaller in
  * every way that matters: node plus a fetch-and-exec boot script, no daemon,
@@ -1916,6 +1929,10 @@ export async function ensurePiWorkerImage(opts: {
   const contentHash = piWorkerImageFingerprint();
   const snapshotName = piWorkerSnapshotName(contentHash);
   const buildKey = `${opts.provider}:${snapshotName}`;
+  const ready = piWorkerImageReady.get(buildKey);
+  if (ready && Date.now() - ready.at < PI_WORKER_IMAGE_READY_TTL_MS) {
+    return ready.result;
+  }
   let image = piWorkerImageBuilds.get(buildKey);
   let ownsImage = false;
   if (!image) {
@@ -1957,10 +1974,13 @@ export async function ensurePiWorkerImage(opts: {
   }
   try {
     const result = await image;
-    if (result.built) return result;
-    return await prepareSnapshotForReuse(provider, snapshotName, result, {
-      blocking: (opts.source ?? 'session-start') !== 'session-start',
-    });
+    const prepared = result.built
+      ? result
+      : await prepareSnapshotForReuse(provider, snapshotName, result, {
+          blocking: (opts.source ?? 'session-start') !== 'session-start',
+        });
+    piWorkerImageReady.set(buildKey, { at: Date.now(), result: prepared });
+    return prepared;
   } finally {
     if (ownsImage) piWorkerImageBuilds.delete(buildKey);
   }

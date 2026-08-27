@@ -641,7 +641,9 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
         .where(eq(projects.projectId, row.projectId))
         .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
 
-      if (config.KORTIX_FAST_COLD_BOOT_ENABLED && writeUpstream) {
+      // Same switch as the create-time hint (#6973): a seeded project's FIRST
+      // session must already find its base tip + scaffold delta cached.
+      if (config.KORTIX_FAST_GIT_BOOT_ENABLED && writeUpstream) {
         const hintTask = resolveFastBootGitHintWithCache(
           {
             projectId: row.projectId,

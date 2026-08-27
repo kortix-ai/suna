@@ -39,6 +39,7 @@ import { makeOpenApiApp } from '../openapi';
 import { loadGitProject } from '../projects/lib/git';
 import { refreshMirror, runGit } from '../projects/git/mirror';
 import { writeScaffoldDeltaBundle } from '../projects/git/commits';
+import { resolveFastBootGitHintWithCache } from '../projects/lib/fast-boot-git-hint';
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, rename, rm, stat, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -246,6 +247,24 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
         // artifacts warm per project without touching the environment. The env
         // mode stays the platform-wide switch; the flag is the per-project one.
         const piWorkerEnabled = resolveFeatureFlag(auth.project.metadata, 'pi_worker');
+        // Warm the fresh-session git hint (base tip + scaffold delta + OpenCode
+        // config dir) right after the push that moved the tip, so the next
+        // session create finds it cached instead of losing the 2 s create-time
+        // race on a cold mirror (measured on dev 2026-08-27: a 200 KB delta's
+        // first session fell back to a 6 s proxied fetch; the second, with the
+        // cached hint, materialized in 1.7 s via the remote bundle).
+        if (config.KORTIX_FAST_GIT_BOOT_ENABLED) {
+          void resolveFastBootGitHintWithCache(
+            gitProject,
+            gitProject.defaultBranch,
+            auth.project.metadata,
+          ).catch((err) => {
+            console.warn(
+              `[git-proxy] fast-boot hint warm skipped for ${projectId}:`,
+              err instanceof Error ? err.message : err,
+            );
+          });
+        }
         const [compiledResult, piResult] = await Promise.allSettled([
           config.KORTIX_COMPILED_BOOT_MODE !== 'off' || piWorkerEnabled
             ? prebuildDefaultBranchArtifacts(
