@@ -399,7 +399,7 @@ describe('readSessionPromptsInbox and the open bundle', () => {
   test('falls back to /prompts when the bundle could not read the inbox', async () => {
     resetSessionOpenBundles();
     const urls = mockFetch((url) =>
-      url.includes('open-bundle')
+      url.includes('snapshot')
         ? bundle({ known: false, reason: 'inbox read failed' })
         : { prompts: [{ prompt_id: 'p9', state: 'queued' }] },
     );

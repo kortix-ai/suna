@@ -1021,7 +1021,7 @@ test('a prompt call throws on a non-2xx instead of returning a half-answer', asy
 // returns, so a caller can hand a leg straight to the consumer that already
 // reads that endpoint.
 
-test('getSessionOpenBundle hits GET /projects/:id/sessions/:sid/open-bundle', async () => {
+test('getSessionOpenBundle hits GET /projects/:id/sessions/:sid/snapshot', async () => {
   nextResponse = { status: 200, body: { observed_at: 'now' } };
   const bundle = await getSessionOpenBundle('P1', 'S1');
   expect(last().url).toContain('/projects/P1/sessions/S1/snapshot');
