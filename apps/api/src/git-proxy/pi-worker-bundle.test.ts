@@ -93,6 +93,13 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime artifact (real bu
         await new Promise((r) => setTimeout(r, 50));
       }
       expect(health?.ok).toBe(true);
+      // The double-start regression crashed the process ~immediately AFTER
+      // health first answered, so a single poll flaky-passed. Survival for a
+      // beat plus a second answer is the actual assertion.
+      await new Promise((r) => setTimeout(r, 1500));
+      expect(child.exitCode).toBeNull();
+      const again = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(again.ok).toBe(true);
     } finally {
       child.kill('SIGKILL');
     }

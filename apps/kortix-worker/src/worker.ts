@@ -451,6 +451,8 @@ export async function startWorker(cfg = configFromEnv()) {
   return { server, agent, env, port, close: () => new Promise<void>((r) => server.close(() => r())) };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  startWorker().catch((e) => { console.error(e); process.exit(1); });
-}
+// No self-start guard here: src/main.ts is the bundle's sole entrypoint and
+// owns startup. In the compiled artifact every module shares one
+// import.meta.url, so a guard here fired ALONGSIDE main's start — two binds on
+// one port, EADDRINUSE ~1s after boot, dead worker. Found on the first
+// dev-served artifact; the api test now asserts survival past that window.

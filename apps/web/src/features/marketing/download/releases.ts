@@ -6,20 +6,50 @@
  * bytes the button delivers are resolved by the same function, so they cannot
  * drift apart.
  *
+ * Resolution is per CHANNEL, keyed off the host the visitor is on
+ * (see @/lib/desktop-channels). dev.kortix.com serves the dev build,
+ * staging.kortix.com the staging build, everything else the released one.
+ * Previously every host served the production installer, so downloading the app
+ * from dev.kortix.com gave you an app that opened kortix.com — testing a dev
+ * change on the desktop was impossible. The CLI is NOT channelled: it takes the
+ * default `stable`.
+ *
  * Verified against release v0.11.0 (2026-07-28):
  *   macOS   Kortix-<v>-universal.dmg          (universal: Apple Silicon + Intel)
  *   Windows Kortix-Setup-<v>.exe
  *   Linux   Kortix-<v>-x86_64.AppImage        (x86_64 ONLY — no arm64 build)
  *   CLI     kortix-{darwin,linux}-{arm64,x64} (no Windows binary)
+ *
+ * Dev/staging artifacts carry the channel in the product name, e.g.
+ * `Kortix Dev-<v>-universal.dmg` / `Kortix Staging-Setup-<v>.exe`. Extension
+ * matching below is unaffected by that.
  */
+
+import type { DesktopChannel } from '@/lib/desktop-channels';
+import { desktopReleaseTag } from '@/lib/desktop-channels';
 
 import type { DesktopOs } from './detect-os';
 
 const REPO = 'kortix-ai/suna';
-const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 
 /** Where every download falls back to when the API is unreachable. */
 export const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
+
+/** The GitHub API endpoint listing a channel's assets. */
+function releaseApiUrl(channel: DesktopChannel): string {
+  const tag = desktopReleaseTag(channel);
+  return `https://api.github.com/repos/${REPO}/${tag ? `releases/tags/${tag}` : 'releases/latest'}`;
+}
+
+/**
+ * Human-facing fallback page for a channel, used when the API is unreachable.
+ * It stays on the visitor's OWN channel: bouncing a dev tester to the stable
+ * releases page would quietly hand them the production installer.
+ */
+export function releasesPageFor(channel: DesktopChannel): string {
+  const tag = desktopReleaseTag(channel);
+  return tag ? `https://github.com/${REPO}/releases/tag/${tag}` : RELEASES_PAGE;
+}
 
 export type ReleaseAsset = { name: string; url: string; size: number };
 export type Release = { version: string; assets: ReleaseAsset[] };
@@ -76,9 +106,9 @@ type GithubAsset = { name?: string; browser_download_url?: string; size?: number
  *
  * The 10-minute revalidate keeps a burst of clicks off GitHub's rate limit.
  */
-export async function getLatestRelease(): Promise<Release | null> {
+export async function getLatestRelease(channel: DesktopChannel = 'stable'): Promise<Release | null> {
   try {
-    const res = await fetch(LATEST_API, {
+    const res = await fetch(releaseApiUrl(channel), {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kortix-download' },
       next: { revalidate: 600 },
     });

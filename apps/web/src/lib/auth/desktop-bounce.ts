@@ -19,6 +19,8 @@
  *     of any upstream URL-encoding.
  */
 
+import { DEFAULT_DESKTOP_SCHEME, resolveDesktopScheme } from '@/lib/desktop-channels';
+
 /** Escape a value for safe interpolation into an HTML attribute value. */
 export function escapeHtmlAttribute(value: string): string {
   return value
@@ -43,28 +45,44 @@ export function serializeForInlineScript(value: unknown): string {
 }
 
 /**
- * Build the `kortix://auth/callback` deep link from an inbound web callback.
- * A supplied transport marker is omitted; every value is re-encoded via
+ * Build the `<scheme>://auth/callback` deep link from an inbound web callback.
+ * Supplied transport markers are omitted; every value is re-encoded via
  * URLSearchParams before it reaches either native client.
+ *
+ * `scheme` is only ever a value that already passed `resolveDesktopScheme`'s
+ * allowlist, so it cannot introduce an arbitrary protocol here.
  */
-export function buildNativeDeepLink(searchParams: URLSearchParams, transportFlag?: string): string {
+export function buildNativeDeepLink(
+  searchParams: URLSearchParams,
+  transportFlags: readonly string[] = [],
+  scheme: string = DEFAULT_DESKTOP_SCHEME,
+): string {
   const forwardParams = new URLSearchParams();
   for (const [k, v] of searchParams) {
-    if (!transportFlag || k !== transportFlag) forwardParams.set(k, v);
+    if (!transportFlags.includes(k)) forwardParams.set(k, v);
   }
   const qs = forwardParams.toString();
-  return `kortix://auth/callback${qs ? `?${qs}` : ''}`;
+  return `${scheme}://auth/callback${qs ? `?${qs}` : ''}`;
 }
 
-/** Build the desktop callback deep link, dropping the desktop marker. */
+/**
+ * Build the desktop callback deep link, dropping the desktop transport markers.
+ *
+ * `desktop_scheme` names the build that started the sign-in — prod, staging or
+ * dev — and is stripped here: it is transport, not something the app's
+ * /auth/callback should ever see. Without it the link would use `kortix://`,
+ * which on a machine with all three builds installed is a coin flip.
+ */
 export function buildDesktopDeepLink(searchParams: URLSearchParams): string {
-  return buildNativeDeepLink(searchParams, 'desktop');
+  const scheme = resolveDesktopScheme(searchParams.get('desktop_scheme'));
+  return buildNativeDeepLink(searchParams, ['desktop', 'desktop_scheme'], scheme);
 }
 
 /** Build the mobile callback deep link, retaining the registration marker. */
 export function buildMobileDeepLink(searchParams: URLSearchParams): string {
   // Unlike desktop, mobile needs this marker after the browser fallback so it
   // can admit a newly-created user only for a state-validated web handoff.
+  // The mobile app ships one build and keeps the plain `kortix://` scheme.
   return buildNativeDeepLink(searchParams);
 }
 

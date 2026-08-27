@@ -565,7 +565,12 @@ jobs:
     needs: version
     runs-on: ${{ matrix.runner }}
     env:
-      DESKTOP_URL: https://kortix.com/projects
+      # The ONLY identity input. electron-builder.js resolves appId, productName,
+      # icon, target URL and the kortix:// scheme from it via src/channel.js —
+      # the same file desktop.yml uses for the dev/staging channels, so the three
+      # builds cannot drift into sharing a bundle id.
+      KORTIX_CHANNEL: stable
+      KORTIX_VERSION: ${{ needs.version.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
@@ -651,16 +656,45 @@ jobs:
       - name: Ensure Electron runtime
         run: pnpm --filter @kortix/desktop-electron exec node scripts/ensure-runtime.js
 
+      # Guards the release against a bundle that is not actually production:
+      # a wrong appId here would ship an installer that cannot update existing
+      # installs, and a wrong URL would ship an app that opens dev.
+      - name: Verify production identity
+        shell: bash
+        working-directory: apps/desktop-electron
+        run: |
+          set -euo pipefail
+          node -e '
+            const c = require("./electron-builder.js");
+            const want = {
+              appId: "com.kortix.desktop",
+              productName: "Kortix",
+              scheme: "kortix",
+              url: "https://kortix.com/projects",
+            };
+            const got = {
+              appId: c.appId,
+              productName: c.productName,
+              scheme: c.protocols[0].schemes[0],
+              url: c.extraMetadata.kortixDefaultUrl,
+            };
+            for (const [k, v] of Object.entries(want)) {
+              if (got[k] !== v) throw new Error(`${k}: expected ${v}, got ${got[k]}`);
+            }
+            if (c.extraMetadata.version !== process.env.KORTIX_VERSION) {
+              throw new Error(`version: expected ${process.env.KORTIX_VERSION}, got ${c.extraMetadata.version}`);
+            }
+            console.log("production identity OK", JSON.stringify(got));
+          '
+
       # electron-builder signs (+ notarizes on macOS) when CSC_*/APPLE_API_*
-      # are present; empty → unsigned. Version + prod URL are baked in here.
+      # are present; empty → unsigned. Identity + version come from
+      # KORTIX_CHANNEL / KORTIX_VERSION above.
       - name: Build desktop installer (Electron)
         shell: bash
         run: |
           pnpm --filter @kortix/desktop-electron exec electron-builder ${{ matrix.eb_flag }} \
-            --publish never \
-            --config.extraMetadata.version="${{ needs.version.outputs.version }}" \
-            --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
-            --config.extraMetadata.kortixUpdateChannel="stable"
+            --publish never
         env:
           CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE || '' }}
           CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
