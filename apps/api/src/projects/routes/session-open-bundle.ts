@@ -85,9 +85,9 @@ function failed(error: unknown): { known: false; reason: string } {
 projectsApp.openapi(
   createRoute({
     method: 'get',
-    path: '/{projectId}/sessions/{sessionId}/open-bundle',
+    path: '/{projectId}/sessions/{sessionId}/snapshot',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/open-bundle',
+    summary: 'GET /:projectId/sessions/:sessionId/snapshot',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
