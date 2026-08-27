@@ -296,11 +296,11 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         return Response.json([]);
       }
 
-      // The Kortix Runtime API session stream (`GET /projects/:pid/sessions/:sid/stream`).
+      // The Kortix Runtime API session stream (`GET /projects/:pid/sessions/:sid/events`).
       // `session.stream()` opens THIS now, not `/p/<box>/8000/global/event`. Emit two
       // runtime frames immediately, then heartbeats — enough to prove the stream is
       // unbuffered end-to-end through the wrapper BFF.
-      const runtimeStreamMatch = p.match(/^projects\/([^/]+)\/sessions\/([^/]+)\/stream$/);
+      const runtimeStreamMatch = p.match(/^projects\/([^/]+)\/sessions\/([^/]+)\/events$/);
       if (runtimeStreamMatch && method === 'GET') {
         let interval: ReturnType<typeof setInterval> | undefined;
         const stream = new ReadableStream({
