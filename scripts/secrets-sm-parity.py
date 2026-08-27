@@ -7,8 +7,9 @@
 Runtime truth is the SM blob (ECS delivers it as KORTIX_ENV_JSON) plus the few plain
 environment entries on the API task definition. The file must contain every such
 key with the same value, except the prod-identical secrets in
-scripts/secrets-sm-quarantine.allowlist, which stay out of the shared non-prod
-files on purpose. Keys allowed to exist only in the file are listed in
+scripts/secrets-sm-quarantine.allowlist (too privileged for a shared file) and the
+names in scripts/secrets-sm-excluded.allowlist (forbidden in git by a repo guard),
+which stay out of the files on purpose. Keys allowed to exist only in the file are listed in
 scripts/secrets-file-only.allowlist. Needs an MFA session:
 AWS_PROFILE (default kortix-mfa) and the dotenvx private keys. Prints key names
 only, never values.
@@ -72,6 +73,11 @@ def quarantined() -> dict:
     return read_allowlist("secrets-sm-quarantine.allowlist")
 
 
+def excluded() -> dict:
+    """Keys a repository guard forbids in any tracked env file (see the allowlist)."""
+    return read_allowlist("secrets-sm-excluded.allowlist")
+
+
 def file_only_allow() -> dict:
     allow = {}
     for line in (ROOT / "scripts/secrets-file-only.allowlist").read_text().splitlines():
@@ -86,7 +92,7 @@ def compare(env: str):
     f, s = file_values(env), sm_values(env)
     s = {**s, **ecs_values(env)}  # task-definition plain env wins over the blob, as in ECS
     s = {k: v for k, v in s.items() if v != ""}  # an empty SM value is satisfied by absence
-    quar = quarantined() if env != "prod" else {}
+    quar = {**excluded(), **(quarantined() if env != "prod" else {})}
     held = sorted(k for k in s if k in quar)  # deliberately absent from the shared file
     missing = sorted(k for k in s if k not in f and k not in quar)
     differ = sorted(k for k in s if k in f and f[k] != s[k] and k not in quar)
@@ -97,7 +103,7 @@ def compare(env: str):
 def check(envs) -> int:
     allow = file_only_allow()
     failed = False
-    quar = quarantined()
+    quar = {**quarantined(), **excluded()}
     for env in envs:
         f, s, missing, differ, extra, held = compare(env)
         unlisted_extra = [k for k in extra if k not in allow]
