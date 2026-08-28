@@ -291,17 +291,34 @@ export async function buildHarness(cfg: WorkerConfig) {
   // Durable transcript. The worker is a cache of it, not its owner: kill this
   // process and the conversation is still whole in the store.
   let session: Session | undefined;
+  /** Non-null when the transcript is NOT being persisted; surfaced in health. */
+  let storeError: string | null = null;
   let restoredEntries = 0;
   let restoredMessages: any[] = [];
   if (cfg.storeUrl && cfg.sessionId) {
     const log = new RemoteSessionLog(cfg.storeUrl, cfg.sessionId, cfg.storeHeaders ?? {});
-    const opened = await DurableSessionStorage.open({ id: cfg.sessionId } as any, log);
-    restoredEntries = opened.restoredEntries;
-    session = new Session(opened.storage as any);
-    const leaf = await session.getLeafId();
-    if (leaf) {
-      const entries = await session.findEntriesOnBranch({ start: leaf } as any);
-      restoredMessages = entries.filter((e: any) => e.type === 'message').map((e: any) => e.message);
+    try {
+      const opened = await DurableSessionStorage.open({ id: cfg.sessionId } as any, log);
+      restoredEntries = opened.restoredEntries;
+      session = new Session(opened.storage as any);
+      const leaf = await session.getLeafId();
+      if (leaf) {
+        const entries = await session.findEntriesOnBranch({ start: leaf } as any);
+        restoredMessages = entries
+          .filter((e: any) => e.type === 'message')
+          .map((e: any) => e.message);
+      }
+    } catch (error) {
+      // Durability is a FEATURE, not a precondition for answering. Unguarded,
+      // any store fault — a 401, an outage, a shape change — threw here before
+      // the worker ever listened, so the box died at boot with the cause
+      // nowhere: the operator saw a session go `running` and then 502 forever.
+      // Degrade to in-memory, say so in health, and keep serving.
+      storeError = error instanceof Error ? error.message : String(error);
+      console.error(`[worker] durable session store unavailable, continuing in memory: ${storeError}`);
+      session = undefined;
+      restoredEntries = 0;
+      restoredMessages = [];
     }
   }
 
@@ -541,6 +558,9 @@ export async function startWorker(cfg = configFromEnv()) {
         repo_required: false,
         repo_ready: true,
         boot_error: null,
+        // null = the transcript is durable. A string means this session is
+        // answering but its history will NOT survive the process.
+        store_error: storeError,
         // The pi worker has no OpenCode store to pin — the start path must not
         // wait for one.
         opencode_session_id: surface.rootId,
