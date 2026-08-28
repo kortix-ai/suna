@@ -136,6 +136,16 @@ for stack_attempt in 1 2; do
   sleep 10
 done
 
+# The Caddyfile is a BIND MOUNT, so rewriting it changes nothing that
+# \`compose up -d\` compares — it recreates a container for a new image, env or
+# port, never for new bytes in a mounted file — and Caddy does not watch its
+# config either. On a reused sandbox the edge therefore keeps serving the config
+# it loaded on first boot. That silently pins the WRONG X-Forwarded-Host after
+# the public name changes, and Next kills every Server Action when it does not
+# match \`origin\` (React #441 — the whole auth flow). Reload explicitly; it is
+# idempotent and costs nothing on a fresh container.
+${compose} exec -T preview-edge caddy reload --config /etc/caddy/Caddyfile
+
 # Ask the edge container directly rather than through the public name. What is
 # being proven here is that THIS stack came up on THIS commit, and a stable
 # public name is served by a proxy that is only re-pointed at this sandbox after
