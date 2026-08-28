@@ -283,11 +283,15 @@ export function useSessionRuntimeStream(
       },
     };
 
-    /** Re-read the tail of held transcripts — the honest response to any
-     *  signal that runtime frames were lost. */
-    const reconcileHeldTranscripts = () => {
-      const held = Object.keys(useSyncStore.getState().messages);
-      for (const sid of sessionsNeedingRehydrate(held)) {
+    /** Re-read THIS stream's session transcript — the honest response to any
+     *  signal that runtime frames were lost. The stream is per (projectId,
+     *  sessionId), so a gap or resync here concerns this session only; every
+     *  other open session runs its own stream and repairs its own gaps. Re-reading
+     *  every held transcript on one stream's resync was the multi-MB refetch-all
+     *  storm — see `sessionsNeedingRehydrate`. `reserveMessageRehydrate` still
+     *  applies its 30s per-session cooldown, so a burst of reconnects coalesces. */
+    const reconcileStreamSession = () => {
+      for (const sid of sessionsNeedingRehydrate(sessionId)) {
         if (!reserveMessageRehydrate(sid)) continue;
         reconcileSessionTail(sid, 'sse-gap')
           .catch(() => {})
@@ -342,7 +346,7 @@ export function useSessionRuntimeStream(
           if (!connected) markSessionRuntimeChannelLive(scope, false);
         },
         onRuntimeResync: (info) => {
-          reconcileHeldTranscripts();
+          reconcileStreamSession();
           if (info.epochChanged) {
             // The daemon rebooted: every runtime catalog this tab holds
             // describes the previous boot.
@@ -357,14 +361,10 @@ export function useSessionRuntimeStream(
             }
           }
         },
-        onRuntimeGap: (info) => {
-          if (info.session && reserveMessageRehydrate(info.session)) {
-            reconcileSessionTail(info.session, 'sse-gap')
-              .catch(() => {})
-              .finally(() => releaseMessageRehydrate(info.session!));
-            return;
-          }
-          reconcileHeldTranscripts();
+        onRuntimeGap: () => {
+          // Per-session stream: the gap is this session's. `info.session` always
+          // equals `sessionId` here, so scope to it like the resync path does.
+          reconcileStreamSession();
         },
       });
     };

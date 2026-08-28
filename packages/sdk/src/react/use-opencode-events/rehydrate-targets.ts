@@ -1,19 +1,28 @@
 /**
- * Which sessions get their transcript re-read after an SSE gap.
+ * Which sessions get their transcript re-read after an SSE gap or resync.
  *
- * The old rule was "the ones whose status slot says busy", and it could not
- * work: the status slot is filled BY the stream, so a gap long enough to lose
- * message frames is long enough to lose the status frame that would have
- * marked the session busy. The sessions most likely to be missing content were
- * therefore the ones most likely to be skipped — and a session that went
- * silently idle during the gap kept a truncated final answer with nothing left
- * to correct it.
+ * The runtime stream is per (projectId, sessionId): `connectSessionStream`
+ * opens ONE connection for ONE session, and its `onRuntimeGap` / `onRuntimeResync`
+ * fire only for that session's frames. So the honest repair for "this stream
+ * lost frames" is a tail read of THIS stream's session — nothing else.
  *
- * A gap means: for some interval, this tab is not sure what the runtime said.
- * The honest response is to re-read every transcript this tab is holding. That
- * is bounded — a tab holds one open session plus a handful of recently viewed
- * ones — and each read is a single tail page.
+ * The rule this replaced re-read EVERY transcript the tab was holding on any
+ * one stream's resync ("a tab holds one open session plus a handful of recently
+ * viewed ones … re-read every transcript this tab is holding"). It was written
+ * for a since-removed model where one multiplexed stream carried the whole tab;
+ * under the owned per-session stream it is over-broad. Against the daemon's tiny
+ * 2,000-frame replay ring (`kortix-event-bus.ts` `DEFAULT_RING_CAPACITY`), a
+ * routine ~30-60s reconnect overflows the ring and resyncs (`gap-too-old`)
+ * constantly — and every resync then dragged a multi-MB `?limit=50` tail page
+ * down for every background session no gap had touched. That is the "why is
+ * `/kortix/opencode/messages` hit so often, for two sessions at once" storm.
+ *
+ * A background session that genuinely lost frames is not abandoned: it runs its
+ * own stream (repairing its own gaps) and re-reads on its next mount / tab-focus
+ * (`reconcile('initial')` / `reconcile('visible')`). The eager refetch-all here
+ * bought nothing those paths do not already cover, at a cost measured in tens of
+ * MB per reconnect.
  */
-export function sessionsNeedingRehydrate(loadedSessionIds: string[]): string[] {
-  return [...new Set(loadedSessionIds)];
+export function sessionsNeedingRehydrate(streamSessionId: string): string[] {
+  return streamSessionId ? [streamSessionId] : [];
 }
